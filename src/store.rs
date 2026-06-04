@@ -1,0 +1,328 @@
+//! The thread-safe interned graph store (plan M1).
+//!
+//! # Locking discipline
+//!
+//! Interning is a read-modify-write on shared state: look up the structural key in the intern
+//! table and, only if absent, push a new node and record its id. To keep that atomic and
+//! race-free, the entire inner state (arena + intern table + outputs) sits behind a single
+//! [`std::sync::Mutex`]. A `RwLock` would not help — interning writes on the common path — and
+//! sharding is deferred because a node's `inputs` reference ids in the shared arena, so a sharded
+//! design would need cross-shard coordination to validate them. The single mutex is therefore the
+//! documented discipline; it is correct under the GIL and under free-threaded 3.14t. The critical
+//! section is short (a hash lookup + two pushes), so contention is acceptable for the MVP; finer
+//! sharding is a tracked improvement. A `loom` model of this critical section lives in the
+//! `loom_model` test module below (run with `RUSTFLAGS="--cfg loom" cargo test --lib loom_model`).
+
+#[cfg(not(loom))]
+use std::sync::{Mutex, MutexGuard};
+
+#[cfg(loom)]
+use loom::sync::{Mutex, MutexGuard};
+
+use std::collections::HashMap;
+
+use crate::node::{NodeId, NodeKey, PayloadDescriptor};
+use crate::param::ParamMap;
+
+/// Error returned when a referenced node id is not in the arena.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BadNodeId(pub NodeId);
+
+impl std::fmt::Display for BadNodeId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "no node with id {}", self.0)
+    }
+}
+
+struct Inner {
+    nodes: Vec<NodeKey>,
+    intern: HashMap<NodeKey, NodeId>,
+    outputs: Vec<NodeId>,
+}
+
+pub struct GraphStore {
+    inner: Mutex<Inner>,
+}
+
+impl Default for GraphStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl GraphStore {
+    pub fn new() -> Self {
+        GraphStore {
+            inner: Mutex::new(Inner {
+                nodes: Vec::new(),
+                intern: HashMap::new(),
+                outputs: Vec::new(),
+            }),
+        }
+    }
+
+    fn lock(&self) -> MutexGuard<'_, Inner> {
+        // Poisoning only happens if a thread panics mid-update; our critical sections do not panic.
+        self.inner
+            .lock()
+            .expect("graphed-core store mutex poisoned")
+    }
+
+    /// Intern a key, validating any input ids in the same critical section.
+    fn intern(&self, key: NodeKey) -> Result<NodeId, BadNodeId> {
+        let mut g = self.lock();
+        let len = g.nodes.len() as NodeId;
+        for &i in key.inputs() {
+            if i >= len {
+                return Err(BadNodeId(i));
+            }
+        }
+        if let Some(&id) = g.intern.get(&key) {
+            return Ok(id);
+        }
+        let id = g.nodes.len() as NodeId;
+        g.nodes.push(key.clone());
+        g.intern.insert(key, id);
+        Ok(id)
+    }
+
+    pub fn add_source(&self, name: String, params: ParamMap) -> NodeId {
+        // sources have no inputs -> interning cannot fail
+        self.intern(NodeKey::Source { name, params })
+            .expect("source has no inputs")
+    }
+
+    pub fn add_op(
+        &self,
+        name: String,
+        inputs: Vec<NodeId>,
+        params: ParamMap,
+    ) -> Result<NodeId, BadNodeId> {
+        self.intern(NodeKey::Op {
+            name,
+            params,
+            inputs,
+        })
+    }
+
+    pub fn add_reduction(
+        &self,
+        name: String,
+        inputs: Vec<NodeId>,
+        params: ParamMap,
+    ) -> Result<NodeId, BadNodeId> {
+        self.intern(NodeKey::Reduction {
+            name,
+            params,
+            inputs,
+        })
+    }
+
+    pub fn add_external(
+        &self,
+        descriptor: PayloadDescriptor,
+        inputs: Vec<NodeId>,
+        params: ParamMap,
+    ) -> Result<NodeId, BadNodeId> {
+        self.intern(NodeKey::External {
+            descriptor,
+            params,
+            inputs,
+        })
+    }
+
+    pub fn mark_output(&self, id: NodeId) -> Result<(), BadNodeId> {
+        let mut g = self.lock();
+        if id >= g.nodes.len() as NodeId {
+            return Err(BadNodeId(id));
+        }
+        if !g.outputs.contains(&id) {
+            g.outputs.push(id);
+        }
+        Ok(())
+    }
+
+    pub fn node_count(&self) -> usize {
+        self.lock().nodes.len()
+    }
+
+    /// Byte-stable graphviz rendering: nodes in id order, edges in (node, input-position) order.
+    pub fn to_dot(&self) -> String {
+        let g = self.lock();
+        let mut out = String::from("digraph graphed {\n");
+        for (id, node) in g.nodes.iter().enumerate() {
+            let shape = if g.outputs.contains(&(id as NodeId)) {
+                ", shape=doublecircle"
+            } else {
+                ""
+            };
+            out.push_str(&format!(
+                "  n{id} [label=\"{}\"{shape}];\n",
+                escape(&node.label())
+            ));
+        }
+        for (id, node) in g.nodes.iter().enumerate() {
+            for &src in node.inputs() {
+                out.push_str(&format!("  n{src} -> n{id};\n"));
+            }
+        }
+        out.push_str("}\n");
+        out
+    }
+}
+
+fn escape(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+#[cfg(all(test, not(loom)))]
+mod tests {
+    use super::*;
+
+    fn pm(entries: Vec<(&str, crate::param::ParamValue)>) -> ParamMap {
+        ParamMap::new(
+            entries
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v))
+                .collect(),
+        )
+    }
+
+    #[test]
+    fn identical_structure_interns() {
+        let s = GraphStore::new();
+        let src = s.add_source("e".into(), pm(vec![]));
+        let a = s.add_op("pt".into(), vec![src], pm(vec![])).unwrap();
+        let b = s.add_op("pt".into(), vec![src], pm(vec![])).unwrap();
+        assert_eq!(a, b);
+        assert_eq!(s.node_count(), 2);
+    }
+
+    #[test]
+    fn nan_canonicalizes_zero_signed_distinct() {
+        use crate::param::ParamValue::Float;
+        let s = GraphStore::new();
+        let src = s.add_source("e".into(), pm(vec![]));
+        let nan1 = s
+            .add_op("k".into(), vec![src], pm(vec![("v", Float(f64::NAN))]))
+            .unwrap();
+        let nan2 = s
+            .add_op("k".into(), vec![src], pm(vec![("v", Float(-f64::NAN))]))
+            .unwrap();
+        let pos = s
+            .add_op("k".into(), vec![src], pm(vec![("v", Float(0.0))]))
+            .unwrap();
+        let neg = s
+            .add_op("k".into(), vec![src], pm(vec![("v", Float(-0.0))]))
+            .unwrap();
+        assert_eq!(nan1, nan2, "all NaNs intern to one node");
+        assert_ne!(pos, neg, "0.0 and -0.0 are distinct");
+        assert_ne!(nan1, pos);
+    }
+
+    #[test]
+    fn bad_input_rejected() {
+        let s = GraphStore::new();
+        assert_eq!(
+            s.add_op("x".into(), vec![99], pm(vec![])),
+            Err(BadNodeId(99))
+        );
+        assert_eq!(s.mark_output(99), Err(BadNodeId(99)));
+    }
+
+    #[test]
+    fn external_descriptor_participates_in_identity() {
+        let s = GraphStore::new();
+        let src = s.add_source("e".into(), pm(vec![]));
+        let d = |hash: &str| PayloadDescriptor {
+            kind: "onnx".into(),
+            content_hash: hash.into(),
+            framework: "ort".into(),
+            version: "1".into(),
+            io_schema: "x".into(),
+            preprocessing_ref: None,
+        };
+        let a = s.add_external(d("h1"), vec![src], pm(vec![])).unwrap();
+        let b = s.add_external(d("h1"), vec![src], pm(vec![])).unwrap();
+        let c = s.add_external(d("h2"), vec![src], pm(vec![])).unwrap();
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+    }
+
+    #[test]
+    fn concurrent_interning_counts_exactly() {
+        use std::sync::Arc;
+        use std::thread;
+        let s = Arc::new(GraphStore::new());
+        let src = s.add_source("e".into(), pm(vec![]));
+        let mut handles = vec![];
+        for _ in 0..16 {
+            let s = Arc::clone(&s);
+            handles.push(thread::spawn(move || {
+                for i in 0..100 {
+                    // every thread builds the SAME 100 ops -> heavy intern contention
+                    s.add_op(
+                        "op".into(),
+                        vec![src],
+                        pm(vec![("i", crate::param::ParamValue::Int(i))]),
+                    )
+                    .unwrap();
+                }
+            }));
+        }
+        for h in handles {
+            h.join().unwrap();
+        }
+        assert_eq!(s.node_count(), 1 + 100);
+    }
+
+    #[test]
+    fn to_dot_is_byte_stable() {
+        let build = || {
+            let s = GraphStore::new();
+            let src = s.add_source(
+                "e".into(),
+                pm(vec![("uri", crate::param::ParamValue::Str("f".into()))]),
+            );
+            let pt = s.add_op("pt".into(), vec![src], pm(vec![])).unwrap();
+            s.mark_output(pt).unwrap();
+            s.to_dot()
+        };
+        assert_eq!(build(), build());
+        assert!(build().starts_with("digraph"));
+    }
+}
+
+/// loom model of the intern critical section (plan M1: "a `loom` test of the locking discipline").
+///
+/// Run with: `RUSTFLAGS="--cfg loom" cargo test --lib loom_model`. loom exhaustively explores the
+/// thread interleavings around the store's `Mutex` (which is `loom::sync::Mutex` under `--cfg loom`)
+/// and asserts that two threads interning the same structural key produce exactly one node and the
+/// same id — i.e. the single-mutex discipline is free of races and lost updates.
+#[cfg(all(test, loom))]
+mod loom_model {
+    use super::*;
+    use crate::param::ParamMap;
+    use loom::sync::Arc;
+
+    #[test]
+    fn concurrent_intern_of_same_key_creates_one_node() {
+        loom::model(|| {
+            let s = Arc::new(GraphStore::new());
+            let src = s.add_source("e".into(), ParamMap::new(vec![]));
+            let handle = {
+                let s = Arc::clone(&s);
+                loom::thread::spawn(move || {
+                    s.add_op("pt".into(), vec![src], ParamMap::new(vec![]))
+                        .unwrap()
+                })
+            };
+            let id_main = s
+                .add_op("pt".into(), vec![src], ParamMap::new(vec![]))
+                .unwrap();
+            let id_other = handle.join().unwrap();
+            assert_eq!(id_main, id_other);
+            assert_eq!(s.node_count(), 2); // source + exactly one interned op
+        });
+    }
+}
