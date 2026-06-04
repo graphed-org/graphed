@@ -12,7 +12,7 @@ from analyses import ADL, agc_object_selection, record
 from graphed import Session
 from graphed_corpus import make_events
 
-from graphed_awkward import AwkwardBackend, from_awkward
+from graphed_awkward import AwkwardBackend, from_awkward, gak
 
 ALL = {**ADL, "agc": agc_object_selection}
 
@@ -29,7 +29,7 @@ def test_analysis_records_metadata_only(name: str) -> None:
 def test_dimuon_smoke_records_correct_forms() -> None:
     s = Session(AwkwardBackend())
     events = from_awkward(s, "events", make_events(n_events=300))
-    pairs = __import__("graphed_awkward").gak.combinations(events.Muon, 2, fields=["a", "b"])
+    pairs = gak.combinations(events.Muon, 2, fields=["a", "b"])
     a, b = pairs.a, pairs.b
     mass = np.sqrt(2 * a.pt * b.pt * (np.cosh(a.eta - b.eta) - np.cos(a.phi - b.phi)))
     inwin = (mass > 60) & (mass < 120)

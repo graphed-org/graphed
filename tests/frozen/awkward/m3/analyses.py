@@ -8,8 +8,9 @@ from __future__ import annotations
 
 import numpy as np
 from graphed import Array, Session
+from graphed_corpus import make_events
 
-from graphed_awkward import gak
+from graphed_awkward import AwkwardBackend, from_awkward, gak
 
 
 def _delta_phi(a: Array, b: Array) -> Array:
@@ -124,10 +125,6 @@ ADL = {"q1": q1, "q2": q2, "q3": q3, "q4": q4, "q5": q5, "q6": q6, "q7": q7, "q8
 
 
 def record(fn: object) -> tuple[Session, Array]:
-    from graphed_corpus import make_events
-
-    import graphed_awkward as ga
-
-    s = Session(ga.AwkwardBackend())
-    events = ga.from_awkward(s, "events", make_events(n_events=400))
+    s = Session(AwkwardBackend())
+    events = from_awkward(s, "events", make_events(n_events=400))
     return s, fn(events)  # type: ignore[operator]

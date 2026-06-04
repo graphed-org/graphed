@@ -10,7 +10,10 @@ import awkward as ak
 import numpy as np
 import pytest
 from analyses import ADL
+from graphed import Session
 from graphed_corpus.analyses.adl import _pair_mass
+
+from graphed_awkward import AwkwardBackend, from_awkward
 
 
 def _flat(x: object) -> np.ndarray:
@@ -35,10 +38,6 @@ def _reference(name: str, ev: ak.Array) -> np.ndarray:
 
 @pytest.mark.parametrize("name", ["q1", "q2", "q4", "q5"])
 def test_materialize_matches_plain_awkward(name: str, shared_events: ak.Array) -> None:
-    from graphed import Session
-
-    from graphed_awkward import AwkwardBackend, from_awkward
-
     s = Session(AwkwardBackend())
     events = from_awkward(s, "events", shared_events)
     got = _flat(s.materialize(ADL[name](events)))

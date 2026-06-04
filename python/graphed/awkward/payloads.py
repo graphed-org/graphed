@@ -49,7 +49,7 @@ def onnx_descriptor(model_path: str) -> PayloadDescriptor:
     opset = "unknown"
     io_schema = "opaque"
     try:
-        import onnx
+        import onnx  # noqa: PLC0415  -- onnx is an optional dependency, imported lazily on demand
 
         model = onnx.load(model_path)
         opset = ",".join(str(o.version) for o in model.opset_import)

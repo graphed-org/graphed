@@ -25,7 +25,7 @@ def cartesian(arrays: Sequence[Array], *, nested: bool = False) -> Array:
     return arrays[0].session.record_op("ak.cartesian", list(arrays), {"nested": nested})
 
 
-def zip(fields: Mapping[str, Array]) -> Array:  # noqa: A001 - mirrors ak.zip
+def zip(fields: Mapping[str, Array]) -> Array:
     arrays = list(fields.values())
     return arrays[0].session.record_op("ak.zip", arrays, {"fields": ",".join(fields.keys())})
 
@@ -46,15 +46,15 @@ def _reduce(name: str, arr: Array, axis: int | None) -> Array:
     return arr.session.record_op(name, [arr], {"axis": "none" if axis is None else axis}, reduction=True)
 
 
-def sum(arr: Array, axis: int | None = None) -> Array:  # noqa: A001 - mirrors ak.sum
+def sum(arr: Array, axis: int | None = None) -> Array:
     return _reduce("ak.sum", arr, axis)
 
 
-def any(arr: Array, axis: int | None = None) -> Array:  # noqa: A001
+def any(arr: Array, axis: int | None = None) -> Array:
     return _reduce("ak.any", arr, axis)
 
 
-def all(arr: Array, axis: int | None = None) -> Array:  # noqa: A001
+def all(arr: Array, axis: int | None = None) -> Array:
     return _reduce("ak.all", arr, axis)
 
 

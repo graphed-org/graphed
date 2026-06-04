@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import sys
+
 import analyses as analyses_mod
 import numpy as np
 from analyses import ADL, record
 from graphed import Session
 from graphed_corpus import make_events
 
-from graphed_awkward import AwkwardBackend, from_awkward
+from graphed_awkward import AwkwardBackend, from_awkward, gak
 
 
 def test_every_node_maps_to_user_code_not_graphed_internals() -> None:
@@ -24,12 +26,10 @@ def test_every_node_maps_to_user_code_not_graphed_internals() -> None:
 
 
 def test_mass_node_maps_to_its_exact_source_line() -> None:
-    import sys
-
     s = Session(AwkwardBackend())
     events = from_awkward(s, "events", make_events(n_events=200))
     mu = events.Muon
-    pairs = __import__("graphed_awkward").gak.combinations(mu, 2, fields=["a", "b"])
+    pairs = gak.combinations(mu, 2, fields=["a", "b"])
     a, b = pairs.a, pairs.b
     line = sys._getframe().f_lineno + 1
     mass = np.sqrt(2 * a.pt * b.pt * (np.cosh(a.eta - b.eta) - np.cos(a.phi - b.phi)))

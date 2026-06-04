@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import awkward as ak
 import pytest
 from analyses import q1, record
 from graphed import Session
 from graphed_corpus import make_events
 
-from graphed_awkward import AwkwardBackend, from_awkward, gak
+from graphed_awkward import AwkwardBackend, from_awkward, gak, payloads
 from graphed_awkward._ops import apply
 
 
@@ -59,10 +61,6 @@ def test_map_opaque_callable_records_external() -> None:
 
 
 def test_dataset_descriptor(tmp_path: object) -> None:
-    from pathlib import Path
-
-    from graphed_awkward import payloads
-
     p = Path(str(tmp_path)) / "f.root"
     p.write_bytes(b"ROOTDATA")
     desc = payloads.dataset_descriptor("DAS:/my/dataset", [str(p)])

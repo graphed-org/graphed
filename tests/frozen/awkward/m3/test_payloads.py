@@ -6,8 +6,10 @@ import hashlib
 import json
 from pathlib import Path
 
+import onnx
 from graphed import Session
 from graphed_corpus import make_events
+from onnx import TensorProto, helper
 
 from graphed_awkward import AwkwardBackend, from_awkward, gak
 
@@ -28,9 +30,6 @@ def _write_correction(path: Path, weight: float = 1.0) -> None:
 
 
 def _write_onnx(path: Path) -> None:
-    import onnx
-    from onnx import TensorProto, helper
-
     node = helper.make_node("Identity", ["x"], ["y"])
     graph = helper.make_graph(
         [node],
