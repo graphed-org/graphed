@@ -48,7 +48,7 @@ src = ["src", "tests"]
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM"]
+select = ["E", "F", "I", "UP", "B", "SIM", "C4", "RUF", "PLC0415"]
 ignore = ["E501"]
 
 [tool.mypy]

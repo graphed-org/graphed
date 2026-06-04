@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 from toy import ToyBackend, source
 
 from graphed import Session
@@ -22,8 +23,6 @@ def test_getitem_mask_field_and_error() -> None:
     mask = source(s, "m")
     assert s.form(a[mask]).describe() == "getitem"
     assert s.form(a["field"]).describe() == "field"
-    import pytest
-
     with pytest.raises(TypeError):
         _ = a[1.5]
 
@@ -73,8 +72,6 @@ def test_numpy_ufuncs_record_canonical_ops() -> None:
 def test_unhashable_due_to_deferred_eq() -> None:
     s = Session(ToyBackend())
     a = source(s, "a")
-    import pytest
-
     with pytest.raises(TypeError):
         hash(a)
 
@@ -82,7 +79,5 @@ def test_unhashable_due_to_deferred_eq() -> None:
 def test_unsupported_scalar_operand_rejected() -> None:
     s = Session(ToyBackend())
     a = source(s, "a")
-    import pytest
-
     with pytest.raises(TypeError):
         _ = a + object()
