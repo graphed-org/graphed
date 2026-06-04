@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import sys
 
-import graphed_core as gc
 import pytest
+
+import graphed_core as gc
 
 
 def _build(store: gc.GraphStore) -> None:
