@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 
 import graphed_core as gc
+import pytest
 
 
 def _build(store: gc.GraphStore) -> None:
@@ -58,7 +59,5 @@ def test_mark_output_accepts_valid_and_rejects_invalid() -> None:
     s = gc.GraphStore()
     n = s.add_source("e")
     s.mark_output(n)  # ok
-    import pytest
-
     with pytest.raises((ValueError, IndexError, OverflowError)):
         s.mark_output(10_000)  # out of range

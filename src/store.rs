@@ -148,6 +148,7 @@ impl GraphStore {
 
     /// Byte-stable graphviz rendering: nodes in id order, edges in (node, input-position) order.
     pub fn to_dot(&self) -> String {
+        use std::fmt::Write as _;
         let g = self.lock();
         let mut out = String::from("digraph graphed {\n");
         for (id, node) in g.nodes.iter().enumerate() {
@@ -156,14 +157,12 @@ impl GraphStore {
             } else {
                 ""
             };
-            out.push_str(&format!(
-                "  n{id} [label=\"{}\"{shape}];\n",
-                escape(&node.label())
-            ));
+            // writing to a String is infallible
+            let _ = writeln!(out, "  n{id} [label=\"{}\"{shape}];", escape(&node.label()));
         }
         for (id, node) in g.nodes.iter().enumerate() {
             for &src in node.inputs() {
-                out.push_str(&format!("  n{src} -> n{id};\n"));
+                let _ = writeln!(out, "  n{src} -> n{id};");
             }
         }
         out.push_str("}\n");

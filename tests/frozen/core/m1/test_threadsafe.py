@@ -23,7 +23,7 @@ def test_concurrent_overlapping_builds_intern_consistently() -> None:
             barrier.wait()
             for i in range(n_ops):
                 store.add_op(f"op{i}", [src], {"i": i})
-        except BaseException as exc:  # noqa: BLE001 - record any race/panic
+        except BaseException as exc:
             errors.append(exc)
 
     threads = [threading.Thread(target=worker) for _ in range(n_threads)]
@@ -48,7 +48,7 @@ def test_concurrent_distinct_builds_count_exactly() -> None:
         try:
             for i in range(per):
                 store.add_op("k", [src], {"t": tid, "i": i})  # disjoint across threads
-        except BaseException as exc:  # noqa: BLE001
+        except BaseException as exc:
             errors.append(exc)
 
     threads = [threading.Thread(target=worker, args=(t,)) for t in range(n_threads)]
