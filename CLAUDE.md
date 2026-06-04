@@ -10,8 +10,20 @@ proxy records them into the Rust-backed `graphed-core` store via a pluggable `Ba
 graph is **backend-agnostic** — backends supply only form inference (`op_form`) and evaluation
 (`eval_stage`), plus `boundary_ops`, `project` (M5 stub), and `external_payload`.
 
-> Guardrails (M2): IR stays backend-agnostic (no numpy/awkward leakage into core types) · **no
-> fusion** (M4) · **no awkward** (the awkward backend is M3) · **provenance is a stub** (M3).
+> Guardrails: IR stays backend-agnostic (no numpy/awkward leakage into core types) · **no fusion**
+> (M4). M2 added the `Backend`/`Form` protocols + the basic `Array`; M3 added the awkward op surface
+> (field access, indexing, comparisons, numpy-ufunc hooks, modulo) and **real provenance**.
+
+## M3 additions
+
+- `Array` awkward surface (`array.py`): `__getattr__` (field), `__getitem__` (mask/field),
+  comparisons (`> < >= <= == !=`, deferred → Array, so Array is unhashable), boolean ops
+  (`& | ~`), scalar-aware arithmetic + reflected ops, `__array_ufunc__` so `np.cos(arr)` etc.
+  record canonical ops without graphed importing numpy.
+- **Real `provenance.capture()`** (`provenance.py`): first non-`graphed*` frame's filename, line,
+  function, and **sub-expression source text** (via `executing`); stateless (thread-safe);
+  toggleable (`set_enabled`). Survives helper functions and comprehensions.
+- The `gak` awkward-function namespace + the typetracer backend live in **graphed-awkward**.
 
 ## M2 — implemented
 

@@ -25,14 +25,14 @@
           "integrity_ok": true,
           "iteration_index": 0,
           "lint_ok": true,
-          "pass_count": 12,
+          "pass_count": 24,
           "tokens_spent": 0,
           "tree_hash": "local",
           "types_ok": true,
           "wall_clock_s": 0.0
         }
       ],
-      "phase": "DONE",
+      "phase": "REVIEW",
       "reject_count": 0
     },
     "M2": {
@@ -60,18 +60,53 @@
           "integrity_ok": true,
           "iteration_index": 0,
           "lint_ok": true,
-          "pass_count": 12,
+          "pass_count": 24,
           "tokens_spent": 0,
           "tree_hash": "local",
           "types_ok": true,
           "wall_clock_s": 0.0
         }
       ],
-      "phase": "DONE",
+      "phase": "REVIEW",
+      "reject_count": 0
+    },
+    "M3": {
+      "dispute_count": 0,
+      "escalated": false,
+      "freeze_tag": "freeze-M3-0",
+      "gates": {
+        "benchmark": null,
+        "coverage": true,
+        "determinism": true,
+        "frozen_tests": true,
+        "integrity_scan": true,
+        "lint": true,
+        "types": true
+      },
+      "incident": null,
+      "l0_count": 0,
+      "metrics_history": [
+        {
+          "benchmark_ok": null,
+          "coverage_ok": true,
+          "determinism_ok": true,
+          "diff_lines": 0,
+          "fail_set_hash": "e3b0c44298fc1c14",
+          "integrity_ok": true,
+          "iteration_index": 0,
+          "lint_ok": true,
+          "pass_count": 24,
+          "tokens_spent": 0,
+          "tree_hash": "local",
+          "types_ok": true,
+          "wall_clock_s": 0.0
+        }
+      ],
+      "phase": "REVIEW",
       "reject_count": 0
     }
   },
   "repo": "graphed",
   "schema_version": 1,
-  "updated_at": "2026-06-04T18:56:06Z"
+  "updated_at": "2026-06-04T19:39:28Z"
 }

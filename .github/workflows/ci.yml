@@ -40,7 +40,7 @@ jobs:
       - name: Mypy (strict)
         run: mypy
       - name: Pytest + coverage gate (>=90%)
-        run: pytest tests/frozen/m2 --cov=graphed --cov-branch --cov-report=term-missing
+        run: pytest tests/frozen --cov=graphed --cov-branch --cov-report=term-missing
 
   # graphed is pure Python; graphed-core builds for free-threaded 3.14t (proven in graphed-core CI).
   test-experimental:
@@ -61,7 +61,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install "${{ env.GRAPHED_CORE }}"
           python -m pip install -e ".[dev]"
-          pytest tests/frozen/m2
+          pytest tests/frozen
 
   docs:
     name: docs (sphinx -W)

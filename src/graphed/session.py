@@ -110,6 +110,8 @@ class Session:
                 return cache[node_id]
             if node_id in self._sources:
                 value = self._sources[node_id]
+                if callable(value):  # lazy source loader (e.g. read parquet at eval, not at build)
+                    value = value()
             elif node_id in self._externals:
                 fn, ids = self._externals[node_id]
                 value = fn(*[ev(i) for i in ids])

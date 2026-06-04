@@ -17,10 +17,10 @@ classifiers = [
   "Programming Language :: Python :: 3.13",
 ]
 # graphed-core is installed from its repo (see CI / CONTRIBUTING); not on PyPI yet.
-dependencies = ["graphed-core"]
+dependencies = ["graphed-core", "executing>=2.0"]
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-cov", "hypothesis", "mypy", "ruff"]
+dev = ["pytest", "pytest-cov", "hypothesis", "mypy", "ruff", "numpy>=1.24"]
 docs = ["sphinx", "furo"]
 
 [project.urls]
@@ -31,7 +31,7 @@ packages = ["src/graphed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src", "tests/frozen/m2"]
+pythonpath = ["src", "tests/frozen/m2", "tests/frozen/m3"]
 addopts = "-q"
 
 [tool.coverage.run]

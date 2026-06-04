@@ -13,7 +13,7 @@ from graphed_orchestrator.gates import evaluate_test_sanity
 from graphed_orchestrator.store import append_attempt, write_state
 
 REPO = "graphed"
-MILESTONES = ("M0", "M2")
+MILESTONES = ("M0", "M2", "M3")
 
 
 def _drive(milestone: str, *, total: int, cov: float, ci_confirmed: bool) -> Orchestrator:
