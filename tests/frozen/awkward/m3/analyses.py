@@ -91,17 +91,24 @@ def q8(events: Array) -> Array:
     eles = gak.with_field(events.Electron, gak.ones_like(events.Electron.pt, dtype="int64"), "flavor")
     lep = gak.concatenate([muons, eles], axis=1)
     lep = lep[gak.argsort(lep.pt, axis=1, ascending=False)]
-    lep = lep[gak.num(lep, axis=1) >= 3]
-    met = events.MET[gak.num(lep, axis=1) >= 3]
+    # compute the >=3-lepton mask ONCE and apply it to both lep and met (mirrors the corpus)
+    mask3 = gak.num(lep, axis=1) >= 3
+    lep = lep[mask3]
+    met = events.MET[mask3]
     idx = gak.local_index(lep, axis=1)
     pairs = gak.combinations(gak.zip({"lep": lep, "i": idx}), 2, fields=["a", "b"])
     ossf = (pairs.a.lep.charge != pairs.b.lep.charge) & (pairs.a.lep.flavor == pairs.b.lep.flavor)
     mass = gak.where(ossf, _pair_mass(pairs.a.lep, pairs.b.lep), np.inf)
+    has_ossf = gak.any(ossf, axis=1)
     best = gak.argmin(abs(mass - 91.2), axis=1, keepdims=True)
     not_in_pair = (idx != gak.flatten(pairs.a.i[best])) & (idx != gak.flatten(pairs.b.i[best]))
-    lead = gak.firsts(lep[not_in_pair])
-    dphi = _delta_phi(lead.phi, met.phi)
-    return np.sqrt(2 * lead.pt * met.pt * (1 - np.cos(dphi)))
+    others = lep[not_in_pair]
+    lead = gak.firsts(others)
+    keep = has_ossf & (gak.num(others, axis=1) >= 1)
+    met_k = met[keep]
+    lead_k = lead[keep]
+    dphi = _delta_phi(lead_k.phi, met_k.phi)
+    return np.sqrt(2 * lead_k.pt * met_k.pt * (1 - np.cos(dphi)))
 
 
 def agc_object_selection(events: Array) -> Array:
