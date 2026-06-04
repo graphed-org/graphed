@@ -20,7 +20,7 @@ DEFAULT_SEED = 1234
 
 def _jagged(rng: np.random.Generator, counts: np.ndarray, **flat_fields: np.ndarray) -> ak.Array:
     """Build a jagged record array from per-event ``counts`` and flat per-object fields."""
-    return ak.unflatten(ak.Array({k: v for k, v in flat_fields.items()}), counts)
+    return ak.unflatten(ak.Array(dict(flat_fields)), counts)
 
 
 def _kin(rng: np.random.Generator, n: int, *, pt_scale: float, eta_max: float) -> dict[str, np.ndarray]:
