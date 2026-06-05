@@ -7,11 +7,12 @@
 mod node;
 mod optimizer;
 mod param;
+mod serialize;
 mod store;
 
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyDict};
+use pyo3::types::{PyBool, PyBytes, PyDict};
 
 use crate::node::{NodeId, PayloadDescriptor};
 use crate::optimizer::{EggEngine, ReductionReport};
@@ -204,6 +205,21 @@ impl PyGraphStore {
 
     fn to_dot(&self) -> String {
         self.store.to_dot()
+    }
+
+    /// Serialize the IR to the canonical, versioned, byte-identical durable form (plan M8 / A.3.1:
+    /// the serializable IR — not cloudpickle — is the canonical durable representation).
+    fn serialize<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
+        PyBytes::new(py, &serialize::serialize(&self.store))
+    }
+
+    /// Rebuild a store from canonical bytes. A round trip reproduces the same node ids, so
+    /// `serialize` of the result is byte-identical to the input (plan M8 determinism gate).
+    #[staticmethod]
+    fn deserialize(data: &[u8]) -> PyResult<PyGraphStore> {
+        let store =
+            serialize::deserialize(data).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(PyGraphStore { store })
     }
 
     /// Reduce via the M4 optimizer (DCE + CSE + equality-saturation stage fusion behind

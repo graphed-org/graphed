@@ -15,8 +15,19 @@ Current limitations
 - **NodeId is an arena index.** Generational ids / removal are not needed yet (the graph is
   append-only at M1).
 
+M8 — plan serialization (delivered)
+-----------------------------------
+
+- ``GraphStore.serialize`` / ``GraphStore.deserialize`` give the **canonical, versioned,
+  byte-identical** durable IR form (magic ``GIR1``); a round trip reproduces identical bytes.
+- ``DurablePlan`` wraps that IR with the executor metadata (partitions, read columns,
+  reduction/stopping/locality/resource specs) and is content-addressed (``task_id`` is a SHA-256
+  over the IR identity + process spec + partition, so it is cache-poisoning-safe). cloudpickle is
+  used **only** for genuinely opaque callables, which are flagged ``opaque=True``.
+
 Planned
 -------
 
 - Sharded or lock-free interning once contention is measured to matter.
-- A serializable plan form (M8) and the optimizer ``RewriteEngine`` boundary (M4) build on this IR.
+- A backwards-compatible v2 of the ``GIR`` format (the magic byte is the versioning hook) if the
+  node schema ever grows; today only ``GIR1`` is accepted.

@@ -18,12 +18,15 @@ from .execution import (
     WorkerResources,
 )
 from .graphed_core import GraphStore, PayloadDescriptor, version
+from .plan import DurablePlan, OpSpec
 
 __all__ = [
+    "DurablePlan",
     "ExecContext",
     "ExecResult",
     "Executor",
     "GraphStore",
+    "OpSpec",
     "Partition",
     "PayloadDescriptor",
     "Plan",

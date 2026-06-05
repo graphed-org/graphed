@@ -101,6 +101,11 @@ impl ParamMap {
         self.0.is_empty()
     }
 
+    /// The sorted (key, value) entries, for canonical serialization (plan M8).
+    pub fn entries(&self) -> &[(String, ParamValue)] {
+        &self.0
+    }
+
     /// A compact, injective, whitespace-free encoding for optimizer tokens (M4). Type-tagged so
     /// int/float/bool/str with the same printed form stay distinct, matching interning identity.
     pub fn token(&self) -> String {
