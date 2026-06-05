@@ -24,6 +24,7 @@ class Session:
         self._backend = backend
         self._forms: dict[int, Form] = {}
         self._sources: dict[int, object] = {}
+        self._source_names: dict[int, str] = {}
         self._ops: dict[int, tuple[str, dict[str, ParamValue], list[int]]] = {}
         self._externals: dict[int, tuple[Callable[[object], object], list[int]]] = {}
         self._provenance: dict[int, Provenance] = {}
@@ -45,11 +46,22 @@ class Session:
     def provenance(self, array: Array) -> Provenance:
         return self._provenance[array.node_id]
 
+    def source_ids(self) -> list[int]:
+        """The node ids of all source nodes (used by projection)."""
+        return list(self._sources)
+
+    def source_name(self, node_id: int) -> str:
+        return self._source_names[node_id]
+
+    def form_of(self, node_id: int) -> Form:
+        return self._forms[node_id]
+
     # ---- builders --------------------------------------------------------------
     def source(self, name: str, *, form: Form, data: object, **params: ParamValue) -> Array:
         node_id = self._store.add_source(name, dict(params))
         self._forms.setdefault(node_id, form)
         self._sources.setdefault(node_id, data)
+        self._source_names.setdefault(node_id, name)
         self._provenance.setdefault(node_id, capture())
         return Array(self, node_id)
 
@@ -101,24 +113,44 @@ class Session:
         self._provenance.setdefault(node_id, prov)
         return Array(self, node_id)
 
-    # ---- evaluation (reference, node-by-node; the real executor is M7) ----------
-    def materialize(self, array: Array) -> object:
+    # ---- generic graph walk (shared by materialize + projection) ----------------
+    def walk(
+        self,
+        array: Array,
+        *,
+        source: Callable[[int], object],
+        op: Callable[[int, str, list[object], Mapping[str, ParamValue]], object],
+        external: Callable[[int, Callable[..., object], list[object]], object],
+    ) -> object:
+        """Evaluate the graph from ``array`` with caller-supplied handlers for sources, ops, and
+        externals. `materialize` evaluates real data; projection evaluates reporting tracers."""
         cache: dict[int, object] = {}
 
         def ev(node_id: int) -> object:
             if node_id in cache:
                 return cache[node_id]
             if node_id in self._sources:
-                value = self._sources[node_id]
-                if callable(value):  # lazy source loader (e.g. read parquet at eval, not at build)
-                    value = value()
+                value = source(node_id)
             elif node_id in self._externals:
                 fn, ids = self._externals[node_id]
-                value = fn(*[ev(i) for i in ids])
+                value = external(node_id, fn, [ev(i) for i in ids])
             else:
-                op, params, ids = self._ops[node_id]
-                value = self._backend.eval_stage(op, [ev(i) for i in ids], params)
+                op_name, params, ids = self._ops[node_id]
+                value = op(node_id, op_name, [ev(i) for i in ids], params)
             cache[node_id] = value
             return value
 
         return ev(array.node_id)
+
+    # ---- evaluation (reference, node-by-node; the real executor is M7) ----------
+    def materialize(self, array: Array) -> object:
+        def source(node_id: int) -> object:
+            value = self._sources[node_id]
+            return value() if callable(value) else value  # lazy loader (e.g. parquet)
+
+        return self.walk(
+            array,
+            source=source,
+            op=lambda _nid, name, ins, params: self._backend.eval_stage(name, ins, params),
+            external=lambda _nid, fn, ins: fn(*ins),
+        )
