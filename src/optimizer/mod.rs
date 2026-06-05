@@ -481,4 +481,146 @@ mod tests {
         };
         assert_eq!(build(), build());
     }
+
+    // ---- complex topologies (diamond / star / nested) — the dask-optimizer failure points -------
+
+    fn seeds(pairs: &[(&str, i64)]) -> HashMap<String, i64> {
+        pairs.iter().map(|(k, v)| (k.to_string(), *v)).collect()
+    }
+
+    #[test]
+    fn diamond_shares_apex_and_round_trips() {
+        // x -> a; a fans out to two DISTINCT branches that re-converge at out (a classic diamond).
+        let s = GraphStore::new();
+        let x = s.add_source("x".into(), empty());
+        let a = s.add_op("inc".into(), vec![x], empty()).unwrap(); // apex, out-degree 2
+        let l = s.add_op("inc".into(), vec![a], empty()).unwrap();
+        let r = s.add_op("neg".into(), vec![a], empty()).unwrap();
+        let out = s.add_op("add".into(), vec![l, r], empty()).unwrap();
+        s.mark_output(out).unwrap();
+        assert_eq!(s.node_count(), 5); // referencing `a` twice interns to ONE node (CSE), not two
+
+        let (nodes, outs) = s.snapshot();
+        let (reduced, report) = s.reduce(&EggEngine::default());
+        let (rn, ro) = reduced.snapshot();
+        let sd = seeds(&[("x", 5)]);
+        // (x+1)+1 + -(x+1) = (x+2) - (x+1) = 1
+        assert_eq!(eval(&nodes, &outs, &sd), vec![1]);
+        assert_eq!(eval(&rn, &ro, &sd), eval(&nodes, &outs, &sd));
+        // the fan-out apex is NOT duplicated into both branches: it stays its own stage
+        assert_eq!(report.stages, 2); // stage(a) + stage(l, r, out)
+        assert_eq!(reduced.node_count(), 3); // source + apex-stage + branch-stage
+    }
+
+    #[test]
+    fn dce_keeps_a_node_reachable_via_two_paths() {
+        // a diamond plus a genuinely dead branch off the apex; DCE keeps the whole diamond (the apex
+        // is reachable via BOTH branches) and drops only the dead op.
+        let s = GraphStore::new();
+        let x = s.add_source("x".into(), empty());
+        let a = s.add_op("inc".into(), vec![x], empty()).unwrap();
+        let l = s.add_op("inc".into(), vec![a], empty()).unwrap();
+        let r = s.add_op("neg".into(), vec![a], empty()).unwrap();
+        let out = s.add_op("add".into(), vec![l, r], empty()).unwrap();
+        let _dead = s.add_op("mul".into(), vec![a, x], empty()).unwrap(); // off the apex, not an output
+        s.mark_output(out).unwrap();
+        let (nodes, outs) = s.snapshot();
+        let (kept, _) = dead_code_elimination(&nodes, &outs);
+        assert_eq!(kept.len(), 5); // x, a, l, r, out kept; the dead mul dropped
+        let sd = seeds(&[("x", 5)]);
+        let (reduced, _) = s.reduce(&EggEngine::default());
+        let (rn, ro) = reduced.snapshot();
+        assert_eq!(eval(&rn, &ro, &sd), eval(&nodes, &outs, &sd));
+    }
+
+    #[test]
+    fn star_fan_out_and_fan_in_round_trip_with_a_shared_hub() {
+        // one hub fans out to N distinct consumers (each takes a distinct extra source), and they all
+        // fan in to a single add. The hub is interned once and never duplicated.
+        let n = 16usize;
+        let s = GraphStore::new();
+        let x = s.add_source("x".into(), empty());
+        let hub = s.add_op("inc".into(), vec![x], empty()).unwrap();
+        let names: Vec<String> = (0..n).map(|i| format!("s{i}")).collect();
+        let mut leaves = Vec::new();
+        for nm in &names {
+            let si = s.add_source(nm.clone(), empty());
+            leaves.push(s.add_op("add".into(), vec![hub, si], empty()).unwrap());
+        }
+        let out = s.add_op("add".into(), leaves.clone(), empty()).unwrap();
+        s.mark_output(out).unwrap();
+
+        let mut pairs = vec![("x", 2i64)];
+        for nm in &names {
+            pairs.push((nm.as_str(), 1));
+        }
+        let sd = seeds(&pairs);
+        let (nodes, outs) = s.snapshot();
+        let (reduced, _) = s.reduce(&EggEngine::default());
+        let (rn, ro) = reduced.snapshot();
+        // hub = x+1 = 3; each leaf = hub + 1 = 4; out = sum = n*4
+        let expect = vec![(n as i64) * 4];
+        assert_eq!(eval(&nodes, &outs, &sd), expect);
+        assert_eq!(eval(&rn, &ro, &sd), expect);
+        // the hub is a single shared node feeding all N leaves
+        assert_eq!(
+            nodes.iter().filter(|k| k.inputs().contains(&hub)).count(),
+            n
+        );
+    }
+
+    #[test]
+    fn nested_stacked_diamonds_collapse_to_constant() {
+        // D diamonds stacked: step(v) = (v+1) + -(v) = 1, so the tower is 1 for any x and any D>=1.
+        // Stresses deep nesting + many fan-out apexes; must stay correct AND grow at most linearly.
+        for d in [1usize, 4, 16, 64] {
+            let s = GraphStore::new();
+            let x = s.add_source("x".into(), empty());
+            let mut v = x;
+            for _ in 0..d {
+                let l = s.add_op("inc".into(), vec![v], empty()).unwrap();
+                let r = s.add_op("neg".into(), vec![v], empty()).unwrap();
+                v = s.add_op("add".into(), vec![l, r], empty()).unwrap();
+            }
+            s.mark_output(v).unwrap();
+            let (nodes, outs) = s.snapshot();
+            let (reduced, _) = s.reduce(&EggEngine::default());
+            let (rn, ro) = reduced.snapshot();
+            let sd = seeds(&[("x", 7)]);
+            assert_eq!(eval(&nodes, &outs, &sd), vec![1], "d={d}");
+            assert_eq!(eval(&rn, &ro, &sd), vec![1], "d={d}");
+            assert!(reduced.node_count() <= 3 * d + 2, "d={d}: no blow-up");
+        }
+    }
+
+    #[test]
+    fn complex_mixed_topology_round_trips_and_is_deterministic() {
+        let build = || {
+            let s = GraphStore::new();
+            let a = s.add_source("a".into(), empty());
+            let b = s.add_source("b".into(), empty());
+            let hub = s.add_op("add".into(), vec![a, b], empty()).unwrap(); // a shared hub (fan-out 3)
+            let l = s.add_op("inc".into(), vec![hub], empty()).unwrap();
+            let r = s.add_op("neg".into(), vec![hub], empty()).unwrap();
+            let d = s.add_op("add".into(), vec![l, r], empty()).unwrap(); // diamond off the hub
+            let p = s.add_op("inc".into(), vec![hub], empty()).unwrap();
+            let red = s.add_reduction("sum".into(), vec![p], empty()).unwrap(); // a boundary in a branch
+            let post = s.add_op("mul".into(), vec![d, red], empty()).unwrap();
+            s.mark_output(post).unwrap();
+            s
+        };
+        let s = build();
+        let (nodes, outs) = s.snapshot();
+        let (reduced, _) = s.reduce(&EggEngine::default());
+        let (rn, ro) = reduced.snapshot();
+        let sd = seeds(&[("a", 3), ("b", 4)]);
+        // hub=7; d=(7+1)+-(7)=1; p=8; red=8 (toy reduction passthrough); post=d*red=8
+        let expected = eval(&nodes, &outs, &sd);
+        assert_eq!(expected, vec![8]);
+        assert_eq!(eval(&rn, &ro, &sd), expected);
+        assert_eq!(
+            build().reduce(&EggEngine::default()).0.to_dot(),
+            build().reduce(&EggEngine::default()).0.to_dot()
+        );
+    }
 }
