@@ -110,6 +110,12 @@ def _best_reduce_time(store: gc.GraphStore, repeats: int = 5) -> float:
     return best
 
 
+# the smallest graph must itself reduce in clearly-measurable ms-scale time; below this the ratio
+# would be dominated by timer noise rather than real work (the failure mode that flaked at 71x when a
+# bad builder collapsed the graph to ~4 nodes timed in microseconds).
+_MS_SCALE_FLOOR_S = 1e-3
+
+
 def test_diamond_and_star_reduction_is_subquadratic() -> None:
     # the dask O(N^2) guard, on topologies (not just chains): an 8x bigger graph must NOT cost ~64x
     # the reduction time. Uses ms-scale sizes (matching the M4 benchmark) so the ratio is meaningful.
@@ -117,7 +123,15 @@ def test_diamond_and_star_reduction_is_subquadratic() -> None:
         sizes = [1000, 2000, 4000, 8000]
         stores = {k: family(k) for k in sizes}
         times = {k: _best_reduce_time(stores[k]) for k in sizes}
-        base = max(times[sizes[0]], 1e-3)  # floor at 1ms so timer noise on a fast base can't dominate
+        base = times[sizes[0]]
+        # SANITY: confirm we are actually timing ms-scale work, not the noise floor. If the base
+        # reduction is sub-millisecond the whole ratio is meaningless, so fail loudly here instead.
+        assert base >= _MS_SCALE_FLOOR_S, (
+            f"{family.__name__}: base reduction {base * 1e6:.0f}us is NOT ms-scale — timing the noise "
+            f"floor, not real work (graph too small / collapsed?): {times}"
+        )
+        # and every larger size must also be ms-scale (monotone real growth, not noise)
+        assert all(t >= _MS_SCALE_FLOOR_S for t in times.values()), times
         growth = times[sizes[-1]] / base  # size grows 8x; linear ~8x, quadratic ~64x
         # these shapes (n-ary fan-in, deep nesting) carry a higher constant than a clean chain; 30x
         # still cleanly separates sub-linear/linear-ish from the 64x quadratic this guards against.
