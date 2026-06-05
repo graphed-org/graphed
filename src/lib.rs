@@ -1,9 +1,11 @@
-//! graphed-core: thread-safe interned graph IR (Rust+PyO3), plan M1.
+//! graphed-core: thread-safe interned graph IR (Rust+PyO3), plans M1 + M4.
 //!
-//! The graph lives in Rust; this crate does not (and must not) depend on awkward. No optimization
-//! here — that is M4.
+//! The graph lives in Rust; this crate does not (and must not) depend on awkward. The M4 optimizer
+//! (DCE/CSE + equality-saturation stage fusion via egg) lives in `optimizer`, behind a
+//! `RewriteEngine` trait so the engine is swappable (Phase-2 egglog).
 
 mod node;
+mod optimizer;
 mod param;
 mod store;
 
@@ -12,6 +14,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict};
 
 use crate::node::{NodeId, PayloadDescriptor};
+use crate::optimizer::{EggEngine, ReductionReport};
 use crate::param::{ParamMap, ParamValue};
 use crate::store::{BadNodeId, GraphStore};
 
@@ -202,6 +205,39 @@ impl PyGraphStore {
     fn to_dot(&self) -> String {
         self.store.to_dot()
     }
+
+    /// Reduce via the M4 optimizer (DCE + CSE + equality-saturation stage fusion behind
+    /// RewriteEngine). Returns the reduced store and a report dict.
+    fn reduce(&self) -> (PyGraphStore, std::collections::HashMap<String, usize>) {
+        let (reduced, report) = self.store.reduce(&EggEngine::default());
+        (PyGraphStore { store: reduced }, report_to_map(&report))
+    }
+
+    /// Incremental reduction (egg e-graphs are additive; reduction re-runs cheaply as you build).
+    fn reduce_incremental(&self) -> (PyGraphStore, std::collections::HashMap<String, usize>) {
+        let (reduced, report) = self.store.reduce_incremental(&EggEngine::default());
+        (PyGraphStore { store: reduced }, report_to_map(&report))
+    }
+
+    /// The reduction report for the current graph, without keeping the reduced store.
+    fn reduction_report(&self) -> std::collections::HashMap<String, usize> {
+        let (_, report) = self.store.reduce(&EggEngine::default());
+        report_to_map(&report)
+    }
+}
+
+fn report_to_map(r: &ReductionReport) -> std::collections::HashMap<String, usize> {
+    [
+        ("input_nodes", r.input_nodes),
+        ("reachable_nodes", r.reachable_nodes),
+        ("canonical_nodes", r.canonical_nodes),
+        ("stages", r.stages),
+        ("reduced_nodes", r.reduced_nodes),
+        ("boundary_nodes", r.boundary_nodes),
+    ]
+    .into_iter()
+    .map(|(k, v)| (k.to_string(), v))
+    .collect()
 }
 
 #[pyfunction]

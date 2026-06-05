@@ -22,6 +22,7 @@ use loom::sync::{Mutex, MutexGuard};
 use std::collections::HashMap;
 
 use crate::node::{NodeId, NodeKey, PayloadDescriptor};
+use crate::optimizer::{self, ReductionReport, RewriteEngine};
 use crate::param::ParamMap;
 
 /// Error returned when a referenced node id is not in the arena.
@@ -144,6 +145,45 @@ impl GraphStore {
 
     pub fn node_count(&self) -> usize {
         self.lock().nodes.len()
+    }
+
+    /// Intern a pre-built `NodeKey` (used when rebuilding the reduced graph).
+    pub fn add_key(&self, key: NodeKey) -> Result<NodeId, BadNodeId> {
+        self.intern(key)
+    }
+
+    /// Snapshot the arena + outputs for the optimizer (clone under one lock).
+    pub fn snapshot(&self) -> (Vec<NodeKey>, Vec<NodeId>) {
+        let g = self.lock();
+        (g.nodes.clone(), g.outputs.clone())
+    }
+
+    /// Reduce the graph via the M4 pipeline (DCE + CSE + equality-saturation stage fusion) into a
+    /// fresh interned store. Returns the reduced store and the reduction report.
+    pub fn reduce(&self, engine: &dyn RewriteEngine) -> (GraphStore, ReductionReport) {
+        let (nodes, outputs) = self.snapshot();
+        let red = optimizer::reduce(&nodes, &outputs, engine);
+        let store = GraphStore::new();
+        let mut map: Vec<NodeId> = Vec::with_capacity(red.nodes.len());
+        for key in &red.nodes {
+            let remapped: Vec<NodeId> = key.inputs().iter().map(|&i| map[i as usize]).collect();
+            let id = store
+                .add_key(key.with_inputs(remapped))
+                .expect("reduced graph references only earlier nodes");
+            map.push(id);
+        }
+        for &o in &red.outputs {
+            store
+                .mark_output(map[o as usize])
+                .expect("reduced output is valid");
+        }
+        (store, red.report)
+    }
+
+    /// Incremental reduction (plan M4): egg e-graphs are additive, so reduction re-runs cheaply as
+    /// the user keeps building. Same result as `reduce` on the current graph.
+    pub fn reduce_incremental(&self, engine: &dyn RewriteEngine) -> (GraphStore, ReductionReport) {
+        self.reduce(engine)
     }
 
     /// Byte-stable graphviz rendering: nodes in id order, edges in (node, input-position) order.

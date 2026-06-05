@@ -16,6 +16,8 @@ crate-type = ["cdylib", "rlib"]
 # pure-Rust IR tests run.
 [dependencies]
 pyo3 = { version = "0.28" }
+# Equality-saturation engine for the M4 optimizer (kept entirely behind the RewriteEngine trait).
+egg = "0.9"
 
 # loom model-checks the locking discipline; only pulled in under `--cfg loom`.
 [target.'cfg(loom)'.dependencies]

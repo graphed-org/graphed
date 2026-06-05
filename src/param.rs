@@ -35,6 +35,17 @@ impl ParamValue {
             x.to_bits()
         }
     }
+
+    /// Type-tagged token mirroring equality/hash identity (floats by canonical bits, so 0.0/-0.0
+    /// stay distinct and all NaNs collapse, exactly as interning does).
+    pub fn token(&self) -> String {
+        match self {
+            ParamValue::Int(a) => format!("i{a}"),
+            ParamValue::Float(a) => format!("f{:016x}", Self::float_key(*a)),
+            ParamValue::Bool(a) => format!("b{a}"),
+            ParamValue::Str(a) => format!("s{a}"),
+        }
+    }
 }
 
 impl PartialEq for ParamValue {
@@ -88,6 +99,16 @@ impl ParamMap {
 
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
+    }
+
+    /// A compact, injective, whitespace-free encoding for optimizer tokens (M4). Type-tagged so
+    /// int/float/bool/str with the same printed form stay distinct, matching interning identity.
+    pub fn token(&self) -> String {
+        self.0
+            .iter()
+            .map(|(k, v)| format!("{k}={}", v.token()))
+            .collect::<Vec<_>>()
+            .join(";")
     }
 }
 

@@ -21,6 +21,21 @@ pub struct PayloadDescriptor {
     pub preprocessing_ref: Option<String>,
 }
 
+/// A reference inside a fused `Stage`: either one of the stage's external inputs or an earlier
+/// member op. This makes a Stage a self-contained, executable, hashable mini-DAG.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum StageRef {
+    Input(usize),
+    Member(usize),
+}
+
+/// One fused op inside a `Stage` (the M4 optimizer groups a maximal run of ops into a stage).
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct StageOp {
+    pub token: String,
+    pub inputs: Vec<StageRef>,
+}
+
 /// The structural identity of a node. Equality/Hash here define interning.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum NodeKey {
@@ -43,12 +58,12 @@ pub enum NodeKey {
         params: ParamMap,
         inputs: Vec<NodeId>,
     },
-    // The Stage variant is part of the M1 Node enum per the Acceptance Contract; it is
-    // *constructed* by the M4 optimizer (stage fusion), not by any M1 builder.
-    #[allow(dead_code)]
+    /// A fused run of ops between boundaries, produced by the M4 optimizer. `members` is the
+    /// internal op-DAG (last member is the stage's output); `inputs` are the boundary nodes it
+    /// consumes.
     Stage {
         inputs: Vec<NodeId>,
-        members: Vec<NodeId>,
+        members: Vec<StageOp>,
     },
 }
 
@@ -60,6 +75,70 @@ impl NodeKey {
             | NodeKey::Reduction { inputs, .. }
             | NodeKey::External { inputs, .. }
             | NodeKey::Stage { inputs, .. } => inputs,
+        }
+    }
+
+    /// True for boundary nodes (source / reduction / external / stage) — fusion never merges
+    /// across these (plan A.6 boundary op).
+    pub fn is_boundary(&self) -> bool {
+        !matches!(self, NodeKey::Op { .. })
+    }
+
+    /// The "operator" identity of a node, excluding inputs — the egg symbol and the key into the
+    /// reconstruction table. Two structurally identical operators share a token; inputs are
+    /// children in the e-graph, not part of the token.
+    pub fn token(&self) -> String {
+        match self {
+            NodeKey::Source { name, params } => with_params(format!("src|{name}"), params),
+            NodeKey::Op { name, params, .. } => with_params(format!("op|{name}"), params),
+            NodeKey::Reduction { name, params, .. } => with_params(format!("red|{name}"), params),
+            NodeKey::External {
+                descriptor, params, ..
+            } => with_params(
+                format!(
+                    "ext|{}|{}|{}|{}|{}|{}",
+                    descriptor.kind,
+                    descriptor.content_hash,
+                    descriptor.framework,
+                    descriptor.version,
+                    descriptor.io_schema,
+                    descriptor.preprocessing_ref.as_deref().unwrap_or("-")
+                ),
+                params,
+            ),
+            NodeKey::Stage { members, .. } => format!("stage|{}", members.len()),
+        }
+    }
+
+    /// Clone this node's operator identity with a fresh input list (used when rebuilding the
+    /// reduced graph). Sources ignore inputs.
+    pub fn with_inputs(&self, new_inputs: Vec<NodeId>) -> NodeKey {
+        match self {
+            NodeKey::Source { name, params } => NodeKey::Source {
+                name: name.clone(),
+                params: params.clone(),
+            },
+            NodeKey::Op { name, params, .. } => NodeKey::Op {
+                name: name.clone(),
+                params: params.clone(),
+                inputs: new_inputs,
+            },
+            NodeKey::Reduction { name, params, .. } => NodeKey::Reduction {
+                name: name.clone(),
+                params: params.clone(),
+                inputs: new_inputs,
+            },
+            NodeKey::External {
+                descriptor, params, ..
+            } => NodeKey::External {
+                descriptor: descriptor.clone(),
+                params: params.clone(),
+                inputs: new_inputs,
+            },
+            NodeKey::Stage { members, .. } => NodeKey::Stage {
+                inputs: new_inputs,
+                members: members.clone(),
+            },
         }
     }
 
@@ -95,6 +174,15 @@ fn fmt_label(kind: &str, name: &str, params: &ParamMap) -> String {
         format!("{kind} {name}")
     } else {
         format!("{kind} {name} {params}")
+    }
+}
+
+/// Append a compact, injective, whitespace-free param encoding to a token prefix.
+fn with_params(prefix: String, params: &ParamMap) -> String {
+    if params.is_empty() {
+        prefix
+    } else {
+        format!("{prefix}|{}", params.token())
     }
 }
 
