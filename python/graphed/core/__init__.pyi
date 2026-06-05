@@ -2,6 +2,35 @@
 
 from __future__ import annotations
 
+# M7 execution contract (pure-Python; re-exported so downstream type-checkers see it)
+from .execution import (
+    ExecContext as ExecContext,
+)
+from .execution import (
+    ExecResult as ExecResult,
+)
+from .execution import (
+    Executor as Executor,
+)
+from .execution import (
+    Partition as Partition,
+)
+from .execution import (
+    Plan as Plan,
+)
+from .execution import (
+    StopCondition as StopCondition,
+)
+from .execution import (
+    StopReason as StopReason,
+)
+from .execution import (
+    Task as Task,
+)
+from .execution import (
+    WorkerResources as WorkerResources,
+)
+
 ParamValue = int | float | bool | str
 Params = dict[str, ParamValue]
 
