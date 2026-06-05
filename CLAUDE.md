@@ -56,3 +56,11 @@ tests/frozen/m2/           frozen suite + two toy backends (backend-independence
 `graphed-core` only — `graphed-numpy` is a separate downstream repo.
 
 Status: see `.graphed/state.json`.
+
+## M5 additions (column-projection support)
+
+- `Session.walk(array, *, source, op, external)` — the generic graph walk `materialize` and
+  projection share. Source helpers: `source_ids`, `source_name`, `form_of`.
+- `projection.py`: `Projection` (source → read columns), `ProjectionError`, `OnFail`
+  (`pass|warn|raise`), `handle_opaque` (the shared on-fail policy). The real projection lives in the
+  backends (graphed-awkward reporting typetracer; graphed-numpy field-touch tracking).
