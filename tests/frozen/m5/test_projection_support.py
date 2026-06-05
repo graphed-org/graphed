@@ -77,6 +77,14 @@ def test_source_helpers() -> None:
     assert s.form_of(a.node_id) == "f"
 
 
+def test_source_value_resolves_eager_and_lazy() -> None:
+    s = Session(_Backend())
+    eager = _src(s, "a", 5)
+    lazy = s.source("b", form="f", data=lambda: 7)  # a lazy loader (resolved on access)
+    assert s.source_value(eager.node_id) == 5
+    assert s.source_value(lazy.node_id) == 7
+
+
 def test_projection_type() -> None:
     p = Projection({"events": frozenset({"pt", "eta"}), "other": frozenset()})
     assert p.columns_for("events") == frozenset({"pt", "eta"})
