@@ -56,6 +56,11 @@ class Session:
     def form_of(self, node_id: int) -> Form:
         return self._forms[node_id]
 
+    def source_value(self, node_id: int) -> object:
+        """The concrete data for a source node (resolving a lazy loader). Used by debug execution."""
+        value = self._sources[node_id]
+        return value() if callable(value) else value
+
     # ---- builders --------------------------------------------------------------
     def source(self, name: str, *, form: Form, data: object, **params: ParamValue) -> Array:
         node_id = self._store.add_source(name, dict(params))
