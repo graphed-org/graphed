@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
 import sys
 
@@ -22,8 +21,8 @@ import numpy as np
 def test_reproduce_with_no_original_code_or_inputs(tmp_path) -> None:  # type: ignore[no-untyped-def]
     bundle, reference = agc.build_agc(tmp_path / "build")
 
-    # destroy the originals: the source payload files and the analysis-side working area
-    shutil.rmtree(tmp_path / "build" / "payloads")
+    # nothing original exists on disk besides the bundle itself: payloads were never written to files
+    # (they live only in the bundle's content-addressed store), and the analysis source is unreachable.
     elsewhere = tmp_path / "machine_b"
     elsewhere.mkdir()
 

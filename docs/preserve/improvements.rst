@@ -4,6 +4,19 @@ Improvements
 Tracked design improvements and known limitations for ``graphed-preserve`` (plan M0 requires this
 file in every package).
 
+External plugins (delivered)
+----------------------------
+
+Externals are an **extensible plugin** system, not a hardwired list. An ``ExternalPlugin`` provides,
+for one ``kind``: a deterministic, content-based ``content_hash`` (ONNX → hash of *weights* + graph
+structure; correctionlib → hash of *contents*; the ``sha256_bytes`` template → raw bytes), an
+``evaluate``, and ``samples`` for validation. ``register_plugin`` validates the hash before trusting
+it — **deterministic across processes** (run under two ``PYTHONHASHSEED``\\ s, so a hash built from
+``hash()``/``id()``/time/randomness is rejected) and **non-vacuous** (distinct payloads must not
+collide). Users record their own preservable Externals with ``record_external(session, plugin, ...)``
+and the ``onnx`` / ``correctionlib`` plugins serve as templates. ``build_bundle`` verifies each
+stored payload hashes to its recorded id (cache-poisoning-safe).
+
 Resolved design choices (the M9 plan flagged these as needing a decision)
 -------------------------------------------------------------------------
 

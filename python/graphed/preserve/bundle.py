@@ -23,13 +23,12 @@ from graphed_checkpoint import Store
 from graphed_core import GraphStore
 
 from .errors import PreserveError, UnresolvedPayload
-from .externals import evaluate_external
+from .externals import evaluate_external, get_plugin
 from .interpreter import run_ir
 from .manifest import FORMAT_VERSION, canonical_bytes, fingerprint
 
 # rounded for cross-platform-stable histogram contents (mirrors graphed-corpus STABLE_DECIMALS)
 _STABLE_DECIMALS = 6
-_OPAQUE_KINDS = frozenset({"opaque_callable"})
 _ENV_PACKAGES = (
     "graphed-core",
     "graphed",
@@ -131,7 +130,7 @@ def build_bundle(
     # 2. input datasets -> content-addressed store
     sources_manifest = {name: store.put(_pack_array(arr)) for name, arr in datasets.items()}
 
-    # 3. external payloads + descriptors (+ flag opaque/unhashable nodes as preservation risks)
+    # 3. external payloads (via plugins) + flag any external with no plugin as a preservation risk
     externals_manifest: list[dict[str, Any]] = []
     opaque_nodes: list[int] = []
     for node in nodes:
@@ -139,17 +138,25 @@ def build_bundle(
             continue
         desc = node["descriptor"]
         ch = desc["content_hash"]
-        if desc["kind"] in _OPAQUE_KINDS or ch.startswith("unhashed-opaque"):
+        plugin = get_plugin(desc["kind"])
+        if plugin is None:
+            # no plugin (e.g. an opaque cloudpickled `map`, or an unregistered kind) -> not preservable
             opaque_nodes.append(node["id"])
             continue
         if ch not in payloads:
             raise PreserveError(f"no payload bytes supplied for external {ch} (node {node['id']})")
+        blob = payloads[ch]
+        actual = plugin.content_hash(blob)
+        if actual != ch:  # integrity: the bytes must hash to the recorded id (cache-poisoning-safe)
+            raise PreserveError(
+                f"payload for node {node['id']} hashes to {actual}, not the recorded {ch} (mismatched/poisoned)"
+            )
         externals_manifest.append(
             {
                 "node_id": node["id"],
                 "kind": desc["kind"],
                 "content_hash": ch,
-                "store": store.put(payloads[ch]),
+                "store": store.put(blob),
                 "io_schema": desc["io_schema"],
             }
         )

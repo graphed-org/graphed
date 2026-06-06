@@ -20,6 +20,10 @@ chose for M9 precisely because it carries an ONNX model, correctionlib SFs, and 
 | `…::test_inspect_is_faithful_to_the_reproduced_graph` | `inspect` is faithful to what `reproduce` runs (same IR nodes) |
 | `…::test_opaque_cloudpickled_node_is_flagged_as_a_risk` | every `opaque=True` node flagged as a preservation risk |
 | `test_missing_payload.py::*` | a missing payload (correction / dataset / IR) fails with "unresolved … <hash>", never silently |
-| `test_build_errors.py::*` | build/evaluate fail honestly (missing payload bytes; unknown external kind) |
+| `test_build_errors.py::*` | build/evaluate fail honestly (missing payload bytes; payload-hash mismatch; unregistered kind) |
+| `test_plugins.py::test_builtin_plugins_have_valid_hashes` | the onnx + correctionlib plugins pass cross-process determinism + non-vacuity validation |
+| `…::test_correctionlib_hashes_contents_not_formatting`, `…::test_onnx_hashes_weights` | content hash = correctionlib *contents* / ONNX *weights*, not raw file bytes |
+| `…::test_vacuous_hash_is_rejected`, `…::test_nondeterministic_hash_is_rejected`, `…::test_time_based_hash_is_rejected` | `register_plugin` rejects a vacuous (constant) or non-deterministic (hash()/time) hash |
+| `…::test_user_plugin_registers_and_reproduces_bit_for_bit`, `…::test_user_plugin_fingerprint_tracks_its_payload`, `…::test_reopened_user_bundle_reproduces` | a user-defined External plugin (the template) records, preserves, and reproduces bit-for-bit |
 
 Frozen = read-only after the freeze tag (see `.graphed/M9/`).
