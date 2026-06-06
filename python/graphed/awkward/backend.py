@@ -65,6 +65,17 @@ class AwkwardBackend:
             return payloads.onnx_descriptor(str(params["path"]))
         if op == "map":
             return payloads.opaque_callable_descriptor(str(params.get("fn", "lambda")))
+        if op == "external":
+            # a generic, user-defined External: the caller supplies a pre-computed *deterministic*
+            # content hash (e.g. via a graphed-preserve plugin) — the backend is just the conduit.
+            return PayloadDescriptor(
+                kind=str(params.get("kind", "external")),
+                content_hash=str(params["content_hash"]),
+                framework=str(params.get("framework", "")),
+                version=str(params.get("version", "")),
+                io_schema=str(params.get("io_schema", "")),
+                preprocessing_ref=None,
+            )
         return None
 
 
