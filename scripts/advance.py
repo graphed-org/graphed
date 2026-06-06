@@ -46,11 +46,18 @@ def _drive(milestone: str, *, total: int, cov: float, ci_confirmed: bool) -> Orc
             benchmark_ok=None,
         )
     )
-    if o.phase.value == "REVIEW" and ci_confirmed:
+    # the engine records DONE only when ci is True; ci_confirmed=False leaves it REVIEW-pending-CI
+    if o.phase.value == "REVIEW":
         o.review(
             approve=True,
             gates=GateReport(
-                frozen_tests=True, coverage=True, lint=True, types=True, determinism=True, integrity_scan=True
+                frozen_tests=True,
+                coverage=True,
+                lint=True,
+                types=True,
+                determinism=True,
+                integrity_scan=True,
+                ci=ci_confirmed,
             ),
         )
     return o
