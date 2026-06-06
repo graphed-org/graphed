@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 ParamValue = int | float | bool | str
 Params = dict[str, ParamValue]
 
@@ -51,6 +53,8 @@ class GraphStore:
     def serialize(self) -> bytes: ...
     @staticmethod
     def deserialize(data: bytes) -> GraphStore: ...
+    # M9 IR introspection: structured nodes in id order (for inspect + IR-driven reproduce).
+    def nodes(self) -> list[dict[str, Any]]: ...
     # M4 optimizer (DCE + CSE + equality-saturation stage fusion behind RewriteEngine):
     def reduce(self) -> tuple[GraphStore, dict[str, int]]: ...
     def reduce_incremental(self) -> tuple[GraphStore, dict[str, int]]: ...

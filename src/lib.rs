@@ -222,6 +222,54 @@ impl PyGraphStore {
         Ok(PyGraphStore { store })
     }
 
+    /// Structured, read-only view of every node in id order (plan M9: `inspect` renders the IR and
+    /// `reproduce` interprets it). Each entry is a dict with `id`, `kind`
+    /// (source|op|reduction|external|stage), `name`, `params`, `inputs`, `output` (bool), plus a
+    /// `descriptor` dict for external nodes and `n_members` for stage nodes.
+    fn nodes<'py>(&self, py: Python<'py>) -> PyResult<Vec<Bound<'py, PyDict>>> {
+        let (nodes, outputs) = self.store.snapshot();
+        let mut out = Vec::with_capacity(nodes.len());
+        for (id, nk) in nodes.iter().enumerate() {
+            let d = PyDict::new(py);
+            d.set_item("id", id as u64)?;
+            d.set_item("output", outputs.contains(&(id as NodeId)))?;
+            d.set_item("inputs", nk.inputs().to_vec())?;
+            match nk {
+                node::NodeKey::Source { name, params } => {
+                    d.set_item("kind", "source")?;
+                    d.set_item("name", name)?;
+                    d.set_item("params", params_to_py(py, params)?)?;
+                }
+                node::NodeKey::Op { name, params, .. } => {
+                    d.set_item("kind", "op")?;
+                    d.set_item("name", name)?;
+                    d.set_item("params", params_to_py(py, params)?)?;
+                }
+                node::NodeKey::Reduction { name, params, .. } => {
+                    d.set_item("kind", "reduction")?;
+                    d.set_item("name", name)?;
+                    d.set_item("params", params_to_py(py, params)?)?;
+                }
+                node::NodeKey::External {
+                    descriptor, params, ..
+                } => {
+                    d.set_item("kind", "external")?;
+                    d.set_item("name", "")?;
+                    d.set_item("params", params_to_py(py, params)?)?;
+                    d.set_item("descriptor", descriptor_to_py(py, descriptor)?)?;
+                }
+                node::NodeKey::Stage { members, .. } => {
+                    d.set_item("kind", "stage")?;
+                    d.set_item("name", "")?;
+                    d.set_item("params", PyDict::new(py))?;
+                    d.set_item("n_members", members.len() as u64)?;
+                }
+            }
+            out.push(d);
+        }
+        Ok(out)
+    }
+
     /// Reduce via the M4 optimizer (DCE + CSE + equality-saturation stage fusion behind
     /// RewriteEngine). Returns the reduced store and a report dict.
     fn reduce(&self) -> (PyGraphStore, std::collections::HashMap<String, usize>) {
@@ -240,6 +288,33 @@ impl PyGraphStore {
         let (_, report) = self.store.reduce(&EggEngine::default());
         report_to_map(&report)
     }
+}
+
+fn params_to_py<'py>(py: Python<'py>, params: &ParamMap) -> PyResult<Bound<'py, PyDict>> {
+    let d = PyDict::new(py);
+    for (k, v) in params.entries() {
+        match v {
+            ParamValue::Int(i) => d.set_item(k, *i)?,
+            ParamValue::Float(f) => d.set_item(k, *f)?,
+            ParamValue::Bool(b) => d.set_item(k, *b)?,
+            ParamValue::Str(s) => d.set_item(k, s)?,
+        }
+    }
+    Ok(d)
+}
+
+fn descriptor_to_py<'py>(
+    py: Python<'py>,
+    desc: &PayloadDescriptor,
+) -> PyResult<Bound<'py, PyDict>> {
+    let d = PyDict::new(py);
+    d.set_item("kind", &desc.kind)?;
+    d.set_item("content_hash", &desc.content_hash)?;
+    d.set_item("framework", &desc.framework)?;
+    d.set_item("version", &desc.version)?;
+    d.set_item("io_schema", &desc.io_schema)?;
+    d.set_item("preprocessing_ref", desc.preprocessing_ref.as_deref())?;
+    Ok(d)
 }
 
 fn report_to_map(r: &ReductionReport) -> std::collections::HashMap<String, usize> {
