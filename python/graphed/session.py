@@ -40,6 +40,24 @@ class Session:
     def to_dot(self) -> str:
         return self._store.to_dot()
 
+    def serialized_ir(self, *outputs: Array, optimize: bool = True) -> bytes:
+        """The recorded analysis as a canonical, versioned, byte-identical durable IR (plan M8).
+
+        Pass the result ``Array``(s) of the analysis as ``outputs``; they are marked as graph outputs
+        so the optimizer's DCE keeps exactly what they reach. With ``optimize=True`` (the default) the
+        graph is then reduced by the M4 optimizer (DCE + CSE + equality-saturation stage fusion), so
+        the bytes carry the **optimized interned graph** — the same content-addressed artifact an
+        executor runs. This is the "compile" step for a ``graphed_core.DurablePlan`` deployment:
+        record an analysis once, serialize it once, then re-target it at many datasets with
+        ``DurablePlan.with_partitions`` / ``for_datasets``.
+        """
+        for arr in outputs:
+            self._store.mark_output(arr.node_id)
+        if optimize and not outputs:
+            raise ValueError("serialized_ir(optimize=True) needs at least one output Array")
+        store = self._store.reduce()[0] if optimize else self._store
+        return store.serialize()
+
     def form(self, array: Array) -> Form:
         return self._forms[array.node_id]
 
