@@ -74,6 +74,20 @@ class Session:
     def form_of(self, node_id: int) -> Form:
         return self._forms[node_id]
 
+    def sourcemap(self) -> dict[int, dict[str, object]]:
+        """Per-node user-source provenance (file / line / function / sub-expression text) — the M6
+        sourcemap. M9's ``inspect`` renders it so every preserved node maps back to the analysis line
+        that created it, without executing anything."""
+        return {
+            nid: {
+                "filename": p.filename,
+                "lineno": p.lineno,
+                "function": p.function,
+                "source": p.source,
+            }
+            for nid, p in self._provenance.items()
+        }
+
     def source_value(self, node_id: int) -> object:
         """The concrete data for a source node (resolving a lazy loader). Used by debug execution."""
         value = self._sources[node_id]
