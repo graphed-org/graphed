@@ -50,8 +50,17 @@ from .graphed_core import (
 
 # M8 durable plan (pure-Python)
 from .plan import (
+    Dataset as Dataset,
+)
+from .plan import (
     DurablePlan as DurablePlan,
 )
 from .plan import (
     OpSpec as OpSpec,
+)
+from .plan import (
+    partition_dataset as partition_dataset,
+)
+from .plan import (
+    partition_datasets as partition_datasets,
 )

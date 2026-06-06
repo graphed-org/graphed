@@ -18,9 +18,16 @@ from .execution import (
     WorkerResources,
 )
 from .graphed_core import GraphStore, PayloadDescriptor, version
-from .plan import DurablePlan, OpSpec
+from .plan import (
+    Dataset,
+    DurablePlan,
+    OpSpec,
+    partition_dataset,
+    partition_datasets,
+)
 
 __all__ = [
+    "Dataset",
     "DurablePlan",
     "ExecContext",
     "ExecResult",
@@ -34,5 +41,7 @@ __all__ = [
     "StopReason",
     "Task",
     "WorkerResources",
+    "partition_dataset",
+    "partition_datasets",
     "version",
 ]

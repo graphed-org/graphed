@@ -17,5 +17,9 @@ half lives in `graphed-checkpoint`.
 | `…::test_task_id_is_deterministic_and_per_partition`, `…::test_task_id_changes_with_the_computation`, `…::test_task_id_changes_with_the_process_callable` | "Is `task_id` actually content-addressed (cache-poisoning-safe)?" (M8 review focus) |
 | `…::test_importable_callable_is_referenced_not_pickled`, `…::test_only_opaque_callables_are_embedded_by_value`, `…::test_plan_opaque_flag_reflects_any_opaque_callable`, `…::test_opaque_process_changes_task_id_and_roundtrips` | canonical form is IR; cloudpickle only for opaque, flagged `opaque=True` (A.3.1) |
 | `…::test_plan_resolves_and_runs_with_no_user_source_files` | "A serialized plan deserializes and runs on a machine with NO source files present" (M8 contract) |
+| `test_deployment.py::test_partition_dataset_*`, `…::test_partition_datasets_concatenates` | `Dataset` → partitions builders (chunking, exact cover, edge cases) |
+| `…::test_with_partitions_shares_the_compiled_computation`, `…::test_compile_once_is_reused_across_many_datasets` | "compile once, run on N datasets": the optimized interned IR is reused unchanged when re-targeting |
+| `…::test_task_ids_are_namespaced_per_dataset` | per-dataset `task_id`s are disjoint so one checkpoint store namespaces datasets safely |
+| `…::test_for_dataset_and_for_datasets_build_a_deployment`, `…::test_retargeting_only_changes_partitions_in_the_serialized_form` | `for_dataset`/`for_datasets` build a deployment; same computation, different inputs |
 
 Frozen = read-only after the freeze tag (see `.graphed/M8/`).

@@ -28,8 +28,8 @@ import base64
 import hashlib
 import importlib
 import json
-from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
 from .execution import Partition
@@ -173,6 +173,22 @@ class DurablePlan:
             _partition_bytes(partition),
         )
 
+    # ---- "compile once, run on N datasets" ------------------------------------------------------
+    def with_partitions(self, partitions: Iterable[Partition]) -> DurablePlan:
+        """A sibling plan with the SAME computation (``ir`` + reduction spec + column/stopping/
+        resource metadata) but a new partition set. The ``ir`` is shared unchanged, so the analysis
+        is **not** recorded/optimized/serialized again — this is the basis of the *compile once, run
+        on N datasets* deployment pattern."""
+        return replace(self, partitions=tuple(partitions))
+
+    def for_dataset(self, dataset: Dataset, *, chunk_size: int) -> DurablePlan:
+        """This analysis, partitioned over a single dataset (chunked into entry ranges)."""
+        return self.with_partitions(partition_dataset(dataset, chunk_size=chunk_size))
+
+    def for_datasets(self, datasets: Iterable[Dataset], *, chunk_size: int) -> DurablePlan:
+        """This analysis, partitioned over several datasets at once (partitions concatenated)."""
+        return self.with_partitions(partition_datasets(datasets, chunk_size=chunk_size))
+
     # ---- (de)serialization ----------------------------------------------------------------------
     def to_bytes(self) -> bytes:
         """Canonical, byte-identical serialization (sorted-key JSON; binary blobs base64'd)."""
@@ -205,6 +221,42 @@ class DurablePlan:
             resource_hints=dict(doc["resource_hints"]),
             format_version=int(doc["format_version"]),
         )
+
+
+@dataclass(frozen=True)
+class Dataset:
+    """A named input dataset to be split into work units (plan glossary 'Partition').
+
+    ``uri`` identifies the input (a file path, a content-addressed dataset id, …) and is what an
+    executor's source op / ``open_once`` reads at run time; ``n_events`` is its length; ``tree`` is
+    the object path within it. A ``Dataset`` carries no data — only the reference + length.
+    """
+
+    uri: str
+    n_events: int
+    tree: str = "Events"
+    name: str = ""
+
+
+def partition_dataset(dataset: Dataset, *, chunk_size: int) -> tuple[Partition, ...]:
+    """Split a dataset's ``[0, n_events)`` into contiguous half-open chunks of at most ``chunk_size``."""
+    if chunk_size <= 0:
+        raise ValueError("chunk_size must be positive")
+    out: list[Partition] = []
+    start = 0
+    while start < dataset.n_events:
+        stop = min(start + chunk_size, dataset.n_events)
+        out.append(Partition(dataset.uri, dataset.tree, start, stop))
+        start = stop
+    return tuple(out)
+
+
+def partition_datasets(datasets: Iterable[Dataset], *, chunk_size: int) -> tuple[Partition, ...]:
+    """Partition several datasets and concatenate the work units (one combined run over all of them)."""
+    out: list[Partition] = []
+    for ds in datasets:
+        out.extend(partition_dataset(ds, chunk_size=chunk_size))
+    return tuple(out)
 
 
 def _partition_json(p: Partition) -> dict[str, str | int]:
