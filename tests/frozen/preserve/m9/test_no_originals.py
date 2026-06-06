@@ -10,6 +10,7 @@ by resolving everything from the bundle's own content-addressed store.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -28,13 +29,18 @@ def test_reproduce_with_no_original_code_or_inputs(tmp_path) -> None:  # type: i
 
     child = (
         "import sys, json; from graphed_preserve import Bundle, reproduce;"
+        "assert __import__('importlib.util', fromlist=['x']).find_spec('agc') is None;"  # originals unreachable
         "out = reproduce(Bundle.open(sys.argv[1]));"
         "print(json.dumps([float(x) for x in out]))"
     )
+    # inherit the OS env (so the interpreter starts on every platform) but drop the import-path vars,
+    # so the analysis source (agc.py, only ever on sys.path via the test runner) is unreachable —
+    # the child can resolve nothing but installed packages + the bundle's own store.
+    env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "PYTHONHOME")}
     proc = subprocess.run(
         [sys.executable, "-c", child, str(bundle.root)],
         cwd=elsewhere,  # not the build dir; this analysis's source (agc.py) is unreachable
-        env={"PATH": "/usr/bin:/bin"},  # scrub PYTHONPATH — only installed packages + the bundle
+        env=env,
         capture_output=True,
         text=True,
     )
