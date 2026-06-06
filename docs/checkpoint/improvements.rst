@@ -4,6 +4,16 @@ Improvements
 Tracked design improvements and known limitations for ``graphed-checkpoint`` (plan M0 requires this
 file in every package).
 
+Delivered
+---------
+
+- **Compile once, run on N datasets.** Record + optimize an analysis once
+  (``graphed.Session.serialized_ir``), wrap it in a ``graphed_core.DurablePlan``, then re-target it
+  at many datasets with ``DurablePlan.with_partitions`` / ``for_dataset`` / ``for_datasets`` (built
+  from ``Dataset`` + ``partition_dataset``). The optimized interned IR is shared unchanged across
+  datasets, and per-dataset content-addressed ``task_id``\\ s let a single ``Store`` checkpoint them
+  all without collision. See ``tests/frozen/m8/test_deployment.py``.
+
 Current limitations
 -------------------
 

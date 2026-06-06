@@ -19,5 +19,10 @@ serializable `DurablePlan` + content-addressed `task_id` half is tested in `grap
 | `test_no_source.py::test_serialized_plan_runs_with_no_user_source`, `…::test_resumed_subprocess_plan_skips_completed_work` | "A serialized plan deserializes and runs on a machine with NO source files present" |
 | `test_codec.py::*` | deterministic per-task partial storage (pickle + numpy `.npy`) |
 | `test_realistic.py::*` | kill/resume on a **real** graphed analysis (ADL-q1 MET pt), bit-for-bit |
+| `test_deployment.py::test_compiled_plan_is_a_realistic_optimized_graph` | the compiled durable plan is an **optimized, interned** graph of realistic analysis complexity (71→23 nodes) |
+| `…::test_compile_once_artifact_is_shared_across_datasets`, `…::test_retargeting_is_cheap` | **compile once, run on N datasets**: one IR reused across datasets; retargeting is cheap metadata work |
+| `…::test_many_datasets_share_one_store_with_correct_per_dataset_results`, `…::test_datasets_produce_distinct_results` | per-dataset bit-for-bit results; one shared `Store` namespaces datasets by content-addressed `task_id` |
+| `…::test_kill_mid_deployment_then_resume_is_correct_and_incremental`, `…::test_finished_deployment_redoes_nothing` | responsiveness: kill mid-deployment then resume skips completed datasets/chunks; a finished deployment redoes nothing |
+| `…::test_deployment_is_partition_count_invariant` | a dataset's deployment result is invariant to chunk size |
 
 Frozen = read-only after the freeze tag (see `.graphed/M8/`).
