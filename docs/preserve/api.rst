@@ -31,6 +31,9 @@ content-based ``content_hash`` (ONNX hashes its weights, correctionlib its conte
 .. autoclass:: graphed_preserve.ExternalPlugin
    :members:
 
+.. autoclass:: graphed_preserve.ResourceCache
+   :members:
+
 .. autofunction:: graphed_preserve.register_plugin
 
 .. autofunction:: graphed_preserve.validate_plugin

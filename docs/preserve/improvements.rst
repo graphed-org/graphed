@@ -39,15 +39,19 @@ multi-input), **XGBoost** (booster bytes; the ``sha256_bytes`` template suffices
 Triton** remote-inference pattern (``tests/frozen/m9/test_ml_plugins.py``; optional, ``pip install -e
 .[mltest]``). The shape held; three findings worth knowing:
 
-- **Remote services aren't bottled.** A Triton (or any remote) model is reached through a live client
-  resolved from the *environment* (a url in ``params``), not from the payload bytes — the bundle
-  content-addresses the *served model's weights* and ``reproduce`` fails loudly (``KeyError`` /
-  connection error) if the service is absent. Consistent with "environment captured, not enforced":
-  remote externals are reproducible only where the service exists. A self-hosting bundle (embedding a
-  servable model + launching it) is a possible Phase-2 extension.
-- **Per-call model load.** ``evaluate`` currently reloads the model from bytes on every call
-  (``torch.jit.load`` / ``Booster.load_model`` per partition). Correct but wasteful; a per-worker
-  payload cache (analogous to M7 ``open_once`` for sources) is a tracked improvement.
+The plugin now carries an optional ``load(payload, params) -> resource`` + ``close(resource)`` and a
+:class:`ResourceCache`, so a model/connection is materialized **once per worker** and reused — both
+findings below are addressed:
+
+- **Per-worker resource cache (delivered).** ``evaluate(resource, ...)`` runs against a resource the
+  cache ``load``-ed once (``torch.jit.load`` / ``Booster.load_model`` / a Triton connection), not
+  per call — ``open_once`` for Externals. ``reproduce`` closes all resources at the end of the run.
+- **Remote services are first-class but not bottled.** A Triton (or any remote) model is reached
+  through a live client that the plugin ``load``-s from the *environment* (a url in ``params``) and
+  ``close``-s at run end; the bundle content-addresses the *served model's weights* and ``reproduce``
+  fails loudly if the service is absent. Consistent with "environment captured, not enforced":
+  remote externals reproduce only where the service exists. A self-hosting bundle (embedding +
+  launching a servable model) is a possible Phase-2 extension.
 - **Conflicting native runtimes.** torch and xgboost each vendor an OpenMP runtime and clash in one
   process — another reason the bundle records the environment. The test suite sets
   ``KMP_DUPLICATE_LIB_OK`` / ``OMP_NUM_THREADS`` before import to coexist.

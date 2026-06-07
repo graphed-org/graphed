@@ -185,6 +185,74 @@ def test_user_plugin_fingerprint_tracks_its_payload(tmp_path) -> None:  # type: 
     assert _fp(1.0) != _fp(2.0)  # changing the user payload changes the bundle fingerprint
 
 
+# ---- per-worker resource cache: load once, reuse, close --------------------------------------
+_LOADS: list[str] = []
+_CLOSES: list[str] = []
+
+
+class _Resource:
+    def __init__(self, payload: bytes) -> None:
+        self.scale = float(json.loads(payload)["scale"])
+
+
+def _counting_load(payload: bytes, params: Any) -> _Resource:
+    _LOADS.append("load")
+    return _Resource(payload)
+
+
+def _counting_eval(resource: _Resource, params: Any, inputs: list[Any]) -> Any:
+    x = np.asarray(ak.to_numpy(ak.Array(inputs[0])), dtype="float64")
+    return ak.Array(resource.scale * x)
+
+
+def _counting_close(resource: _Resource) -> None:
+    _CLOSES.append("close")
+
+
+def _counting_samples() -> list[bytes]:
+    return [json.dumps({"scale": s}).encode() for s in (1.0, 2.0)]
+
+
+COUNTING_PLUGIN = ExternalPlugin(
+    "counting",
+    content_hash=lambda p: "sha256:" + hashlib.sha256(p).hexdigest(),
+    evaluate=_counting_eval,
+    samples=_counting_samples,
+    load=_counting_load,
+    close=_counting_close,
+)
+
+
+def test_resource_is_loaded_once_per_run_and_closed(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    from graphed_awkward import gak  # noqa: PLC0415
+
+    register_plugin(COUNTING_PLUGIN)
+    payload = json.dumps({"scale": 3.0}).encode()
+    s = Session(AwkwardBackend())
+    ev = from_awkward(s, "events", make_events(n_events=800, seed=3))
+    njet = gak.num(ev.Jet, axis=1)
+    # TWO external nodes sharing the SAME payload (so they share one loaded resource in a run)
+    a = record_external(s, COUNTING_PLUGIN, payload, [njet])
+    b = record_external(s, COUNTING_PLUGIN, payload, [njet])
+    value, weight = ev.MET.pt, a + b
+    bundle = build_bundle(
+        tmp_path / "bundle",
+        session=s,
+        value=value,
+        weight=weight,
+        datasets={"events": make_events(n_events=800, seed=3)},
+        payloads={COUNTING_PLUGIN.content_hash(payload): payload},
+        histogram={"name": "met", "bins": 10, "lo": 0.0, "hi": 200.0},
+    )
+
+    _LOADS.clear()
+    _CLOSES.clear()
+    reproduce(bundle)
+    # both external nodes used ONE loaded resource (no per-call / per-node reload), closed once
+    assert _LOADS == ["load"], f"expected exactly one load, got {_LOADS}"
+    assert _CLOSES == ["close"], f"resource must be closed once at run end, got {_CLOSES}"
+
+
 def test_reopened_user_bundle_reproduces(tmp_path) -> None:  # type: ignore[no-untyped-def]
     register_plugin(LINEAR_PLUGIN)
     payload = json.dumps({"slope": 0.7, "intercept": 0.1}).encode()

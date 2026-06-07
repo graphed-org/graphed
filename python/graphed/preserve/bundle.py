@@ -23,7 +23,7 @@ from graphed_checkpoint import Store
 from graphed_core import GraphStore
 
 from .errors import PreserveError, UnresolvedPayload
-from .externals import evaluate_external, get_plugin
+from .externals import ResourceCache, evaluate_external, get_plugin
 from .interpreter import run_ir
 from .manifest import FORMAT_VERSION, canonical_bytes, fingerprint
 
@@ -202,34 +202,38 @@ def reproduce(bundle: Bundle) -> Any:
     nodes = GraphStore.deserialize(_resolve(store, m["analysis"]["ir"], what="IR")).nodes()
     backend = AwkwardBackend()
 
-    cache: dict[str, Any] = {}
+    data_cache: dict[str, Any] = {}
 
     def source(node: dict[str, Any]) -> Any:
         name = node["name"]
         h = m["sources"].get(name)
         if h is None:
             raise UnresolvedPayload(name, what="dataset for source")
-        if name not in cache:
-            cache[name] = _unpack_array(_resolve(store, h, what="dataset"))
-        return cache[name]
+        if name not in data_cache:
+            data_cache[name] = _unpack_array(_resolve(store, h, what="dataset"))
+        return data_cache[name]
 
     ext_by_node = {e["node_id"]: e for e in m["externals"]}
+    resources = ResourceCache()  # load each External payload (model / connection) once per worker
 
     def external(node: dict[str, Any], inputs: list[Any]) -> Any:
         entry = ext_by_node.get(node["id"])
         if entry is None:
             raise PreserveError(f"external node {node['id']} is not in the manifest (opaque/unpreserved?)")
         payload = _resolve(store, entry["store"], what=f"{entry['kind']} payload")
-        return evaluate_external(node, inputs, payload)
+        return evaluate_external(node, inputs, payload, resources)
 
-    values = run_ir(
-        nodes,
-        source=source,
-        external=external,
-        eval_op=lambda name, ins, params: backend.eval_stage(name, ins, params),
-    )
-    out = m["analysis"]["outputs"]
-    return _histogram(values[out["value"]], values[out["weight"]], m["analysis"]["histogram"])
+    try:
+        values = run_ir(
+            nodes,
+            source=source,
+            external=external,
+            eval_op=lambda name, ins, params: backend.eval_stage(name, ins, params),
+        )
+        out = m["analysis"]["outputs"]
+        return _histogram(values[out["value"]], values[out["weight"]], m["analysis"]["histogram"])
+    finally:
+        resources.close()  # release loaded models / close connections at the end of the run
 
 
 def _histogram(value: Any, weight: Any, spec: dict[str, Any]) -> Any:

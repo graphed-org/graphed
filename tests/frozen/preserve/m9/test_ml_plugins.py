@@ -101,11 +101,17 @@ def _torch_weight_hash(payload: bytes) -> str:
     return "sha256:" + h.hexdigest()
 
 
-def _torch_eval(payload: bytes, params: Any, inputs: list[Any]) -> Any:
+def _torch_load(payload: bytes, params: Any) -> Any:
     import torch  # noqa: PLC0415
 
-    model = torch.jit.load(io.BytesIO(payload))
+    model = torch.jit.load(io.BytesIO(payload))  # load the TorchScript module once per worker
     model.eval()
+    return model
+
+
+def _torch_eval(model: Any, params: Any, inputs: list[Any]) -> Any:
+    import torch  # noqa: PLC0415
+
     cols = [np.asarray(ak.to_numpy(ak.Array(i)), dtype="float32") for i in inputs]
     x = torch.from_numpy(np.stack(cols, axis=1))
     with torch.no_grad():
@@ -124,8 +130,12 @@ def _torch_samples_2d() -> list[bytes]:
     ]
 
 
-TORCH_PLUGIN = ExternalPlugin("torch_module", _torch_weight_hash, _torch_eval, _torch_samples, "torch")
-TORCH2_PLUGIN = ExternalPlugin("torch_module_2d", _torch_weight_hash, _torch_eval, _torch_samples_2d, "torch")
+TORCH_PLUGIN = ExternalPlugin(
+    "torch_module", _torch_weight_hash, _torch_eval, _torch_samples, load=_torch_load, framework="torch"
+)
+TORCH2_PLUGIN = ExternalPlugin(
+    "torch_module_2d", _torch_weight_hash, _torch_eval, _torch_samples_2d, load=_torch_load, framework="torch"
+)
 
 
 def test_torch_plugin_hash_is_weights_and_validates() -> None:
@@ -167,11 +177,17 @@ def _xgb_model_bytes(*, seed: int) -> bytes:
     return bytes(booster.save_raw("ubj"))  # self-contained model bytes
 
 
-def _xgb_eval(payload: bytes, params: Any, inputs: list[Any]) -> Any:
+def _xgb_load(payload: bytes, params: Any) -> Any:
     import xgboost as xgb  # noqa: PLC0415
 
     booster = xgb.Booster()
-    booster.load_model(bytearray(payload))
+    booster.load_model(bytearray(payload))  # load the booster once per worker
+    return booster
+
+
+def _xgb_eval(booster: Any, params: Any, inputs: list[Any]) -> Any:
+    import xgboost as xgb  # noqa: PLC0415
+
     x = np.asarray(ak.to_numpy(ak.Array(inputs[0])), dtype="float32").reshape(-1, 1)
     return ak.Array(booster.predict(xgb.DMatrix(x)).astype("float64"))
 
@@ -180,7 +196,9 @@ def _xgb_samples() -> list[bytes]:
     return [_xgb_model_bytes(seed=1), _xgb_model_bytes(seed=2)]
 
 
-XGB_PLUGIN = ExternalPlugin("xgboost_model", sha256_bytes, _xgb_eval, _xgb_samples, "xgboost")
+XGB_PLUGIN = ExternalPlugin(
+    "xgboost_model", sha256_bytes, _xgb_eval, _xgb_samples, load=_xgb_load, framework="xgboost"
+)
 
 
 def test_xgboost_plugin_validates_and_reproduces(tmp_path) -> None:  # type: ignore[no-untyped-def]
@@ -196,23 +214,37 @@ def test_xgboost_plugin_validates_and_reproduces(tmp_path) -> None:  # type: ign
 _TRITON_SERVERS: dict[str, Any] = {}
 
 
-class _FakeTritonServer:
-    """Stands in for a Triton server hosting the model identified by the payload's weights."""
+class _FakeTritonClient:
+    """Stands in for a tritonclient connection to a server hosting the served model."""
 
     def __init__(self, weight: float, bias: float) -> None:
         self.weight, self.bias = weight, bias
+        self.closed = False
 
     def infer(self, model_name: str, x: np.ndarray, real_inputs: Any, real_outputs: Any) -> np.ndarray:
         # real_inputs/real_outputs are genuine tritonclient request objects (built below); a live
         # server would consume them. Offline we compute the served model directly.
         return 1.0 / (1.0 + np.exp(-(self.weight * x[:, 0] + self.bias)))
 
+    def close(self) -> None:
+        self.closed = True
+
 
 def _triton_served_weights(*, weight: float, bias: float) -> bytes:
     return np.array([weight, bias], dtype="float64").tobytes()  # the deployed model's weights
 
 
-def _triton_eval(payload: bytes, params: Any, inputs: list[Any]) -> Any:
+def _triton_connect(payload: bytes, params: Any) -> Any:
+    # a live plugin: tritonclient.http.InferenceServerClient(params["url"]); here the env supplies it.
+    # Opened ONCE per worker (a connection is exactly the kind of resource `load` exists for).
+    return _TRITON_SERVERS[str(params["url"])]
+
+
+def _triton_disconnect(client: Any) -> None:
+    client.close()  # release the connection at the end of the run
+
+
+def _triton_eval(client: Any, params: Any, inputs: list[Any]) -> Any:
     import tritonclient.http as triton  # noqa: PLC0415
 
     x = np.asarray(ak.to_numpy(ak.Array(inputs[0])), dtype="float32").reshape(-1, 1)
@@ -220,10 +252,8 @@ def _triton_eval(payload: bytes, params: Any, inputs: list[Any]) -> Any:
     inp = triton.InferInput("x", list(x.shape), "FP32")
     inp.set_data_from_numpy(x)
     out = triton.InferRequestedOutput("y")
-    # a live run is: triton.InferenceServerClient(url).infer(model, [inp], outputs=[out]); offline the
-    # env-resolved server computes the same. The model identity is the content-hashed served weights.
-    server = _TRITON_SERVERS[str(params["url"])]
-    result = server.infer(str(params["model"]), x, [inp], [out])
+    # a live run is: client.infer(model, [inp], outputs=[out]); offline the connection computes it.
+    result = client.infer(str(params["model"]), x, [inp], [out])
     return ak.Array(np.asarray(result, dtype="float64").reshape(-1))
 
 
@@ -231,7 +261,15 @@ def _triton_samples() -> list[bytes]:
     return [_triton_served_weights(weight=0.5, bias=0.0), _triton_served_weights(weight=0.8, bias=0.2)]
 
 
-TRITON_PLUGIN = ExternalPlugin("triton_model", sha256_bytes, _triton_eval, _triton_samples, "triton")
+TRITON_PLUGIN = ExternalPlugin(
+    "triton_model",
+    sha256_bytes,
+    _triton_eval,
+    _triton_samples,
+    load=_triton_connect,
+    close=_triton_disconnect,
+    framework="triton",
+)
 
 
 def test_triton_remote_inference_pattern(tmp_path) -> None:  # type: ignore[no-untyped-def]
@@ -239,7 +277,7 @@ def test_triton_remote_inference_pattern(tmp_path) -> None:  # type: ignore[no-u
     validate_plugin(TRITON_PLUGIN)  # hash of the served model's weights is deterministic + non-vacuous
 
     weight, bias, url = 0.45, -0.1, "triton://localhost:8000"
-    _TRITON_SERVERS[url] = _FakeTritonServer(weight, bias)  # the server is part of the environment
+    _TRITON_SERVERS[url] = _FakeTritonClient(weight, bias)  # the connection is part of the environment
     payload = _triton_served_weights(weight=weight, bias=bias)
     register_plugin(TRITON_PLUGIN)
 
@@ -275,7 +313,7 @@ def test_triton_reproduce_without_the_server_fails_loudly(tmp_path) -> None:  # 
     pytest.importorskip("tritonclient.http")
     register_plugin(TRITON_PLUGIN)
     url = "triton://unreachable:8000"
-    _TRITON_SERVERS[url] = _FakeTritonServer(0.3, 0.0)
+    _TRITON_SERVERS[url] = _FakeTritonClient(0.3, 0.0)
     payload = _triton_served_weights(weight=0.3, bias=0.0)
 
     from graphed_awkward import gak  # noqa: PLC0415

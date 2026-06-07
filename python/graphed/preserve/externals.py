@@ -1,12 +1,18 @@
 """External payload **plugins** — the extensible, validated mechanism for preservable Externals (M9).
 
-An :class:`ExternalPlugin` says, for one ``kind`` of external payload, three things:
+An :class:`ExternalPlugin` says, for one ``kind`` of external payload:
 
 1. ``content_hash(payload_bytes) -> str`` — a **deterministic, content-based** hash of the payload.
    For an ONNX model it is the hash of the *weights* (+ graph structure), for a correctionlib set the
    hash of its *contents* — not the raw file bytes (which carry incidental formatting/metadata).
-2. ``evaluate(payload_bytes, params, inputs) -> value`` — how to actually run the payload on inputs.
-3. ``samples() -> Sequence[bytes]`` — ≥2 distinct example payloads used to *validate the hash*.
+2. ``load(payload_bytes, params) -> resource`` — materialize the payload **once per worker** (a loaded
+   model, or a live connection); defaults to returning the bytes, so simple plugins can ignore it.
+3. ``evaluate(resource, params, inputs) -> value`` — run the loaded resource on inputs (per call).
+4. ``close(resource)`` — release the resource at end of run (e.g. close a connection); default no-op.
+5. ``samples() -> Sequence[bytes]`` — ≥2 distinct example payloads used to *validate the hash*.
+
+A :class:`ResourceCache` loads each payload once and reuses it across calls/nodes — ``open_once`` (M7)
+for Externals, so a model/connection is not re-created per partition.
 
 ``register_plugin`` validates a plugin's hash before trusting it (the user's explicit requirement):
 it must be **deterministic across processes** (so it reproduces on machine B — this catches a hash
@@ -18,6 +24,7 @@ plugins and double as templates for users writing their own.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import subprocess
 import sys
@@ -28,18 +35,59 @@ from typing import Any
 from .errors import PreserveError
 
 ContentHash = Callable[[bytes], str]
-Evaluate = Callable[[bytes, Mapping[str, Any], list[Any]], Any]
+Load = Callable[[bytes, Mapping[str, Any]], Any]
+Evaluate = Callable[[Any, Mapping[str, Any], list[Any]], Any]
+Close = Callable[[Any], None]
+
+
+def _identity_load(payload: bytes, params: Mapping[str, Any]) -> Any:
+    """Default ``load``: the resource IS the payload bytes (simple plugins evaluate from bytes)."""
+    return payload
+
+
+def _noop_close(resource: Any) -> None:
+    return None
 
 
 @dataclass(frozen=True)
 class ExternalPlugin:
-    """How to hash, evaluate, and (self-)validate one ``kind`` of External payload."""
+    """How to hash, load, evaluate, and (self-)validate one ``kind`` of External payload.
+
+    ``load(payload_bytes, params) -> resource`` materializes the payload **once per worker** (a loaded
+    model, or a live connection); ``evaluate(resource, params, inputs)`` then runs it per call. The
+    default ``load`` returns the payload bytes, so a simple plugin can ignore it and evaluate straight
+    from bytes. ``close(resource)`` releases the resource at the end of a run (e.g. a connection).
+    """
 
     kind: str
     content_hash: ContentHash
     evaluate: Evaluate
     samples: Callable[[], Sequence[bytes]]
+    load: Load = _identity_load
+    close: Close = _noop_close
     framework: str = ""
+
+
+class ResourceCache:
+    """Per-run cache of loaded External resources: a payload is ``load``-ed once and reused across
+    every call (and across nodes sharing the same payload+params), then ``close``-d on ``close()``.
+    This is ``open_once`` (M7) for Externals — no re-loading a model per partition."""
+
+    def __init__(self) -> None:
+        self._items: dict[tuple[str, str, str], tuple[ExternalPlugin, Any]] = {}
+
+    def resource(
+        self, plugin: ExternalPlugin, payload: bytes, params: Mapping[str, Any], *, content_hash: str
+    ) -> Any:
+        key = (plugin.kind, content_hash, json.dumps(dict(params), sort_keys=True, default=str))
+        if key not in self._items:
+            self._items[key] = (plugin, plugin.load(payload, params))
+        return self._items[key][1]
+
+    def close(self) -> None:
+        while self._items:
+            _key, (plugin, resource) = self._items.popitem()
+            plugin.close(resource)
 
 
 _REGISTRY: dict[str, ExternalPlugin] = {}
@@ -136,13 +184,26 @@ def _hash_in_subprocess(content_hash: ContentHash, sample: bytes, *, seed: str) 
     return out
 
 
-def evaluate_external(node: Mapping[str, Any], inputs: list[Any], payload: bytes) -> Any:
-    """Evaluate an External node via its registered plugin (dispatch by descriptor kind)."""
+def evaluate_external(
+    node: Mapping[str, Any], inputs: list[Any], payload: bytes, cache: ResourceCache | None = None
+) -> Any:
+    """Evaluate an External node via its registered plugin (dispatch by descriptor kind).
+
+    With a ``cache`` the payload is ``load``-ed once per worker and reused; without one it is loaded,
+    evaluated, and closed in a single shot."""
     kind = node["descriptor"]["kind"]
     plugin = get_plugin(kind)
     if plugin is None:
         raise PreserveError(f"no plugin registered for external kind {kind!r} (a preservation risk)")
-    return plugin.evaluate(payload, node["params"], inputs)
+    params = node["params"]
+    if cache is not None:
+        resource = cache.resource(plugin, payload, params, content_hash=node["descriptor"]["content_hash"])
+        return plugin.evaluate(resource, params, inputs)
+    resource = plugin.load(payload, params)
+    try:
+        return plugin.evaluate(resource, params, inputs)
+    finally:
+        plugin.close(resource)
 
 
 def record_external(
@@ -166,9 +227,12 @@ def record_external(
         "framework": plugin.framework,
         **(params or {}),
     }
+    holder: dict[str, Any] = {}  # load the resource once for this node (build-time materialize)
 
     def _fn(*values: Any) -> Any:
-        return plugin.evaluate(payload, node_params, list(values))
+        if "resource" not in holder:
+            holder["resource"] = plugin.load(payload, node_params)
+        return plugin.evaluate(holder["resource"], node_params, list(values))
 
     return session.record_external("external", _fn, list(inputs), node_params)
 
@@ -190,12 +254,17 @@ def correctionlib_content_hash(payload: bytes) -> str:
     return "sha256:" + hashlib.sha256(b"correctionlib-contents-v1" + canonical).hexdigest()
 
 
-def eval_correctionlib(payload: bytes, params: Mapping[str, Any], inputs: list[Any]) -> Any:
-    import awkward as ak  # noqa: PLC0415
+def load_correctionlib(payload: bytes, params: Mapping[str, Any]) -> Any:
+    """Parse the correction set once (per worker)."""
     import correctionlib  # noqa: PLC0415
+
+    return correctionlib.CorrectionSet.from_string(payload.decode("utf-8"))
+
+
+def eval_correctionlib(cset: Any, params: Mapping[str, Any], inputs: list[Any]) -> Any:
+    import awkward as ak  # noqa: PLC0415
     import numpy as np  # noqa: PLC0415
 
-    cset = correctionlib.CorrectionSet.from_string(payload.decode("utf-8"))
     name = str(params.get("name", ""))
     systematic = str(params.get("systematic", "nominal"))
     x = np.asarray(ak.to_numpy(ak.Array(inputs[0])), dtype="float64")
@@ -243,15 +312,20 @@ def onnx_content_hash(payload: bytes) -> str:
     return "sha256:" + h.hexdigest()
 
 
-def eval_onnx(payload: bytes, params: Mapping[str, Any], inputs: list[Any]) -> Any:
-    import awkward as ak  # noqa: PLC0415
-    import numpy as np  # noqa: PLC0415
+def load_onnx(payload: bytes, params: Mapping[str, Any]) -> Any:
+    """Create the ONNX Runtime session once (per worker) — not per call."""
     import onnxruntime as ort  # noqa: PLC0415
 
-    sess = ort.InferenceSession(payload, providers=["CPUExecutionProvider"])
-    name = str(params.get("input_name", "")) or sess.get_inputs()[0].name
+    return ort.InferenceSession(payload, providers=["CPUExecutionProvider"])
+
+
+def eval_onnx(session: Any, params: Mapping[str, Any], inputs: list[Any]) -> Any:
+    import awkward as ak  # noqa: PLC0415
+    import numpy as np  # noqa: PLC0415
+
+    name = str(params.get("input_name", "")) or session.get_inputs()[0].name
     x = np.asarray(ak.to_numpy(ak.Array(inputs[0])), dtype="float32").reshape(-1, 1)
-    out = sess.run(None, {name: x})[0].reshape(-1)
+    out = session.run(None, {name: x})[0].reshape(-1)
     return ak.Array(np.asarray(out, dtype="float64"))
 
 
@@ -278,6 +352,7 @@ CORRECTIONLIB_PLUGIN = ExternalPlugin(
     content_hash=correctionlib_content_hash,
     evaluate=eval_correctionlib,
     samples=_correctionlib_samples,
+    load=load_correctionlib,  # parse the correction set once per worker
     framework="correctionlib",
 )
 ONNX_PLUGIN = ExternalPlugin(
@@ -285,6 +360,7 @@ ONNX_PLUGIN = ExternalPlugin(
     content_hash=onnx_content_hash,
     evaluate=eval_onnx,
     samples=_onnx_samples,
+    load=load_onnx,  # build the inference session once per worker
     framework="onnxruntime",
 )
 
