@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GRAPHED_CORE: "graphed-core @ git+https://github.com/graphed-org/graphed-core@main"
+  GRAPHED_CORE: "graphed-core @ git+https://github.com/graphed-org/graphed-core-mvp@main"
 
 jobs:
   test:

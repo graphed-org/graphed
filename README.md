@@ -4,7 +4,7 @@ The **deferred-array frontend** for `graphed` (milestone M2): a user writes ordi
 expressions and `graphed` records them into the Rust-backed `graphed-core` store via a pluggable
 **`Backend`**. The recorded graph is **backend-agnostic** — backends supply only form inference and
 evaluation. Part of the [`graphed-org`](https://github.com/graphed-org) project; see
-[`graphed-project`](https://github.com/graphed-org/graphed-project) for the root guidance and plan.
+[`graphed-project`](https://github.com/graphed-org/graphed-project-mvp) for the root guidance and plan.
 
 ```python
 from graphed import Session
@@ -33,7 +33,7 @@ Guardrails: no fusion (M4); no awkward (the awkward backend is M3); provenance i
 ## Develop
 
 ```bash
-pip install "graphed-core @ git+https://github.com/graphed-org/graphed-core@main"   # needs Rust
+pip install "graphed-core @ git+https://github.com/graphed-org/graphed-core-mvp@main"   # needs Rust
 pip install -e ".[dev,docs]"
 ruff check . && ruff format --check . && mypy
 pytest tests/frozen/m2

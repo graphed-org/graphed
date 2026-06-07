@@ -1,7 +1,7 @@
 # Contributing to graphed
 
 Part of the `graphed` project, governed by the gated three-role pipeline. The root
-[`graphed-project/CLAUDE.md`](https://github.com/graphed-org/graphed-project) and the project plan
+[`graphed-project/CLAUDE.md`](https://github.com/graphed-org/graphed-project-mvp) and the project plan
 are authoritative; the plan always wins.
 
 ## Guardrails (M2)
@@ -20,7 +20,7 @@ under test; never flood `# type: ignore` / `except: pass`. Dispute a frozen test
 ## Local gates
 
 ```bash
-pip install "graphed-core @ git+https://github.com/graphed-org/graphed-core@main"   # needs Rust
+pip install "graphed-core @ git+https://github.com/graphed-org/graphed-core-mvp@main"   # needs Rust
 pip install -e ".[dev,docs]"
 ruff check . && ruff format --check . && mypy
 pytest tests/frozen/m2 --cov=graphed --cov-branch    # >=90%
