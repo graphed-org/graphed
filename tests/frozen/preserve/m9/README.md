@@ -27,6 +27,7 @@ chose for M9 precisely because it carries an ONNX model, correctionlib SFs, and 
 | `…::test_user_plugin_registers_and_reproduces_bit_for_bit`, `…::test_user_plugin_fingerprint_tracks_its_payload`, `…::test_reopened_user_bundle_reproduces` | a user-defined External plugin (the template) records, preserves, and reproduces bit-for-bit |
 | `test_ml_plugins.py::test_torch_*` | real **PyTorch** plugin (TorchScript; hash of weights; single- and multi-input) validates + reproduces bit-for-bit (optional, `[mltest]`) |
 | `…::test_xgboost_plugin_validates_and_reproduces` | real **XGBoost** plugin (booster bytes; `sha256_bytes` template) validates + reproduces (optional) |
-| `…::test_triton_remote_inference_pattern`, `…::test_triton_reproduce_without_the_server_fails_loudly` | the **NVIDIA Triton** remote-inference pattern: served-model identity content-addressed; reproduce needs the service in the env, else fails loudly (optional) |
+| `…::test_triton_remote_inference_pattern`, `…::test_triton_reproduce_without_the_server_fails_loudly` | the **NVIDIA Triton** remote-inference pattern (in-process stub): served-model identity content-addressed; reproduce needs the service in the env, else fails loudly (optional) |
+| `test_triton_server.py::test_real_triton_reproduces_over_transport[grpc/http]` | reproduce a bundle through a **REAL Triton server** (CI container) over **gRPC and HTTP** — bit-for-bit vs a numpy reference (CI `triton` job; gated on `GRAPHED_TRITON_{GRPC,HTTP}`) |
 
 Frozen = read-only after the freeze tag (see `.graphed/M9/`).

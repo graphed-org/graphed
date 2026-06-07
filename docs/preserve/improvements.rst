@@ -51,7 +51,10 @@ findings below are addressed:
   ``close``-s at run end; the bundle content-addresses the *served model's weights* and ``reproduce``
   fails loudly if the service is absent. Consistent with "environment captured, not enforced":
   remote externals reproduce only where the service exists. A self-hosting bundle (embedding +
-  launching a servable model) is a possible Phase-2 extension.
+  launching a servable model) is a possible Phase-2 extension. **Validated against a real server:** the
+  CI ``triton`` job starts an ``nvcr.io/nvidia/tritonserver`` container serving
+  ``tests/samples/triton_models`` and reproduces a bundle through it over **both gRPC and HTTP**
+  (``tests/frozen/m9/test_triton_server.py``), bit-for-bit vs a numpy reference.
 - **Conflicting native runtimes.** torch and xgboost each vendor an OpenMP runtime and clash in one
   process — another reason the bundle records the environment. The test suite sets
   ``KMP_DUPLICATE_LIB_OK`` / ``OMP_NUM_THREADS`` before import to coexist.
