@@ -25,5 +25,8 @@ chose for M9 precisely because it carries an ONNX model, correctionlib SFs, and 
 | `…::test_correctionlib_hashes_contents_not_formatting`, `…::test_onnx_hashes_weights` | content hash = correctionlib *contents* / ONNX *weights*, not raw file bytes |
 | `…::test_vacuous_hash_is_rejected`, `…::test_nondeterministic_hash_is_rejected`, `…::test_time_based_hash_is_rejected` | `register_plugin` rejects a vacuous (constant) or non-deterministic (hash()/time) hash |
 | `…::test_user_plugin_registers_and_reproduces_bit_for_bit`, `…::test_user_plugin_fingerprint_tracks_its_payload`, `…::test_reopened_user_bundle_reproduces` | a user-defined External plugin (the template) records, preserves, and reproduces bit-for-bit |
+| `test_ml_plugins.py::test_torch_*` | real **PyTorch** plugin (TorchScript; hash of weights; single- and multi-input) validates + reproduces bit-for-bit (optional, `[mltest]`) |
+| `…::test_xgboost_plugin_validates_and_reproduces` | real **XGBoost** plugin (booster bytes; `sha256_bytes` template) validates + reproduces (optional) |
+| `…::test_triton_remote_inference_pattern`, `…::test_triton_reproduce_without_the_server_fails_loudly` | the **NVIDIA Triton** remote-inference pattern: served-model identity content-addressed; reproduce needs the service in the env, else fails loudly (optional) |
 
 Frozen = read-only after the freeze tag (see `.graphed/M9/`).
