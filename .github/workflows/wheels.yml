@@ -1,0 +1,35 @@
+name: wheels
+
+# Build-only release artifacts (plan A.5 / M0): a pure-Python wheel + sdist, validated with
+# `twine check` and uploaded as a CI artifact. There is intentionally NO publish step — nothing
+# is uploaded to PyPI from CI.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: wheels-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: sdist + wheel (pure Python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m build
+      - name: Validate metadata
+        run: python -m twine check dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/*
