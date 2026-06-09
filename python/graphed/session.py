@@ -19,7 +19,7 @@ from .provenance import Provenance, capture
 
 
 class Session:
-    def __init__(self, backend: Backend) -> None:
+    def __init__(self, backend: Backend, *, incremental: bool = False) -> None:
         self._store = graphed_core.GraphStore()
         self._backend = backend
         self._forms: dict[int, Form] = {}
@@ -28,6 +28,14 @@ class Session:
         self._ops: dict[int, tuple[str, dict[str, ParamValue], list[int]]] = {}
         self._externals: dict[int, tuple[Callable[[object], object], list[int]]] = {}
         self._provenance: dict[int, Provenance] = {}
+        # M10 (plan A.1): with incremental=True the session maintains the reduced view AS THE
+        # GRAPH IS BUILT — every record steps an IncrementalReducer whose per-step work is the
+        # delta, so compile time never pays a whole-history optimization.
+        self._reducer = graphed_core.IncrementalReducer() if incremental else None
+
+    def _step_reducer(self) -> None:
+        if self._reducer is not None:
+            self._reducer.step(self._store)
 
     # ---- introspection ---------------------------------------------------------
     @property
@@ -55,8 +63,13 @@ class Session:
             self._store.mark_output(arr.node_id)
         if optimize and not outputs:
             raise ValueError("serialized_ir(optimize=True) needs at least one output Array")
-        store = self._store.reduce()[0] if optimize else self._store
-        return store.serialize()
+        if not optimize:
+            return bytes(self._store.serialize())
+        if self._reducer is not None:
+            # incremental session (M10): finish from the maintained canonical view — one linear
+            # pass over the concise form instead of a whole-history optimization.
+            return bytes(self._reducer.finalize(self._store)[0].serialize())
+        return bytes(self._store.reduce()[0].serialize())
 
     def form(self, array: Array) -> Form:
         return self._forms[array.node_id]
@@ -67,6 +80,23 @@ class Session:
     def source_ids(self) -> list[int]:
         """The node ids of all source nodes (used by projection)."""
         return list(self._sources)
+
+    def sources(self) -> dict[int, object]:
+        """The source nodes' concrete data objects, keyed by node id (a public, read-only view —
+        host-reader integrations inspect this instead of reaching into session internals)."""
+        return dict(self._sources)
+
+    def reduction_state(self) -> dict[str, int] | None:
+        """Incremental-reduction introspection (M10): how many nodes the maintained reduced view
+        has consumed (`watermark`), cumulative reducer work (`total_work` — equals `watermark`, the
+        incrementality witness), and the canonical size. ``None`` for a non-incremental session."""
+        if self._reducer is None:
+            return None
+        return {
+            "watermark": self._reducer.watermark(),
+            "total_work": self._reducer.total_work(),
+            "canonical_count": self._reducer.canonical_count(),
+        }
 
     def source_name(self, node_id: int) -> str:
         return self._source_names[node_id]
@@ -100,6 +130,7 @@ class Session:
         self._sources.setdefault(node_id, data)
         self._source_names.setdefault(node_id, name)
         self._provenance.setdefault(node_id, capture())
+        self._step_reducer()
         return Array(self, node_id)
 
     def record_op(
@@ -127,6 +158,7 @@ class Session:
         self._forms.setdefault(node_id, form)
         self._ops.setdefault(node_id, (op, params_d, ids))
         self._provenance.setdefault(node_id, prov)
+        self._step_reducer()
         return Array(self, node_id)
 
     def record_external(
@@ -148,6 +180,7 @@ class Session:
         self._forms.setdefault(node_id, form)
         self._externals.setdefault(node_id, (fn, ids))
         self._provenance.setdefault(node_id, prov)
+        self._step_reducer()
         return Array(self, node_id)
 
     # ---- generic graph walk (shared by materialize + projection) ----------------
