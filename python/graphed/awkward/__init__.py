@@ -11,6 +11,7 @@ from __future__ import annotations
 from . import functions, payloads
 from . import functions as gak
 from .backend import AwkwardBackend, AwkwardForm, from_awkward, from_parquet
+from .projection import project, project_buffers
 
 __all__ = [
     "AwkwardBackend",
@@ -20,6 +21,8 @@ __all__ = [
     "functions",
     "gak",
     "payloads",
+    "project",
+    "project_buffers",
 ]
 
 __version__ = "0.0.1"
