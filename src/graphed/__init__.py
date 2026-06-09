@@ -8,7 +8,16 @@ from __future__ import annotations
 from .array import Array
 from .backend import Backend, Form, ParamValue
 from .errors import GraphedError, GraphedTypeError
-from .projection import CONSERVATIVE, OnFail, Projection, ProjectionError, handle_opaque
+from .execute import CompiledGraph, compile_ir, evaluate_ir
+from .projection import (
+    CONSERVATIVE,
+    BufferNeed,
+    BufferProjection,
+    OnFail,
+    Projection,
+    ProjectionError,
+    handle_opaque,
+)
 from .provenance import Provenance, capture, is_enabled, set_enabled
 from .session import Session
 
@@ -16,6 +25,9 @@ __all__ = [
     "CONSERVATIVE",
     "Array",
     "Backend",
+    "BufferNeed",
+    "BufferProjection",
+    "CompiledGraph",
     "Form",
     "GraphedError",
     "GraphedTypeError",
@@ -26,6 +38,8 @@ __all__ = [
     "Provenance",
     "Session",
     "capture",
+    "compile_ir",
+    "evaluate_ir",
     "handle_opaque",
     "is_enabled",
     "set_enabled",

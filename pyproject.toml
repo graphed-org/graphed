@@ -31,7 +31,7 @@ packages = ["src/graphed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src", "tests/frozen/m2", "tests/frozen/m3"]
+pythonpath = ["src", "tests/frozen/m2", "tests/frozen/m3", "tests/frozen/m10"]
 addopts = "-q"
 
 [tool.coverage.run]
