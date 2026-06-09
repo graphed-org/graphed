@@ -26,12 +26,40 @@ R = TypeVar("R")  # a partial result (e.g. a histogram array)
 
 @dataclass(frozen=True)
 class Partition:
-    """A unit of input work (plan glossary): a uri + tree + half-open entry range."""
+    """A unit of input work (plan glossary): a uri + tree + half-open entry range.
+
+    A **blind** partition (M10) defers entry-range resolution to read time: it records
+    ``(step, n_steps)`` instead of an entry range, and the reader calls :meth:`resolve` against the
+    file's actual entry count when the partition is read. Construct with :meth:`Partition.blind` —
+    this replaces the old host-reader convention of smuggling the step through a negative
+    ``entry_stop``, which any unaware consumer silently misread."""
 
     uri: str
     tree: str = ""
     entry_start: int = 0
     entry_stop: int = 0
+    blind_step: int | None = None
+    blind_n_steps: int | None = None
+
+    @classmethod
+    def blind(cls, uri: str, tree: str, step: int, n_steps: int) -> Partition:
+        """A partition describing step ``step`` of ``n_steps`` over a file NOT opened yet."""
+        if n_steps < 1 or not 0 <= step < n_steps:
+            raise ValueError(f"blind partition needs 0 <= step < n_steps, got {step}/{n_steps}")
+        return cls(uri, tree, 0, 0, blind_step=step, blind_n_steps=n_steps)
+
+    @property
+    def is_blind(self) -> bool:
+        return self.blind_step is not None
+
+    def resolve(self, num_entries: int) -> Partition:
+        """Resolve a blind partition against the file's actual entry count (every entry is read
+        exactly once across the file's n_steps partitions). A non-blind partition returns itself."""
+        if self.blind_step is None or self.blind_n_steps is None:
+            return self
+        start = (self.blind_step * num_entries) // self.blind_n_steps
+        stop = ((self.blind_step + 1) * num_entries) // self.blind_n_steps
+        return Partition(self.uri, self.tree, start, stop)
 
     @property
     def n_entries(self) -> int:

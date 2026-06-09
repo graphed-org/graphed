@@ -260,10 +260,22 @@ def partition_datasets(datasets: Iterable[Dataset], *, chunk_size: int) -> tuple
 
 
 def _partition_json(p: Partition) -> dict[str, str | int]:
-    return {"uri": p.uri, "tree": p.tree, "entry_start": p.entry_start, "entry_stop": p.entry_stop}
+    d: dict[str, str | int] = {
+        "uri": p.uri,
+        "tree": p.tree,
+        "entry_start": p.entry_start,
+        "entry_stop": p.entry_stop,
+    }
+    # blind fields only when set, so non-blind plans' bytes/task_ids are unchanged (M8 pins)
+    if p.blind_step is not None and p.blind_n_steps is not None:
+        d["blind_step"] = p.blind_step
+        d["blind_n_steps"] = p.blind_n_steps
+    return d
 
 
 def _partition_from_json(d: Mapping[str, Any]) -> Partition:
+    if "blind_step" in d:
+        return Partition.blind(d["uri"], d.get("tree", ""), int(d["blind_step"]), int(d["blind_n_steps"]))
     return Partition(
         uri=d["uri"],
         tree=d.get("tree", ""),
