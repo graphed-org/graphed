@@ -37,15 +37,51 @@ impl ParamValue {
     }
 
     /// Type-tagged token mirroring equality/hash identity (floats by canonical bits, so 0.0/-0.0
-    /// stay distinct and all NaNs collapse, exactly as interning does).
+    /// stay distinct and all NaNs collapse, exactly as interning does). String payloads are
+    /// escaped so the encoding is injective even when a value contains a separator character.
     pub fn token(&self) -> String {
         match self {
             ParamValue::Int(a) => format!("i{a}"),
             ParamValue::Float(a) => format!("f{:016x}", Self::float_key(*a)),
             ParamValue::Bool(a) => format!("b{a}"),
-            ParamValue::Str(a) => format!("s{a}"),
+            ParamValue::Str(a) => format!("s{}", escape_token(a)),
         }
     }
+
+    /// Decode one tagged value token (the inverse of `token`).
+    pub fn from_token(tok: &str) -> Option<ParamValue> {
+        let (tag, rest) = tok.split_at(tok.char_indices().nth(1).map_or(tok.len(), |(i, _)| i));
+        match tag {
+            "i" => rest.parse::<i64>().ok().map(ParamValue::Int),
+            "f" => u64::from_str_radix(rest, 16)
+                .ok()
+                .map(|bits| ParamValue::Float(f64::from_bits(bits))),
+            "b" => match rest {
+                "true" => Some(ParamValue::Bool(true)),
+                "false" => Some(ParamValue::Bool(false)),
+                _ => None,
+            },
+            "s" => Some(ParamValue::Str(unescape_token(rest))),
+            _ => None,
+        }
+    }
+}
+
+/// Escape the separator characters (`%`, `;`, `=`, `|`) so param tokens are injective and
+/// losslessly parseable. `%` first so unescaping is its exact inverse.
+pub fn escape_token(s: &str) -> String {
+    s.replace('%', "%25")
+        .replace(';', "%3B")
+        .replace('=', "%3D")
+        .replace('|', "%7C")
+}
+
+/// Inverse of [`escape_token`].
+pub fn unescape_token(s: &str) -> String {
+    s.replace("%7C", "|")
+        .replace("%3D", "=")
+        .replace("%3B", ";")
+        .replace("%25", "%")
 }
 
 impl PartialEq for ParamValue {
@@ -108,12 +144,28 @@ impl ParamMap {
 
     /// A compact, injective, whitespace-free encoding for optimizer tokens (M4). Type-tagged so
     /// int/float/bool/str with the same printed form stay distinct, matching interning identity.
+    /// Keys and string payloads are separator-escaped, so the encoding is genuinely injective and
+    /// invertible via [`ParamMap::from_token`].
     pub fn token(&self) -> String {
         self.0
             .iter()
-            .map(|(k, v)| format!("{k}={}", v.token()))
+            .map(|(k, v)| format!("{}={}", escape_token(k), v.token()))
             .collect::<Vec<_>>()
             .join(";")
+    }
+
+    /// Decode a `token()` string back into a `ParamMap` (used by `GraphStore.nodes()` to expose
+    /// fused stage members for IR-driven execution). Returns `None` on a malformed token.
+    pub fn from_token(s: &str) -> Option<ParamMap> {
+        if s.is_empty() {
+            return Some(ParamMap::new(vec![]));
+        }
+        let mut entries = Vec::new();
+        for part in s.split(';') {
+            let (k, v) = part.split_once('=')?;
+            entries.push((unescape_token(k), ParamValue::from_token(v)?));
+        }
+        Some(ParamMap::new(entries))
     }
 }
 

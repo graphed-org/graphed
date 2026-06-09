@@ -158,11 +158,19 @@ impl GraphStore {
         (g.nodes.clone(), g.outputs.clone())
     }
 
-    /// Reduce the graph via the M4 pipeline (DCE + CSE + equality-saturation stage fusion) into a
-    /// fresh interned store. Returns the reduced store and the reduction report.
-    pub fn reduce(&self, engine: &dyn RewriteEngine) -> (GraphStore, ReductionReport) {
-        let (nodes, outputs) = self.snapshot();
-        let red = optimizer::reduce(&nodes, &outputs, engine);
+    /// Snapshot only the nodes with id >= `start` (the delta an `IncrementalReducer` consumes).
+    pub fn snapshot_from(&self, start: usize) -> Vec<NodeKey> {
+        let g = self.lock();
+        g.nodes[start.min(g.nodes.len())..].to_vec()
+    }
+
+    /// The marked output ids, in mark order.
+    pub fn outputs(&self) -> Vec<NodeId> {
+        self.lock().outputs.clone()
+    }
+
+    /// Rebuild a `Reduced` form into a fresh interned store.
+    pub(crate) fn from_reduced(red: optimizer::Reduced) -> (GraphStore, ReductionReport) {
         let store = GraphStore::new();
         let mut map: Vec<NodeId> = Vec::with_capacity(red.nodes.len());
         for key in &red.nodes {
@@ -180,8 +188,25 @@ impl GraphStore {
         (store, red.report)
     }
 
-    /// Incremental reduction (plan M4): egg e-graphs are additive, so reduction re-runs cheaply as
-    /// the user keeps building. Same result as `reduce` on the current graph.
+    /// Reduce the graph via the M4 pipeline (DCE + CSE + equality-saturation stage fusion) into a
+    /// fresh interned store. Returns the reduced store and the reduction report.
+    pub fn reduce(&self, engine: &dyn RewriteEngine) -> (GraphStore, ReductionReport) {
+        self.reduce_with(engine, optimizer::FusionMode::SingleUse)
+    }
+
+    /// `reduce` with an explicit stage-fusion mode (see `optimizer::FusionMode`).
+    pub fn reduce_with(
+        &self,
+        engine: &dyn RewriteEngine,
+        mode: optimizer::FusionMode,
+    ) -> (GraphStore, ReductionReport) {
+        let (nodes, outputs) = self.snapshot();
+        GraphStore::from_reduced(optimizer::reduce_with_mode(&nodes, &outputs, engine, mode))
+    }
+
+    /// One-shot incremental reduction of the current graph — same result as `reduce`. For genuine
+    /// step-by-step reduction while building, use `optimizer::IncrementalReducer`, which processes
+    /// only the delta per step (and whose work counter proves it).
     pub fn reduce_incremental(&self, engine: &dyn RewriteEngine) -> (GraphStore, ReductionReport) {
         self.reduce(engine)
     }

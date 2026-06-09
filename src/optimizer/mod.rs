@@ -11,12 +11,26 @@
 //! ```
 
 mod engine;
+mod incremental;
 
 use std::collections::HashMap;
 
 pub use engine::{EggEngine, EngineGraph, EngineNode, RewriteEngine};
+pub use incremental::IncrementalReducer;
 
 use crate::node::{NodeId, NodeKey, StageOp, StageRef};
+
+/// How aggressively ops fuse into stages. `SingleUse` is the original M4 behavior (an op fuses only
+/// into its sole consumer) and stays the default — it is pinned by the frozen M4 suite. `Maximal`
+/// additionally fuses a fan-out op when ALL of its consumers are ops that land in one stage, so a
+/// diamond inside an op region becomes ONE stage (the glossary's "maximal fused run"). Both modes
+/// never cross a boundary.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum FusionMode {
+    #[default]
+    SingleUse,
+    Maximal,
+}
 
 /// Stats reported for one reduction (plan M4 `reduction_report`).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -36,9 +50,15 @@ pub struct Reduced {
     pub report: ReductionReport,
 }
 
-/// Run the full reduction. `nodes` is the interned arena (topological by id); `outputs` are marked
-/// output ids. Returns reduced NodeKeys whose inputs reference indices *within the returned list*.
-pub fn reduce(nodes: &[NodeKey], outputs: &[NodeId], engine: &dyn RewriteEngine) -> Reduced {
+/// Run the full reduction with an explicit fusion mode (see [`FusionMode`]). `nodes` is the
+/// interned arena (topological by id); `outputs` are marked output ids. Returns reduced NodeKeys
+/// whose inputs reference indices *within the returned list*.
+pub fn reduce_with_mode(
+    nodes: &[NodeKey],
+    outputs: &[NodeId],
+    engine: &dyn RewriteEngine,
+    mode: FusionMode,
+) -> Reduced {
     // 1. DCE — keep only nodes reachable from the outputs.
     let (reachable_keys, reachable_outputs) = dead_code_elimination(nodes, outputs);
 
@@ -56,7 +76,7 @@ pub fn reduce(nodes: &[NodeKey], outputs: &[NodeId], engine: &dyn RewriteEngine)
     let deduped = cse(&canonical);
 
     // 4. stage fusion + rebuild.
-    let mut out = stage_fusion(&deduped, &templates);
+    let mut out = stage_fusion(&deduped, &templates, mode);
     out.report.input_nodes = nodes.len();
     out.report.reachable_nodes = reachable_keys.len();
     out.report.canonical_nodes = deduped.nodes.len();
@@ -165,8 +185,14 @@ impl Dsu {
 }
 
 /// Group maximal runs of ops between boundaries into `Stage` nodes (fusion never crosses a
-/// boundary). An op fuses into its consumer only when it has exactly one use and that use is an op.
-fn stage_fusion(graph: &EngineGraph, templates: &HashMap<String, NodeKey>) -> Reduced {
+/// boundary). `SingleUse`: an op fuses into its consumer only when it has exactly one use and that
+/// use is an op. `Maximal`: an op additionally fuses when ALL of its consumers are ops in one
+/// shared stage (a diamond inside an op region becomes one stage).
+fn stage_fusion(
+    graph: &EngineGraph,
+    templates: &HashMap<String, NodeKey>,
+    mode: FusionMode,
+) -> Reduced {
     let n = graph.nodes.len();
     // consumers + output marks
     let mut consumers: Vec<Vec<usize>> = vec![Vec::new(); n];
@@ -180,29 +206,54 @@ fn stage_fusion(graph: &EngineGraph, templates: &HashMap<String, NodeKey>) -> Re
         is_output[o] = true;
     }
 
-    // union ops whose single use is another op
-    let mut dsu = Dsu::new(n);
-    for (i, node) in graph.nodes.iter().enumerate() {
-        if node.boundary {
-            continue;
-        }
-        if consumers[i].len() == 1 && !is_output[i] {
-            let c = consumers[i][0];
-            if !graph.nodes[c].boundary {
-                dsu.union(i, c);
+    let comp_id: Vec<usize> = match mode {
+        FusionMode::SingleUse => {
+            // union ops whose single use is another op
+            let mut dsu = Dsu::new(n);
+            for (i, node) in graph.nodes.iter().enumerate() {
+                if node.boundary {
+                    continue;
+                }
+                if consumers[i].len() == 1 && !is_output[i] {
+                    let c = consumers[i][0];
+                    if !graph.nodes[c].boundary {
+                        dsu.union(i, c);
+                    }
+                }
             }
+            // component id per node (ops -> dsu root; boundaries -> themselves)
+            (0..n)
+                .map(|i| {
+                    if graph.nodes[i].boundary {
+                        i
+                    } else {
+                        dsu.find(i)
+                    }
+                })
+                .collect()
         }
-    }
-
-    // component id per node (ops -> dsu root; boundaries -> themselves)
-    let comp_of = |dsu: &mut Dsu, i: usize| {
-        if graph.nodes[i].boundary {
-            i
-        } else {
-            dsu.find(i)
+        FusionMode::Maximal => {
+            // One descending pass: a node's consumers all have higher indices (topological order),
+            // so their components are final when the node is visited. An op joins its consumers'
+            // stage iff every consumer is an op AND they all sit in one component; otherwise (an
+            // output, a boundary consumer, or consumers in different stages) it heads its own
+            // stage. Deterministic: a pure function of the (ordered) graph.
+            let mut comp: Vec<usize> = (0..n).collect();
+            for i in (0..n).rev() {
+                if graph.nodes[i].boundary || is_output[i] || consumers[i].is_empty() {
+                    continue;
+                }
+                if consumers[i].iter().any(|&c| graph.nodes[c].boundary) {
+                    continue;
+                }
+                let c0 = comp[consumers[i][0]];
+                if consumers[i].iter().all(|&c| comp[c] == c0) {
+                    comp[i] = c0;
+                }
+            }
+            comp
         }
     };
-    let comp_id: Vec<usize> = (0..n).map(|i| comp_of(&mut dsu, i)).collect();
 
     // build comp -> member node indices
     let mut comp_members: HashMap<usize, Vec<usize>> = HashMap::new();

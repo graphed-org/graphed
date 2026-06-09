@@ -88,10 +88,13 @@ impl NodeKey {
     /// reconstruction table. Two structurally identical operators share a token; inputs are
     /// children in the e-graph, not part of the token.
     pub fn token(&self) -> String {
+        use crate::param::escape_token as esc;
         match self {
-            NodeKey::Source { name, params } => with_params(format!("src|{name}"), params),
-            NodeKey::Op { name, params, .. } => with_params(format!("op|{name}"), params),
-            NodeKey::Reduction { name, params, .. } => with_params(format!("red|{name}"), params),
+            NodeKey::Source { name, params } => with_params(format!("src|{}", esc(name)), params),
+            NodeKey::Op { name, params, .. } => with_params(format!("op|{}", esc(name)), params),
+            NodeKey::Reduction { name, params, .. } => {
+                with_params(format!("red|{}", esc(name)), params)
+            }
             NodeKey::External {
                 descriptor, params, ..
             } => with_params(
@@ -184,6 +187,26 @@ fn with_params(prefix: String, params: &ParamMap) -> String {
     } else {
         format!("{prefix}|{}", params.token())
     }
+}
+
+/// Decode an op-shaped token (`op|<name>` / `red|<name>`, optionally `|<params>`) back into its
+/// `(kind, name, params)` parts — the inverse of `token()` for the tokens a fused `Stage` member
+/// carries. This is what lets `GraphStore.nodes()` expose stage members as executable
+/// (name, params) pairs for IR-driven evaluation, without changing the stage's structural identity
+/// or the serialized form. Returns `None` for non-op tokens (sources/externals never fuse).
+pub fn parse_op_token(token: &str) -> Option<(String, String, ParamMap)> {
+    use crate::param::unescape_token;
+    let mut parts = token.splitn(3, '|');
+    let kind = parts.next()?;
+    if kind != "op" && kind != "red" {
+        return None;
+    }
+    let name = unescape_token(parts.next()?);
+    let params = match parts.next() {
+        Some(p) => ParamMap::from_token(p)?,
+        None => ParamMap::new(vec![]),
+    };
+    Some((kind.to_string(), name, params))
 }
 
 impl fmt::Display for NodeKey {

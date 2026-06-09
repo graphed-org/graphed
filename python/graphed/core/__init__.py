@@ -17,7 +17,7 @@ from .execution import (
     Task,
     WorkerResources,
 )
-from .graphed_core import GraphStore, PayloadDescriptor, version
+from .graphed_core import GraphStore, IncrementalReducer, PayloadDescriptor, version
 from .plan import (
     Dataset,
     DurablePlan,
@@ -33,6 +33,7 @@ __all__ = [
     "ExecResult",
     "Executor",
     "GraphStore",
+    "IncrementalReducer",
     "OpSpec",
     "Partition",
     "PayloadDescriptor",

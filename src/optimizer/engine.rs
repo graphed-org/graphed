@@ -14,7 +14,21 @@
 
 use std::collections::HashMap;
 
-use egg::{rewrite as rw, EGraph, Id, Rewrite, Runner, Symbol, SymbolLang};
+use egg::{EGraph, Id, Pattern, Rewrite, Runner, Symbol, SymbolLang};
+
+/// The symmetric binary ops in the frontend vocabulary (argument order is semantically
+/// irrelevant). ONE list shared by the egg rule set and the incremental canonicalizer, so the two
+/// reduction paths agree node-for-node. Asymmetric ops (sub/div/lt/...) are deliberately absent.
+pub const SYMMETRIC_OPS: &[&str] = &["add", "mul", "and", "or", "eq", "ne", "maximum", "minimum"];
+
+/// Identity-elimination tokens: an op with this exact token is equivalent to its single input
+/// (`x + 0.0` / `0.0 + x` / `x * 1.0` / `1.0 * x`). Shared with the incremental canonicalizer.
+pub const IDENTITY_TOKENS: &[&str] = &[
+    "op|add|scalar=f0000000000000000;side=sr",
+    "op|add|scalar=f0000000000000000;side=sl",
+    "op|mul|scalar=f3ff0000000000000;side=sr",
+    "op|mul|scalar=f3ff0000000000000;side=sl",
+];
 
 /// An egg-free node view: an operator `token`, whether it is a boundary, and input indices.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -50,16 +64,21 @@ pub struct EggEngine {
 
 impl Default for EggEngine {
     fn default() -> Self {
-        // Only provably-sound rewrites (commutativity of +/*, additive/multiplicative identities).
-        // Domain-dependent rules (mask-fusion, field-collapse) are intentionally excluded.
-        let rules = vec![
-            rw!("commute-add"; "(op|add ?a ?b)" => "(op|add ?b ?a)"),
-            rw!("commute-mul"; "(op|mul ?a ?b)" => "(op|mul ?b ?a)"),
-            rw!("add-zero-r"; "(op|add|scalar=f0000000000000000;side=sr ?x)" => "?x"),
-            rw!("add-zero-l"; "(op|add|scalar=f0000000000000000;side=sl ?x)" => "?x"),
-            rw!("mul-one-r"; "(op|mul|scalar=f3ff0000000000000;side=sr ?x)" => "?x"),
-            rw!("mul-one-l"; "(op|mul|scalar=f3ff0000000000000;side=sl ?x)" => "?x"),
-        ];
+        // Only provably-sound rewrites: commutativity of every symmetric op in the vocabulary, and
+        // the additive/multiplicative identities. Domain-dependent rules (mask-fusion,
+        // field-collapse) are intentionally excluded. Generated from the shared SYMMETRIC_OPS /
+        // IDENTITY_TOKENS constants so the incremental canonicalizer provably uses the same rules.
+        let mut rules: Vec<Rewrite<SymbolLang, ()>> = Vec::new();
+        for op in SYMMETRIC_OPS {
+            let lhs: Pattern<SymbolLang> = format!("(op|{op} ?a ?b)").parse().unwrap();
+            let rhs: Pattern<SymbolLang> = format!("(op|{op} ?b ?a)").parse().unwrap();
+            rules.push(Rewrite::new(format!("commute-{op}"), lhs, rhs).unwrap());
+        }
+        for (i, tok) in IDENTITY_TOKENS.iter().enumerate() {
+            let lhs: Pattern<SymbolLang> = format!("({tok} ?x)").parse().unwrap();
+            let rhs: Pattern<SymbolLang> = "?x".parse().unwrap();
+            rules.push(Rewrite::new(format!("identity-{i}"), lhs, rhs).unwrap());
+        }
         EggEngine {
             rules,
             iter_limit: 12,

@@ -36,6 +36,9 @@ from .graphed_core import (
     GraphStore as GraphStore,
 )
 from .graphed_core import (
+    IncrementalReducer as IncrementalReducer,
+)
+from .graphed_core import (
     Params as Params,
 )
 from .graphed_core import (

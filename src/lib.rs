@@ -14,10 +14,20 @@ use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyDict};
 
-use crate::node::{NodeId, PayloadDescriptor};
-use crate::optimizer::{EggEngine, ReductionReport};
+use std::sync::Mutex;
+
+use crate::node::{parse_op_token, NodeId, PayloadDescriptor};
+use crate::optimizer::{EggEngine, FusionMode, IncrementalReducer, ReductionReport};
 use crate::param::{ParamMap, ParamValue};
 use crate::store::{BadNodeId, GraphStore};
+
+fn fusion_mode(maximal_fusion: bool) -> FusionMode {
+    if maximal_fusion {
+        FusionMode::Maximal
+    } else {
+        FusionMode::SingleUse
+    }
+}
 
 fn map_err(e: BadNodeId) -> PyErr {
     PyValueError::new_err(e.to_string())
@@ -263,6 +273,33 @@ impl PyGraphStore {
                     d.set_item("name", "")?;
                     d.set_item("params", PyDict::new(py))?;
                     d.set_item("n_members", members.len() as u64)?;
+                    // the fused op-DAG, decoded to executable (name, params) pairs — what lets an
+                    // executor evaluate the REDUCED IR directly (one dispatch per fused op, no
+                    // re-recording). Each member input is ("input", slot) or ("member", index).
+                    let mut ms = Vec::with_capacity(members.len());
+                    for m in members {
+                        let (kind, name, params) = parse_op_token(&m.token).ok_or_else(|| {
+                            PyValueError::new_err(format!(
+                                "unparseable stage member token {:?}",
+                                m.token
+                            ))
+                        })?;
+                        let md = PyDict::new(py);
+                        md.set_item("kind", kind)?;
+                        md.set_item("name", name)?;
+                        md.set_item("params", params_to_py(py, &params)?)?;
+                        let refs: Vec<(&str, usize)> = m
+                            .inputs
+                            .iter()
+                            .map(|r| match r {
+                                node::StageRef::Input(i) => ("input", *i),
+                                node::StageRef::Member(i) => ("member", *i),
+                            })
+                            .collect();
+                        md.set_item("inputs", refs)?;
+                        ms.push(md);
+                    }
+                    d.set_item("members", ms)?;
                 }
             }
             out.push(d);
@@ -270,14 +307,28 @@ impl PyGraphStore {
         Ok(out)
     }
 
+    /// The marked output node ids, in mark order (what an IR evaluator returns, in order).
+    fn outputs(&self) -> Vec<NodeId> {
+        self.store.outputs()
+    }
+
     /// Reduce via the M4 optimizer (DCE + CSE + equality-saturation stage fusion behind
-    /// RewriteEngine). Returns the reduced store and a report dict.
-    fn reduce(&self) -> (PyGraphStore, std::collections::HashMap<String, usize>) {
-        let (reduced, report) = self.store.reduce(&EggEngine::default());
+    /// RewriteEngine). Returns the reduced store and a report dict. `maximal_fusion=True` opts in
+    /// to fusing fan-out ops whose consumers all land in one stage (the default single-use rule is
+    /// pinned by the frozen M4 suite).
+    #[pyo3(signature = (*, maximal_fusion=false))]
+    fn reduce(
+        &self,
+        maximal_fusion: bool,
+    ) -> (PyGraphStore, std::collections::HashMap<String, usize>) {
+        let (reduced, report) = self
+            .store
+            .reduce_with(&EggEngine::default(), fusion_mode(maximal_fusion));
         (PyGraphStore { store: reduced }, report_to_map(&report))
     }
 
-    /// Incremental reduction (egg e-graphs are additive; reduction re-runs cheaply as you build).
+    /// One-shot incremental reduction of the current graph (same result as `reduce`). For genuine
+    /// step-by-step reduction while building, use `IncrementalReducer`.
     fn reduce_incremental(&self) -> (PyGraphStore, std::collections::HashMap<String, usize>) {
         let (reduced, report) = self.store.reduce_incremental(&EggEngine::default());
         (PyGraphStore { store: reduced }, report_to_map(&report))
@@ -331,6 +382,82 @@ fn report_to_map(r: &ReductionReport) -> std::collections::HashMap<String, usize
     .collect()
 }
 
+/// Genuinely incremental reduction (plan §A.1): feed it a store as the graph is being built; each
+/// `step` canonicalizes ONLY the nodes recorded since the last step (identity elimination,
+/// commutativity dedup, hash-consing — the same sound rules the EggEngine runs), so a concise
+/// canonical form is maintained while building and `finalize` does one linear pass instead of a
+/// whole-history optimization. `total_work()` counts nodes processed across all steps — it equals
+/// the node count of the store, no matter how many steps fed it (the incrementality witness).
+#[pyclass(name = "IncrementalReducer", frozen)]
+struct PyIncrementalReducer {
+    inner: Mutex<IncrementalReducer>,
+}
+
+#[pymethods]
+impl PyIncrementalReducer {
+    #[new]
+    fn new() -> Self {
+        PyIncrementalReducer {
+            inner: Mutex::new(IncrementalReducer::new()),
+        }
+    }
+
+    /// Consume the nodes recorded in `store` since the last step. Returns how many were processed
+    /// (the delta size). The reducer must always be fed the same store.
+    fn step(&self, store: &PyGraphStore) -> PyResult<usize> {
+        let mut r = self.inner.lock().expect("incremental reducer poisoned");
+        let delta = store.store.snapshot_from(r.watermark());
+        r.step(&delta).map_err(map_err)
+    }
+
+    /// How many of the store's nodes have been consumed so far.
+    fn watermark(&self) -> usize {
+        self.inner
+            .lock()
+            .expect("incremental reducer poisoned")
+            .watermark()
+    }
+
+    /// Cumulative nodes processed across all steps (== watermark: each node touched once).
+    fn total_work(&self) -> usize {
+        self.inner
+            .lock()
+            .expect("incremental reducer poisoned")
+            .total_work()
+    }
+
+    /// Size of the maintained canonical form.
+    fn canonical_count(&self) -> usize {
+        self.inner
+            .lock()
+            .expect("incremental reducer poisoned")
+            .canonical_count()
+    }
+
+    /// Finish: consume any remaining delta, then reduce the maintained canonical form against the
+    /// store's marked outputs. Returns the reduced store + report, exactly like
+    /// `GraphStore.reduce`.
+    #[pyo3(signature = (store, *, maximal_fusion=false))]
+    fn finalize(
+        &self,
+        store: &PyGraphStore,
+        maximal_fusion: bool,
+    ) -> PyResult<(PyGraphStore, std::collections::HashMap<String, usize>)> {
+        let mut r = self.inner.lock().expect("incremental reducer poisoned");
+        let delta = store.store.snapshot_from(r.watermark());
+        r.step(&delta).map_err(map_err)?;
+        let red = r
+            .finalize(
+                &store.store.outputs(),
+                &EggEngine::default(),
+                fusion_mode(maximal_fusion),
+            )
+            .map_err(map_err)?;
+        let (reduced, report) = GraphStore::from_reduced(red);
+        Ok((PyGraphStore { store: reduced }, report_to_map(&report)))
+    }
+}
+
 #[pyfunction]
 fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")
@@ -340,6 +467,7 @@ fn version() -> &'static str {
 fn graphed_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyGraphStore>()?;
     m.add_class::<PyPayloadDescriptor>()?;
+    m.add_class::<PyIncrementalReducer>()?;
     m.add_function(wrap_pyfunction!(version, m)?)?;
     Ok(())
 }
