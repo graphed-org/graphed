@@ -135,14 +135,23 @@ def _fields(params: Mapping[str, Any]) -> list[str]:
     return [f for f in str(raw).split(",") if f]
 
 
-def apply(op: str, operands: Sequence[Any], params: Mapping[str, Any]) -> Any:
+def apply(
+    op: str, operands: Sequence[Any], params: Mapping[str, Any], behavior: Mapping[str, Any] | None = None
+) -> Any:
     if op in _UNARY:
         return _UNARY[op](operands[0])
     if op in _BINARY:
         a, b = _scalar_operands(operands, params)
         return _BINARY[op](a, b)
     if op == "field":
-        return operands[0][params["field"]]
+        x = operands[0]
+        name = str(params["field"])
+        if name in getattr(x, "fields", []):
+            return x[name]
+        # M18: not a record field -> a behavior property (vector's .pt/.mass, the coffea
+        # pattern); works on the typetracer and real arrays alike when the array carries the
+        # behavior. An unknown attribute raises here -> a record-time GraphedTypeError.
+        return getattr(x, name)
     if op in ("getitem", "filter"):
         return operands[0][operands[1]]
     if op == "ak.num":
@@ -201,6 +210,15 @@ def apply(op: str, operands: Sequence[Any], params: Mapping[str, Any]) -> Any:
         return ak.ones_like(operands[0], dtype=_dtype(params))
     if op == "ak.values_astype":
         return ak.values_astype(operands[0], _dtype(params))
+    if op == "ak.with_name":
+        named = ak.with_name(operands[0], str(params["name"]))
+        if behavior:
+            return ak.Array(named.layout, behavior=dict(behavior))
+        return named
+    if op == "ak.with_parameter":
+        return ak.with_parameter(operands[0], str(params["key"]), params["value"])
+    if op == "ak.without_parameters":
+        return ak.without_parameters(operands[0])
     if op == "ak.sort":
         return ak.sort(
             operands[0], axis=int(params.get("axis", 1)), ascending=bool(params.get("ascending", True))

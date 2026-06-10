@@ -41,16 +41,21 @@ _EXTERNAL = frozenset({"map", "correction", "onnx", "external"})
 
 
 class AwkwardBackend:
+    def __init__(self, behavior: Mapping[str, object] | None = None) -> None:
+        # M18: a registered behavior dict (e.g. vector's) makes behavior PROPERTIES work through
+        # plain attribute access — on the typetracer at record time and on real arrays in eval.
+        self._behavior = dict(behavior) if behavior else None
+
     def op_form(self, op: str, inputs: Sequence[AwkwardForm], params: Mapping[str, object]) -> AwkwardForm:
         if op in _EXTERNAL:
             # Opaque/external op: output form is not derivable from inputs. Approximate it by the
             # first input's form (corrections/inference are ~shape-preserving for these fixtures).
             return inputs[0]
         operands = [f.tt for f in inputs]
-        return AwkwardForm(apply(op, operands, params))
+        return AwkwardForm(apply(op, operands, params, behavior=self._behavior))
 
     def eval_stage(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> object:
-        return apply(op, inputs, params)
+        return apply(op, inputs, params, behavior=self._behavior)
 
     def boundary_ops(self) -> frozenset[str]:
         return _BOUNDARY

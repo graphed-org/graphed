@@ -299,3 +299,18 @@ def to_list(arr: Array) -> list[object]:
 
     out: list[object] = _ak.to_list(arr.session.materialize(arr))
     return out
+
+
+# ---- M18: behaviors (dask-awkward parity plan P2) ---------------------------------------------
+def with_name(arr: Array, name: str) -> Array:
+    """Name the records; with a behavior dict registered on the backend, behavior properties
+    (vector's .pt/.mass) then work through plain attribute access."""
+    return arr.session.record_op("ak.with_name", [arr], {"name": name})
+
+
+def with_parameter(arr: Array, key: str, value: str | int | float | bool) -> Array:
+    return arr.session.record_op("ak.with_parameter", [arr], {"key": key, "value": value})
+
+
+def without_parameters(arr: Array) -> Array:
+    return arr.session.record_op("ak.without_parameters", [arr])
