@@ -13,3 +13,9 @@
   `apply_gufunc` lands in graphed-numpy's M14. P3.9 and P4 stay Phase 2 (user decision).
 - gates: frozen_tests 164/164 PASS · coverage 94% (>=90, branch) · ruff+format clean ·
   mypy --strict clean · determinism green · sphinx -W clean.
+
+## Iteration 1 — IMPLEMENTING — 2026-06-10
+
+- Gap exposed by graphed-numpy's gufunc work: `record_external` did not wrap backend `op_form`
+  errors into provenance-located GraphedTypeError the way `record_op` does, so record-time
+  binding errors surfaced raw. Fixed (same wrap as record_op); all gates re-run green.
