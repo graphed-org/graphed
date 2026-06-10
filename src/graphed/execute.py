@@ -68,8 +68,6 @@ def compile_ir(
     if optimize and not outputs:
         raise ValueError("compile_ir(optimize=True) needs at least one output Array")
     ids = [arr.node_id for arr in outputs]
-    for arr in outputs:
-        session._store.mark_output(arr.node_id)  # legacy side effect (see serialized_ir)
     if not optimize:
         blob = bytes(session._store.serialize(outputs=ids))
     elif session._reducer is not None:

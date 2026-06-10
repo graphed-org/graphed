@@ -1,8 +1,8 @@
 """M22 (graphed): compiles are output-scoped — the compile_ir accumulation footgun is FIXED.
 
 `compile_ir(session, expr)` and `Session.serialized_ir(expr)` produce artifacts that carry
-EXACTLY the requested outputs (the legacy mark side effect is retained for the frozen m8 pins
-but is never read by the compile path), so compiling two different
+EXACTLY the requested outputs and write NO session state (freeze-M22-1: the `mark_output`
+mutator is removed outright), so compiling two different
 expressions from one session yields two independent single-output artifacts — each byte-identical
 to what a fresh session would produce (compilation is session-history-independent). Deliberate
 multi-output requests (`compile_ir(s, a, b)`) still carry both. Holds on the one-shot, the

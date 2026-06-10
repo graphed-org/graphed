@@ -39,11 +39,14 @@ def test_serialized_ir_is_deterministic() -> None:
 
 
 def test_optimized_ir_keeps_the_output_and_is_the_reduced_graph() -> None:
+    # [freeze-M22-1, user-authorized respin: serializing no longer writes output marks into the
+    # store — the reference is the store reduced FOR the same request]
     s, result = _record()
     optimized = s.serialized_ir(result, optimize=True)
-    expected = s._store.reduce()[0].serialize()  # same store (outputs now marked) reduced
+    expected = s._store.reduce(outputs=[result.node_id])[0].serialize()
     assert optimized == expected
     assert graphed_core.GraphStore.deserialize(optimized).node_count() > 0  # not DCE'd to nothing
+    assert s._store.outputs() == []  # and serializing left NO state behind
 
 
 def test_optimize_without_an_output_is_rejected() -> None:
