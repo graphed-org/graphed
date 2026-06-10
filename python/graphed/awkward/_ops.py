@@ -154,6 +154,10 @@ def apply(
         return getattr(x, name)
     if op in ("getitem", "filter"):
         return operands[0][operands[1]]
+    if op == "slice":  # the M13 common axis-0 slice (start/stop/step present-only)
+        return operands[0][slice(params.get("start"), params.get("stop"), params.get("step"))]
+    if op == "index":  # the M13 common integer index
+        return operands[0][int(params["i"])]
     if op == "ak.num":
         return ak.num(operands[0], axis=int(params.get("axis", 1)))
     if op in ("ak.min", "ak.max", "ak.ptp") and _axis(params) is None:

@@ -314,3 +314,29 @@ def with_parameter(arr: Array, key: str, value: str | int | float | bool) -> Arr
 
 def without_parameters(arr: Array) -> Array:
     return arr.session.record_op("ak.without_parameters", [arr])
+
+
+# ---- M19: introspection + peeking conveniences (parity plan P3.8) ----------------------------
+def fields(arr: Array) -> list[str]:
+    """Record-field names from the FORM (pure metadata: records nothing)."""
+    return list(arr.session.form(arr).tt.fields)  # type: ignore[attr-defined]
+
+
+def type_of(arr: Array) -> str:
+    """The awkward type string from the FORM (pure metadata: records nothing)."""
+    return str(arr.session.form(arr).describe())
+
+
+def backend_of(arr: Array) -> str:
+    """The session's backend class name (pure metadata: records nothing)."""
+    return type(arr.session.backend).__name__
+
+
+def head(arr: Array, n: int = 5) -> object:
+    """EAGER peek at the first ``n`` rows (the common slice op + reference materialize)."""
+    return arr.session.materialize(arr[:n])
+
+
+def sample(arr: Array, *, factor: int) -> object:
+    """EAGER peek at every ``factor``-th row."""
+    return arr.session.materialize(arr[::factor])
