@@ -339,7 +339,23 @@ class Array:
             return self._session.record_op("getitem", [self, key])
         if isinstance(key, str):
             return self._session.record_op("field", [self], {"field": key})
-        raise TypeError(f"unsupported index {key!r}; use an Array mask/index or a field name")
+        # M13: slices and integer indexing are common to both backend idioms. Both consume or
+        # restructure the partitioned axis, so they record BOUNDARY reduction nodes (M12 rule);
+        # only the fields the user gave are recorded, so equal slices intern.
+        if isinstance(key, slice):
+            params: dict[str, ParamValue] = {}
+            for name, value in (("start", key.start), ("stop", key.stop), ("step", key.step)):
+                if value is None:
+                    continue
+                if isinstance(value, bool) or not isinstance(value, int):
+                    raise TypeError(f"slice fields must be ints, got {value!r}")
+                params[name] = value
+            return self._session.record_op("slice", [self], params, reduction=True)
+        if not isinstance(key, bool) and isinstance(key, int):
+            return self._session.record_op("index", [self], {"i": key}, reduction=True)
+        raise TypeError(
+            f"unsupported index {key!r}; use an Array mask/index, a slice, an int, or a field name"
+        )
 
     # ---- M2 methods (kept) -----------------------------------------------------
     def filter(self, mask: Array) -> Array:
