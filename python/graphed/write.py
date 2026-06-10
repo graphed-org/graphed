@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable, Hashable, Mapping, Sequence
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 from graphed_core import Partition
 from graphed_core.execution import ExecResult, Plan, Task, WorkerResources
@@ -104,3 +104,21 @@ def step_of(entry_start: int, entry_stop: int, n_entries: int, steps_per_file: i
 def part_path(destination: str, index: int, *, prefix: str = "part", suffix: str) -> str:
     """Deterministic part naming; the SUFFIX is the specialization's (".parquet", ".root", ...)."""
     return os.path.join(destination, f"{prefix}-{index:05d}{suffix}")
+
+
+# ---- the partitioned-source protocol (read side of the base) -------------------------------------
+@runtime_checkable
+class PartitionedSource(Protocol):
+    """A source DATA object that can be read partition by partition — the read-side counterpart of
+    the write plan. Writers (and any partition-wise consumer) dispatch on this protocol instead of
+    materializing the whole dataset through the source's lazy loader: ``partitions`` describes the
+    dataset's partitioning (BLIND preferred — R7.9: no file opened at planning time) and
+    ``read_partition`` reads exactly one partition, restricted to ``columns`` (``None`` = the
+    source's own selection), with ``resources.open_once`` available for the file-locality
+    directive. Implemented by the parquet dataset loader and the ROOT reader integration's source."""
+
+    def partitions(self, steps_per_file: int) -> tuple[Partition, ...]: ...
+
+    def read_partition(
+        self, partition: Partition, columns: Sequence[str] | None, resources: WorkerResources
+    ) -> object: ...
