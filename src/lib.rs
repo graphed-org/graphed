@@ -218,9 +218,28 @@ impl PyGraphStore {
     }
 
     /// Serialize the IR to the canonical, versioned, byte-identical durable form (plan M8 / A.3.1:
-    /// the serializable IR — not cloudpickle — is the canonical durable representation).
-    fn serialize<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
-        PyBytes::new(py, &serialize::serialize(&self.store))
+    /// the serializable IR — not cloudpickle — is the canonical durable representation). With
+    /// `outputs=` the bytes flag EXACTLY that set, ignoring stored marks (M22: outputs are a
+    /// property of the compile request); the default keeps the marks-based behavior.
+    #[pyo3(signature = (outputs=None))]
+    fn serialize<'py>(
+        &self,
+        py: Python<'py>,
+        outputs: Option<Vec<NodeId>>,
+    ) -> PyResult<Bound<'py, PyBytes>> {
+        match outputs {
+            None => Ok(PyBytes::new(py, &serialize::serialize(&self.store))),
+            Some(outs) => {
+                let n = self.store.node_count() as NodeId;
+                if let Some(&bad) = outs.iter().find(|&&o| o >= n) {
+                    return Err(map_err(BadNodeId(bad)));
+                }
+                Ok(PyBytes::new(
+                    py,
+                    &serialize::serialize_with(&self.store, &outs),
+                ))
+            }
+        }
     }
 
     /// Rebuild a store from canonical bytes. A round trip reproduces the same node ids, so
@@ -316,15 +335,24 @@ impl PyGraphStore {
     /// RewriteEngine). Returns the reduced store and a report dict. `maximal_fusion=True` opts in
     /// to fusing fan-out ops whose consumers all land in one stage (the default single-use rule is
     /// pinned by the frozen M4 suite).
-    #[pyo3(signature = (*, maximal_fusion=false))]
+    #[pyo3(signature = (*, maximal_fusion=false, outputs=None))]
     fn reduce(
         &self,
         maximal_fusion: bool,
-    ) -> (PyGraphStore, std::collections::HashMap<String, usize>) {
-        let (reduced, report) = self
-            .store
-            .reduce_with(&EggEngine::default(), fusion_mode(maximal_fusion));
-        (PyGraphStore { store: reduced }, report_to_map(&report))
+        outputs: Option<Vec<NodeId>>,
+    ) -> PyResult<(PyGraphStore, std::collections::HashMap<String, usize>)> {
+        let (reduced, report) = match outputs {
+            // M22: an explicit output set scopes the reduction to the compile request, ignoring
+            // stored marks — compiling is read-only and sequential compiles never cross-talk
+            Some(outs) => self
+                .store
+                .reduce_with_outputs(&outs, &EggEngine::default(), fusion_mode(maximal_fusion))
+                .map_err(map_err)?,
+            None => self
+                .store
+                .reduce_with(&EggEngine::default(), fusion_mode(maximal_fusion)),
+        };
+        Ok((PyGraphStore { store: reduced }, report_to_map(&report)))
     }
 
     /// One-shot incremental reduction of the current graph (same result as `reduce`). For genuine
@@ -435,23 +463,30 @@ impl PyIncrementalReducer {
     }
 
     /// Finish: consume any remaining delta, then reduce the maintained canonical form against the
-    /// store's marked outputs. Returns the reduced store + report, exactly like
-    /// `GraphStore.reduce`.
-    #[pyo3(signature = (store, *, maximal_fusion=false))]
+    /// store's marked outputs — or, with `outputs=`, against EXACTLY that set (M22: stored marks
+    /// ignored). Returns the reduced store + report, exactly like `GraphStore.reduce`.
+    #[pyo3(signature = (store, *, maximal_fusion=false, outputs=None))]
     fn finalize(
         &self,
         store: &PyGraphStore,
         maximal_fusion: bool,
+        outputs: Option<Vec<NodeId>>,
     ) -> PyResult<(PyGraphStore, std::collections::HashMap<String, usize>)> {
+        let outs = match outputs {
+            Some(outs) => {
+                let n = store.store.node_count() as NodeId;
+                if let Some(&bad) = outs.iter().find(|&&o| o >= n) {
+                    return Err(map_err(BadNodeId(bad)));
+                }
+                outs
+            }
+            None => store.store.outputs(),
+        };
         let mut r = self.inner.lock().expect("incremental reducer poisoned");
         let delta = store.store.snapshot_from(r.watermark());
         r.step(&delta).map_err(map_err)?;
         let red = r
-            .finalize(
-                &store.store.outputs(),
-                &EggEngine::default(),
-                fusion_mode(maximal_fusion),
-            )
+            .finalize(&outs, &EggEngine::default(), fusion_mode(maximal_fusion))
             .map_err(map_err)?;
         let (reduced, report) = GraphStore::from_reduced(red);
         Ok((PyGraphStore { store: reduced }, report_to_map(&report)))

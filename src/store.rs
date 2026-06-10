@@ -204,6 +204,26 @@ impl GraphStore {
         GraphStore::from_reduced(optimizer::reduce_with_mode(&nodes, &outputs, engine, mode))
     }
 
+    /// `reduce_with` against an EXPLICIT output set — the compile request's — ignoring stored
+    /// marks entirely (M22: outputs are a property of the compile request, not store state, so
+    /// compiling is a READ-ONLY operation and sequential compiles never cross-talk).
+    pub fn reduce_with_outputs(
+        &self,
+        outputs: &[NodeId],
+        engine: &dyn RewriteEngine,
+        mode: optimizer::FusionMode,
+    ) -> Result<(GraphStore, ReductionReport), BadNodeId> {
+        let nodes = { self.lock().nodes.clone() };
+        for &o in outputs {
+            if o >= nodes.len() as NodeId {
+                return Err(BadNodeId(o));
+            }
+        }
+        Ok(GraphStore::from_reduced(optimizer::reduce_with_mode(
+            &nodes, outputs, engine, mode,
+        )))
+    }
+
     /// One-shot incremental reduction of the current graph — same result as `reduce`. For genuine
     /// step-by-step reduction while building, use `optimizer::IncrementalReducer`, which processes
     /// only the delta per step (and whose work counter proves it).
@@ -282,6 +302,65 @@ mod tests {
         assert_eq!(nan1, nan2, "all NaNs intern to one node");
         assert_ne!(pos, neg, "0.0 and -0.0 are distinct");
         assert_ne!(nan1, pos);
+    }
+
+    #[test]
+    fn output_scoped_reduce_ignores_marks_and_matches_single_mark_store() {
+        use crate::optimizer::EggEngine;
+        let build = || {
+            let s = GraphStore::new();
+            let src = s.add_source("events".into(), pm(vec![]));
+            let a = s.add_op("pt".into(), vec![src], pm(vec![])).unwrap();
+            let b = s.add_op("eta".into(), vec![src], pm(vec![])).unwrap();
+            (s, a, b)
+        };
+        let (s, a, b) = build();
+        s.mark_output(a).unwrap(); // stale state from an earlier compile
+        let (scoped, _) = s
+            .reduce_with_outputs(
+                &[b],
+                &EggEngine::default(),
+                optimizer::FusionMode::SingleUse,
+            )
+            .unwrap();
+        let (reference, _) = {
+            let (s2, _a2, b2) = build();
+            s2.mark_output(b2).unwrap();
+            (s2.reduce(&EggEngine::default()).0, ())
+        };
+        assert_eq!(
+            crate::serialize::serialize(&scoped),
+            crate::serialize::serialize(&reference),
+            "explicit-outputs reduce is byte-identical to a fresh single-mark store"
+        );
+        assert_eq!(s.outputs(), vec![a], "compiling wrote no store state");
+        // invalid ids are rejected, not silently dropped
+        assert!(s
+            .reduce_with_outputs(
+                &[10_000],
+                &EggEngine::default(),
+                optimizer::FusionMode::SingleUse
+            )
+            .is_err());
+    }
+
+    #[test]
+    fn serialize_with_scopes_the_output_flags() {
+        let s = GraphStore::new();
+        let src = s.add_source("events".into(), pm(vec![]));
+        let a = s.add_op("pt".into(), vec![src], pm(vec![])).unwrap();
+        let b = s.add_op("eta".into(), vec![src], pm(vec![])).unwrap();
+        s.mark_output(a).unwrap();
+        let scoped = crate::serialize::deserialize(&crate::serialize::serialize_with(&s, &[b]))
+            .expect("round trip");
+        assert_eq!(scoped.outputs(), vec![b], "exactly the requested set");
+        let legacy =
+            crate::serialize::deserialize(&crate::serialize::serialize(&s)).expect("round trip");
+        assert_eq!(
+            legacy.outputs(),
+            vec![a],
+            "the default stays the marks path"
+        );
     }
 
     #[test]

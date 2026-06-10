@@ -8,7 +8,7 @@
 //! and a round trip rebuilds a structurally identical store (same node count, same `to_dot`, same
 //! bytes).
 
-use crate::node::{NodeKey, PayloadDescriptor, StageOp, StageRef};
+use crate::node::{NodeId, NodeKey, PayloadDescriptor, StageOp, StageRef};
 use crate::param::{ParamMap, ParamValue};
 use crate::store::GraphStore;
 
@@ -103,9 +103,17 @@ fn put_inputs(out: &mut Vec<u8>, inputs: &[u64]) {
     }
 }
 
-/// Serialize the store's nodes (in id order) + outputs into the canonical byte form.
+/// Serialize the store's nodes (in id order) + its MARKED outputs into the canonical byte form.
 pub fn serialize(store: &GraphStore) -> Vec<u8> {
-    let (nodes, outputs) = store.snapshot();
+    let outputs = store.outputs();
+    serialize_with(store, &outputs)
+}
+
+/// `serialize` against an EXPLICIT output set (M22): the bytes flag exactly the requested
+/// outputs, ignoring stored marks. The byte FORMAT is identical — `serialize` is this with the
+/// marked set.
+pub fn serialize_with(store: &GraphStore, outputs: &[NodeId]) -> Vec<u8> {
+    let (nodes, _) = store.snapshot();
     let mut out = Vec::new();
     out.extend_from_slice(MAGIC);
     put_u32(&mut out, nodes.len() as u32);
@@ -181,7 +189,7 @@ pub fn serialize(store: &GraphStore) -> Vec<u8> {
         }
     }
     put_u32(&mut out, outputs.len() as u32);
-    for &o in &outputs {
+    for &o in outputs {
         put_u64(&mut out, o);
     }
     out
