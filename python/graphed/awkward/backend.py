@@ -90,20 +90,5 @@ def from_awkward(session: Session, name: str, array: object, **descriptor: objec
     return session.source(name, form=AwkwardForm(_typetracer(real)), data=real)
 
 
-def from_parquet(session: Session, name: str, path: str) -> Any:
-    """Create a source from a parquet file reading **only its metadata** for the form (plan M3)."""
-    form = ak.metadata_from_parquet(path)["form"]
-    content = form.length_zero_array(highlevel=False)
-    tt = ak.Array(content.to_typetracer(forget_length=True))
-    loader = _ParquetLoader(path)
-    return session.source(name, form=AwkwardForm(tt), data=loader)
-
-
-@dataclass
-class _ParquetLoader:
-    """Lazy data loader so source creation never reads event data (only metadata)."""
-
-    path: str
-
-    def __call__(self) -> ak.Array:
-        return ak.from_parquet(self.path)
+# from_parquet moved to io.py (M15): the multi-file, blind-partition specialization of the
+# graphed.parquet base; the M3 single-file shape is a special case of it.

@@ -8,9 +8,10 @@ nodes with content-hashed `PayloadDescriptor`s. Reuse awkward/correctionlib/ONNX
 
 from __future__ import annotations
 
-from . import functions, payloads
+from . import functions, io, payloads
 from . import functions as gak
-from .backend import AwkwardBackend, AwkwardForm, from_awkward, from_parquet
+from .backend import AwkwardBackend, AwkwardForm, from_awkward
+from .io import from_parquet, read_parquet_partition, to_parquet
 from .projection import project, project_buffers
 
 __all__ = [
@@ -20,9 +21,12 @@ __all__ = [
     "from_parquet",
     "functions",
     "gak",
+    "io",
     "payloads",
     "project",
     "project_buffers",
+    "read_parquet_partition",
+    "to_parquet",
 ]
 
 __version__ = "0.0.1"
