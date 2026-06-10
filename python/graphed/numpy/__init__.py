@@ -154,6 +154,148 @@ _LIKE: dict[str, Any] = {
     "full_like": np.full_like,
 }
 
+# M13 manipulation/combination ops (dask.array parity P2). Partition-local ones are fusible;
+# slice/index/take(axis 0)/concatenate(axis 0) and the whole-axis analytics are boundaries —
+# the RECORDING side (graphed Array / NumpyArray) decides that; here is evaluation + inference.
+_MANIP_OPS = frozenset(
+    {
+        "slice",
+        "index",
+        "getitem",
+        "subscript",
+        "reshape",
+        "ravel",
+        "squeeze",
+        "expand_dims",
+        "swapaxes",
+        "transpose",
+        "astype",
+        "clip",
+        "round",
+        "take",
+        "where",
+        "concatenate",
+        "diff",
+        "isin",
+        "searchsorted",
+        "unique",
+        "bincount",
+        "histogram",
+        "histogram2d",
+        "histogramdd",
+    }
+)
+
+# analytics whose meta result is already concrete (the partitioned axis is consumed)
+_CONCRETE_AGGS = frozenset({"histogram", "histogram2d", "histogramdd"})
+
+
+def _decode_dims(spec: object) -> tuple[int, ...]:
+    return tuple(int(p) for p in str(spec).split(",")) if str(spec) else ()
+
+
+def _decode_subscript(spec: object) -> tuple[Any, ...]:
+    out: list[Any] = []
+    for part in str(spec).split(","):
+        if ":" in part:
+            bits = part.split(":")
+            out.append(slice(*(int(b) if b else None for b in bits)))
+        else:
+            out.append(int(part))
+    return tuple(out)
+
+
+def _manip_eval(op: str, xs: Sequence[Any], params: Mapping[str, object]) -> Any:
+    """Evaluate one M13 op — shared by record-time inference (on metas) and eval_stage."""
+    if op == "slice":
+        key = slice(*(params.get(k) for k in ("start", "stop", "step")))
+        return np.asarray(xs[0])[key]
+    if op == "index":
+        return np.asarray(xs[0])[int(params["i"])]  # type: ignore[call-overload]
+    if op == "getitem":
+        return np.asarray(xs[0])[np.asarray(xs[1])]
+    if op == "subscript":
+        return np.asarray(xs[0])[_decode_subscript(params["spec"])]
+    if op == "reshape":
+        return np.reshape(xs[0], _decode_dims(params["shape"]))
+    if op == "ravel":
+        return np.ravel(xs[0])
+    if op == "squeeze":
+        return np.squeeze(xs[0], axis=int(params["axis"]))  # type: ignore[call-overload]
+    if op == "expand_dims":
+        return np.expand_dims(xs[0], int(params["axis"]))  # type: ignore[call-overload]
+    if op == "swapaxes":
+        return np.swapaxes(xs[0], int(params["a1"]), int(params["a2"]))  # type: ignore[call-overload]
+    if op == "transpose":
+        return np.transpose(xs[0], _decode_dims(params["axes"]) if "axes" in params else None)
+    if op == "astype":
+        return np.asarray(xs[0]).astype(np.dtype(str(params["dtype"])))
+    if op == "clip":
+        return np.clip(xs[0], params.get("lo"), params.get("hi"))
+    if op == "round":
+        return np.round(xs[0], int(params.get("decimals", 0)))  # type: ignore[call-overload]
+    if op == "take":
+        axis = params.get("axis")
+        return np.take(xs[0], np.asarray(xs[1]).astype(np.intp), axis=None if axis is None else int(axis))  # type: ignore[call-overload]
+    if op == "where":
+        rest = list(xs[1:])
+        xval = params["x_scalar"] if "x_scalar" in params else rest.pop(0)
+        yval = params["y_scalar"] if "y_scalar" in params else rest.pop(0)
+        return np.where(np.asarray(xs[0]), xval, yval)
+    if op == "concatenate":
+        return np.concatenate([np.asarray(x) for x in xs], axis=int(params.get("axis", 0)))  # type: ignore[call-overload]
+    if op == "diff":
+        return np.diff(xs[0], n=int(params.get("n", 1)), axis=int(params.get("axis", -1)))  # type: ignore[call-overload]
+    if op == "isin":
+        return np.isin(xs[0], xs[1])
+    if op == "searchsorted":
+        return np.searchsorted(xs[0], xs[1], side=str(params.get("side", "left")))  # type: ignore[call-overload]
+    if op == "unique":
+        return np.unique(xs[0])
+    if op == "bincount":
+        return np.bincount(np.asarray(xs[0]))
+    if op == "histogram":
+        rng = (float(params["lo"]), float(params["hi"]))  # type: ignore[arg-type]
+        return np.histogram(xs[0], bins=int(params["bins"]), range=rng)[0]  # type: ignore[call-overload]
+    if op == "histogram2d":
+        rng2 = [
+            (float(params["xlo"]), float(params["xhi"])),  # type: ignore[arg-type]
+            (float(params["ylo"]), float(params["yhi"])),  # type: ignore[arg-type]
+        ]
+        return np.histogram2d(xs[0], xs[1], bins=int(params["bins"]), range=rng2)[0]  # type: ignore[call-overload]
+    if op == "histogramdd":
+        lows = [float(v) for v in str(params["los"]).split(",")]
+        highs = [float(v) for v in str(params["his"]).split(",")]
+        rngs = list(zip(lows, highs, strict=True))
+        return np.histogramdd(xs[0], bins=int(params["bins"]), range=rngs)[0]  # type: ignore[call-overload]
+    raise TypeError(f"unsupported op {op!r}")
+
+
+def _check_manip_geometry(op: str, forms: Sequence[NumpyForm], params: Mapping[str, object]) -> None:
+    """The axis-0-partitioned MVP's geometry rules, enforced at record time (Phase 2 lifts them)."""
+    if op == "reshape":
+        dims = _decode_dims(params["shape"])
+        if not dims or dims[0] != -1 or any(d <= 0 for d in dims[1:]):
+            raise TypeError(
+                "reshape in the axis-0-partitioned MVP needs shape (-1, concrete...): the "
+                "partitioned axis must stay leading and its length is unknown at record time"
+            )
+    elif op == "squeeze" and int(params["axis"]) == 0:  # type: ignore[call-overload]
+        raise TypeError("cannot squeeze the partitioned axis 0")
+    elif op == "expand_dims" and int(params["axis"]) == 0:  # type: ignore[call-overload]
+        raise TypeError("cannot displace the partitioned axis 0 (expand an inner axis instead)")
+    elif op == "swapaxes" and 0 in (int(params["a1"]), int(params["a2"])):  # type: ignore[call-overload]
+        raise TypeError("cannot move the partitioned axis 0 (swap inner axes instead)")
+    elif op == "transpose":
+        if "axes" in params:
+            if _decode_dims(params["axes"])[0] != 0:
+                raise TypeError("transpose must keep the partitioned axis 0 in place")
+        elif forms[0].ndim > 1:
+            raise TypeError(
+                "transpose without axes reverses them, displacing the partitioned axis 0; "
+                "pass explicit axes keeping axis 0 first"
+            )
+
 
 def _reduce_kwargs(params: Mapping[str, object]) -> dict[str, Any]:
     kwargs: dict[str, Any] = {}
@@ -200,6 +342,22 @@ class NumpyBackend:
             # scans and inner-axis reductions preserve the partitioned axis; axis None/0 consume it
             leading_none = op in _SCANS or (axis is not None and axis != 0)
             return form_from_meta(result, leading_none)
+        if op in _MANIP_OPS:
+            _check_manip_geometry(op, forms, params)
+            if op == "index":  # length-one stand-in; row 0 stands for any row
+                result = _manip_eval(op, [unit_meta(forms[0])], {"i": 0})
+                return form_from_meta(result, False)
+            if op == "take":  # the gathered extent equals the (partitioned) index length
+                _manip_eval(op, [meta(f) for f in forms], params)  # validate evaluability
+                data, _ = forms
+                axis_p = params.get("axis")
+                k = 0 if axis_p is None else int(axis_p)  # type: ignore[call-overload]
+                if axis_p is None:
+                    return NumpyForm(data.dtype, shape=(None,))
+                return NumpyForm(data.dtype, shape=(*data.shape[:k], None, *data.shape[k + 1 :]))
+            result = _manip_eval(op, [meta(f) for f in forms], params)
+            leading_none = op not in _CONCRETE_AGGS
+            return form_from_meta(result, leading_none)
         result = self._apply(op, [meta(f) for f in forms], params)
         leading_none = any(f.shape and f.shape[0] is None for f in forms)
         return form_from_meta(result, leading_none)
@@ -230,6 +388,8 @@ class NumpyBackend:
             return np.asarray(inputs[0])[np.asarray(inputs[1])]
         if op in _REDUCERS or op in _SCANS:
             return (_REDUCERS | _SCANS)[op](np.asarray(inputs[0]), **_reduce_kwargs(params))
+        if op in _MANIP_OPS:
+            return _manip_eval(op, [np.asarray(x) for x in inputs], params)
         return self._apply(op, [np.asarray(x) for x in inputs], params)
 
     def boundary_ops(self) -> frozenset[str]:
