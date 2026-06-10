@@ -32,6 +32,11 @@ class Session:
         # GRAPH IS BUILT — every record steps an IncrementalReducer whose per-step work is the
         # delta, so compile time never pays a whole-history optimization.
         self._reducer = graphed_core.IncrementalReducer() if incremental else None
+        # M11 factorization: the backend may supply its own Array proxy subclass (its idiomatic
+        # user surface — e.g. graphed_numpy.NumpyArray's method/property style). The base Array
+        # stays backend-idiom-neutral; backends without array_type get it unchanged.
+        factory = getattr(backend, "array_type", None)
+        self._array_cls: type[Array] = factory() if callable(factory) else Array
 
     def _step_reducer(self) -> None:
         if self._reducer is not None:
@@ -131,7 +136,7 @@ class Session:
         self._source_names.setdefault(node_id, name)
         self._provenance.setdefault(node_id, capture())
         self._step_reducer()
-        return Array(self, node_id)
+        return self._array_cls(self, node_id)
 
     def record_op(
         self,
@@ -159,7 +164,7 @@ class Session:
         self._ops.setdefault(node_id, (op, params_d, ids))
         self._provenance.setdefault(node_id, prov)
         self._step_reducer()
-        return Array(self, node_id)
+        return self._array_cls(self, node_id)
 
     def record_external(
         self,
@@ -181,7 +186,7 @@ class Session:
         self._externals.setdefault(node_id, (fn, ids))
         self._provenance.setdefault(node_id, prov)
         self._step_reducer()
-        return Array(self, node_id)
+        return self._array_cls(self, node_id)
 
     # ---- generic graph walk (shared by materialize + projection) ----------------
     def walk(

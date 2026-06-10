@@ -17,29 +17,102 @@ if TYPE_CHECKING:
     from .session import Session
 
 # numpy ufunc name -> canonical op name (so np.subtract(a, b) and a - b record the same op).
+# M11 (dask.array parity P0.2): the FULL single-output ufunc tier. Ufunc application is COMMON to
+# both backend idioms (numpy arrays and awkward arrays both accept ufuncs), so it lives here;
+# numpy aliases (degrees/rad2deg, divide/true_divide, ...) map to one canonical name so
+# hash-consing dedups them.
 _UFUNC_TO_OP: dict[str, str] = {
+    # arithmetic
     "add": "add",
     "subtract": "sub",
     "multiply": "mul",
     "true_divide": "div",
     "divide": "div",
+    "floor_divide": "floordiv",
+    "remainder": "mod",
+    "power": "power",
+    "float_power": "float_power",
+    "fmod": "fmod",
+    # comparisons
     "greater": "gt",
     "less": "lt",
     "greater_equal": "ge",
     "less_equal": "le",
     "equal": "eq",
     "not_equal": "ne",
+    # signs / rounding
     "absolute": "abs",
+    "fabs": "fabs",
     "negative": "neg",
+    "positive": "pos",
+    "sign": "sign",
+    "signbit": "signbit",
+    "copysign": "copysign",
+    "floor": "floor",
+    "ceil": "ceil",
+    "trunc": "trunc",
+    "rint": "rint",
+    # exponentials / logs / powers
+    "exp": "exp",
+    "exp2": "exp2",
+    "expm1": "expm1",
+    "log": "log",
+    "log1p": "log1p",
+    "log2": "log2",
+    "log10": "log10",
+    "logaddexp": "logaddexp",
+    "logaddexp2": "logaddexp2",
     "sqrt": "sqrt",
+    "cbrt": "cbrt",
+    "square": "square",
+    "reciprocal": "reciprocal",
+    # trig / hyperbolic
     "cos": "cos",
     "sin": "sin",
+    "tan": "tan",
     "cosh": "cosh",
     "sinh": "sinh",
+    "tanh": "tanh",
+    "arcsin": "arcsin",
+    "arccos": "arccos",
+    "arctan": "arctan",
+    "arctan2": "arctan2",
+    "arcsinh": "arcsinh",
+    "arccosh": "arccosh",
+    "arctanh": "arctanh",
     "hypot": "hypot",
+    "deg2rad": "deg2rad",
+    "rad2deg": "rad2deg",
+    "degrees": "rad2deg",
+    "radians": "deg2rad",
+    # extrema
     "maximum": "maximum",
     "minimum": "minimum",
-    "power": "power",
+    "fmax": "fmax",
+    "fmin": "fmin",
+    # floating-point inspection / manipulation
+    "isnan": "isnan",
+    "isinf": "isinf",
+    "isfinite": "isfinite",
+    "nextafter": "nextafter",
+    "spacing": "spacing",
+    "ldexp": "ldexp",
+    "heaviside": "heaviside",
+    "conjugate": "conj",
+    # integer / bitwise
+    "gcd": "gcd",
+    "lcm": "lcm",
+    "bitwise_and": "and",
+    "bitwise_or": "or",
+    "bitwise_xor": "xor",
+    "invert": "invert",
+    "left_shift": "lshift",
+    "right_shift": "rshift",
+    # logical
+    "logical_and": "logical_and",
+    "logical_or": "logical_or",
+    "logical_xor": "logical_xor",
+    "logical_not": "logical_not",
 }
 
 
@@ -123,6 +196,15 @@ class Array:
     def __pow__(self, other: object) -> Array:
         return self._binary("power", other)
 
+    def __rpow__(self, other: object) -> Array:
+        return self._binary("power", other, reflected=True)
+
+    def __floordiv__(self, other: object) -> Array:
+        return self._binary("floordiv", other)
+
+    def __rfloordiv__(self, other: object) -> Array:
+        return self._binary("floordiv", other, reflected=True)
+
     def __mod__(self, other: object) -> Array:
         return self._binary("mod", other)
 
@@ -134,6 +216,9 @@ class Array:
 
     def __neg__(self) -> Array:
         return self._unary("neg")
+
+    def __pos__(self) -> Array:
+        return self._unary("pos")
 
     # comparisons (deferred -> Array, not bool)
     def __gt__(self, other: object) -> Array:
@@ -156,15 +241,53 @@ class Array:
 
     __hash__ = None  # type: ignore[assignment]  # deferred __eq__ makes Array unhashable
 
-    # boolean combination of masks
+    # boolean / bitwise combination
     def __and__(self, other: object) -> Array:
         return self._binary("and", other)
+
+    def __rand__(self, other: object) -> Array:
+        return self._binary("and", other, reflected=True)
 
     def __or__(self, other: object) -> Array:
         return self._binary("or", other)
 
+    def __ror__(self, other: object) -> Array:
+        return self._binary("or", other, reflected=True)
+
+    def __xor__(self, other: object) -> Array:
+        return self._binary("xor", other)
+
+    def __rxor__(self, other: object) -> Array:
+        return self._binary("xor", other, reflected=True)
+
+    def __lshift__(self, other: object) -> Array:
+        return self._binary("lshift", other)
+
+    def __rlshift__(self, other: object) -> Array:
+        return self._binary("lshift", other, reflected=True)
+
+    def __rshift__(self, other: object) -> Array:
+        return self._binary("rshift", other)
+
+    def __rrshift__(self, other: object) -> Array:
+        return self._binary("rshift", other, reflected=True)
+
     def __invert__(self) -> Array:
         return self._unary("invert")
+
+    # ---- shared backend-proxy infrastructure (M11/M12, dask.array parity P0/P1) -
+    # graphed.Array carries only what is COMMON to the backend idioms. Idiomatic surfaces live on
+    # the backend's proxy subclass (graphed_numpy.NumpyArray: .shape/.sum()/__array_function__) or
+    # in its function namespace (graphed_awkward.gak — awkward arrays never grow methods). These
+    # protected helpers are the infrastructure those surfaces are built from.
+    def _form_meta(self, name: str) -> Any:
+        """Answer array metadata from the node's form when the backend models it; otherwise fall
+        back to recording a field op, preserving the M3 attribute-access semantics for backends
+        whose records may genuinely contain a column of that name."""
+        form = self._session.form(self)
+        if hasattr(form, name):
+            return getattr(form, name)
+        return self._session.record_op("field", [self], {"field": name})
 
     # ---- structural access -----------------------------------------------------
     def __getattr__(self, name: str) -> Array:
