@@ -56,25 +56,30 @@ class Session:
     def serialized_ir(self, *outputs: Array, optimize: bool = True) -> bytes:
         """The recorded analysis as a canonical, versioned, byte-identical durable IR (plan M8).
 
-        Pass the result ``Array``(s) of the analysis as ``outputs``; they are marked as graph outputs
-        so the optimizer's DCE keeps exactly what they reach. With ``optimize=True`` (the default) the
-        graph is then reduced by the M4 optimizer (DCE + CSE + equality-saturation stage fusion), so
+        Pass the result ``Array``(s) of the analysis as ``outputs``: the artifact carries EXACTLY
+        that output set — outputs are a property of THIS request, not session state (M22), so
+        sequential calls with different outputs are fully independent
+        (byte-identical to fresh-session serializations). With ``optimize=True`` (the default) the
+        graph is reduced by the M4 optimizer (DCE + CSE + equality-saturation stage fusion), so
         the bytes carry the **optimized interned graph** — the same content-addressed artifact an
         executor runs. This is the "compile" step for a ``graphed_core.DurablePlan`` deployment:
         record an analysis once, serialize it once, then re-target it at many datasets with
         ``DurablePlan.with_partitions`` / ``for_datasets``.
         """
-        for arr in outputs:
-            self._store.mark_output(arr.node_id)
         if optimize and not outputs:
             raise ValueError("serialized_ir(optimize=True) needs at least one output Array")
+        ids = [arr.node_id for arr in outputs]
+        for arr in outputs:
+            # legacy side effect, kept for back-compat (the frozen m8 suite pins that a later
+            # marks-path reduce sees these outputs); the BYTES above ignore marks entirely
+            self._store.mark_output(arr.node_id)
         if not optimize:
-            return bytes(self._store.serialize())
+            return bytes(self._store.serialize(outputs=ids))
         if self._reducer is not None:
             # incremental session (M10): finish from the maintained canonical view — one linear
             # pass over the concise form instead of a whole-history optimization.
-            return bytes(self._reducer.finalize(self._store)[0].serialize())
-        return bytes(self._store.reduce()[0].serialize())
+            return bytes(self._reducer.finalize(self._store, outputs=ids)[0].serialize())
+        return bytes(self._store.reduce(outputs=ids)[0].serialize())
 
     def form(self, array: Array) -> Form:
         return self._forms[array.node_id]
