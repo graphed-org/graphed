@@ -38,12 +38,19 @@ def num(arr: Array, axis: int = 1) -> Array:
     return arr.session.record_op("ak.num", [arr], {"axis": axis})
 
 
-def count(arr: Array, axis: int = 1) -> Array:
-    return arr.session.record_op("ak.count", [arr], {"axis": axis})
+def count(arr: Array, axis: int | None = 1) -> Array:
+    return _reduce("ak.count", arr, axis)
 
 
-def _reduce(name: str, arr: Array, axis: int | None) -> Array:
-    return arr.session.record_op(name, [arr], {"axis": "none" if axis is None else axis}, reduction=True)
+def _reduce(name: str, arr: Array, axis: int | None, extra: Mapping[str, int] | None = None) -> Array:
+    """Record one awkward reduction under the M12/M16 STRUCTURAL RULE: reducing over the event
+    (partitioned) axis — axis None or 0 — is a stage boundary executed by the M7 tree reduction;
+    an inner-axis (per-event) reduction is partition-local and fusible."""
+    params: dict[str, object] = {"axis": "none" if axis is None else axis}
+    if extra:
+        params.update(extra)
+    boundary = axis is None or axis == 0
+    return arr.session.record_op(name, [arr], params, reduction=boundary)  # type: ignore[arg-type]
 
 
 def sum(arr: Array, axis: int | None = None) -> Array:
@@ -56,6 +63,64 @@ def any(arr: Array, axis: int | None = None) -> Array:
 
 def all(arr: Array, axis: int | None = None) -> Array:
     return _reduce("ak.all", arr, axis)
+
+
+def count_nonzero(arr: Array, axis: int | None = None) -> Array:
+    return _reduce("ak.count_nonzero", arr, axis)
+
+
+def min(arr: Array, axis: int | None = None) -> Array:
+    return _reduce("ak.min", arr, axis)
+
+
+def max(arr: Array, axis: int | None = None) -> Array:
+    return _reduce("ak.max", arr, axis)
+
+
+def prod(arr: Array, axis: int | None = None) -> Array:
+    return _reduce("ak.prod", arr, axis)
+
+
+def mean(arr: Array, axis: int | None = None) -> Array:
+    return _reduce("ak.mean", arr, axis)
+
+
+def ptp(arr: Array, axis: int | None = None) -> Array:
+    return _reduce("ak.ptp", arr, axis)
+
+
+def std(arr: Array, axis: int | None = None, *, ddof: int = 0) -> Array:
+    return _reduce("ak.std", arr, axis, {"ddof": ddof} if ddof else None)
+
+
+def var(arr: Array, axis: int | None = None, *, ddof: int = 0) -> Array:
+    return _reduce("ak.var", arr, axis, {"ddof": ddof} if ddof else None)
+
+
+def moment(arr: Array, n: int, axis: int | None = None) -> Array:
+    return _reduce("ak.moment", arr, axis, {"n": n})
+
+
+def softmax(arr: Array, axis: int = 1) -> Array:
+    """Per-list normalization — shape-preserving, ALWAYS partition-local (never a boundary)."""
+    return arr.session.record_op("ak.softmax", [arr], {"axis": axis})
+
+
+def _reduce2(name: str, x: Array, y: Array, axis: int | None) -> Array:
+    boundary = axis is None or axis == 0
+    return x.session.record_op(name, [x, y], {"axis": "none" if axis is None else axis}, reduction=boundary)
+
+
+def corr(x: Array, y: Array, axis: int | None = None) -> Array:
+    return _reduce2("ak.corr", x, y, axis)
+
+
+def covar(x: Array, y: Array, axis: int | None = None) -> Array:
+    return _reduce2("ak.covar", x, y, axis)
+
+
+def linear_fit(x: Array, y: Array, axis: int | None = None) -> Array:
+    return _reduce2("ak.linear_fit", x, y, axis)
 
 
 def firsts(arr: Array, axis: int = 1) -> Array:

@@ -14,15 +14,51 @@ import awkward as ak
 import numpy as np
 
 # Elementwise ops: canonical name -> callable. Unary take 1 operand, binary take 2.
+# M16 (parity plan P0): the FULL M11 canonical ufunc tier — awkward arrays take numpy ufuncs
+# directly, and the typetracer infers forms for every one of them.
 _UNARY: dict[str, Any] = {
     "abs": np.abs,
+    "fabs": np.fabs,
     "neg": np.negative,
-    "invert": np.invert,
+    "pos": np.positive,
+    "sign": np.sign,
+    "signbit": np.signbit,
+    "floor": np.floor,
+    "ceil": np.ceil,
+    "trunc": np.trunc,
+    "rint": np.rint,
+    "exp": np.exp,
+    "exp2": np.exp2,
+    "expm1": np.expm1,
+    "log": np.log,
+    "log1p": np.log1p,
+    "log2": np.log2,
+    "log10": np.log10,
     "sqrt": np.sqrt,
-    "cos": np.cos,
+    "cbrt": np.cbrt,
+    "square": np.square,
+    "reciprocal": np.reciprocal,
     "sin": np.sin,
-    "cosh": np.cosh,
+    "cos": np.cos,
+    "tan": np.tan,
     "sinh": np.sinh,
+    "cosh": np.cosh,
+    "tanh": np.tanh,
+    "arcsin": np.arcsin,
+    "arccos": np.arccos,
+    "arctan": np.arctan,
+    "arcsinh": np.arcsinh,
+    "arccosh": np.arccosh,
+    "arctanh": np.arctanh,
+    "deg2rad": np.deg2rad,
+    "rad2deg": np.rad2deg,
+    "isnan": np.isnan,
+    "isinf": np.isinf,
+    "isfinite": np.isfinite,
+    "spacing": np.spacing,
+    "conj": np.conjugate,
+    "invert": np.invert,
+    "logical_not": np.logical_not,
 }
 _BINARY: dict[str, Any] = {
     "add": lambda a, b: a + b,
@@ -42,6 +78,47 @@ _BINARY: dict[str, Any] = {
     "hypot": np.hypot,
     "maximum": np.maximum,
     "minimum": np.minimum,
+    "floordiv": np.floor_divide,
+    "fmod": np.fmod,
+    "float_power": np.float_power,
+    "arctan2": np.arctan2,
+    "copysign": np.copysign,
+    "nextafter": np.nextafter,
+    "ldexp": np.ldexp,
+    "fmax": np.fmax,
+    "fmin": np.fmin,
+    "logaddexp": np.logaddexp,
+    "logaddexp2": np.logaddexp2,
+    "heaviside": np.heaviside,
+    "gcd": np.gcd,
+    "lcm": np.lcm,
+    "xor": np.bitwise_xor,
+    "lshift": np.left_shift,
+    "rshift": np.right_shift,
+    "logical_and": np.logical_and,
+    "logical_or": np.logical_or,
+    "logical_xor": np.logical_xor,
+}
+
+# Reductions over one array, all honoring the M12/M16 structural rule at RECORD time (the
+# recording side decides boundary-vs-fusible; this table only evaluates).
+_AK_REDUCERS: dict[str, Any] = {
+    "ak.sum": ak.sum,
+    "ak.any": ak.any,
+    "ak.all": ak.all,
+    "ak.count": ak.count,
+    "ak.count_nonzero": ak.count_nonzero,
+    "ak.min": ak.min,
+    "ak.max": ak.max,
+    "ak.prod": ak.prod,
+    "ak.mean": ak.mean,
+    "ak.ptp": ak.ptp,
+}
+
+_AK_TWO_INPUT: dict[str, Any] = {
+    "ak.corr": ak.corr,
+    "ak.covar": ak.covar,
+    "ak.linear_fit": ak.linear_fit,
 }
 
 
@@ -70,14 +147,19 @@ def apply(op: str, operands: Sequence[Any], params: Mapping[str, Any]) -> Any:
         return operands[0][operands[1]]
     if op == "ak.num":
         return ak.num(operands[0], axis=int(params.get("axis", 1)))
-    if op == "ak.sum":
-        return ak.sum(operands[0], axis=_axis(params))
-    if op == "ak.any":
-        return ak.any(operands[0], axis=_axis(params))
-    if op == "ak.all":
-        return ak.all(operands[0], axis=_axis(params))
-    if op == "ak.count":
-        return ak.count(operands[0], axis=_axis(params))
+    if op in ("ak.min", "ak.max", "ak.ptp") and _axis(params) is None:
+        return _global_extremum(op, operands[0])
+    if op in _AK_REDUCERS:
+        return _AK_REDUCERS[op](operands[0], axis=_axis(params))
+    if op in ("ak.std", "ak.var"):
+        fn = ak.std if op == "ak.std" else ak.var
+        return fn(operands[0], axis=_axis(params), ddof=int(params.get("ddof", 0)))
+    if op == "ak.moment":
+        return ak.moment(operands[0], int(params["n"]), axis=_axis(params))
+    if op == "ak.softmax":
+        return ak.softmax(operands[0], axis=int(params.get("axis", 1)))
+    if op in _AK_TWO_INPUT:
+        return _AK_TWO_INPUT[op](operands[0], operands[1], axis=_axis(params))
     if op == "ak.combinations":
         return ak.combinations(operands[0], int(params["n"]), fields=_fields(params) or None)
     if op == "ak.cartesian":
@@ -120,6 +202,23 @@ def apply(op: str, operands: Sequence[Any], params: Mapping[str, Any]) -> Any:
     if op == "ak.values_astype":
         return ak.values_astype(operands[0], _dtype(params))
     raise TypeError(f"unsupported awkward op {op!r}")
+
+
+def _global_extremum(op: str, x: Any) -> Any:
+    """axis=None min/max/ptp need typetracer-aware handling: the typetracer's option-scalar
+    (MaybeNone) cannot be formed or subtracted, and upstream ak.ptp(axis=None) indexes its scalar
+    result. On the TYPETRACER path use awkward's own mask_identity=False inference (a plain
+    unknown scalar); the REAL path keeps awkward's default semantics untouched. ptp composes
+    max - min on the typetracer (identical kernels — not hand-rolled inference)."""
+    tracing = ak.backend(x) == "typetracer"
+    if op == "ak.ptp":
+        if tracing:
+            high = ak.max(x, axis=None, mask_identity=False)
+            low = ak.min(x, axis=None, mask_identity=False)
+            return high - low
+        return ak.ptp(x, axis=None)
+    fn = ak.min if op == "ak.min" else ak.max
+    return fn(x, axis=None, mask_identity=False) if tracing else fn(x, axis=None)
 
 
 def _axis(params: Mapping[str, Any], default: int | None = None) -> int | None:
