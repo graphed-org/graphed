@@ -346,6 +346,12 @@ class Array:
             return self._session.record_op("getitem", [self, key])
         if isinstance(key, str):
             return self._session.record_op("field", [self], {"field": key})
+        # M17: a list of field names selects a RECORD SUBSET — common to both array models
+        # (awkward records, numpy structured arrays). Order is part of the selection.
+        if isinstance(key, list):
+            if not key or not all(isinstance(f, str) for f in key):
+                raise TypeError("a field-list selection needs one or more field-name strings")
+            return self._session.record_op("fields", [self], {"fields": ",".join(key)})
         # M13: slices and integer indexing are common to both backend idioms. Both consume or
         # restructure the partitioned axis, so they record BOUNDARY reduction nodes (M12 rule);
         # only the fields the user gave are recorded, so equal slices intern.
