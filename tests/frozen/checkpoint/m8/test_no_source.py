@@ -34,11 +34,12 @@ def _opaque_plan() -> DurablePlan:
         return np.zeros(BINS, dtype="int64")
 
     g = GraphStore()
-    g.mark_output(g.add_op("hist", [g.add_source("events")]))
+    out = g.add_op("hist", [g.add_source("events")])
+    blob = g.serialize(outputs=[out])  # [freeze-M22-1: mark_output removed]
     edges = [0, N // 3, 2 * N // 3, N]
     parts = tuple(Partition("x", "", edges[i], edges[i + 1]) for i in range(3))
     return DurablePlan(
-        ir=g.serialize(),
+        ir=blob,
         process=OpSpec.from_callable(proc),
         combine=OpSpec.from_callable(add),
         empty=OpSpec.from_callable(empty),

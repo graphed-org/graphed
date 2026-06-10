@@ -99,8 +99,8 @@ def _ir() -> bytes:
     src = g.add_source("events", {"uri": "corpus://values"})
     pt = g.add_op("value", [src])
     cut = g.add_op("gt", [pt], {"thr": 0.0})
-    g.mark_output(g.add_reduction("hist", [cut], {"bins": BINS}))
-    return g.serialize()
+    out = g.add_reduction("hist", [cut], {"bins": BINS})
+    return g.serialize(outputs=[out])  # [freeze-M22-1: mark_output removed; outputs per request]
 
 
 def partitions(n_chunks: int) -> tuple[Partition, ...]:
