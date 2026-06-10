@@ -6,7 +6,7 @@ name: wheels
 
 on:
   push:
-    branches: [main]
+    branches: [main, "backup/**"]
   pull_request:
   workflow_dispatch:
 
