@@ -173,19 +173,30 @@ class Session:
         fn: Callable[[object], object],
         inputs: Sequence[Array],
         params: Mapping[str, ParamValue] | None = None,
+        *,
+        descriptor: graphed_core.PayloadDescriptor | None = None,
+        form: Form | None = None,
     ) -> Array:
+        """Record an External node. By default the BACKEND supplies the payload descriptor and
+        output form (the M3 correctionlib/ONNX family); a package recording its OWN External
+        family (M23 — e.g. histogram fills) passes ``descriptor=`` and ``form=`` explicitly and
+        the backend is not consulted at all, so backends stay free of domain content (§A.4)."""
         params_d: dict[str, ParamValue] = dict(params or {})
         prov = capture()
-        descriptor = self._backend.external_payload(op, params_d)
+        if (descriptor is None) != (form is None):
+            raise GraphedTypeError(op, prov, "descriptor= and form= must be given together")
         if descriptor is None:
-            raise GraphedTypeError(op, prov, "backend returned no payload descriptor for external op")
-        in_forms = [self._forms[a.node_id] for a in inputs]
-        try:
-            form = self._backend.op_form(op, in_forms, params_d)
-        except GraphedTypeError:
-            raise
-        except Exception as exc:  # backend type/shape error -> user-located error (as record_op)
-            raise GraphedTypeError(op, prov, str(exc)) from exc
+            descriptor = self._backend.external_payload(op, params_d)
+            if descriptor is None:
+                raise GraphedTypeError(op, prov, "backend returned no payload descriptor for external op")
+        if form is None:
+            in_forms = [self._forms[a.node_id] for a in inputs]
+            try:
+                form = self._backend.op_form(op, in_forms, params_d)
+            except GraphedTypeError:
+                raise
+            except Exception as exc:  # backend type/shape error -> user-located error (as record_op)
+                raise GraphedTypeError(op, prov, str(exc)) from exc
         ids = [a.node_id for a in inputs]
         node_id = self._store.add_external(descriptor, ids, params_d)
         self._forms.setdefault(node_id, form)
