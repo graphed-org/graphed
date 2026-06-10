@@ -69,10 +69,6 @@ class Session:
         if optimize and not outputs:
             raise ValueError("serialized_ir(optimize=True) needs at least one output Array")
         ids = [arr.node_id for arr in outputs]
-        for arr in outputs:
-            # legacy side effect, kept for back-compat (the frozen m8 suite pins that a later
-            # marks-path reduce sees these outputs); the BYTES above ignore marks entirely
-            self._store.mark_output(arr.node_id)
         if not optimize:
             return bytes(self._store.serialize(outputs=ids))
         if self._reducer is not None:
