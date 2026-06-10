@@ -5,7 +5,7 @@ No fusion (that is M4). The awkward backend lives in graphed-awkward (M3). Prove
 
 from __future__ import annotations
 
-from .array import Array
+from .array import Array, apply
 from .backend import Backend, Form, ParamValue
 from .errors import GraphedError, GraphedTypeError
 from .execute import CompiledGraph, compile_ir, evaluate_ir
@@ -37,6 +37,7 @@ __all__ = [
     "ProjectionError",
     "Provenance",
     "Session",
+    "apply",
     "capture",
     "compile_ir",
     "evaluate_ir",
