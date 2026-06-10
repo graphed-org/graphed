@@ -289,6 +289,45 @@ class Array:
             return getattr(form, name)
         return self._session.record_op("field", [self], {"field": name})
 
+    def _norm_axis(self, axis: int | None) -> int | None:
+        """Resolve a (possibly negative) axis against the form's ndim, when the backend models it."""
+        if axis is None:
+            return None
+        if isinstance(axis, bool) or not isinstance(axis, int):
+            raise TypeError(f"axis must be an int or None, got {axis!r}")
+        if axis < 0:
+            ndim = getattr(self._session.form(self), "ndim", None)
+            if not isinstance(ndim, int):
+                raise TypeError("a negative axis requires a backend form exposing ndim")
+            axis += ndim
+            if axis < 0:
+                raise TypeError(f"axis out of range for a {ndim}-dimensional array")
+        return axis
+
+    def _reduction(
+        self, kind: str, axis: int | None = None, *, keepdims: bool = False, ddof: int = 0
+    ) -> Array:
+        """Record one reduction with THE structural rule of M12 (dask.array parity P1.4):
+        reducing over the partitioned axis (``axis`` None or 0) is a stage boundary executed by
+        the M7 tree reduction; an inner axis is partition-local and fusible."""
+        axis = self._norm_axis(axis)
+        params: dict[str, ParamValue] = {}
+        if axis is not None:
+            params["axis"] = axis
+        if keepdims:
+            params["keepdims"] = True
+        if ddof:  # default ddof=0 records nothing, so std(ddof=0) interns with std()
+            params["ddof"] = ddof
+        return self._session.record_op(kind, [self], params, reduction=axis is None or axis == 0)
+
+    def _scan(self, kind: str, axis: int | None = None) -> Array:
+        """Record one cumulative scan — always partition-local, always fusible."""
+        axis = self._norm_axis(axis)
+        params: dict[str, ParamValue] = {}
+        if axis is not None:
+            params["axis"] = axis
+        return self._session.record_op(kind, [self], params)
+
     # ---- structural access -----------------------------------------------------
     def __getattr__(self, name: str) -> Array:
         if name.startswith("_"):
