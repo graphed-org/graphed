@@ -20,8 +20,9 @@ classifiers = [
 dependencies = ["graphed-core", "executing>=2.0"]
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-cov", "hypothesis", "mypy", "ruff", "numpy>=1.24"]
+dev = ["pytest", "pytest-cov", "hypothesis", "mypy", "ruff", "numpy>=1.24", "pyarrow>=15"]
 docs = ["sphinx", "furo"]
+parquet = ["pyarrow>=15"]
 
 [project.urls]
 Homepage = "https://github.com/graphed-org/graphed-mvp"
@@ -31,7 +32,7 @@ packages = ["src/graphed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src", "tests/frozen/m2", "tests/frozen/m3", "tests/frozen/m10", "tests/frozen/m11", "tests/frozen/m12", "tests/frozen/m13", "tests/frozen/m14"]
+pythonpath = ["src", "tests/frozen/m2", "tests/frozen/m3", "tests/frozen/m10", "tests/frozen/m11", "tests/frozen/m12", "tests/frozen/m13", "tests/frozen/m14", "tests/frozen/m15"]
 addopts = "-q"
 
 [tool.coverage.run]
@@ -55,3 +56,11 @@ ignore = ["E501"]
 python_version = "3.11"
 strict = true
 files = ["src"]
+
+# pyarrow is the OPTIONAL parquet extra; its inline types drag sphinx sources (3.12-only syntax)
+# into a 3.11-pinned strict run. Treat it as untyped at the boundary (same policy as numpy in
+# graphed-numpy). Not a gate change: our own sources stay --strict.
+[[tool.mypy.overrides]]
+module = ["pyarrow.*"]
+ignore_missing_imports = true
+follow_imports = "skip"
