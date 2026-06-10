@@ -337,7 +337,9 @@ class Array:
     def __iter__(self) -> Any:
         # int __getitem__ (M13) would otherwise make Array INFINITELY iterable through Python's
         # legacy iteration protocol (a[0], a[1], ... never raises IndexError on a deferred graph)
-        raise TypeError("deferred graphed arrays are not iterable (unknown partitioned length); materialize first")
+        raise TypeError(
+            "deferred graphed arrays are not iterable (unknown partitioned length); materialize first"
+        )
 
     def __getitem__(self, key: object) -> Array:
         if isinstance(key, Array):
@@ -375,3 +377,19 @@ class Array:
 
     def __repr__(self) -> str:
         return f"Array(node_id={self._node_id})"
+
+
+def apply(fn: Callable[..., object], *arrays: Array, name: str | None = None) -> Array:
+    """Record ``fn`` over several deferred arrays as ONE multi-input External node (M14, parity
+    P3.8 — the blockwise/map_blocks analogue). A function over arrays, so it is idiom-neutral
+    (awkward style); the numpy-specific signature-aware form is ``graphed_numpy.apply_gufunc``.
+
+    The node carries the backend's ``PayloadDescriptor``: the opaque callable stays a flagged
+    preservation risk (plan A.3.1). With one array this IS ``Array.map`` (interns with it)."""
+    if not arrays or not all(isinstance(a, Array) for a in arrays):
+        raise TypeError("apply needs at least one deferred Array operand")
+    session = arrays[0].session
+    if any(a.session is not session for a in arrays):
+        raise TypeError("apply operands must come from one Session")
+    fn_name: str = name or str(getattr(fn, "__name__", "lambda"))
+    return session.record_external("map", fn, list(arrays), {"fn": fn_name})
