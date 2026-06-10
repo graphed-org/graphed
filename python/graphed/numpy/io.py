@@ -39,6 +39,24 @@ def _pa() -> Any:
     return pa
 
 
+# arrow primitive name -> numpy dtype, explicitly (DataType.to_pandas_dtype routes through
+# pyarrow's PANDAS SHIM and fails without pandas — pandas is NOT a dependency of this package)
+_ARROW_TO_NUMPY = {
+    "bool": "bool",
+    "int8": "int8",
+    "int16": "int16",
+    "int32": "int32",
+    "int64": "int64",
+    "uint8": "uint8",
+    "uint16": "uint16",
+    "uint32": "uint32",
+    "uint64": "uint64",
+    "halffloat": "float16",
+    "float": "float32",
+    "double": "float64",
+}
+
+
 def _rectilinear_fields(paths: Sequence[str], columns: Sequence[str] | None) -> tuple[tuple[str, str], ...]:
     """(column, numpy dtype str) for every selected schema column; REFUSES non-primitives."""
     pa = _pa()
@@ -52,7 +70,7 @@ def _rectilinear_fields(paths: Sequence[str], columns: Sequence[str] | None) -> 
                 f"column {name!r} has non-rectilinear type {typ} — numpy bags hold fixed-width "
                 "primitives only; jagged/nested data belongs to graphed-awkward"
             )
-        fields.append((name, np.dtype(typ.to_pandas_dtype()).str))
+        fields.append((name, np.dtype(_ARROW_TO_NUMPY[str(typ)]).str))
     return tuple(fields)
 
 
@@ -69,7 +87,7 @@ class _DatasetLoader:
         cols = list(self.columns) if self.columns else None
         tables = [pq.read_table(p, columns=cols) for p in self.paths]
         names = tables[0].column_names
-        return {n: np.concatenate([t[n].to_numpy() for t in tables]) for n in names}
+        return {n: np.concatenate([_column_to_numpy(t, n) for t in tables]) for n in names}
 
 
 def from_parquet(
@@ -94,6 +112,13 @@ def from_parquet(
     return gpq.deferred_source(session, name, paths=paths, form=form, loader=loader)
 
 
+def _column_to_numpy(table: Any, name: str) -> np.ndarray:
+    """pandas-free column conversion: ChunkedArray.to_numpy routes through pyarrow's PANDAS SHIM
+    (found in CI, where pandas is absent — locally a sibling repo's dev deps masked it);
+    Array.to_numpy after combine_chunks does not."""
+    return table.column(name).combine_chunks().to_numpy(zero_copy_only=False)  # type: ignore[no-any-return]
+
+
 def read_parquet_partition(
     partition: Partition, columns: Sequence[str] | None = None
 ) -> dict[str, np.ndarray]:
@@ -102,7 +127,7 @@ def read_parquet_partition(
 
     part = gpq.resolve_partition(partition)
     table = pq.read_table(part.uri, columns=list(columns) if columns else None)
-    return {n: table[n].to_numpy()[part.entry_start : part.entry_stop] for n in table.column_names}
+    return {n: _column_to_numpy(table, n)[part.entry_start : part.entry_stop] for n in table.column_names}
 
 
 # ---- deferred writing ------------------------------------------------------------------------
