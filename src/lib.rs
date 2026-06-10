@@ -205,10 +205,6 @@ impl PyGraphStore {
         self.store.add_external(d, inputs, p).map_err(map_err)
     }
 
-    fn mark_output(&self, node_id: NodeId) -> PyResult<()> {
-        self.store.mark_output(node_id).map_err(map_err)
-    }
-
     fn node_count(&self) -> usize {
         self.store.node_count()
     }
@@ -357,15 +353,35 @@ impl PyGraphStore {
 
     /// One-shot incremental reduction of the current graph (same result as `reduce`). For genuine
     /// step-by-step reduction while building, use `IncrementalReducer`.
-    fn reduce_incremental(&self) -> (PyGraphStore, std::collections::HashMap<String, usize>) {
-        let (reduced, report) = self.store.reduce_incremental(&EggEngine::default());
-        (PyGraphStore { store: reduced }, report_to_map(&report))
+    #[pyo3(signature = (*, outputs=None))]
+    fn reduce_incremental(
+        &self,
+        outputs: Option<Vec<NodeId>>,
+    ) -> PyResult<(PyGraphStore, std::collections::HashMap<String, usize>)> {
+        let (reduced, report) = match outputs {
+            Some(outs) => self
+                .store
+                .reduce_with_outputs(&outs, &EggEngine::default(), FusionMode::SingleUse)
+                .map_err(map_err)?,
+            None => self.store.reduce_incremental(&EggEngine::default()),
+        };
+        Ok((PyGraphStore { store: reduced }, report_to_map(&report)))
     }
 
     /// The reduction report for the current graph, without keeping the reduced store.
-    fn reduction_report(&self) -> std::collections::HashMap<String, usize> {
-        let (_, report) = self.store.reduce(&EggEngine::default());
-        report_to_map(&report)
+    #[pyo3(signature = (*, outputs=None))]
+    fn reduction_report(
+        &self,
+        outputs: Option<Vec<NodeId>>,
+    ) -> PyResult<std::collections::HashMap<String, usize>> {
+        let (_, report) = match outputs {
+            Some(outs) => self
+                .store
+                .reduce_with_outputs(&outs, &EggEngine::default(), FusionMode::SingleUse)
+                .map_err(map_err)?,
+            None => self.store.reduce(&EggEngine::default()),
+        };
+        Ok(report_to_map(&report))
     }
 }
 

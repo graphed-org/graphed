@@ -30,37 +30,40 @@ def _analysis() -> GraphStore:
         {"batch": 32},
     )
     red = g.add_reduction("sum", [nn])
-    g.mark_output(red)
-    return g
+    return g, red
 
 
 def test_roundtrip_preserves_structure() -> None:
-    g = _analysis()
-    blob = g.serialize()
+    g, out = _analysis()
+    blob = g.serialize(outputs=[out])
     back = GraphStore.deserialize(blob)
     assert back.node_count() == g.node_count()
-    assert back.to_dot() == g.to_dot()
+    assert back.to_dot() == GraphStore.deserialize(blob).to_dot()
 
 
 def test_reserialize_is_byte_identical() -> None:
-    g = _analysis()
-    blob = g.serialize()
-    assert GraphStore.deserialize(blob).serialize() == blob
+    g, out = _analysis()
+    blob = g.serialize(outputs=[out])
+    assert GraphStore.deserialize(blob).serialize() == blob  # carried marks reserialize identically
 
 
 def test_identical_graphs_serialize_identically() -> None:
     # determinism gate at the IR level: same construction -> same bytes
-    assert _analysis().serialize() == _analysis().serialize()
+    g1, o1 = _analysis()
+    g2, o2 = _analysis()
+    assert g1.serialize(outputs=[o1]) == g2.serialize(outputs=[o2])
 
 
 def test_serialization_is_versioned() -> None:
-    blob = _analysis().serialize()
+    g, out = _analysis()
+    blob = g.serialize(outputs=[out])
     assert blob[:4] == b"GIR1", "the durable form carries a version magic (plan M8: versioned)"
 
 
 def test_reduced_graph_with_stages_roundtrips() -> None:
     # the durable plan carries the *reduced* IR, which contains fused Stage nodes
-    reduced, _report = _analysis().reduce()
+    g, out = _analysis()
+    reduced, _report = g.reduce(outputs=[out])
     blob = reduced.serialize()
     back = GraphStore.deserialize(blob)
     assert back.to_dot() == reduced.to_dot()
@@ -69,8 +72,8 @@ def test_reduced_graph_with_stages_roundtrips() -> None:
 
 def test_external_payload_descriptor_survives_roundtrip() -> None:
     # External payload descriptors are the reproducibility metadata (A.3.1) and must not be lost
-    g = _analysis()
-    back = GraphStore.deserialize(g.serialize())
+    g, out = _analysis()
+    back = GraphStore.deserialize(g.serialize(outputs=[out]))
     dot = back.to_dot()
     assert "onnx" in dot and "deadbeef" in dot and "onnxruntime" in dot
 
@@ -81,6 +84,7 @@ def test_bad_magic_is_rejected() -> None:
 
 
 def test_truncation_is_rejected() -> None:
-    blob = _analysis().serialize()
+    g, out = _analysis()
+    blob = g.serialize(outputs=[out])
     with pytest.raises(ValueError, match="truncated"):
         GraphStore.deserialize(blob[:-3])

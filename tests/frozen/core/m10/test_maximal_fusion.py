@@ -12,19 +12,19 @@ from __future__ import annotations
 from graphed_core import GraphStore
 
 
-def _diamond() -> GraphStore:
+def _diamond() -> tuple[GraphStore, int]:
     s = GraphStore()
     x = s.add_source("x")
     a = s.add_op("inc", [x])  # fan-out apex
     left = s.add_op("inc", [a])
     right = s.add_op("neg", [a])
     out = s.add_op("add", [left, right])
-    s.mark_output(out)
-    return s
+    return s, out
 
 
 def test_diamond_fuses_to_one_stage_with_maximal_fusion() -> None:
-    reduced, report = _diamond().reduce(maximal_fusion=True)
+    s, out = _diamond()
+    reduced, report = s.reduce(maximal_fusion=True, outputs=[out])
     assert report["stages"] == 1, "the whole diamond is one maximal op-run"
     assert reduced.node_count() == 2  # source + one stage
     stage = next(n for n in reduced.nodes() if n["kind"] == "stage")
@@ -36,9 +36,12 @@ def test_diamond_fuses_to_one_stage_with_maximal_fusion() -> None:
 
 def test_default_mode_is_unchanged_single_use() -> None:
     # the M4 frozen pin: apex stays its own stage by default
-    _, report = _diamond().reduce()
+    s, out = _diamond()
+    _, report = s.reduce(outputs=[out])
     assert report["stages"] == 2
-    assert _diamond().reduce()[0].serialize() == _diamond().reduce()[0].serialize()
+    s1, o1 = _diamond()
+    s2, o2 = _diamond()
+    assert s1.reduce(outputs=[o1])[0].serialize() == s2.reduce(outputs=[o2])[0].serialize()
 
 
 def test_maximal_fusion_never_crosses_a_boundary() -> None:
@@ -47,8 +50,7 @@ def test_maximal_fusion_never_crosses_a_boundary() -> None:
     pre = s.add_op("inc", [x])
     red = s.add_reduction("sum", [pre])  # boundary
     post = s.add_op("inc", [red])
-    s.mark_output(post)
-    _, report = s.reduce(maximal_fusion=True)
+    _, report = s.reduce(maximal_fusion=True, outputs=[post])
     assert report["stages"] == 2, "a reduction still splits stages"
 
 
@@ -61,8 +63,7 @@ def test_fan_out_to_a_boundary_still_splits() -> None:
     b = s.add_op("neg", [a])
     r = s.add_reduction("sum", [a])
     out = s.add_op("add", [b, r])
-    s.mark_output(out)
-    _, report = s.reduce(maximal_fusion=True)
+    _, report = s.reduce(maximal_fusion=True, outputs=[out])
     assert report["stages"] == 2
     assert report["boundary_nodes"] == 2  # source + reduction
 
@@ -76,8 +77,7 @@ def test_fan_out_to_two_different_stages_does_not_fuse() -> None:
     red = s.add_reduction("sum", [left])
     right = s.add_op("neg", [a])
     out = s.add_op("add", [red, right])
-    s.mark_output(out)
-    _, report = s.reduce(maximal_fusion=True)
+    _, report = s.reduce(maximal_fusion=True, outputs=[out])
     # left fuses upstream of the boundary; right/out fuse after it; the apex's consumers live in
     # different stages, so it stays its own stage: 3 stages + 1 boundary
     assert report["stages"] == 3
@@ -86,7 +86,8 @@ def test_fan_out_to_two_different_stages_does_not_fuse() -> None:
 
 def test_maximal_fusion_is_deterministic_and_durable() -> None:
     def run() -> bytes:
-        return bytes(_diamond().reduce(maximal_fusion=True)[0].serialize())
+        s, out = _diamond()
+        return bytes(s.reduce(maximal_fusion=True, outputs=[out])[0].serialize())
 
     blob = run()
     assert blob == run()

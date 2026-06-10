@@ -11,7 +11,7 @@ Maps each M1 Acceptance Contract clause to the tests that cover it.
 | `to_dot()` byte-stable across runs (determinism) | `test_determinism_and_guardrails.py::test_to_dot_is_byte_stable`, `::test_to_dot_is_nonempty_digraph` |
 | External nodes intern by full PayloadDescriptor; any field change → distinct id | `test_external.py::*` |
 | Guardrail: graph in Rust; `graphed-core` must not import awkward | `test_determinism_and_guardrails.py::test_core_does_not_import_awkward`, `::test_version_returns_string` |
-| `mark_output` validates node ids | `test_determinism_and_guardrails.py::test_mark_output_accepts_valid_and_rejects_invalid` |
+| `reduce(outputs=)` validates node ids; `mark_output` removed (freeze-M22-1) | `test_determinism_and_guardrails.py::test_reduce_outputs_accepts_valid_and_rejects_invalid` |
 
 Rust-side: `cargo test` covers the intern table, total-order float hashing, and a multi-thread
 stress test of the locking discipline; a `loom` model of the intern critical section is provided

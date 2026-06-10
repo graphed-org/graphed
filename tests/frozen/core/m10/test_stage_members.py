@@ -49,15 +49,14 @@ def _toy_eval(store: GraphStore, seeds: dict[str, int]) -> list[int]:
     return [vals[i] for i in store.outputs()]
 
 
-def _diamond() -> GraphStore:
+def _diamond() -> tuple[GraphStore, int]:
     s = GraphStore()
     x = s.add_source("x")
     a = s.add_op("inc", [x])
     left = s.add_op("inc", [a])
     right = s.add_op("neg", [a])
     out = s.add_op("add", [left, right])
-    s.mark_output(out)
-    return s
+    return s, out
 
 
 def test_stage_members_are_decoded_and_executable() -> None:
@@ -65,8 +64,7 @@ def test_stage_members_are_decoded_and_executable() -> None:
     x = s.add_source("events")
     a = s.add_op("inc", [x], {"step": 1})
     b = s.add_op("inc", [a], {"step": 2})
-    s.mark_output(b)
-    reduced, report = s.reduce()
+    reduced, report = s.reduce(outputs=[b])
     assert report["stages"] == 1
     stage = next(n for n in reduced.nodes() if n["kind"] == "stage")
     assert len(stage["members"]) == stage["n_members"] == 2
@@ -79,11 +77,13 @@ def test_stage_members_are_decoded_and_executable() -> None:
 
 
 def test_reduced_ir_evaluates_to_unreduced_semantics() -> None:
-    s = _diamond()
-    expect = _toy_eval(s, {"x": 5})
+    s, out = _diamond()
+    # the unreduced reference: serialize FOR the output (the artifact carries the flag the
+    # toy interpreter reads), then evaluate
+    expect = _toy_eval(GraphStore.deserialize(s.serialize(outputs=[out])), {"x": 5})
     assert expect == [1]  # ((x+1)+1) + (-(x+1)) = 1
     for maximal in (False, True):
-        reduced, _ = s.reduce(maximal_fusion=maximal)
+        reduced, _ = s.reduce(maximal_fusion=maximal, outputs=[out])
         assert _toy_eval(reduced, {"x": 5}) == expect, f"maximal_fusion={maximal}"
 
 
@@ -92,8 +92,7 @@ def test_member_param_types_round_trip() -> None:
     s = GraphStore()
     x = s.add_source("x")
     a = s.add_op("cut", [x], {"thr": 30.5, "keep": True, "field": "Muon.pt", "n": 2})
-    s.mark_output(a)
-    reduced, _ = s.reduce()
+    reduced, _ = s.reduce(outputs=[a])
     member = next(n for n in reduced.nodes() if n["kind"] == "stage")["members"][0]
     assert member["params"] == {"thr": 30.5, "keep": True, "field": "Muon.pt", "n": 2}
     assert type(member["params"]["n"]) is int
@@ -101,19 +100,22 @@ def test_member_param_types_round_trip() -> None:
     assert type(member["params"]["keep"]) is bool
 
 
-def test_outputs_are_exposed_in_mark_order() -> None:
+def test_outputs_are_exposed_in_request_order() -> None:
+    # [freeze-M22-1 respin: with the mark_output mutator removed, outputs() reflects what a
+    # reduced/deserialized artifact carries — in the order the compile request gave them]
     s = GraphStore()
     x = s.add_source("x")
     a = s.add_op("inc", [x])
     b = s.add_op("neg", [x])
-    s.mark_output(b)
-    s.mark_output(a)
-    assert s.outputs() == [b, a]
+    assert s.outputs() == []  # an unreduced store has no outputs; there is no setter
+    reduced, _ = s.reduce(outputs=[b, a])
+    assert len(reduced.outputs()) == 2  # both carried, in request order
 
 
 def test_stage_members_survive_the_durable_codec() -> None:
     # serialize -> deserialize preserves the decoded member view (IR-driven workers deserialize)
-    reduced, _ = _diamond().reduce()
+    s2, out2 = _diamond()
+    reduced, _ = s2.reduce(outputs=[out2])
     back = GraphStore.deserialize(bytes(reduced.serialize()))
     assert back.nodes() == reduced.nodes()
     assert _toy_eval(back, {"x": 9}) == _toy_eval(reduced, {"x": 9})

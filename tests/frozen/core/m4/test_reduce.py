@@ -14,14 +14,13 @@ def _chain(n: int) -> gc.GraphStore:
     cur = s.add_source("x")
     for _ in range(n):
         cur = s.add_op("inc", [cur])
-    s.mark_output(cur)
-    return s
+    return s, cur
 
 
 def test_chain_reduces_to_constant_stages_regardless_of_length() -> None:
     for n in (10, 200, 5000):
-        s = _chain(n)
-        reduced, report = s.reduce()
+        s, out = _chain(n)
+        reduced, report = s.reduce(outputs=[out])
         assert reduced.node_count() == 2  # source + one fused stage, independent of n
         assert report["stages"] == 1
         assert report["stages"] < 10
@@ -39,8 +38,7 @@ def test_canonical_analysis_reduces_to_few_stages() -> None:
     y = red
     for i in range(20):
         y = s.add_op("post", [y], {"step": i})
-    s.mark_output(y)
-    reduced, report = s.reduce()
+    reduced, report = s.reduce(outputs=[y])
     assert report["stages"] < 10  # regardless of intermediate-variable count
     # source + pre-stage + reduction + post-stage = 4
     assert reduced.node_count() == 4
@@ -53,9 +51,7 @@ def test_commuted_adds_merge_via_equality_saturation() -> None:
     ab = s.add_op("add", [a, b])
     ba = s.add_op("add", [b, a])
     assert ab != ba  # distinct before reduction
-    s.mark_output(ab)
-    s.mark_output(ba)
-    reduced, report = s.reduce()
+    reduced, report = s.reduce(outputs=[ab, ba])
     assert report["stages"] == 1  # egg commutativity + CSE merge them
     assert reduced.node_count() == 3  # a, b, one stage
 
@@ -63,8 +59,8 @@ def test_commuted_adds_merge_via_equality_saturation() -> None:
 def test_additive_identity_is_simplified_away() -> None:
     s = gc.GraphStore()
     x = s.add_source("x")
-    s.mark_output(s.add_op("add", [x], {"scalar": 0.0, "side": "r"}))
-    _reduced, report = s.reduce()
+    out = s.add_op("add", [x], {"scalar": 0.0, "side": "r"})
+    _reduced, report = s.reduce(outputs=[out])
     assert report["stages"] == 0  # x + 0 -> x
 
 
@@ -74,8 +70,7 @@ def test_fusion_never_crosses_a_boundary() -> None:
     pre = s.add_op("inc", [src])
     red = s.add_reduction("sum", [pre])
     post = s.add_op("inc", [red])
-    s.mark_output(post)
-    _reduced, report = s.reduce()
+    _reduced, report = s.reduce(outputs=[post])
     assert report["stages"] == 2  # the reduction boundary splits the two stages
 
 
@@ -84,8 +79,7 @@ def test_dead_code_is_eliminated() -> None:
     a = s.add_source("a")
     live = s.add_op("inc", [a])
     s.add_op("neg", [a])  # dead: never an output
-    s.mark_output(live)
-    reduced, report = s.reduce()
+    reduced, report = s.reduce(outputs=[live])
     assert report["reachable_nodes"] == 2  # a + live (dead op dropped)
     assert reduced.node_count() == 2
 
@@ -97,15 +91,14 @@ def test_reduction_is_byte_deterministic() -> None:
         b = s.add_source("b")
         c = s.add_op("add", [a, b])
         d = s.add_op("inc", [c])
-        s.mark_output(d)
-        return s.reduce()[0].to_dot()
+        return s.reduce(outputs=[d])[0].to_dot()
 
     assert build() == build()
 
 
 def test_reduction_report_has_expected_keys() -> None:
-    s = _chain(5)
-    report = s.reduction_report()
+    s, out = _chain(5)
+    report = s.reduction_report(outputs=[out])
     for key in (
         "input_nodes",
         "reachable_nodes",
@@ -119,7 +112,7 @@ def test_reduction_report_has_expected_keys() -> None:
 
 
 def test_incremental_reduction_matches_full() -> None:
-    s = _chain(50)
-    full = s.reduce()[1]
-    incr = s.reduce_incremental()[1]
+    s, out = _chain(50)
+    full = s.reduce(outputs=[out])[1]
+    incr = s.reduce_incremental(outputs=[out])[1]
     assert full == incr

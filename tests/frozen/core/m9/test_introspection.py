@@ -10,7 +10,7 @@ from __future__ import annotations
 from graphed_core import GraphStore, PayloadDescriptor
 
 
-def _graph() -> GraphStore:
+def _graph() -> tuple[GraphStore, int]:
     g = GraphStore()
     src = g.add_source("events", {"uri": "ds"})
     pt = g.add_op("pt", [src], {"thr": 30.0})
@@ -26,12 +26,12 @@ def _graph() -> GraphStore:
         [pt],
         {"path": "sf.json", "name": "btagSF"},
     )
-    g.mark_output(g.add_reduction("hist", [ext]))
-    return g
+    out = g.add_reduction("hist", [ext])
+    return g, out
 
 
 def test_nodes_report_kind_name_params_inputs_in_id_order() -> None:
-    nodes = _graph().nodes()
+    nodes = _graph()[0].nodes()
     assert [n["id"] for n in nodes] == [0, 1, 2, 3]
     assert [n["kind"] for n in nodes] == ["source", "op", "external", "reduction"]
     assert nodes[0]["name"] == "events" and nodes[0]["params"] == {"uri": "ds"}
@@ -40,12 +40,16 @@ def test_nodes_report_kind_name_params_inputs_in_id_order() -> None:
 
 
 def test_output_flag_marks_only_outputs() -> None:
-    nodes = _graph().nodes()
-    assert [n["output"] for n in nodes] == [False, False, False, True]
+    # [freeze-M22-1 respin: outputs are given per request — the flags appear in the artifact
+    # serialized FOR that output, and nowhere else]
+    g, out = _graph()
+    assert [n["output"] for n in g.nodes()] == [False, False, False, False]  # no setter exists
+    back = GraphStore.deserialize(g.serialize(outputs=[out]))
+    assert [n["output"] for n in back.nodes()] == [False, False, False, True]
 
 
 def test_external_descriptor_is_exposed() -> None:
-    ext = next(n for n in _graph().nodes() if n["kind"] == "external")
+    ext = next(n for n in _graph()[0].nodes() if n["kind"] == "external")
     desc = ext["descriptor"]
     assert desc["kind"] == "correctionlib"
     assert desc["content_hash"] == "sha256:beef"
@@ -55,14 +59,15 @@ def test_external_descriptor_is_exposed() -> None:
 
 
 def test_nodes_survive_a_serialize_roundtrip() -> None:
-    g = _graph()
-    back = GraphStore.deserialize(g.serialize())
-    assert g.nodes() == back.nodes()  # introspection is stable through the durable form
+    g, out = _graph()
+    back = GraphStore.deserialize(g.serialize(outputs=[out]))
+    flagged = GraphStore.deserialize(back.serialize())  # the marks carried in the bytes persist
+    assert back.nodes() == flagged.nodes()  # introspection is stable through the durable form
 
 
 def test_param_value_types_are_preserved() -> None:
     g = GraphStore()
-    g.mark_output(g.add_source("s", {"i": 7, "f": 1.5, "b": True, "s": "x"}))
+    g.add_source("s", {"i": 7, "f": 1.5, "b": True, "s": "x"})
     params = g.nodes()[0]["params"]
     assert params == {"i": 7, "f": 1.5, "b": True, "s": "x"}
     assert isinstance(params["i"], int) and isinstance(params["f"], float)

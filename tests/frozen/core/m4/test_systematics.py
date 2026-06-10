@@ -8,7 +8,7 @@ import time
 import graphed_core as gc
 
 
-def _systematics(n_variations: int, selection_depth: int) -> gc.GraphStore:
+def _systematics(n_variations: int, selection_depth: int) -> tuple[gc.GraphStore, int]:
     """A shared selection chain feeding many per-variation observable+weight tails that combine
     into one output — the structure the AGC systematics graph has (heavy shared substructure)."""
     s = gc.GraphStore()
@@ -22,26 +22,27 @@ def _systematics(n_variations: int, selection_depth: int) -> gc.GraphStore:
         w = s.add_op("weight", [obs], {"var": v})
         acc = w if acc is None else s.add_op("add", [acc, w])
     assert acc is not None
-    s.mark_output(acc)
-    return s
+    return s, acc
 
 
 def test_reduced_size_is_independent_of_systematics_count() -> None:
     # doubling (10x-ing) the variation count must NOT grow the reduced stage-graph: the variation
     # ops all fuse into one stage; the shared selection stays one stage.
-    small, _ = _systematics(50, 30).reduce()
-    big, _ = _systematics(500, 30).reduce()
+    s_small, out_small = _systematics(50, 30)
+    s_big, out_big = _systematics(500, 30)
+    small, _ = s_small.reduce(outputs=[out_small])
+    big, _ = s_big.reduce(outputs=[out_big])
     assert small.node_count() == big.node_count()
     assert small.node_count() <= 5  # source + selection-stage + variation-stage
 
 
 def test_ten_thousand_node_graph_reduces_fast_to_o_stage() -> None:
-    s = _systematics(n_variations=3300, selection_depth=100)  # ~10,000 nodes
+    s, out = _systematics(n_variations=3300, selection_depth=100)  # ~10,000 nodes
     n_in = s.node_count()
     assert n_in >= 9000
 
     start = time.perf_counter()
-    reduced, report = s.reduce()
+    reduced, report = s.reduce(outputs=[out])
     elapsed = time.perf_counter() - start
 
     assert elapsed < 1.0, f"reduction took {elapsed:.3f}s (budget 1s)"

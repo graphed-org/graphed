@@ -12,7 +12,7 @@ from __future__ import annotations
 from graphed_core import GraphStore, IncrementalReducer
 
 
-def _chain_with_twins(n: int) -> GraphStore:
+def _chain_with_twins(n: int) -> tuple[GraphStore, int]:
     """A realistic build: a chain plus commuted duplicate work and an identity op."""
     s = GraphStore()
     a = s.add_source("a")
@@ -23,8 +23,7 @@ def _chain_with_twins(n: int) -> GraphStore:
     cur = s.add_op("mul", [one, ba])
     for i in range(n):
         cur = s.add_op("inc", [cur], {"i": i})
-    s.mark_output(cur)
-    return s
+    return s, cur
 
 
 def test_per_step_work_is_the_delta_never_the_history() -> None:
@@ -60,16 +59,16 @@ def test_canonical_form_stays_concise_while_building() -> None:
 
 
 def test_finalize_is_byte_identical_to_one_shot_reduce() -> None:
-    built = _chain_with_twins(25)
+    built, out = _chain_with_twins(25)
     r = IncrementalReducer()
     r.step(built)
-    inc_store, _ = r.finalize(built)
-    full_store, _ = built.reduce()
+    inc_store, _ = r.finalize(built, outputs=[out])
+    full_store, _ = built.reduce(outputs=[out])
     assert inc_store.serialize() == full_store.serialize()
 
 
 def test_finalize_after_many_small_steps_matches_one_big_step() -> None:
-    a = _chain_with_twins(40)
+    a, out_a = _chain_with_twins(40)
     ra = IncrementalReducer()
     ra.step(a)  # one big step
 
@@ -88,25 +87,24 @@ def test_finalize_after_many_small_steps_matches_one_big_step() -> None:
     for i in range(40):
         cur = b.add_op("inc", [cur], {"i": i})
         rb.step(b)
-    b.mark_output(cur)
 
-    assert ra.finalize(a)[0].serialize() == rb.finalize(b)[0].serialize()
+    assert ra.finalize(a, outputs=[out_a])[0].serialize() == rb.finalize(b, outputs=[cur])[0].serialize()
 
 
 def test_incremental_reduction_is_deterministic() -> None:
     def run() -> bytes:
-        s = _chain_with_twins(10)
+        s, out = _chain_with_twins(10)
         r = IncrementalReducer()
         r.step(s)
-        return bytes(r.finalize(s)[0].serialize())
+        return bytes(r.finalize(s, outputs=[out])[0].serialize())
 
     assert run() == run()
 
 
 def test_finalize_report_matches_reduce_shape() -> None:
-    s = _chain_with_twins(5)
+    s, out = _chain_with_twins(5)
     r = IncrementalReducer()
-    _, report = r.finalize(s)  # finalize() consumes any unstepped delta itself
+    _, report = r.finalize(s, outputs=[out])  # finalize() consumes any unstepped delta itself
     for key in ("stages", "reduced_nodes", "boundary_nodes"):
         assert key in report
     assert report["stages"] >= 1

@@ -10,7 +10,7 @@ import graphed_core as gc
 SIZES = [1000, 2000, 4000, 8000]
 
 
-def _build(n: int) -> gc.GraphStore:
+def _build(n: int) -> tuple[gc.GraphStore, int]:
     # a shared selection + many fused variations: a realistically-shaped graph of ~n nodes
     s = gc.GraphStore()
     src = s.add_source("events")
@@ -21,22 +21,21 @@ def _build(n: int) -> gc.GraphStore:
     for v in range(n - n // 4 - 1):
         leaf = s.add_op("observable", [sel], {"var": v})
         acc = s.add_op("add", [acc, leaf])
-    s.mark_output(acc)
-    return s
+    return s, acc
 
 
-def _time_reduce(store: gc.GraphStore, repeats: int = 3) -> float:
+def _time_reduce(store: gc.GraphStore, out: int, repeats: int = 3) -> float:
     best = float("inf")
     for _ in range(repeats):
         start = time.perf_counter()
-        store.reduce()
+        store.reduce(outputs=[out])
         best = min(best, time.perf_counter() - start)
     return best
 
 
 def test_reduction_is_subquadratic() -> None:
     stores = {n: _build(n) for n in SIZES}
-    times = {n: _time_reduce(stores[n]) for n in SIZES}
+    times = {n: _time_reduce(*stores[n]) for n in SIZES}
 
     base = max(times[SIZES[0]], 1e-4)  # floor to avoid divide-by-noise on tiny times
     growth = times[SIZES[-1]] / base  # size grows 8x from 1k -> 8k
@@ -46,9 +45,9 @@ def test_reduction_is_subquadratic() -> None:
 
 def test_each_size_reduces_within_budget() -> None:
     for n in SIZES:
-        s = _build(n)
+        s, out = _build(n)
         start = time.perf_counter()
-        _, report = s.reduce()
+        _, report = s.reduce(outputs=[out])
         elapsed = time.perf_counter() - start
         assert elapsed < 1.0, f"n={n} took {elapsed:.3f}s"
         assert report["reduced_nodes"] < 10  # collapses to O(stage) regardless of n

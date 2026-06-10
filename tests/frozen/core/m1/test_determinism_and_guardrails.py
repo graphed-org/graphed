@@ -13,7 +13,7 @@ def _build(store: gc.GraphStore) -> None:
     src = store.add_source("events", {"uri": "f.root", "tree": "Events"})
     pt = store.add_op("pt", [src])
     cut = store.add_op("cut", [pt], {"thr": 30})
-    red = store.add_reduction("sum", [cut])
+    store.add_reduction("sum", [cut])
     store.add_external(
         {
             "kind": "correctionlib",
@@ -25,7 +25,6 @@ def _build(store: gc.GraphStore) -> None:
         },
         [cut],
     )
-    store.mark_output(red)
 
 
 def test_to_dot_is_byte_stable() -> None:
@@ -56,9 +55,12 @@ def test_core_does_not_import_awkward() -> None:
     assert "awkward" not in sys.modules
 
 
-def test_mark_output_accepts_valid_and_rejects_invalid() -> None:
+def test_reduce_outputs_accepts_valid_and_rejects_invalid() -> None:
+    # [freeze-M22-1, user-authorized respin: outputs are given per compile request — the
+    # mark_output mutator is REMOVED from the public API]
     s = gc.GraphStore()
     n = s.add_source("e")
-    s.mark_output(n)  # ok
+    s.reduce(outputs=[n])  # ok
+    assert not hasattr(s, "mark_output")  # the mutator is gone
     with pytest.raises((ValueError, IndexError, OverflowError)):
-        s.mark_output(10_000)  # out of range
+        s.reduce(outputs=[10_000])  # out of range

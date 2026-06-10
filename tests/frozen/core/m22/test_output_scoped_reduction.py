@@ -1,11 +1,11 @@
 """M22: output-scoped reduction & serialization (the compile_ir output-accumulation fix).
 
 Graph outputs are a property of the COMPILE REQUEST, not store state: `reduce`, `serialize`, and
-`IncrementalReducer.finalize` accept an explicit `outputs=` set that is used EXACTLY — stored
-marks are ignored — so sequential compiles of different expressions from one store are fully
-independent, byte-identical to single-mark stores, and safe under concurrency (compiling is a
-READ-ONLY operation). `outputs=None` (the default) keeps the marks-based behavior every earlier
-frozen suite pins.
+`IncrementalReducer.finalize` take an explicit `outputs=` set that is used EXACTLY, so sequential
+compiles of different expressions from one store are fully independent, byte-identical to
+fresh-store compiles, and safe under concurrency (compiling is a READ-ONLY operation).
+[freeze-M22-1, user-authorized respin: the `mark_output` mutator is REMOVED — an unreduced store
+simply has no outputs; reduced/deserialized artifacts carry the outputs their request named.]
 """
 
 from __future__ import annotations
@@ -29,23 +29,23 @@ def _two_analyses() -> tuple[gc.GraphStore, int, int]:
     return s, a, b
 
 
-def _single_mark_bytes(pick_second: bool) -> bytes:
-    """Reference: a FRESH store where only the chosen analysis was ever marked (the marks path)."""
+def _fresh_request_bytes(pick_second: bool) -> bytes:
+    """Reference: a FRESH store compiled for exactly the chosen analysis."""
     s, a, b = _two_analyses()
-    s.mark_output(b if pick_second else a)
-    return bytes(s.reduce()[0].serialize())
+    return bytes(s.reduce(outputs=[b if pick_second else a])[0].serialize())
 
 
 def _flagged(store: gc.GraphStore) -> list[int]:
     return [n["id"] for n in store.nodes() if n["output"]]
 
 
-def test_reduce_outputs_ignores_stored_marks() -> None:
+def test_reduce_uses_exactly_the_requested_outputs() -> None:
     s, a, b = _two_analyses()
-    s.mark_output(a)  # stale state from an earlier compile
+    _ = s.reduce(outputs=[a])  # an earlier compile of the OTHER analysis
     reduced, _ = s.reduce(outputs=[b])
     assert len(_flagged(reduced)) == 1  # exactly the requested output — not the union
-    assert bytes(reduced.serialize()) == _single_mark_bytes(pick_second=True)
+    assert bytes(reduced.serialize()) == _fresh_request_bytes(pick_second=True)
+    assert not hasattr(s, "mark_output")  # there is no output mutator at all
 
 
 def test_sequential_compiles_from_one_store_are_independent() -> None:
@@ -53,28 +53,28 @@ def test_sequential_compiles_from_one_store_are_independent() -> None:
     first = bytes(s.reduce(outputs=[a])[0].serialize())
     second = bytes(s.reduce(outputs=[b])[0].serialize())
     again = bytes(s.reduce(outputs=[a])[0].serialize())
-    assert first == _single_mark_bytes(pick_second=False)  # history-independent
-    assert second == _single_mark_bytes(pick_second=True)
+    assert first == _fresh_request_bytes(pick_second=False)  # history-independent
+    assert second == _fresh_request_bytes(pick_second=True)
     assert again == first  # and no accumulation in either direction
     assert s.outputs() == []  # compiling never wrote store state
 
 
 def test_serialize_outputs_scopes_the_unoptimized_bytes() -> None:
-    s, a, b = _two_analyses()
-    s.mark_output(a)
+    s, _a, b = _two_analyses()
     scoped = gc.GraphStore.deserialize(bytes(s.serialize(outputs=[b])))
-    assert _flagged(scoped) == [b]  # exactly the requested set, stale mark ignored
-    legacy = gc.GraphStore.deserialize(bytes(s.serialize()))
-    assert _flagged(legacy) == [a]  # the default stays the marks path (frozen back-compat)
+    assert _flagged(scoped) == [b]  # exactly the requested set
+    bare = gc.GraphStore.deserialize(bytes(s.serialize()))
+    assert _flagged(bare) == []  # an unreduced store has no outputs of its own
+    # a deserialized artifact reserializes ITS carried outputs by default (the durable form)
+    assert bytes(scoped.serialize()) == bytes(s.serialize(outputs=[b]))
 
 
 def test_finalize_outputs_matches_one_shot_reduce() -> None:
-    s, a, b = _two_analyses()
-    s.mark_output(a)  # stale
+    s, _a, b = _two_analyses()
     r = IncrementalReducer()
     inc_bytes = bytes(r.finalize(s, outputs=[b])[0].serialize())
     assert inc_bytes == bytes(s.reduce(outputs=[b])[0].serialize())
-    assert inc_bytes == _single_mark_bytes(pick_second=True)
+    assert inc_bytes == _fresh_request_bytes(pick_second=True)
 
 
 def test_explicit_multi_output_request_keeps_both_and_is_deterministic() -> None:

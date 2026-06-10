@@ -22,9 +22,7 @@ def test_commuted_twins_merge_for_every_symmetric_op() -> None:
         ab = s.add_op(op, [a, b])
         ba = s.add_op(op, [b, a])
         assert ab != ba  # distinct when recorded
-        s.mark_output(ab)
-        s.mark_output(ba)
-        _, report = s.reduce()
+        _, report = s.reduce(outputs=[ab, ba])
         assert report["stages"] == 1, f"{op}: commuted twins must merge into one stage"
 
 
@@ -33,9 +31,9 @@ def test_asymmetric_ops_do_not_merge() -> None:
         s = GraphStore()
         a = s.add_source("a")
         b = s.add_source("b")
-        s.mark_output(s.add_op(op, [a, b]))
-        s.mark_output(s.add_op(op, [b, a]))
-        _, report = s.reduce()
+        fwd = s.add_op(op, [a, b])
+        rev = s.add_op(op, [b, a])
+        _, report = s.reduce(outputs=[fwd, rev])
         assert report["stages"] == 2, f"{op} is not symmetric; commuting it would be unsound"
 
 
@@ -47,9 +45,7 @@ def test_param_tokens_are_injective_for_hostile_strings() -> None:
     hostile = s.add_op("tag", [x], {"a": "x;b=i1"})
     benign = s.add_op("tag", [x], {"a": "x", "b": 1})
     assert hostile != benign
-    s.mark_output(hostile)
-    s.mark_output(benign)
-    reduced, _ = s.reduce()
+    reduced, _ = s.reduce(outputs=[hostile, benign])
     # both ops survive reduction with their own params intact
     blob = bytes(reduced.serialize())
     back = GraphStore.deserialize(blob)
@@ -62,7 +58,7 @@ def test_separator_characters_in_params_round_trip_through_members() -> None:
     s = GraphStore()
     x = s.add_source("x")
     weird: dict[str, int | float | bool | str] = {"expr": "pt>30; |eta|<2.4", "label": "a=b%c"}
-    s.mark_output(s.add_op("cut", [x], weird))
-    reduced, _ = s.reduce()
+    cut = s.add_op("cut", [x], weird)
+    reduced, _ = s.reduce(outputs=[cut])
     member = next(n for n in reduced.nodes() if n["kind"] == "stage")["members"][0]
     assert member["params"] == weird

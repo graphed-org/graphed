@@ -24,8 +24,8 @@ def _ir() -> bytes:
     g = GraphStore()
     src = g.add_source("events", {"uri": "data.root"})
     pt = g.add_op("pt", [src])
-    g.mark_output(g.add_reduction("sum", [pt]))
-    return g.serialize()
+    out = g.add_reduction("sum", [pt])
+    return g.serialize(outputs=[out])
 
 
 def _plan(ir: bytes | None = None) -> DurablePlan:
@@ -93,8 +93,8 @@ def test_task_id_changes_with_the_computation() -> None:
     part = Partition("data.root", "Events", 0, 100)
     g2 = GraphStore()
     s = g2.add_source("events", {"uri": "data.root"})
-    g2.mark_output(g2.add_op("eta", [s]))  # a *different* computation
-    assert _plan().task_id(part) != _plan(g2.serialize()).task_id(part)
+    out2 = g2.add_op("eta", [s])  # a *different* computation
+    assert _plan().task_id(part) != _plan(g2.serialize(outputs=[out2])).task_id(part)
 
 
 def test_task_id_changes_with_the_process_callable() -> None:

@@ -25,8 +25,8 @@ from graphed_core import (
 def _ir() -> bytes:
     g = GraphStore()
     src = g.add_source("events", {"uri": "ds"})
-    g.mark_output(g.add_reduction("hist", [g.add_op("pt", [src])]))
-    return g.serialize()
+    out = g.add_reduction("hist", [g.add_op("pt", [src])])
+    return g.serialize(outputs=[out])
 
 
 def _compiled_plan() -> DurablePlan:
