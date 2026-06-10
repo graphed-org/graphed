@@ -334,6 +334,11 @@ class Array:
             raise AttributeError(name)
         return self._session.record_op("field", [self], {"field": name})
 
+    def __iter__(self) -> Any:
+        # int __getitem__ (M13) would otherwise make Array INFINITELY iterable through Python's
+        # legacy iteration protocol (a[0], a[1], ... never raises IndexError on a deferred graph)
+        raise TypeError("deferred graphed arrays are not iterable (unknown partitioned length); materialize first")
+
     def __getitem__(self, key: object) -> Array:
         if isinstance(key, Array):
             return self._session.record_op("getitem", [self, key])
