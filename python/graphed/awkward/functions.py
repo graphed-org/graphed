@@ -202,3 +202,100 @@ def onnx_inference(model_path: str, inputs: Sequence[Array], runner: Callable[..
 correctionlib_descriptor = payloads.correctionlib_descriptor
 onnx_descriptor = payloads.onnx_descriptor
 dataset_descriptor = payloads.dataset_descriptor
+
+
+# ---- M17: structure-op parity (dask-awkward parity plan P1) ---------------------------------
+def sort(arr: Array, axis: int = 1, *, ascending: bool = True) -> Array:
+    return arr.session.record_op("ak.sort", [arr], {"axis": axis, "ascending": ascending})
+
+
+def ravel(arr: Array) -> Array:
+    return arr.session.record_op("ak.ravel", [arr])
+
+
+def run_lengths(arr: Array) -> Array:
+    return arr.session.record_op("ak.run_lengths", [arr])
+
+
+def mask(arr: Array, condition: Array, *, valid_when: bool = True) -> Array:
+    return arr.session.record_op("ak.mask", [arr, condition], {"valid_when": valid_when})
+
+
+def is_none(arr: Array, axis: int = 0) -> Array:
+    return arr.session.record_op("ak.is_none", [arr], {"axis": axis})
+
+
+def singletons(arr: Array, axis: int = 0) -> Array:
+    return arr.session.record_op("ak.singletons", [arr], {"axis": axis})
+
+
+def pad_none(arr: Array, target: int, axis: int = 1, *, clip: bool = False) -> Array:
+    return arr.session.record_op("ak.pad_none", [arr], {"target": target, "axis": axis, "clip": clip})
+
+
+def unflatten(arr: Array, counts: Array, axis: int = 0) -> Array:
+    return arr.session.record_op("ak.unflatten", [arr, counts], {"axis": axis})
+
+
+def to_regular(arr: Array, axis: int = 1) -> Array:
+    return arr.session.record_op("ak.to_regular", [arr], {"axis": axis})
+
+
+def from_regular(arr: Array, axis: int = 1) -> Array:
+    return arr.session.record_op("ak.from_regular", [arr], {"axis": axis})
+
+
+def full_like(arr: Array, value: float, *, dtype: str | None = None) -> Array:
+    params: dict[str, object] = {"value": float(value)}
+    if dtype is not None:
+        params["dtype"] = dtype
+    return arr.session.record_op("ak.full_like", [arr], params)  # type: ignore[arg-type]
+
+
+def nan_to_num(arr: Array) -> Array:
+    return arr.session.record_op("ak.nan_to_num", [arr])
+
+
+def isclose(x: Array, y: Array, *, rtol: float = 1e-05, atol: float = 1e-08) -> Array:
+    return x.session.record_op("ak.isclose", [x, y], {"rtol": rtol, "atol": atol})
+
+
+def argcombinations(arr: Array, n: int, *, fields: Sequence[str] | None = None) -> Array:
+    params: dict[str, object] = {"n": n}
+    if fields:
+        params["fields"] = ",".join(fields)
+    return arr.session.record_op("ak.argcombinations", [arr], params)  # type: ignore[arg-type]
+
+
+def argcartesian(arrays: Sequence[Array], *, nested: bool = False) -> Array:
+    return arrays[0].session.record_op("ak.argcartesian", list(arrays), {"nested": nested})
+
+
+def without_field(arr: Array, field: str) -> Array:
+    return arr.session.record_op("ak.without_field", [arr], {"field": field})
+
+
+def values_astype(arr: Array, dtype: str) -> Array:
+    return arr.session.record_op("ak.values_astype", [arr], {"dtype": dtype})
+
+
+def broadcast_arrays(*arrays: Array) -> tuple[Array, ...]:
+    """Each broadcast output is its own recorded node (same inputs, an index param)."""
+    session = arrays[0].session
+    return tuple(
+        session.record_op("ak.broadcast_arrays", list(arrays), {"index": i}) for i in range(len(arrays))
+    )
+
+
+def unzip(arr: Array) -> tuple[Array, ...]:
+    """One recorded field op per record field (the field list comes from the typetracer form)."""
+    form = arr.session.form(arr)
+    return tuple(arr[name] for name in form.tt.fields)  # type: ignore[attr-defined]
+
+
+def to_list(arr: Array) -> list[object]:
+    """EAGER sugar: materializes through the session, then ak.to_list (records nothing new)."""
+    import awkward as _ak  # noqa: PLC0415  (avoid importing awkward at gak import for tooling)
+
+    out: list[object] = _ak.to_list(arr.session.materialize(arr))
+    return out

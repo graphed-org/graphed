@@ -201,6 +201,56 @@ def apply(op: str, operands: Sequence[Any], params: Mapping[str, Any]) -> Any:
         return ak.ones_like(operands[0], dtype=_dtype(params))
     if op == "ak.values_astype":
         return ak.values_astype(operands[0], _dtype(params))
+    if op == "ak.sort":
+        return ak.sort(
+            operands[0], axis=int(params.get("axis", 1)), ascending=bool(params.get("ascending", True))
+        )
+    if op == "ak.ravel":
+        return ak.ravel(operands[0])
+    if op == "ak.run_lengths":
+        return ak.run_lengths(operands[0])
+    if op == "ak.mask":
+        return ak.mask(operands[0], operands[1], valid_when=bool(params.get("valid_when", True)))
+    if op == "ak.is_none":
+        return ak.is_none(operands[0], axis=int(params.get("axis", 0)))
+    if op == "ak.singletons":
+        return ak.singletons(operands[0], axis=int(params.get("axis", 0)))
+    if op == "ak.pad_none":
+        return ak.pad_none(
+            operands[0],
+            int(params["target"]),
+            axis=int(params.get("axis", 1)),
+            clip=bool(params.get("clip", False)),
+        )
+    if op == "ak.unflatten":
+        return ak.unflatten(operands[0], operands[1], axis=int(params.get("axis", 0)))
+    if op == "ak.to_regular":
+        return ak.to_regular(operands[0], axis=int(params.get("axis", 1)))
+    if op == "ak.from_regular":
+        return ak.from_regular(operands[0], axis=int(params.get("axis", 1)))
+    if op == "ak.full_like":
+        dtype = np.dtype(str(params["dtype"])) if "dtype" in params else None
+        return ak.full_like(operands[0], params["value"], dtype=dtype)
+    if op == "ak.nan_to_num":
+        return ak.nan_to_num(operands[0])
+    if op == "ak.isclose":
+        return ak.isclose(
+            operands[0],
+            operands[1],
+            rtol=float(params.get("rtol", 1e-05)),
+            atol=float(params.get("atol", 1e-08)),
+        )
+    if op == "ak.argcombinations":
+        return ak.argcombinations(operands[0], int(params["n"]), fields=_fields(params) or None)
+    if op == "ak.argcartesian":
+        return ak.argcartesian(list(operands), nested=bool(params.get("nested", False)))
+    if op == "ak.without_field":
+        return ak.without_field(operands[0], params["field"])
+    if op == "ak.broadcast_arrays":
+        return ak.broadcast_arrays(*operands)[int(params["index"])]
+    if op == "fields":
+        names = [f for f in str(params["fields"]).split(",") if f]
+        return operands[0][names]
     raise TypeError(f"unsupported awkward op {op!r}")
 
 
