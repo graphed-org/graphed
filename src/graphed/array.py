@@ -408,7 +408,9 @@ class Array:
         return f"Array(node_id={self._node_id})"
 
 
-def _take_axis(kind: str, args: tuple[object, ...], kwargs: dict[str, object]) -> tuple[int | None, dict[str, object]]:
+def _take_axis(
+    kind: str, args: tuple[object, ...], kwargs: dict[str, object]
+) -> tuple[int | None, dict[str, object]]:
     """Normalize the (positional-or-keyword) axis argument of a numpy reduction/scan call."""
     kw = dict(kwargs)
     rest = args[1:]
@@ -422,7 +424,9 @@ def _take_axis(kind: str, args: tuple[object, ...], kwargs: dict[str, object]) -
     return axis, kw
 
 
-def _make_reduction(kind: str, *, allow_ddof: bool = False) -> Callable[[Array, tuple[object, ...], dict[str, object]], Array]:
+def _make_reduction(
+    kind: str, *, allow_ddof: bool = False
+) -> Callable[[Array, tuple[object, ...], dict[str, object]], Array]:
     def handler(arr: Array, args: tuple[object, ...], kwargs: dict[str, object]) -> Array:
         if not args or args[0] is not arr:
             raise TypeError(f"graphed np.{kind}: the first argument must be the deferred array")
@@ -454,17 +458,27 @@ def _make_scan(kind: str) -> Callable[[Array, tuple[object, ...], dict[str, obje
 _ARRAY_FUNCTIONS: dict[str, Callable[[Array, tuple[object, ...], dict[str, object]], Array]] = {
     name: _make_reduction(kind)
     for name, kind in [
-        ("sum", "sum"), ("prod", "prod"), ("mean", "mean"),
-        ("min", "min"), ("amin", "min"), ("max", "max"), ("amax", "max"),
-        ("any", "any"), ("all", "all"), ("argmin", "argmin"), ("argmax", "argmax"),
-        ("nansum", "nansum"), ("nanprod", "nanprod"), ("nanmean", "nanmean"),
-        ("nanmin", "nanmin"), ("nanmax", "nanmax"),
-        ("nanargmin", "nanargmin"), ("nanargmax", "nanargmax"),
+        ("sum", "sum"),
+        ("prod", "prod"),
+        ("mean", "mean"),
+        ("min", "min"),
+        ("amin", "min"),
+        ("max", "max"),
+        ("amax", "max"),
+        ("any", "any"),
+        ("all", "all"),
+        ("argmin", "argmin"),
+        ("argmax", "argmax"),
+        ("nansum", "nansum"),
+        ("nanprod", "nanprod"),
+        ("nanmean", "nanmean"),
+        ("nanmin", "nanmin"),
+        ("nanmax", "nanmax"),
+        ("nanargmin", "nanargmin"),
+        ("nanargmax", "nanargmax"),
     ]
 }
 _ARRAY_FUNCTIONS.update(
     {name: _make_reduction(name, allow_ddof=True) for name in ("std", "var", "nanstd", "nanvar")}
 )
-_ARRAY_FUNCTIONS.update(
-    {name: _make_scan(name) for name in ("cumsum", "cumprod", "nancumsum", "nancumprod")}
-)
+_ARRAY_FUNCTIONS.update({name: _make_scan(name) for name in ("cumsum", "cumprod", "nancumsum", "nancumprod")})
