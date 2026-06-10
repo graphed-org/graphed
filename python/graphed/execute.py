@@ -60,19 +60,26 @@ def compile_ir(
     """Compile the session's recorded graph for the given output arrays.
 
     Reduction runs once, here — workers receive the already-reduced bytes. An incremental session
-    finishes from its maintained canonical view (per-step work already paid at record time)."""
+    finishes from its maintained canonical view (per-step work already paid at record time).
+    The artifact carries EXACTLY the requested outputs (M22), so compiling different
+    expressions sequentially from one session never cross-talks."""
     if maximal_fusion and not optimize:
         raise ValueError("maximal_fusion requires optimize=True")
-    for arr in outputs:
-        session._store.mark_output(arr.node_id)
     if optimize and not outputs:
         raise ValueError("compile_ir(optimize=True) needs at least one output Array")
+    ids = [arr.node_id for arr in outputs]
+    for arr in outputs:
+        session._store.mark_output(arr.node_id)  # legacy side effect (see serialized_ir)
     if not optimize:
-        blob = bytes(session._store.serialize())
+        blob = bytes(session._store.serialize(outputs=ids))
     elif session._reducer is not None:
-        blob = bytes(session._reducer.finalize(session._store, maximal_fusion=maximal_fusion)[0].serialize())
+        blob = bytes(
+            session._reducer.finalize(session._store, maximal_fusion=maximal_fusion, outputs=ids)[
+                0
+            ].serialize()
+        )
     else:
-        blob = bytes(session._store.reduce(maximal_fusion=maximal_fusion)[0].serialize())
+        blob = bytes(session._store.reduce(maximal_fusion=maximal_fusion, outputs=ids)[0].serialize())
     names = tuple(session.source_name(nid) for nid in session.source_ids())
     return CompiledGraph(ir=blob, source_names=names)
 
