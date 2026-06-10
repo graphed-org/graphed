@@ -24,6 +24,7 @@ from graphed_core import PayloadDescriptor
 
 from .array import NumpyArray
 from .forms import NumpyForm, form_from_meta, is_numeric, meta, unit_meta
+from .gufunc import apply_gufunc, gufunc_form
 from .projection import project
 
 # canonical op name -> numpy callable. These are the evaluation AND the record-time form-inference
@@ -333,6 +334,8 @@ class NumpyBackend:
             return NumpyForm(data.dtype, shape=data.shape)
         if op == "map":
             return NumpyForm(np.dtype(object))  # opaque callable: result form unknown
+        if op == "gufunc":
+            return gufunc_form(forms, params)  # M14: the signature makes the opaque callable typable
         if op in _REDUCERS or op in _SCANS:
             (a,) = forms
             if not (is_numeric(a) or (a.fields is None and a.dtype == np.bool_)):
@@ -393,22 +396,24 @@ class NumpyBackend:
         return self._apply(op, [np.asarray(x) for x in inputs], params)
 
     def boundary_ops(self) -> frozenset[str]:
-        return frozenset({"source", "map", *_REDUCERS})
+        return frozenset({"source", "map", "gufunc", *_REDUCERS})
 
     def project(self, op: str, used: object, params: Mapping[str, object]) -> object:
         # Vestigial M2 per-op stub; the real projection is the module-level `project` (M5).
         return used
 
     def external_payload(self, op: str, params: Mapping[str, object]) -> PayloadDescriptor | None:
-        if op != "map":
+        if op not in ("map", "gufunc"):
             return None
         fn_name = str(params.get("fn", "lambda"))
+        # M14: a gufunc node's io_schema IS its signature — the descriptor carries the contract
+        io_schema = str(params["signature"]) if op == "gufunc" else "opaque->opaque"
         return PayloadDescriptor(
             kind="opaque_callable",
             content_hash=f"unhashed-opaque:{fn_name}",
             framework="python",
             version=platform.python_version(),
-            io_schema="opaque->opaque",
+            io_schema=io_schema,
             preprocessing_ref=None,
         )
 
@@ -456,6 +461,7 @@ __all__ = [
     "NumpyArray",
     "NumpyBackend",
     "NumpyForm",
+    "apply_gufunc",
     "arange",
     "default_rng",
     "empty",
