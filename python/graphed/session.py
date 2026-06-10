@@ -179,7 +179,12 @@ class Session:
         if descriptor is None:
             raise GraphedTypeError(op, prov, "backend returned no payload descriptor for external op")
         in_forms = [self._forms[a.node_id] for a in inputs]
-        form = self._backend.op_form(op, in_forms, params_d)
+        try:
+            form = self._backend.op_form(op, in_forms, params_d)
+        except GraphedTypeError:
+            raise
+        except Exception as exc:  # backend type/shape error -> user-located error (as record_op)
+            raise GraphedTypeError(op, prov, str(exc)) from exc
         ids = [a.node_id for a in inputs]
         node_id = self._store.add_external(descriptor, ids, params_d)
         self._forms.setdefault(node_id, form)
