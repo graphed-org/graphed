@@ -18,10 +18,13 @@ resolved only via the bundle's content-addressed references.
 Reuses HEP standards (correctionlib / ONNX / UHI) — invents no formats. Builds on M8's determinism
 and Store; this is the reproducibility requirement of A.3.1.
 
+Start with :doc:`design` for the engineering walkthrough.
+
 .. toctree::
    :maxdepth: 2
    :caption: Contents
 
+   design
    api
    improvements
 
