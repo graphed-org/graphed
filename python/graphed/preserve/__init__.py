@@ -17,6 +17,7 @@ from .bundle import Bundle, build_bundle, inspect, reproduce
 from .errors import PreserveError, UnresolvedPayload
 from .externals import (
     CORRECTIONLIB_PLUGIN,
+    HISTOGRAM_PLUGIN,
     ONNX_PLUGIN,
     ExternalPlugin,
     ResourceCache,
@@ -32,6 +33,7 @@ from .manifest import canonical_bytes, fingerprint
 
 __all__ = [
     "CORRECTIONLIB_PLUGIN",
+    "HISTOGRAM_PLUGIN",
     "ONNX_PLUGIN",
     "Bundle",
     "ExternalPlugin",

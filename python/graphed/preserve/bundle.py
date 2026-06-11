@@ -105,10 +105,10 @@ def build_bundle(
     *,
     session: Any,
     value: Any,
-    weight: Any,
-    datasets: dict[str, Any],
-    payloads: dict[str, bytes],
-    histogram: dict[str, Any],
+    weight: Any | None = None,
+    datasets: dict[str, Any] | None = None,
+    payloads: dict[str, bytes] | None = None,
+    histogram: dict[str, Any] | None = None,
     config: dict[str, Any] | None = None,
     seed: int = 0,
     environment: dict[str, Any] | None = None,
@@ -118,12 +118,19 @@ def build_bundle(
     self-contained bundle. ``datasets`` maps each source name to its input array; ``payloads`` maps
     each External descriptor ``content_hash`` to the correction/model file bytes; ``histogram`` is the
     ``{name, bins, lo, hi}`` spec applied to ``value`` weighted by ``weight``."""
+    if (weight is None) != (histogram is None):
+        raise PreserveError(
+            "weight= and histogram= must be given together (the value/weight/spec triple) or both omitted (a histogram-terminal analysis)"
+        )
+    datasets = dict(datasets or {})
+    payloads = dict(payloads or {})
     root = Path(root)
     root.mkdir(parents=True, exist_ok=True)
     store = Store(root / "store")
 
     # 1. the canonical IR (opt_level=0: auditable, 1:1 with user ops, no stage fusion)
-    ir = session.serialized_ir(value, weight, optimize=False)
+    outputs_arrays = (value,) if weight is None else (value, weight)
+    ir = session.serialized_ir(*outputs_arrays, optimize=False)
     ir_hash = store.put(ir)
     nodes = GraphStore.deserialize(ir).nodes()
 
@@ -143,6 +150,10 @@ def build_bundle(
             # no plugin (e.g. an opaque cloudpickled `map`, or an unregistered kind) -> not preservable
             opaque_nodes.append(node["id"])
             continue
+        if ch not in payloads and plugin.synthesize is not None:
+            synthesized = plugin.synthesize(node["params"])
+            if synthesized is not None:  # M25: derivable payloads (e.g. a fill's canonical spec)
+                payloads[ch] = synthesized
         if ch not in payloads:
             raise PreserveError(f"no payload bytes supplied for external {ch} (node {node['id']})")
         blob = payloads[ch]
@@ -173,8 +184,11 @@ def build_bundle(
         "format_version": FORMAT_VERSION,
         "analysis": {
             "ir": ir_hash,
-            "outputs": {"value": int(value.node_id), "weight": int(weight.node_id)},
-            "histogram": dict(histogram),
+            "outputs": {
+                "value": int(value.node_id),
+                "weight": None if weight is None else int(weight.node_id),
+            },
+            "histogram": None if histogram is None else dict(histogram),
         },
         "sources": sources_manifest,
         "externals": externals_manifest,
@@ -231,6 +245,10 @@ def reproduce(bundle: Bundle) -> Any:
             eval_op=lambda name, ins, params: backend.eval_stage(name, ins, params),
         )
         out = m["analysis"]["outputs"]
+        if m["analysis"]["histogram"] is None:
+            # a histogram-terminal analysis: the preserved IR ends AT the fill — the evaluated
+            # value IS the histogram (M25; no value/weight/spec triple)
+            return values[out["value"]]
         return _histogram(values[out["value"]], values[out["weight"]], m["analysis"]["histogram"])
     finally:
         resources.close()  # release loaded models / close connections at the end of the run
