@@ -15,10 +15,13 @@ content-addressed ``task_id``), this package adds the durable side of M8:
 
 Local-filesystem and single-machine only (the M8 guardrail). Analysis *preservation* is M9.
 
+Start with :doc:`design` for the engineering walkthrough.
+
 .. toctree::
    :maxdepth: 2
    :caption: Contents
 
+   design
    api
    improvements
 
