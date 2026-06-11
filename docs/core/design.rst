@@ -208,35 +208,57 @@ stage input, deduplicated in first-seen order). The stage's last member is its r
 executor therefore dispatches once per *stage*, runs the members as a tight loop with no
 graph-interpretation overhead between them, and never sees the original op count.
 
-A worked example
-~~~~~~~~~~~~~~~~
+A worked example (runnable)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Record this (typical of how analysis code accumulates)::
+Record this (typical of how analysis code accumulates) and reduce it::
 
-    src  = source("events")
-    pt   = op("pt", [src])
-    w    = op("weight", [src])
-    a    = op("add", [pt, w])
-    b    = op("add", [w, pt])          # the commuted twin, written elsewhere
-    one  = op("mul", [a], scalar=1.0)  # a helper that multiplied by 1.0
-    dead = op("cut", [pt])             # tried, abandoned, never an output
-    out  = reduction("sum", [op("mul", [one, b])])
+    import graphed_core as gc
 
-Reduction with ``outputs=[out]`` proceeds:
+    s = gc.GraphStore()
+    src  = s.add_source("events", {"uri": "data.root"})
+    pt   = s.add_op("pt", [src])
+    w    = s.add_op("weight", [src])
+    a    = s.add_op("add", [pt, w])
+    b    = s.add_op("add", [w, pt])                      # the commuted twin, written elsewhere
+    one  = s.add_op("mul", [a], {"scalar": 1.0, "side": "r"})  # a helper that multiplied by 1.0
+    dead = s.add_op("cut", [pt])                         # tried, abandoned, never an output
+    out  = s.add_reduction("sum", [s.add_op("mul", [one, b])])
 
-1. **DCE** drops ``dead`` (unreachable from ``out``).
-2. **Canonicalization** merges ``a`` and ``b`` into one class (commutativity) and equates
-   ``one`` with ``a`` (multiplicative identity). Extraction keeps the earliest member of each
-   class: ``b`` and ``one`` vanish, and their consumers re-point at ``a``.
-3. **CSE** collapses any parents that became identical under those rewrites (here the final
-   ``mul`` becomes ``mul(a, a)`` — a single node either way).
-4. **Stage fusion** groups the surviving ops: ``pt``, ``weight``, ``add``, ``mul`` fuse into
-   one stage between the ``src`` boundary and the ``sum`` boundary.
+    reduced, report = s.reduce(outputs=[out])
+    print(report)
+    for n in reduced.nodes():
+        print(n["id"], n["kind"], n.get("n_members", ""))
 
-Result: ``source → Stage[pt, weight, add, mul] → sum`` — three nodes, one executor dispatch for
-the op work, regardless of how many intermediate variables the user's code accumulated. The
-``reduction_report`` exposes the counts at each step (input, reachable, canonical, stages,
-boundary nodes) so this collapse is observable rather than folklore.
+which prints (exactly — this is deterministic)::
+
+    {'input_nodes': 9, 'reachable_nodes': 8, 'canonical_nodes': 6,
+     'stages': 2, 'boundary_nodes': 2, 'reduced_nodes': 4}
+    0 source
+    1 stage 3
+    2 stage 1
+    3 reduction
+
+Walking the counts:
+
+1. **DCE**: 9 recorded → 8 reachable (``dead`` is gone).
+2. **Canonicalization**: 8 → 6 — ``b`` merged with ``a`` (commutativity) and ``one`` equated
+   with ``a`` (multiplicative identity); extraction kept the earliest member of each class and
+   re-pointed consumers, so the final ``mul`` became ``mul(a, a)``.
+3. **Stage fusion** (SingleUse): the surviving ops form **two** stages, and the reason is
+   instructive — after the rewrites, ``a`` is consumed *twice* by ``mul(a, a)``, so it is a
+   fan-out and heads its own single-member stage; ``pt``/``w``/``add`` would each feed it...
+   in fact the three-member stage is ``[pt, weight, add→a]`` computing ``a`` once, and the
+   one-member stage is the ``mul`` that uses it twice. The fan-out value is computed once,
+   never inlined twice — exactly the SingleUse guarantee.
+4. The two boundaries (``source``, ``sum``) survive as themselves: **4 nodes total**, two
+   executor dispatches for the op work, regardless of how many intermediate variables the
+   user's code accumulated.
+
+(Under ``maximal_fusion=True`` the fan-out *would* fuse — all of ``a``'s consumers are ops in
+one stage — giving ``source → Stage[4] → sum``.) The ``reduction_report`` makes the collapse
+observable at every step rather than folklore; re-running ``reduce`` produces byte-identical
+output (``reduced.serialize()`` equality is part of the frozen suite).
 
 The incremental reducer
 ~~~~~~~~~~~~~~~~~~~~~~~
@@ -307,3 +329,26 @@ File                                  What lives there
 ``python/graphed_core/plan.py``       ``DurablePlan`` + ``OpSpec`` + content-addressed ``task_id``
 ``python/graphed_core/execution.py``  the executor-facing ``Plan``/``Task``/``ExecResult`` contract
 ====================================  ===========================================================
+
+
+Phase 2 (deliberately not built)
+--------------------------------
+
+The MVP draws its scope lines explicitly; these are the known next steps, in this package's
+territory, that are *intentionally absent* rather than forgotten:
+
+* **The egglog engine swap.** ``RewriteEngine`` exists precisely so a second engine
+  implementation (egglog) can replace ``EggEngine`` without touching DCE/CSE/fusion; the MVP
+  ships egg only.
+* **A richer (still sound) rule vocabulary.** Associativity regrouping, constant folding, and
+  any domain-informed rules would require revisiting both the O(N) extraction argument (rules
+  must keep the equate-with-an-earlier-node property or extraction needs a real cost search)
+  and the incremental reducer's constructor-locality argument — the byte-identity pin between
+  ``finalize`` and ``reduce`` is the tripwire either way.
+* **Finer store sharding.** The single ``Mutex`` has been sufficient under free-threaded
+  stress; sharding the intern table is tracked for genuinely contended recording workloads.
+* **Cost-model-driven fusion.** ``SingleUse``/``Maximal`` are structural policies; a
+  Volcano/Cascades-style cost model choosing fusion per stage (kernel size, memory residency)
+  is a Phase-2 optimizer evolution.
+
+See :doc:`improvements` for the live tracked list.
