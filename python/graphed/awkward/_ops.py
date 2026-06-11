@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -160,58 +161,91 @@ def apply(
         return operands[0][int(params["i"])]
     if op == "ak.num":
         return ak.num(operands[0], axis=int(params.get("axis", 1)))
-    if op in ("ak.min", "ak.max", "ak.ptp") and _axis(params) is None:
+    if (
+        op in ("ak.min", "ak.max", "ak.ptp")
+        and _axis(params) is None
+        and not any(k in params for k in ("mask_identity", "initial", "keepdims"))
+    ):
         return _global_extremum(op, operands[0])
     if op in _AK_REDUCERS:
-        return _AK_REDUCERS[op](operands[0], axis=_axis(params))
+        return _AK_REDUCERS[op](operands[0], axis=_axis(params), **_reduce_kwargs(op, params, operands))
     if op in ("ak.std", "ak.var"):
         fn = ak.std if op == "ak.std" else ak.var
-        return fn(operands[0], axis=_axis(params), ddof=int(params.get("ddof", 0)))
+        return fn(
+            operands[0],
+            axis=_axis(params),
+            ddof=int(params.get("ddof", 0)),
+            **_reduce_kwargs(op, params, operands),
+        )
     if op == "ak.moment":
-        return ak.moment(operands[0], int(params["n"]), axis=_axis(params))
+        return ak.moment(
+            operands[0], int(params["n"]), axis=_axis(params), **_reduce_kwargs(op, params, operands)
+        )
     if op == "ak.softmax":
         return ak.softmax(operands[0], axis=int(params.get("axis", 1)))
     if op in _AK_TWO_INPUT:
         return _AK_TWO_INPUT[op](operands[0], operands[1], axis=_axis(params))
-    if op == "ak.combinations":
-        return ak.combinations(operands[0], int(params["n"]), fields=_fields(params) or None)
-    if op == "ak.cartesian":
-        return ak.cartesian(list(operands), nested=bool(params.get("nested", False)))
+    if op in ("ak.combinations", "ak.argcombinations"):
+        fn2 = ak.combinations if op == "ak.combinations" else ak.argcombinations
+        return fn2(
+            operands[0],
+            int(params["n"]),
+            fields=_fields(params) or None,
+            replacement=bool(params.get("replacement", False)),
+            axis=int(params.get("axis", 1)),
+            **_naming_kwargs(params),
+        )
+    if op in ("ak.cartesian", "ak.argcartesian"):
+        fn3 = ak.cartesian if op == "ak.cartesian" else ak.argcartesian
+        return fn3(
+            list(operands),
+            nested=_nested(params),
+            axis=int(params.get("axis", 1)),
+            **_naming_kwargs(params),
+        )
     if op == "ak.zip":
-        return ak.zip(dict(zip(_fields(params), operands, strict=True)))
+        zipped = tuple(operands) if params.get("tuple") else dict(zip(_fields(params), operands, strict=True))
+        kw: dict[str, Any] = dict(_naming_kwargs(params))
+        if "depth_limit" in params:
+            kw["depth_limit"] = int(params["depth_limit"])
+        return ak.zip(zipped, **kw)
     if op == "ak.with_field":
         return ak.with_field(operands[0], operands[1], where=params["field"])
     if op == "ak.firsts":
         return ak.firsts(operands[0], axis=int(params.get("axis", 1)))
-    if op == "ak.argmin":
-        return ak.argmin(
-            operands[0], axis=int(params.get("axis", 1)), keepdims=bool(params.get("keepdims", False))
-        )
-    if op == "ak.argmax":
-        return ak.argmax(
-            operands[0], axis=int(params.get("axis", 1)), keepdims=bool(params.get("keepdims", False))
+    if op in ("ak.argmin", "ak.argmax"):
+        fn4 = ak.argmin if op == "ak.argmin" else ak.argmax
+        return fn4(
+            operands[0],
+            axis=_axis(params),
+            keepdims=bool(params.get("keepdims", False)),
+            mask_identity=bool(params.get("mask_identity", True)),
         )
     if op == "ak.argsort":
         return ak.argsort(
-            operands[0], axis=int(params.get("axis", 1)), ascending=bool(params.get("ascending", True))
+            operands[0],
+            axis=int(params.get("axis", -1)),
+            ascending=bool(params.get("ascending", True)),
+            stable=bool(params.get("stable", True)),
         )
     if op == "ak.local_index":
-        return ak.local_index(operands[0], axis=int(params.get("axis", 1)))
+        return ak.local_index(operands[0], axis=int(params.get("axis", -1)))
     if op == "ak.concatenate":
-        return ak.concatenate(list(operands), axis=int(params.get("axis", 1)))
+        return ak.concatenate(list(operands), axis=int(params.get("axis", 0)))
     if op == "ak.flatten":
         return ak.flatten(operands[0], axis=_axis(params, default=1))
     if op == "ak.fill_none":
         return ak.fill_none(operands[0], params["value"], axis=int(params.get("axis", -1)))
     if op == "ak.drop_none":
-        return ak.drop_none(operands[0])
+        ax = params.get("axis")
+        return ak.drop_none(operands[0], axis=None if ax is None else int(ax))
     if op == "ak.where":
         cond, a, b = _three_operands(operands, params)
         return ak.where(cond, a, b)
     if op == "ak.zeros_like":
-        return ak.zeros_like(operands[0], dtype=_dtype(params))
+        return ak.zeros_like(operands[0], dtype=_dtype(params) if "dtype" in params else None)
     if op == "ak.ones_like":
-        return ak.ones_like(operands[0], dtype=_dtype(params))
+        return ak.ones_like(operands[0], dtype=_dtype(params) if "dtype" in params else None)
     if op == "ak.values_astype":
         return ak.values_astype(operands[0], _dtype(params))
     if op == "ak.with_name":
@@ -225,7 +259,10 @@ def apply(
         return ak.without_parameters(operands[0])
     if op == "ak.sort":
         return ak.sort(
-            operands[0], axis=int(params.get("axis", 1)), ascending=bool(params.get("ascending", True))
+            operands[0],
+            axis=int(params.get("axis", -1)),
+            ascending=bool(params.get("ascending", True)),
+            stable=bool(params.get("stable", True)),
         )
     if op == "ak.ravel":
         return ak.ravel(operands[0])
@@ -254,13 +291,19 @@ def apply(
         dtype = np.dtype(str(params["dtype"])) if "dtype" in params else None
         return ak.full_like(operands[0], params["value"], dtype=dtype)
     if op == "ak.nan_to_num":
-        return ak.nan_to_num(operands[0])
+        return ak.nan_to_num(
+            operands[0],
+            nan=float(params.get("nan", 0.0)),
+            posinf=float(params["posinf"]) if "posinf" in params else None,
+            neginf=float(params["neginf"]) if "neginf" in params else None,
+        )
     if op == "ak.isclose":
         return ak.isclose(
             operands[0],
             operands[1],
             rtol=float(params.get("rtol", 1e-05)),
             atol=float(params.get("atol", 1e-08)),
+            equal_nan=bool(params.get("equal_nan", False)),
         )
     if op == "ak.argcombinations":
         return ak.argcombinations(operands[0], int(params["n"]), fields=_fields(params) or None)
@@ -269,7 +312,8 @@ def apply(
     if op == "ak.without_field":
         return ak.without_field(operands[0], params["field"])
     if op == "ak.broadcast_arrays":
-        return ak.broadcast_arrays(*operands)[int(params["index"])]
+        dl = int(params["depth_limit"]) if "depth_limit" in params else None
+        return ak.broadcast_arrays(*operands, depth_limit=dl)[int(params["index"])]
     if op == "fields":
         names = [f for f in str(params["fields"]).split(",") if f]
         return operands[0][names]
@@ -291,6 +335,39 @@ def _global_extremum(op: str, x: Any) -> Any:
         return ak.ptp(x, axis=None)
     fn = ak.min if op == "ak.min" else ak.max
     return fn(x, axis=None, mask_identity=False) if tracing else fn(x, axis=None)
+
+
+def _reduce_kwargs(op: str, params: Mapping[str, Any], operands: Sequence[Any]) -> dict[str, Any]:
+    """ak-parity reducer kwargs, present-only in params (ak's own defaults otherwise); a weighted
+    moment carries its weight as the SECOND OPERAND."""
+    kw: dict[str, Any] = {}
+    if params.get("keepdims"):
+        kw["keepdims"] = True
+    if "mask_identity" in params:
+        kw["mask_identity"] = bool(params["mask_identity"])
+    if "initial" in params:
+        kw["initial"] = float(params["initial"])
+    if params.get("weighted"):
+        kw["weight"] = operands[1]
+    return kw
+
+
+def _naming_kwargs(params: Mapping[str, Any]) -> dict[str, Any]:
+    """Inline with_name/parameters for the structure constructors (JSON-decoded)."""
+    kw: dict[str, Any] = {}
+    if "with_name" in params:
+        kw["with_name"] = str(params["with_name"])
+    if "parameters" in params:
+        kw["parameters"] = json.loads(str(params["parameters"]))
+    return kw
+
+
+def _nested(params: Mapping[str, Any]) -> Any:
+    if "nested_axes" in params:
+        return [int(x) for x in str(params["nested_axes"]).split(",") if x]
+    if "nested" in params:
+        return bool(params["nested"])
+    return None
 
 
 def _axis(params: Mapping[str, Any], default: int | None = None) -> int | None:
