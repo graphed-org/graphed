@@ -1,15 +1,21 @@
 graphed
 =======
 
-The deferred-array frontend for ``graphed`` (milestone M2). A user writes ordinary array
-expressions; ``graphed`` records them into the Rust-backed ``graphed-core`` store via a pluggable
-``Backend``. The recorded graph is **backend-agnostic** — backends supply only form inference and
-evaluation. No fusion (M4); no awkward (M3); provenance is a stub (M3).
+The deferred-array **recording frontend**: ordinary array expressions become nodes in the
+Rust-backed ``graphed-core`` store through a pluggable, five-method ``Backend`` protocol.
+Type errors surface at the recording line (form inference on metadata only); results
+materialize through the reference walker or — the real path — compile to a reduced IR any
+executor evaluates. The frontend is strictly backend-agnostic: numpy and awkward idioms live
+in their backends, common machinery (projection, compilation, the parquet/write I/O bases)
+lives here.
+
+Start with :doc:`design` for the engineering walkthrough, then :doc:`api`.
 
 .. toctree::
    :maxdepth: 2
    :caption: Contents
 
+   design
    api
    improvements
 
