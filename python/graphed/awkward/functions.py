@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Mapping, Sequence
-from typing import SupportsFloat
+from typing import Any, SupportsFloat
 
 from graphed import Array, ParamValue
 
@@ -399,19 +399,139 @@ def ones_like(arr: Array, *, dtype: str | None = None) -> Array:
     return arr.session.record_op("ak.ones_like", [arr], params)
 
 
+# ---- M28: variadic call templates for the recorded externals --------------------------------------
+# The template ("$i" slots, [..] groups, constants where the callee allows) is PRESERVED NODE
+# CONTENT: it rides the IR as canonical JSON, and record-time evaluation materializes THE SAME
+# template the preservation replay obeys — agreement by construction. Descriptors on this path
+# use the content-identity hash conventions shared with graphed-preserve, and params carry no
+# filesystem paths. The template-less calls below remain the M3 path, byte-for-byte.
+
+
+def _payload_bytes(payload: str | bytes) -> bytes:
+    if isinstance(payload, bytes):
+        return payload
+    from pathlib import Path  # noqa: PLC0415
+
+    return Path(payload).read_bytes()
+
+
+_TemplateEntry = tuple[str, Any]  # ("slot", i) | ("group", [i, ...]) | ("const", value)
+
+
+def _parse_template(spec: object, n_inputs: int, *, constants: bool, groups: bool) -> list[_TemplateEntry]:
+    if not isinstance(spec, list):
+        raise TypeError("a call template's args must be a list (use kwargs= for keywords)")
+    entries: list[_TemplateEntry] = []
+    for entry in spec:
+        if isinstance(entry, str) and entry.startswith("$"):
+            i = int(entry[1:])
+            if not 0 <= i < n_inputs:
+                raise ValueError(f"call template slot {entry} out of range ({n_inputs} inputs)")
+            entries.append(("slot", i))
+        elif isinstance(entry, list):
+            if not groups:
+                raise TypeError("this callee takes scalar/array arguments, not stacked groups")
+            entries.append(("group", [int(e[1:]) for e in entry]))
+        elif constants and isinstance(entry, (str, int, float, bool)):
+            entries.append(("const", entry))
+        else:
+            raise TypeError(f"call template entry {entry!r} is not a slot, group, or allowed constant")
+    return entries
+
+
+def _ml_matrix(entry: _TemplateEntry, vals: Sequence[object]) -> object:
+    import awkward as _ak  # noqa: PLC0415
+    import numpy as _np  # noqa: PLC0415
+
+    kind, value = entry
+    idxs = [value] if kind == "slot" else list(value)
+    cols = [_np.asarray(_ak.to_numpy(_ak.Array(vals[i])), dtype="float32") for i in idxs]
+    return _np.stack(cols, axis=1)
+
+
 def apply_correction(
-    json_path: str, name: str, inputs: Sequence[Array], evaluator: Callable[..., object]
+    payload: str | bytes,
+    name: str,
+    inputs: Sequence[Array],
+    evaluator: Callable[..., object],
+    *,
+    args: list[object] | None = None,
 ) -> Array:
-    """Record a correctionlib scale-factor application as an External node (content-hashed JSON)."""
-    return inputs[0].session.record_external(
-        "correction", lambda *vals: evaluator(*vals), list(inputs), {"path": json_path, "name": name}
+    """Record a correctionlib scale-factor application as an External node.
+
+    With ``args=`` (e.g. ``["nominal", "$0", "$1"]``): the M28 preservation-aligned path —
+    content-identity descriptor, no path in the IR, inputs passed to ``evaluator`` NATIVELY
+    (awkward/numpy, jagged preserved) per the template, which replay obeys identically.
+    Without it: the original M3 recording, unchanged (``payload`` must then be a path)."""
+    if args is None:
+        return inputs[0].session.record_external(
+            "correction", lambda *vals: evaluator(*vals), list(inputs), {"path": str(payload), "name": name}
+        )
+    blob = _payload_bytes(payload)
+    entries = _parse_template(args, len(inputs), constants=True, groups=False)
+    first_slot = next(int(i) for kind, i in entries if kind == "slot")
+
+    def _fn(*vals: object) -> object:
+        call = [vals[int(v)] if kind == "slot" else v for kind, v in entries]
+        return evaluator(*call)
+
+    session = inputs[0].session
+    return session.record_external(
+        "correction",
+        _fn,
+        list(inputs),
+        {"name": name, "args": json.dumps(args, sort_keys=False)},
+        descriptor=payloads.correctionlib_contents_descriptor(blob, name),
+        form=session.form(inputs[first_slot]),
     )
 
 
-def onnx_inference(model_path: str, inputs: Sequence[Array], runner: Callable[..., object]) -> Array:
-    """Record an ONNX model evaluation as an External node (content-hashed model file)."""
-    return inputs[0].session.record_external(
-        "onnx", lambda *vals: runner(*vals), list(inputs), {"path": model_path}
+def onnx_inference(
+    payload: str | bytes,
+    inputs: Sequence[Array],
+    runner: Callable[..., object],
+    *,
+    args: list[object] | None = None,
+    kwargs: dict[str, object] | None = None,
+) -> Array:
+    """Record an ONNX model evaluation as an External node.
+
+    With ``args=``/``kwargs=`` (e.g. ``args=[["$0", "$1"]]``): the M28 preservation-aligned
+    path — weights-identity descriptor, no path in the IR, template entries materialized as
+    float32 feature matrices (groups stack) and passed to ``runner`` positionally/by keyword.
+    Without them: the original M3 recording, unchanged (``payload`` must then be a path)."""
+    if args is None and kwargs is None:
+        return inputs[0].session.record_external(
+            "onnx", lambda *vals: runner(*vals), list(inputs), {"path": str(payload)}
+        )
+    blob = _payload_bytes(payload)
+    arg_entries = _parse_template(args or [], len(inputs), constants=False, groups=True)
+    kw_entries = {
+        k: _parse_template([v], len(inputs), constants=False, groups=True)[0]
+        for k, v in (kwargs or {}).items()
+    }
+    slot_indices = [i for kind, i in arg_entries if kind == "slot"]
+    group_first = [v[0] for kind, v in arg_entries if kind == "group"]
+    first = (slot_indices + group_first + [0])[0]
+
+    def _fn(*vals: object) -> object:
+        call = [_ml_matrix(e, vals) for e in arg_entries]
+        kw = {k: _ml_matrix(e, vals) for k, e in kw_entries.items()}
+        return runner(*call, **kw)
+
+    session = inputs[0].session
+    params: dict[str, str] = {}
+    if args is not None:
+        params["args"] = json.dumps(args, sort_keys=False)
+    if kwargs is not None:
+        params["kwargs"] = json.dumps(kwargs, sort_keys=True)
+    return session.record_external(
+        "onnx",
+        _fn,
+        list(inputs),
+        params,
+        descriptor=payloads.onnx_weights_descriptor(blob),
+        form=session.form(inputs[first]),
     )
 
 

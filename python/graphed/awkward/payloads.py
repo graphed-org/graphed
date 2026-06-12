@@ -8,6 +8,7 @@ Reuse the standards — invent no formats.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import platform
@@ -89,5 +90,67 @@ def opaque_callable_descriptor(fn_name: str) -> PayloadDescriptor:
         framework="python",
         version=platform.python_version(),
         io_schema="opaque->opaque",
+        preprocessing_ref=None,
+    )
+
+
+# ---- M28: content-identity descriptors, aligned with the graphed-preserve plugin conventions ------
+# (identical domain strings + algorithms, so descriptor.content_hash == plugin.content_hash(payload)
+# and gak-recorded Externals pass a bundle's payload-integrity check)
+def correctionlib_contents_hash(payload: bytes) -> str:
+    """sha256 of the correction set's CONTENTS (canonical JSON) — formatting is not identity."""
+    data = json.loads(payload)
+    canonical = json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return "sha256:" + hashlib.sha256(b"correctionlib-contents-v1" + canonical).hexdigest()
+
+
+def onnx_weights_hash(payload: bytes) -> str:
+    """sha256 of the model's WEIGHTS + graph op structure — file bytes are not identity."""
+    import onnx  # noqa: PLC0415
+    from onnx import numpy_helper  # noqa: PLC0415
+
+    model = onnx.load_from_string(payload)
+    h = hashlib.sha256()
+    h.update(b"onnx-weights-v1")
+    for init in sorted(model.graph.initializer, key=lambda t: t.name):
+        h.update(init.name.encode("utf-8"))
+        h.update(numpy_helper.to_array(init).tobytes())
+    for node in model.graph.node:
+        h.update(node.op_type.encode("utf-8"))
+    return "sha256:" + h.hexdigest()
+
+
+def correctionlib_contents_descriptor(payload: bytes, correction_name: str) -> PayloadDescriptor:
+    schema_version = "unknown"
+    with contextlib.suppress(Exception):  # malformed JSON still fails loudly at the hash step
+        schema_version = str(json.loads(payload).get("schema_version", "unknown"))
+    return PayloadDescriptor(
+        kind="correctionlib",
+        content_hash=correctionlib_contents_hash(payload),
+        framework="correctionlib",
+        version=schema_version,
+        io_schema=correction_name,
+        preprocessing_ref=None,
+    )
+
+
+def onnx_weights_descriptor(payload: bytes) -> PayloadDescriptor:
+    opset, io_schema = "unknown", "opaque"
+    try:
+        import onnx  # noqa: PLC0415
+
+        model = onnx.load_from_string(payload)
+        opset = ",".join(str(o.version) for o in model.opset_import)
+        ins = ",".join(i.name for i in model.graph.input)
+        outs = ",".join(o.name for o in model.graph.output)
+        io_schema = f"{ins}->{outs}"
+    except Exception:  # pragma: no cover
+        pass
+    return PayloadDescriptor(
+        kind="onnx_model",
+        content_hash=onnx_weights_hash(payload),
+        framework="onnxruntime",
+        version=opset,
+        io_schema=io_schema,
         preprocessing_ref=None,
     )
