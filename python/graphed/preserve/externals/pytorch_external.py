@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from ._base import ExternalPlugin
-from ._helpers import _as_event_array, _stack_feature_columns
+from ._helpers import _as_event_array, _stack_feature_columns, ml_matrix, parse_call_template
 
 
 def pytorch_content_hash(payload: bytes) -> str:
@@ -38,8 +38,15 @@ def load_pytorch(payload: bytes, params: Mapping[str, Any]) -> Any:
 def eval_pytorch(model: Any, params: Mapping[str, Any], inputs: list[Any]) -> Any:
     import torch  # noqa: PLC0415
 
+    template = parse_call_template(params, len(inputs))
     with torch.no_grad():
-        out = model(torch.from_numpy(_stack_feature_columns(inputs))).numpy()
+        if template is None:  # legacy: one stacked feature matrix
+            out = model(torch.from_numpy(_stack_feature_columns(inputs))).numpy()
+        else:
+            args, kwargs = template
+            tensors = [torch.from_numpy(ml_matrix(e, inputs)) for e in args]
+            kwtensors = {k: torch.from_numpy(ml_matrix(e, inputs)) for k, e in kwargs.items()}
+            out = model(*tensors, **kwtensors).numpy()
     return _as_event_array(out)
 
 

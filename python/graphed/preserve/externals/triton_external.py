@@ -6,8 +6,15 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from ..errors import PreserveError
 from ._base import ExternalPlugin
-from ._helpers import _as_event_array, _canonical_json_hash, _stack_feature_columns
+from ._helpers import (
+    _as_event_array,
+    _canonical_json_hash,
+    _stack_feature_columns,
+    ml_matrix,
+    parse_call_template,
+)
 
 
 # ---- NVIDIA Triton (remote inference) -------------------------------------------------------------
@@ -55,13 +62,22 @@ def load_triton(payload: bytes, params: Mapping[str, Any]) -> Any:
 
 
 def eval_triton(resource: Any, params: Mapping[str, Any], inputs: list[Any]) -> Any:
-    x = _stack_feature_columns(inputs)
-    input_name = str(params.get("input_name", "x"))
     output_name = str(params.get("output_name", "y"))
-    request = resource.module.InferInput(input_name, list(x.shape), "FP32")
-    request.set_data_from_numpy(x)
+    template = parse_call_template(params, len(inputs), allow_kwargs=False)
+    if template is None:  # legacy: one named input
+        named = {str(params.get("input_name", "x")): _stack_feature_columns(inputs)}
+    else:
+        args, _ = template
+        if not (len(args) == 1 and args[0][0] == "named"):
+            raise PreserveError("triton inputs are NAMED: use the dict form of params['args']")
+        named = {name: ml_matrix(entry, inputs) for name, entry in args[0][1].items()}
+    requests = []
+    for name, x in named.items():
+        request = resource.module.InferInput(name, list(x.shape), "FP32")
+        request.set_data_from_numpy(x)
+        requests.append(request)
     wanted = resource.module.InferRequestedOutput(output_name)
-    result = resource.client.infer(str(params["model"]), [request], outputs=[wanted])
+    result = resource.client.infer(str(params["model"]), requests, outputs=[wanted])
     return _as_event_array(result.as_numpy(output_name))
 
 

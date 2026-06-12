@@ -8,6 +8,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from ._base import ExternalPlugin
+from ._helpers import parse_call_template
 
 
 def correctionlib_content_hash(payload: bytes) -> str:
@@ -29,9 +30,18 @@ def eval_correctionlib(cset: Any, params: Mapping[str, Any], inputs: list[Any]) 
     import numpy as np  # noqa: PLC0415
 
     name = str(params.get("name", ""))
-    systematic = str(params.get("systematic", "nominal"))
-    x = np.asarray(ak.to_numpy(ak.Array(inputs[0])), dtype="float64")
-    return ak.Array(np.asarray(cset[name].evaluate(systematic, x), dtype="float64"))
+    template = parse_call_template(
+        params, len(inputs), allow_constants=True, allow_groups=False, allow_kwargs=False
+    )
+    if template is None:  # the legacy (systematic, inputs[0]) shape, unchanged
+        systematic = str(params.get("systematic", "nominal"))
+        x = np.asarray(ak.to_numpy(ak.Array(inputs[0])), dtype="float64")
+        return ak.Array(np.asarray(cset[name].evaluate(systematic, x), dtype="float64"))
+    args, _ = template
+    # correctionlib accepts numpy AND awkward natively (jagged included) — pass inputs through
+    call = [inputs[v] if kind == "slot" else v for kind, v in args]
+    out = cset[name].evaluate(*call)
+    return out if isinstance(out, ak.Array) else ak.Array(np.asarray(out))
 
 
 def _correctionlib_samples() -> list[bytes]:

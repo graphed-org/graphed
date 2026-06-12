@@ -102,6 +102,35 @@ fails loudly at reproduce time, never silently. The same injectable seam is how 
 suite runs the full record→build→reproduce path against a fake transport with no frameworks
 installed.
 
+Variadic call templates
+~~~~~~~~~~~~~~~~~~~~~~~
+
+An External's callee has a real signature — a correction takes a systematic name plus several
+kinematic arrays, a model takes multiple tensors (positionally or by keyword), a served
+endpoint takes multiple *named* inputs, a fill takes several axes and possibly several
+weights. The call shape is **preserved node content**: ``params["args"]`` (and
+``params["kwargs"]``) route the node's graph inputs to callee arguments, ride the IR into the
+bundle as canonical JSON, and replay obeys them exactly.
+
+* positional: ``"args": [["$0", "$1"], ["$2"]]`` — ``$i`` is graph input *i*; an inner list is
+  a *group*, stacked into one ``(n_events, k)`` feature matrix by the ML plugins;
+* keyword: ``"kwargs": {"mask": ["$2"]}`` — real Python keyword arguments, for callables with
+  Python signatures (PyTorch, JAX);
+* named protocol inputs: ``"args": {"kin": ["$0", "$1"], "mask": ["$2"]}`` — ONNX feeds and
+  Triton ``InferInput``\ s, where names belong to the wire protocol rather than Python;
+* constants: correctionlib templates may interleave string/number constants
+  (``["nominal", "$0", "$1"]``) — how systematics select variations at any argument position —
+  and its array inputs pass through **natively** (numpy in → numpy out, awkward in → awkward
+  out, jagged structure preserved: correctionlib handles both itself);
+* histogram fills are structural rather than templated: ``n_axes`` / ``weighted`` /
+  ``n_weights`` / ``sampled`` describe the signature, and multiple weight inputs multiply
+  elementwise into the single fill weight;
+* a plugin whose callee cannot honor a shape says so loudly (xgboost takes exactly one tabular
+  matrix; correctionlib and the named-protocol plugins reject Python kwargs) — never a guess.
+
+**No template means the legacy convention, byte-compatible** — every pre-M27 bundle keeps its
+meaning, and the frozen suite pins both directions.
+
 A ``ResourceCache`` loads each payload once per run and reuses it across calls and nodes —
 ``open_once`` for Externals, so a model is not re-loaded per partition.
 

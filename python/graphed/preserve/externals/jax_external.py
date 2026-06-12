@@ -8,7 +8,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from ._base import ExternalPlugin
-from ._helpers import _as_event_array, _stack_feature_columns
+from ._helpers import _as_event_array, _stack_feature_columns, ml_matrix, parse_call_template
 
 _MLIR_LOC = re.compile(r"loc\(.*?\)|#loc\d*\s*=?.*")
 
@@ -32,7 +32,13 @@ def load_jax(payload: bytes, params: Mapping[str, Any]) -> Any:
 
 
 def eval_jax(exported: Any, params: Mapping[str, Any], inputs: list[Any]) -> Any:
-    return _as_event_array(exported.call(_stack_feature_columns(inputs)))
+    template = parse_call_template(params, len(inputs))
+    if template is None:  # legacy: one stacked feature matrix
+        return _as_event_array(exported.call(_stack_feature_columns(inputs)))
+    args, kwargs = template
+    arrays = [ml_matrix(e, inputs) for e in args]
+    kwarrays = {k: ml_matrix(e, inputs) for k, e in kwargs.items()}
+    return _as_event_array(exported.call(*arrays, **kwarrays))
 
 
 def _jax_samples() -> list[bytes]:

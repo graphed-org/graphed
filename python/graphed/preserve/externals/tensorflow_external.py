@@ -8,7 +8,13 @@ from collections.abc import Mapping
 from typing import Any
 
 from ._base import ExternalPlugin
-from ._helpers import _as_event_array, _stack_feature_columns, _strip_config_names
+from ._helpers import (
+    _as_event_array,
+    _stack_feature_columns,
+    _strip_config_names,
+    ml_matrix,
+    parse_call_template,
+)
 
 
 def tensorflow_content_hash(payload: bytes) -> str:
@@ -40,7 +46,14 @@ def load_tensorflow(payload: bytes, params: Mapping[str, Any]) -> Any:
 
 
 def eval_tensorflow(model: Any, params: Mapping[str, Any], inputs: list[Any]) -> Any:
-    out = model(_stack_feature_columns(inputs))
+    template = parse_call_template(params, len(inputs))
+    if template is None:  # legacy: one stacked feature matrix
+        out = model(_stack_feature_columns(inputs))
+    else:
+        args, kwargs = template
+        tensors = [ml_matrix(e, inputs) for e in args]
+        kwtensors = {k: ml_matrix(e, inputs) for k, e in kwargs.items()}
+        out = model(tensors if len(tensors) > 1 else tensors[0], **kwtensors)
     # convert via the tensor's own .numpy() — np.asarray on an EagerTensor goes through keras's
     # pre-numpy-2 __array__ (no copy= keyword) and warns on every call
     return _as_event_array(out.numpy() if hasattr(out, "numpy") else out)

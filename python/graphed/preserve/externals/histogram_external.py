@@ -21,12 +21,25 @@ def eval_histogram(resource: Any, params: Mapping[str, Any], inputs: list[Any]) 
     from graphed_histogram.boost import FillEvaluator  # noqa: PLC0415  (optional integration)
 
     payload = resource if isinstance(resource, bytes) else bytes(resource)
+    n_axes = int(params.get("n_axes", 1))
+    has_weight = bool(params.get("weighted", False))
+    n_weights = int(params.get("n_weights", 1 if has_weight else 0))
     evaluator = FillEvaluator(
         spec=payload.decode(),
-        n_axes=int(params.get("n_axes", 1)),
-        has_weight=bool(params.get("weighted", False)),
+        n_axes=n_axes,
+        has_weight=has_weight,
         has_sample=bool(params.get("sampled", False)),
     )
+    if has_weight and n_weights > 1:
+        # M27: MULTIPLE weight inputs (genWeight x pileup SF x trigger SF ...) multiply into the
+        # single fill weight — elementwise, preserving awkward/numpy semantics
+        axes = list(inputs[:n_axes])
+        weights = inputs[n_axes : n_axes + n_weights]
+        rest = list(inputs[n_axes + n_weights :])
+        combined = weights[0]
+        for w in weights[1:]:
+            combined = combined * w
+        return evaluator(*axes, combined, *rest)
     return evaluator(*inputs)
 
 

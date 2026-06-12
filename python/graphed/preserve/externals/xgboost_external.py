@@ -5,8 +5,15 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from ..errors import PreserveError
 from ._base import ExternalPlugin
-from ._helpers import _as_event_array, _canonical_json_hash, _stack_feature_columns
+from ._helpers import (
+    _as_event_array,
+    _canonical_json_hash,
+    _stack_feature_columns,
+    ml_matrix,
+    parse_call_template,
+)
 
 
 def xgboost_content_hash(payload: bytes) -> str:
@@ -23,9 +30,20 @@ def load_xgboost(payload: bytes, params: Mapping[str, Any]) -> Any:
 
 
 def eval_xgboost(booster: Any, params: Mapping[str, Any], inputs: list[Any]) -> Any:
+    template = parse_call_template(params, len(inputs), allow_kwargs=False)
+    if template is not None:
+        args, _ = template
+        if len(args) != 1 or args[0][0] not in ("group", "slot"):
+            raise PreserveError(
+                "xgboost models take a single tabular matrix: the call template must be "
+                'exactly one positional group (e.g. [["$0", "$1"]])'
+            )
+        matrix = ml_matrix(args[0], inputs)
+    else:
+        matrix = _stack_feature_columns(inputs)
     import xgboost as xgb  # noqa: PLC0415
 
-    return _as_event_array(booster.predict(xgb.DMatrix(_stack_feature_columns(inputs))))
+    return _as_event_array(booster.predict(xgb.DMatrix(matrix)))
 
 
 def _xgboost_samples() -> list[bytes]:

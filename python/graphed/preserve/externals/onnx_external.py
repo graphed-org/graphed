@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from ._base import ExternalPlugin
+from ._helpers import ml_matrix, parse_call_template
 
 
 def onnx_content_hash(payload: bytes) -> str:
@@ -35,9 +36,19 @@ def eval_onnx(session: Any, params: Mapping[str, Any], inputs: list[Any]) -> Any
     import awkward as ak  # noqa: PLC0415
     import numpy as np  # noqa: PLC0415
 
-    name = str(params.get("input_name", "")) or session.get_inputs()[0].name
-    x = np.asarray(ak.to_numpy(ak.Array(inputs[0])), dtype="float32").reshape(-1, 1)
-    out = session.run(None, {name: x})[0].reshape(-1)
+    template = parse_call_template(params, len(inputs), allow_kwargs=False)
+    if template is None:  # legacy: one (-1, 1) feed
+        name = str(params.get("input_name", "")) or session.get_inputs()[0].name
+        x = np.asarray(ak.to_numpy(ak.Array(inputs[0])), dtype="float32").reshape(-1, 1)
+        out = session.run(None, {name: x})[0].reshape(-1)
+        return ak.Array(np.asarray(out, dtype="float64"))
+    args, _ = template
+    if len(args) == 1 and args[0][0] == "named":  # ONNX feeds are named — the natural form
+        feeds = {name: ml_matrix(entry, inputs) for name, entry in args[0][1].items()}
+    else:  # positional: mapped to the graph's declared input order
+        graph_inputs = [i.name for i in session.get_inputs()]
+        feeds = {graph_inputs[k]: ml_matrix(entry, inputs) for k, entry in enumerate(args)}
+    out = session.run(None, feeds)[0].reshape(-1)
     return ak.Array(np.asarray(out, dtype="float64"))
 
 

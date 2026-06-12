@@ -42,3 +42,84 @@ def _strip_config_names(obj: Any) -> Any:
     if isinstance(obj, list):
         return [_strip_config_names(v) for v in obj]
     return obj
+
+
+# ---- M27: variadic call templates ----------------------------------------------------------------
+# params["args"] (positional) / params["kwargs"] (keyword) route a node's graph inputs to the
+# callee's REAL signature. Entries: "$i" (input slot i), ["$i", "$j"] (a group — for ML plugins,
+# stacked into one feature matrix), or — where a plugin allows it — a constant (correctionlib's
+# systematic names). Stored in the IR as canonical-JSON strings (the ParamMap is scalar-typed);
+# accepted here as either the decoded structure or the JSON string. Replay obeys the template
+# exactly; an unknown shape is a loud PreserveError, never a guess.
+
+TemplateEntry = tuple[str, Any]  # ("slot", i) | ("group", [i, ...]) | ("const", value)
+
+
+def _decode_spec(value: Any) -> Any:
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except ValueError as err:
+            raise PreserveError(f"call template is not valid JSON: {value!r}") from err
+    return value
+
+
+def _parse_entry(entry: Any, n_inputs: int, *, allow_constants: bool, allow_groups: bool) -> TemplateEntry:
+    if isinstance(entry, str) and entry.startswith("$"):
+        i = int(entry[1:])
+        if not 0 <= i < n_inputs:
+            raise PreserveError(f"call template slot {entry} out of range (node has {n_inputs} inputs)")
+        return ("slot", i)
+    if isinstance(entry, list):
+        if not allow_groups:
+            raise PreserveError("this plugin's callee takes scalar/array arguments, not stacked groups")
+        return (
+            "group",
+            [_parse_entry(e, n_inputs, allow_constants=False, allow_groups=False)[1] for e in entry],
+        )
+    if allow_constants and isinstance(entry, (str, int, float, bool)):
+        return ("const", entry)
+    raise PreserveError(f"call template entry {entry!r} is not a slot, group, or allowed constant")
+
+
+def parse_call_template(
+    params: Any,
+    n_inputs: int,
+    *,
+    allow_constants: bool = False,
+    allow_groups: bool = True,
+    allow_kwargs: bool = True,
+) -> tuple[list[TemplateEntry], dict[str, TemplateEntry]] | None:
+    """Parse the node's call template; ``None`` when absent (callers use their legacy shape)."""
+    raw_args = _decode_spec(params.get("args")) if params.get("args") is not None else None
+    raw_kwargs = _decode_spec(params.get("kwargs")) if params.get("kwargs") is not None else None
+    if raw_args is None and raw_kwargs is None:
+        return None
+    if raw_kwargs and not allow_kwargs:
+        raise PreserveError("this plugin's callee does not take keyword arguments")
+    kwargs: dict[str, TemplateEntry] = {
+        str(k): _parse_entry(v, n_inputs, allow_constants=allow_constants, allow_groups=allow_groups)
+        for k, v in (raw_kwargs or {}).items()
+    }
+    if isinstance(raw_args, dict):
+        # the NAMED form (onnx feeds, triton InferInputs): named protocol inputs, not python kwargs
+        named = {
+            str(k): _parse_entry(v, n_inputs, allow_constants=allow_constants, allow_groups=allow_groups)
+            for k, v in raw_args.items()
+        }
+        return ([("named", named)], kwargs)
+    args = [
+        _parse_entry(e, n_inputs, allow_constants=allow_constants, allow_groups=allow_groups)
+        for e in (raw_args or [])
+    ]
+    return (args, kwargs)
+
+
+def ml_matrix(entry: TemplateEntry, inputs: list[Any]) -> Any:
+    """Materialize one template entry as the ML convention: a float32 (n_events, k) matrix."""
+    kind, value = entry
+    if kind == "slot":
+        return _stack_feature_columns([inputs[value]])
+    if kind == "group":
+        return _stack_feature_columns([inputs[i] for i in value])
+    raise PreserveError(f"constants are not valid model inputs (got {value!r})")

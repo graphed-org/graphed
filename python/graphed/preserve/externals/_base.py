@@ -231,7 +231,12 @@ def record_external(
         "kind": plugin.kind,
         "content_hash": content_hash,
         "framework": plugin.framework,
-        **(params or {}),
+        **{
+            # the IR's ParamMap is scalar-typed; structured params (e.g. the M27 call template
+            # in params["args"]/["kwargs"]) ride as canonical JSON strings
+            k: (v if isinstance(v, (int, float, bool, str)) else json.dumps(v, sort_keys=True))
+            for k, v in (params or {}).items()
+        },
     }
     holder: dict[str, Any] = {}  # load the resource once for this node (build-time materialize)
 
