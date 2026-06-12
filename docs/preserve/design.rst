@@ -72,17 +72,35 @@ An :class:`~graphed_preserve.ExternalPlugin` defines, for one payload kind: a de
 set, load the model), ``evaluate`` (run it on inputs), ``close``, and ``samples`` — at least
 two distinct example payloads used to *validate the hash itself*. ``register_plugin`` rejects
 a hash that is non-deterministic across processes (catching anything built from ``hash()``,
-``id()``, time, or randomness) or vacuous (distinct samples colliding). Three plugins ship and
+``id()``, time, or randomness) or vacuous (distinct samples colliding). Eight plugins ship and
 double as templates:
 
 * ``correctionlib`` — hash over the correction *contents*, not incidental file formatting;
 * ``onnx_model`` — hash over weights + graph structure;
-* ``histogram`` — the interesting one: its payload **is** the fill's canonical axes/storage
-  spec, whose SHA-256 is *already the node's identity* (the same bytes hash to the same value
-  on both sides of the seam — pinned). Because the spec also rides in the node's parameters,
-  the plugin implements the ``synthesize`` hook: at build time the payload is derived from the
-  node itself, so callers supply nothing. Its evaluator reconstructs the fill from those
-  parameters.
+* ``histogram`` — the structurally interesting one: its payload **is** the fill's canonical
+  axes/storage spec, whose SHA-256 is *already the node's identity* (the same bytes hash to the
+  same value on both sides of the seam — pinned). Because the spec also rides in the node's
+  parameters, the plugin implements the ``synthesize`` hook: at build time the payload is
+  derived from the node itself, so callers supply nothing. Its evaluator reconstructs the fill
+  from those parameters;
+* the **ML-framework family** — ``tensorflow_model`` (``.keras`` archives),
+  ``pytorch_model`` (TorchScript), ``xgboost_model`` (XGBoost's open JSON format),
+  ``jax_export`` (``jax.export`` StableHLO artifacts), and ``triton_model`` (below). The
+  recurring lesson, pinned per framework: **content identity is not byte identity.** Every one
+  of these archive formats embeds volatile metadata — zip timestamps, auto-generated layer
+  names, MLIR source locations — so re-saving an identical model yields different bytes. Each
+  hash therefore goes through the framework's own loader and digests what *is* content: weights
+  plus architecture (TorchScript code, name-stripped Keras config, location-stripped StableHLO,
+  canonicalized model JSON), stable across re-saves and sensitive to either kind of change.
+
+``triton_model`` is the odd one out and earns its own note: a Triton-served model is *remote* —
+the payload preserves the **served model's identity** (a canonical JSON descriptor), while the
+connection is environment, resolved per worker through an importable transport factory
+(``params["transport"] = "module:attr"``; the default builds a ``tritonclient`` HTTP client).
+The bundle preserves *what was called*; it cannot bottle the server — and a vanished server
+fails loudly at reproduce time, never silently. The same injectable seam is how the frozen
+suite runs the full record→build→reproduce path against a fake transport with no frameworks
+installed.
 
 A ``ResourceCache`` loads each payload once per run and reuses it across calls and nodes —
 ``open_once`` for Externals, so a model is not re-loaded per partition.

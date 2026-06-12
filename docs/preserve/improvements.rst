@@ -76,3 +76,17 @@ Planned
 - A stage-aware interpreter so an M4-optimized IR can be preserved/reproduced directly.
 - HS3 capture for any statistical model; UHI serialization of the reproduced histogram to disk.
 - Verifying the captured environment (container build) as part of ``reproduce`` on a fresh machine.
+
+M26 findings (ML-framework plugins)
+-----------------------------------
+
+- **PyTorch is deprecating TorchScript** (``torch.jit.*`` warns since torch 2.12, pointing at
+  ``torch.export``): the ``pytorch_model`` payload format is TorchScript *deliberately* — it is
+  today's self-contained, class-free deployment artifact with the larger installed base — but a
+  ``.pt2`` (``torch.export``) payload kind is the designed Phase-2 follow-up; the deprecation
+  warnings in the test suite are this entry's reminder.
+- **keras's ``__array__`` lacks numpy-2 ``copy=`` support** (upstream issue): the shipped
+  evaluator converts via the tensor's own ``.numpy()`` instead, which is also cheaper.
+- TorchScript/.keras archives and ``jax.export`` blobs are NOT byte-stable across re-saves of an
+  identical model (zip timestamps, auto-generated layer names, MLIR ``#loc`` metadata) — the
+  content hashes go through each framework's loader; pinned per framework in the frozen suite.
