@@ -16,6 +16,9 @@ from .execution import (
     LocalResources as LocalResources,
 )
 from .execution import (
+    Monitor as Monitor,
+)
+from .execution import (
     Partition as Partition,
 )
 from .execution import (
@@ -34,7 +37,22 @@ from .execution import (
     Task as Task,
 )
 from .execution import (
+    TaskEvent as TaskEvent,
+)
+from .execution import (
+    TaskPhase as TaskPhase,
+)
+from .execution import (
+    WorkerProfiler as WorkerProfiler,
+)
+from .execution import (
     WorkerResources as WorkerResources,
+)
+from .execution import (
+    emit_task as emit_task,
+)
+from .execution import (
+    partition_label as partition_label,
 )
 
 # the compiled extension surface

@@ -17,6 +17,7 @@ stays a stable, minimal seam. A `Plan` is reduced to a single result by an `Exec
 from __future__ import annotations
 
 import contextlib
+import time
 from collections import OrderedDict
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
@@ -152,6 +153,73 @@ class Executor(Protocol):
     def run(self, plan: Plan[R]) -> ExecResult[R]: ...
 
 
+# ---- M37: the passive live-dashboard seam (data-only; no web, no profiler dep) --------------
+
+
+class TaskPhase(StrEnum):
+    SUBMITTED = "submitted"
+    STARTED = "started"
+    FINISHED = "finished"
+    ERRORED = "errored"
+
+
+@dataclass(frozen=True)
+class TaskEvent:
+    """A passive, display-only record of one task's lifecycle transition (M37 dashboard seam).
+
+    Carries no un-picklable objects — it crosses a process boundary from a ``ProcessExecutor`` worker
+    back to the driver. ``error`` is a pre-rendered summary string, never an exception object;
+    ``partition`` is a human label. Per task the contract is exactly one ``SUBMITTED``, then one
+    ``STARTED``, then exactly one of ``FINISHED`` | ``ERRORED``."""
+
+    phase: TaskPhase
+    key: int
+    worker: str
+    t: float
+    partition: str = ""
+    n_entries: int = 0
+    bytes_read: int | None = None
+    error: str | None = None
+
+
+@runtime_checkable
+class WorkerProfiler(Protocol):
+    """A per-worker statistical sampler (M37). graphed-debug supplies the implementation
+    (pyinstrument-backed); graphed-exec-local *drives* it without importing any profiler.
+    ``flush``/``stop`` return a serialized sample tree (bytes) the driver merges, or ``None``."""
+
+    def start(self) -> None: ...
+    def flush(self) -> bytes | None: ...
+    def stop(self) -> bytes | None: ...
+
+
+@runtime_checkable
+class Monitor(Protocol):
+    """A passive observer of a run (M37). An executor *emits* through it; it MUST NOT influence task
+    order, the reduction tree, or results — the determinism gate is green attached-or-not. A monitor
+    that raises is swallowed by the emitting executor (see :func:`emit_task`). ``worker_profiler_factory``
+    returns a *picklable* zero-arg factory shipped to workers (``None`` ⇒ no sampling)."""
+
+    def on_task(self, event: TaskEvent) -> None: ...
+    def on_profile(self, worker: str, payload: bytes) -> None: ...
+    def on_combine(self, leaves_done: int) -> None: ...
+    def worker_profiler_factory(self) -> Callable[[], WorkerProfiler] | None: ...
+
+
+def emit_task(monitor: Monitor | None, event: TaskEvent) -> None:
+    """Best-effort task emission: a ``None`` monitor is a no-op, and a monitor that raises must never
+    break a run (M37 passivity)."""
+    if monitor is None:
+        return
+    with contextlib.suppress(Exception):
+        monitor.on_task(event)
+
+
+def partition_label(partition: Partition) -> str:
+    """A short human label for a partition (dashboard display only)."""
+    return f"{partition.uri}:{partition.tree}:{partition.entry_start}-{partition.entry_stop}"
+
+
 def _close_handle(handle: object) -> None:
     close = getattr(handle, "close", None)
     if callable(close):
@@ -197,16 +265,47 @@ class SequentialRunner:
     executes so every layer — the frontend's deferred writers, histogram aggregation,
     preservation, the benchmarks — can run a ``Plan`` without depending on the executor package
     (which the frontend may not import). It is the canonical baseline any real executor
-    (graphed-exec-local's thread/process pools) must match bit-for-bit."""
+    (graphed-exec-local's thread/process pools) must match bit-for-bit.
+
+    An optional :class:`Monitor` observes the run (M37). It is purely passive: emission is
+    best-effort and a misbehaving monitor cannot change the result."""
+
+    def __init__(self, monitor: Monitor | None = None) -> None:
+        self._monitor = monitor
 
     def run(self, plan: Plan[R]) -> ExecResult[R]:
         resources = LocalResources()
+        monitor = self._monitor
         try:
             value = plan.empty()
             n = 0
-            for task in sorted(plan.tasks, key=lambda t: t.key):
-                value = plan.combine(value, plan.process(task.partition, resources))
+            ordered = sorted(plan.tasks, key=lambda t: t.key)
+            for task in ordered:
+                emit_task(monitor, self._event(TaskPhase.SUBMITTED, task))
+            for task in ordered:
+                emit_task(monitor, self._event(TaskPhase.STARTED, task))
+                try:
+                    partial = plan.process(task.partition, resources)
+                except Exception as exc:
+                    emit_task(
+                        monitor, self._event(TaskPhase.ERRORED, task, error=f"{type(exc).__name__}: {exc}")
+                    )
+                    raise
+                value = plan.combine(value, partial)
+                emit_task(monitor, self._event(TaskPhase.FINISHED, task))
                 n += 1
             return ExecResult(value=value, n_partitions=n, n_combines=max(0, n - 1))
         finally:
             resources.close()  # release file handles deterministically at end of run
+
+    @staticmethod
+    def _event(phase: TaskPhase, task: Task, *, error: str | None = None) -> TaskEvent:
+        return TaskEvent(
+            phase=phase,
+            key=task.key,
+            worker="seq",
+            t=time.perf_counter(),
+            partition=partition_label(task.partition),
+            n_entries=task.partition.n_entries,
+            error=error,
+        )
