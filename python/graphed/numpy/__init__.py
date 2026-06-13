@@ -22,7 +22,7 @@ import numpy as np
 from graphed import Array, Session
 from graphed_core import PayloadDescriptor
 
-from .array import NumpyArray
+from .array import NumpyArray, _f, _i
 from .forms import NumpyForm, form_from_meta, is_numeric, meta, unit_meta
 from .gufunc import apply_gufunc, gufunc_form
 from .projection import project
@@ -212,7 +212,7 @@ def _manip_eval(op: str, xs: Sequence[Any], params: Mapping[str, object]) -> Any
         key = slice(*(params.get(k) for k in ("start", "stop", "step")))
         return np.asarray(xs[0])[key]
     if op == "index":
-        return np.asarray(xs[0])[int(params["i"])]  # type: ignore[call-overload]
+        return np.asarray(xs[0])[_i(params["i"])]
     if op == "getitem":
         return np.asarray(xs[0])[np.asarray(xs[1])]
     if op == "subscript":
@@ -222,11 +222,11 @@ def _manip_eval(op: str, xs: Sequence[Any], params: Mapping[str, object]) -> Any
     if op == "ravel":
         return np.ravel(xs[0])
     if op == "squeeze":
-        return np.squeeze(xs[0], axis=int(params["axis"]))  # type: ignore[call-overload]
+        return np.squeeze(xs[0], axis=_i(params["axis"]))
     if op == "expand_dims":
-        return np.expand_dims(xs[0], int(params["axis"]))  # type: ignore[call-overload]
+        return np.expand_dims(xs[0], _i(params["axis"]))
     if op == "swapaxes":
-        return np.swapaxes(xs[0], int(params["a1"]), int(params["a2"]))  # type: ignore[call-overload]
+        return np.swapaxes(xs[0], _i(params["a1"]), _i(params["a2"]))
     if op == "transpose":
         return np.transpose(xs[0], _decode_dims(params["axes"]) if "axes" in params else None)
     if op == "astype":
@@ -234,19 +234,19 @@ def _manip_eval(op: str, xs: Sequence[Any], params: Mapping[str, object]) -> Any
     if op == "clip":
         return np.clip(xs[0], params.get("lo"), params.get("hi"))
     if op == "round":
-        return np.round(xs[0], int(params.get("decimals", 0)))  # type: ignore[call-overload]
+        return np.round(xs[0], _i(params.get("decimals", 0)))
     if op == "take":
         axis = params.get("axis")
-        return np.take(xs[0], np.asarray(xs[1]).astype(np.intp), axis=None if axis is None else int(axis))  # type: ignore[call-overload]
+        return np.take(xs[0], np.asarray(xs[1]).astype(np.intp), axis=None if axis is None else _i(axis))
     if op == "where":
         rest = list(xs[1:])
         xval = params["x_scalar"] if "x_scalar" in params else rest.pop(0)
         yval = params["y_scalar"] if "y_scalar" in params else rest.pop(0)
         return np.where(np.asarray(xs[0]), xval, yval)
     if op == "concatenate":
-        return np.concatenate([np.asarray(x) for x in xs], axis=int(params.get("axis", 0)))  # type: ignore[call-overload]
+        return np.concatenate([np.asarray(x) for x in xs], axis=_i(params.get("axis", 0)))
     if op == "diff":
-        return np.diff(xs[0], n=int(params.get("n", 1)), axis=int(params.get("axis", -1)))  # type: ignore[call-overload]
+        return np.diff(xs[0], n=_i(params.get("n", 1)), axis=_i(params.get("axis", -1)))
     if op == "isin":
         return np.isin(xs[0], xs[1])
     if op == "searchsorted":
@@ -256,19 +256,19 @@ def _manip_eval(op: str, xs: Sequence[Any], params: Mapping[str, object]) -> Any
     if op == "bincount":
         return np.bincount(np.asarray(xs[0]))
     if op == "histogram":
-        rng = (float(params["lo"]), float(params["hi"]))  # type: ignore[arg-type]
-        return np.histogram(xs[0], bins=int(params["bins"]), range=rng)[0]  # type: ignore[call-overload]
+        rng = (_f(params["lo"]), _f(params["hi"]))
+        return np.histogram(xs[0], bins=_i(params["bins"]), range=rng)[0]
     if op == "histogram2d":
         rng2 = [
-            (float(params["xlo"]), float(params["xhi"])),  # type: ignore[arg-type]
-            (float(params["ylo"]), float(params["yhi"])),  # type: ignore[arg-type]
+            (_f(params["xlo"]), _f(params["xhi"])),
+            (_f(params["ylo"]), _f(params["yhi"])),
         ]
-        return np.histogram2d(xs[0], xs[1], bins=int(params["bins"]), range=rng2)[0]  # type: ignore[call-overload]
+        return np.histogram2d(xs[0], xs[1], bins=_i(params["bins"]), range=rng2)[0]
     if op == "histogramdd":
         lows = [float(v) for v in str(params["los"]).split(",")]
         highs = [float(v) for v in str(params["his"]).split(",")]
         rngs = list(zip(lows, highs, strict=True))
-        return np.histogramdd(xs[0], bins=int(params["bins"]), range=rngs)[0]  # type: ignore[call-overload]
+        return np.histogramdd(xs[0], bins=_i(params["bins"]), range=rngs)[0]
     raise TypeError(f"unsupported op {op!r}")
 
 
@@ -281,11 +281,11 @@ def _check_manip_geometry(op: str, forms: Sequence[NumpyForm], params: Mapping[s
                 "reshape in the axis-0-partitioned MVP needs shape (-1, concrete...): the "
                 "partitioned axis must stay leading and its length is unknown at record time"
             )
-    elif op == "squeeze" and int(params["axis"]) == 0:  # type: ignore[call-overload]
+    elif op == "squeeze" and _i(params["axis"]) == 0:
         raise TypeError("cannot squeeze the partitioned axis 0")
-    elif op == "expand_dims" and int(params["axis"]) == 0:  # type: ignore[call-overload]
+    elif op == "expand_dims" and _i(params["axis"]) == 0:
         raise TypeError("cannot displace the partitioned axis 0 (expand an inner axis instead)")
-    elif op == "swapaxes" and 0 in (int(params["a1"]), int(params["a2"])):  # type: ignore[call-overload]
+    elif op == "swapaxes" and 0 in (_i(params["a1"]), _i(params["a2"])):
         raise TypeError("cannot move the partitioned axis 0 (swap inner axes instead)")
     elif op == "transpose":
         if "axes" in params:
@@ -354,7 +354,7 @@ class NumpyBackend:
                 _manip_eval(op, [meta(f) for f in forms], params)  # validate evaluability
                 data, _ = forms
                 axis_p = params.get("axis")
-                k = 0 if axis_p is None else int(axis_p)  # type: ignore[call-overload]
+                k = 0 if axis_p is None else _i(axis_p)
                 if axis_p is None:
                     return NumpyForm(data.dtype, shape=(None,))
                 return NumpyForm(data.dtype, shape=(*data.shape[:k], None, *data.shape[k + 1 :]))

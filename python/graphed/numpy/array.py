@@ -21,6 +21,17 @@ from graphed.backend import ParamValue
 Handler = Callable[["NumpyArray", tuple[object, ...], dict[str, object]], Any]
 
 
+def _i(value: object) -> int:
+    """Coerce a graph param (an int|float|bool|str value typed as object) to int -- the one
+    unavoidable builtins-overload gap for param coercion, centralized here."""
+    return int(value)  # type: ignore[call-overload, no-any-return]
+
+
+def _f(value: object) -> float:
+    """Coerce a graph param to float (see :func:`_i`)."""
+    return float(value)  # type: ignore[arg-type]
+
+
 def _encode_dims(dims: Sequence[int]) -> str:
     out: list[int] = []
     for d in dims:
@@ -315,7 +326,7 @@ def _fn_swapaxes(arr: NumpyArray, args: tuple[object, ...], kwargs: dict[str, ob
     a = _one_array("swapaxes", args)
     if len(args) != 3 or kwargs:
         raise TypeError("graphed np.swapaxes takes (array, axis1, axis2)")
-    return a.swapaxes(int(args[1]), int(args[2]))  # type: ignore[call-overload]
+    return a.swapaxes(_i(args[1]), _i(args[2]))
 
 
 def _fn_expand_dims(arr: NumpyArray, args: tuple[object, ...], kwargs: dict[str, object]) -> Any:
@@ -334,7 +345,7 @@ def _fn_clip(arr: NumpyArray, args: tuple[object, ...], kwargs: dict[str, object
     hi: object = args[2] if len(args) > 2 else kw.pop("a_max", kw.pop("max", None))
     if kw or len(args) > 3:
         raise TypeError("graphed np.clip takes (array, min, max)")
-    return a.clip(None if lo is None else float(lo), None if hi is None else float(hi))  # type: ignore[arg-type]
+    return a.clip(None if lo is None else _f(lo), None if hi is None else _f(hi))
 
 
 def _fn_round(arr: NumpyArray, args: tuple[object, ...], kwargs: dict[str, object]) -> Any:
@@ -342,7 +353,7 @@ def _fn_round(arr: NumpyArray, args: tuple[object, ...], kwargs: dict[str, objec
     decimals = args[1] if len(args) > 1 else kwargs.pop("decimals", 0)
     if kwargs or len(args) > 2:
         raise TypeError("graphed np.round takes (array, decimals)")
-    return a.round(int(decimals))  # type: ignore[call-overload]
+    return a.round(_i(decimals))
 
 
 def _fn_take(arr: NumpyArray, args: tuple[object, ...], kwargs: dict[str, object]) -> Any:
@@ -351,7 +362,7 @@ def _fn_take(arr: NumpyArray, args: tuple[object, ...], kwargs: dict[str, object
     axis = kwargs.pop("axis", None)
     if kwargs or len(args) > 2 or not isinstance(indices, NumpyArray):
         raise TypeError("graphed np.take takes (array, deferred indices, axis=)")
-    return a.take(indices, None if axis is None else int(axis))  # type: ignore[call-overload]
+    return a.take(indices, None if axis is None else _i(axis))
 
 
 def _fn_astype(arr: NumpyArray, args: tuple[object, ...], kwargs: dict[str, object]) -> Any:
@@ -372,11 +383,11 @@ def _fn_where(arr: NumpyArray, args: tuple[object, ...], kwargs: dict[str, objec
     if isinstance(x, NumpyArray):
         inputs.append(x)
     else:
-        params["x_scalar"] = float(x)  # type: ignore[arg-type]
+        params["x_scalar"] = _f(x)
     if isinstance(y, NumpyArray):
         inputs.append(y)
     else:
-        params["y_scalar"] = float(y)  # type: ignore[arg-type]
+        params["y_scalar"] = _f(y)
     return cond.session.record_op("where", inputs, params)
 
 
@@ -400,7 +411,7 @@ def _fn_concatenate(arr: NumpyArray, args: tuple[object, ...], kwargs: dict[str,
     axis = args[1] if len(args) > 1 else kwargs.pop("axis", 0)
     if kwargs or len(args) > 2:
         raise TypeError("graphed np.concatenate takes (arrays, axis)")
-    return _record_concat(arrays, int(axis))  # type: ignore[call-overload]
+    return _record_concat(arrays, _i(axis))
 
 
 def _fn_hstack(arr: NumpyArray, args: tuple[object, ...], kwargs: dict[str, object]) -> Any:
@@ -423,10 +434,10 @@ def _fn_diff(arr: NumpyArray, args: tuple[object, ...], kwargs: dict[str, object
     axis = kwargs.pop("axis", -1)
     if kwargs or len(args) > 2:
         raise TypeError("graphed np.diff takes (array, n, axis=)")
-    normalized = a._norm_axis(int(axis))  # type: ignore[call-overload]
+    normalized = a._norm_axis(_i(axis))
     params: dict[str, ParamValue] = {"axis": normalized if normalized is not None else 0}
-    if int(n) != 1:  # type: ignore[call-overload]
-        params["n"] = int(n)  # type: ignore[call-overload]
+    if _i(n) != 1:
+        params["n"] = _i(n)
     return a.session.record_op("diff", [a], params)
 
 
