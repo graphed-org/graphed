@@ -24,7 +24,7 @@ from graphed import parquet as gpq
 from graphed import write as gw
 from graphed.write import PartitionedSource
 from graphed_core import Partition
-from graphed_core.execution import Plan, WorkerResources
+from graphed_core.execution import Plan, SequentialRunner, WorkerResources
 
 from .backend import AwkwardBackend, AwkwardForm
 from .projection import project_buffers
@@ -273,5 +273,5 @@ def to_parquet(
     plan = gw.write_plan(partitions, writer)
     if not compute:
         return plan
-    runner = executor if executor is not None else gpq.SequentialRunner()
+    runner = executor if executor is not None else SequentialRunner()
     return list(runner.run(plan).value)

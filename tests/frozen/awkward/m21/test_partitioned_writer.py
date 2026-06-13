@@ -18,9 +18,9 @@ from graphed import Session
 
 pytest.importorskip("pyarrow")
 
-from graphed.write import PartitionedSource, SequentialRunner
+from graphed.write import PartitionedSource
 from graphed_core import Partition
-from graphed_core.execution import Plan
+from graphed_core.execution import Plan, SequentialRunner
 
 import graphed_awkward.io as gio
 from graphed_awkward import AwkwardBackend, AwkwardForm, from_parquet, gak

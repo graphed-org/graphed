@@ -20,7 +20,7 @@ from graphed import Session
 pytest.importorskip("pyarrow")
 
 from graphed import parquet as gpq
-from graphed_core.execution import Plan
+from graphed_core.execution import Plan, SequentialRunner
 
 import graphed_awkward.io as gio
 from graphed_awkward import AwkwardBackend, from_awkward, from_parquet, gak, project
@@ -142,7 +142,7 @@ def test_disabled_write_graph_run_later_equals_enabled_run(dataset, tmp_path) ->
     plan = gio.to_parquet(expr, disabled_dir, steps_per_file=1, compute=False)
     assert isinstance(plan, Plan)  # a task graph of write tasks, not outputs (R15.4)
     assert not os.path.exists(disabled_dir) or not os.listdir(disabled_dir)  # nothing written yet
-    later = gpq.SequentialRunner().run(plan).value
+    later = SequentialRunner().run(plan).value
 
     assert [os.path.basename(p) for p in later] == [os.path.basename(p) for p in enabled]
     for a, b in zip(enabled, later, strict=True):
