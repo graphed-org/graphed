@@ -7,10 +7,20 @@ from collections.abc import Mapping
 from typing import Any
 
 from ._base import ExternalPlugin
-from ._helpers import _as_event_array, _stack_feature_columns, ml_matrix, parse_call_template
+from ._helpers import (
+    _as_event_array,
+    _stack_feature_columns,
+    memoized_model_hash,
+    ml_matrix,
+    parse_call_template,
+)
 
 
 def pytorch_content_hash(payload: bytes) -> str:
+    return memoized_model_hash("pytorch", payload, _pytorch_content_hash_impl)
+
+
+def _pytorch_content_hash_impl(payload: bytes) -> str:
     """Weights (sorted state_dict) + TorchScript code — stable across re-saves of one model."""
     import io  # noqa: PLC0415
 

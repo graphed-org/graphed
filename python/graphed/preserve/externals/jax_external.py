@@ -8,12 +8,22 @@ from collections.abc import Mapping
 from typing import Any
 
 from ._base import ExternalPlugin
-from ._helpers import _as_event_array, _stack_feature_columns, ml_matrix, parse_call_template
+from ._helpers import (
+    _as_event_array,
+    _stack_feature_columns,
+    memoized_model_hash,
+    ml_matrix,
+    parse_call_template,
+)
 
 _MLIR_LOC = re.compile(r"loc\(.*?\)|#loc\d*\s*=?.*")
 
 
 def jax_content_hash(payload: bytes) -> str:
+    return memoized_model_hash("jax", payload, _jax_content_hash_impl)
+
+
+def _jax_content_hash_impl(payload: bytes) -> str:
     """Location-stripped StableHLO + input/output avals — stable across re-exports of one fn."""
     from jax import export  # noqa: PLC0415
 

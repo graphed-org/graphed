@@ -12,12 +12,17 @@ from ._helpers import (
     _as_event_array,
     _stack_feature_columns,
     _strip_config_names,
+    memoized_model_hash,
     ml_matrix,
     parse_call_template,
 )
 
 
 def tensorflow_content_hash(payload: bytes) -> str:
+    return memoized_model_hash("tensorflow", payload, _tensorflow_content_hash_impl)
+
+
+def _tensorflow_content_hash_impl(payload: bytes) -> str:
     """Architecture (name-stripped config) + weights — stable across re-saves of one model."""
     model = _keras_load_from_bytes(payload)
     import numpy as np  # noqa: PLC0415

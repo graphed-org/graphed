@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections import OrderedDict
+from collections.abc import Callable
 from typing import Any
 
 from ..errors import PreserveError
@@ -123,3 +125,26 @@ def ml_matrix(entry: TemplateEntry, inputs: list[Any]) -> Any:
     if kind == "group":
         return _stack_feature_columns([inputs[i] for i in value])
     raise PreserveError(f"constants are not valid model inputs (got {value!r})")
+
+
+# ---- M36: memoize the EXPENSIVE (model-parsing) content hashes -----------------------------------
+# A model's content hash is computed at record time AND re-verified at bundle-build time; each call
+# re-parses the model (onnx.load, torch.jit.load, keras load, jax deserialize). Cache the result by
+# a cheap raw-bytes digest so the same payload parses once. Bounded FIFO; keyed per (domain, bytes)
+# so distinct plugins never collide. Cold in a fresh process, so the by-value validate subprocess
+# still computes correctly.
+_HASH_MEMO: OrderedDict[str, str] = OrderedDict()
+_HASH_MEMO_CAP = 64
+
+
+def memoized_model_hash(domain: str, payload: bytes, compute: Callable[[bytes], str]) -> str:
+    key = domain + ":" + hashlib.sha256(payload).hexdigest()
+    cached = _HASH_MEMO.get(key)
+    if cached is not None:
+        _HASH_MEMO.move_to_end(key)
+        return cached
+    result = compute(payload)
+    _HASH_MEMO[key] = result
+    while len(_HASH_MEMO) > _HASH_MEMO_CAP:
+        _HASH_MEMO.popitem(last=False)
+    return result

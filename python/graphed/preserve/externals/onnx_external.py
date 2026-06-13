@@ -7,10 +7,14 @@ from collections.abc import Mapping
 from typing import Any
 
 from ._base import ExternalPlugin
-from ._helpers import ml_matrix, parse_call_template
+from ._helpers import memoized_model_hash, ml_matrix, parse_call_template
 
 
 def onnx_content_hash(payload: bytes) -> str:
+    return memoized_model_hash("onnx", payload, _onnx_content_hash_impl)
+
+
+def _onnx_content_hash_impl(payload: bytes) -> str:
     import onnx  # noqa: PLC0415
     from onnx import numpy_helper  # noqa: PLC0415
 
