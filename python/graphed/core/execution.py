@@ -148,3 +148,33 @@ class Executor(Protocol):
     intact (picklable) — never as an opaque string."""
 
     def run(self, plan: Plan[R]) -> ExecResult[R]: ...
+
+
+class LocalResources:
+    """Reference :class:`WorkerResources`: opens each uri at most once per runner (``open_once``)."""
+
+    def __init__(self) -> None:
+        self._handles: dict[str, object] = {}
+
+    def open_once(self, uri: str, opener: Callable[[str], object]) -> object:
+        if uri not in self._handles:
+            self._handles[uri] = opener(uri)
+        return self._handles[uri]
+
+
+class SequentialRunner:
+    """The dependency-free reference :class:`Executor` of the ``Plan`` contract: runs a plan's
+    tasks **in key order**, in-process, with no worker pool. It lives beside the contract it
+    executes so every layer — the frontend's deferred writers, histogram aggregation,
+    preservation, the benchmarks — can run a ``Plan`` without depending on the executor package
+    (which the frontend may not import). It is the canonical baseline any real executor
+    (graphed-exec-local's thread/process pools) must match bit-for-bit."""
+
+    def run(self, plan: Plan[R]) -> ExecResult[R]:
+        resources = LocalResources()
+        value = plan.empty()
+        n = 0
+        for task in sorted(plan.tasks, key=lambda t: t.key):
+            value = plan.combine(value, plan.process(task.partition, resources))
+            n += 1
+        return ExecResult(value=value, n_partitions=n, n_combines=max(0, n - 1))

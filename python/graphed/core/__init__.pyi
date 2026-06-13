@@ -13,10 +13,16 @@ from .execution import (
     Executor as Executor,
 )
 from .execution import (
+    LocalResources as LocalResources,
+)
+from .execution import (
     Partition as Partition,
 )
 from .execution import (
     Plan as Plan,
+)
+from .execution import (
+    SequentialRunner as SequentialRunner,
 )
 from .execution import (
     StopCondition as StopCondition,
