@@ -23,7 +23,7 @@ import numpy as np
 from graphed import Backend, CompiledGraph, Session, compile_ir, evaluate_ir
 from graphed import parquet as gpq
 from graphed_core import Partition
-from graphed_core.execution import Plan, WorkerResources
+from graphed_core.execution import Plan, SequentialRunner, WorkerResources
 
 from . import NumpyBackend, project
 from .forms import NumpyForm
@@ -233,5 +233,5 @@ def to_parquet(
     plan = gpq.write_plan(partitions, writer)
     if not compute:
         return plan
-    runner = executor if executor is not None else gpq.SequentialRunner()
+    runner = executor if executor is not None else SequentialRunner()
     return list(runner.run(plan).value)

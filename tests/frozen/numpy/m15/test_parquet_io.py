@@ -20,7 +20,7 @@ import pyarrow as pa  # noqa: I001
 import pyarrow.parquet as pq
 
 from graphed import parquet as gpq
-from graphed_core.execution import Plan
+from graphed_core.execution import Plan, SequentialRunner
 
 import graphed_numpy as gn
 import graphed_numpy.io as gio
@@ -125,7 +125,7 @@ def test_disabled_write_graph_run_later_equals_enabled_run(dataset, tmp_path) ->
     enabled = gio.to_parquet(expr, os.path.join(tmp_path, "en"), steps_per_file=1)
     plan = gio.to_parquet(expr, os.path.join(tmp_path, "dis"), steps_per_file=1, compute=False)
     assert isinstance(plan, Plan)
-    later = gpq.SequentialRunner().run(plan).value
+    later = SequentialRunner().run(plan).value
     assert [os.path.basename(p) for p in later] == [os.path.basename(p) for p in enabled]
     for a, b in zip(enabled, later, strict=True):
         np.testing.assert_array_equal(
