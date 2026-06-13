@@ -16,6 +16,8 @@ stays a stable, minimal seam. A `Plan` is reduced to a single result by an `Exec
 
 from __future__ import annotations
 
+import contextlib
+from collections import OrderedDict
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -150,16 +152,43 @@ class Executor(Protocol):
     def run(self, plan: Plan[R]) -> ExecResult[R]: ...
 
 
-class LocalResources:
-    """Reference :class:`WorkerResources`: opens each uri at most once per runner (``open_once``)."""
+def _close_handle(handle: object) -> None:
+    close = getattr(handle, "close", None)
+    if callable(close):
+        with contextlib.suppress(Exception):  # a handle's own close must not break the run
+            close()
 
-    def __init__(self) -> None:
-        self._handles: dict[str, object] = {}
+
+class LocalResources:
+    """Reference :class:`WorkerResources`: ``open_once(uri, opener)`` opens a uri at most once and
+    reuses the handle for that runner/worker's later chunks. The set of simultaneously-open
+    handles is **bounded** to ``max_open`` — when a new open would exceed it, the
+    least-recently-used handle is closed and dropped (a uri reopened after eviction is opened
+    again). ``close()`` releases every handle. The bound matters for a long-lived worker (a
+    persistent process pool over many files): without it, ``open_once`` would accumulate every
+    file ever opened for the worker's whole lifetime."""
+
+    def __init__(self, max_open: int = 128) -> None:
+        self._handles: OrderedDict[str, object] = OrderedDict()
+        self._max_open = max_open
+        self.open_count = 0  # real opens performed (test/diagnostic introspection)
 
     def open_once(self, uri: str, opener: Callable[[str], object]) -> object:
-        if uri not in self._handles:
-            self._handles[uri] = opener(uri)
-        return self._handles[uri]
+        if uri in self._handles:
+            self._handles.move_to_end(uri)  # mark most-recently-used
+            return self._handles[uri]
+        handle = opener(uri)
+        self.open_count += 1
+        self._handles[uri] = handle
+        while len(self._handles) > self._max_open:
+            _, evicted = self._handles.popitem(last=False)  # close the least-recently-used
+            _close_handle(evicted)
+        return handle
+
+    def close(self) -> None:
+        for handle in self._handles.values():
+            _close_handle(handle)
+        self._handles.clear()
 
 
 class SequentialRunner:
@@ -172,9 +201,12 @@ class SequentialRunner:
 
     def run(self, plan: Plan[R]) -> ExecResult[R]:
         resources = LocalResources()
-        value = plan.empty()
-        n = 0
-        for task in sorted(plan.tasks, key=lambda t: t.key):
-            value = plan.combine(value, plan.process(task.partition, resources))
-            n += 1
-        return ExecResult(value=value, n_partitions=n, n_combines=max(0, n - 1))
+        try:
+            value = plan.empty()
+            n = 0
+            for task in sorted(plan.tasks, key=lambda t: t.key):
+                value = plan.combine(value, plan.process(task.partition, resources))
+                n += 1
+            return ExecResult(value=value, n_partitions=n, n_combines=max(0, n - 1))
+        finally:
+            resources.close()  # release file handles deterministically at end of run
