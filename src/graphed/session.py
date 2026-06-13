@@ -218,21 +218,38 @@ class Session:
         externals. `materialize` evaluates real data; projection evaluates reporting tracers."""
         cache: dict[int, object] = {}
 
-        def ev(node_id: int) -> object:
-            if node_id in cache:
-                return cache[node_id]
+        def inputs_of(node_id: int) -> tuple[int, ...]:
             if node_id in self._sources:
-                value = source(node_id)
+                return ()
+            if node_id in self._externals:
+                return tuple(self._externals[node_id][1])
+            return tuple(self._ops[node_id][2])
+
+        # explicit-stack post-order: a deeply chained recorded graph (a long selection/systematics
+        # chain) would blow Python's recursion limit if this evaluated recursively. Inputs are
+        # pushed reversed so the first input resolves first -- left-to-right compute order, matching
+        # a depth-first recursion; the cache deduplicates shared sub-DAGs and survives re-visits.
+        root = array.node_id
+        stack = [root]
+        while stack:
+            node_id = stack[-1]
+            if node_id in cache:
+                stack.pop()
+                continue
+            pending = [i for i in inputs_of(node_id) if i not in cache]
+            if pending:
+                stack.extend(reversed(pending))
+                continue
+            stack.pop()
+            if node_id in self._sources:
+                cache[node_id] = source(node_id)
             elif node_id in self._externals:
                 fn, ids = self._externals[node_id]
-                value = external(node_id, fn, [ev(i) for i in ids])
+                cache[node_id] = external(node_id, fn, [cache[i] for i in ids])
             else:
                 op_name, params, ids = self._ops[node_id]
-                value = op(node_id, op_name, [ev(i) for i in ids], params)
-            cache[node_id] = value
-            return value
-
-        return ev(array.node_id)
+                cache[node_id] = op(node_id, op_name, [cache[i] for i in ids], params)
+        return cache[root]
 
     # ---- evaluation (reference, node-by-node; the real executor is M7) ----------
     def materialize(self, array: Array) -> object:
