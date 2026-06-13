@@ -14,7 +14,7 @@ graphed stays numpy/awkward-free; the array codecs live in `graphed_awkward.io` 
   executors read per-partition through the specializations' readers instead).
 - **The deferred write plan** (R15.4 semantics): compute-disabled returns a task graph of write
   tasks — each writes one output part and returns its path — and running that same plan IS the
-  compute-enabled mode. The `SequentialRunner` here is the dependency-free reference; any R7
+  compute-enabled mode. Run the plan with graphed_core.execution.SequentialRunner (dependency-free reference) or any R7
   executor (e.g. graphed-exec-local's process pool) accepts the same plan.
 - **Part naming** (R15.9): a writer derives its own output-part index from its partition plus a
   per-file base table, so per-task pickled state is bounded by the number of FILES, not
@@ -36,7 +36,7 @@ from graphed_core import Partition
 from .array import Array
 from .backend import Form, ParamValue
 from .session import Session
-from .write import SequentialRunner, blind_part_index, file_bases, step_of, write_plan
+from .write import blind_part_index, file_bases, step_of, write_plan
 from .write import part_path as _base_part_path
 
 PathLike = str | Iterable[str]
@@ -143,10 +143,10 @@ def deferred_source(
 
 
 # ---- the deferred write plan: re-exported from the format-agnostic base (graphed.write) ----------
-# write_plan / SequentialRunner / file_bases are ALIASES of graphed.write's — the M15 surface is
-# the parquet specialization of the M20 base, pinned identical by the m20 frozen suite.
+# write_plan / file_bases are ALIASES of graphed.write's — the M15 surface is the parquet
+# specialization of the M20 base. The reference runner is graphed_core.execution.SequentialRunner
+# (it is general execution, not a write/parquet concept).
 __all__ = [
-    "SequentialRunner",
     "blind_part_index",
     "deferred_source",
     "derive_part_index",

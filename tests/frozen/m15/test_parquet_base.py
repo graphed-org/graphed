@@ -20,6 +20,7 @@ pa = pytest.importorskip("pyarrow")
 import pyarrow.parquet as pq  # noqa: E402, I001
 
 from graphed import parquet as gpq  # noqa: E402
+from graphed_core import SequentialRunner  # noqa: E402  (M32: the reference runner moved here)
 from graphed_core import Partition  # noqa: E402
 from graphed_core.execution import Task, WorkerResources  # noqa: E402
 
@@ -139,7 +140,7 @@ def test_write_plan_disabled_graph_run_later_matches_enabled_run(files: list[str
     assert plan.empty() == []
 
     # running the disabled graph produces the enabled mode's outputs
-    result = gpq.SequentialRunner().run(plan)
+    result = SequentialRunner().run(plan)
     assert result.n_partitions == len(parts)
     assert result.value == [p.uri + f".part{p.entry_start}-{p.entry_stop}.txt" for p in parts]
     for path in result.value:
@@ -149,7 +150,7 @@ def test_write_plan_disabled_graph_run_later_matches_enabled_run(files: list[str
 def test_sequential_runner_is_key_ordered_and_combine_is_plan_combine(files: list[str]) -> None:
     parts = gpq.make_partitions(files, steps_per_file=1, open_files=True)
     plan = gpq.write_plan(tuple(reversed(parts)), _toy_writer)
-    result = gpq.SequentialRunner().run(plan)
+    result = SequentialRunner().run(plan)
     # keys fix the order regardless of the sequence handed in: output order is key order
     assert result.value == [
         t.partition.uri + f".part{t.partition.entry_start}-{t.partition.entry_stop}.txt"

@@ -5,8 +5,9 @@ the same skeleton: a set of partitions becomes a TASK GRAPH of write tasks (each
 output part and reports its path), the compute-disabled graph run later IS the compute-enabled
 mode (R15.4), workers derive their own part index from their partition plus an O(#files) base
 table (R15.9 — no per-partition path map pickled into every task), and any R7 executor runs the
-plan (with a dependency-free key-ordered sequential reference here). This module carries that
-skeleton with NO format content; specializations supply only the array codec and naming suffix.
+plan (the dependency-free key-ordered reference is ``graphed_core.execution.SequentialRunner``).
+This module carries that skeleton with NO format content; specializations supply only the array
+codec and naming suffix.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from collections.abc import Callable, Hashable, Mapping, Sequence
 from typing import Any, Protocol, runtime_checkable
 
 from graphed_core import Partition
-from graphed_core.execution import ExecResult, Plan, Task, WorkerResources
+from graphed_core.execution import Plan, Task, WorkerResources
 
 
 # ---- the deferred write plan --------------------------------------------------------------------
@@ -39,34 +40,6 @@ def write_plan(
     process-pool executor unchanged."""
     tasks = tuple(Task(i, p) for i, p in enumerate(partitions))
     return Plan(process=write_part, combine=_concat_paths, empty=_no_paths, tasks=tasks)
-
-
-class _LocalResources:
-    """Reference WorkerResources: opens each uri once per runner."""
-
-    def __init__(self) -> None:
-        self._handles: dict[str, object] = {}
-
-    def open_once(self, uri: str, opener: Callable[[str], object]) -> object:
-        if uri not in self._handles:
-            self._handles[uri] = opener(uri)
-        return self._handles[uri]
-
-
-class SequentialRunner:
-    """The dependency-free reference runner: executes a plan's tasks IN KEY ORDER in-process.
-
-    Exists so a writer's compute-enabled path works without graphed-exec-local; any R7 executor
-    accepting the same plan may be passed instead."""
-
-    def run(self, plan: Plan[list[str]]) -> ExecResult[list[str]]:
-        resources = _LocalResources()
-        value = plan.empty()
-        n = 0
-        for task in sorted(plan.tasks, key=lambda t: t.key):
-            value = plan.combine(value, plan.process(task.partition, resources))
-            n += 1
-        return ExecResult(value=value, n_partitions=n, n_combines=max(0, n - 1))
 
 
 # ---- writer-side part naming and indexing (R15.9) ------------------------------------------------
