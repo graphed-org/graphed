@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>graphed · live execution</title>
+  <link rel="stylesheet" href="/static/uPlot.min.css" />
+  <link rel="stylesheet" href="/static/d3-flamegraph.css" />
+  <style>
+    :root { --bg:#0f1116; --panel:#171a21; --line:#262b36; --fg:#d7dbe3; --muted:#8b93a5;
+            --accent:#5b9dff; --ok:#3fb950; --err:#f85149; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--fg);
+           font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+    header { padding:10px 16px; border-bottom:1px solid var(--line); display:flex;
+             align-items:center; gap:18px; flex-wrap:wrap; }
+    h1 { font-size:14px; margin:0; font-weight:600; letter-spacing:.04em; }
+    h1 span { color:var(--accent); }
+    .stat { color:var(--muted); } .stat b { color:var(--fg); font-weight:600; }
+    .stat.err b { color:var(--err); }
+    #progress { flex:1; min-width:160px; height:10px; background:var(--line);
+                border-radius:5px; overflow:hidden; }
+    #bar { height:100%; width:0; background:var(--accent); transition:width .15s linear; }
+    main { display:grid; grid-template-columns:1fr 1fr; gap:14px; padding:14px; }
+    .panel { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:12px; }
+    .panel h2 { font-size:11px; text-transform:uppercase; letter-spacing:.08em;
+                color:var(--muted); margin:0 0 10px; }
+    .wide { grid-column:1 / -1; }
+    table { width:100%; border-collapse:collapse; }
+    th,td { text-align:right; padding:3px 8px; border-bottom:1px solid var(--line); }
+    th:first-child, td:first-child { text-align:left; }
+    th { color:var(--muted); font-weight:500; }
+    #flame { width:100%; min-height:240px; }
+    #err { color:var(--err); white-space:pre-wrap; min-height:20px; }
+    .muted { color:var(--muted); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>graphed <span>· live execution</span></h1>
+    <div id="progress"><div id="bar"></div></div>
+    <div class="stat"><b id="done">0</b>/<span id="sub">0</span> done</div>
+    <div class="stat"><b id="inflight">0</b> in flight</div>
+    <div class="stat err"><b id="errored">0</b> errored</div>
+    <div class="stat"><b id="combines">0</b> combines</div>
+    <div class="stat"><b id="elapsed">0.0</b>s</div>
+    <div class="stat" id="conn">connecting…</div>
+  </header>
+  <main>
+    <div class="panel"><h2>Throughput (tasks finished)</h2><div id="thru"></div></div>
+    <div class="panel"><h2>Tasks in flight</h2><div id="fly"></div></div>
+    <div class="panel"><h2>Workers</h2>
+      <table><thead><tr><th>worker</th><th>started</th><th>finished</th><th>errored</th><th>entries</th></tr></thead>
+      <tbody id="workers"></tbody></table>
+    </div>
+    <div class="panel"><h2>Last error (user source)</h2><div id="err" class="muted">none</div></div>
+    <div class="panel wide"><h2>Profile flamegraph <span id="flamehint" class="muted"></span></h2><div id="flame"></div></div>
+  </main>
+  <script src="/static/uPlot.min.js"></script>
+  <script src="/static/d3.min.js"></script>
+  <script src="/static/d3-flamegraph.min.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>

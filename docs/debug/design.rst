@@ -117,6 +117,50 @@ source annotated with its projected columns. Deterministic text output, suitable
 notebooks, and diffing two lowerings of the same analysis.
 
 
+Live execution dashboard
+------------------------
+
+``Dashboard`` (M37) is an **opt-in, passive** live view of a running ``Plan``. While work runs on
+*any* executor, a daemon thread serves a webpage showing task progress, throughput, per-worker
+activity, a statistical-sampling flamegraph, and any ``StageError`` mapped to the user's analysis
+line. Unlike dask — which starts a Bokeh server on every client — nothing runs until you ask:
+
+.. code-block:: python
+
+   from graphed_debug import Dashboard
+   from graphed_exec_local.executors import ProcessExecutor
+
+   with Dashboard(port=8787, profile=True) as dash:   # prints http://127.0.0.1:8787/
+       result = ProcessExecutor(monitor=dash, persistent=True).run(plan)
+   # the server thread, collector, and worker samplers are torn down on exit
+
+How it fits together, in three layers with strict boundaries:
+
+* **The seam (``graphed_core.execution``).** ``TaskEvent`` (a frozen, picklable, *display-only*
+  record), ``TaskPhase``, and the ``Monitor`` / ``WorkerProfiler`` protocols are pure data — core
+  gains no web or profiler dependency. The event vocabulary is shared by every executor, so it
+  lives at the layer it serves.
+* **Emit (``graphed-exec-local``).** Each executor takes an optional ``monitor=``. A thread pool
+  calls the monitor in-process; a process pool forwards worker events over a bounded
+  ``Manager().Queue()`` drained by a driver-side collector thread. Per task: one ``SUBMITTED``
+  (driver-side), then ``STARTED``, then exactly one of ``FINISHED`` / ``ERRORED`` (worker-side).
+* **Consume + render (``graphed-debug``).** The ``Dashboard`` *is* the ``Monitor`` and owns the web
+  server. Python emits JSON over **Server-Sent Events**; a static single-page app (uPlot for the
+  time series, d3-flame-graph for the profile) renders in the browser — there is no Python
+  rendering framework. The error panel reuses the same source-mapped ``StageError`` rendering as
+  the rest of this package.
+
+The headline guarantee is **passivity**: attaching a dashboard (even with ``profile=True``) leaves
+the reduced result, the combine count, and the serialized plan byte-identical. Emission is
+best-effort and drops on a full queue rather than back-pressuring a worker, and a monitor that
+raises is swallowed — the determinism gate is green attached-or-not.
+
+The statistical sampler is `pyinstrument <https://github.com/joerick/pyinstrument>`_ (an optional
+``dashboard`` extra). Each worker runs its own sampler; ``graphed-exec-local`` drives it through the
+abstract ``WorkerProfiler`` protocol without importing it. Per-worker sessions are serialized, sent
+over the same channel as task events, and merged driver-side into one flamegraph.
+
+
 Phase 2 (deliberately not built)
 --------------------------------
 
