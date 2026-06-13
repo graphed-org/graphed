@@ -6,4 +6,4 @@ backends, ROOT in the reader fork — instead of borrowing parquet tools. Tracea
 
 | Test file | Verifies | Item |
 |---|---|---|
-| `test_write_base.py` | format-agnostic `write_plan` + key-ordered `SequentialRunner` with worker-reported paths; `file_bases` over generic keys (uri strings and (uri, tree) pairs); `blind_part_index` from the partition alone (non-blind refused); exact `step_of` reconstruction (n=5/steps=3); suffix-explicit `part_path`; and the compat pin that `graphed.parquet`'s M15 surface IS the base via aliases | P3.6 |
+| `test_write_base.py` | format-agnostic `write_plan` with worker-reported paths (run via `graphed_core.execution.SequentialRunner`); `file_bases` over generic keys (uri strings and (uri, tree) pairs); `blind_part_index` from the partition alone (non-blind refused); exact `step_of` reconstruction (n=5/steps=3); suffix-explicit `part_path`; and the pin that `graphed.parquet`'s M15 surface IS the base via aliases (M32: `SequentialRunner` is no longer among them — it is general execution in `graphed_core.execution`) | P3.6 |

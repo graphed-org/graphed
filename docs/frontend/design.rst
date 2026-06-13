@@ -159,7 +159,7 @@ Two small modules host what every I/O integration shares, with **no array-librar
 :mod:`graphed.write`
     The format-agnostic partitioned-write skeleton: ``write_plan`` builds a task graph whose
     tasks write one part each and *report their paths* up a deterministic combine tree;
-    ``SequentialRunner`` is the dependency-free reference runner (any real executor accepts the
+    ``graphed_core.execution.SequentialRunner`` is the dependency-free reference runner (any real executor accepts the
     same plan); ``file_bases``/``blind_part_index``/``step_of``/``part_path`` let a worker
     derive its own part name from its partition plus an O(#files) table. The module also
     defines :class:`~graphed.write.PartitionedSource` — the read-side protocol (``partitions()``

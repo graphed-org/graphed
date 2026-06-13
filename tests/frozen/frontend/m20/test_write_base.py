@@ -14,7 +14,8 @@ from __future__ import annotations
 import os
 
 import pytest
-from graphed_core import Partition
+from graphed_core import Partition, SequentialRunner
+from graphed_core import execution as _gce
 from graphed_core.execution import WorkerResources
 from m15_toy import ToyForm, session  # noqa: F401  (the m15 toy backend serves this suite too)
 
@@ -33,7 +34,7 @@ def test_write_plan_and_sequential_runner_are_format_agnostic(tmp_path) -> None:
     parts = tuple(Partition(os.path.join(tmp_path, f"f{i}"), "tree", 0, i + 1) for i in range(3))
     plan = gw.write_plan(tuple(reversed(parts)), _toy_writer)
     assert plan.empty() == []
-    result = gw.SequentialRunner().run(plan)
+    result = SequentialRunner().run(plan)
     assert result.n_partitions == 3
     # key order, regardless of the order handed in; workers report their own paths
     assert result.value == [
@@ -83,6 +84,10 @@ def test_part_path_is_suffix_explicit() -> None:
 def test_parquet_remains_the_specialization_not_a_fork() -> None:
     # the M15 parquet surface IS the base (aliases) — the suites can never diverge
     assert gpq.write_plan is gw.write_plan
-    assert gpq.SequentialRunner is gw.SequentialRunner
     assert gpq.file_bases is gw.file_bases
+    # M32: SequentialRunner is general execution, not a write/parquet concept — it lives in the
+    # execution contract and is NOT re-exported by either write-shaped module
+    assert not hasattr(gw, "SequentialRunner")
+    assert not hasattr(gpq, "SequentialRunner")
+    assert SequentialRunner is _gce.SequentialRunner  # the one canonical reference runner
     assert gpq.part_path("/out", 7) == os.path.join("/out", "part-00007.parquet")  # m15 pin holds
