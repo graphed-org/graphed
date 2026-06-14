@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>graphed · live execution</title>
+  <!-- FINOS Perspective, loaded from CDN. Pin the JS major to match the installed
+       `perspective-python` wire protocol if you change versions. -->
+  <script type="module">
+    import perspective from "https://cdn.jsdelivr.net/npm/@finos/perspective@3/dist/cdn/perspective.js";
+    import "https://cdn.jsdelivr.net/npm/@finos/perspective-viewer@3/dist/cdn/perspective-viewer.js";
+    import "https://cdn.jsdelivr.net/npm/@finos/perspective-viewer-datagrid@3/dist/cdn/perspective-viewer-datagrid.js";
+    import "https://cdn.jsdelivr.net/npm/@finos/perspective-viewer-d3fc@3/dist/cdn/perspective-viewer-d3fc.js";
+
+    const wsUrl = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/websocket`;
+    const client = await perspective.websocket(wsUrl);
+
+    async function bind(id, name, config) {
+      const table = await client.open_table(name);
+      const viewer = document.getElementById(id);
+      await viewer.load(table);
+      if (config) await viewer.restore(config);
+    }
+    // stats: one live row of progress counters; tasks: per-task current state; profile: sampled frames
+    await bind("stats", "stats", { plugin: "Datagrid" });
+    await bind("tasks", "tasks", { plugin: "Datagrid", sort: [["t", "desc"]] });
+    await bind("profile", "profile",
+      { plugin: "Treemap", group_by: ["function"], columns: ["self_us"], aggregates: { self_us: "sum" } });
+  </script>
+  <style>
+    :root { --line:#262b36; }
+    html, body { margin:0; height:100%; background:#0f1116; color:#d7dbe3;
+      font:13px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    header { padding:10px 16px; border-bottom:1px solid var(--line); font-weight:600; letter-spacing:.04em; }
+    header span { color:#5b9dff; }
+    .grid { display:grid; grid-template-rows:auto 1fr 1fr; gap:10px; padding:10px; height:calc(100% - 42px); box-sizing:border-box; }
+    perspective-viewer { border:1px solid var(--line); border-radius:8px; }
+    #stats { height:120px; }
+    .label { font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:#8b93a5; margin:2px 2px -4px; }
+  </style>
+</head>
+<body>
+  <header>graphed <span>· live execution</span></header>
+  <div class="grid">
+    <perspective-viewer id="stats"></perspective-viewer>
+    <div style="display:grid; grid-template-rows:auto 1fr;"><div class="label">tasks</div>
+      <perspective-viewer id="tasks"></perspective-viewer></div>
+    <div style="display:grid; grid-template-rows:auto 1fr;"><div class="label">profile (sampled self-time by function)</div>
+      <perspective-viewer id="profile"></perspective-viewer></div>
+  </div>
+</body>
+</html>

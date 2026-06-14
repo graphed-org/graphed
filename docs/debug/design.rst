@@ -120,45 +120,56 @@ notebooks, and diffing two lowerings of the same analysis.
 Live execution dashboard
 ------------------------
 
-``Dashboard`` (M37) is an **opt-in, passive** live view of a running ``Plan``. While work runs on
-*any* executor, a daemon thread serves a webpage showing task progress, throughput, per-worker
-activity, a statistical-sampling flamegraph, and any ``StageError`` mapped to the user's analysis
-line. Unlike dask — which starts a Bokeh server on every client — nothing runs until you ask:
+``Dashboard`` (M37) is an **opt-in, passive** live view of a running ``Plan``, built on **FINOS
+Perspective** tables served over Tornado, fed by a **websocket network transport**. While work runs
+on *any* executor — local or remote — it shows live task progress, per-worker activity, a sampled
+profile, and any ``StageError`` mapped to the user's analysis line. Unlike dask, which starts a
+Bokeh server on every client, nothing runs until you ask:
 
 .. code-block:: python
 
    from graphed_debug import Dashboard
    from graphed_exec_local.executors import ProcessExecutor
 
-   with Dashboard(port=8787, profile=True) as dash:   # prints http://127.0.0.1:8787/
-       result = ProcessExecutor(monitor=dash, persistent=True).run(plan)
-   # the server thread, collector, and worker samplers are torn down on exit
+   with Dashboard(port=8888, profile=True) as dash:   # serves http://127.0.0.1:8888/
+       result = ProcessExecutor(monitor=dash.monitor, persistent=True).run(plan)
+   # the Perspective server + websocket client are torn down on exit
 
 How it fits together, in three layers with strict boundaries:
 
 * **The seam (``graphed_core.execution``).** ``TaskEvent`` (a frozen, picklable, *display-only*
   record), ``TaskPhase``, and the ``Monitor`` / ``WorkerProfiler`` protocols are pure data — core
-  gains no web or profiler dependency. The event vocabulary is shared by every executor, so it
-  lives at the layer it serves.
+  gains no web/network/profiler dependency. The vocabulary is shared by every executor, so it lives
+  at the layer it serves, and it is **transport- and render-agnostic** (it survived the move from an
+  earlier SSE prototype to Perspective unchanged).
 * **Emit (``graphed-exec-local``).** Each executor takes an optional ``monitor=``. A thread pool
   calls the monitor in-process; a process pool forwards worker events over a bounded
   ``Manager().Queue()`` drained by a driver-side collector thread. Per task: one ``SUBMITTED``
   (driver-side), then ``STARTED``, then exactly one of ``FINISHED`` / ``ERRORED`` (worker-side).
-* **Consume + render (``graphed-debug``).** The ``Dashboard`` *is* the ``Monitor`` and owns the web
-  server. Python emits JSON over **Server-Sent Events**; a static single-page app (uPlot for the
-  time series, d3-flame-graph for the profile) renders in the browser — there is no Python
-  rendering framework. The error panel reuses the same source-mapped ``StageError`` rendering as
-  the rest of this package.
+* **Consume + render (``graphed-debug``).** Three cooperating pieces:
+
+  - :class:`DashboardServer` — a ``perspective.Server`` hosting live ``tasks`` / ``profile`` /
+    ``stats`` tables over a Tornado app. Browsers connect a ``<perspective-viewer>`` to
+    ``/websocket``; executors push events to the ``/ingest`` websocket. It runs its own IOLoop in a
+    daemon thread, so it is decoupled from the executor.
+  - :class:`NetworkMonitor` — a passive ``Monitor`` that streams a run's events to a server over a
+    websocket (``websocket-client``). This is the **network-comms transport**: loopback for a local
+    dashboard, ``ws://host:port/ingest`` for a remote one, so a dashboard can observe an executor on
+    another machine.
+  - :class:`Dashboard` — the opt-in convenience: a local ``DashboardServer`` plus a loopback
+    ``NetworkMonitor``, so even a same-machine run streams over a real websocket.
 
 The headline guarantee is **passivity**: attaching a dashboard (even with ``profile=True``) leaves
-the reduced result, the combine count, and the serialized plan byte-identical. Emission is
-best-effort and drops on a full queue rather than back-pressuring a worker, and a monitor that
-raises is swallowed — the determinism gate is green attached-or-not.
+the reduced result, the combine count, and the serialized plan byte-identical. The client enqueues
+events to a background sender; a full queue or a down connection **drops** them and never blocks or
+raises into the executor — the determinism gate is green attached-or-not.
 
-The statistical sampler is `pyinstrument <https://github.com/joerick/pyinstrument>`_ (an optional
-``dashboard`` extra). Each worker runs its own sampler; ``graphed-exec-local`` drives it through the
-abstract ``WorkerProfiler`` protocol without importing it. Per-worker sessions are serialized, sent
-over the same channel as task events, and merged driver-side into one flamegraph.
+The statistical sampler is `pyinstrument <https://github.com/joerick/pyinstrument>`_. Each worker
+runs its own sampler (``graphed-exec-local`` drives it via the abstract ``WorkerProfiler`` without
+importing it); sessions ride the same transport and the server flattens them into the ``profile``
+table (function, location, self/total µs), which the viewer groups and sums. The dashboard stack
+(``perspective-python``, ``tornado``, ``websocket-client``, ``pyinstrument``) is the optional
+``dashboard`` extra; the core package stays pure-Python and import-clean without it.
 
 
 Phase 2 (deliberately not built)

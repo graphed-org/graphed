@@ -7,7 +7,7 @@ user's analysis line, never a raw opaque worker traceback (plan A.3 #8).
 
 from __future__ import annotations
 
-from .dashboard import Dashboard
+from .dashboard import Dashboard, DashboardServer, NetworkMonitor
 from .errors import SourceFrame, StageError
 from .lowering import LoweredGraph, LoweredOp, LoweredStage, lower
 from .runner import run
@@ -16,9 +16,11 @@ from .viz import visualize
 
 __all__ = [
     "Dashboard",
+    "DashboardServer",
     "LoweredGraph",
     "LoweredOp",
     "LoweredStage",
+    "NetworkMonitor",
     "SourceFrame",
     "StageError",
     "format_traceback",
