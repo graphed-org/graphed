@@ -130,7 +130,9 @@ def test_network_monitor_streams_tasks_and_combines() -> None:
                 mon.on_task(_ev(TaskPhase.FINISHED, k, "w0"))
             mon.on_combine(1)
             mon.on_combine(2)
-            snap = _poll(server, lambda s: s["stats"]["finished"] >= 5)
+            # combines are sent last over the (FIFO) websocket, so wait for them: that they landed
+            # implies every earlier task message did too (no premature read on a slow runner).
+            snap = _poll(server, lambda s: s["stats"]["combines"] >= 2 and s["stats"]["finished"] >= 5)
             assert snap["stats"]["submitted"] == 5
             assert snap["stats"]["started"] == 5
             assert snap["stats"]["finished"] == 5
