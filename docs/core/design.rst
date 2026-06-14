@@ -312,6 +312,33 @@ stores safe against cache poisoning: work is keyed by *what* it computes, not by
 it ran.
 
 
+The monitor seam (live observability)
+-------------------------------------
+
+``graphed_core.execution`` also carries the M37 **observability seam** — the contract a live
+dashboard plugs into. It is deliberately tiny and pure data: ``TaskEvent`` (a frozen, picklable,
+*display-only* record of one task transition), ``TaskPhase`` (``SUBMITTED`` / ``STARTED`` /
+``FINISHED`` / ``ERRORED``), and two protocols, ``Monitor`` (``on_task`` / ``on_profile`` /
+``on_combine`` / ``worker_profiler_factory``) and ``WorkerProfiler`` (``start`` / ``flush`` /
+``stop``).
+
+Why it lives in ``graphed-core`` and not in the dashboard: the event vocabulary is shared by *every*
+executor, so it belongs at the layer they all depend on — a shared primitive at the layer it serves.
+Keeping it here also keeps it honest about its boundaries:
+
+* **Render- and transport-agnostic.** Core gains no web, websocket, or profiler dependency. A
+  ``TaskEvent`` is just data; *how* it reaches a screen — an in-process call, a websocket to a
+  Perspective server, something not yet written — is entirely the consumer's business. (This is why
+  the seam survived ``graphed-debug``'s switch from an SSE prototype to Perspective unchanged.)
+* **Passive by construction.** ``emit_task(monitor, event)`` is a no-op for a ``None`` monitor and
+  swallows any exception a monitor raises. An executor emits best-effort; a misbehaving or absent
+  monitor can never change a result. ``SequentialRunner`` is the observable baseline that proves it:
+  its reduced value is identical with or without a monitor attached.
+
+Concrete monitors (and the websocket/Perspective rendering) live in ``graphed-debug``; the reference
+executors that *emit* through this seam live in ``graphed-exec-local``.
+
+
 Reading map
 -----------
 
