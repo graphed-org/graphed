@@ -4,13 +4,16 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>graphed · live execution</title>
-  <!-- FINOS Perspective, loaded from CDN. Pin the JS major to match the installed
-       `perspective-python` wire protocol if you change versions. -->
+  <!-- Perspective is VENDORED (works offline) at the EXACT version of the installed
+       `perspective-python` server (FINOS 3.8.0). The client and server share a versioned wire
+       protocol, so these MUST match the server. The FINOS `/dist/cdn/` builds are browser-ready and
+       self-register; they fetch their wasm from `../wasm/` relative to the script, so the
+       `vendor/cdn` + `vendor/wasm` layout below is load-bearing. -->
+  <link rel="stylesheet" href="/static/vendor/css/themes.css" />
   <script type="module">
-    import perspective from "https://cdn.jsdelivr.net/npm/@finos/perspective@3/dist/cdn/perspective.js";
-    import "https://cdn.jsdelivr.net/npm/@finos/perspective-viewer@3/dist/cdn/perspective-viewer.js";
-    import "https://cdn.jsdelivr.net/npm/@finos/perspective-viewer-datagrid@3/dist/cdn/perspective-viewer-datagrid.js";
-    import "https://cdn.jsdelivr.net/npm/@finos/perspective-viewer-d3fc@3/dist/cdn/perspective-viewer-d3fc.js";
+    import perspective from "/static/vendor/cdn/perspective.js";
+    import "/static/vendor/cdn/perspective-viewer.js";
+    import "/static/vendor/cdn/perspective-viewer-datagrid.js";
 
     const wsUrl = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/websocket`;
     const client = await perspective.websocket(wsUrl);
@@ -19,13 +22,21 @@
       const table = await client.open_table(name);
       const viewer = document.getElementById(id);
       await viewer.load(table);
-      if (config) await viewer.restore(config);
+      await viewer.restore({ theme: "Pro Dark", ...config });
     }
-    // stats: one live row of progress counters; tasks: per-task current state; profile: sampled frames
+    // All three panels use the built-in Datagrid (robust on empty/streaming data; the d3fc plots
+    // throw on degenerate data). stats = live counters; tasks = per-task state (latest first);
+    // profile = sampled self/total time aggregated by function.
     await bind("stats", "stats", { plugin: "Datagrid" });
     await bind("tasks", "tasks", { plugin: "Datagrid", sort: [["t", "desc"]] });
-    await bind("profile", "profile",
-      { plugin: "Treemap", group_by: ["function"], columns: ["self_us"], aggregates: { self_us: "sum" } });
+    await bind("profile", "profile", {
+      plugin: "Datagrid",
+      group_by: ["function"],
+      columns: ["self_us", "total_us"],
+      aggregates: { self_us: "sum", total_us: "sum" },
+      sort: [["self_us", "desc"]],
+    });
+    document.body.removeAttribute("data-loading");
   </script>
   <style>
     :root { --line:#262b36; }
@@ -33,13 +44,14 @@
       font:13px ui-monospace, SFMono-Regular, Menlo, monospace; }
     header { padding:10px 16px; border-bottom:1px solid var(--line); font-weight:600; letter-spacing:.04em; }
     header span { color:#5b9dff; }
-    .grid { display:grid; grid-template-rows:auto 1fr 1fr; gap:10px; padding:10px; height:calc(100% - 42px); box-sizing:border-box; }
+    .grid { display:grid; grid-template-rows:auto 1fr 1fr; gap:10px; padding:10px;
+      height:calc(100% - 42px); box-sizing:border-box; }
     perspective-viewer { border:1px solid var(--line); border-radius:8px; }
     #stats { height:120px; }
     .label { font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:#8b93a5; margin:2px 2px -4px; }
   </style>
 </head>
-<body>
+<body data-loading>
   <header>graphed <span>· live execution</span></header>
   <div class="grid">
     <perspective-viewer id="stats"></perspective-viewer>
