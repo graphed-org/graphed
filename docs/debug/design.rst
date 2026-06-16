@@ -179,12 +179,14 @@ flamegraph at ``/api/flamegraph.json``. The browser polls and renders it with d3
 the cells truncate long names, hovering a frame pops out the full ``function;file:line`` plus its
 sample count and percentage.
 
-The task view is the **dask-distributed "Progress" idiom** rather than a scrolling list of start/stop
-events (which a human cannot parse mid-run): the server aggregates the task stream into overall +
-per-worker counts (``/api/progress.json``), and the browser draws one stacked horizontal bar per
-worker — segment widths are finished / in-flight / errored, bar length is normalized to the busiest
-worker so stragglers and load imbalance are visible at a glance. Hovering a bar pops out that worker's
-counts and its most recent partition. The dashboard stack (``perspective-python``, ``tornado``,
+The task view is the **dask-distributed "Progress"/"Task Stream" idiom** rather than a scrolling list
+of start/stop events (which a human cannot parse mid-run). The server keeps, per worker, one record
+per task (created on ``STARTED``, completed in place on ``FINISHED``/``ERRORED``) alongside the
+aggregate counts, served at ``/api/progress.json``. The browser draws one **overall** stacked bar
+(finished / in-flight / errored / pending tile the submitted total) and then, per worker, a
+chronological **strip of one cell per task** coloured by state — so the number of cells shows load /
+stragglers and **hovering any individual cell** (completed or in-flight) pops out that task's key,
+partition, entry count, state and duration. The dashboard stack (``perspective-python``, ``tornado``,
 ``websocket-client``) is the optional ``dashboard`` extra — no third-party profiler dependency; the
 core package stays pure-Python and import-clean without it.
 

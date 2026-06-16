@@ -173,7 +173,15 @@ def test_progress_aggregates_overall_and_per_worker() -> None:
             assert sorted(byw) == ["w0", "w1"]  # SUBMITTED (driver, worker="") never makes a row
             assert byw["w0"]["started"] == 3 and byw["w0"]["finished"] == 3 and byw["w0"]["inflight"] == 0
             assert byw["w1"]["started"] == 3 and byw["w1"]["finished"] == 2 and byw["w1"]["inflight"] == 1
-            assert byw["w1"]["last_partition"]  # carries the most recent task's partition label
+
+            # per-task records (one hoverable cell each): w1 ran keys 3,4,5 -> 2 finished + 1 in-flight
+            tasks = byw["w1"]["tasks"]
+            assert [t["key"] for t in tasks] == [3, 4, 5]  # sorted by start time, then key
+            assert [t["state"] for t in tasks] == ["finished", "finished", "started"]
+            for t in tasks:
+                assert t["partition"] and t["n_entries"] == t["key"]  # carried from the STARTED event
+            assert tasks[0]["t_end"] is not None  # a finished task records its end time (-> duration)
+            assert tasks[2]["t_end"] is None  # the in-flight one has no end yet
         finally:
             mon.close()
     finally:

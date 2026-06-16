@@ -186,29 +186,41 @@ class DashboardServer:
                     "message": msg.get("error", ""),
                 }
             # per-worker progress for the bars. SUBMITTED is driver-side (worker=""), so only the
-            # worker-side phases (started/finished/errored) populate a worker row.
+            # worker-side phases (started/finished/errored) populate a worker row. We keep a per-task
+            # record (keyed by task key) so the UI can render one hoverable cell PER TASK, not just an
+            # aggregate bar — a started task's record is completed in place when it finishes/errors.
             if worker and phase in ("started", "finished", "errored"):
                 w = self._workers.setdefault(
                     worker,
-                    {
-                        "worker": worker,
-                        "started": 0,
-                        "finished": 0,
-                        "errored": 0,
-                        "inflight": 0,
-                        "last_key": None,
-                        "last_partition": "",
-                        "last_t": 0.0,
-                    },
+                    {"worker": worker, "started": 0, "finished": 0, "errored": 0, "inflight": 0, "tasks": {}},
                 )
                 w[phase] += 1
                 if phase == "started":
                     w["inflight"] += 1
                 else:
                     w["inflight"] = max(0, w["inflight"] - 1)
-                w["last_key"] = msg.get("key")
-                w["last_partition"] = msg.get("partition", "")
-                w["last_t"] = msg.get("t", 0.0)
+                key = msg.get("key")
+                rec = w["tasks"].get(key)
+                if rec is None:  # STARTED normally creates it; tolerate an out-of-order finish/error
+                    rec = {
+                        "key": key,
+                        "partition": "",
+                        "n_entries": 0,
+                        "state": "started",
+                        "t_start": 0.0,
+                        "t_end": None,
+                        "error": "",
+                    }
+                    w["tasks"][key] = rec
+                if phase == "started":
+                    rec["partition"] = msg.get("partition", "")
+                    rec["n_entries"] = msg.get("n_entries", 0)
+                    rec["t_start"] = msg.get("t", 0.0)
+                else:
+                    rec["state"] = phase
+                    rec["t_end"] = msg.get("t", 0.0)
+                    if phase == "errored":
+                        rec["error"] = msg.get("error", "")
         self._push_stats_table()
 
     def _ingest_profile(self, msg: dict[str, Any]) -> None:
@@ -238,10 +250,22 @@ class DashboardServer:
     def progress(self) -> dict[str, Any]:
         """Overall + per-worker progress for the bar chart. ``total`` is the submitted count; the
         ``overall`` segments (finished/errored/inflight) plus the implicit pending remainder tile it.
-        ``workers`` is one row per worker that has run a task, sorted by id (deterministic order)."""
+        ``workers`` is one row per worker that has run a task, sorted by id (deterministic order); each
+        carries its aggregate counts plus ``tasks`` — one record per task (sorted by start time, then
+        key) so the UI can render a hoverable cell per task. Records are deep-copied under the lock so
+        JSON encoding (outside the lock) never races a concurrent task update."""
         with self._lock:
             overall = {k: self._stats[k] for k in ("submitted", "started", "finished", "errored", "inflight")}
-            workers = [dict(self._workers[w]) for w in sorted(self._workers)]
+            workers = []
+            for name in sorted(self._workers):
+                wd = self._workers[name]
+                tasks = sorted(
+                    (dict(r) for r in wd["tasks"].values()), key=lambda r: (r["t_start"], r["key"])
+                )
+                workers.append(
+                    {k: wd[k] for k in ("worker", "started", "finished", "errored", "inflight")}
+                    | {"tasks": tasks}
+                )
         return {"total": overall["submitted"], "overall": overall, "workers": workers}
 
     def progress_json(self) -> bytes:

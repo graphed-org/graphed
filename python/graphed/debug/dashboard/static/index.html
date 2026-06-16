@@ -60,43 +60,45 @@
     function seg(cls, frac) {
       return frac > 0 ? `<div class="pseg ${cls}" style="width:${(frac * 100).toFixed(3)}%"></div>` : "";
     }
-    function barRow(name, segs, count, tipHtml) {
+    // the OVERALL bar stays an aggregate stacked track (one tooltip of the whole-run counts)
+    function overallRow(o, pending, total) {
+      const segs = [["done", o.finished / total], ["run", o.inflight / total], ["err", o.errored / total], ["pend", pending / total]];
       const fills = segs.map(([cls, frac]) => seg(cls, frac)).join("");
+      const tip =
+        `<b>all tasks</b><br>submitted ${o.submitted}<br>finished ${o.finished}<br>` +
+        `in-flight ${o.inflight}<br>errored ${o.errored}<br>pending ${pending}`;
       return (
-        `<div class="pbar-row" data-tip="${esc(tipHtml)}">` +
-        `<div class="pbar-name">${esc(name)}</div>` +
+        `<div class="pbar-row" data-tip="${esc(tip)}">` +
+        `<div class="pbar-name">all tasks</div>` +
         `<div class="pbar-track">${fills}</div>` +
-        `<div class="pbar-count">${esc(count)}</div></div>`
+        `<div class="pbar-count">${o.finished} / ${o.submitted}</div></div>`
+      );
+    }
+    // each WORKER row is a strip of one hoverable CELL PER TASK (not an aggregate bar), so any
+    // completed or in-flight task can be moused over for its own details.
+    const STATE_CLS = { finished: "done", errored: "err", started: "run" };
+    function taskCell(t) {
+      const dur = t.t_end != null ? `${(t.t_end - t.t_start).toFixed(3)}s` : "in-flight";
+      const err = t.error ? `<br>${esc(t.error)}` : "";
+      const tip =
+        `<b>task ${t.key}</b> · ${esc(t.state)}<br>${esc(t.partition || "—")}<br>` +
+        `${t.n_entries} entries<br>${dur}${err}`;
+      return `<div class="tcell ${STATE_CLS[t.state] || "run"}" data-tip="${esc(tip)}"></div>`;
+    }
+    function workerRow(w) {
+      const cells = w.tasks.map(taskCell).join("");
+      return (
+        `<div class="pbar-row">` +
+        `<div class="pbar-name">${esc(w.worker)}</div>` +
+        `<div class="pbar-cells">${cells}</div>` +
+        `<div class="pbar-count">${w.finished} / ${w.started}</div></div>`
       );
     }
     function renderProgress(p) {
       const total = Math.max(p.total, 1);
       const o = p.overall;
       const pending = Math.max(0, o.submitted - o.finished - o.errored - o.inflight);
-      const rows = [
-        barRow(
-          "all tasks",
-          [["done", o.finished / total], ["run", o.inflight / total], ["err", o.errored / total], ["pend", pending / total]],
-          `${o.finished} / ${o.submitted}`,
-          `<b>all tasks</b><br>submitted ${o.submitted}<br>finished ${o.finished}<br>` +
-            `in-flight ${o.inflight}<br>errored ${o.errored}<br>pending ${pending}`
-        ),
-      ];
-      // per-worker bars normalized to the busiest worker's load, so bar LENGTH shows imbalance /
-      // stragglers and the green fill shows that worker's completion.
-      const maxStarted = Math.max(1, ...p.workers.map((w) => w.started));
-      for (const w of p.workers) {
-        const last = w.last_partition ? `<br>last ${esc(w.last_partition)} @ t=${(+w.last_t).toFixed(2)}` : "";
-        rows.push(
-          barRow(
-            w.worker,
-            [["done", w.finished / maxStarted], ["run", w.inflight / maxStarted], ["err", w.errored / maxStarted]],
-            `${w.finished} / ${w.started}`,
-            `<b>worker ${esc(w.worker)}</b><br>finished ${w.finished} of ${w.started} started<br>` +
-              `in-flight ${w.inflight}<br>errored ${w.errored}${last}`
-          )
-        );
-      }
+      const rows = [overallRow(o, pending, total), ...p.workers.map(workerRow)];
       document.getElementById("progress").innerHTML = rows.join("");
     }
     async function pollProgress() {
@@ -133,11 +135,13 @@
     }
 
     window.addEventListener("load", () => {
-      // progress-bar tooltips (delegated, so they survive each innerHTML re-render)
+      // progress tooltips (delegated, so they survive each innerHTML re-render): a per-task cell
+      // wins over the row, so each worker's individual tasks are inspectable; the overall bar's row
+      // carries the aggregate tip.
       const prog = document.getElementById("progress");
       prog.addEventListener("mousemove", (ev) => {
-        const row = ev.target.closest(".pbar-row");
-        if (row && row.dataset.tip) showTip(row.dataset.tip, ev);
+        const el = ev.target.closest(".tcell, .pbar-row");
+        if (el && el.dataset.tip) showTip(el.dataset.tip, ev);
         else hideTip();
       });
       prog.addEventListener("mouseleave", hideTip);
@@ -183,6 +187,15 @@
     .pseg.done { background:var(--done); }
     .pseg.run  { background:var(--run); }
     .pseg.err  { background:var(--err); }
+    /* per-worker rows: one hoverable cell per task (chronological strip). Cells grow to fill when few
+       and shrink to a hoverable minimum when many (the row scrolls if it overflows). */
+    .pbar-cells { display:flex; gap:1px; height:14px; border-radius:4px; overflow-x:auto;
+      background:#1a1e27; box-shadow:inset 0 0 0 1px var(--line); }
+    .tcell { flex:1 0 4px; min-width:4px; height:100%; }
+    .tcell:hover { outline:1px solid #cdd6e6; outline-offset:-1px; }
+    .tcell.done { background:var(--done); }
+    .tcell.run  { background:var(--run); }
+    .tcell.err  { background:var(--err); }
     .label { font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:#8b93a5; margin:2px 2px -4px; }
     /* shared pop-out tooltip */
     #gp-tooltip { position:fixed; display:none; z-index:1000; pointer-events:none; max-width:60ch;
@@ -195,7 +208,7 @@
   <header>graphed <span>· live execution</span></header>
   <div class="grid">
     <perspective-viewer id="stats"></perspective-viewer>
-    <div style="display:grid; grid-template-rows:auto 1fr; min-height:0;"><div class="label">progress (overall · per worker)</div>
+    <div style="display:grid; grid-template-rows:auto 1fr; min-height:0;"><div class="label">progress (overall · per worker · hover any task)</div>
       <div id="progress"></div></div>
     <div style="display:grid; grid-template-rows:auto 1fr; min-height:0;"><div class="label">profile (off-thread sampler · inclusive flamegraph · hover for full name)</div>
       <div id="profile"></div></div>

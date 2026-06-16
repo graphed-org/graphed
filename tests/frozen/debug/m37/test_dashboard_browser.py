@@ -80,9 +80,11 @@ def test_dashboard_page_renders_in_a_browser() -> None:
                 "document.getElementById('gp-tooltip').style.display === 'block'", timeout=5000
             )
             assert "samples" in page.inner_text("#gp-tooltip")
-            # hover a progress bar -> the tooltip shows that bar's task counts
-            page.hover("#progress .pbar-row .pbar-track")
-            page.wait_for_function("document.getElementById('gp-tooltip').innerHTML.length > 0", timeout=5000)
+            # hover an individual per-worker TASK cell -> the tooltip shows that one task's details
+            page.hover("#progress .pbar-cells .tcell")
+            page.wait_for_function(
+                "document.getElementById('gp-tooltip').innerText.includes('task')", timeout=5000
+            )
 
             time.sleep(0.5)  # let any late errors surface
             browser.close()
