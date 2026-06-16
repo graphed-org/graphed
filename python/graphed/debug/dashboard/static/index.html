@@ -5,15 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>graphed · live execution</title>
   <!-- Perspective is VENDORED (works offline) at the EXACT version of the installed
-       `perspective-python` server (FINOS 3.8.0). The client and server share a versioned wire
-       protocol, so these MUST match the server. The FINOS `/dist/cdn/` builds are browser-ready and
-       self-register; they fetch their wasm from `../wasm/` relative to the script, so the
-       `vendor/cdn` + `vendor/wasm` layout below is load-bearing. -->
-  <link rel="stylesheet" href="/static/vendor/css/themes.css" />
+       `perspective-python` server (4.5.1). `perspective-dashboard.js` is a single self-contained
+       bundle (client + viewer + Datagrid plugin + inlined wasm) produced by the esbuild recipe in
+       tools/dashboard-build/; the client/server share a versioned wire protocol so the two MUST
+       match. Re-run that build (and re-pin perspective-python together) to upgrade. -->
+  <link rel="stylesheet" href="/static/vendor/themes.css" />
   <script type="module">
-    import perspective from "/static/vendor/cdn/perspective.js";
-    import "/static/vendor/cdn/perspective-viewer.js";
-    import "/static/vendor/cdn/perspective-viewer-datagrid.js";
+    // default export = the perspective client; importing the bundle also registers
+    // <perspective-viewer> and the Datagrid plugin as a side effect.
+    import perspective from "/static/vendor/perspective-dashboard.js";
 
     const wsUrl = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/websocket`;
     const client = await perspective.websocket(wsUrl);
@@ -22,15 +22,14 @@
       const table = await client.open_table(name);
       const viewer = document.getElementById(id);
       await viewer.load(table);
-      await viewer.restore({ theme: "Pro Dark", ...config });
+      await viewer.restore({ theme: "Pro Dark", plugin: "Datagrid", ...config });
     }
     // All three panels use the built-in Datagrid (robust on empty/streaming data; the d3fc plots
     // throw on degenerate data). stats = live counters; tasks = per-task state (latest first);
     // profile = sampled self/total time aggregated by function.
-    await bind("stats", "stats", { plugin: "Datagrid" });
-    await bind("tasks", "tasks", { plugin: "Datagrid", sort: [["t", "desc"]] });
+    await bind("stats", "stats", {});
+    await bind("tasks", "tasks", { sort: [["t", "desc"]] });
     await bind("profile", "profile", {
-      plugin: "Datagrid",
       group_by: ["function"],
       columns: ["self_us", "total_us"],
       aggregates: { self_us: "sum", total_us: "sum" },
