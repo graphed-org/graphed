@@ -148,10 +148,11 @@ How it fits together, in three layers with strict boundaries:
   (driver-side), then ``STARTED``, then exactly one of ``FINISHED`` / ``ERRORED`` (worker-side).
 * **Consume + render (``graphed-debug``).** Three cooperating pieces:
 
-  - :class:`DashboardServer` — a ``perspective.Server`` hosting live ``tasks`` / ``profile`` /
-    ``stats`` tables over a Tornado app. Browsers connect a ``<perspective-viewer>`` to
-    ``/websocket``; executors push events to the ``/ingest`` websocket. It runs its own IOLoop in a
-    daemon thread, so it is decoupled from the executor.
+  - :class:`DashboardServer` — a ``perspective.Server`` hosting live ``tasks`` / ``stats`` tables
+    over a Tornado app, plus a merged profile **flamegraph** served as JSON at
+    ``/api/flamegraph.json``. Browsers connect a ``<perspective-viewer>`` to ``/websocket``; executors
+    push events to the ``/ingest`` websocket. It runs its own IOLoop in a daemon thread, so it is
+    decoupled from the executor.
   - :class:`NetworkMonitor` — a passive ``Monitor`` that streams a run's events to a server over a
     websocket (``websocket-client``). This is the **network-comms transport**: loopback for a local
     dashboard, ``ws://host:port/ingest`` for a remote one, so a dashboard can observe an executor on
@@ -164,12 +165,18 @@ the reduced result, the combine count, and the serialized plan byte-identical. T
 events to a background sender; a full queue or a down connection **drops** them and never blocks or
 raises into the executor — the determinism gate is green attached-or-not.
 
-The statistical sampler is `pyinstrument <https://github.com/joerick/pyinstrument>`_. Each worker
-runs its own sampler (``graphed-exec-local`` drives it via the abstract ``WorkerProfiler`` without
-importing it); sessions ride the same transport and the server flattens them into the ``profile``
-table (function, location, self/total µs), which the viewer groups and sums. The dashboard stack
-(``perspective-python``, ``tornado``, ``websocket-client``, ``pyinstrument``) is the optional
-``dashboard`` extra; the core package stays pure-Python and import-clean without it.
+The statistical sampler is **off-thread** (the dask ``distributed.profile`` technique), in pure
+stdlib (:mod:`graphed_debug._sampler`). A per-call profiler such as pyinstrument hooks *every* Python
+call, taxing call-heavy HEP code ~3x on the very thread doing the data work regardless of sample
+rate; instead, ``StackSampler`` samples its worker's task thread from a **separate daemon thread** via
+``sys._current_frames()`` every 10 ms, so the data path is never hooked (array kernels release the
+GIL anyway — measured profiling cost dropped from ~+53% to within noise). Each sample folds the stack
+into an inclusive **count tree** (a parent's count covers its children — the flamegraph invariant);
+``graphed-exec-local`` drives this via the abstract ``WorkerProfiler`` without importing it. The
+worker trees ride the same transport and the server merges them into one tree, served as a d3
+flamegraph at ``/api/flamegraph.json`` (the browser polls and renders it). The dashboard stack
+(``perspective-python``, ``tornado``, ``websocket-client``) is the optional ``dashboard`` extra — no
+third-party profiler dependency; the core package stays pure-Python and import-clean without it.
 
 
 Phase 2 (deliberately not built)

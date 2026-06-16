@@ -1,6 +1,7 @@
-"""The dashboard **server** (M37): a `perspective` ``Server`` hosting three live tables (``tasks``,
-``profile``, ``stats``) over a Tornado app. Browsers connect a ``<perspective-viewer>`` to the
-``/websocket`` endpoint; executors push events to the ``/ingest`` websocket (see
+"""The dashboard **server** (M37): a `perspective` ``Server`` hosting two live tables (``tasks`` and
+``stats``) over a Tornado app, plus a merged profile **flamegraph** served as JSON at
+``/api/flamegraph.json``. Browsers connect a ``<perspective-viewer>`` to the ``/websocket`` endpoint;
+executors push events to the ``/ingest`` websocket (see
 :class:`graphed_debug.dashboard.NetworkMonitor`). It runs its own asyncio/Tornado IOLoop in a daemon
 thread, so it is decoupled from the executor — the same server serves a local *or* a remote run.
 
@@ -36,12 +37,12 @@ class DashboardServer:
         self._http: Any = None
         self._client: Any = None
         self._tasks: Any = None
-        self._profile_table: Any = None
         self._stats_table: Any = None
         self._lock = threading.Lock()
         self._stats: dict[str, int] = dict.fromkeys(_wire.STATS_KEYS, 0)
         self._last_error: dict[str, Any] | None = None
-        self._profile_rows = 0
+        self._profile_tree: dict[str, Any] = _sampler._new_node()  # merged sampled stacks -> flamegraph
+        self._profile_samples = 0
         self._ready = threading.Event()
         self._error: BaseException | None = None
         self._started = False
@@ -97,7 +98,6 @@ class DashboardServer:
             server = perspective.Server()
             self._client = server.new_local_client()
             self._tasks = self._client.table(_wire.TASKS_SCHEMA, index="key", name="tasks")
-            self._profile_table = self._client.table(_wire.PROFILE_SCHEMA, name="profile")
             self._stats_table = self._client.table(_wire.STATS_SCHEMA, index="metric", name="stats")
             self._push_stats_table()
 
@@ -115,10 +115,17 @@ class DashboardServer:
                     self.set_header("Content-Type", "text/html; charset=utf-8")
                     self.finish((_STATIC / "index.html").read_bytes())
 
+            class _Flame(RequestHandler):  # type: ignore[misc]  # the merged profile flamegraph (JSON)
+                def get(self) -> None:
+                    self.set_header("Content-Type", "application/json")
+                    self.set_header("Cache-Control", "no-store")
+                    self.finish(owner.flamegraph_json())
+
             app = Application(
                 [
                     (r"/websocket", PerspectiveTornadoHandler, {"perspective_server": server}),
                     (r"/ingest", _Ingest),
+                    (r"/api/flamegraph.json", _Flame),
                     (r"/static/(.*)", StaticFileHandler, {"path": str(_STATIC)}),
                     (r"/", _Index),
                 ]
@@ -171,14 +178,12 @@ class DashboardServer:
 
     def _ingest_profile(self, msg: dict[str, Any]) -> None:
         try:
-            session = _sampler.session_from_bytes(base64.b64decode(msg["session_b64"]))
-            rows = _sampler.profile_rows(session, msg.get("worker", ""))
+            tree = _sampler.tree_from_bytes(base64.b64decode(msg["tree_b64"]))
         except Exception:
-            return  # a malformed/sampler-less payload must never break the server
-        if rows:
-            self._profile_table.update(rows)
-            with self._lock:
-                self._profile_rows += len(rows)
+            return  # a malformed payload must never break the server
+        with self._lock:
+            _sampler.merge_into(self._profile_tree, tree)
+            self._profile_samples += int(tree.get("count", 0))
 
     def _push_stats_table(self) -> None:
         with self._lock:
@@ -187,11 +192,19 @@ class DashboardServer:
 
     # ---- programmatic read (any thread) ---------------------------------
 
+    def flamegraph(self) -> dict[str, Any]:
+        """The merged d3-flame-graph tree (``{name, value, children}``) across all flushes/workers."""
+        with self._lock:
+            return _sampler.flamegraph(self._profile_tree)
+
+    def flamegraph_json(self) -> bytes:
+        return json.dumps(self.flamegraph()).encode("utf-8")
+
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
             return {
                 "stats": dict(self._stats),
                 "last_error": self._last_error,
-                "profile_rows": self._profile_rows,
+                "profile_samples": self._profile_samples,
                 "url": self.url,
             }

@@ -5,6 +5,7 @@ everything here executes in-process (coverage sees it). ``importorskip`` lets th
 
 from __future__ import annotations
 
+import json
 import time
 import urllib.request
 
@@ -39,36 +40,47 @@ def _poll(server: DashboardServer, pred, timeout: float = 10.0) -> dict:  # type
     raise AssertionError(f"predicate not satisfied within {timeout}s; last={server.snapshot()}")
 
 
-def _spin_profile(spins: int = 400000) -> bytes:
+def _spin_profile(duration: float = 0.2) -> bytes:
+    """Run the off-thread sampler over a busy task thread long enough to land several samples (10ms
+    interval), returning its JSON count-tree payload. Spins on wall-clock (not a fixed iteration
+    count) so a fast machine can't finish before the first sample."""
     p = _sampler.make_worker_profiler()
     p.start()
+    end = time.monotonic() + duration
     s = 0.0
-    for i in range(spins):
+    i = 0
+    while time.monotonic() < end:
         s += (i % 5) ** 0.5
+        i += 1
     payload = p.stop()
-    assert payload is not None
+    assert payload is not None  # at least one sample landed in `duration` at a 10ms interval
     return payload
 
 
-# ---- pure wire / adapter (no server) -----------------------------------
+# ---- pure wire / sampler (no server) -----------------------------------
 
 
 def test_wire_messages() -> None:
     msg = _wire.task_message(_ev(TaskPhase.STARTED, 1, "w"))
     assert msg["type"] == "task" and msg["phase"] == "started" and msg["error"] == ""
     assert _wire.combine_message(4) == {"type": "combine", "leaves_done": 4}
-    assert _wire.profile_message("w", "B64") == {"type": "profile", "worker": "w", "session_b64": "B64"}
+    assert _wire.profile_message("w", "B64") == {"type": "profile", "worker": "w", "tree_b64": "B64"}
     assert set(_wire.task_row(msg)) == set(_wire.TASKS_SCHEMA)
 
 
-def test_profile_rows_adapter() -> None:
-    session = _sampler.session_from_bytes(_spin_profile())
-    rows = _sampler.profile_rows(session, "w0")
-    assert rows
-    for r in rows:
-        assert set(r) == {"function", "location", "worker", "self_us", "total_us"}
-        assert r["total_us"] >= r["self_us"] >= 0
-        assert r["worker"] == "w0"
+def test_sampler_tree_and_flamegraph() -> None:
+    tree = _sampler.tree_from_bytes(_spin_profile())
+    assert tree["name"] == "all" and tree["count"] > 0 and tree["children"]
+    fg = _sampler.flamegraph(tree)
+    assert fg["name"] == "all" and fg["value"] == tree["count"]
+
+    # inclusive-count invariant (the flamegraph contract): a parent's value covers its children's sum.
+    def check(node: dict) -> None:  # type: ignore[type-arg]
+        assert node["value"] >= sum(c["value"] for c in node["children"])
+        for c in node["children"]:
+            check(c)
+
+    check(fg)
 
 
 def test_worker_profiler_factory_gate() -> None:
@@ -81,28 +93,19 @@ def test_worker_profiler_factory_gate() -> None:
 
 def test_sampler_edge_cases() -> None:
     p = _sampler.make_worker_profiler()
-    assert p.flush() is None and p.stop() is None  # never started -> nothing to take
+    assert p.flush() is None and p.stop() is None  # never started -> nothing sampled
 
-    class _Frame:
-        function = "f"
-        time = 0.01
-        children = ()  # immutable empty -> no mutable-default lint
+    # merge sums inclusive counts per identifier; fresh parses (as the server feeds them) -> additive.
+    payload = _spin_profile()
+    n = _sampler.tree_from_bytes(payload)["count"]
+    acc = _sampler._new_node()
+    _sampler.merge_into(acc, _sampler.tree_from_bytes(payload))
+    _sampler.merge_into(acc, _sampler.tree_from_bytes(payload))
+    assert acc["count"] == 2 * n
 
-        def code_position_short(self) -> None:
-            return None
-
-    class _BadFrame(_Frame):
-        def code_position_short(self) -> None:
-            raise RuntimeError("boom")
-
-    assert _sampler._location(_Frame()) == ""  # no position -> empty
-    assert _sampler._location(_BadFrame()) == ""  # a raising accessor -> empty
-
-    class _EmptySession:
-        def root_frame(self) -> None:
-            return None
-
-    assert _sampler.profile_rows(_EmptySession(), "w") == []
+    # an empty tree -> a zero-value root with no children (the server's initial state)
+    empty = _sampler.flamegraph(_sampler._new_node())
+    assert empty["value"] == 0 and empty["children"] == []
 
 
 # ---- server + network transport ----------------------------------------
@@ -161,16 +164,39 @@ def test_errored_task_surfaces_in_last_error() -> None:
         server.stop()
 
 
-def test_profile_ingest_lands_rows() -> None:
+def test_profile_ingest_lands_flamegraph() -> None:
     server = DashboardServer().start()
     try:
         mon = NetworkMonitor(server.ingest_url, profile=True).start()
         try:
             mon.on_profile("w0", _spin_profile())
-            snap = _poll(server, lambda s: s["profile_rows"] > 0, timeout=10)
-            assert snap["profile_rows"] > 0
+            snap = _poll(server, lambda s: s["profile_samples"] > 0, timeout=10)
+            assert snap["profile_samples"] > 0
+            fg = server.flamegraph()
+            # the merged flamegraph's root value == the total samples ingested, with real frames under it
+            assert fg["value"] == snap["profile_samples"] and fg["children"]
         finally:
             mon.close()
+    finally:
+        server.stop()
+
+
+def test_profile_ingest_ignores_malformed_payload() -> None:
+    server = DashboardServer()  # no start(): _ingest_profile is pure data, no IOLoop needed
+    server._ingest_profile({"tree_b64": "@@@not-base64@@@"})  # undecodable -> swallowed, never raises
+    server._ingest_profile({})  # missing key -> swallowed too
+    assert server.snapshot()["profile_samples"] == 0
+    assert server.flamegraph()["value"] == 0
+
+
+def test_flamegraph_route_serves_json() -> None:
+    server = DashboardServer().start()
+    try:
+        with urllib.request.urlopen(server.url + "api/flamegraph.json", timeout=5) as resp:
+            assert resp.status == 200
+            fg = json.loads(resp.read())
+        # before any profile arrives: a well-formed empty flamegraph (never a 404 / malformed body)
+        assert fg["name"] == "all" and fg["value"] == 0 and fg["children"] == []
     finally:
         server.stop()
 

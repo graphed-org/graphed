@@ -11,8 +11,9 @@ from typing import Any
 from graphed_core.execution import TaskEvent
 
 # Perspective table schemas (column -> perspective type). ``tasks`` is indexed by ``key`` so a task's
-# row advances SUBMITTED -> STARTED -> FINISHED/ERRORED in place; ``profile`` is append-only (the
-# viewer groups + sums); ``stats`` is a single indexed row updated in place.
+# row advances SUBMITTED -> STARTED -> FINISHED/ERRORED in place; ``stats`` is a single indexed row
+# updated in place. (The profile is a flamegraph, not a table — the server merges sampled stack trees
+# and serves them at /api/flamegraph.json.)
 TASKS_SCHEMA: dict[str, str] = {
     "key": "integer",
     "phase": "string",
@@ -21,13 +22,6 @@ TASKS_SCHEMA: dict[str, str] = {
     "partition": "string",
     "n_entries": "integer",
     "error": "string",
-}
-PROFILE_SCHEMA: dict[str, str] = {
-    "function": "string",
-    "location": "string",
-    "worker": "string",
-    "self_us": "integer",
-    "total_us": "integer",
 }
 STATS_SCHEMA: dict[str, str] = {
     "metric": "string",
@@ -59,8 +53,8 @@ def combine_message(leaves_done: int) -> dict[str, Any]:
     return {"type": "combine", "leaves_done": leaves_done}
 
 
-def profile_message(worker: str, session_b64: str) -> dict[str, Any]:
-    return {"type": "profile", "worker": worker, "session_b64": session_b64}
+def profile_message(worker: str, tree_b64: str) -> dict[str, Any]:
+    return {"type": "profile", "worker": worker, "tree_b64": tree_b64}
 
 
 def task_row(message: dict[str, Any]) -> dict[str, Any]:

@@ -30,7 +30,7 @@ class NetworkMonitor:
 
     def __init__(self, ingest_url: str, *, profile: bool = False, queue_size: int = 10000) -> None:
         self._url = ingest_url
-        self._profile = bool(profile) and _sampler.pyinstrument_available()
+        self._profile = bool(profile) and _sampler.sampler_available()
         self._queue: queue.Queue[dict[str, Any] | None] = queue.Queue(maxsize=queue_size)
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._sender, name="graphed-dash-client", daemon=True)

@@ -30,12 +30,15 @@ def _ev(phase: TaskPhase, key: int, worker: str = "w0") -> TaskEvent:
     return TaskEvent(phase, key, worker, float(key), f"f{key}.root:Events:0-{key}", key)
 
 
-def _profile_payload() -> bytes:
+def _profile_payload(duration: float = 0.2) -> bytes:
     prof = _sampler.make_worker_profiler()
     prof.start()
+    end = time.monotonic() + duration
     s = 0.0
-    for i in range(400000):
+    i = 0
+    while time.monotonic() < end:
         s += (i % 5) ** 0.5
+        i += 1
     payload = prof.stop()
     assert payload is not None
     return payload
@@ -59,11 +62,14 @@ def test_dashboard_page_renders_in_a_browser() -> None:
             page.on("console", lambda m: console_errors.append(m.text) if m.type == "error" else None)
             page.on("pageerror", lambda e: page_errors.append(str(e)))
             page.goto(dash.url, wait_until="load")
-            # every panel is a Datagrid -> it renders a <regular-table> once it has loaded the table
-            # from the websocket. If the client/server versions mismatched, or a plugin were missing,
-            # these never appear and/or the error lists fill.
-            for vid in ("stats", "tasks", "profile"):
+            # stats + tasks are Datagrids -> each renders a <regular-table> once it has loaded its
+            # table from the websocket. If the client/server versions mismatched, or a plugin were
+            # missing, these never appear and/or the error lists fill.
+            for vid in ("stats", "tasks"):
                 page.wait_for_selector(f"#{vid} regular-table", timeout=30000, state="attached")
+            # the profile panel is a d3 flamegraph polling /api/flamegraph.json -> once samples have
+            # been ingested it draws an <svg class="d3-flame-graph"> into #profile.
+            page.wait_for_selector("#profile svg.d3-flame-graph", timeout=30000, state="attached")
             time.sleep(0.5)  # let any late errors surface
             browser.close()
 

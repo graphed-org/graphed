@@ -8,8 +8,14 @@
        `perspective-python` server (4.5.1). `perspective-dashboard.js` is a single self-contained
        bundle (client + viewer + Datagrid plugin + inlined wasm) produced by the esbuild recipe in
        tools/dashboard-build/; the client/server share a versioned wire protocol so the two MUST
-       match. Re-run that build (and re-pin perspective-python together) to upgrade. -->
+       match. Re-run that build (and re-pin perspective-python together) to upgrade.
+       d3 + d3-flame-graph are vendored UMD scripts (globals `d3` / `flamegraph`) — the profile panel
+       is a flamegraph of the off-thread sampler's merged stack tree, polled from /api/flamegraph.json
+       (NOT a Perspective table; the sampler ships a {name,value,children} count tree, see _sampler). -->
   <link rel="stylesheet" href="/static/vendor/themes.css" />
+  <link rel="stylesheet" href="/static/vendor/d3-flamegraph.css" />
+  <script src="/static/vendor/d3.min.js"></script>
+  <script src="/static/vendor/d3-flamegraph.min.js"></script>
   <script type="module">
     // default export = the perspective client; importing the bundle also registers
     // <perspective-viewer> and the Datagrid plugin as a side effect.
@@ -24,18 +30,41 @@
       await viewer.load(table);
       await viewer.restore({ theme: "Pro Dark", plugin: "Datagrid", ...config });
     }
-    // All three panels use the built-in Datagrid (robust on empty/streaming data; the d3fc plots
-    // throw on degenerate data). stats = live counters; tasks = per-task state (latest first);
-    // profile = sampled self/total time aggregated by function.
+    // stats + tasks use the built-in Datagrid (robust on empty/streaming data). The profile panel is
+    // a flamegraph (below); it is decoupled from Perspective so an empty profile never blocks render.
     await bind("stats", "stats", {});
     await bind("tasks", "tasks", { sort: [["t", "desc"]] });
-    await bind("profile", "profile", {
-      group_by: ["function"],
-      columns: ["self_us", "total_us"],
-      aggregates: { self_us: "sum", total_us: "sum" },
-      sort: [["self_us", "desc"]],
-    });
     document.body.removeAttribute("data-loading");
+  </script>
+  <script>
+    // Profile flamegraph: poll the merged sampler tree and (re-)render. The sampler is off-thread, so
+    // this is purely a viewer concern — it never touches the data path. Best-effort: a failed/empty
+    // fetch is ignored (the panel just stays blank until the first samples arrive).
+    let flameChart = null;
+    function renderFlame(data) {
+      const el = document.getElementById("profile");
+      if (flameChart === null) {
+        flameChart = flamegraph()
+          .width(el.clientWidth)
+          .cellHeight(18)
+          .transitionDuration(0)
+          .minFrameSize(1)
+          .sort(true)
+          .title("");
+        d3.select("#profile").datum(data).call(flameChart);
+      } else {
+        flameChart.width(el.clientWidth);
+        flameChart.update(data);
+      }
+    }
+    async function pollFlame() {
+      try {
+        const resp = await fetch("/api/flamegraph.json", { cache: "no-store" });
+        const data = await resp.json();
+        if (data && data.value > 0) renderFlame(data);
+      } catch (e) { /* dashboard telemetry is best-effort; never surface to the run */ }
+    }
+    window.addEventListener("load", () => { pollFlame(); setInterval(pollFlame, 1000); });
   </script>
   <style>
     :root { --line:#262b36; }
@@ -45,8 +74,10 @@
     header span { color:#5b9dff; }
     .grid { display:grid; grid-template-rows:auto 1fr 1fr; gap:10px; padding:10px;
       height:calc(100% - 42px); box-sizing:border-box; }
-    perspective-viewer { border:1px solid var(--line); border-radius:8px; }
+    perspective-viewer, #profile { border:1px solid var(--line); border-radius:8px; }
     #stats { height:120px; }
+    #profile { overflow:auto; background:#0f1116; padding:6px; }
+    #profile .d3-flame-graph rect { stroke:#0f1116; }
     .label { font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:#8b93a5; margin:2px 2px -4px; }
   </style>
 </head>
@@ -56,8 +87,8 @@
     <perspective-viewer id="stats"></perspective-viewer>
     <div style="display:grid; grid-template-rows:auto 1fr;"><div class="label">tasks</div>
       <perspective-viewer id="tasks"></perspective-viewer></div>
-    <div style="display:grid; grid-template-rows:auto 1fr;"><div class="label">profile (sampled self-time by function)</div>
-      <perspective-viewer id="profile"></perspective-viewer></div>
+    <div style="display:grid; grid-template-rows:auto 1fr; min-height:0;"><div class="label">profile (off-thread sampler · inclusive flamegraph)</div>
+      <div id="profile"></div></div>
   </div>
 </body>
 </html>
