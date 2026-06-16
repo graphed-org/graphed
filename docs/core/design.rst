@@ -339,6 +339,21 @@ Concrete monitors (and the websocket/Perspective rendering) live in ``graphed-de
 executors that *emit* through this seam live in ``graphed-exec-local``.
 
 
+The inter-worker comms seam (M38)
+---------------------------------
+
+``graphed_core.execution`` also carries the **inter-worker transport contract** — the seam peer
+reduction and work-stealing ride, and the one a future *distributed* executor reuses unchanged.
+:class:`WorkerTransport` is a Protocol for an addressable, **non-blocking, best-effort** message
+channel between the driver and workers (and worker↔worker): ``send`` / ``broadcast`` / ``poll`` /
+``recv`` / ``peers`` / ``close``, carrying arbitrary picklable messages. Like the monitor seam it is
+pure contract — core gains no socket or IPC dependency; the concrete backends (queue-based IPC and
+loopback HTTP) live in ``graphed-exec-local``, and a distributed scheduler supplies its own. The
+contract is explicit that it makes **no ordering or delivery guarantee** — reduction determinism is
+the protocol layer's job (it keys every combine by leaf index, never by arrival time or worker), so
+peer reduction stays bit-for-bit identical to the driver-hub path.
+
+
 Reading map
 -----------
 

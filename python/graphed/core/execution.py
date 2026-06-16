@@ -153,6 +153,42 @@ class Executor(Protocol):
     def run(self, plan: Plan[R]) -> ExecResult[R]: ...
 
 
+# ---- M38: the inter-worker comms seam (peer reduction + work-stealing) ----------------------
+
+
+@runtime_checkable
+class WorkerTransport(Protocol):
+    """An addressable, **best-effort, non-blocking** message channel between the driver and workers
+    (and worker↔worker). It is the seam under peer reduction and work-stealing; a single-machine
+    executor backs it with IPC (queues), and a future distributed executor backs the *same* interface
+    with sockets/HTTP — so neither the reduction protocol nor the executor changes when the topology
+    does.
+
+    Contract:
+
+    - every endpoint has a string ``address`` (``"driver"`` is reserved); :meth:`peers` lists the
+      addresses this endpoint may send to;
+    - :meth:`send` is **non-blocking** and **best-effort** — it enqueues and returns ``True``, or
+      drops and returns ``False`` if the destination's inbox is full (back-pressure must never reach
+      the data path, exactly as M37 telemetry is off-path);
+    - messages are arbitrary **picklable** objects; their meaning (a steal request, a partial handoff)
+      is defined by the protocol layer above, not here;
+    - :meth:`poll` drains the local inbox without blocking; :meth:`recv` blocks up to ``timeout`` and
+      is for a dedicated coordination thread, never the task thread;
+    - the transport imposes **no ordering or delivery guarantees** — determinism of a reduction is the
+      protocol layer's job (it keys every combine by leaf index, never by arrival time or worker).
+    """
+
+    address: str
+
+    def peers(self) -> tuple[str, ...]: ...
+    def send(self, dest: str, message: object) -> bool: ...
+    def broadcast(self, message: object) -> None: ...
+    def poll(self) -> list[tuple[str, object]]: ...
+    def recv(self, timeout: float | None = None) -> tuple[str, object] | None: ...
+    def close(self) -> None: ...
+
+
 # ---- M37: the passive live-dashboard seam (data-only; no web, no profiler dep) --------------
 
 
