@@ -148,11 +148,12 @@ How it fits together, in three layers with strict boundaries:
   (driver-side), then ``STARTED``, then exactly one of ``FINISHED`` / ``ERRORED`` (worker-side).
 * **Consume + render (``graphed-debug``).** Three cooperating pieces:
 
-  - :class:`DashboardServer` — a ``perspective.Server`` hosting live ``tasks`` / ``stats`` tables
-    over a Tornado app, plus a merged profile **flamegraph** served as JSON at
-    ``/api/flamegraph.json``. Browsers connect a ``<perspective-viewer>`` to ``/websocket``; executors
-    push events to the ``/ingest`` websocket. It runs its own IOLoop in a daemon thread, so it is
-    decoupled from the executor.
+  - :class:`DashboardServer` — a ``perspective.Server`` hosting the live ``stats`` table (and a
+    ``tasks`` table fed by the same event stream) over a Tornado app, plus two derived JSON views the
+    browser polls: a merged profile **flamegraph** at ``/api/flamegraph.json`` and overall +
+    per-worker **progress** at ``/api/progress.json``. Browsers connect a ``<perspective-viewer>`` to
+    ``/websocket``; executors push events to the ``/ingest`` websocket. It runs its own IOLoop in a
+    daemon thread, so it is decoupled from the executor.
   - :class:`NetworkMonitor` — a passive ``Monitor`` that streams a run's events to a server over a
     websocket (``websocket-client``). This is the **network-comms transport**: loopback for a local
     dashboard, ``ws://host:port/ingest`` for a remote one, so a dashboard can observe an executor on
@@ -174,9 +175,18 @@ GIL anyway — measured profiling cost dropped from ~+53% to within noise). Each
 into an inclusive **count tree** (a parent's count covers its children — the flamegraph invariant);
 ``graphed-exec-local`` drives this via the abstract ``WorkerProfiler`` without importing it. The
 worker trees ride the same transport and the server merges them into one tree, served as a d3
-flamegraph at ``/api/flamegraph.json`` (the browser polls and renders it). The dashboard stack
-(``perspective-python``, ``tornado``, ``websocket-client``) is the optional ``dashboard`` extra — no
-third-party profiler dependency; the core package stays pure-Python and import-clean without it.
+flamegraph at ``/api/flamegraph.json``. The browser polls and renders it with d3-flame-graph; because
+the cells truncate long names, hovering a frame pops out the full ``function;file:line`` plus its
+sample count and percentage.
+
+The task view is the **dask-distributed "Progress" idiom** rather than a scrolling list of start/stop
+events (which a human cannot parse mid-run): the server aggregates the task stream into overall +
+per-worker counts (``/api/progress.json``), and the browser draws one stacked horizontal bar per
+worker — segment widths are finished / in-flight / errored, bar length is normalized to the busiest
+worker so stragglers and load imbalance are visible at a glance. Hovering a bar pops out that worker's
+counts and its most recent partition. The dashboard stack (``perspective-python``, ``tornado``,
+``websocket-client``) is the optional ``dashboard`` extra — no third-party profiler dependency; the
+core package stays pure-Python and import-clean without it.
 
 
 Phase 2 (deliberately not built)

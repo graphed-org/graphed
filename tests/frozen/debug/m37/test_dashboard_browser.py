@@ -62,14 +62,28 @@ def test_dashboard_page_renders_in_a_browser() -> None:
             page.on("console", lambda m: console_errors.append(m.text) if m.type == "error" else None)
             page.on("pageerror", lambda e: page_errors.append(str(e)))
             page.goto(dash.url, wait_until="load")
-            # stats + tasks are Datagrids -> each renders a <regular-table> once it has loaded its
-            # table from the websocket. If the client/server versions mismatched, or a plugin were
-            # missing, these never appear and/or the error lists fill.
-            for vid in ("stats", "tasks"):
-                page.wait_for_selector(f"#{vid} regular-table", timeout=30000, state="attached")
+            # stats is a Datagrid -> renders a <regular-table> once it has loaded its table from the
+            # websocket. If the client/server versions mismatched, or a plugin were missing, it never
+            # appears and/or the error lists fill.
+            page.wait_for_selector("#stats regular-table", timeout=30000, state="attached")
+            # the progress panel polls /api/progress.json and renders one .pbar-row per bar (overall +
+            # per worker) -> at least the "all tasks" bar appears.
+            page.wait_for_selector("#progress .pbar-row", timeout=30000, state="attached")
             # the profile panel is a d3 flamegraph polling /api/flamegraph.json -> once samples have
             # been ingested it draws an <svg class="d3-flame-graph"> into #profile.
             page.wait_for_selector("#profile svg.d3-flame-graph", timeout=30000, state="attached")
+
+            # hover a flamegraph cell -> the shared pop-out tooltip shows the FULL name + sample count
+            # (the cells truncate the name; this is the whole point of the mouseover).
+            page.hover("#profile svg.d3-flame-graph g")
+            page.wait_for_function(
+                "document.getElementById('gp-tooltip').style.display === 'block'", timeout=5000
+            )
+            assert "samples" in page.inner_text("#gp-tooltip")
+            # hover a progress bar -> the tooltip shows that bar's task counts
+            page.hover("#progress .pbar-row .pbar-track")
+            page.wait_for_function("document.getElementById('gp-tooltip').innerHTML.length > 0", timeout=5000)
+
             time.sleep(0.5)  # let any late errors surface
             browser.close()
 

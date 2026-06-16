@@ -147,6 +147,51 @@ def test_network_monitor_streams_tasks_and_combines() -> None:
         server.stop()
 
 
+def test_progress_aggregates_overall_and_per_worker() -> None:
+    server = DashboardServer().start()
+    try:
+        mon = NetworkMonitor(server.ingest_url).start()
+        try:
+            # 6 tasks split across two workers; leave one in-flight on w1 (started, not finished)
+            for k in range(6):
+                mon.on_task(_ev(TaskPhase.SUBMITTED, k))
+            for k in range(3):
+                mon.on_task(_ev(TaskPhase.STARTED, k, "w0"))
+                mon.on_task(_ev(TaskPhase.FINISHED, k, "w0"))
+            for k in range(3, 6):
+                mon.on_task(_ev(TaskPhase.STARTED, k, "w1"))
+            for k in range(3, 5):
+                mon.on_task(_ev(TaskPhase.FINISHED, k, "w1"))
+            snap = _poll(server, lambda s: s["stats"]["finished"] >= 5)
+            assert snap["stats"]["inflight"] == 1
+
+            p = server.progress()
+            assert p["total"] == 6
+            assert p["overall"]["submitted"] == 6 and p["overall"]["finished"] == 5
+            assert p["overall"]["inflight"] == 1
+            byw = {w["worker"]: w for w in p["workers"]}
+            assert sorted(byw) == ["w0", "w1"]  # SUBMITTED (driver, worker="") never makes a row
+            assert byw["w0"]["started"] == 3 and byw["w0"]["finished"] == 3 and byw["w0"]["inflight"] == 0
+            assert byw["w1"]["started"] == 3 and byw["w1"]["finished"] == 2 and byw["w1"]["inflight"] == 1
+            assert byw["w1"]["last_partition"]  # carries the most recent task's partition label
+        finally:
+            mon.close()
+    finally:
+        server.stop()
+
+
+def test_progress_route_serves_json() -> None:
+    server = DashboardServer().start()
+    try:
+        with urllib.request.urlopen(server.url + "api/progress.json", timeout=5) as resp:
+            assert resp.status == 200
+            p = json.loads(resp.read())
+        # before any task: a well-formed empty progress doc (never a 404 / malformed body)
+        assert p["total"] == 0 and p["workers"] == [] and p["overall"]["finished"] == 0
+    finally:
+        server.stop()
+
+
 def test_errored_task_surfaces_in_last_error() -> None:
     server = DashboardServer().start()
     try:

@@ -9,9 +9,10 @@
        bundle (client + viewer + Datagrid plugin + inlined wasm) produced by the esbuild recipe in
        tools/dashboard-build/; the client/server share a versioned wire protocol so the two MUST
        match. Re-run that build (and re-pin perspective-python together) to upgrade.
-       d3 + d3-flame-graph are vendored UMD scripts (globals `d3` / `flamegraph`) — the profile panel
-       is a flamegraph of the off-thread sampler's merged stack tree, polled from /api/flamegraph.json
-       (NOT a Perspective table; the sampler ships a {name,value,children} count tree, see _sampler). -->
+       d3 + d3-flame-graph are vendored UMD scripts (globals `d3` / `flamegraph`). Two panels poll
+       derived JSON (NOT Perspective tables): the profile flamegraph (/api/flamegraph.json, the
+       off-thread sampler's merged {name,value,children} count tree) and the progress bars
+       (/api/progress.json, overall + per-worker counts — the dask-distributed "Progress" idiom). -->
   <link rel="stylesheet" href="/static/vendor/themes.css" />
   <link rel="stylesheet" href="/static/vendor/d3-flamegraph.css" />
   <script src="/static/vendor/d3.min.js"></script>
@@ -30,16 +31,82 @@
       await viewer.load(table);
       await viewer.restore({ theme: "Pro Dark", plugin: "Datagrid", ...config });
     }
-    // stats + tasks use the built-in Datagrid (robust on empty/streaming data). The profile panel is
-    // a flamegraph (below); it is decoupled from Perspective so an empty profile never blocks render.
+    // stats uses the built-in Datagrid (robust on empty/streaming data). tasks + profile are custom
+    // panels below (progress bars / flamegraph), decoupled from Perspective so empty data never blocks.
     await bind("stats", "stats", {});
-    await bind("tasks", "tasks", { sort: [["t", "desc"]] });
     document.body.removeAttribute("data-loading");
   </script>
   <script>
-    // Profile flamegraph: poll the merged sampler tree and (re-)render. The sampler is off-thread, so
-    // this is purely a viewer concern — it never touches the data path. Best-effort: a failed/empty
-    // fetch is ignored (the panel just stays blank until the first samples arrive).
+    // ---- one shared pop-out tooltip (progress bars + flamegraph) --------------------------------
+    const tip = () => document.getElementById("gp-tooltip");
+    function showTip(html, ev) {
+      const t = tip();
+      t.innerHTML = html;
+      t.style.display = "block";
+      // keep it on-screen: flip to the left of the cursor near the right edge
+      const pad = 14, w = t.offsetWidth, h = t.offsetHeight;
+      let x = ev.clientX + pad, y = ev.clientY + pad;
+      if (x + w > window.innerWidth) x = ev.clientX - w - pad;
+      if (y + h > window.innerHeight) y = ev.clientY - h - pad;
+      t.style.left = Math.max(0, x) + "px";
+      t.style.top = Math.max(0, y) + "px";
+    }
+    function hideTip() { tip().style.display = "none"; }
+    function esc(s) {
+      return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+    }
+
+    // ---- progress bars (dask "Progress" idiom): overall + per-worker ----------------------------
+    function seg(cls, frac) {
+      return frac > 0 ? `<div class="pseg ${cls}" style="width:${(frac * 100).toFixed(3)}%"></div>` : "";
+    }
+    function barRow(name, segs, count, tipHtml) {
+      const fills = segs.map(([cls, frac]) => seg(cls, frac)).join("");
+      return (
+        `<div class="pbar-row" data-tip="${esc(tipHtml)}">` +
+        `<div class="pbar-name">${esc(name)}</div>` +
+        `<div class="pbar-track">${fills}</div>` +
+        `<div class="pbar-count">${esc(count)}</div></div>`
+      );
+    }
+    function renderProgress(p) {
+      const total = Math.max(p.total, 1);
+      const o = p.overall;
+      const pending = Math.max(0, o.submitted - o.finished - o.errored - o.inflight);
+      const rows = [
+        barRow(
+          "all tasks",
+          [["done", o.finished / total], ["run", o.inflight / total], ["err", o.errored / total], ["pend", pending / total]],
+          `${o.finished} / ${o.submitted}`,
+          `<b>all tasks</b><br>submitted ${o.submitted}<br>finished ${o.finished}<br>` +
+            `in-flight ${o.inflight}<br>errored ${o.errored}<br>pending ${pending}`
+        ),
+      ];
+      // per-worker bars normalized to the busiest worker's load, so bar LENGTH shows imbalance /
+      // stragglers and the green fill shows that worker's completion.
+      const maxStarted = Math.max(1, ...p.workers.map((w) => w.started));
+      for (const w of p.workers) {
+        const last = w.last_partition ? `<br>last ${esc(w.last_partition)} @ t=${(+w.last_t).toFixed(2)}` : "";
+        rows.push(
+          barRow(
+            w.worker,
+            [["done", w.finished / maxStarted], ["run", w.inflight / maxStarted], ["err", w.errored / maxStarted]],
+            `${w.finished} / ${w.started}`,
+            `<b>worker ${esc(w.worker)}</b><br>finished ${w.finished} of ${w.started} started<br>` +
+              `in-flight ${w.inflight}<br>errored ${w.errored}${last}`
+          )
+        );
+      }
+      document.getElementById("progress").innerHTML = rows.join("");
+    }
+    async function pollProgress() {
+      try {
+        const resp = await fetch("/api/progress.json", { cache: "no-store" });
+        renderProgress(await resp.json());
+      } catch (e) { /* telemetry is best-effort; never surface to the run */ }
+    }
+
+    // ---- profile flamegraph ---------------------------------------------------------------------
     let flameChart = null;
     function renderFlame(data) {
       const el = document.getElementById("profile");
@@ -64,31 +131,75 @@
         if (data && data.value > 0) renderFlame(data);
       } catch (e) { /* dashboard telemetry is best-effort; never surface to the run */ }
     }
-    window.addEventListener("load", () => { pollFlame(); setInterval(pollFlame, 1000); });
+
+    window.addEventListener("load", () => {
+      // progress-bar tooltips (delegated, so they survive each innerHTML re-render)
+      const prog = document.getElementById("progress");
+      prog.addEventListener("mousemove", (ev) => {
+        const row = ev.target.closest(".pbar-row");
+        if (row && row.dataset.tip) showTip(row.dataset.tip, ev);
+        else hideTip();
+      });
+      prog.addEventListener("mouseleave", hideTip);
+
+      // flamegraph tooltips: the cells truncate names, so hover shows the FULL function;file:line +
+      // sample count + % of total. Delegated on #profile so it survives chart.update().
+      const prof = document.getElementById("profile");
+      prof.addEventListener("mousemove", (ev) => {
+        const cell = ev.target.closest("g");
+        const d = cell ? d3.select(cell).datum() : null;
+        if (d && d.data) {
+          const pct = d.x1 != null && d.x0 != null ? (d.x1 - d.x0) * 100 : 0;
+          showTip(`<b>${esc(d.data.name)}</b><br>${d.data.value} samples (${pct.toFixed(1)}%)`, ev);
+        } else hideTip();
+      });
+      prof.addEventListener("mouseleave", hideTip);
+
+      pollProgress(); setInterval(pollProgress, 400);
+      pollFlame(); setInterval(pollFlame, 1000);
+    });
   </script>
   <style>
-    :root { --line:#262b36; }
+    :root { --line:#262b36; --done:#3fa45b; --run:#d9a23a; --err:#cf5454; }
     html, body { margin:0; height:100%; background:#0f1116; color:#d7dbe3;
       font:13px ui-monospace, SFMono-Regular, Menlo, monospace; }
     header { padding:10px 16px; border-bottom:1px solid var(--line); font-weight:600; letter-spacing:.04em; }
     header span { color:#5b9dff; }
     .grid { display:grid; grid-template-rows:auto 1fr 1fr; gap:10px; padding:10px;
       height:calc(100% - 42px); box-sizing:border-box; }
-    perspective-viewer, #profile { border:1px solid var(--line); border-radius:8px; }
+    perspective-viewer, #profile, #progress { border:1px solid var(--line); border-radius:8px; }
     #stats { height:120px; }
     #profile { overflow:auto; background:#0f1116; padding:6px; }
     #profile .d3-flame-graph rect { stroke:#0f1116; }
+    /* progress bars */
+    #progress { overflow:auto; background:#0f1116; padding:8px 10px; }
+    .pbar-row { display:grid; grid-template-columns:120px 1fr 72px; align-items:center; gap:10px;
+      height:22px; }
+    .pbar-name { color:#9aa3b5; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .pbar-count { text-align:right; color:#9aa3b5; font-variant-numeric:tabular-nums; }
+    .pbar-track { display:flex; height:14px; border-radius:4px; overflow:hidden;
+      background:#1a1e27; box-shadow:inset 0 0 0 1px var(--line); }
+    .pseg { height:100%; }
+    .pseg.done { background:var(--done); }
+    .pseg.run  { background:var(--run); }
+    .pseg.err  { background:var(--err); }
     .label { font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:#8b93a5; margin:2px 2px -4px; }
+    /* shared pop-out tooltip */
+    #gp-tooltip { position:fixed; display:none; z-index:1000; pointer-events:none; max-width:60ch;
+      background:#0b0d12; color:#e6e9f0; border:1px solid #3a4150; border-radius:6px; padding:6px 9px;
+      font-size:12px; line-height:1.45; box-shadow:0 4px 16px rgba(0,0,0,.55); word-break:break-all; }
+    #gp-tooltip b { color:#7fb2ff; }
   </style>
 </head>
 <body data-loading>
   <header>graphed <span>· live execution</span></header>
   <div class="grid">
     <perspective-viewer id="stats"></perspective-viewer>
-    <div style="display:grid; grid-template-rows:auto 1fr;"><div class="label">tasks</div>
-      <perspective-viewer id="tasks"></perspective-viewer></div>
-    <div style="display:grid; grid-template-rows:auto 1fr; min-height:0;"><div class="label">profile (off-thread sampler · inclusive flamegraph)</div>
+    <div style="display:grid; grid-template-rows:auto 1fr; min-height:0;"><div class="label">progress (overall · per worker)</div>
+      <div id="progress"></div></div>
+    <div style="display:grid; grid-template-rows:auto 1fr; min-height:0;"><div class="label">profile (off-thread sampler · inclusive flamegraph · hover for full name)</div>
       <div id="profile"></div></div>
   </div>
+  <div id="gp-tooltip"></div>
 </body>
 </html>
