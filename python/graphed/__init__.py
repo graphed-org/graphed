@@ -17,6 +17,7 @@ from .projection import (
     Projection,
     ProjectionError,
     handle_opaque,
+    read_columns,
 )
 from .provenance import Provenance, capture, is_enabled, set_enabled
 from .session import Session
@@ -43,6 +44,7 @@ __all__ = [
     "evaluate_ir",
     "handle_opaque",
     "is_enabled",
+    "read_columns",
     "set_enabled",
 ]
 
