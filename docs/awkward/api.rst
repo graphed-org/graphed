@@ -1,18 +1,13 @@
 API reference
 =============
 
-.. autoclass:: graphed_awkward.AwkwardBackend
-   :members:
+This page is generated automatically from the package source by
+:mod:`sphinx.ext.autosummary`, so it always reflects the current public API. Follow a module link
+for its functions and classes; the awkward-mirroring ``gak`` surface lives in
+``graphed_awkward.functions``.
 
-.. autoclass:: graphed_awkward.AwkwardForm
-   :members:
+.. autosummary::
+   :toctree: generated
+   :recursive:
 
-.. autofunction:: graphed_awkward.from_awkward
-
-.. autofunction:: graphed_awkward.from_parquet
-
-.. automodule:: graphed_awkward.functions
-   :members:
-
-.. automodule:: graphed_awkward.payloads
-   :members:
+   graphed_awkward
