@@ -1,4 +1,4 @@
-"""The IR interpreter — `reproduce` runs the preserved graph node-by-node (plan M9).
+"""The IR interpreter — ``reproduce`` runs the preserved graph node-by-node (plan M9).
 
 This is what makes ``inspect`` faithful to ``reproduce``: both consume the SAME canonical IR
 (``GraphStore.nodes()``). Op/reduction nodes evaluate through the backend (graphed-awkward's real
