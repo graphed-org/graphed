@@ -1,21 +1,12 @@
 API reference
 =============
 
-.. autoclass:: graphed.Session
-   :members:
+This page is generated automatically from the package source by
+:mod:`sphinx.ext.autosummary`, so it always reflects the current public API. Follow a module link
+for its functions and classes.
 
-.. autoclass:: graphed.Array
-   :members:
+.. autosummary::
+   :toctree: generated
+   :recursive:
 
-.. autoclass:: graphed.Backend
-   :members:
-
-.. autoclass:: graphed.Form
-   :members:
-
-.. autoclass:: graphed.Provenance
-   :members:
-
-.. autofunction:: graphed.capture
-
-.. autoexception:: graphed.GraphedTypeError
+   graphed
