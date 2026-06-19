@@ -5,6 +5,7 @@ No fusion (that is M4). The awkward backend lives in graphed-awkward (M3). Prove
 
 from __future__ import annotations
 
+from .aggregate import aggregate_plan, resolve_backend
 from .array import Array, apply
 from .backend import Backend, Form, ParamValue
 from .errors import GraphedError, GraphedTypeError
@@ -38,6 +39,7 @@ __all__ = [
     "ProjectionError",
     "Provenance",
     "Session",
+    "aggregate_plan",
     "apply",
     "capture",
     "compile_ir",
@@ -45,6 +47,7 @@ __all__ = [
     "handle_opaque",
     "is_enabled",
     "read_columns",
+    "resolve_backend",
     "set_enabled",
 ]
 
