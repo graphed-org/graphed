@@ -1,6 +1,6 @@
-"""`StageError` — the picklable, source-mapped error that survives a process boundary (plan M6).
+"""``StageError`` — the picklable, source-mapped error that survives a process boundary (plan M6).
 
-A runtime failure inside a stage is wrapped in a `StageError` carrying the failing op, the **user
+A runtime failure inside a stage is wrapped in a ``StageError`` carrying the failing op, the **user
 source-frame chain** (filename / line / function / sub-expression text), the input forms, and the
 partition — all as plain data, so the error pickles intact and can be re-raised in the driver as the
 same formatted traceback pointing at the user's analysis line. It never degrades to an opaque string

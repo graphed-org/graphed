@@ -1,8 +1,9 @@
-"""`visualize` — render a `LoweredGraph` as Graphviz or Mermaid (plan M6).
+"""``visualize`` — render a ``LoweredGraph`` as Graphviz or Mermaid (plan M6).
 
 Nodes are stages, annotated with their member ops + the user provenance of the stage head, and
-(optionally) the projected columns per source from an M5 `Projection`. Output is deterministic
-source text (Graphviz `digraph` / Mermaid `flowchart`); rendering to an image is left to the caller.
+(optionally) the projected columns per source from an M5 ``Projection``. Output is deterministic
+source text (Graphviz ``digraph`` / Mermaid ``flowchart``); rendering to an image is left to the
+caller.
 """
 
 from __future__ import annotations

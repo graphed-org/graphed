@@ -1,8 +1,8 @@
 """graphed-debug (plan M6): opt-level lowering, source-mapped picklable tracebacks, visualization.
 
 The headline guarantee: a runtime error — even one raised deep inside a fused stage on a remote
-worker process — is re-raised in the driver as a `StageError` whose `format_traceback` points at the
-user's analysis line, never a raw opaque worker traceback (plan A.3 #8).
+worker process — is re-raised in the driver as a ``StageError`` whose ``format_traceback`` points at
+the user's analysis line, never a raw opaque worker traceback (plan A.3 #8).
 """
 
 from __future__ import annotations

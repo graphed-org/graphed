@@ -1,10 +1,10 @@
 """Debug execution that maps any failure back to the user's analysis line (plan M6).
 
-`run` evaluates the lowered graph op-by-op (so it localizes a failure even when it happens deep
-inside a fused stage), wrapping the first failing op in a `StageError` carrying that op's exact
+``run`` evaluates the lowered graph op-by-op (so it localizes a failure even when it happens deep
+inside a fused stage), wrapping the first failing op in a ``StageError`` carrying that op's exact
 provenance, its input forms, and the partition. At ``opt_level=0`` it also runs inter-op consistency
 assertions. This is a *debug* runner, not the M7 executor; it exists to prove the error-surfacing
-contract, including across a process boundary (the resulting `StageError` is picklable).
+contract, including across a process boundary (the resulting ``StageError`` is picklable).
 """
 
 from __future__ import annotations
