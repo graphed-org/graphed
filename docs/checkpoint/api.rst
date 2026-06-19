@@ -1,48 +1,12 @@
 API reference
 =============
 
-Store
------
+This page is generated automatically from the package source by
+:mod:`sphinx.ext.autosummary`, so it always reflects the current public API. Follow a module link
+for its functions and classes.
 
-.. autoclass:: graphed_checkpoint.Store
-   :members:
+.. autosummary::
+   :toctree: generated
+   :recursive:
 
-.. autoclass:: graphed_checkpoint.JournalEntry
-   :members:
-
-Resumable runner
-----------------
-
-.. autofunction:: graphed_checkpoint.run_resumable
-
-.. autoclass:: graphed_checkpoint.ResumeResult
-   :members:
-
-.. autoclass:: graphed_checkpoint.ResumeReport
-   :members:
-
-Retry policies
---------------
-
-.. autoclass:: graphed_checkpoint.RetryN
-   :members:
-
-.. autoclass:: graphed_checkpoint.RetrySmallerChunk
-   :members:
-
-.. autoclass:: graphed_checkpoint.RetryElsewhere
-   :members:
-
-.. autoclass:: graphed_checkpoint.Quarantine
-   :members:
-
-Error harvesting + codecs
--------------------------
-
-.. autofunction:: graphed_checkpoint.dead_letter_descriptor
-
-.. autoclass:: graphed_checkpoint.PickleCodec
-   :members:
-
-.. autoclass:: graphed_checkpoint.NumpyCodec
-   :members:
+   graphed_checkpoint
