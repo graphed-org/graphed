@@ -1,22 +1,12 @@
 API reference
 =============
 
-Dataset
--------
+This page is generated automatically from the package source by
+:mod:`sphinx.ext.autosummary`, so it always reflects the current public API. Follow a module link
+for its functions and classes.
 
-.. autofunction:: graphed_corpus.make_events
+.. autosummary::
+   :toctree: generated
+   :recursive:
 
-Canonical analyses
-------------------
-
-.. automodule:: graphed_corpus.analyses.adl
-   :members:
-
-.. automodule:: graphed_corpus.analyses.systematics
-   :members:
-
-Histogram helpers
------------------
-
-.. automodule:: graphed_corpus.histograms
-   :members:
+   graphed_corpus
