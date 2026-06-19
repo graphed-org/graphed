@@ -1,10 +1,12 @@
 API reference
 =============
 
-.. autoclass:: graphed_numpy.NumpyBackend
-   :members:
+This page is generated automatically from the package source by
+:mod:`sphinx.ext.autosummary`, so it always reflects the current public API. Follow a module link
+for its functions and classes.
 
-.. autoclass:: graphed_numpy.NumpyForm
-   :members:
+.. autosummary::
+   :toctree: generated
+   :recursive:
 
-.. autofunction:: graphed_numpy.from_array
+   graphed_numpy
