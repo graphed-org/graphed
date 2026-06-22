@@ -69,7 +69,10 @@ def run_resumable(
 
     ``error_budget`` stops the run once the number of dead-lettered partitions exceeds it.
     ``_kill_after`` (test-only) raises an uncatchable interrupt after that many tasks commit, to
-    simulate a crash mid-run; the committed journal/objects are what a resumed run recovers from.
+    simulate a crash mid-run; the committed journal/objects are what a resumed run recovers from. If
+    the run would finish before committing that many tasks (the plan has too few partitions), it
+    raises ``ValueError`` instead of completing silently — a simulated crash that can never fire is
+    a misconfiguration, not an uninterrupted run.
     """
     codec = codec or PickleCodec()
     process = plan.process.resolve()
@@ -113,6 +116,15 @@ def run_resumable(
         committed += 1
         if _kill_after is not None and committed >= _kill_after:
             raise _SimulatedInterrupt(f"simulated kill after {committed} committed tasks")
+
+    # the run finished without the kill firing: a crash requested after more commits than the plan
+    # can ever produce is a misconfiguration, not a quietly-successful uninterrupted run.
+    if _kill_after is not None and report.stopped is None and committed < _kill_after:
+        raise ValueError(
+            f"_kill_after={_kill_after} never fired: the run committed only {committed} task(s) "
+            f"before completing, so the simulated crash could not happen. The plan has too few "
+            f"committable partitions for that kill point."
+        )
 
     report.dead_letters = store.dead_letters()
     value = _reduce_partials(partials, combine, empty)
