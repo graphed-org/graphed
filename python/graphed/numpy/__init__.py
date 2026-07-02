@@ -22,6 +22,7 @@ import numpy as np
 from graphed import Array, Session
 from graphed_core import PayloadDescriptor
 
+from . import shuffle
 from .array import NumpyArray, _f, _i
 from .forms import NumpyForm, form_from_meta, is_numeric, meta, unit_meta
 from .gufunc import apply_gufunc, gufunc_form
@@ -310,7 +311,14 @@ def _reduce_kwargs(params: Mapping[str, object]) -> dict[str, Any]:
 
 
 class NumpyBackend:
-    """A `graphed.Backend` over numpy arrays: M2 seam + M5 records + the M11 elementwise tier."""
+    """A `graphed.Backend` over numpy arrays: M2 seam + M5 records + the M11 elementwise tier.
+
+    Also a `graphed_core.ShuffleBackend` (M39 exchange half): the rectilinear
+    ``partition``/``concat``/``slice_rows``/``estimated_bytes``/``to_wire``/``from_wire`` over
+    structured (record) arrays, routing by the pinned §4 sha256 rule (``shuffle`` module)."""
+
+    #: the backend's versioned shuffle-format token (folded into the V2 task ids, §7.2)
+    identity = "graphed-numpy/0"
 
     def array_type(self) -> type[Array]:
         """The numpy-idiomatic proxy (M11 factorization): Sessions return ``NumpyArray``."""
@@ -318,6 +326,8 @@ class NumpyBackend:
 
     def op_form(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> NumpyForm:
         forms = [f for f in inputs if isinstance(f, NumpyForm)]
+        if op == "exchange":
+            return forms[0]  # a pure data-movement boundary is identity on the payload form (§3.3a)
         if op == "field":
             (rec,) = forms
             if rec.fields is None:
@@ -417,6 +427,33 @@ class NumpyBackend:
             preprocessing_ref=None,
         )
 
+    # ---- ShuffleBackend exchange half (M39 §3.0) — thin delegates to the pure `shuffle` module ----
+    def partition(
+        self,
+        block: Any,
+        key_field: str,
+        parts: int,
+        *,
+        salt: int = 0,
+        boundaries: object = None,
+    ) -> tuple[Any, ...]:
+        return shuffle.partition(block, key_field, parts, salt=salt, boundaries=boundaries)
+
+    def concat(self, blocks: Sequence[Any]) -> Any:
+        return shuffle.concat(blocks)
+
+    def slice_rows(self, block: Any, start: int, stop: int) -> Any:
+        return shuffle.slice_rows(block, start, stop)
+
+    def estimated_bytes(self, block_or_form: object) -> int:
+        return shuffle.estimated_bytes(block_or_form)
+
+    def to_wire(self, block: Any) -> bytes:
+        return shuffle.to_wire(block)
+
+    def from_wire(self, data: bytes) -> Any:
+        return shuffle.from_wire(data)
+
 
 def from_array(session: Session, name: str, values: object, *, chunks: int | None = None) -> Array:
     """Create a source Array from a numpy array (or anything array-like); axis 0 is partitioned.
@@ -475,6 +512,7 @@ __all__ = [
     "ones",
     "ones_like",
     "project",
+    "shuffle",
     "zeros",
     "zeros_like",
 ]
