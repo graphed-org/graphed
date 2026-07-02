@@ -29,20 +29,32 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class JournalEntry:
-    """One completed task recorded in the manifest."""
+    """One completed task recorded in the manifest. M39 adds ``stage`` (which pipeline stage the
+    block belongs to — ``map_write``/``gather_join``/``manifest``/…) and ``deps`` (the upstream input
+    block hashes for a gather block), so a multi-stage shuffle resumes with the right dependency
+    structure. Both default empty, so a V1 single-stage entry is unchanged."""
 
     task_id: str
     partition: str  # a human-readable partition tag (uri@start:stop), for audit
     blob: str  # content hash of the stored output
+    stage: str = ""
+    deps: tuple[str, ...] = ()
 
 
 class Store:
-    """A content-addressed, append-only, crash-safe checkpoint store on the local filesystem."""
+    """A content-addressed, append-only, crash-safe checkpoint store on the local filesystem.
 
-    def __init__(self, root: str | os.PathLike[str]) -> None:
+    M39 (§6.3/§7.3): with ``node=None`` this is the V1 single-writer store — one ``journal.log``,
+    byte-for-byte the M8 behaviour. With ``node="A"`` it writes its OWN ``journal.A.log`` (so N nodes
+    checkpointing shuffle intermediates to one root never contend on a shared append), and
+    :meth:`completed` replays the UNION of every writer's journal."""
+
+    def __init__(self, root: str | os.PathLike[str], node: str | None = None) -> None:
         self.root = Path(root)
+        self.node = node
         self.objects = self.root / "objects"
-        self.journal_path = self.root / "journal.log"
+        journal_name = "journal.log" if node is None else f"journal.{node}.log"
+        self.journal_path = self.root / journal_name
         self.dead_letter_path = self.root / "dead_letter.log"
         self.objects.mkdir(parents=True, exist_ok=True)
 
@@ -68,20 +80,41 @@ class Store:
         return path.read_bytes() if path.exists() else None
 
     # ---- append-only manifest / journal ---------------------------------------------------------
-    def record_done(self, task_id: str, partition: str, blob: str) -> None:
-        self._append(self.journal_path, {"task_id": task_id, "partition": partition, "blob": blob})
+    def record_done(
+        self,
+        task_id: str,
+        partition: str,
+        blob: str,
+        *,
+        stage: str = "",
+        deps: tuple[str, ...] = (),
+    ) -> None:
+        # write ``stage``/``deps`` only when set, so a plain single-stage record stays byte-identical
+        # to the V1 journal line (the M8 determinism gate is untouched).
+        rec: dict[str, object] = {"task_id": task_id, "partition": partition, "blob": blob}
+        if stage:
+            rec["stage"] = stage
+        if deps:
+            rec["deps"] = list(deps)
+        self._append(self.journal_path, rec)
 
     def completed(self) -> dict[str, JournalEntry]:
-        """Replay the journal into ``task_id -> JournalEntry`` (last write wins). A torn trailing
-        line (interrupted append) is skipped, never fatal."""
+        """Replay the UNION of every writer's journal (``journal.log`` + ``journal.<node>.log``) into
+        ``task_id -> JournalEntry`` (last write wins, deterministic file order). A torn trailing line
+        (interrupted append) is skipped, never fatal."""
         done: dict[str, JournalEntry] = {}
-        for rec in self._read_lines(self.journal_path):
-            blob = rec.get("blob")
-            # only honor an entry whose blob is actually present (guards a journal line that
-            # outraced its object write across a crash)
-            if isinstance(blob, str) and self.has_blob(blob):
-                tid = str(rec.get("task_id", ""))
-                done[tid] = JournalEntry(tid, str(rec.get("partition", "")), blob)
+        for path in sorted(self.root.glob("journal*.log")):
+            for rec in self._read_lines(path):
+                blob = rec.get("blob")
+                # only honor an entry whose blob is actually present (guards a journal line that
+                # outraced its object write across a crash)
+                if isinstance(blob, str) and self.has_blob(blob):
+                    tid = str(rec.get("task_id", ""))
+                    raw_deps = rec.get("deps", [])
+                    deps = tuple(str(d) for d in raw_deps) if isinstance(raw_deps, list) else ()
+                    done[tid] = JournalEntry(
+                        tid, str(rec.get("partition", "")), blob, str(rec.get("stage", "")), deps
+                    )
         return done
 
     # ---- dead-letter set ------------------------------------------------------------------------

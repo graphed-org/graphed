@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from functools import reduce
 from typing import Any
 
-from graphed_core import DurablePlan, Partition
+from graphed_core import DurablePlan, DurablePlanV2, Partition
 
 from .codec import Codec, PickleCodec
 from .errors import dead_letter_descriptor
@@ -160,3 +160,71 @@ def _reduce_partials(
 
 def _partition_tag(p: Partition) -> str:
     return f"{p.uri}@{p.entry_start}:{p.entry_stop}"
+
+
+# ---- M39: two-phase (map-write -> gather) shuffle resume ----------------------------------------
+@dataclass
+class ShuffleResumeResult:
+    """The result of a resumable multi-stage shuffle: the content-addressed gather-block hashes (in
+    dest-task order) plus an M8-style report (``executed``/``skipped``/``did_less_work``)."""
+
+    value: tuple[str, ...]
+    report: ResumeReport
+
+
+def run_shuffle_resumable(
+    plan: DurablePlanV2,
+    store: Any,
+    *,
+    resources: Any = None,
+    _kill_after: int | None = None,
+) -> ShuffleResumeResult:
+    """Run a two-phase :class:`~graphed_core.DurablePlanV2` (map-write -> gather) against ``store``,
+    skipping already-journaled blocks (plan §5.3/§7.3, the M8 kill/resume pattern extended to two
+    stages). Each block is content-addressed by its V2 ``task_id`` and journaled with its ``stage``
+    and its upstream input block hashes (``deps``); a stage's tasks receive the payloads of the
+    stages it depends on as ``inputs``. A crash at any point resumes from the last durable block, and
+    the result (the tuple of gather-block hashes) is byte-identical to an uninterrupted run.
+
+    Stage-process convention: ``process(task, inputs, resources) -> bytes`` where ``inputs`` is the
+    tuple of upstream dep block payloads (empty for stage 0)."""
+    completed = store.completed()
+    report = ResumeReport()
+    committed = 0
+    stage_payloads: dict[int, list[bytes]] = {}  # stage index -> its blocks' payloads (in task order)
+    stage_hashes: dict[int, list[str]] = {}  # stage index -> its blocks' content hashes
+
+    for si, stage in enumerate(plan.stages):
+        process = stage.process.resolve()
+        upstream_payloads = [p for dep in stage.inputs for p in stage_payloads[dep]]
+        upstream_hashes = tuple(h for dep in stage.inputs for h in stage_hashes[dep])
+        this_payloads: list[bytes] = []
+        this_hashes: list[str] = []
+        for task in stage.tasks:
+            tid = plan.task_id(si, task)
+            entry = completed.get(tid)
+            if entry is not None:
+                blob = store.get(entry.blob)
+                if blob is not None:
+                    this_payloads.append(blob)
+                    this_hashes.append(entry.blob)
+                    report.skipped += 1
+                    continue
+
+            payload = process(task, tuple(upstream_payloads), resources)
+            blob_hash = store.put(payload)
+            store.record_done(
+                tid, _partition_tag(task.partition), blob_hash, stage=stage.kind, deps=upstream_hashes
+            )
+            this_payloads.append(payload)
+            this_hashes.append(blob_hash)
+            report.executed += 1
+            committed += 1
+            if _kill_after is not None and committed >= _kill_after:
+                raise _SimulatedInterrupt(f"simulated kill after {committed} committed blocks")
+
+        stage_payloads[si] = this_payloads
+        stage_hashes[si] = this_hashes
+
+    value = tuple(stage_hashes[len(plan.stages) - 1])  # the gather stage's content-addressed blocks
+    return ShuffleResumeResult(value=value, report=report)
