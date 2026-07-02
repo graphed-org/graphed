@@ -132,6 +132,12 @@ impl GraphStore {
         })
     }
 
+    /// Record an `Exchange` boundary (plan M39): its `scheme` ParamMap is its identity, its one
+    /// logical `input` is the partition it repartitions.
+    pub fn add_exchange(&self, inputs: Vec<NodeId>, scheme: ParamMap) -> Result<NodeId, BadNodeId> {
+        self.intern(NodeKey::Exchange { scheme, inputs })
+    }
+
     pub fn mark_output(&self, id: NodeId) -> Result<(), BadNodeId> {
         let mut g = self.lock();
         if id >= g.nodes.len() as NodeId {

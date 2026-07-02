@@ -32,11 +32,13 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
-from .execution import Partition
+from .execution import Partition, Task
 from .graphed_core import GraphStore
 
 FORMAT_VERSION = 1
+FORMAT_VERSION_V2 = "graphed-plan/2"  # a STRING (vs V1's int) -> V1 and V2 byte spaces never overlap
 _TASK_DOMAIN = b"graphed-task-v1"
+_TASK_DOMAIN_V2 = b"graphed-task-v2"
 
 
 def _sha256_hex(*parts: bytes) -> str:
@@ -220,6 +222,104 @@ class DurablePlan:
             file_locality=dict(doc["file_locality"]),
             resource_hints=dict(doc["resource_hints"]),
             format_version=int(doc["format_version"]),
+        )
+
+
+@dataclass(frozen=True)
+class StageSpec:
+    """One stage of a multi-stage :class:`DurablePlanV2` (plan M39 §4.4). A shuffle is a stage-1
+    map-write (``kind="map_write"``) that a stage-2 gather (``kind="gather"|"gather_join"``) depends
+    on via ``inputs`` (the indices of the stages it reads).
+
+    ``process`` is the per-task callable (an :class:`OpSpec`, source-free like V1). ``routing`` is
+    the free-form exchange scheme the stage carries (``scheme``/``key``/``parts`` + the backend's
+    ``backend_id`` — recorded here, in the EXISTING routing map, so folding it into the task id is
+    NOT a schema change, §7.2). ``tasks`` are the stage's producer-/gather-tasks.
+    """
+
+    kind: str
+    inputs: tuple[int, ...] = ()
+    process: OpSpec = field(default_factory=lambda: OpSpec.from_ref("builtins:list"))
+    routing: Mapping[str, Any] = field(default_factory=dict)
+    tasks: tuple[Task, ...] = ()
+
+    def _to_json(self) -> dict[str, Any]:
+        return {
+            "kind": self.kind,
+            "inputs": list(self.inputs),
+            "process": self.process._to_json(),
+            "routing": dict(self.routing),
+            "tasks": [{"key": t.key, "partition": _partition_json(t.partition)} for t in self.tasks],
+        }
+
+    @classmethod
+    def _from_json(cls, d: Mapping[str, Any]) -> StageSpec:
+        return cls(
+            kind=str(d["kind"]),
+            inputs=tuple(int(i) for i in d["inputs"]),
+            process=OpSpec._from_json(d["process"]),
+            routing=dict(d["routing"]),
+            tasks=tuple(Task(int(t["key"]), _partition_from_json(t["partition"])) for t in d["tasks"]),
+        )
+
+
+@dataclass(frozen=True)
+class DurablePlanV2:
+    """The additive multi-stage durable plan (plan M39 §4.4). A shuffle needs genuine intra-run
+    staging (a gather stage depending on a map-write stage), which the single map->reduce
+    :class:`DurablePlan` cannot express. This is a SEPARATE, purely-additive class with a DISTINCT
+    string ``format_version`` (``"graphed-plan/2"`` vs V1's int), so a V1 blob and a V2 blob can
+    never collide and each reader rejects the other's bytes loudly. V1 is untouched.
+    """
+
+    ir: bytes
+    stages: tuple[StageSpec, ...] = ()
+    format_version: str = FORMAT_VERSION_V2
+
+    def graph(self) -> GraphStore:
+        """Rebuild the interned IR (no user source files required)."""
+        return GraphStore.deserialize(self.ir)
+
+    def ir_fingerprint(self) -> str:
+        return _sha256_hex(self.ir)
+
+    def task_id(self, stage_index: int, task: Task) -> str:
+        """Content-addressed id for one task of one stage. Folds the stage's ``routing`` (hence its
+        ``backend_id``, §7.2) so two conforming backends that route a key to different dests never
+        journal the same id for different content (B-r5.2); cache-poisoning-safe like V1's."""
+        stage = self.stages[stage_index]
+        routing_bytes = json.dumps(dict(stage.routing), sort_keys=True, separators=(",", ":")).encode()
+        return _sha256_hex(
+            _TASK_DOMAIN_V2,
+            self.ir,
+            str(stage_index).encode(),
+            stage.kind.encode(),
+            stage.process.identity(),
+            routing_bytes,
+            _partition_bytes(task.partition),
+            str(task.key).encode(),
+        )
+
+    def to_bytes(self) -> bytes:
+        """Canonical, byte-identical serialization (sorted-key JSON; the IR base64'd)."""
+        doc = {
+            "format_version": self.format_version,
+            "ir_b64": base64.b64encode(self.ir).decode(),
+            "stages": [s._to_json() for s in self.stages],
+        }
+        return json.dumps(doc, sort_keys=True, separators=(",", ":")).encode()
+
+    @classmethod
+    def from_bytes(cls, data: bytes) -> DurablePlanV2:
+        doc = json.loads(data)
+        if doc.get("format_version") != FORMAT_VERSION_V2:
+            raise ValueError(
+                f"not a {FORMAT_VERSION_V2!r} blob (format_version={doc.get('format_version')!r}); "
+                "a V1 DurablePlan blob must be read by DurablePlan.from_bytes"
+            )
+        return cls(
+            ir=base64.b64decode(doc["ir_b64"]),
+            stages=tuple(StageSpec._from_json(s) for s in doc["stages"]),
         )
 
 

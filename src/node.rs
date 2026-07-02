@@ -65,6 +65,14 @@ pub enum NodeKey {
         inputs: Vec<NodeId>,
         members: Vec<StageOp>,
     },
+    /// A pure data-movement boundary (plan M39 §2.1): its one logical input's rows are
+    /// repartitioned according to `scheme` (hash|range|coalesce|split, key, parts, seed, …). Its
+    /// identity IS its `scheme` ParamMap — it is NOT an `Op`, so it interns/CSEs like every node,
+    /// ends a stage (fusion never crosses it), and survives reduction as itself.
+    Exchange {
+        scheme: ParamMap,
+        inputs: Vec<NodeId>,
+    },
 }
 
 impl NodeKey {
@@ -74,7 +82,8 @@ impl NodeKey {
             NodeKey::Op { inputs, .. }
             | NodeKey::Reduction { inputs, .. }
             | NodeKey::External { inputs, .. }
-            | NodeKey::Stage { inputs, .. } => inputs,
+            | NodeKey::Stage { inputs, .. }
+            | NodeKey::Exchange { inputs, .. } => inputs,
         }
     }
 
@@ -110,6 +119,9 @@ impl NodeKey {
                 params,
             ),
             NodeKey::Stage { members, .. } => format!("stage|{}", members.len()),
+            // a non-`op|` prefix, so the optimizer's `boundary_from_token` treats it as a boundary;
+            // the scheme is in the token so distinct schemes are distinct templates on reconstruction.
+            NodeKey::Exchange { scheme, .. } => with_params("exch".to_string(), scheme),
         }
     }
 
@@ -142,6 +154,10 @@ impl NodeKey {
                 inputs: new_inputs,
                 members: members.clone(),
             },
+            NodeKey::Exchange { scheme, .. } => NodeKey::Exchange {
+                scheme: scheme.clone(),
+                inputs: new_inputs,
+            },
         }
     }
 
@@ -168,6 +184,13 @@ impl NodeKey {
                 }
             }
             NodeKey::Stage { members, .. } => format!("Stage[{} members]", members.len()),
+            NodeKey::Exchange { scheme, .. } => {
+                if scheme.is_empty() {
+                    "Exchange".to_string()
+                } else {
+                    format!("Exchange {scheme}")
+                }
+            }
         }
     }
 }

@@ -205,6 +205,18 @@ impl PyGraphStore {
         self.store.add_external(d, inputs, p).map_err(map_err)
     }
 
+    /// Record an `Exchange` boundary (plan M39 §2.1). No `name` — an Exchange's identity is its
+    /// `scheme` ParamMap (`params`) + its one logical input; `nodes()[i]["kind"] == "exchange"`.
+    #[pyo3(signature = (inputs, params=None))]
+    fn add_exchange(
+        &self,
+        inputs: Vec<NodeId>,
+        params: Option<Bound<'_, PyAny>>,
+    ) -> PyResult<NodeId> {
+        let p = params_from_py(params.as_ref())?;
+        self.store.add_exchange(inputs, p).map_err(map_err)
+    }
+
     fn node_count(&self) -> usize {
         self.store.node_count()
     }
@@ -282,6 +294,11 @@ impl PyGraphStore {
                     d.set_item("name", "")?;
                     d.set_item("params", params_to_py(py, params)?)?;
                     d.set_item("descriptor", descriptor_to_py(py, descriptor)?)?;
+                }
+                node::NodeKey::Exchange { scheme, .. } => {
+                    d.set_item("kind", "exchange")?;
+                    d.set_item("name", "")?;
+                    d.set_item("params", params_to_py(py, scheme)?)?;
                 }
                 node::NodeKey::Stage { members, .. } => {
                     d.set_item("kind", "stage")?;

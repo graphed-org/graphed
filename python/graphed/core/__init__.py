@@ -15,6 +15,7 @@ from .execution import (
     Partition,
     Plan,
     SequentialRunner,
+    ShuffleBackend,
     StopCondition,
     StopReason,
     Task,
@@ -29,7 +30,9 @@ from .graphed_core import GraphStore, IncrementalReducer, PayloadDescriptor, ver
 from .plan import (
     Dataset,
     DurablePlan,
+    DurablePlanV2,
     OpSpec,
+    StageSpec,
     partition_dataset,
     partition_datasets,
 )
@@ -37,6 +40,7 @@ from .plan import (
 __all__ = [
     "Dataset",
     "DurablePlan",
+    "DurablePlanV2",
     "ExecContext",
     "ExecResult",
     "Executor",
@@ -49,6 +53,8 @@ __all__ = [
     "PayloadDescriptor",
     "Plan",
     "SequentialRunner",
+    "ShuffleBackend",
+    "StageSpec",
     "StopCondition",
     "StopReason",
     "Task",

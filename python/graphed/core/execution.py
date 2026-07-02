@@ -25,6 +25,54 @@ from enum import StrEnum
 from typing import Generic, Protocol, TypeVar, runtime_checkable
 
 R = TypeVar("R")  # a partial result (e.g. a histogram array)
+Block = TypeVar("Block")  # a backend-native partition of rows (opaque to the engine)
+# a backend-native row-index handle: a phantom second parameter reserved for the M40 join half
+# (match_indices/take), so it appears in no M39 method and is therefore covariant.
+Index_co = TypeVar("Index_co", covariant=True)
+
+
+@runtime_checkable
+class ShuffleBackend(Protocol[Block, Index_co]):
+    """The vectorized data-movement primitives the generic exchange/repartition engine calls (plan
+    M39 §3.0, exchange half). Like every contract in this module it is **pure and §A.4-clean** —
+    graphed-core must never depend on a backend array library, so the engine deals only in opaque
+    ``Block``/``Index`` handles; the real primitives live in the array-backend packages.
+
+    ``identity`` is the backend's versioned shuffle-format token (folded into the V2 task ids so two
+    conforming backends never journal the same id for different content, §7.2). Per ADV-r5.3 the
+    ``@runtime_checkable`` check is **import hygiene only** — it witnesses method NAMES, never the
+    routing rule; the pinned §4 SHA-256 route ``partition`` implements is witnessed by the backends'
+    golden-vector suites. The join half (``match_indices``/``take``/``merge_records``) is M40.
+    """
+
+    identity: str
+
+    def partition(
+        self, block: Block, key_field: str, parts: int, *, salt: int = 0, boundaries: object = None
+    ) -> tuple[Block, ...]:
+        """Route each row of ``block`` to one of ``parts`` sub-blocks by the pinned §4 hash of its
+        ``key_field`` (``range`` uses ``boundaries``). Row-conserving; deterministic; §4/B2 contract."""
+        ...
+
+    def concat(self, blocks: Sequence[Block]) -> Block:
+        """Vertically concatenate blocks in order (the deterministic ascending-src_pid merge)."""
+        ...
+
+    def slice_rows(self, block: Block, start: int, stop: int) -> Block:
+        """A half-open row slice at event boundaries (keeps each row's structure intact)."""
+        ...
+
+    def estimated_bytes(self, block_or_form: object) -> int:
+        """Measured payload bytes (NOT entry count — jagged bytes are not a function of #rows)."""
+        ...
+
+    def to_wire(self, block: Block) -> bytes:
+        """Deterministic serialization to the wire (content-addressing hashes these bytes)."""
+        ...
+
+    def from_wire(self, data: bytes) -> Block:
+        """Inverse of :meth:`to_wire`."""
+        ...
 
 
 @dataclass(frozen=True)

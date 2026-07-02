@@ -28,6 +28,9 @@ from .execution import (
     SequentialRunner as SequentialRunner,
 )
 from .execution import (
+    ShuffleBackend as ShuffleBackend,
+)
+from .execution import (
     StopCondition as StopCondition,
 )
 from .execution import (
@@ -83,7 +86,13 @@ from .plan import (
     DurablePlan as DurablePlan,
 )
 from .plan import (
+    DurablePlanV2 as DurablePlanV2,
+)
+from .plan import (
     OpSpec as OpSpec,
+)
+from .plan import (
+    StageSpec as StageSpec,
 )
 from .plan import (
     partition_dataset as partition_dataset,
