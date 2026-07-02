@@ -8,7 +8,7 @@ nodes with a content-hashed ``PayloadDescriptor``. Reuse awkward/correctionlib/O
 
 from __future__ import annotations
 
-from . import functions, io, payloads
+from . import functions, io, payloads, shuffle
 from . import functions as gak
 from .backend import AwkwardBackend, AwkwardForm, from_awkward
 from .io import from_parquet, read_parquet_partition, to_parquet
@@ -26,6 +26,7 @@ __all__ = [
     "project",
     "project_buffers",
     "read_parquet_partition",
+    "shuffle",
     "to_parquet",
 ]
 
