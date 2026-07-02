@@ -40,7 +40,10 @@ def test_exchange_blob_roundtrips_byte_identically() -> None:
     blob = g.serialize(outputs=outs)
     back = GraphStore.deserialize(blob)
     assert back.node_count() == g.node_count()
-    assert back.to_dot() == g.to_dot()
+    # freeze-M39-1 (owner-sanctioned refreeze, 2026-07-02): compare deserialize-vs-deserialize —
+    # the M8 pattern (m8/test_ir_serialization.py) — because the blob-marked `back` can never equal
+    # the unmarked builder `g` under the M22 read-only-serialize pin (dispute: .graphed/M39/disputes/).
+    assert back.to_dot() == GraphStore.deserialize(blob).to_dot()
     assert back.serialize() == blob, "re-serialize of a decoded Exchange graph must be byte-identical"
 
 
