@@ -167,6 +167,21 @@ class Session:
         self._step_reducer()
         return self._array_cls(self, node_id)
 
+    def record_exchange(self, input_array: Array, params: Mapping[str, ParamValue]) -> Array:
+        """Record an ``Exchange`` boundary (M39): a pure data-movement repartition of one input. Its
+        ``params`` (the scheme map — ``scheme``/``key``/``parts``/``target_bytes``) are its structural
+        identity; its output form is the input form (identity on the payload, §3.3a)."""
+        params_d: dict[str, ParamValue] = dict(params)
+        prov = capture()
+        in_form = self._forms[input_array.node_id]
+        form = self._backend.op_form("exchange", [in_form], params_d)
+        node_id = self._store.add_exchange([input_array.node_id], params_d)
+        self._forms.setdefault(node_id, form)
+        self._ops.setdefault(node_id, ("exchange", params_d, [input_array.node_id]))
+        self._provenance.setdefault(node_id, prov)
+        self._step_reducer()
+        return self._array_cls(self, node_id)
+
     def record_external(
         self,
         op: str,

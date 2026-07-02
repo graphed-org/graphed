@@ -381,6 +381,15 @@ class Array:
     def reduce(self, kind: str = "sum") -> Array:
         return self._session.record_op(kind, [self], reduction=True)
 
+    def repartition(self, *, n: int | None = None, target_bytes: int | None = None) -> Array:
+        """Physically rebalance this array's partitions (M39): by count (``n``) or by measured size
+        (``target_bytes``). Rebalancing MOVES rows without reinterpreting them — a physical,
+        backend-neutral operation (no array idiom) — so it stays on ``Array`` (the keyed/join
+        repartition is the neutral module verb ``graphed.repartition``, per the factorization rule)."""
+        from .shuffle import repartition as _repartition  # noqa: PLC0415  (avoid an import cycle)
+
+        return _repartition(self, n=n, target_bytes=target_bytes)
+
     def __repr__(self) -> str:
         return f"Array(node_id={self._node_id})"
 

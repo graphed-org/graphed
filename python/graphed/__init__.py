@@ -22,6 +22,7 @@ from .projection import (
 )
 from .provenance import Provenance, capture, is_enabled, set_enabled
 from .session import Session
+from .shuffle import repartition, shuffle_plan
 
 __all__ = [
     "CONSERVATIVE",
@@ -47,8 +48,10 @@ __all__ = [
     "handle_opaque",
     "is_enabled",
     "read_columns",
+    "repartition",
     "resolve_backend",
     "set_enabled",
+    "shuffle_plan",
 ]
 
 __version__ = "0.0.1"
