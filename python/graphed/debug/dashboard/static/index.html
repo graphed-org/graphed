@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>graphed · live execution</title>
+  <!-- Perspective is VENDORED (works offline) at the EXACT version of the installed
+       `perspective-python` server (4.5.1). `perspective-dashboard.js` is a single self-contained
+       bundle (client + viewer + Datagrid plugin + inlined wasm) produced by the esbuild recipe in
+       tools/dashboard-build/; the client/server share a versioned wire protocol so the two MUST
+       match. Re-run that build (and re-pin perspective-python together) to upgrade.
+       d3 + d3-flame-graph are vendored UMD scripts (globals `d3` / `flamegraph`). Two panels poll
+       derived JSON (NOT Perspective tables): the profile flamegraph (/api/flamegraph.json, the
+       off-thread sampler's merged {name,value,children} count tree) and the progress bars
+       (/api/progress.json, overall + per-worker counts — the dask-distributed "Progress" idiom). -->
+  <link rel="stylesheet" href="/static/vendor/themes.css" />
+  <link rel="stylesheet" href="/static/vendor/d3-flamegraph.css" />
+  <script src="/static/vendor/d3.min.js"></script>
+  <script src="/static/vendor/d3-flamegraph.min.js"></script>
+  <script type="module">
+    // default export = the perspective client; importing the bundle also registers
+    // <perspective-viewer> and the Datagrid plugin as a side effect.
+    import perspective from "/static/vendor/perspective-dashboard.js";
+
+    const wsUrl = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/websocket`;
+    const client = await perspective.websocket(wsUrl);
+
+    async function bind(id, name, config) {
+      const table = await client.open_table(name);
+      const viewer = document.getElementById(id);
+      await viewer.load(table);
+      await viewer.restore({ theme: "Pro Dark", plugin: "Datagrid", ...config });
+    }
+    // stats uses the built-in Datagrid (robust on empty/streaming data). tasks + profile are custom
+    // panels below (progress bars / flamegraph), decoupled from Perspective so empty data never blocks.
+    await bind("stats", "stats", {});
+    document.body.removeAttribute("data-loading");
+  </script>
+  <script>
+    // ---- one shared pop-out tooltip (progress bars + flamegraph) --------------------------------
+    const tip = () => document.getElementById("gp-tooltip");
+    function showTip(html, ev) {
+      const t = tip();
+      t.innerHTML = html;
+      t.style.display = "block";
+      // keep it on-screen: flip to the left of the cursor near the right edge
+      const pad = 14, w = t.offsetWidth, h = t.offsetHeight;
+      let x = ev.clientX + pad, y = ev.clientY + pad;
+      if (x + w > window.innerWidth) x = ev.clientX - w - pad;
+      if (y + h > window.innerHeight) y = ev.clientY - h - pad;
+      t.style.left = Math.max(0, x) + "px";
+      t.style.top = Math.max(0, y) + "px";
+    }
+    function hideTip() { tip().style.display = "none"; }
+    function esc(s) {
+      return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+    }
+
+    // ---- progress bars (dask "Progress" idiom): overall + per-worker ----------------------------
+    function seg(cls, frac) {
+      return frac > 0 ? `<div class="pseg ${cls}" style="width:${(frac * 100).toFixed(3)}%"></div>` : "";
+    }
+    // the OVERALL bar stays an aggregate stacked track (one tooltip of the whole-run counts)
+    function overallRow(o, pending, total) {
+      const segs = [["done", o.finished / total], ["run", o.inflight / total], ["err", o.errored / total], ["pend", pending / total]];
+      const fills = segs.map(([cls, frac]) => seg(cls, frac)).join("");
+      const tip =
+        `<b>all tasks</b><br>submitted ${o.submitted}<br>finished ${o.finished}<br>` +
+        `in-flight ${o.inflight}<br>errored ${o.errored}<br>pending ${pending}`;
+      return (
+        `<div class="pbar-row" data-tip="${esc(tip)}">` +
+        `<div class="pbar-name">all tasks</div>` +
+        `<div class="pbar-track">${fills}</div>` +
+        `<div class="pbar-count">${o.finished} / ${o.submitted}</div></div>`
+      );
+    }
+    // each WORKER row is a strip of one hoverable CELL PER TASK (not an aggregate bar), so any
+    // completed or in-flight task can be moused over for its own details.
+    const STATE_CLS = { finished: "done", errored: "err", started: "run" };
+    function taskCell(t) {
+      const dur = t.t_end != null ? `${(t.t_end - t.t_start).toFixed(3)}s` : "in-flight";
+      const err = t.error ? `<br>${esc(t.error)}` : "";
+      const tip =
+        `<b>task ${t.key}</b> · ${esc(t.state)}<br>${esc(t.partition || "—")}<br>` +
+        `${t.n_entries} entries<br>${dur}${err}`;
+      return `<div class="tcell ${STATE_CLS[t.state] || "run"}" data-tip="${esc(tip)}"></div>`;
+    }
+    function workerRow(w) {
+      const cells = w.tasks.map(taskCell).join("");
+      return (
+        `<div class="pbar-row">` +
+        `<div class="pbar-name">${esc(w.worker)}</div>` +
+        `<div class="pbar-cells">${cells}</div>` +
+        `<div class="pbar-count">${w.finished} / ${w.started}</div></div>`
+      );
+    }
+    function renderProgress(p) {
+      const total = Math.max(p.total, 1);
+      const o = p.overall;
+      const pending = Math.max(0, o.submitted - o.finished - o.errored - o.inflight);
+      const rows = [overallRow(o, pending, total), ...p.workers.map(workerRow)];
+      document.getElementById("progress").innerHTML = rows.join("");
+    }
+    async function pollProgress() {
+      try {
+        const resp = await fetch("/api/progress.json", { cache: "no-store" });
+        renderProgress(await resp.json());
+      } catch (e) { /* telemetry is best-effort; never surface to the run */ }
+    }
+
+    // ---- profile flamegraph ---------------------------------------------------------------------
+    let flameChart = null;
+    function renderFlame(data) {
+      const el = document.getElementById("profile");
+      if (flameChart === null) {
+        flameChart = flamegraph()
+          .width(el.clientWidth)
+          .cellHeight(18)
+          .transitionDuration(0)
+          .minFrameSize(1)
+          .sort(true)
+          .title("");
+        d3.select("#profile").datum(data).call(flameChart);
+      } else {
+        flameChart.width(el.clientWidth);
+        flameChart.update(data);
+      }
+    }
+    async function pollFlame() {
+      try {
+        const resp = await fetch("/api/flamegraph.json", { cache: "no-store" });
+        const data = await resp.json();
+        if (data && data.value > 0) renderFlame(data);
+      } catch (e) { /* dashboard telemetry is best-effort; never surface to the run */ }
+    }
+
+    window.addEventListener("load", () => {
+      // progress tooltips (delegated, so they survive each innerHTML re-render): a per-task cell
+      // wins over the row, so each worker's individual tasks are inspectable; the overall bar's row
+      // carries the aggregate tip.
+      const prog = document.getElementById("progress");
+      prog.addEventListener("mousemove", (ev) => {
+        const el = ev.target.closest(".tcell, .pbar-row");
+        if (el && el.dataset.tip) showTip(el.dataset.tip, ev);
+        else hideTip();
+      });
+      prog.addEventListener("mouseleave", hideTip);
+
+      // flamegraph tooltips: the cells truncate names, so hover shows the FULL function;file:line +
+      // sample count + % of total. Delegated on #profile so it survives chart.update().
+      const prof = document.getElementById("profile");
+      prof.addEventListener("mousemove", (ev) => {
+        const cell = ev.target.closest("g");
+        const d = cell ? d3.select(cell).datum() : null;
+        if (d && d.data) {
+          const pct = d.x1 != null && d.x0 != null ? (d.x1 - d.x0) * 100 : 0;
+          showTip(`<b>${esc(d.data.name)}</b><br>${d.data.value} samples (${pct.toFixed(1)}%)`, ev);
+        } else hideTip();
+      });
+      prof.addEventListener("mouseleave", hideTip);
+
+      pollProgress(); setInterval(pollProgress, 400);
+      pollFlame(); setInterval(pollFlame, 1000);
+    });
+  </script>
+  <style>
+    :root { --line:#262b36; --done:#3fa45b; --run:#d9a23a; --err:#cf5454; }
+    html, body { margin:0; height:100%; background:#0f1116; color:#d7dbe3;
+      font:13px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    header { padding:10px 16px; border-bottom:1px solid var(--line); font-weight:600; letter-spacing:.04em; }
+    header span { color:#5b9dff; }
+    .grid { display:grid; grid-template-rows:auto 1fr 1fr; gap:10px; padding:10px;
+      height:calc(100% - 42px); box-sizing:border-box; }
+    perspective-viewer, #profile, #progress { border:1px solid var(--line); border-radius:8px; }
+    #stats { height:120px; }
+    #profile { overflow:auto; background:#0f1116; padding:6px; }
+    #profile .d3-flame-graph rect { stroke:#0f1116; }
+    /* progress bars. The count column is `auto` + nowrap, so a long "done / total" widens the
+       column (and the 1fr bar shrinks to match) instead of line-wrapping; min-width:0 on the bar
+       lets it actually give up that space. */
+    #progress { overflow:auto; background:#0f1116; padding:8px 10px; }
+    .pbar-row { display:grid; grid-template-columns:120px minmax(0, 1fr) auto; align-items:center;
+      gap:10px; height:22px; }
+    .pbar-name { color:#9aa3b5; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .pbar-count { text-align:right; white-space:nowrap; color:#9aa3b5; font-variant-numeric:tabular-nums; }
+    .pbar-track { display:flex; min-width:0; height:14px; border-radius:4px; overflow:hidden;
+      background:#1a1e27; box-shadow:inset 0 0 0 1px var(--line); }
+    .pseg { height:100%; }
+    .pseg.done { background:var(--done); }
+    .pseg.run  { background:var(--run); }
+    .pseg.err  { background:var(--err); }
+    /* per-worker rows: one hoverable cell per task (chronological strip). Cells grow to fill when few
+       and shrink to a hoverable minimum when many (the row scrolls if it overflows). */
+    .pbar-cells { display:flex; gap:1px; height:14px; border-radius:4px; overflow-x:auto;
+      background:#1a1e27; box-shadow:inset 0 0 0 1px var(--line); }
+    .tcell { flex:1 0 4px; min-width:4px; height:100%; }
+    .tcell:hover { outline:1px solid #cdd6e6; outline-offset:-1px; }
+    .tcell.done { background:var(--done); }
+    .tcell.run  { background:var(--run); }
+    .tcell.err  { background:var(--err); }
+    .label { font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:#8b93a5; margin:2px 2px -4px; }
+    /* shared pop-out tooltip */
+    #gp-tooltip { position:fixed; display:none; z-index:1000; pointer-events:none; max-width:60ch;
+      background:#0b0d12; color:#e6e9f0; border:1px solid #3a4150; border-radius:6px; padding:6px 9px;
+      font-size:12px; line-height:1.45; box-shadow:0 4px 16px rgba(0,0,0,.55); word-break:break-all; }
+    #gp-tooltip b { color:#7fb2ff; }
+  </style>
+</head>
+<body data-loading>
+  <header>graphed <span>· live execution</span></header>
+  <div class="grid">
+    <perspective-viewer id="stats"></perspective-viewer>
+    <div style="display:grid; grid-template-rows:auto 1fr; min-height:0;"><div class="label">progress (overall · per worker · hover any task)</div>
+      <div id="progress"></div></div>
+    <div style="display:grid; grid-template-rows:auto 1fr; min-height:0;"><div class="label">profile (off-thread sampler · inclusive flamegraph · hover for full name)</div>
+      <div id="profile"></div></div>
+  </div>
+  <div id="gp-tooltip"></div>
+</body>
+</html>
