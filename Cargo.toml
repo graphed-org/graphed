@@ -1,0 +1,31 @@
+[package]
+name = "graphed_core"
+version = "0.0.1"
+edition = "2021"
+rust-version = "1.74"
+description = "graphed-core: thread-safe interned graph IR (Rust+PyO3)"
+license = "MIT"
+
+[lib]
+name = "graphed_core"
+# cdylib for the Python extension; rlib so `cargo test` can exercise the pure-Rust IR.
+crate-type = ["cdylib", "rlib"]
+
+# NOTE: `extension-module` is intentionally NOT enabled here — maturin adds it for the wheel
+# (see [tool.maturin] in pyproject.toml). Leaving it off lets `cargo test` link libpython so the
+# pure-Rust IR tests run.
+[dependencies]
+pyo3 = { version = "0.28" }
+# Equality-saturation engine for the M4 optimizer (kept entirely behind the RewriteEngine trait).
+egg = "0.9"
+
+# loom model-checks the locking discipline; only pulled in under `--cfg loom`.
+[target.'cfg(loom)'.dependencies]
+loom = "0.7"
+
+[profile.release]
+opt-level = 3
+
+# `loom` is a custom cfg enabled only when model-checking the locking discipline.
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }
