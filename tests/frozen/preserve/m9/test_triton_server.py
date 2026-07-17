@@ -41,7 +41,7 @@ _HIST = {"name": "met", "bins": 20, "lo": 0.0, "hi": 200.0}
 _SERVERS = {"grpc": os.environ.get("GRAPHED_TRITON_GRPC"), "http": os.environ.get("GRAPHED_TRITON_HTTP")}
 
 # the served model's identity (preserved + content-addressed); inference goes to the live server
-_PAYLOAD_PATH = Path(__file__).parents[2] / "samples" / "triton_models" / "scorer" / "1" / "model.py"
+_PAYLOAD_PATH = Path(__file__).parents[3] / "samples" / "triton_models" / "scorer" / "1" / "model.py"
 
 
 def _triton_module(protocol: str) -> Any:

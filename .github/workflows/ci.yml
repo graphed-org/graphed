@@ -113,7 +113,11 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e .
           python -m pip install pytest hypothesis numpy
-          pytest tests/frozen/core tests/frozen/frontend tests/frozen/numpy -p no:cacheprovider
+          # separate invocations: a single pytest over multiple subtrees collides on duplicate
+          # test basenames (test_topologies.py, test_external.py) — same reason run-tests.sh exists.
+          pytest tests/frozen/core -p no:cacheprovider
+          pytest tests/frozen/frontend -p no:cacheprovider
+          pytest tests/frozen/numpy -p no:cacheprovider
 
   test-freethreaded-backends:
     name: test py3.14t (free-threaded, backends — advisory)
