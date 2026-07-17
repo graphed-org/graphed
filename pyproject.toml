@@ -18,16 +18,19 @@ classifiers = [
   "Programming Language :: Python :: 3.14",
   "Programming Language :: Rust",
 ]
-# Base install stays light: the frontend + the Rust core (shipped in the wheel) + executing.
-# Backends and preservation frameworks are opt-in extras; `import graphed.awkward` etc. raise a
-# clear ImportError until the matching extra is installed.
-dependencies = ["executing>=2.0"]
+# Base install stays light: the frontend + the Rust core (shipped in the wheel) + executing +
+# cloudpickle. cloudpickle (pure-Python, tiny) is a core capability, not an extra: graphed.core's
+# Plan serializes genuinely-opaque user callables by value (plan.py `kind="opaque"`), so a bare
+# `pip install graphed` must be able to build/resolve such a Plan. Backends and preservation
+# frameworks stay opt-in extras; `import graphed.awkward` etc. raise a clear ImportError until the
+# matching extra is installed.
+dependencies = ["executing>=2.0", "cloudpickle"]
 
 [project.optional-dependencies]
 numpy = ["numpy>=1.24"]
 awkward = ["awkward>=2.6", "numpy>=1.24"]
 parquet = ["pyarrow>=15"]
-checkpoint = ["cloudpickle"]
+checkpoint = []  # cloudpickle is a base dep now; kept as a marker extra for intent/back-compat
 dashboard = ["perspective-python==4.5.1", "tornado>=6.2", "websocket-client>=1.6"]
 preserve = ["awkward>=2.6", "numpy>=1.24", "correctionlib>=2.6", "onnx>=1.15", "onnxruntime>=1.17", "cloudpickle"]
 ml = ["torch", "xgboost", "tritonclient[http]", "tensorflow", "jax"]
