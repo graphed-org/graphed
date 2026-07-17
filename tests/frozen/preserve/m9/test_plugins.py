@@ -15,11 +15,11 @@ from typing import Any
 import awkward as ak
 import numpy as np
 import pytest
-from graphed import Session
-from graphed_awkward import AwkwardBackend, from_awkward
 from graphed_corpus import make_events
 
-from graphed_preserve import (
+from graphed import Session
+from graphed.awkward import AwkwardBackend, from_awkward
+from graphed.preserve import (
     CORRECTIONLIB_PLUGIN,
     ONNX_PLUGIN,
     Bundle,
@@ -129,7 +129,7 @@ LINEAR_PLUGIN = ExternalPlugin(
 
 
 def _record_user_analysis(payload: bytes):  # type: ignore[no-untyped-def]
-    from graphed_awkward import gak  # noqa: PLC0415
+    from graphed.awkward import gak  # noqa: PLC0415
 
     s = Session(AwkwardBackend())
     ev = from_awkward(s, "events", make_events(n_events=1500, seed=7))
@@ -224,7 +224,7 @@ COUNTING_PLUGIN = ExternalPlugin(
 
 
 def test_resource_is_loaded_once_per_run_and_closed(tmp_path) -> None:  # type: ignore[no-untyped-def]
-    from graphed_awkward import gak  # noqa: PLC0415
+    from graphed.awkward import gak  # noqa: PLC0415
 
     register_plugin(COUNTING_PLUGIN)
     payload = json.dumps({"scale": 3.0}).encode()

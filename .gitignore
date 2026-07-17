@@ -1,0 +1,26 @@
+# Rust (Cargo.lock IS committed for reproducible wheel builds)
+/target/
+**/*.rs.bk
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+dist/
+build/
+_build/
+docs/generated/
+*.so
+
+# Tools
+.serena/
+.DS_Store

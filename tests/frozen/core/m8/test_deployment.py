@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from graphed_core import (
+from graphed.core import (
     Dataset,
     DurablePlan,
     GraphStore,

@@ -8,10 +8,10 @@ user's own scheme). The backend is just the conduit: it records the descriptor v
 
 from __future__ import annotations
 
-from graphed import Session
 from graphed_corpus import make_events
 
-from graphed_awkward import AwkwardBackend, from_awkward
+from graphed import Session
+from graphed.awkward import AwkwardBackend, from_awkward
 
 
 def test_generic_external_descriptor_is_built_from_params() -> None:

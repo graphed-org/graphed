@@ -8,12 +8,12 @@ plan bytes and runs ``run_resumable`` to completion using only installed package
 
 from __future__ import annotations
 
+import importlib
 import subprocess
 import sys
 
-from graphed_core import DurablePlan, GraphStore, OpSpec, Partition
-
-from graphed_checkpoint import run_resumable
+from graphed.checkpoint import run_resumable
+from graphed.core import DurablePlan, GraphStore, OpSpec, Partition
 
 SEED, N, BINS, LO, HI = 99, 1200, 10, 0.0, 100.0
 
@@ -55,7 +55,7 @@ def test_serialized_plan_runs_with_no_user_source(tmp_path) -> None:  # type: ig
     store_dir = tmp_path / "store"
 
     child = (
-        "import sys; from graphed_core import DurablePlan; from graphed_checkpoint import Store, run_resumable;"
+        "import sys; from graphed.core import DurablePlan; from graphed.checkpoint import Store, run_resumable;"
         "p=DurablePlan.from_bytes(open(sys.argv[1],'rb').read());"
         "r=run_resumable(p, Store(sys.argv[2]));"
         "print(int(r.value.sum()), r.report.executed)"
@@ -76,12 +76,12 @@ def test_resumed_subprocess_plan_skips_completed_work(tmp_path) -> None:  # type
     # run once locally to populate the store, then a fresh interpreter must SKIP all of it
     plan = _opaque_plan()
     store_dir = tmp_path / "store"
-    run_resumable(plan, __import__("graphed_checkpoint").Store(store_dir))
+    run_resumable(plan, importlib.import_module("graphed.checkpoint").Store(store_dir))
     blob = tmp_path / "plan.bin"
     blob.write_bytes(plan.to_bytes())
 
     child = (
-        "import sys; from graphed_core import DurablePlan; from graphed_checkpoint import Store, run_resumable;"
+        "import sys; from graphed.core import DurablePlan; from graphed.checkpoint import Store, run_resumable;"
         "p=DurablePlan.from_bytes(open(sys.argv[1],'rb').read());"
         "r=run_resumable(p, Store(sys.argv[2]));"
         "print(r.report.executed, r.report.skipped)"

@@ -10,10 +10,10 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from graphed import Session
 from m13_helpers import recorded
 
-from graphed_numpy import NumpyBackend, from_array
+from graphed import Session
+from graphed.numpy import NumpyBackend, from_array
 
 V = np.array([5.0, 1.0, 4.0, 2.0, 8.0, 6.0, 3.0, 7.0, 9.0, 0.0, 2.5, 1.5])
 D2 = np.array([[3.0, 1.0, 4.0], [1.0, 5.0, 9.0], [2.0, 6.0, 5.0], [3.0, 5.0, 8.0]])

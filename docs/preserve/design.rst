@@ -67,7 +67,7 @@ not preservable as durable data; it is recorded in ``opaque_nodes`` and surfaces
 The plugin registry
 -------------------
 
-An :class:`~graphed_preserve.ExternalPlugin` defines, for one payload kind: a deterministic
+An :class:`~graphed.preserve.ExternalPlugin` defines, for one payload kind: a deterministic
 ``content_hash`` over payload bytes, ``load`` (materialize once per run — parse the correction
 set, load the model), ``evaluate`` (run it on inputs), ``close``, and ``samples`` — at least
 two distinct example payloads used to *validate the hash itself*. ``register_plugin`` rejects

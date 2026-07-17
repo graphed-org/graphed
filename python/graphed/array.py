@@ -277,8 +277,8 @@ class Array:
 
     # ---- shared backend-proxy infrastructure (M11/M12, dask.array parity P0/P1) -
     # graphed.Array carries only what is COMMON to the backend idioms. Idiomatic surfaces live on
-    # the backend's proxy subclass (graphed_numpy.NumpyArray: .shape/.sum()/__array_function__) or
-    # in its function namespace (graphed_awkward.gak — awkward arrays never grow methods). These
+    # the backend's proxy subclass (graphed.numpy.NumpyArray: .shape/.sum()/__array_function__) or
+    # in its function namespace (graphed.awkward.gak — awkward arrays never grow methods). These
     # protected helpers are the infrastructure those surfaces are built from.
     def _form_meta(self, name: str) -> Any:
         """Answer array metadata from the node's form when the backend models it; otherwise fall
@@ -397,7 +397,7 @@ class Array:
 def apply(fn: Callable[..., object], *arrays: Array, name: str | None = None) -> Array:
     """Record ``fn`` over several deferred arrays as ONE multi-input External node (M14, parity
     P3.8 — the blockwise/map_blocks analogue). A function over arrays, so it is idiom-neutral
-    (awkward style); the numpy-specific signature-aware form is ``graphed_numpy.apply_gufunc``.
+    (awkward style); the numpy-specific signature-aware form is ``graphed.numpy.apply_gufunc``.
 
     The node carries the backend's ``PayloadDescriptor``: the opaque callable stays a flagged
     preservation risk (plan A.3.1). With one array this IS ``Array.map`` (interns with it)."""

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import math
 
-import graphed_core as gc
+import graphed.core as gc
 
 
 def test_identical_ops_intern_to_one_node() -> None:

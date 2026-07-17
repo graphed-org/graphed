@@ -17,7 +17,7 @@ import sys
 
 import pytest
 
-from graphed_core import DurablePlan, GraphStore, OpSpec, Partition
+from graphed.core import DurablePlan, GraphStore, OpSpec, Partition
 
 
 def _ir() -> bytes:
@@ -182,7 +182,7 @@ def test_plan_resolves_and_runs_with_no_user_source_files(tmp_path) -> None:  # 
     blob_path.write_bytes(plan.to_bytes())
 
     child = (
-        "import sys; from graphed_core import DurablePlan;"
+        "import sys; from graphed.core import DurablePlan;"
         "p=DurablePlan.from_bytes(open(sys.argv[1],'rb').read());"
         "g=p.graph();"  # the IR rebuilds with no source files
         "print(p.process.resolve()(14), g.node_count())"

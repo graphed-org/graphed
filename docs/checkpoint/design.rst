@@ -55,8 +55,8 @@ follows. Say ``myanalysis.py`` contains::
 
 Then::
 
-    from graphed_core import DurablePlan, OpSpec, Partition
-    from graphed_checkpoint import Store, run_resumable
+    from graphed.core import DurablePlan, OpSpec, Partition
+    from graphed.checkpoint import Store, run_resumable
 
     plan = DurablePlan(
         ir=analysis_ir_bytes,                       # session.serialized_ir(out) in real use

@@ -14,7 +14,7 @@ import awkward as ak
 import numpy as np
 import pytest
 
-from graphed_preserve import JAX_PLUGIN, ONNX_PLUGIN, PYTORCH_PLUGIN, TENSORFLOW_PLUGIN
+from graphed.preserve import JAX_PLUGIN, ONNX_PLUGIN, PYTORCH_PLUGIN, TENSORFLOW_PLUGIN
 
 X0 = np.array([1.0, 2.0, -1.0, 4.0], dtype="float64")
 X1 = np.array([0.5, 0.0, 2.0, 1.0], dtype="float64")

@@ -7,11 +7,11 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from graphed import Session
 from graphed_corpus import make_events
 
-from graphed_awkward import AwkwardBackend, from_awkward, gak
-from graphed_awkward.projection import project
+from graphed import Session
+from graphed.awkward import AwkwardBackend, from_awkward, gak
+from graphed.awkward.projection import project
 
 # the synthetic record's 20 leaf columns, grouped by collection
 ALL_COLUMNS = {

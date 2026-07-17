@@ -19,7 +19,7 @@ import awkward as ak
 import numpy as np
 import pytest
 
-from graphed_preserve import (
+from graphed.preserve import (
     JAX_PLUGIN,
     PYTORCH_PLUGIN,
     TENSORFLOW_PLUGIN,
@@ -219,7 +219,7 @@ def test_triton_default_transport_builds_real_client_objects() -> None:
     # no server needed: the DEFAULT transport must construct genuine tritonclient request
     # machinery (the seam a live deployment exercises), and close() must release it.
     pytest.importorskip("tritonclient.http")
-    from graphed_preserve.externals import triton_http_transport  # noqa: PLC0415
+    from graphed.preserve.externals import triton_http_transport  # noqa: PLC0415
 
     client = triton_http_transport({"url": "localhost:8000"})
     try:

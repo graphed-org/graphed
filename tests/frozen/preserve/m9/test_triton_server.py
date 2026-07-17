@@ -21,11 +21,11 @@ from typing import Any
 import awkward as ak
 import numpy as np
 import pytest
-from graphed import Session
-from graphed_awkward import AwkwardBackend, from_awkward
 from graphed_corpus import make_events
 
-from graphed_preserve import (
+from graphed import Session
+from graphed.awkward import AwkwardBackend, from_awkward
+from graphed.preserve import (
     ExternalPlugin,
     build_bundle,
     record_external,
@@ -93,7 +93,7 @@ def _reference(events: Any) -> np.ndarray:
     """The expected histogram, computed WITHOUT Triton (numpy float32, matching the served model)."""
     s = Session(AwkwardBackend())
     ev = from_awkward(s, "events", events)
-    from graphed_awkward import gak  # noqa: PLC0415
+    from graphed.awkward import gak  # noqa: PLC0415
 
     njet = np.asarray(ak.to_numpy(ak.Array(s.materialize(gak.num(ev.Jet, axis=1)))), dtype="float32")
     met = np.asarray(ak.to_numpy(ak.Array(s.materialize(ev.MET.pt))), dtype="float64")
@@ -113,7 +113,7 @@ def test_real_triton_reproduces_over_transport(protocol: str, tmp_path) -> None:
     events = make_events(n_events=1500, seed=11)
     reference = _reference(events)
 
-    from graphed_awkward import gak  # noqa: PLC0415
+    from graphed.awkward import gak  # noqa: PLC0415
 
     s = Session(AwkwardBackend())
     ev = from_awkward(s, "events", events)

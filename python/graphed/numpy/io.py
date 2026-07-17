@@ -20,10 +20,11 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 import numpy as np
+
 from graphed import Backend, CompiledGraph, Session, compile_ir, evaluate_ir
 from graphed import parquet as gpq
-from graphed_core import Partition
-from graphed_core.execution import Plan, SequentialRunner, WorkerResources
+from graphed.core import Partition
+from graphed.core.execution import Plan, SequentialRunner, WorkerResources
 
 from . import NumpyBackend, project
 from .forms import NumpyForm
@@ -34,7 +35,7 @@ def _pa() -> Any:
         import pyarrow as pa  # noqa: PLC0415  (lazy: pyarrow is the optional extra)
     except ImportError as exc:  # pragma: no cover - exercised in the graphed base suite
         raise ImportError(
-            "parquet I/O needs pyarrow — install the optional extra: pip install 'graphed-numpy[parquet]'"
+            "parquet I/O needs pyarrow — install the optional extra: pip install 'graphed[parquet]'"
         ) from exc
     return pa
 

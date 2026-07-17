@@ -24,7 +24,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-import graphed_core
+import graphed.core
 
 from .backend import Backend
 from .errors import GraphedError
@@ -94,7 +94,7 @@ def evaluate_ir(
     binds each External payload's ``content_hash`` to its evaluator. Returns the outputs in mark
     order."""
     blob = compiled.ir if isinstance(compiled, CompiledGraph) else compiled
-    store = graphed_core.GraphStore.deserialize(bytes(blob))
+    store = graphed.core.GraphStore.deserialize(bytes(blob))
     vals: list[object] = []
     for nd in store.nodes():
         kind = nd["kind"]

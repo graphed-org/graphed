@@ -9,10 +9,9 @@ from __future__ import annotations
 import awkward as ak
 import pytest
 from conftest import REF_DIR, all_fixtures
-from hist import Hist
-
 from graphed_corpus import fingerprint, load_reference
 from graphed_corpus.histograms import bin_values
+from hist import Hist
 
 FIXTURE_NAMES = sorted(all_fixtures())
 

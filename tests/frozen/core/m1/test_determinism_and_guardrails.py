@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-import graphed_core as gc
+import graphed.core as gc
 
 
 def _build(store: gc.GraphStore) -> None:

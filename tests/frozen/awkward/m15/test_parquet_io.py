@@ -15,15 +15,15 @@ import os
 
 import awkward as ak
 import pytest
+
 from graphed import Session
 
 pytest.importorskip("pyarrow")
 
+import graphed.awkward.io as gio
 from graphed import parquet as gpq
-from graphed_core.execution import Plan, SequentialRunner
-
-import graphed_awkward.io as gio
-from graphed_awkward import AwkwardBackend, from_awkward, from_parquet, gak, project
+from graphed.awkward import AwkwardBackend, from_awkward, from_parquet, gak, project
+from graphed.core.execution import Plan, SequentialRunner
 
 LENGTHS = [6, 4, 5]
 

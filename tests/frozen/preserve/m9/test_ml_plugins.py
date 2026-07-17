@@ -17,11 +17,11 @@ from typing import Any
 import awkward as ak
 import numpy as np
 import pytest
-from graphed import Session
-from graphed_awkward import AwkwardBackend, from_awkward
 from graphed_corpus import make_events
 
-from graphed_preserve import (
+from graphed import Session
+from graphed.awkward import AwkwardBackend, from_awkward
+from graphed.preserve import (
     Bundle,
     ExternalPlugin,
     build_bundle,
@@ -46,7 +46,7 @@ def _hist(value: Any, weight: Any) -> np.ndarray:
 
 
 def _record(plugin: ExternalPlugin, payload: bytes, *, two_inputs: bool = False):  # type: ignore[no-untyped-def]
-    from graphed_awkward import gak  # noqa: PLC0415
+    from graphed.awkward import gak  # noqa: PLC0415
 
     s = Session(AwkwardBackend())
     ev = from_awkward(s, "events", make_events(n_events=1200, seed=11))
@@ -281,7 +281,7 @@ def test_triton_remote_inference_pattern(tmp_path) -> None:  # type: ignore[no-u
     payload = _triton_served_weights(weight=weight, bias=bias)
     register_plugin(TRITON_PLUGIN)
 
-    from graphed_awkward import gak  # noqa: PLC0415
+    from graphed.awkward import gak  # noqa: PLC0415
 
     s = Session(AwkwardBackend())
     ev = from_awkward(s, "events", make_events(n_events=1200, seed=11))
@@ -316,7 +316,7 @@ def test_triton_reproduce_without_the_server_fails_loudly(tmp_path) -> None:  # 
     _TRITON_SERVERS[url] = _FakeTritonClient(0.3, 0.0)
     payload = _triton_served_weights(weight=0.3, bias=0.0)
 
-    from graphed_awkward import gak  # noqa: PLC0415
+    from graphed.awkward import gak  # noqa: PLC0415
 
     s = Session(AwkwardBackend())
     ev = from_awkward(s, "events", make_events(n_events=600, seed=5))

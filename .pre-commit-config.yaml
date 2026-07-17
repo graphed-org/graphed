@@ -1,0 +1,47 @@
+# Lint + type-check hooks for the Python surface, run by prek (https://github.com/j178/prek).
+#
+# These commands live here ONCE and are consumed by every gate: CI (`uvx prek run
+# --all-files`), the graphed-orchestrator pre-commit gate, and a developer's local
+# `prek install`. No more hand-rolled `ruff`/`mypy` shell chains duplicated per workflow.
+#
+# ruff and mypy are `system` hooks on purpose: they use the versions already installed in
+# the project's env (the `dev` extra, intentionally unpinned), so there is a single source
+# of truth for tool versions rather than a second set pinned here that could drift.
+#
+# cargo fmt + clippy are hooks too (below); the dedicated `rust` CI job invokes them through prek,
+# so the Rust lint commands live here once as well. cargo test / loom / llvm-cov stay as their own
+# steps — those are tests/coverage, not lint. The matrix `test` job runs only the Python hook ids
+# (its toolchain has no clippy/rustfmt components), and the `rust` job runs only the cargo hook ids.
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: ruff check --force-exclude
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+      - id: ruff-format
+        name: ruff format
+        entry: ruff format --check --force-exclude
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+      - id: mypy
+        name: mypy (strict)
+        entry: mypy
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: cargo-fmt
+        name: cargo fmt
+        entry: cargo fmt --check
+        language: system
+        types: [rust]
+        pass_filenames: false
+      - id: cargo-clippy
+        name: cargo clippy (deny warnings)
+        entry: cargo clippy --all-targets -- -D warnings
+        language: system
+        types: [rust]
+        pass_filenames: false

@@ -6,7 +6,6 @@ import warnings
 from collections.abc import Mapping, Sequence
 
 import pytest
-from graphed_core import PayloadDescriptor
 
 from graphed import (
     CONSERVATIVE,
@@ -16,6 +15,7 @@ from graphed import (
     Session,
     handle_opaque,
 )
+from graphed.core import PayloadDescriptor
 
 
 class _Backend:

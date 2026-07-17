@@ -16,9 +16,9 @@ import inspect
 
 import awkward as ak
 import numpy as np
-from graphed import Session
 
-from graphed_awkward import AwkwardBackend, from_awkward, gak
+from graphed import Session
+from graphed.awkward import AwkwardBackend, from_awkward, gak
 
 JAGGED = ak.Array([[1.0, 2.0, 3.0], [], [4.0, 5.0]])
 FLAT = ak.Array([3.0, 1.0, 2.0, 5.0, 4.0])

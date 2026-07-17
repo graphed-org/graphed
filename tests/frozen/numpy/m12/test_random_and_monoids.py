@@ -3,7 +3,7 @@
 Random: a seeded generator records ordinary sources whose values — and whose serialized IR — are
 byte-identical across runs for the same seed (the determinism gate extends to random programs).
 
-Monoids: `graphed_numpy.monoid(kind)` is the (chunk, combine, empty, finalize) quadruple that
+Monoids: `graphed.numpy.monoid(kind)` is the (chunk, combine, empty, finalize) quadruple that
 drops into the M7 process/combine/empty execution model (dask's generic `reduction()` is exactly
 this triple + aggregate). Combining over ANY chunking/tree shape must agree with numpy whole-array.
 """
@@ -14,9 +14,9 @@ from functools import reduce as fold
 
 import numpy as np
 import pytest
-from graphed import Session
 
-import graphed_numpy as gn
+import graphed.numpy as gn
+from graphed import Session
 
 # ---- random ---------------------------------------------------------------------------------------
 

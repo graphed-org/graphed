@@ -8,7 +8,7 @@ import multiprocessing as mp
 
 import analyses
 
-import graphed_debug as gd
+import graphed.debug as gd
 
 
 def test_stage_error_survives_a_real_worker_process() -> None:

@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
+
 from graphed import Array, Session
 
 from .forms import NumpyForm

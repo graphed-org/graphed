@@ -27,10 +27,10 @@ from typing import Any
 import awkward as ak
 import numpy as np
 import pytest
-from graphed import Session
 
-from graphed_awkward import AwkwardBackend, from_awkward, gak
-from graphed_awkward.payloads import (
+from graphed import Session
+from graphed.awkward import AwkwardBackend, from_awkward, gak
+from graphed.awkward.payloads import (
     correctionlib_contents_descriptor,
     correctionlib_contents_hash,
     onnx_weights_descriptor,

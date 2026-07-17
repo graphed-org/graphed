@@ -8,7 +8,7 @@ Delivered
 ---------
 
 - **Compile once, run on N datasets.** Record + optimize an analysis once
-  (``graphed.Session.serialized_ir``), wrap it in a ``graphed_core.DurablePlan``, then re-target it
+  (``graphed.Session.serialized_ir``), wrap it in a ``graphed.core.DurablePlan``, then re-target it
   at many datasets with ``DurablePlan.with_partitions`` / ``for_dataset`` / ``for_datasets`` (built
   from ``Dataset`` + ``partition_dataset``). The optimized interned IR is shared unchanged across
   datasets, and per-dataset content-addressed ``task_id``\\ s let a single ``Store`` checkpoint them

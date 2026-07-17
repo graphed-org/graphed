@@ -7,7 +7,7 @@ of the IR surface — ``to_dot`` / ``serialize`` / a deserialized round trip).""
 
 from __future__ import annotations
 
-from graphed_core import GraphStore, PayloadDescriptor
+from graphed.core import GraphStore, PayloadDescriptor
 
 
 def _graph() -> tuple[GraphStore, int]:

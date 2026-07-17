@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
+
 from graphed import Array, Session
 
 from .creation import ShapeLike, _norm_shape, _source

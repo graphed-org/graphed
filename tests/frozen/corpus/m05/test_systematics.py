@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import awkward as ak
-
 from graphed_corpus import fingerprint, ttbar_region, ttgamma_region
 from graphed_corpus.analyses.systematics import _apply_jes
 

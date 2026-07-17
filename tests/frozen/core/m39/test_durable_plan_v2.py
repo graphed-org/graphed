@@ -8,7 +8,7 @@ can never collide with a V1 blob and a V1 reader rejects a V2 blob loudly. Its V
 route a key to different dests never journal the same id for different content (B-r5.2).
 
 Pinned surface: ``DurablePlanV2(ir, stages, ...)`` + ``StageSpec(kind, inputs, process, routing,
-tasks)`` importable from ``graphed_core``; ``to_bytes``/``from_bytes`` deterministic; and
+tasks)`` importable from ``graphed.core``; ``to_bytes``/``from_bytes`` deterministic; and
 ``DurablePlanV2.task_id(stage_index, task)`` folding the stage's ``routing["backend_id"]``.
 """
 
@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import pytest
 
-from graphed_core import (
+from graphed.core import (
     DurablePlan,
     DurablePlanV2,
     GraphStore,

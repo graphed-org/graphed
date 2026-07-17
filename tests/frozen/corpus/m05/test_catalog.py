@@ -9,7 +9,7 @@ from pathlib import Path
 
 from conftest import all_fixtures
 
-DOCS = Path(__file__).resolve().parents[3] / "docs"
+DOCS = Path(__file__).resolve().parents[4] / "docs" / "corpus"
 CATALOG = DOCS / "requirements" / "ops_catalog.md"
 BLOAT = DOCS / "graph_bloat_note.md"
 

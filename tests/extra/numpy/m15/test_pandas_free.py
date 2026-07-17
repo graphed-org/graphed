@@ -13,11 +13,11 @@ import sys
 
 import numpy as np
 import pytest
+
+import graphed.numpy.io as gio
 from graphed import Session
 from graphed import parquet as gpq
-
-import graphed_numpy.io as gio
-from graphed_numpy import NumpyBackend
+from graphed.numpy import NumpyBackend
 
 pa = pytest.importorskip("pyarrow")
 import pyarrow.parquet as pq  # noqa: E402

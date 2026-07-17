@@ -11,7 +11,8 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
-from graphed_core import DurablePlan, GraphStore, OpSpec, Partition
+
+from graphed.core import DurablePlan, GraphStore, OpSpec, Partition
 
 N_VALUES = 6000
 SEED = 20260605
@@ -71,7 +72,7 @@ def poison_one(partition: Partition, resources: Any) -> np.ndarray:
     # raise a source-mapped StageError (M6) on a specific partition, to exercise dead-letter
     # provenance harvesting; every other partition succeeds normally
     if partition.entry_start == _POISON_START:
-        from graphed_debug import SourceFrame, StageError  # noqa: PLC0415
+        from graphed.debug import SourceFrame, StageError  # noqa: PLC0415
 
         raise StageError(
             op="jet_pt",
@@ -142,9 +143,10 @@ def _met_counts(values: object) -> np.ndarray:
 
 def met_chunk(partition: Partition, resources: Any) -> np.ndarray:
     """Record + execute the ADL-q1 MET-pt histogram on one event chunk (a real graphed analysis)."""
-    from graphed import Session  # noqa: PLC0415
-    from graphed_awkward import AwkwardBackend, from_awkward  # noqa: PLC0415
     from graphed_corpus import make_events  # noqa: PLC0415
+
+    from graphed import Session  # noqa: PLC0415
+    from graphed.awkward import AwkwardBackend, from_awkward  # noqa: PLC0415
 
     events = make_events(n_events=N_EVENTS_HEP, seed=SEED_HEP)[partition.entry_start : partition.entry_stop]
     s = Session(AwkwardBackend())
@@ -153,9 +155,10 @@ def met_chunk(partition: Partition, resources: Any) -> np.ndarray:
 
 
 def met_reference() -> np.ndarray:
-    from graphed import Session  # noqa: PLC0415
-    from graphed_awkward import AwkwardBackend, from_awkward  # noqa: PLC0415
     from graphed_corpus import make_events  # noqa: PLC0415
+
+    from graphed import Session  # noqa: PLC0415
+    from graphed.awkward import AwkwardBackend, from_awkward  # noqa: PLC0415
 
     s = Session(AwkwardBackend())
     ev = from_awkward(s, "events", make_events(n_events=N_EVENTS_HEP, seed=SEED_HEP))

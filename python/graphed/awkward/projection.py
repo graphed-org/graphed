@@ -18,6 +18,7 @@ been reduced (it replays the ops, which a fused stage contains unchanged).
 from __future__ import annotations
 
 import awkward as ak
+
 from graphed import (
     CONSERVATIVE,
     Array,

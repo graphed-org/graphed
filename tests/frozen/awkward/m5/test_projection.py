@@ -6,11 +6,11 @@ import warnings
 
 import numpy as np
 import pytest
-from graphed import ProjectionError, Session
 from graphed_corpus import make_events
 
-from graphed_awkward import AwkwardBackend, from_awkward, gak
-from graphed_awkward.projection import project
+from graphed import ProjectionError, Session
+from graphed.awkward import AwkwardBackend, from_awkward, gak
+from graphed.awkward.projection import project
 
 
 def _dimuon(s: Session) -> object:

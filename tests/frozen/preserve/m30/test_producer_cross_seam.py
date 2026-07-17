@@ -18,11 +18,11 @@ from typing import Any
 import awkward as ak
 import numpy as np
 import pytest
-from graphed import Session
-from graphed_awkward import AwkwardBackend, from_awkward, gak
-from graphed_awkward.payloads import correctionlib_contents_hash, onnx_weights_hash
 
-from graphed_preserve import PreserveError, build_bundle, reproduce
+from graphed import Session
+from graphed.awkward import AwkwardBackend, from_awkward, gak
+from graphed.awkward.payloads import correctionlib_contents_hash, onnx_weights_hash
+from graphed.preserve import PreserveError, build_bundle, reproduce
 
 HIST = {"name": "met", "bins": 16, "lo": 0.0, "hi": 120.0}
 
@@ -150,7 +150,9 @@ def test_gak_recorded_onnx_passes_integrity_and_replays(tmp_path) -> None:  # ty
 
 def test_gh_multi_weight_fill_replays_through_a_bundle(tmp_path) -> None:  # type: ignore[no-untyped-def]
     import boost_histogram as bh  # noqa: PLC0415
-    import graphed_histogram as gh  # noqa: PLC0415
+    import pytest  # noqa: PLC0415
+
+    gh = pytest.importorskip("graphed_histogram")  # separate optional package
 
     s = Session(AwkwardBackend())
     g = from_awkward(s, "events", EVENTS)

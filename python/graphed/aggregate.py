@@ -17,8 +17,8 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Generic, TypeVar
 
-from graphed_core import Partition
-from graphed_core.execution import Plan, Task, WorkerResources
+from graphed.core import Partition
+from graphed.core.execution import Plan, Task, WorkerResources
 
 from .array import Array
 from .execute import compile_ir, evaluate_ir
@@ -75,7 +75,7 @@ def aggregate_plan(
     steps_per_file: int = 1,
     partitions: Sequence[Partition] | None = None,
 ) -> Plan[V]:
-    """Build a one-pass partition-wise reduction :class:`~graphed_core.execution.Plan` over the
+    """Build a one-pass partition-wise reduction :class:`~graphed.core.execution.Plan` over the
     session's single partitioned source (see module docstring). ``outputs`` are the output Arrays
     (their shared sub-graph is compiled to one IR and evaluated once per partition); ``externals``
     binds any External payload evaluator; ``backend`` is the workers' evaluation backend (factory,

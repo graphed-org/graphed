@@ -17,7 +17,8 @@ import hashlib
 from typing import Any
 
 import numpy as np
-from graphed_core import Dataset, DurablePlan, OpSpec
+
+from graphed.core import Dataset, DurablePlan, OpSpec
 
 N_EVENTS = 1800
 
@@ -63,7 +64,7 @@ def _record_observables(ev: Any) -> list[Any]:
     """Record the multi-observable analysis on a graphed Array ``ev``; return the observable Arrays
     in ``_AXES`` order. Shared object selections (jets, muons) intern once, and the dimuon-mass calc
     adds a deep arithmetic sub-DAG -> a graph of realistic analysis complexity."""
-    from graphed_awkward import gak  # noqa: PLC0415
+    from graphed.awkward import gak  # noqa: PLC0415
 
     jets = ev.Jet[ev.Jet.pt > 30]
     mu = ev.Muon[ev.Muon.pt > 10]
@@ -94,7 +95,7 @@ def _concat(materialized: list[Any]) -> np.ndarray:
 def analysis_chunk(partition: Any, resources: Any) -> np.ndarray:
     """Execute the analysis on one chunk of the dataset selected by ``partition.uri``."""
     from graphed import Session  # noqa: PLC0415
-    from graphed_awkward import AwkwardBackend, from_awkward  # noqa: PLC0415
+    from graphed.awkward import AwkwardBackend, from_awkward  # noqa: PLC0415
 
     events = _events_for(partition.uri)[partition.entry_start : partition.entry_stop]
     s = Session(AwkwardBackend())
@@ -118,7 +119,7 @@ def compiled_ir() -> bytes:
     Cached: the compile step happens once per process, mirroring the deployment pattern (and keeping
     the suite responsive)."""
     from graphed import Session  # noqa: PLC0415
-    from graphed_awkward import AwkwardBackend, from_awkward  # noqa: PLC0415
+    from graphed.awkward import AwkwardBackend, from_awkward  # noqa: PLC0415
 
     s = Session(AwkwardBackend())
     ev = from_awkward(s, "events", _events_for("template://compile"))  # structure only, not data
@@ -129,8 +130,8 @@ def compiled_ir() -> bytes:
 def graph_complexity() -> tuple[int, int]:
     """(unreduced, optimized) node counts of the recorded analysis — for the complexity assertion."""
     from graphed import Session  # noqa: PLC0415
-    from graphed_awkward import AwkwardBackend, from_awkward  # noqa: PLC0415
-    from graphed_core import GraphStore  # noqa: PLC0415
+    from graphed.awkward import AwkwardBackend, from_awkward  # noqa: PLC0415
+    from graphed.core import GraphStore  # noqa: PLC0415
 
     s = Session(AwkwardBackend())
     ev = from_awkward(s, "events", _events_for("template://compile"))
@@ -155,7 +156,7 @@ def compile_plan() -> DurablePlan:
 def reference_for(uri: str) -> np.ndarray:
     """The single-pass result for one dataset (the bit-for-bit target for a chunked deployment)."""
     from graphed import Session  # noqa: PLC0415
-    from graphed_awkward import AwkwardBackend, from_awkward  # noqa: PLC0415
+    from graphed.awkward import AwkwardBackend, from_awkward  # noqa: PLC0415
 
     s = Session(AwkwardBackend())
     ev = from_awkward(s, "events", _events_for(uri))

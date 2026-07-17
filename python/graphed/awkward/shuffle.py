@@ -29,9 +29,7 @@ def route(key: int, parts: int, *, salt: int = 0) -> int:
 
 def _dests(keys: np.ndarray, parts: int, salt: int) -> np.ndarray:
     """Per-row destination indices under the pinned route (one sha256 per row)."""
-    return np.fromiter(
-        (route(int(k), parts, salt=salt) for k in keys), dtype=np.intp, count=len(keys)
-    )
+    return np.fromiter((route(int(k), parts, salt=salt) for k in keys), dtype=np.intp, count=len(keys))
 
 
 def partition(

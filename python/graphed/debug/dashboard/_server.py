@@ -3,11 +3,11 @@
 browser polls — a merged profile **flamegraph** at ``/api/flamegraph.json`` and overall + per-worker
 **progress** at ``/api/progress.json`` (the dask-style progress bars). Browsers connect a
 ``<perspective-viewer>`` to the ``/websocket`` endpoint; executors push events to the ``/ingest``
-websocket (see :class:`graphed_debug.dashboard.NetworkMonitor`). It runs its own asyncio/Tornado
+websocket (see :class:`graphed.debug.dashboard.NetworkMonitor`). It runs its own asyncio/Tornado
 IOLoop in a daemon thread, so it is decoupled from the executor — the same server serves a local *or*
 a remote run.
 
-perspective/tornado are imported lazily (the ``dashboard`` extra), so ``import graphed_debug`` works
+perspective/tornado are imported lazily (the ``dashboard`` extra), so ``import graphed.debug`` works
 without them; :meth:`DashboardServer.start` raises a clear error if they are missing.
 """
 

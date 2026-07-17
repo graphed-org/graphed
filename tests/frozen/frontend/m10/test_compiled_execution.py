@@ -10,10 +10,10 @@ from __future__ import annotations
 
 import pickle
 
-import graphed_core
 import pytest
 from m10_toy import CountingListBackend, from_list
 
+import graphed.core
 from graphed import Array, CompiledGraph, GraphedError, Session, compile_ir, evaluate_ir
 
 
@@ -104,7 +104,7 @@ def test_external_payloads_resolve_by_content_hash_and_fail_loudly() -> None:
 
     # the payload's content hash is IN the compiled IR — resolve the evaluator from there, the way
     # a real deployment binds payload-backed evaluators (no session needed)
-    store = graphed_core.GraphStore.deserialize(compiled.ir)
+    store = graphed.core.GraphStore.deserialize(compiled.ir)
     (chash,) = [n["descriptor"]["content_hash"] for n in store.nodes() if n["kind"] == "external"]
     got = evaluate_ir(
         compiled,

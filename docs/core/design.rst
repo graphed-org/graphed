@@ -32,7 +32,7 @@ A node is one of five kinds::
 
 ``Source`` is an input dataset; ``Op`` is an elementwise/array operation; ``Reduction`` is an
 aggregation boundary; ``External`` is a call into an outside payload (a correction set, an ONNX
-model, a histogram fill) identified by a :class:`~graphed_core.PayloadDescriptor`; ``Stage`` is
+model, a histogram fill) identified by a :class:`~graphed.core.PayloadDescriptor`; ``Stage`` is
 a fused run of ops and is **only ever constructed by the optimizer** — frontends cannot record
 one.
 
@@ -213,7 +213,7 @@ A worked example (runnable)
 
 Record this (typical of how analysis code accumulates) and reduce it::
 
-    import graphed_core as gc
+    import graphed.core as gc
 
     s = gc.GraphStore()
     src  = s.add_source("events", {"uri": "data.root"})
@@ -302,7 +302,7 @@ their content, preservation bundles embed them, and debuggers map them back to s
 The plan layer
 --------------
 
-On top of the codec, the pure-Python :class:`~graphed_core.DurablePlan` packages a reduced IR
+On top of the codec, the pure-Python :class:`~graphed.core.DurablePlan` packages a reduced IR
 with what an executor needs: partitions, read columns, and the process/combine/empty operations
 as ``OpSpec``\ s. An ``OpSpec`` references a callable **by import path** so a plan can run on a
 machine with no analysis source files; only a genuinely opaque callable is embedded by value
@@ -315,7 +315,7 @@ it ran.
 The monitor seam (live observability)
 -------------------------------------
 
-``graphed_core.execution`` also carries the M37 **observability seam** — the contract a live
+``graphed.core.execution`` also carries the M37 **observability seam** — the contract a live
 dashboard plugs into. It is deliberately tiny and pure data: ``TaskEvent`` (a frozen, picklable,
 *display-only* record of one task transition), ``TaskPhase`` (``SUBMITTED`` / ``STARTED`` /
 ``FINISHED`` / ``ERRORED``), and two protocols, ``Monitor`` (``on_task`` / ``on_profile`` /
@@ -342,7 +342,7 @@ executors that *emit* through this seam live in ``graphed-exec-local``.
 The inter-worker comms seam (M38)
 ---------------------------------
 
-``graphed_core.execution`` also carries the **inter-worker transport contract** — the seam peer
+``graphed.core.execution`` also carries the **inter-worker transport contract** — the seam peer
 reduction and work-stealing ride, and the one a future *distributed* executor reuses unchanged.
 :class:`WorkerTransport` is a Protocol for an addressable, **non-blocking, best-effort** message
 channel between the driver and workers (and worker↔worker): ``send`` / ``broadcast`` / ``poll`` /
@@ -368,8 +368,8 @@ File                                  What lives there
 ``src/optimizer/incremental.rs``      the delta-consuming canonicalizer + work counters
 ``src/serialize.rs``                  the GIR1 codec
 ``src/lib.rs``                        PyO3 bindings (thin; everything above is plain Rust)
-``python/graphed_core/plan.py``       ``DurablePlan`` + ``OpSpec`` + content-addressed ``task_id``
-``python/graphed_core/execution.py``  the executor-facing ``Plan``/``Task``/``ExecResult`` contract
+``python/graphed/core/plan.py``       ``DurablePlan`` + ``OpSpec`` + content-addressed ``task_id``
+``python/graphed/core/execution.py``  the executor-facing ``Plan``/``Task``/``ExecResult`` contract
 ====================================  ===========================================================
 
 

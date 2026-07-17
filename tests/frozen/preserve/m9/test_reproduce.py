@@ -13,7 +13,7 @@ from typing import Any
 import agc
 import numpy as np
 
-from graphed_preserve import reproduce
+from graphed.preserve import reproduce
 
 
 def test_reproduce_matches_build_bit_for_bit(agc_bundle: tuple[Any, np.ndarray]) -> None:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import graphed_core as gc
+import graphed.core as gc
 
 
 def _descriptor(**overrides: str) -> dict[str, str]:

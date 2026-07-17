@@ -15,15 +15,14 @@ pytest.importorskip("perspective")
 pytest.importorskip("tornado")
 pytest.importorskip("websocket")
 
-from graphed_core import TaskEvent, TaskPhase
-
-from graphed_debug import (
+from graphed.core import TaskEvent, TaskPhase
+from graphed.debug import (
     Dashboard,
     DashboardServer,
     NetworkMonitor,
     _sampler,
 )
-from graphed_debug.dashboard import _wire
+from graphed.debug.dashboard import _wire
 
 
 def _ev(phase: TaskPhase, key: int, worker: str = "w0", error: str | None = None) -> TaskEvent:

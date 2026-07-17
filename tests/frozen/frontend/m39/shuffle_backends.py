@@ -15,7 +15,7 @@ import pickle
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
-from graphed_core import Partition
+from graphed.core import Partition
 
 Row = dict
 Block = list  # a toy partition == a list of Row

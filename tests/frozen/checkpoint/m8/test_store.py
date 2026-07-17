@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from graphed_checkpoint import Store
+from graphed.checkpoint import Store
 
 
 def test_put_is_content_addressed_and_idempotent(tmp_path) -> None:  # type: ignore[no-untyped-def]

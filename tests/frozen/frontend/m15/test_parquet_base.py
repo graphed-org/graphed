@@ -20,9 +20,9 @@ pa = pytest.importorskip("pyarrow")
 import pyarrow.parquet as pq  # noqa: E402, I001
 
 from graphed import parquet as gpq  # noqa: E402
-from graphed_core import SequentialRunner  # noqa: E402  (M32: the reference runner moved here)
-from graphed_core import Partition  # noqa: E402
-from graphed_core.execution import Task, WorkerResources  # noqa: E402
+from graphed.core import SequentialRunner  # noqa: E402  (M32: the reference runner moved here)
+from graphed.core import Partition  # noqa: E402
+from graphed.core.execution import Task, WorkerResources  # noqa: E402
 
 ROWS = [5, 3, 7]  # rows per fixture file
 

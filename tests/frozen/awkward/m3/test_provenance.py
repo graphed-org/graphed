@@ -7,10 +7,10 @@ import sys
 import analyses as analyses_mod
 import numpy as np
 from analyses import ADL, record
-from graphed import Session
 from graphed_corpus import make_events
 
-from graphed_awkward import AwkwardBackend, from_awkward, gak
+from graphed import Session
+from graphed.awkward import AwkwardBackend, from_awkward, gak
 
 
 def test_every_node_maps_to_user_code_not_graphed_internals() -> None:
@@ -20,7 +20,7 @@ def test_every_node_maps_to_user_code_not_graphed_internals() -> None:
     for p in provs:
         # nodes map to the analyses module or the test, never into the graphed* package source
         assert "/src/graphed/" not in p.filename
-        assert "/src/graphed_awkward/" not in p.filename
+        assert "/src/graphed.awkward/" not in p.filename
     # at least one node maps to the analyses module (the user's code)
     assert any(p.filename == analyses_mod.__file__ for p in provs)
 

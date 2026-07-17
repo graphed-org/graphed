@@ -17,6 +17,7 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 import numpy as np
+
 from graphed import Array
 
 from .array import NumpyArray

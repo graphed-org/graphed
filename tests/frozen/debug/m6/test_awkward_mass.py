@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from analyses import awkward_mass_oob
 
-import graphed_debug as gd
+import graphed.debug as gd
 
 
 def test_out_of_range_index_maps_to_the_mass_calc_line() -> None:

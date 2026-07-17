@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from graphed import GraphedTypeError, Session
 
-from graphed_numpy import NumpyBackend, from_array
+from graphed import GraphedTypeError, Session
+from graphed.numpy import NumpyBackend, from_array
 
 D2 = np.array([[3.0, 1.0, 4.0], [1.0, 5.0, 9.0], [2.0, 6.0, 5.0], [3.0, 5.0, 8.0]])
 DN = np.array([[3.0, np.nan, 4.0], [np.nan, 5.0, 9.0], [2.0, 6.0, np.nan], [3.0, 5.0, 8.0]])

@@ -7,11 +7,11 @@ import json
 from pathlib import Path
 
 import onnx
-from graphed import Session
 from graphed_corpus import make_events
 from onnx import TensorProto, helper
 
-from graphed_awkward import AwkwardBackend, from_awkward, gak
+from graphed import Session
+from graphed.awkward import AwkwardBackend, from_awkward, gak
 
 
 def _sha(path: Path) -> str:

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from graphed import GraphedTypeError, Session
 
-from graphed_numpy import NumpyBackend, from_array
+from graphed import GraphedTypeError, Session
+from graphed.numpy import NumpyBackend, from_array
 
 
 def test_sub_and_div_arith() -> None:

@@ -1,6 +1,6 @@
 """The build session: records a deferred program into the graphed-core store via a backend.
 
-A `Session` owns one `graphed_core.GraphStore`, the chosen `Backend`, and the side tables mapping
+A `Session` owns one `graphed.core.GraphStore`, the chosen `Backend`, and the side tables mapping
 each interned `NodeId` to its `Form` and its concrete inputs (sources / opaque callables) for
 evaluation. The recorded graph is backend-independent; only forms and evaluation depend on the
 backend.
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 
-import graphed_core
+import graphed.core
 
 from .array import Array
 from .backend import Backend, Form, ParamValue
@@ -20,7 +20,7 @@ from .provenance import Provenance, capture
 
 class Session:
     def __init__(self, backend: Backend, *, incremental: bool = False) -> None:
-        self._store = graphed_core.GraphStore()
+        self._store = graphed.core.GraphStore()
         self._backend = backend
         self._forms: dict[int, Form] = {}
         self._sources: dict[int, object] = {}
@@ -31,9 +31,9 @@ class Session:
         # M10 (plan A.1): with incremental=True the session maintains the reduced view AS THE
         # GRAPH IS BUILT — every record steps an IncrementalReducer whose per-step work is the
         # delta, so compile time never pays a whole-history optimization.
-        self._reducer = graphed_core.IncrementalReducer() if incremental else None
+        self._reducer = graphed.core.IncrementalReducer() if incremental else None
         # M11 factorization: the backend may supply its own Array proxy subclass (its idiomatic
-        # user surface — e.g. graphed_numpy.NumpyArray's method/property style). The base Array
+        # user surface — e.g. graphed.numpy.NumpyArray's method/property style). The base Array
         # stays backend-idiom-neutral; backends without array_type get it unchanged.
         factory = getattr(backend, "array_type", None)
         self._array_cls: type[Array] = factory() if callable(factory) else Array
@@ -62,7 +62,7 @@ class Session:
         (byte-identical to fresh-session serializations). With ``optimize=True`` (the default) the
         graph is reduced by the M4 optimizer (DCE + CSE + equality-saturation stage fusion), so
         the bytes carry the **optimized interned graph** — the same content-addressed artifact an
-        executor runs. This is the "compile" step for a ``graphed_core.DurablePlan`` deployment:
+        executor runs. This is the "compile" step for a ``graphed.core.DurablePlan`` deployment:
         record an analysis once, serialize it once, then re-target it at many datasets with
         ``DurablePlan.with_partitions`` / ``for_datasets``.
         """
@@ -189,7 +189,7 @@ class Session:
         inputs: Sequence[Array],
         params: Mapping[str, ParamValue] | None = None,
         *,
-        descriptor: graphed_core.PayloadDescriptor | None = None,
+        descriptor: graphed.core.PayloadDescriptor | None = None,
         form: Form | None = None,
     ) -> Array:
         """Record an External node. By default the BACKEND supplies the payload descriptor and

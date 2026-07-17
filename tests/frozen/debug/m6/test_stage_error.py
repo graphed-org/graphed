@@ -7,7 +7,7 @@ import pickle
 
 import pytest
 
-from graphed_debug import SourceFrame, StageError
+from graphed.debug import SourceFrame, StageError
 
 
 def _err() -> StageError:

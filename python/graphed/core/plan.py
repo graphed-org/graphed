@@ -6,7 +6,7 @@ in-memory runtime job (live callables); ``DurablePlan`` is its durable form: it 
 to bytes, content-addressed, shipped, and re-executed **on a machine with no user source files**.
 
 Canonical durable form (plan A.3.1). The computation is carried as the **serialized IR** (from
-``graphed_core.GraphStore.serialize``), never cloudpickle — *except* for genuinely opaque user
+``graphed.core.GraphStore.serialize``), never cloudpickle — *except* for genuinely opaque user
 callables that cannot be expressed in the IR, which are embedded **by value** (cloudpickle) and
 flagged ``opaque=True`` as a preservation risk so M9 can surface them. Everything else in the plan
 (partitions, read columns, reduction/stopping/locality/resource metadata) is plain data.

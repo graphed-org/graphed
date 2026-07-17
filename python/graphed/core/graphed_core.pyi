@@ -1,4 +1,4 @@
-"""Type stubs for the compiled extension module ``graphed_core.graphed_core``."""
+"""Type stubs for the compiled extension module ``graphed.core.graphed_core``."""
 
 from __future__ import annotations
 

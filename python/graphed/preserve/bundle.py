@@ -2,7 +2,7 @@
 
 A bundle is a directory holding a canonical ``manifest.json`` (the content-addressed bill-of-materials
 whose hash is the bundle fingerprint) and a content-addressed ``store/`` (the M8
-``graphed_checkpoint.Store``) holding every referenced blob: the canonical serialized IR, each input
+``graphed.checkpoint.Store``) holding every referenced blob: the canonical serialized IR, each input
 dataset, each correction/model payload, and the provenance sourcemap. The bundle is **runnable from
 references alone** — no original user code, environment, author, or input files are needed on the
 reproducing machine (the environment is captured for audit; inputs are resolved from the archive).
@@ -19,8 +19,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from graphed_checkpoint import Store
-from graphed_core import GraphStore
+from graphed.checkpoint import Store
+from graphed.core import GraphStore
 
 from .errors import PreserveError, UnresolvedPayload
 from .externals import ResourceCache, evaluate_external, get_plugin
@@ -209,7 +209,7 @@ def reproduce(bundle: Bundle) -> Any:
     Resolves the IR, datasets, and correction/model payloads from the bundle's content-addressed
     store (raising :class:`UnresolvedPayload` for anything missing), interprets the IR through the
     awkward backend + payload-backed external evaluators, and applies the histogram spec."""
-    from graphed_awkward import AwkwardBackend  # noqa: PLC0415
+    from graphed.awkward import AwkwardBackend  # noqa: PLC0415
 
     store = bundle.store
     m = bundle.manifest

@@ -5,9 +5,9 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from graphed import Session
 
-import graphed_numpy as gn
+import graphed.numpy as gn
+from graphed import Session
 
 WIDE = {f"c{i}": np.arange(4, dtype=float) for i in range(20)}  # a 20-column record
 

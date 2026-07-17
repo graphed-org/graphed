@@ -9,9 +9,9 @@ program serialize to byte-identical reduced IR.
 from __future__ import annotations
 
 import numpy as np
-from graphed import Session
 
-import graphed_numpy as gn
+import graphed.numpy as gn
+from graphed import Session
 
 
 def _events(s: Session) -> object:

@@ -19,12 +19,13 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 import awkward as ak
+
 from graphed import Backend, CompiledGraph, Session, compile_ir, evaluate_ir
 from graphed import parquet as gpq
 from graphed import write as gw
+from graphed.core import Partition
+from graphed.core.execution import Plan, SequentialRunner, WorkerResources
 from graphed.write import PartitionedSource
-from graphed_core import Partition
-from graphed_core.execution import Plan, SequentialRunner, WorkerResources
 
 from .backend import AwkwardBackend, AwkwardForm
 from .projection import project_buffers

@@ -1,8 +1,8 @@
 """Backend-agnostic deferred parquet I/O — the common base (M15.1, dask-awkward parity plan).
 
 The pieces every parquet specialization shares, with NO array-library content (plan §A.4 —
-graphed stays numpy/awkward-free; the array codecs live in `graphed_awkward.io` and
-`graphed_numpy.io`):
+graphed stays numpy/awkward-free; the array codecs live in `graphed.awkward.io` and
+`graphed.numpy.io`):
 
 - **Discovery** is deterministic: a directory or glob is SORTED; an explicit list keeps the
   caller's order (it is part of the dataset's identity).
@@ -14,7 +14,7 @@ graphed stays numpy/awkward-free; the array codecs live in `graphed_awkward.io` 
   executors read per-partition through the specializations' readers instead).
 - **The deferred write plan** (R15.4 semantics): compute-disabled returns a task graph of write
   tasks — each writes one output part and returns its path — and running that same plan IS the
-  compute-enabled mode. Run the plan with graphed_core.execution.SequentialRunner (dependency-free reference) or any R7
+  compute-enabled mode. Run the plan with graphed.core.execution.SequentialRunner (dependency-free reference) or any R7
   executor (e.g. graphed-exec-local's process pool) accepts the same plan.
 - **Part naming** (R15.9): a writer derives its own output-part index from its partition plus a
   per-file base table, so per-task pickled state is bounded by the number of FILES, not
@@ -31,7 +31,7 @@ import os
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any
 
-from graphed_core import Partition
+from graphed.core import Partition
 
 from .array import Array
 from .backend import Form, ParamValue
@@ -144,7 +144,7 @@ def deferred_source(
 
 # ---- the deferred write plan: re-exported from the format-agnostic base (graphed.write) ----------
 # write_plan / file_bases are ALIASES of graphed.write's — the M15 surface is the parquet
-# specialization of the M20 base. The reference runner is graphed_core.execution.SequentialRunner
+# specialization of the M20 base. The reference runner is graphed.core.execution.SequentialRunner
 # (it is general execution, not a write/parquet concept).
 __all__ = [
     "blind_part_index",

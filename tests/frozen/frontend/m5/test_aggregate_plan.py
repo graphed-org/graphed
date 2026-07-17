@@ -12,10 +12,10 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
 import pytest
-from graphed_core import Partition
-from graphed_core.execution import SequentialRunner
 
 from graphed import Array, Session, aggregate_plan, resolve_backend
+from graphed.core import Partition
+from graphed.core.execution import SequentialRunner
 
 
 class _Backend:

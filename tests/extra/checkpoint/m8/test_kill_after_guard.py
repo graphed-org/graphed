@@ -16,10 +16,10 @@ from pathlib import Path
 
 import analyses
 import pytest
-from graphed_core import DurablePlan
 
-from graphed_checkpoint import Store, run_resumable
-from graphed_checkpoint.runner import _SimulatedInterrupt
+from graphed.checkpoint import Store, run_resumable
+from graphed.checkpoint.runner import _SimulatedInterrupt
+from graphed.core import DurablePlan
 
 
 def _one_partition_plan() -> DurablePlan:

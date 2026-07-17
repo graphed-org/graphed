@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from graphed_core import GraphStore
+from graphed.core import GraphStore
 
 
 def _exchange_graph() -> tuple[GraphStore, list[int]]:

@@ -5,10 +5,9 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
-import graphed_core
-from graphed_core import PayloadDescriptor
-
+import graphed.core
 from graphed import Array, Session
+from graphed.core import PayloadDescriptor
 
 
 @dataclass(frozen=True)
@@ -50,6 +49,6 @@ def source(s: Session, name: str, value: object) -> Array:
 
 
 def recorded(s: Session, arr: Array) -> dict[str, object]:
-    g = graphed_core.GraphStore.deserialize(s.serialized_ir(arr, optimize=False))
+    g = graphed.core.GraphStore.deserialize(s.serialized_ir(arr, optimize=False))
     (node,) = [n for n in g.nodes() if n["id"] == arr.node_id]
     return node

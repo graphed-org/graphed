@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from graphed_core import GraphStore
+from graphed.core import GraphStore
 
 
 def _toy_eval(store: GraphStore, seeds: dict[str, int]) -> list[int]:

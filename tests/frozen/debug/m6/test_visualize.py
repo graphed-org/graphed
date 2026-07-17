@@ -3,13 +3,13 @@ and (optionally) projected columns (plan M6)."""
 
 from __future__ import annotations
 
-import graphed_numpy as gn
 import numpy as np
 import pytest
 from analyses import numpy_oob
-from graphed import Session
 
-import graphed_debug as gd
+import graphed.debug as gd
+import graphed.numpy as gn
+from graphed import Session
 
 
 def test_mermaid_renders_stage_nodes_and_edges() -> None:

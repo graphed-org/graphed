@@ -7,7 +7,7 @@ websocket network transport.
   websocket (local or remote).
 
 The heavy deps (``perspective-python``, ``tornado``, ``websocket-client``) are the ``dashboard``
-extra and are imported lazily, so ``import graphed_debug`` works without them.
+extra and are imported lazily, so ``import graphed.debug`` works without them.
 """
 
 from __future__ import annotations

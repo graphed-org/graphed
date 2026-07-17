@@ -20,10 +20,10 @@ import pytest
 pytest.importorskip("playwright")
 pytest.importorskip("perspective")
 
-from graphed_core import TaskEvent, TaskPhase
 from playwright.sync_api import sync_playwright
 
-from graphed_debug import Dashboard, _sampler
+from graphed.core import TaskEvent, TaskPhase
+from graphed.debug import Dashboard, _sampler
 
 
 def _ev(phase: TaskPhase, key: int, worker: str = "w0") -> TaskEvent:

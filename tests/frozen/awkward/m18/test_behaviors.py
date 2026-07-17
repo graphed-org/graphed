@@ -11,12 +11,13 @@ from __future__ import annotations
 
 import awkward as ak
 import pytest
+
 from graphed import GraphedTypeError, Session
 
 vector = pytest.importorskip("vector")
 vector.register_awkward()
 
-from graphed_awkward import AwkwardBackend, from_awkward, gak, project  # noqa: E402
+from graphed.awkward import AwkwardBackend, from_awkward, gak, project  # noqa: E402
 
 MUONS = ak.Array(
     {

@@ -9,9 +9,9 @@ so the awkward backend keeps the base proxy and its user surface stays in the `g
 from __future__ import annotations
 
 import awkward as ak
-from graphed import Array, Session
 
-from graphed_awkward import AwkwardBackend, from_awkward, gak
+from graphed import Array, Session
+from graphed.awkward import AwkwardBackend, from_awkward, gak
 
 
 def test_awkward_sessions_return_the_base_neutral_proxy() -> None:

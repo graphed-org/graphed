@@ -10,7 +10,7 @@ skipped on resume, not needlessly re-run). The V1 default (no ``node``) still wr
 
 from __future__ import annotations
 
-from graphed_checkpoint import Store
+from graphed.checkpoint import Store
 
 
 def test_journal_entry_carries_stage_and_deps(tmp_path) -> None:  # type: ignore[no-untyped-def]

@@ -8,7 +8,7 @@ process so the by-value validate subprocess still computes correctly. (Framework
 
 from __future__ import annotations
 
-from graphed_preserve.externals._helpers import (
+from graphed.preserve.externals._helpers import (
     _HASH_MEMO,
     _HASH_MEMO_CAP,
     memoized_model_hash,

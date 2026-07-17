@@ -9,4 +9,10 @@ for its functions and classes.
    :toctree: generated
    :recursive:
 
-   graphed_checkpoint
+   graphed
+   graphed.core
+   graphed.awkward
+   graphed.numpy
+   graphed.debug
+   graphed.checkpoint
+   graphed.preserve

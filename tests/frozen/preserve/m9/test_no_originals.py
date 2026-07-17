@@ -27,7 +27,7 @@ def test_reproduce_with_no_original_code_or_inputs(tmp_path) -> None:  # type: i
     elsewhere.mkdir()
 
     child = (
-        "import sys, json; from graphed_preserve import Bundle, reproduce;"
+        "import sys, json; from graphed.preserve import Bundle, reproduce;"
         "assert __import__('importlib.util', fromlist=['x']).find_spec('agc') is None;"  # originals unreachable
         "out = reproduce(Bundle.open(sys.argv[1]));"
         "print(json.dumps([float(x) for x in out]))"

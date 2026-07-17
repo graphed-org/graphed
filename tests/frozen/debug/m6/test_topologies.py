@@ -4,11 +4,11 @@ localize to that branch's op — the other branch must not mask or mislocate it.
 
 from __future__ import annotations
 
-import graphed_numpy as gn
 import numpy as np
-from graphed import Session
 
-import graphed_debug as gd
+import graphed.debug as gd
+import graphed.numpy as gn
+from graphed import Session
 
 
 def _events(s: Session) -> object:

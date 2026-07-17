@@ -10,10 +10,10 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from graphed import BufferNeed, BufferProjection, ProjectionError, Session
 from graphed_corpus import make_events
 
-from graphed_awkward import AwkwardBackend, from_awkward, gak, project, project_buffers
+from graphed import BufferNeed, BufferProjection, ProjectionError, Session
+from graphed.awkward import AwkwardBackend, from_awkward, gak, project, project_buffers
 
 
 def _session():

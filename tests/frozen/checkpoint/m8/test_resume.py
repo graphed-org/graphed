@@ -10,8 +10,8 @@ import analyses
 import numpy as np
 import pytest
 
-from graphed_checkpoint import Store, run_resumable
-from graphed_checkpoint.runner import _SimulatedInterrupt
+from graphed.checkpoint import Store, run_resumable
+from graphed.checkpoint.runner import _SimulatedInterrupt
 
 
 def _plan(n_chunks: int = 6):  # type: ignore[no-untyped-def]

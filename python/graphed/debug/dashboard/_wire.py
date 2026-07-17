@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from graphed_core.execution import TaskEvent
+from graphed.core.execution import TaskEvent
 
 # Perspective table schemas (column -> perspective type). ``tasks`` is indexed by ``key`` so a task's
 # row advances SUBMITTED -> STARTED -> FINISHED/ERRORED in place; ``stats`` is a single indexed row

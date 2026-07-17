@@ -7,8 +7,6 @@ from pathlib import Path
 
 import awkward as ak
 import pytest
-from hist import Hist
-
 from graphed_corpus import (
     ADL_QUERIES,
     TTBAR_FIXTURES,
@@ -17,8 +15,9 @@ from graphed_corpus import (
     ttbar_region,
     ttgamma_region,
 )
+from hist import Hist
 
-REF_DIR = Path(__file__).resolve().parents[3] / "corpus" / "references"
+REF_DIR = Path(__file__).resolve().parents[3] / "_corpus" / "references"
 
 
 def all_fixtures() -> dict[str, Callable[[ak.Array], Hist]]:

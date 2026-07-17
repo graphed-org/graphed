@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import time
 
-import graphed_core as gc
+import graphed.core as gc
 
 
 def _diamond(s: gc.GraphStore, apex: int) -> int:

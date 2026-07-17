@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import awkward as ak
 from conftest import all_fixtures
-
 from graphed_corpus import fingerprint, make_events
 
 

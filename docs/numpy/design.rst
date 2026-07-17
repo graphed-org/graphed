@@ -20,7 +20,7 @@ The backend in one example
 
     import numpy as np
     from graphed import Session
-    from graphed_numpy import NumpyBackend, from_record
+    from graphed.numpy import NumpyBackend, from_record
 
     s  = Session(NumpyBackend())
     ev = from_record(s, "events",
@@ -108,7 +108,7 @@ associative combine — without the executor knowing anything about the specific
 Parquet I/O (rectilinear only)
 ------------------------------
 
-``graphed_numpy.io`` specializes the shared :mod:`graphed.parquet` base: ``from_parquet``
+``graphed.numpy.io`` specializes the shared :mod:`graphed.parquet` base: ``from_parquet``
 records a deferred dataset source (blind partitions; schema from metadata via an explicit
 arrow→numpy dtype map), ``to_parquet`` rides the shared write plan. Two deliberate constraints:
 **rectilinear refusal** — a nested/list-typed parquet column is rejected with a pointer to the

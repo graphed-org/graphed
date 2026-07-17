@@ -9,7 +9,7 @@ can never silently become a behavior change.
 
 from __future__ import annotations
 
-from graphed_core import GraphStore
+from graphed.core import GraphStore
 
 
 def _diamond() -> tuple[GraphStore, int]:

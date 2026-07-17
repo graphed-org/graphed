@@ -3,11 +3,11 @@ build + run the failing analysis inside a spawned child process."""
 
 from __future__ import annotations
 
-import graphed_numpy as gn
 import numpy as np
-from graphed import Session
 
-import graphed_debug as gd
+import graphed.debug as gd
+import graphed.numpy as gn
+from graphed import Session
 
 
 def numpy_oob(n: int = 3):
@@ -35,8 +35,9 @@ def awkward_mass_oob(n_events: int = 200):
     than two muons (the canonical 'out-of-range index into the mass calc' of the M6 contract). The
     positional index is awkward-specific, so the calc lives in a map; the error surfaces at eval."""
     import numpy as anp  # noqa: PLC0415 - awkward-only helpers, kept off the numpy-backend import
-    from graphed_awkward import AwkwardBackend, from_awkward  # noqa: PLC0415
     from graphed_corpus import make_events  # noqa: PLC0415
+
+    from graphed.awkward import AwkwardBackend, from_awkward  # noqa: PLC0415
 
     def dimuon_mass(mu: object) -> object:
         a, b = mu[:, 0], mu[:, 1]  # <-- out-of-range 2nd-muon index for single-muon events

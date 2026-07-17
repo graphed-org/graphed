@@ -12,7 +12,7 @@ Pinned Python surface (test-author decision, faithful to the §2.1 enum which ha
 
 from __future__ import annotations
 
-from graphed_core import GraphStore
+from graphed.core import GraphStore
 
 
 def _chain_with_exchange(parts: int = 8) -> tuple[GraphStore, int, int]:

@@ -11,8 +11,9 @@ from dataclasses import dataclass
 from typing import Any
 
 import awkward as ak
+
 from graphed import Session
-from graphed_core import PayloadDescriptor
+from graphed.core import PayloadDescriptor
 
 from . import payloads, shuffle
 from ._ops import apply

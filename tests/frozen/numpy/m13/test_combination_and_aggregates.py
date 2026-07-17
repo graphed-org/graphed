@@ -11,10 +11,10 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from graphed import GraphedTypeError, Session
 from m13_helpers import recorded
 
-from graphed_numpy import NumpyBackend, from_array
+from graphed import GraphedTypeError, Session
+from graphed.numpy import NumpyBackend, from_array
 
 V = np.array([5.0, 1.0, 4.0, 2.0, 8.0, 6.0, 3.0, 7.0, 9.0, 0.0, 2.5, 1.5])
 W = np.array([2.0, 0.5, 3.5, 1.0, 7.5, 6.5, 2.5, 8.0, 9.5, 0.5, 3.0, 1.0])

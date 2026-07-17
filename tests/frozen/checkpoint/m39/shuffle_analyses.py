@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from graphed_core import DurablePlanV2, GraphStore, OpSpec, Partition, StageSpec, Task
+from graphed.core import DurablePlanV2, GraphStore, OpSpec, Partition, StageSpec, Task
 
 
 def map_write(task: Task, inputs: tuple[bytes, ...], resources: Any) -> bytes:

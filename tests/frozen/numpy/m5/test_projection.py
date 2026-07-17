@@ -6,9 +6,9 @@ import warnings
 
 import numpy as np
 import pytest
-from graphed import ProjectionError, Session
 
-import graphed_numpy as gn
+import graphed.numpy as gn
+from graphed import ProjectionError, Session
 
 
 def _events(s: Session) -> object:

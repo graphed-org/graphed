@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from graphed import Session
 
-from graphed_numpy import NumpyBackend, from_array
+from graphed import Session
+from graphed.numpy import NumpyBackend, from_array
 
 F = np.array([0.25, 0.5, 1.5, 2.0])  # positive floats: safe for log/sqrt/reciprocal
 G = np.array([2.0, 0.5, 3.0, 1.5])

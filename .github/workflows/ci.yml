@@ -1,0 +1,210 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Python frozen suites on the full OS matrix. One `-e .[dev]` builds the maturin extension and
+  # installs every backend — no more git-sibling installs. Tests run per-subtree (see
+  # scripts/run-tests.sh) so each package's suite keeps its origin-repo isolation.
+  test:
+    name: test ${{ matrix.os }} py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest]
+        python: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install (builds the extension)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+      - uses: astral-sh/setup-uv@v5
+      - name: Lint + types (Python hooks via prek)
+        # this job's toolchain has no clippy/rustfmt components, so run only the Python hooks
+        run: uvx prek@0.4.5 run --all-files --show-diff-on-failure ruff-check ruff-format mypy
+      - name: Frozen suites (per-subtree)
+        shell: bash
+        run: ./scripts/run-tests.sh
+
+  # Combined branch-coverage gate (>=90%). Accumulated with --cov-append across subtrees, gated
+  # once on the union. The Rust core is measured separately (coverage-rust).
+  coverage:
+    name: coverage (>=90% combined)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install (builds the extension)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+      - name: Combined coverage
+        shell: bash
+        run: COV=1 ./scripts/run-tests.sh
+
+  # Pure-Rust IR: formatting, clippy (deny warnings), unit tests, and the loom model.
+  rust:
+    name: rust (clippy + cargo test + loom)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - name: Link libpython for the test binary
+        run: echo "LD_LIBRARY_PATH=$(python -c 'import sysconfig; print(sysconfig.get_config_var(\"LIBDIR\"))')" >> "$GITHUB_ENV"
+      - uses: astral-sh/setup-uv@v5
+      - name: Rust lint (cargo fmt + clippy via prek)
+        run: uvx prek@0.4.5 run --all-files cargo-fmt cargo-clippy
+      - run: cargo test
+      - name: loom model of the locking discipline
+        run: RUSTFLAGS="--cfg loom" cargo test --lib loom_model
+
+  coverage-rust:
+    name: rust coverage (cargo llvm-cov)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Link libpython for the test binary
+        run: echo "LD_LIBRARY_PATH=$(python -c 'import sysconfig; print(sysconfig.get_config_var(\"LIBDIR\"))')" >> "$GITHUB_ENV"
+      - name: cargo llvm-cov (fail under 90% lines, bindings excluded)
+        run: cargo llvm-cov --ignore-filename-regex 'lib\.rs' --fail-under-lines 90
+
+  # Free-threaded Python (plan A.5), REQUIRED for the core + frontend + numpy suites: these need
+  # only numpy (which ships free-threaded wheels), so the no-GIL thread-safety of the Rust core is
+  # a hard gate. The awkward/onnx-dependent suites run advisory below (their wheels lag on 3.14t).
+  test-freethreaded:
+    name: test py3.14t (free-threaded, core+frontend+numpy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14t"
+      - uses: dtolnay/rust-toolchain@stable
+      - run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+          python -m pip install pytest hypothesis numpy
+          pytest tests/frozen/core tests/frozen/frontend tests/frozen/numpy -p no:cacheprovider
+
+  test-freethreaded-backends:
+    name: test py3.14t (free-threaded, backends — advisory)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14t"
+      - uses: dtolnay/rust-toolchain@stable
+      - shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+          ./scripts/run-tests.sh
+
+  # The live dashboard's BROWSER render in headless Chromium (M37). Heavy (a real browser), so it
+  # runs once here; the matrix's dashboard tests importorskip Playwright and skip the smoke test.
+  dashboard-smoke:
+    name: dashboard browser smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@stable
+      - shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,dashboard]"
+          python -m pip install playwright
+          python -m playwright install --with-deps chromium
+          pytest tests/frozen/debug/m37/test_dashboard_browser.py -q -p no:cacheprovider
+
+  docs:
+    name: docs (sphinx -W)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Graphviz (inheritance diagrams)
+        run: sudo apt-get update && sudo apt-get install -y graphviz
+      - run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[docs,dev]"
+          sphinx-build -W -b html docs docs/_build/html
+
+  # Reproduce a preservation bundle through a REAL NVIDIA Triton server (gRPC + HTTP) with every ML
+  # framework present — the fully-realistic External-plugin cell. Serves tests/samples/triton_models.
+  triton:
+    name: real triton server (grpc + http)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Start Triton server with the example model
+        run: |
+          docker run -d --rm --name triton -p 8000:8000 -p 8001:8001 -p 8002:8002 \
+            -v ${{ github.workspace }}/tests/samples/triton_models:/models \
+            nvcr.io/nvidia/tritonserver:25.11-pyt-python-py3 \
+            tritonserver --model-repository=/models
+      - name: Install this package + all ML frameworks + triton client (grpc + http)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,ml]" "tritonclient[all]"
+      - name: Wait for Triton to be ready
+        run: |
+          for i in $(seq 1 90); do
+            if [ "$(curl -s -o /dev/null -w '%{http_code}' localhost:8000/v2/health/ready)" = "200" ]; then
+              echo "triton ready after ${i} tries"; exit 0
+            fi
+            sleep 2
+          done
+          echo "triton did not become ready"; docker logs triton; exit 1
+      - name: Full preserve suite against real Triton (gRPC + HTTP); nothing in m26 may skip
+        env:
+          GRAPHED_TRITON_GRPC: localhost:8001
+          GRAPHED_TRITON_HTTP: localhost:8000
+          TRITON_SERVER_URL: localhost:8000
+        run: |
+          pytest tests/frozen/preserve -p no:cacheprovider
+          pytest tests/frozen/preserve/m26 -q -rs | tee m26run.txt
+          ! grep -i "skipped" m26run.txt || (echo "m26 skipped tests on the everything-present cell" && exit 1)
+      - name: Triton logs (on failure)
+        if: failure()
+        run: docker logs triton || true

@@ -14,7 +14,7 @@ import json
 import platform
 from pathlib import Path
 
-from graphed_core import PayloadDescriptor
+from graphed.core import PayloadDescriptor
 
 
 def _sha256(path: str) -> str:

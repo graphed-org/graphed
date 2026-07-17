@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from graphed_preserve import (
+from graphed.preserve import (
     JAX_PLUGIN,
     PYTORCH_PLUGIN,
     TENSORFLOW_PLUGIN,
@@ -34,7 +34,7 @@ ALL = {
 
 def test_all_five_plugins_are_registered_at_import() -> None:
     for kind, (plugin, framework) in ALL.items():
-        assert get_plugin(kind) is plugin, f"{kind} must be registered by importing graphed_preserve"
+        assert get_plugin(kind) is plugin, f"{kind} must be registered by importing graphed.preserve"
         assert plugin.kind == kind
         assert plugin.framework == framework
 
@@ -70,7 +70,7 @@ def test_dependency_free_plugins_pass_full_hash_validation(kind: str) -> None:
 
 
 def test_non_json_payloads_are_rejected_loudly() -> None:
-    from graphed_preserve import PreserveError  # noqa: PLC0415
+    from graphed.preserve import PreserveError  # noqa: PLC0415
 
     with pytest.raises(PreserveError, match="JSON"):
         TRITON_PLUGIN.content_hash(b"\x00\x01 not json")

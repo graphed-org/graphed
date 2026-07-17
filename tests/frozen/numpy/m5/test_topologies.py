@@ -5,9 +5,9 @@ field may be over-touched, however the branches fan out and re-join (a dask fail
 from __future__ import annotations
 
 import numpy as np
-from graphed import Session
 
-import graphed_numpy as gn
+import graphed.numpy as gn
+from graphed import Session
 
 
 def _events(s: Session) -> object:

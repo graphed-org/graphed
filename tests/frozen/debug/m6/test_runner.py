@@ -3,12 +3,12 @@ and at the same location regardless of opt level (plan M6)."""
 
 from __future__ import annotations
 
-import graphed_numpy as gn
 import numpy as np
 from analyses import numpy_mismatch_in_fused_stage, numpy_oob
-from graphed import Session
 
-import graphed_debug as gd
+import graphed.debug as gd
+import graphed.numpy as gn
+from graphed import Session
 
 
 def test_success_path_returns_the_value() -> None:

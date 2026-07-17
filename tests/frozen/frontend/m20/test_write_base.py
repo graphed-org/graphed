@@ -14,13 +14,13 @@ from __future__ import annotations
 import os
 
 import pytest
-from graphed_core import Partition, SequentialRunner
-from graphed_core import execution as _gce
-from graphed_core.execution import WorkerResources
 from m15_toy import ToyForm, session  # noqa: F401  (the m15 toy backend serves this suite too)
 
 from graphed import parquet as gpq
 from graphed import write as gw
+from graphed.core import Partition, SequentialRunner
+from graphed.core import execution as _gce
+from graphed.core.execution import WorkerResources
 
 
 def _toy_writer(partition: Partition, resources: WorkerResources) -> list[str]:

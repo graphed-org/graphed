@@ -5,7 +5,7 @@ from __future__ import annotations
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-import graphed_core as gc
+import graphed.core as gc
 
 # Restrict params to int/str/bool here so the Python-side reference key exactly mirrors Rust
 # without float-canonicalization concerns (floats are covered in test_interning).

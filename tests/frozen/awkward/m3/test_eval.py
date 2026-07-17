@@ -10,10 +10,10 @@ import awkward as ak
 import numpy as np
 import pytest
 from analyses import ADL
-from graphed import Session
 from graphed_corpus.analyses.adl import _pair_mass
 
-from graphed_awkward import AwkwardBackend, from_awkward
+from graphed import Session
+from graphed.awkward import AwkwardBackend, from_awkward
 
 
 def _flat(x: object) -> np.ndarray:

@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import time
 
-import graphed_core as gc
+import graphed.core as gc
 
 SIZES = [1000, 2000, 4000, 8000]
 

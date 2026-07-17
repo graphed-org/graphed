@@ -9,7 +9,7 @@ byte-for-byte through the M8 codec.
 
 from __future__ import annotations
 
-from graphed_core import GraphStore, IncrementalReducer
+from graphed.core import GraphStore, IncrementalReducer
 
 
 def _chain_with_twins(n: int) -> tuple[GraphStore, int]:

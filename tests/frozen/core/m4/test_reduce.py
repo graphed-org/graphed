@@ -6,7 +6,7 @@ the full numpy/awkward-backend executor equivalence is M7.)
 
 from __future__ import annotations
 
-import graphed_core as gc
+import graphed.core as gc
 
 
 def _chain(n: int) -> gc.GraphStore:

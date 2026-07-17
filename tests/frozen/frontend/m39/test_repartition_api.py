@@ -9,11 +9,11 @@ these run over a toy backend.
 
 from __future__ import annotations
 
-from graphed_core import GraphStore
 from shuffle_backends import ListSource, ToyBackend
 
 import graphed
 from graphed import Array, Session, compile_ir
+from graphed.core import GraphStore
 
 
 def _exchange_nodes(session: Session, result: Array) -> list[dict]:

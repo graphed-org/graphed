@@ -12,11 +12,11 @@ reduce, combine, empty, backend=None, steps_per_file=1) -> DurablePlanV2``.
 from __future__ import annotations
 
 import pytest
-from graphed_core import DurablePlanV2
 from shuffle_backends import ListSource, ToyBackend
 
 import graphed
 from graphed import Session, aggregate_plan
+from graphed.core import DurablePlanV2
 
 
 def _repartitioned(s: Session):  # type: ignore[no-untyped-def]

@@ -11,9 +11,9 @@ incremental (M10), and the `optimize=False` paths.
 
 from __future__ import annotations
 
-import graphed_core
 from m10_toy import CountingListBackend, from_list
 
+import graphed.core
 from graphed import Array, Session, compile_ir, evaluate_ir
 
 SRC = {"x": [1.0, 2.0, 3.0]}
@@ -28,7 +28,7 @@ def _session(incremental: bool = False) -> tuple[Session, Array, Array]:
 
 
 def _flag_count(blob: bytes) -> int:
-    return sum(1 for n in graphed_core.GraphStore.deserialize(blob).nodes() if n["output"])
+    return sum(1 for n in graphed.core.GraphStore.deserialize(blob).nodes() if n["output"])
 
 
 def test_footgun_reproducer_each_compile_carries_exactly_one_output() -> None:
@@ -59,7 +59,7 @@ def test_serialized_ir_is_output_scoped_on_optimized_and_raw_paths() -> None:
     assert scoped == fresh_s.serialized_ir(fb)
     # optimize=False serializes the WHOLE store but flags only the requested output
     raw = s.serialized_ir(b, optimize=False)
-    g = graphed_core.GraphStore.deserialize(raw)
+    g = graphed.core.GraphStore.deserialize(raw)
     assert [n["id"] for n in g.nodes() if n["output"]] == [b.node_id]
 
 

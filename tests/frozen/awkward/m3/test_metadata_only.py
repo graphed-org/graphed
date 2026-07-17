@@ -6,10 +6,10 @@ from pathlib import Path
 
 import awkward as ak
 from analyses import ADL, record
-from graphed import Session
 from graphed_corpus import make_events
 
-from graphed_awkward import AwkwardBackend, from_awkward, from_parquet, gak
+from graphed import Session
+from graphed.awkward import AwkwardBackend, from_awkward, from_parquet, gak
 
 
 def test_recording_keeps_every_form_on_the_typetracer_backend() -> None:

@@ -1,6 +1,6 @@
 """M21: the generic writer dispatches on the PartitionedSource protocol (P3.6 revision).
 
-`graphed_awkward.io.to_parquet` must write ANY deferred array partition-wise when its source data
+`graphed.awkward.io.to_parquet` must write ANY deferred array partition-wise when its source data
 implements `graphed.write.PartitionedSource` — with the source's whole-dataset loader NEVER
 invoked (the efficiency witness: counters), and a read list that merges the graph's SYNTACTIC
 source-field accesses (evaluation replays every node — a zip's untouched legs included) with the
@@ -14,16 +14,16 @@ from dataclasses import dataclass, field
 
 import awkward as ak
 import pytest
+
 from graphed import Session
 
 pytest.importorskip("pyarrow")
 
+import graphed.awkward.io as gio
+from graphed.awkward import AwkwardBackend, AwkwardForm, from_parquet, gak
+from graphed.core import Partition
+from graphed.core.execution import Plan, SequentialRunner
 from graphed.write import PartitionedSource
-from graphed_core import Partition
-from graphed_core.execution import Plan, SequentialRunner
-
-import graphed_awkward.io as gio
-from graphed_awkward import AwkwardBackend, AwkwardForm, from_parquet, gak
 
 EVENTS = ak.Array(
     {

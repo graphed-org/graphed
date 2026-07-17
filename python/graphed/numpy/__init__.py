@@ -19,8 +19,9 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 import numpy as np
+
 from graphed import Array, Session
-from graphed_core import PayloadDescriptor
+from graphed.core import PayloadDescriptor
 
 from . import shuffle
 from .array import NumpyArray, _f, _i
@@ -313,7 +314,7 @@ def _reduce_kwargs(params: Mapping[str, object]) -> dict[str, Any]:
 class NumpyBackend:
     """A `graphed.Backend` over numpy arrays: M2 seam + M5 records + the M11 elementwise tier.
 
-    Also a `graphed_core.ShuffleBackend` (M39 exchange half): the rectilinear
+    Also a `graphed.core.ShuffleBackend` (M39 exchange half): the rectilinear
     ``partition``/``concat``/``slice_rows``/``estimated_bytes``/``to_wire``/``from_wire`` over
     structured (record) arrays, routing by the pinned §4 sha256 rule (``shuffle`` module)."""
 

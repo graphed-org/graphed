@@ -17,11 +17,11 @@ import awkward as ak
 import fake_triton
 import numpy as np
 import pytest
-from graphed import Session
-from graphed_awkward import AwkwardBackend, from_awkward
 from graphed_corpus import make_events
 
-from graphed_preserve import (
+from graphed import Session
+from graphed.awkward import AwkwardBackend, from_awkward
+from graphed.preserve import (
     TRITON_PLUGIN,
     XGBOOST_PLUGIN,
     build_bundle,
@@ -41,7 +41,7 @@ def _hist(value: Any, weight: Any) -> np.ndarray:
 
 
 def _record(plugin: Any, payload: bytes, params: dict[str, Any] | None = None):  # type: ignore[no-untyped-def]
-    from graphed_awkward import gak  # noqa: PLC0415
+    from graphed.awkward import gak  # noqa: PLC0415
 
     s = Session(AwkwardBackend())
     ev = from_awkward(s, "events", make_events(n_events=1200, seed=11))
@@ -99,7 +99,7 @@ def test_triton_reproduce_with_the_server_gone_fails_loudly(tmp_path) -> None:  
 
 
 def test_triton_unimportable_transport_fails_loudly(tmp_path) -> None:  # type: ignore[no-untyped-def]
-    from graphed_preserve import PreserveError  # noqa: PLC0415
+    from graphed.preserve import PreserveError  # noqa: PLC0415
 
     params = dict(TRITON_PARAMS, transport="no_such_module:transport")
     with pytest.raises((PreserveError, ImportError, ModuleNotFoundError)):
@@ -133,7 +133,7 @@ def test_triton_live_server_end_to_end(tmp_path) -> None:  # type: ignore[no-unt
     transport override): record -> build -> reproduce with every inference over the wire, and
     the result independently checked against the served model's declared weights."""
     pytest.importorskip("tritonclient.http")
-    from graphed_preserve import TRITON_PLUGIN as plugin  # noqa: PLC0415
+    from graphed.preserve import TRITON_PLUGIN as plugin  # noqa: PLC0415
 
     params = {"url": LIVE_TRITON_URL, "model": "scorer", "input_name": "x", "output_name": "y"}
 

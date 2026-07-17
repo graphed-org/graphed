@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import numpy as np
-from graphed import Session
-from graphed_core import PayloadDescriptor
 
-from graphed_numpy import NumpyBackend, from_array
+from graphed import Session
+from graphed.core import PayloadDescriptor
+from graphed.numpy import NumpyBackend, from_array
 
 
 def test_external_payload_describes_opaque_callable() -> None:

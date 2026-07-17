@@ -11,7 +11,7 @@ from __future__ import annotations
 import analyses
 import numpy as np
 
-from graphed_checkpoint import (
+from graphed.checkpoint import (
     Quarantine,
     RetryElsewhere,
     RetryN,

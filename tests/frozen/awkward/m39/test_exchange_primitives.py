@@ -13,7 +13,7 @@ import awkward as ak
 import numpy as np
 from golden_route import GOLDEN
 
-from graphed_awkward import AwkwardBackend
+from graphed.awkward import AwkwardBackend
 
 
 def _single_key_block(key: int, rows: int = 3) -> ak.Array:

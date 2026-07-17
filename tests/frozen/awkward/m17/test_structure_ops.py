@@ -10,7 +10,7 @@ from __future__ import annotations
 import awkward as ak
 from m16_helpers import recorded, session_events
 
-from graphed_awkward import gak, project, project_buffers
+from graphed.awkward import gak, project, project_buffers
 
 JAGGED = [[3.0, 1.0], [], [7.0, 2.0, 5.0], [4.0]]
 WITH_NONE = [[3.0, None], [], [7.0, None, 5.0], [None]]

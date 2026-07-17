@@ -12,10 +12,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import pytest
-from graphed_core import PayloadDescriptor
 from m10_toy import CountingListBackend, from_list
 
 from graphed import GraphedTypeError, Session, compile_ir, evaluate_ir
+from graphed.core import PayloadDescriptor
 
 
 @dataclass(frozen=True)

@@ -5,7 +5,7 @@ from __future__ import annotations
 import analyses
 import numpy as np
 
-from graphed_checkpoint import NumpyCodec, PickleCodec, Store, run_resumable
+from graphed.checkpoint import NumpyCodec, PickleCodec, Store, run_resumable
 
 
 def test_pickle_codec_roundtrips_and_is_deterministic() -> None:

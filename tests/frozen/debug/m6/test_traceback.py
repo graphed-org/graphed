@@ -7,7 +7,7 @@ import pickle
 
 from analyses import numpy_oob
 
-from graphed_debug import SourceFrame, StageError, format_traceback, run
+from graphed.debug import SourceFrame, StageError, format_traceback, run
 
 
 def _err() -> StageError:
@@ -50,7 +50,18 @@ def test_collapses_graphed_internal_frames() -> None:
         run(s, bad, opt_level=1)
     except StageError as e:
         out = format_traceback(e)
-        assert "graphed_debug/" not in out and "graphed/" not in out
+        # graphed* internal frames are collapsed (provenance.capture skips module.startswith("graphed")).
+        # The consolidated repo dir is itself named "graphed", so the user file's own path contains
+        # "graphed/"; assert no INTERNAL package SOURCE file leaks instead of a bare "graphed/" substring.
+        internal_sources = (
+            "session.py",
+            "array.py",
+            "aggregate.py",
+            "runner.py",
+            "lowering.py",
+            "execute.py",
+        )
+        assert not any(src in out for src in internal_sources)
         assert "site-packages" not in out
         assert "analyses.py" in out
 

@@ -13,8 +13,8 @@ import pickle
 
 import pytest
 
-from graphed_core import Partition
-from graphed_core.plan import _partition_bytes, _partition_from_json, _partition_json
+from graphed.core import Partition
+from graphed.core.plan import _partition_bytes, _partition_from_json, _partition_json
 
 
 def test_blind_constructor_and_flags() -> None:

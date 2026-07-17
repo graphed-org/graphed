@@ -8,7 +8,7 @@ the same token, which could make the optimizer rebuild a boundary node with the 
 
 from __future__ import annotations
 
-from graphed_core import GraphStore
+from graphed.core import GraphStore
 
 # every symmetric binary op the frontend records (mirrors the shared Rust SYMMETRIC_OPS constant)
 SYMMETRIC_OPS = ["add", "mul", "and", "or", "eq", "ne", "maximum", "minimum"]

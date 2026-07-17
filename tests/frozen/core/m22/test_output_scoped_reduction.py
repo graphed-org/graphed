@@ -14,8 +14,8 @@ import threading
 
 import pytest
 
-import graphed_core as gc
-from graphed_core import IncrementalReducer
+import graphed.core as gc
+from graphed.core import IncrementalReducer
 
 
 def _two_analyses() -> tuple[gc.GraphStore, int, int]:

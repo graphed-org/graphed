@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from analyses import numpy_mismatch_in_fused_stage, numpy_oob
 
-import graphed_debug as gd
+import graphed.debug as gd
 
 
 def test_opt_level_0_is_one_to_one() -> None:

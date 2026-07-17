@@ -8,7 +8,7 @@ Two recording entry points, both backend-agnostic (graphed imports no numpy/awkw
   *physical* (moves rows, no idiom) and stays on ``Array.repartition``, which delegates here.
 - :func:`shuffle_plan` — the multi-source/multi-stage plan builder. The single-source
   ``aggregate_plan`` raises on a repartition boundary, so a shuffle serializes as a multi-stage
-  :class:`~graphed_core.DurablePlanV2`: a stage-1 map-write (route + coalesce) that a stage-2 gather
+  :class:`~graphed.core.DurablePlanV2`: a stage-1 map-write (route + coalesce) that a stage-2 gather
   depends on.
 
 The generic radix-split / coalesce-split / deterministic-merge ENGINE over the ``ShuffleBackend``
@@ -27,7 +27,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, Generic, TypeVar
 
-from graphed_core import DurablePlanV2, GraphStore, OpSpec, Partition, StageSpec, Task
+from graphed.core import DurablePlanV2, GraphStore, OpSpec, Partition, StageSpec, Task
 
 from .aggregate import resolve_backend
 from .array import Array
@@ -93,7 +93,7 @@ def shuffle_plan(
     backend: Callable[[], Any] | str | None = None,
     steps_per_file: int = 1,
 ) -> DurablePlanV2:
-    """Build a multi-stage :class:`~graphed_core.DurablePlanV2` for a repartition/shuffle (plan §3.2,
+    """Build a multi-stage :class:`~graphed.core.DurablePlanV2` for a repartition/shuffle (plan §3.2,
     §4.4). Mirrors ``aggregate_plan``'s signature. The recorded graph must carry a repartition
     ``Exchange`` (the barrier); the plan is a stage-1 map-write (route + coalesce over the session's
     partitioned source) that a stage-2 gather depends on — the real intra-run barrier edge."""

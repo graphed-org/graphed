@@ -1,4 +1,4 @@
-"""M11: the numpy calling idiom lives on ``graphed_numpy.NumpyArray``, not on ``graphed.Array``.
+"""M11: the numpy calling idiom lives on ``graphed.numpy.NumpyArray``, not on ``graphed.Array``.
 
 The factorization pin (design review 2026-06-10): the shared frontend proxy is backend-idiom-
 neutral; ``NumpyBackend.array_type`` supplies the subclass that completes numpy's method/property
@@ -8,9 +8,9 @@ surface, and every Session builder returns it.
 from __future__ import annotations
 
 import numpy as np
-from graphed import Array, Session
 
-from graphed_numpy import NumpyArray, NumpyBackend, from_array, from_record
+from graphed import Array, Session
+from graphed.numpy import NumpyArray, NumpyBackend, from_array, from_record
 
 
 def test_every_builder_returns_the_numpy_proxy() -> None:

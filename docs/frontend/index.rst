@@ -9,14 +9,13 @@ executor evaluates. The frontend is strictly backend-agnostic: numpy and awkward
 in their backends, common machinery (projection, compilation, the parquet/write I/O bases)
 lives here.
 
-Start with :doc:`design` for the engineering walkthrough, then :doc:`api`.
+Start with :doc:`design` for the engineering walkthrough, then the :doc:`/api` reference.
 
 .. toctree::
    :maxdepth: 2
    :caption: Contents
 
    design
-   api
    improvements
 
 Indices

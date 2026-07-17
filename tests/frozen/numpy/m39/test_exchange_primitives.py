@@ -12,7 +12,7 @@ from __future__ import annotations
 import numpy as np
 from golden_route import GOLDEN
 
-from graphed_numpy import NumpyBackend
+from graphed.numpy import NumpyBackend
 
 _DTYPE = np.dtype([("__joinkey__", np.uint64), ("v", np.int64)])
 

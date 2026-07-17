@@ -1,6 +1,6 @@
 """M32 — the dependency-free reference executor lives with the execution contract.
 
-`SequentialRunner` (and the `LocalResources` it uses) belong in `graphed_core.execution`, beside
+`SequentialRunner` (and the `LocalResources` it uses) belong in `graphed.core.execution`, beside
 the `Plan`/`Executor`/`WorkerResources` contract they implement — not in a frontend
 write-format module, where it had accreted only because that was the first dependency-free
 caller. Every layer that runs a plan (frontend writers, histogram aggregation, preservation,
@@ -9,8 +9,8 @@ benchmarks) now reaches it here without importing the executor package or anythi
 
 from __future__ import annotations
 
-from graphed_core import LocalResources, SequentialRunner
-from graphed_core.execution import ExecResult, Executor, Partition, Plan, Task
+from graphed.core import LocalResources, SequentialRunner
+from graphed.core.execution import ExecResult, Executor, Partition, Plan, Task
 
 
 def _count(partition: Partition, resources: object) -> list[int]:

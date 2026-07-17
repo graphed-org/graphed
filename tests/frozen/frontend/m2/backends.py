@@ -9,9 +9,8 @@ import platform
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
-from graphed_core import PayloadDescriptor
-
 from graphed import Array, Session
+from graphed.core import PayloadDescriptor
 
 _NUMERIC = {"int", "float"}
 

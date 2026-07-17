@@ -9,9 +9,9 @@ are deterministic: they are zeros (uninitialized memory would break the byte-ide
 from __future__ import annotations
 
 import numpy as np
-from graphed import Session
 
-import graphed_numpy as gn
+import graphed.numpy as gn
+from graphed import Session
 
 
 def test_concrete_creators_match_numpy() -> None:

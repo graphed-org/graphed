@@ -9,10 +9,10 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from analyses import ADL, agc_object_selection, record
-from graphed import Session
 from graphed_corpus import make_events
 
-from graphed_awkward import AwkwardBackend, from_awkward, gak
+from graphed import Session
+from graphed.awkward import AwkwardBackend, from_awkward, gak
 
 ALL = {**ADL, "agc": agc_object_selection}
 

@@ -13,14 +13,13 @@ deterministic and benchmarked against super-linear scaling in CI. This package m
 awkward — array semantics live in the backends.
 
 Start with :doc:`design` for the engineering walkthrough (the optimizer section is written to
-be read, not skimmed), then :doc:`api` for the surface.
+be read, not skimmed), then the :doc:`/api` reference for the surface.
 
 .. toctree::
    :maxdepth: 2
    :caption: Contents
 
    design
-   api
    improvements
 
 Indices

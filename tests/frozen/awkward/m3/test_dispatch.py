@@ -7,11 +7,11 @@ from pathlib import Path
 import awkward as ak
 import pytest
 from analyses import q1, record
-from graphed import Session
 from graphed_corpus import make_events
 
-from graphed_awkward import AwkwardBackend, from_awkward, gak, payloads
-from graphed_awkward._ops import apply
+from graphed import Session
+from graphed.awkward import AwkwardBackend, from_awkward, gak, payloads
+from graphed.awkward._ops import apply
 
 
 def _events() -> tuple[Session, object]:

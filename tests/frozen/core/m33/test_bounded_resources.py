@@ -8,8 +8,8 @@ The set of simultaneously-open handles is bounded (LRU-evicted, closing the evic
 
 from __future__ import annotations
 
-from graphed_core import LocalResources, SequentialRunner
-from graphed_core.execution import Partition, Plan, Task
+from graphed.core import LocalResources, SequentialRunner
+from graphed.core.execution import Partition, Plan, Task
 
 
 class _Handle:

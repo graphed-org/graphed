@@ -15,7 +15,6 @@ Start with :doc:`design` for the engineering walkthrough.
    :caption: Contents
 
    design
-   api
    improvements
 
 Indices

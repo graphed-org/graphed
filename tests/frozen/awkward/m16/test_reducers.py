@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 from m16_helpers import session_events
 
-from graphed_awkward import gak, project
+from graphed.awkward import gak, project
 
 ONE_INPUT = ["sum", "any", "all", "count", "count_nonzero", "min", "max", "prod", "mean", "std", "var", "ptp"]
 

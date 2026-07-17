@@ -62,7 +62,7 @@ class StageError(Exception):
         )
 
     # Custom pickling: Exception's default uses self.args; we carry structured fields instead, so the
-    # error round-trips byte-for-byte across a process boundary (only graphed_debug is needed to load).
+    # error round-trips byte-for-byte across a process boundary (only graphed.debug is needed to load).
     # `__new__` reconstructs a bare instance (no __init__), then __setstate__ restores the fields.
     def __reduce__(self) -> tuple[object, tuple[type[StageError]], dict[str, object]]:
         return (self.__class__.__new__, (self.__class__,), self.__dict__.copy())

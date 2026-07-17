@@ -15,11 +15,11 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from graphed import Session
-from graphed_awkward import AwkwardBackend, from_awkward
 from graphed_corpus import make_events
 
-from graphed_preserve import CORRECTIONLIB_PLUGIN, ONNX_PLUGIN, build_bundle, record_external
+from graphed import Session
+from graphed.awkward import AwkwardBackend, from_awkward
+from graphed.preserve import CORRECTIONLIB_PLUGIN, ONNX_PLUGIN, build_bundle, record_external
 
 N_EVENTS = 2500
 SEED = 2026
@@ -95,7 +95,7 @@ def record(
     events: Any, *, config: dict[str, Any], corr_bytes: bytes, model_bytes: bytes
 ) -> tuple[Session, Any, Any]:
     """Record the AGC slice; return (session, value=HT[sel], weight=(SF*score)[sel])."""
-    from graphed_awkward import gak  # noqa: PLC0415
+    from graphed.awkward import gak  # noqa: PLC0415
 
     syst = str(config.get("systematic", "nominal"))
     jes = float(config.get("jes_factor", 1.0))
@@ -172,7 +172,7 @@ def build_agc(
 def build_opaque(root: Path) -> Any:
     """A bundle whose weight is an opaque (cloudpickled) ``map`` node — a preservation risk, for the
     inspect risk-flagging test."""
-    from graphed_awkward import gak  # noqa: PLC0415
+    from graphed.awkward import gak  # noqa: PLC0415
 
     s = Session(AwkwardBackend())
     ev = from_awkward(s, "events", make_events_for())

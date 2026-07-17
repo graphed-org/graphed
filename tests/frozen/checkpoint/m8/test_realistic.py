@@ -11,8 +11,8 @@ import analyses
 import numpy as np
 import pytest
 
-from graphed_checkpoint import Store, run_resumable
-from graphed_checkpoint.runner import _SimulatedInterrupt
+from graphed.checkpoint import Store, run_resumable
+from graphed.checkpoint.runner import _SimulatedInterrupt
 
 
 def test_real_analysis_chunked_resume_matches_single_pass(tmp_path) -> None:  # type: ignore[no-untyped-def]

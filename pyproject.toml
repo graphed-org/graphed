@@ -1,0 +1,119 @@
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[project]
+name = "graphed"
+version = "0.0.1"
+description = "A schedulable, serializable, debuggable HEP task-graph system with an interned Rust IR and equality-saturation optimizer"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "graphed-org" }]
+classifiers = [
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Programming Language :: Rust",
+]
+# Base install stays light: the frontend + the Rust core (shipped in the wheel) + executing.
+# Backends and preservation frameworks are opt-in extras; `import graphed.awkward` etc. raise a
+# clear ImportError until the matching extra is installed.
+dependencies = ["executing>=2.0"]
+
+[project.optional-dependencies]
+numpy = ["numpy>=1.24"]
+awkward = ["awkward>=2.6", "numpy>=1.24"]
+parquet = ["pyarrow>=15"]
+checkpoint = ["cloudpickle"]
+dashboard = ["perspective-python==4.5.1", "tornado>=6.2", "websocket-client>=1.6"]
+preserve = ["awkward>=2.6", "numpy>=1.24", "correctionlib>=2.6", "onnx>=1.15", "onnxruntime>=1.17", "cloudpickle"]
+ml = ["torch", "xgboost", "tritonclient[http]", "tensorflow", "jax"]
+all = [
+  "numpy>=1.24", "awkward>=2.6", "pyarrow>=15", "cloudpickle",
+  "correctionlib>=2.6", "onnx>=1.15", "onnxruntime>=1.17",
+  "perspective-python==4.5.1", "tornado>=6.2", "websocket-client>=1.6",
+]
+dev = [
+  "pytest", "pytest-cov", "pytest-xdist", "coverage[toml]", "hypothesis", "mypy", "ruff",
+  "numpy>=1.24", "awkward>=2.6", "pyarrow>=15", "cloudpickle", "pandas", "vector",
+  "correctionlib>=2.6", "onnx>=1.15", "onnxruntime>=1.17",
+  "boost-histogram>=1.4", "hist>=2.7",
+  "perspective-python==4.5.1", "tornado>=6.2", "websocket-client>=1.6",
+]
+docs = ["sphinx", "furo", "myst-parser", "graphviz"]
+
+[project.urls]
+Homepage = "https://github.com/graphed-org/graphed"
+
+[tool.maturin]
+# Mixed layout: the Rust extension is nested at graphed.core.graphed_core, re-exported by the
+# graphed.core package. python-source ships the whole graphed/ package tree (all pure-Python
+# subpackages) alongside the compiled module. The PyO3 `#[pymodule] fn graphed_core` leaf name and
+# `[lib] name` are unchanged; only this dotted module-name moved.
+python-source = "python"
+module-name = "graphed.core.graphed_core"
+features = ["pyo3/extension-module"]
+
+[tool.ruff]
+line-length = 110
+src = ["python", "tests"]
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "C4", "RUF", "PLC0415"]
+ignore = ["E501"]
+
+[tool.mypy]
+# 3.12 pin: numpy 2.5.0 (py>=3.12) ships PEP695 stubs that require mypy on 3.12+.
+python_version = "3.12"
+strict = true
+files = ["python"]
+
+[[tool.mypy.overrides]]
+module = [
+  "awkward.*", "numpy.*", "onnx.*", "onnxruntime.*", "correctionlib.*", "cloudpickle.*",
+  "pyarrow.*", "perspective.*", "tornado.*", "websocket.*", "boost_histogram.*", "hist.*",
+  "vector.*", "pandas.*", "keras.*", "tensorflow.*", "torch.*", "xgboost.*", "jax.*",
+  "tritonclient.*", "graphed_histogram.*",
+]
+ignore_missing_imports = true
+follow_imports = "skip"
+
+[[tool.mypy.overrides]]
+module = [
+  "graphed.awkward._ops", "graphed.awkward.backend", "graphed.awkward.functions",
+  "graphed.awkward.shuffle", "graphed.numpy", "graphed.numpy.shuffle",
+]
+warn_return_any = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+# Per-subtree runs (see scripts/run-tests.sh) keep each package's frozen suite in its own process
+# (prepend import mode + isolation, so duplicate test basenames and the sys.modules purity guard
+# behave as in the origin repos). Same-dir helper imports resolve via prepend automatically; the
+# pythonpath lists ONLY the vendored corpus package + the CROSS-dir helper providers (a test dir
+# importing a helper from a different dir). `analyses` is listed from checkpoint/m8 alone — awkward/m3
+# and debug/m6 also ship an `analyses.py`, but those are same-dir imports (prepend covers them), so
+# keeping them off the path avoids the top-level-name collision.
+pythonpath = [
+  "python",
+  "tests/_corpus",
+  "tests/frozen/frontend/m2",
+  "tests/frozen/frontend/m10",
+  "tests/frozen/frontend/m13",
+  "tests/frozen/frontend/m15",
+  "tests/frozen/awkward/m16",
+  "tests/frozen/checkpoint/m8",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["graphed"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 90

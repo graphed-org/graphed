@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import time
 
-import graphed_core as gc
+import graphed.core as gc
 
 
 def _systematics(n_variations: int, selection_depth: int) -> tuple[gc.GraphStore, int]:

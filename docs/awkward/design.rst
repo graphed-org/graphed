@@ -20,7 +20,7 @@ The backend in one example
 
     import awkward as ak
     from graphed import Session
-    from graphed_awkward import AwkwardBackend, from_awkward, gak, project, project_buffers
+    from graphed.awkward import AwkwardBackend, from_awkward, gak, project, project_buffers
 
     events = ak.Array({"Jet": [[{"pt": 50.0, "eta": 0.1}, {"pt": 30.0, "eta": 2.2}],
                                [],

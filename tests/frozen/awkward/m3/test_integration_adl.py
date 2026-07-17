@@ -12,12 +12,12 @@ from __future__ import annotations
 import awkward as ak
 import pytest
 from analyses import ADL
-from graphed import Session
 from graphed_corpus import make_events
 from graphed_corpus.analyses import adl as corpus_adl
 from graphed_corpus.histograms import bin_values, hist1d
 
-from graphed_awkward import AwkwardBackend, from_awkward
+from graphed import Session
+from graphed.awkward import AwkwardBackend, from_awkward
 
 ADL_NAMES = [f"q{i}" for i in range(1, 9)]
 

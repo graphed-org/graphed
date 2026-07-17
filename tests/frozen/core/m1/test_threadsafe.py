@@ -6,7 +6,7 @@ from __future__ import annotations
 import sysconfig
 import threading
 
-import graphed_core as gc
+import graphed.core as gc
 
 
 def test_concurrent_overlapping_builds_intern_consistently() -> None:

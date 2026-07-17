@@ -5,8 +5,8 @@ from __future__ import annotations
 import agc
 import pytest
 
-from graphed_preserve import PreserveError, build_bundle
-from graphed_preserve.externals import evaluate_external
+from graphed.preserve import PreserveError, build_bundle
+from graphed.preserve.externals import evaluate_external
 
 
 def test_build_requires_payload_bytes_for_non_opaque_externals(tmp_path) -> None:  # type: ignore[no-untyped-def]
@@ -28,7 +28,7 @@ def test_build_requires_payload_bytes_for_non_opaque_externals(tmp_path) -> None
 
 
 def test_build_rejects_payload_that_does_not_match_its_hash(tmp_path) -> None:  # type: ignore[no-untyped-def]
-    from graphed_preserve import CORRECTIONLIB_PLUGIN, ONNX_PLUGIN  # noqa: PLC0415
+    from graphed.preserve import CORRECTIONLIB_PLUGIN, ONNX_PLUGIN  # noqa: PLC0415
 
     events = agc.make_events_for()
     corr, model = agc.correctionlib_json(), agc.onnx_model()

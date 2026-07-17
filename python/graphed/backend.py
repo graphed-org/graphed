@@ -11,9 +11,9 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Protocol, runtime_checkable
 
-from graphed_core import PayloadDescriptor
+from graphed.core import PayloadDescriptor
 
-# Param values are scalars the graphed-core store can intern (must match graphed_core's ParamValue).
+# Param values are scalars the graphed-core store can intern (must match graphed.core's ParamValue).
 ParamValue = int | float | bool | str
 
 

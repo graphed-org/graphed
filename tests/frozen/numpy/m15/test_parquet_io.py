@@ -13,6 +13,7 @@ import os
 
 import numpy as np
 import pytest
+
 from graphed import Session
 
 pytest.importorskip("pyarrow")
@@ -20,11 +21,11 @@ import pyarrow as pa  # noqa: I001
 import pyarrow.parquet as pq
 
 from graphed import parquet as gpq
-from graphed_core.execution import Plan, SequentialRunner
+from graphed.core.execution import Plan, SequentialRunner
 
-import graphed_numpy as gn
-import graphed_numpy.io as gio
-from graphed_numpy import NumpyBackend, from_record
+import graphed.numpy as gn
+import graphed.numpy.io as gio
+from graphed.numpy import NumpyBackend, from_record
 
 LENGTHS = [6, 4, 5]
 

@@ -15,7 +15,6 @@ Start with :doc:`design` for the engineering walkthrough.
    requirements/ops_catalog
    graph_bloat_note
    design
-   api
    improvements
 
 Indices

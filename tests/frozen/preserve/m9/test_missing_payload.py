@@ -11,7 +11,7 @@ import shutil
 import agc
 import pytest
 
-from graphed_preserve import Bundle, UnresolvedPayload, reproduce
+from graphed.preserve import Bundle, UnresolvedPayload, reproduce
 
 
 def _copy(bundle, dest):  # type: ignore[no-untyped-def]

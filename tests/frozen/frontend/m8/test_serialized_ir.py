@@ -2,16 +2,16 @@
 
 A user records an analysis once and serializes it to the canonical, versioned, byte-identical
 durable IR (optionally optimized by the M4 reducer first). That byte string is what a
-`graphed_core.DurablePlan` carries and re-targets at many datasets. These tests pin: the bytes
+`graphed.core.DurablePlan` carries and re-targets at many datasets. These tests pin: the bytes
 round-trip through graphed-core, are deterministic, and the optimized form is the reduced graph.
 """
 
 from __future__ import annotations
 
-import graphed_core
 import pytest
 from backends import ListBackend, from_list
 
+import graphed.core
 from graphed import Session
 
 
@@ -27,7 +27,7 @@ def _record() -> tuple[Session, object]:
 def test_serialized_ir_roundtrips_through_graphed_core() -> None:
     s, result = _record()
     blob = s.serialized_ir(result, optimize=False)
-    back = graphed_core.GraphStore.deserialize(blob)
+    back = graphed.core.GraphStore.deserialize(blob)
     assert back.node_count() == s.node_count()
     assert back.serialize() == blob  # byte-identical round trip
 
@@ -45,7 +45,7 @@ def test_optimized_ir_keeps_the_output_and_is_the_reduced_graph() -> None:
     optimized = s.serialized_ir(result, optimize=True)
     expected = s._store.reduce(outputs=[result.node_id])[0].serialize()
     assert optimized == expected
-    assert graphed_core.GraphStore.deserialize(optimized).node_count() > 0  # not DCE'd to nothing
+    assert graphed.core.GraphStore.deserialize(optimized).node_count() > 0  # not DCE'd to nothing
     assert s._store.outputs() == []  # and serializing left NO state behind
 
 
@@ -58,12 +58,12 @@ def test_optimize_without_an_output_is_rejected() -> None:
 def test_serialized_ir_feeds_a_durable_plan() -> None:
     # the headline usability path: record -> serialize -> DurablePlan -> retarget at a dataset
     s, result = _record()
-    plan = graphed_core.DurablePlan(
+    plan = graphed.core.DurablePlan(
         ir=s.serialized_ir(result),
-        process=graphed_core.OpSpec.from_ref("builtins:len"),
-        combine=graphed_core.OpSpec.from_ref("operator:add"),
-        empty=graphed_core.OpSpec.from_ref("builtins:int"),
+        process=graphed.core.OpSpec.from_ref("builtins:len"),
+        combine=graphed.core.OpSpec.from_ref("operator:add"),
+        empty=graphed.core.OpSpec.from_ref("builtins:int"),
     )
-    deployed = plan.for_dataset(graphed_core.Dataset("file://x.root", n_events=100), chunk_size=40)
+    deployed = plan.for_dataset(graphed.core.Dataset("file://x.root", n_events=100), chunk_size=40)
     assert len(deployed.partitions) == 3
     assert deployed.ir_fingerprint() == plan.ir_fingerprint()  # same compiled computation

@@ -10,10 +10,10 @@ import os
 
 import awkward as ak
 import pytest
-from graphed import Session
 from m16_helpers import EVENTS, session_events
 
-from graphed_awkward import AwkwardBackend, from_parquet, gak
+from graphed import Session
+from graphed.awkward import AwkwardBackend, from_parquet, gak
 
 
 def test_fields_and_type_answer_from_the_form_without_recording() -> None:

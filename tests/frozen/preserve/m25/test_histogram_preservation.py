@@ -12,13 +12,12 @@ from __future__ import annotations
 
 import awkward as ak
 import boost_histogram as bh
-import graphed_histogram as gh
 import numpy as np
 import pytest
-from graphed import Session
-from graphed_awkward import AwkwardBackend, from_awkward, gak
 
-from graphed_preserve import (
+from graphed import Session
+from graphed.awkward import AwkwardBackend, from_awkward, gak
+from graphed.preserve import (
     HISTOGRAM_PLUGIN,
     PreserveError,
     build_bundle,
@@ -27,6 +26,9 @@ from graphed_preserve import (
     reproduce,
     validate_plugin,
 )
+
+# graphed-histogram is a separate optional package; run this integration suite only when installed.
+gh = pytest.importorskip("graphed_histogram")
 
 EVENTS = ak.Array({"x": [[10.0, 40.0], [], [70.0, 25.0, 90.0]] * 30})
 

@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import numpy as np
-from graphed import Session
 
-from graphed_numpy import NumpyBackend, NumpyForm, from_array
+from graphed import Session
+from graphed.numpy import NumpyBackend, NumpyForm, from_array
 
 
 def test_twenty_line_program_builds_correct_graph_and_evaluates() -> None:

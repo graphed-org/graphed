@@ -13,9 +13,9 @@ from typing import Any
 import agc
 import numpy as np
 import pytest
-from graphed_core import GraphStore
 
-from graphed_preserve import UnresolvedPayload, inspect, reproduce
+from graphed.core import GraphStore
+from graphed.preserve import UnresolvedPayload, inspect, reproduce
 
 
 def test_inspect_renders_ir_provenance_and_payload_inventory(agc_bundle: tuple[Any, np.ndarray]) -> None:

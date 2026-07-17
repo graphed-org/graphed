@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from graphed import Session
 
-from graphed_numpy import NumpyBackend, from_array
+from graphed import Session
+from graphed.numpy import NumpyBackend, from_array
 
 V = np.array([1.0, 2.0, 3.0, 4.0])
 IDX = np.array([0, 2])

@@ -3,7 +3,7 @@ How graphed works
 
 ``graphed`` is the recording frontend of the ecosystem. A user writes ordinary array
 expressions; this package turns each operation into a node in the Rust-backed
-:mod:`graphed_core` store and hands back a lightweight proxy. Nothing computes until something
+:mod:`graphed.core` store and hands back a lightweight proxy. Nothing computes until something
 asks — and when something asks, what runs is the *reduced* graph, never a replay of the user's
 operations one by one.
 
@@ -21,7 +21,7 @@ projection machinery, compilation/evaluation, and the two shared I/O bases.
 Recording: Session and the Array proxy
 --------------------------------------
 
-A :class:`~graphed.Session` owns one ``graphed_core.GraphStore`` plus the side tables the core
+A :class:`~graphed.Session` owns one ``graphed.core.GraphStore`` plus the side tables the core
 deliberately does not hold: per-node **forms** (backend type/shape descriptions), **provenance**
 (the user source line that recorded each node), and source/external metadata. Recording an op is
 three steps::
@@ -37,7 +37,7 @@ frame — before any data is read. Try it::
 
     import numpy as np
     from graphed import Session
-    from graphed_numpy import NumpyBackend, from_array
+    from graphed.numpy import NumpyBackend, from_array
 
     s = Session(NumpyBackend())
     x = from_array(s, "x", np.arange(6.0))
@@ -63,7 +63,7 @@ Two recording details with outsized consequences:
   or via a helper — yields the same node id. Sessions can be long-lived and exploratory; the
   graph holds the *set* of distinct computations, not the history of statements.
 * **Incremental reduction is opt-in at the session.** ``Session(backend, incremental=True)``
-  maintains the reduced canonical form *as the graph is built* (a ``graphed_core``
+  maintains the reduced canonical form *as the graph is built* (a ``graphed.core``
   ``IncrementalReducer`` consuming deltas), so a large un-reduced graph never exists; the
   one-shot and incremental paths are pinned byte-identical.
 
@@ -159,7 +159,7 @@ Two small modules host what every I/O integration shares, with **no array-librar
 :mod:`graphed.write`
     The format-agnostic partitioned-write skeleton: ``write_plan`` builds a task graph whose
     tasks write one part each and *report their paths* up a deterministic combine tree;
-    ``graphed_core.execution.SequentialRunner`` is the dependency-free reference runner (any real executor accepts the
+    ``graphed.core.execution.SequentialRunner`` is the dependency-free reference runner (any real executor accepts the
     same plan); ``file_bases``/``blind_part_index``/``step_of``/``part_path`` let a worker
     derive its own part name from its partition plus an O(#files) table. The module also
     defines :class:`~graphed.write.PartitionedSource` — the read-side protocol (``partitions()``

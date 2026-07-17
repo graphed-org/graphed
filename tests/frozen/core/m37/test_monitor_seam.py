@@ -1,4 +1,4 @@
-"""M37 frozen suite (graphed-core slice): the passive monitor seam in ``graphed_core.execution``.
+"""M37 frozen suite (graphed-core slice): the passive monitor seam in ``graphed.core.execution``.
 
 The contract: an executor *emits* ``TaskEvent``s through a ``Monitor``; the seam is data-only and
 purely passive — attaching a monitor MUST NOT change the reduced result, and a monitor that raises
@@ -11,7 +11,7 @@ import dataclasses
 
 import pytest
 
-from graphed_core import (
+from graphed.core import (
     Monitor,
     Partition,
     Plan,

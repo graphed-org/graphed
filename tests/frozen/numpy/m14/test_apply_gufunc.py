@@ -12,13 +12,13 @@ from __future__ import annotations
 
 import warnings
 
-import graphed_core
 import numpy as np
 import pytest
-from graphed import GraphedTypeError, ProjectionError, Session
 
-import graphed_numpy as gn
-from graphed_numpy import NumpyBackend, from_array
+import graphed.core
+import graphed.numpy as gn
+from graphed import GraphedTypeError, ProjectionError, Session
+from graphed.numpy import NumpyBackend, from_array
 
 P3 = np.array([[3.0, 1.0, 4.0], [1.0, 5.0, 9.0], [2.0, 6.0, 5.0], [3.0, 5.0, 8.0]])
 Q3 = np.array([[2.0, 7.0, 1.0], [8.0, 2.0, 8.0], [1.0, 8.0, 2.0], [8.0, 4.0, 5.0]])
@@ -77,7 +77,7 @@ def test_descriptor_carries_the_signature_as_io_schema() -> None:
     a = from_array(s, "a", P3)
     b = from_array(s, "b", Q3)
     out = gn.apply_gufunc(_rowdot, "(i),(i)->()", a, b, output_dtype=np.float64, name="rowdot")
-    g = graphed_core.GraphStore.deserialize(s.serialized_ir(out, optimize=False))
+    g = graphed.core.GraphStore.deserialize(s.serialized_ir(out, optimize=False))
     (node,) = [n for n in g.nodes() if n["id"] == out.node_id]
     assert node["kind"] == "external"
     assert node["descriptor"]["io_schema"] == "(i),(i)->()"

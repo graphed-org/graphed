@@ -5,7 +5,7 @@ the same skeleton: a set of partitions becomes a TASK GRAPH of write tasks (each
 output part and reports its path), the compute-disabled graph run later IS the compute-enabled
 mode (R15.4), workers derive their own part index from their partition plus an O(#files) base
 table (R15.9 — no per-partition path map pickled into every task), and any R7 executor runs the
-plan (the dependency-free key-ordered reference is ``graphed_core.execution.SequentialRunner``).
+plan (the dependency-free key-ordered reference is ``graphed.core.execution.SequentialRunner``).
 This module carries that skeleton with NO format content; specializations supply only the array
 codec and naming suffix.
 """
@@ -16,8 +16,8 @@ import os
 from collections.abc import Callable, Hashable, Mapping, Sequence
 from typing import Any, Protocol, runtime_checkable
 
-from graphed_core import Partition
-from graphed_core.execution import Plan, Task, WorkerResources
+from graphed.core import Partition
+from graphed.core.execution import Plan, Task, WorkerResources
 
 
 # ---- the deferred write plan --------------------------------------------------------------------

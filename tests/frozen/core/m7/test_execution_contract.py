@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pickle
 
-import graphed_core as gc
+import graphed.core as gc
 
 
 def test_partition_entry_count() -> None:

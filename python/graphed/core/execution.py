@@ -10,7 +10,7 @@ stays a stable, minimal seam. A `Plan` is reduced to a single result by an `Exec
 - `open_once` gives file-locality (a uri opened once per worker);
 - `StopCondition` ends the run early (target events / wall-clock / error budget / …);
 - **error-propagation obligation**: a worker failure (process OR thread) must reach the driver
-  *intact and picklable* — in particular a `graphed_debug.StageError` must NOT degrade to an opaque
+  *intact and picklable* — in particular a `graphed.debug.StageError` must NOT degrade to an opaque
   string, so the driver can render the user-source traceback (plan A.3 #8).
 """
 

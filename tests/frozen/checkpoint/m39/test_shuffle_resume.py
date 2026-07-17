@@ -15,8 +15,8 @@ from __future__ import annotations
 import pytest
 import shuffle_analyses as sa
 
-from graphed_checkpoint import Store, run_shuffle_resumable
-from graphed_checkpoint.runner import _SimulatedInterrupt
+from graphed.checkpoint import Store, run_shuffle_resumable
+from graphed.checkpoint.runner import _SimulatedInterrupt
 
 N_PROD, N_DEST = 3, 2
 _TOTAL = sa.n_blocks(N_PROD, N_DEST)  # 3 map-write + 2 gather = 5 blocks

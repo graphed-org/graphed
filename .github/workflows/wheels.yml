@@ -1,0 +1,70 @@
+name: wheels
+
+# Build-only release artifacts (plan A.5 / M0): per-interpreter wheels via maturin on every
+# OS x arch target, including a DEDICATED free-threaded 3.14t wheel, plus the sdist. macOS builds
+# universal2 (x86_64 + arm64 in one wheel). Each wheel carries the compiled core AND all pure-Python
+# subpackages (one distribution). No PyPI upload here — see release.yml.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: wheels-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: wheel ${{ matrix.os }} py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest]
+        python: ["3.11", "3.12", "3.13", "3.14", "3.14t"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Add macOS universal2 targets
+        if: runner.os == 'macOS'
+        run: rustup target add x86_64-apple-darwin aarch64-apple-darwin
+      - name: Build wheel (universal2 on macOS)
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip maturin
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            maturin build --release --out dist --target universal2-apple-darwin -i python
+          else
+            maturin build --release --out dist -i python
+          fi
+      - name: Smoke-test the wheel (base install stays light)
+        shell: bash
+        run: |
+          python -m pip install dist/*.whl
+          python -c "import graphed, graphed.core; print('graphed', graphed.__version__, '/ core', graphed.core.version())"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.os }}-py${{ matrix.python }}
+          path: dist/*.whl
+
+  sdist:
+    name: sdist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@stable
+      - run: |
+          python -m pip install --upgrade pip maturin
+          maturin sdist --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: dist/*.tar.gz

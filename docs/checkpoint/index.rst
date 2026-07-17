@@ -2,7 +2,7 @@ graphed-checkpoint
 ==================
 
 Content-addressed checkpoint store, deterministic resume, and error harvesting for ``graphed``
-(milestone M8). On top of the M8 ``graphed_core.DurablePlan`` (versioned, byte-identical IR +
+(milestone M8). On top of the M8 ``graphed.core.DurablePlan`` (versioned, byte-identical IR +
 content-addressed ``task_id``), this package adds the durable side of M8:
 
 - a crash-safe, content-addressed ``Store`` (atomic blob writes + an append-only manifest/journal +
@@ -22,7 +22,6 @@ Start with :doc:`design` for the engineering walkthrough.
    :caption: Contents
 
    design
-   api
    improvements
 
 Indices

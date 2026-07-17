@@ -18,14 +18,14 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from graphed_core.execution import TaskEvent, WorkerProfiler
+from graphed.core.execution import TaskEvent, WorkerProfiler
 
 from .. import _sampler
 from . import _wire
 
 
 class NetworkMonitor:
-    """A ``graphed_core.execution.Monitor`` that streams events to a dashboard server over a
+    """A ``graphed.core.execution.Monitor`` that streams events to a dashboard server over a
     websocket. Construct with the server's ingest URL (``DashboardServer.ingest_url``)."""
 
     def __init__(self, ingest_url: str, *, profile: bool = False, queue_size: int = 10000) -> None:

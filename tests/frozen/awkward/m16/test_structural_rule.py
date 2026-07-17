@@ -12,7 +12,7 @@ from __future__ import annotations
 import pytest
 from m16_helpers import recorded, session_events
 
-from graphed_awkward import gak
+from graphed.awkward import gak
 
 REDUCER_KINDS = [
     "sum",

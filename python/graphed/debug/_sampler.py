@@ -1,5 +1,5 @@
 """The M37 statistical sampler: an **off-thread** stack sampler implementing the
-``graphed_core.execution.WorkerProfiler`` protocol.
+``graphed.core.execution.WorkerProfiler`` protocol.
 
 Unlike a per-call profiler (pyinstrument hooks every Python call → ~3x overhead on call-heavy HEP
 code, regardless of sample rate), this samples the worker's *task thread* from a **separate daemon

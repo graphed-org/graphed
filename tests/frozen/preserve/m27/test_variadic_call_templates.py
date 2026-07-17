@@ -24,11 +24,11 @@ import awkward as ak
 import fake_triton_multi
 import numpy as np
 import pytest
-from graphed import Session
-from graphed_awkward import AwkwardBackend, from_awkward
 from graphed_corpus import make_events
 
-from graphed_preserve import (
+from graphed import Session
+from graphed.awkward import AwkwardBackend, from_awkward
+from graphed.preserve import (
     CORRECTIONLIB_PLUGIN,
     HISTOGRAM_PLUGIN,
     TRITON_PLUGIN,
@@ -151,7 +151,7 @@ def test_correctionlib_legacy_default_is_unchanged() -> None:
 
 
 def test_correctionlib_jagged_replay_through_a_bundle(tmp_path) -> None:  # type: ignore[no-untyped-def]
-    from graphed_awkward import gak  # noqa: PLC0415
+    from graphed.awkward import gak  # noqa: PLC0415
 
     events = make_events(n_events=800, seed=13)
     s = Session(AwkwardBackend())
@@ -178,8 +178,11 @@ def test_correctionlib_jagged_replay_through_a_bundle(tmp_path) -> None:  # type
 # ---------------------------------- histogram: multi-axis + multi-weight ---------------------------
 def test_histogram_multi_axis_fill_replays_through_a_bundle(tmp_path) -> None:  # type: ignore[no-untyped-def]
     import boost_histogram as bh  # noqa: PLC0415
-    import graphed_histogram as gh  # noqa: PLC0415
-    from graphed_awkward import gak  # noqa: PLC0415
+    import pytest  # noqa: PLC0415
+
+    from graphed.awkward import gak  # noqa: PLC0415
+
+    gh = pytest.importorskip("graphed_histogram")  # separate optional package
 
     events = ak.Array({"x": [[1.0, 4.0], [], [7.0, 2.5]] * 40, "y": [[0.1, 0.4], [], [0.7, 0.2]] * 40})
     s = Session(AwkwardBackend())
@@ -199,7 +202,9 @@ def test_histogram_multi_axis_fill_replays_through_a_bundle(tmp_path) -> None:  
 
 def test_histogram_multiple_weights_multiply_on_replay(tmp_path) -> None:  # type: ignore[no-untyped-def]
     import boost_histogram as bh  # noqa: PLC0415
-    import graphed_histogram as gh  # noqa: PLC0415
+    import pytest  # noqa: PLC0415
+
+    gh = pytest.importorskip("graphed_histogram")  # separate optional package
 
     events = ak.Array(
         {"x": [1.0, 4.0, 7.0, 2.5] * 30, "w1": [0.5, 1.0, 2.0, 1.5] * 30, "w2": [1.0, 0.5, 1.0, 2.0] * 30}
@@ -234,7 +239,7 @@ PARAMS = {
 
 
 def test_triton_multiple_named_inputs_replay_through_a_bundle(tmp_path) -> None:  # type: ignore[no-untyped-def]
-    from graphed_awkward import gak  # noqa: PLC0415
+    from graphed.awkward import gak  # noqa: PLC0415
 
     client = fake_triton_multi.serve(PARAMS["url"], DESCRIPTOR)
     events = make_events(n_events=600, seed=7)

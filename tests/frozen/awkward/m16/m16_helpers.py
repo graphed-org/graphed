@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import awkward as ak
-import graphed_core
-from graphed import Array, Session
 
-from graphed_awkward import AwkwardBackend, from_awkward
+import graphed.core
+from graphed import Array, Session
+from graphed.awkward import AwkwardBackend, from_awkward
 
 EVENTS = ak.Array(
     {
@@ -28,6 +28,6 @@ def session_events() -> tuple[Session, Array, ak.Array]:
 
 def recorded(s: Session, arr: Array) -> dict[str, object]:
     """The (kind, name, params) of the node ``arr`` denotes, read back from the serialized IR."""
-    g = graphed_core.GraphStore.deserialize(s.serialized_ir(arr, optimize=False))
+    g = graphed.core.GraphStore.deserialize(s.serialized_ir(arr, optimize=False))
     (node,) = [n for n in g.nodes() if n["id"] == arr.node_id]
     return node

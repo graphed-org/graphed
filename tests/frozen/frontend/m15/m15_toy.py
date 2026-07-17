@@ -5,9 +5,8 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
-from graphed_core import PayloadDescriptor
-
 from graphed import Array, Session
+from graphed.core import PayloadDescriptor
 
 
 @dataclass(frozen=True)

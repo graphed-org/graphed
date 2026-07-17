@@ -5,11 +5,11 @@ were dask-awkward failure points)."""
 
 from __future__ import annotations
 
-from graphed import Session
 from graphed_corpus import make_events
 
-from graphed_awkward import AwkwardBackend, from_awkward, gak
-from graphed_awkward.projection import project
+from graphed import Session
+from graphed.awkward import AwkwardBackend, from_awkward, gak
+from graphed.awkward.projection import project
 
 
 def _events(s: Session) -> object:

@@ -15,7 +15,7 @@ from ._client import NetworkMonitor
 from ._server import DashboardServer
 
 if TYPE_CHECKING:
-    from graphed_core.execution import Executor
+    from graphed.core.execution import Executor
 
 
 class Dashboard:

@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from functools import reduce
 from typing import Any, Protocol
 
-from graphed_core import Partition
+from graphed.core import Partition
 
 Process = Callable[[Partition, Any], Any]
 Combine = Callable[[Any, Any], Any]

@@ -45,7 +45,7 @@ StageError: the diagnosis as a real exception
 ---------------------------------------------
 
 ``run(session, array, opt_level=..., partition=...)`` executes the lowered graph on the
-session's source data and, on the first failing op, raises :class:`~graphed_debug.StageError`
+session's source data and, on the first failing op, raises :class:`~graphed.debug.StageError`
 carrying:
 
 * ``op`` — the failing operator;
@@ -77,9 +77,9 @@ A worked failure
 
 ::
 
-    import numpy as np, graphed_debug as gd
+    import numpy as np, graphed.debug as gd
     from graphed import Session
-    from graphed_numpy import NumpyBackend, from_array
+    from graphed.numpy import NumpyBackend, from_array
 
     s   = Session(NumpyBackend())
     x   = from_array(s, "x", np.arange(4.0))
@@ -128,7 +128,7 @@ Bokeh server on every client, nothing runs until you ask:
 
 .. code-block:: python
 
-   from graphed_debug import Dashboard
+   from graphed.debug import Dashboard
    from graphed_exec_local.executors import ProcessExecutor
 
    with Dashboard(port=8888, profile=True) as dash:   # serves http://127.0.0.1:8888/
@@ -137,7 +137,7 @@ Bokeh server on every client, nothing runs until you ask:
 
 How it fits together, in three layers with strict boundaries:
 
-* **The seam (``graphed_core.execution``).** ``TaskEvent`` (a frozen, picklable, *display-only*
+* **The seam (``graphed.core.execution``).** ``TaskEvent`` (a frozen, picklable, *display-only*
   record), ``TaskPhase``, and the ``Monitor`` / ``WorkerProfiler`` protocols are pure data — core
   gains no web/network/profiler dependency. The vocabulary is shared by every executor, so it lives
   at the layer it serves, and it is **transport- and render-agnostic** (it survived the move from an
@@ -167,7 +167,7 @@ events to a background sender; a full queue or a down connection **drops** them 
 raises into the executor — the determinism gate is green attached-or-not.
 
 The statistical sampler is **off-thread** (the dask ``distributed.profile`` technique), in pure
-stdlib (:mod:`graphed_debug._sampler`). A per-call profiler such as pyinstrument hooks *every* Python
+stdlib (:mod:`graphed.debug._sampler`). A per-call profiler such as pyinstrument hooks *every* Python
 call, taxing call-heavy HEP code ~3x on the very thread doing the data work regardless of sample
 rate; instead, ``StackSampler`` samples its worker's task thread from a **separate daemon thread** via
 ``sys._current_frames()`` every 10 ms, so the data path is never hooked (array kernels release the

@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from functools import reduce
 from typing import Any
 
-from graphed_core import DurablePlan, DurablePlanV2, Partition
+from graphed.core import DurablePlan, DurablePlanV2, Partition
 
 from .codec import Codec, PickleCodec
 from .errors import dead_letter_descriptor
@@ -179,7 +179,7 @@ def run_shuffle_resumable(
     resources: Any = None,
     _kill_after: int | None = None,
 ) -> ShuffleResumeResult:
-    """Run a two-phase :class:`~graphed_core.DurablePlanV2` (map-write -> gather) against ``store``,
+    """Run a two-phase :class:`~graphed.core.DurablePlanV2` (map-write -> gather) against ``store``,
     skipping already-journaled blocks (plan §5.3/§7.3, the M8 kill/resume pattern extended to two
     stages). Each block is content-addressed by its V2 ``task_id`` and journaled with its ``stage``
     and its upstream input block hashes (``deps``); a stage's tasks receive the payloads of the

@@ -7,10 +7,10 @@ Operations Catalog through graphed. Each returns the final Array of the recorded
 from __future__ import annotations
 
 import numpy as np
-from graphed import Array, Session
 from graphed_corpus import make_events
 
-from graphed_awkward import AwkwardBackend, from_awkward, gak
+from graphed import Array, Session
+from graphed.awkward import AwkwardBackend, from_awkward, gak
 
 
 def _delta_phi(a: Array, b: Array) -> Array:
