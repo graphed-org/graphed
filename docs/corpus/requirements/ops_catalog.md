@@ -4,7 +4,7 @@ Distilled from the A.8 reference corpus. Each entry names an operation/pattern t
 frontend must support, the corpus analysis it is exercised by, and the **milestone** that must
 deliver it. "Extract, do not invent": every row below is exercised by a runnable fixture in
 `src/graphed_corpus/` (the catalog and the fixtures are kept in lock-step by
-`tests/frozen/m05/test_catalog.py`).
+`tests/frozen/corpus/m05/test_catalog.py`).
 
 > **Fixture data provenance.** The fixtures run on a deterministic *synthetic* NanoAOD-like dataset
 > (`dataset.py`), not real CMS Open Data. This is sufficient for `graphed`'s contract — "same

@@ -1,7 +1,7 @@
 Improvements
 ============
 
-Tracked design improvements and known limitations for ``graphed-preserve`` (plan M0 requires this
+Tracked design improvements and known limitations for ``graphed.preserve`` (plan M0 requires this
 file in every package).
 
 External plugins (delivered)
@@ -36,8 +36,8 @@ External plugins — validated against real ML frameworks
 The ``ExternalPlugin`` shape — ``content_hash(bytes)`` + ``evaluate(bytes, params, inputs)`` +
 ``samples()`` — was stress-tested against **PyTorch** (TorchScript; hash of weights; single- and
 multi-input), **XGBoost** (booster bytes; the ``sha256_bytes`` template suffices), and the **NVIDIA
-Triton** remote-inference pattern (``tests/frozen/m9/test_ml_plugins.py``; optional, ``pip install -e
-.[mltest]``). The shape held; three findings worth knowing:
+Triton** remote-inference pattern (``tests/frozen/preserve/m9/test_ml_plugins.py``; optional,
+``pip install -e ".[ml]"``). The shape held; three findings worth knowing:
 
 The plugin now carries an optional ``load(payload, params) -> resource`` + ``close(resource)`` and a
 :class:`ResourceCache`, so a model/connection is materialized **once per worker** and reused — both
@@ -54,7 +54,7 @@ findings below are addressed:
   launching a servable model) is a possible Phase-2 extension. **Validated against a real server:** the
   CI ``triton`` job starts an ``nvcr.io/nvidia/tritonserver`` container serving
   ``tests/samples/triton_models`` and reproduces a bundle through it over **both gRPC and HTTP**
-  (``tests/frozen/m9/test_triton_server.py``), bit-for-bit vs a numpy reference.
+  (``tests/frozen/preserve/m9/test_triton_server.py``), bit-for-bit vs a numpy reference.
 - **Conflicting native runtimes.** torch and xgboost each vendor an OpenMP runtime and clash in one
   process — another reason the bundle records the environment. The test suite sets
   ``KMP_DUPLICATE_LIB_OK`` / ``OMP_NUM_THREADS`` before import to coexist.

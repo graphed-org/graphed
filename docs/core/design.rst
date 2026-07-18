@@ -1,7 +1,7 @@
-How graphed-core works
+How graphed.core works
 ======================
 
-``graphed-core`` is the spine of the graphed ecosystem: a thread-safe, interned intermediate
+``graphed.core`` is the spine of the graphed ecosystem: a thread-safe, interned intermediate
 representation (IR) for array analyses, an optimizer that reduces that IR to a handful of fused
 *stages*, and a deterministic, versioned codec that makes the reduced graph the durable artifact
 executors run. The graph lives in Rust (PyO3 bindings on top); Python supplies the recording
@@ -322,20 +322,20 @@ dashboard plugs into. It is deliberately tiny and pure data: ``TaskEvent`` (a fr
 ``on_combine`` / ``worker_profiler_factory``) and ``WorkerProfiler`` (``start`` / ``flush`` /
 ``stop``).
 
-Why it lives in ``graphed-core`` and not in the dashboard: the event vocabulary is shared by *every*
+Why it lives in ``graphed.core`` and not in the dashboard: the event vocabulary is shared by *every*
 executor, so it belongs at the layer they all depend on — a shared primitive at the layer it serves.
 Keeping it here also keeps it honest about its boundaries:
 
 * **Render- and transport-agnostic.** Core gains no web, websocket, or profiler dependency. A
   ``TaskEvent`` is just data; *how* it reaches a screen — an in-process call, a websocket to a
   Perspective server, something not yet written — is entirely the consumer's business. (This is why
-  the seam survived ``graphed-debug``'s switch from an SSE prototype to Perspective unchanged.)
+  the seam survived ``graphed.debug``'s switch from an SSE prototype to Perspective unchanged.)
 * **Passive by construction.** ``emit_task(monitor, event)`` is a no-op for a ``None`` monitor and
   swallows any exception a monitor raises. An executor emits best-effort; a misbehaving or absent
   monitor can never change a result. ``SequentialRunner`` is the observable baseline that proves it:
   its reduced value is identical with or without a monitor attached.
 
-Concrete monitors (and the websocket/Perspective rendering) live in ``graphed-debug``; the reference
+Concrete monitors (and the websocket/Perspective rendering) live in ``graphed.debug``; the reference
 executors that *emit* through this seam live in ``graphed-exec-local``.
 
 

@@ -1,7 +1,7 @@
-How graphed-awkward works
+How graphed.awkward works
 =========================
 
-``graphed-awkward`` is the **ragged backend** — the one HEP analyses actually live on. It
+``graphed.awkward`` is the **ragged backend** — the one HEP analyses actually live on. It
 teaches the graphed frontend awkward-array's type system by *reusing awkward's own typetracer*
 (never reimplementing type inference), exposes a deferred ragged-array library whose interface
 mirrors ``ak.*`` function-for-function and default-for-default, and contributes the two pieces

@@ -1,8 +1,9 @@
-graphed
-=======
+graphed (the frontend)
+======================
 
-The deferred-array **recording frontend**: ordinary array expressions become nodes in the
-Rust-backed ``graphed-core`` store through a pluggable, five-method ``Backend`` protocol.
+The top-level ``graphed`` package is the deferred-array **recording frontend**: ordinary array
+expressions become nodes in the Rust-backed ``graphed.core`` store through a pluggable, five-method
+``Backend`` protocol.
 Type errors surface at the recording line (form inference on metadata only); results
 materialize through the reference walker or — the real path — compile to a reduced IR any
 executor evaluates. The frontend is strictly backend-agnostic: numpy and awkward idioms live

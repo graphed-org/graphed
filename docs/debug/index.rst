@@ -1,4 +1,4 @@
-graphed-debug
+graphed.debug
 =============
 
 Debugging for ``graphed`` (milestone M6): opt-level lowering, source-mapped **picklable**

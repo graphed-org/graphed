@@ -1,4 +1,4 @@
-graphed-core
+graphed.core
 ============
 
 The Rust+PyO3 spine of the graphed ecosystem: a **thread-safe interned graph IR**, the

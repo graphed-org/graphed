@@ -1,4 +1,4 @@
-graphed-numpy
+graphed.numpy
 =============
 
 The **rectilinear backend** for ``graphed``: numpy's type system and idiom over the deferred

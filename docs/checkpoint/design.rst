@@ -1,7 +1,7 @@
-How graphed-checkpoint works
+How graphed.checkpoint works
 ============================
 
-``graphed-checkpoint`` is the durability layer for long runs: a content-addressed ``Store`` of
+``graphed.checkpoint`` is the durability layer for long runs: a content-addressed ``Store`` of
 completed work, a ``run_resumable`` driver that skips anything the store already holds, retry
 policies for the failures worth retrying, and a dead-letter path for the ones that are not. The
 design goal is blunt: **a crashed eight-hour run resumes losing only the partition that was in

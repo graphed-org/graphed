@@ -1,4 +1,4 @@
-graphed-checkpoint
+graphed.checkpoint
 ==================
 
 Content-addressed checkpoint store, deterministic resume, and error harvesting for ``graphed``

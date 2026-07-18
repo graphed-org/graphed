@@ -1,7 +1,7 @@
-How graphed-preserve works
+How graphed.preserve works
 ==========================
 
-``graphed-preserve`` answers the question every analysis eventually faces: *can someone — a
+``graphed.preserve`` answers the question every analysis eventually faces: *can someone — a
 collaborator, a reviewer, you in three years — reproduce this result on a clean machine, bit
 for bit?* A **preservation bundle** is a self-contained directory capturing the analysis as
 durable data: the canonical IR, the input datasets, every external payload (corrections,
@@ -23,7 +23,7 @@ On disk, a bundle is two things::
 
     bundle/
       manifest.json     # the content-addressed bill of materials
-      store/            # a graphed-checkpoint Store: every blob, keyed by hash
+      store/            # a graphed.checkpoint Store: every blob, keyed by hash
 
 The manifest *names* everything and *contains* nothing heavy: the IR's hash, each dataset's
 hash, each external payload's hash with its kind and node binding, the provenance sourcemap's

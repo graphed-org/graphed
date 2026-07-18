@@ -1,7 +1,7 @@
 Improvements
 ============
 
-Tracked design improvements and limitations for ``graphed-awkward`` (plan M0 requires this file).
+Tracked design improvements and limitations for ``graphed.awkward`` (plan M0 requires this file).
 
 Current limitations
 -------------------

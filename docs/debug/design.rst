@@ -1,7 +1,7 @@
-How graphed-debug works
+How graphed.debug works
 =======================
 
-``graphed-debug`` exists because of one specific, painful failure mode of distributed array
+``graphed.debug`` exists because of one specific, painful failure mode of distributed array
 analysis: a computation fails inside a worker, and what reaches the user is an opaque wall of
 framework internals — their actual mistake nowhere in it. This package makes the opposite
 guarantee: **a runtime failure points at the user's analysis line**, with the failing operation,
@@ -146,7 +146,7 @@ How it fits together, in three layers with strict boundaries:
   calls the monitor in-process; a process pool forwards worker events over a bounded
   ``Manager().Queue()`` drained by a driver-side collector thread. Per task: one ``SUBMITTED``
   (driver-side), then ``STARTED``, then exactly one of ``FINISHED`` / ``ERRORED`` (worker-side).
-* **Consume + render (``graphed-debug``).** Three cooperating pieces:
+* **Consume + render (``graphed.debug``).** Three cooperating pieces:
 
   - :class:`DashboardServer` — a ``perspective.Server`` hosting the live ``stats`` table (and a
     ``tasks`` table fed by the same event stream) over a Tornado app, plus two derived JSON views the

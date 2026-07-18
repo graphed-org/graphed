@@ -1,4 +1,4 @@
-graphed-awkward
+graphed.awkward
 ===============
 
 The **ragged backend** — the one HEP analyses live on: awkward typetracer form inference

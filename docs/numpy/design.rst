@@ -1,7 +1,7 @@
-How graphed-numpy works
+How graphed.numpy works
 =======================
 
-``graphed-numpy`` is the **rectilinear backend**: it teaches the graphed frontend numpy's type
+``graphed.numpy`` is the **rectilinear backend**: it teaches the graphed frontend numpy's type
 system and numpy's idiom. It exists for two reasons. First, it is the seam-prover — the
 simplest possible real backend, demonstrating that the frontend's five-method ``Backend``
 protocol is sufficient for an actual array library. Second, it is a genuinely usable deferred

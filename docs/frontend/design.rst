@@ -9,7 +9,7 @@ operations one by one.
 
 The package is strictly **backend-agnostic**: it knows nothing about numpy or awkward. Array
 semantics (type inference, evaluation, column projection) arrive through a small ``Backend``
-protocol, implemented by ``graphed-numpy`` and ``graphed-awkward``. This document explains what
+protocol, implemented by ``graphed.numpy`` and ``graphed.awkward``. This document explains what
 the frontend itself contributes: the recording session, the proxy, forms and provenance, the
 projection machinery, compilation/evaluation, and the two shared I/O bases.
 
@@ -52,8 +52,8 @@ comparison dunders, ``__array_ufunc__`` (so ``np.sqrt(x)`` records instead of ex
 boolean/slice/integer/field-list ``__getitem__``, and the shared helpers backends build on
 (axis normalization, the reduction/scan recording rule). Everything *idiomatic to one array
 library* lives outside this class: a backend may supply a richer proxy via its
-``array_type()`` factory (graphed-numpy's ``NumpyArray`` adds ``.shape``, ``.sum()``,
-``__array_function__`` and friends), while graphed-awkward deliberately keeps the base proxy
+``array_type()`` factory (graphed.numpy's ``NumpyArray`` adds ``.shape``, ``.sum()``,
+``__array_function__`` and friends), while graphed.awkward deliberately keeps the base proxy
 and exposes its idiom as free functions. The split keeps one library's conventions from
 leaking into another's.
 
@@ -178,7 +178,7 @@ Errors and provenance
 
 ``capture()`` records the nearest user frame at every recording call; ``GraphedTypeError``
 formats it into the message. Runtime errors are the next package up
-(``graphed-debug``'s source-mapped ``StageError``) — the frontend's contribution is that the
+(``graphed.debug``'s source-mapped ``StageError``) — the frontend's contribution is that the
 provenance *exists* for every node, cheaply, from the moment it was recorded.
 
 

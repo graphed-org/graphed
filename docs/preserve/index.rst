@@ -1,4 +1,4 @@
-graphed-preserve
+graphed.preserve
 ================
 
 The analysis **preservation bundle** for ``graphed`` (milestone M9): a self-contained,

@@ -1,7 +1,7 @@
 Improvements
 ============
 
-Tracked design improvements and known limitations for ``graphed-checkpoint`` (plan M0 requires this
+Tracked design improvements and known limitations for ``graphed.checkpoint`` (plan M0 requires this
 file in every package).
 
 Delivered
@@ -12,7 +12,7 @@ Delivered
   at many datasets with ``DurablePlan.with_partitions`` / ``for_dataset`` / ``for_datasets`` (built
   from ``Dataset`` + ``partition_dataset``). The optimized interned IR is shared unchanged across
   datasets, and per-dataset content-addressed ``task_id``\\ s let a single ``Store`` checkpoint them
-  all without collision. See ``tests/frozen/m8/test_deployment.py``.
+  all without collision. See ``tests/frozen/checkpoint/m8/test_deployment.py``.
 
 Current limitations
 -------------------

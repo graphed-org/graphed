@@ -1,7 +1,7 @@
 Improvements
 ============
 
-Tracked design improvements and known limitations for ``graphed-core`` (plan M0 requires this file
+Tracked design improvements and known limitations for ``graphed.core`` (plan M0 requires this file
 in every package).
 
 Current limitations
