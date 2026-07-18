@@ -1,13 +1,22 @@
 name: release
 
-# Publish to PyPI on a version tag (vX.Y.Z), using PyPI Trusted Publishing (OIDC — no API token).
+# Publish to PyPI on a version tag (vX.Y.Z).
 #
-# BEFORE this can publish you must, once, configure a Trusted Publisher on PyPI for the `graphed`
-# project (https://pypi.org/manage/project/graphed/settings/publishing/):
-#   owner=graphed-org  repo=graphed  workflow=release.yml  environment=pypi
-# The project name `graphed` is currently free on PyPI. Until the trusted publisher is configured,
-# this workflow builds and verifies the artifacts but the publish step will no-op/fail — that is
-# intentional (nothing is uploaded without the maintainer opting in).
+# Auth:  a PyPI API token stored as the repo secret PYPI_TOKEN (uploaded as user __token__).
+# Verify: every wheel + the sdist gets an OIDC-signed GitHub build-provenance attestation
+#         (actions/attest-build-provenance, Sigstore) tying the artifact to this repo+workflow+commit.
+#         Anyone can verify a downloaded artifact with:
+#             gh attestation verify <file> --repo graphed-org/graphed
+#
+# Why token auth AND OIDC (not PyPI's own PEP 740 attestations): PyPI's built-in attestations are
+# only generated via Trusted Publishing, which is mutually exclusive with API-token auth. So we
+# authenticate the upload with the token and attach independent, verifiable provenance via GitHub's
+# OIDC identity. To switch to Trusted Publishing instead: configure a publisher at
+# https://pypi.org/manage/project/graphed/settings/publishing/ (owner=graphed-org, repo=graphed,
+# workflow=release.yml, environment=pypi), then drop `password:` and set the publish `attestations: true`.
+#
+# NOTE: bump the version (Cargo.toml + pyproject) before tagging — re-uploading a version already on
+# PyPI (0.0.1 is published) is rejected.
 
 on:
   push:
@@ -62,17 +71,28 @@ jobs:
           path: dist/*.tar.gz
 
   publish:
-    name: publish to PyPI (trusted publishing)
+    name: publish to PyPI (token auth + OIDC build provenance)
     needs: [build, sdist]
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
-      id-token: write # OIDC token for trusted publishing
+      id-token: write # mint the OIDC token for Sigstore-signed build provenance
+      attestations: write # persist the provenance attestations to this repo
+      contents: read
     steps:
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
+      # OIDC-signed provenance for every artifact about to be uploaded; verify with:
+      #   gh attestation verify <file> --repo graphed-org/graphed
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: "dist/*"
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist
+          password: ${{ secrets.PYPI_TOKEN }}
+          # PEP 740 attestations require Trusted Publishing (incompatible with token auth); provenance
+          # is supplied by the attest-build-provenance step above instead.
+          attestations: false
