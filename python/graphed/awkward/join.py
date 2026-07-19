@@ -89,16 +89,24 @@ def take(block: ak.Array, index: np.ndarray) -> ak.Array:
 
 
 def merge_records(left: ak.Array, right: ak.Array, *, on: Sequence[str]) -> ak.Array:
-    """Flat field-union of two aligned taken blocks, deduped by field-name INTERSECTION (LEFT wins):
-    LEFT contributes every field; RIGHT contributes each field LEFT does not already carry. A join on
-    the natural keys packs run/lumi/event + ``__joinkey__`` onto BOTH sides, so only intersection-dedup
-    yields a clean flat record; ``on`` is unused (protocol-required; :func:`join_form` mirrors this).
-    One flat record per aligned row; option rows from :func:`take` survive as option fields (M40 §3.3).
-    ponytail: no SQL-style suffixing of a shared NON-key column — add if an analysis ever joins tables
-    sharing a payload field name."""
-    fields: dict[str, ak.Array] = {f: left[f] for f in ak.fields(left)}
-    for f in ak.fields(right):
-        if f not in fields:
+    """Flat field-union of two aligned taken blocks. The shared ``on`` key columns are **COALESCED** —
+    the present (non-``None``) side wins, so a left/right/outer miss row keeps the REAL key value, never
+    null (F3); the absent side's NON-key fields stay option ``None``. LEFT contributes its non-shared
+    fields, RIGHT contributes each field LEFT lacks. A shared NON-key column is **rejected** (F7 — no
+    silent SQL-style suffixing; rename it or add it to ``on``)."""
+    on_set = {str(c) for c in on}
+    lf, rf = ak.fields(left), ak.fields(right)
+    shared_nonkey = sorted(f for f in rf if f in lf and f not in on_set)
+    if shared_nonkey:
+        raise ValueError(f"merge_records: shared non-key column(s) {shared_nonkey} — rename or add to `on`")
+    fields: dict[str, ak.Array] = {}
+    for f in lf:
+        if f in on_set and f in rf:  # coalesce the shared key: the present (non-None) side wins
+            fields[f] = ak.where(ak.is_none(left[f]), right[f], left[f])
+        else:
+            fields[f] = left[f]
+    for f in rf:
+        if f not in lf:
             fields[f] = right[f]
     return ak.zip(fields, depth_limit=1)
 
@@ -110,9 +118,21 @@ def pack_key(rec: ak.Array, on: Sequence[str]) -> ak.Array:
     n = len(on)
     if n == 0:
         raise ValueError("pack_key needs at least one key field")
+    if n * _PACK_STRIDE > 64:  # the packing itself cannot fit u64 (overflow→fixed-width bytes is Phase-2)
+        raise ValueError(
+            f"pack_key: {n} fields x {_PACK_STRIDE} bits exceeds u64 (overflow->bytes is Phase-2)"
+        )
+    limit = np.uint64(1) << np.uint64(_PACK_STRIDE)
     key: ak.Array | None = None
     for i, f in enumerate(on):
-        shifted = ak.values_astype(rec[f], np.uint64) << np.uint64((n - 1 - i) * _PACK_STRIDE)
+        col = ak.values_astype(rec[f], np.uint64)
+        # F8: a field value >= 2**stride bleeds into the adjacent field and silently collides — raise
+        # loudly instead (guard skipped on the typetracer, which carries no data to check).
+        if ak.backend(col) != "typetracer" and bool(ak.any(col >= limit)):
+            raise ValueError(
+                f"pack_key: field {f!r} has a value >= 2**{_PACK_STRIDE} (overflow->bytes is Phase-2)"
+            )
+        shifted = col << np.uint64((n - 1 - i) * _PACK_STRIDE)
         key = shifted if key is None else key | shifted
     return ak.with_field(rec, ak.values_astype(key, np.uint64), where="__joinkey__")
 
@@ -129,13 +149,19 @@ def join_form(inputs: Sequence[ak.Array], params: Mapping[str, Any]) -> ak.Array
     structurally on typetracers — no matching, no data read."""
     left, right = inputs[0], inputs[1]
     how = str(params.get("how", "inner"))
-    left_opt = how in ("right", "outer")
-    right_opt = how in ("left", "outer")
-    fields: dict[str, ak.Array] = {f: (_optional(left[f]) if left_opt else left[f]) for f in ak.fields(left)}
-    for f in ak.fields(right):
-        if f in fields:  # intersection-dedup, mirroring merge_records (`on` ignored)
-            continue
-        fields[f] = _optional(right[f]) if right_opt else right[f]
+    on_set = {str(c) for c in on_from_params(params)}
+    lf, rf = ak.fields(left), ak.fields(right)
+    shared_nonkey = sorted(f for f in rf if f in lf and f not in on_set)
+    if shared_nonkey:
+        raise ValueError(f"op_form(join): shared non-key column(s) {shared_nonkey} — rename or add to `on`")
+    left_opt = how in ("right", "outer")  # left's NON-key fields can be null on a right-only row
+    right_opt = how in ("left", "outer")  # right's NON-key fields can be null on a left-only row
+    fields: dict[str, ak.Array] = {}
+    for f in lf:  # a coalesced shared key is NON-optional (always present); other left fields per `how`
+        fields[f] = left[f] if (f in on_set and f in rf) else (_optional(left[f]) if left_opt else left[f])
+    for f in rf:
+        if f not in lf:
+            fields[f] = _optional(right[f]) if right_opt else right[f]
     return ak.zip(fields, depth_limit=1)
 
 

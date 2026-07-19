@@ -368,6 +368,12 @@ class NumpyBackend:
             # merge_records exactly, so the inferred form == the evaluated record (field set AND order).
             lnames = {f for f, _ in left.fields}
             rnames = {f for f, _ in right.fields}
+            on_set = set(_decode_on(params.get("on", "")))
+            shared_nonkey = sorted(n for n in lnames & rnames if n not in on_set)
+            if shared_nonkey:  # F7: mirror merge_records — no silent SQL suffixing
+                raise ValueError(
+                    f"op_form(join): shared non-key column(s) {shared_nonkey} — rename or add to `on`"
+                )
             right_only = [(n, t) for n, t in right.fields if n not in lnames]
             left_only = [(n, t) for n, t in left.fields if n not in rnames]
             # left/outer nullability rides in companion validity columns (NumpyForm has no option field,

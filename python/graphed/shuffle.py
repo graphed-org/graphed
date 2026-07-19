@@ -95,7 +95,8 @@ def join(left: Array, right: Array, *, on: Sequence[str], how: str = "inner") ->
     awkward nor a numpy idiom, so — like :func:`repartition` — it is a module function, not an
     ``Array`` method. It records ``pack_key`` → hash ``Exchange`` on each side (co-partitioning them on
     the shared ``__joinkey__``) then a two-input ``Join`` boundary; the flat output record is the union
-    of both sides' fields with shared columns kept once. ``how`` ∈ {inner, left, outer}."""
+    of both sides' fields, the shared key columns COALESCED (a left/right/outer miss keeps the present
+    side's key, never null). ``how`` ∈ {inner, left, right, outer} (SQL/pandas relational semantics)."""
     if left.session is not right.session:
         raise GraphedError("join: left and right must belong to the same Session")
     session = left.session
@@ -103,9 +104,11 @@ def join(left: Array, right: Array, *, on: Sequence[str], how: str = "inner") ->
     rk = pack_key(right, on=on)
     le = session.record_exchange(lk, {"scheme": "hash", "key": JOINKEY})
     re = session.record_exchange(rk, {"scheme": "hash", "key": JOINKEY})
-    # the co-partitioned sides are matched on the packed __joinkey__; ``on`` is a scalar (comma-joined
-    # for a composite key) since IR params carry only scalars.
-    return session.record_join(le, re, {"on": JOINKEY, "how": how})
+    # Match + coalesce on the full key set — the user's ``on`` fields AND the packed ``__joinkey__``
+    # (comma-joined; IR params carry only scalars). Carrying the real keys lets ``merge_records``
+    # COALESCE them on a left/right/outer miss row (the present side's key survives, never null), and
+    # makes the match disambiguate any ``__joinkey__`` collision by the real fields.
+    return session.record_join(le, re, {"on": ",".join([*on, JOINKEY]), "how": how})
 
 
 def join_blocks(
@@ -190,6 +193,18 @@ def shuffle_plan(
     return DurablePlanV2(ir=bytes(compiled.ir), stages=stages)
 
 
+def broadcast_join_choice(build_size: int, probe_size: int, n: int) -> bool:
+    """The pinned broadcast-vs-shuffle cost rule (plan §3.3, theme (c); E5/F6): broadcast the build
+    side IFF replicating it ``n``-fold is cheaper than shuffling BOTH sides —
+    ``|build|·n < |build|+|probe|``. The single source of truth for the rule: :func:`join_plan` calls
+    it at plan-build time with a PLAN-STABLE ``n`` (each side's own partition count — typetracer forms
+    carry no row count, so a byte estimate isn't available pre-execution, R7.9) and freezes the result
+    into the durable plan; ``graphed_exec_local.shuffle`` re-exports this same function for its
+    ``run_join(broadcast=None)`` auto-choice (also keyed on ``parts``, never the runtime worker count —
+    the F6 bug was recomputing this from the live worker pool)."""
+    return build_size * n < build_size + probe_size
+
+
 def join_plan(
     output: Array,
     *,
@@ -199,7 +214,7 @@ def join_plan(
     """Build the multi-stage :class:`~graphed.core.DurablePlanV2` for a two-source ``graphed.join``
     (plan §3.2, contract E1/target 13). A join has TWO independently-partitioned sources, so the
     single-source ``shuffle_plan`` guard cannot express it: this emits ONE ``map_write`` stage per side
-    (route + coalesce on ``__joinkey__``) that a single ``kind="gather_join"`` stage — ``inputs`` over
+    (route + coalesce on ``__joinkey__``) that a single ``kind=\"gather_join\"`` stage — ``inputs`` over
     both map-writes — depends on (the two-input barrier edge). Cross-process execution is the
     executor's ``run_join``; this builder is the durable, byte-deterministic plan artifact."""
     session = output.session
@@ -233,11 +248,16 @@ def join_plan(
         )
         for data in sides
     )
+    # E5/F6: the broadcast-vs-shuffle choice is a PLAN property. Each side's own partition count is
+    # the deterministic, no-file-opened size proxy (typetracer forms carry no row count, R7.9) — never
+    # the runtime worker pool, which is the F6 bug the executor's auto-choice still had.
+    build_n, probe_n = len(map_stages[0].tasks), len(map_stages[1].tasks)
+    broadcast = broadcast_join_choice(build_n, probe_n, parts)
     gather = StageSpec(
         kind="gather_join",
         inputs=tuple(range(len(map_stages))),  # (0, 1): depends on BOTH map-writes (the barrier edge)
         process=OpSpec.from_callable(join_blocks),
-        routing={"parts": parts, "backend_id": backend_id, "how": how},
+        routing={"parts": parts, "backend_id": backend_id, "how": how, "broadcast": broadcast},
         tasks=tuple(Task(d, Partition("dest", "p", d, d + 1)) for d in range(parts)),
     )
     return DurablePlanV2(ir=bytes(compiled.ir), stages=(*map_stages, gather))

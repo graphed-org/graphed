@@ -181,6 +181,9 @@ def merge_records(left: np.ndarray, right: np.ndarray, *, on: Sequence[str]) -> 
     ldata, lmask = np.ma.getdata(lm), np.ma.getmaskarray(lm)
     rdata, rmask = np.ma.getdata(rm), np.ma.getmaskarray(rm)
     lnames = list(ldata.dtype.names or ())
+    shared_nonkey = sorted(n for n in (rdata.dtype.names or ()) if n in lnames and n not in on_set)
+    if shared_nonkey:  # F7: no silent SQL-style suffixing — rename or add to `on`
+        raise ValueError(f"merge_records: shared non-key column(s) {shared_nonkey} — rename or add to `on`")
     right_extra = [n for n in (rdata.dtype.names or ()) if n not in on_set and n not in lnames]
     out_names = lnames + right_extra
     out_dt = np.dtype([(n, (ldata if n in lnames else rdata).dtype[n]) for n in out_names])
@@ -210,6 +213,13 @@ def pack_key(record: object, on: Sequence[str]) -> np.ndarray:
     for the 3-field key); wider keys / overflow→fixed-width-bytes is Phase-2."""
     cols = _as_columns(record)
     names = [str(c) for c in on]
+    if len(names) * 20 > 64:  # the packing cannot fit u64 (overflow->fixed-width bytes is Phase-2)
+        raise ValueError(f"pack_key: {len(names)} fields x 20 bits exceeds u64 (overflow->bytes is Phase-2)")
+    for nm in names:  # F8: a field value >= 2**20 bleeds into the adjacent field and silently collides
+        if np.any(np.asarray(cols[nm]).astype(np.uint64) >= np.uint64(1 << 20)):
+            raise ValueError(
+                f"pack_key: field {nm!r} has a value >= 2**20 (overflow->fixed-width bytes is Phase-2)"
+            )
     key = _pack_key_column([cols[nm] for nm in names])
     cols["__joinkey__"] = key
     out_dt = np.dtype([(nm, np.asarray(v).dtype) for nm, v in cols.items()])

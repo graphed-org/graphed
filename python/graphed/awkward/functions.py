@@ -35,8 +35,8 @@ def join(left: Array, right: Array, *, on: Sequence[str], how: str = "inner", gr
     rk = graphed.pack_key(right, on=on)
     le = session.record_exchange(lk, {"scheme": "hash", "key": JOINKEY})
     re = session.record_exchange(rk, {"scheme": "hash", "key": JOINKEY})
-    # same co-partitioning as graphed.join; the grouped flag flips the Join op to the regroup post-op.
-    return session.record_join(le, re, {"on": JOINKEY, "how": how, "grouped": True})
+    # same co-partitioning + full-key coalescing as graphed.join; grouped flips the Join to the regroup post-op.
+    return session.record_join(le, re, {"on": ",".join([*on, JOINKEY]), "how": how, "grouped": True})
 
 
 def _comb_params(
