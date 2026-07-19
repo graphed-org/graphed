@@ -269,6 +269,59 @@ class WorkerTransport(Protocol):
     def close(self) -> None: ...
 
 
+# ---- M41: the Phase-2 ClusterExecutor launch seam (plan §6.1.3) ----------------------------------
+# Three data-only siblings of Executor/WorkerTransport. The concrete cross-process Store + launcher
+# live in graphed-exec-local BEHIND these types; this module stays pure (§A.4 — no backend/exec import).
+@dataclass
+class AddressTable:
+    """A data-only ``node_id -> routable (host, port)`` table a *launcher* populates (plan §6.1.3),
+    each entry tagged with ``registered_by`` provenance — the CHILD that announced it, not the driver.
+
+    This is **ephemeral runtime state**: announced host/port/pid live here and MUST NOT be folded into
+    the durable plan (:class:`~graphed.core.plan.DurablePlanV2`) or the content-addressed task ids —
+    addresses vary run-to-run, so baking them into the canonical IR would make task ids non-deterministic
+    (§A.3.1). Multi-host launch stays deferred (Phase-2); only the seam ships now."""
+
+    addresses: dict[object, tuple[str, int]] = field(default_factory=dict)
+    provenance: dict[object, object] = field(default_factory=dict)
+
+    def register(self, node_id: object, host: str, port: int, *, registered_by: object) -> None:
+        """Record ``node_id -> (host, port)`` and who announced it (the registering child, not the driver)."""
+        self.addresses[node_id] = (host, int(port))
+        self.provenance[node_id] = registered_by
+
+    def lookup(self, node_id: object) -> tuple[str, int]:
+        """The routable ``(host, port)`` a launcher registered for ``node_id``."""
+        return self.addresses[node_id]
+
+    def registered_by(self, node_id: object) -> object:
+        """Registration provenance for ``node_id`` — the child endpoint that announced its address."""
+        return self.provenance[node_id]
+
+
+@runtime_checkable
+class NodeStore(Protocol):
+    """The per-node Store handle the cluster runtime pulls blobs through (plan §6.1.3, §4.3). The
+    concrete node-local Store in graphed-exec-local satisfies this *behind* the core type (§A.4).
+
+    ``fetch(digest)`` is the bulk data-plane endpoint: **idempotent** (re-fetching a digest already
+    present returns the same bytes and moves none) and **byte-backpressured / spillable** (a large blob
+    streams to the node-local Store instead of sitting whole in RAM — the *body* is exec/M41-T1; the
+    seam pins only the *signature*, left open for an Arrow-Flight/RDMA transport of the same shape)."""
+
+    def fetch(self, digest: str) -> object: ...
+
+
+@runtime_checkable
+class ClusterExecutor(Protocol):
+    """An :class:`Executor`-shaped launch seam over a cluster (plan §6.1.3): a launcher populates an
+    :class:`AddressTable`, each node exposes a :class:`NodeStore` ``fetch`` endpoint, and ``run`` drives
+    a ``Plan`` to a reduced result across them. Multi-host launch is Phase-2 — defining the seam here
+    keeps the reduction protocol and the single-machine executors unchanged when the topology grows."""
+
+    def run(self, plan: Plan[R]) -> ExecResult[R]: ...
+
+
 # ---- M37: the passive live-dashboard seam (data-only; no web, no profiler dep) --------------
 
 

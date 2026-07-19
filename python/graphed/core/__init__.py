@@ -7,11 +7,14 @@ graph lives in Rust; this package MUST NOT import awkward.
 from __future__ import annotations
 
 from .execution import (
+    AddressTable,
+    ClusterExecutor,
     ExecContext,
     ExecResult,
     Executor,
     LocalResources,
     Monitor,
+    NodeStore,
     Partition,
     Plan,
     SequentialRunner,
@@ -38,6 +41,8 @@ from .plan import (
 )
 
 __all__ = [
+    "AddressTable",
+    "ClusterExecutor",
     "Dataset",
     "DurablePlan",
     "DurablePlanV2",
@@ -48,6 +53,7 @@ __all__ = [
     "IncrementalReducer",
     "LocalResources",
     "Monitor",
+    "NodeStore",
     "OpSpec",
     "Partition",
     "PayloadDescriptor",
