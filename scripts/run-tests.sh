@@ -24,21 +24,45 @@ SUITES=(
   "corpus:tests/frozen/corpus"
 )
 
+# Packages that must run one process PER MILESTONE subdir (not one per package): they aggregate
+# origin-repo milestones with duplicate top-level module basenames (M40's shuffle_backends.py /
+# test_projection.py), which collide when collected in a single prepend-import process.
+SPLIT_PKGS="frontend numpy awkward"
+
 rc=0
 [ "$COV" = 1 ] && rm -f .coverage .coverage.*
+
+run_one() {  # run ONE pytest process over the given paths; accumulate rc + combined coverage
+  echo "═══════════════ $1 ═══════════════"; shift
+  if [ "$COV" = 1 ]; then
+    # --cov-fail-under=0: no per-subtree gate (each subtree alone is far under 90); the gate is the
+    # combined `coverage report --fail-under=90` after all subtrees have appended.
+    python -m pytest "$@" -q --cov=graphed --cov-append --cov-branch --cov-fail-under=0 || rc=1
+  else
+    python -m pytest "$@" -q || rc=1
+  fi
+}
+
 for entry in "${SUITES[@]}"; do
   name=${entry%%:*}; paths=${entry#*:}
   # keep only paths that exist (extra/ dirs are not present for every package)
   existing=""; for p in $paths; do [ -e "$p" ] && existing="$existing $p"; done
   [ -z "$existing" ] && continue
-  echo "═══════════════ $name ═══════════════"
-  if [ "$COV" = 1 ]; then
-    # --cov-fail-under=0: no per-subtree gate (each subtree alone is far under 90); the gate is the
-    # combined `coverage report --fail-under=90` after all subtrees have appended.
-    python -m pytest $existing -q --cov=graphed --cov-append --cov-branch --cov-fail-under=0 || rc=1
-  else
-    python -m pytest $existing -q || rc=1
-  fi
+  case " $SPLIT_PKGS " in
+  *" $name "*)
+    # Finer (per-milestone) isolation: these packages aggregate origin-repo milestones with DUPLICATE
+    # top-level basenames — M40 added m39/m40 `shuffle_backends.py` (frontend) and m5/m40
+    # `test_projection.py` (numpy, awkward). Collected in ONE process, prepend-import caches the first
+    # under its bare name and shadows/mismatches the second -> ImportError / "import file mismatch". So
+    # run each frozen/<pkg>/<milestone> in its OWN process; cross-dir helper imports still resolve via
+    # the pytest `pythonpath`. extra/<pkg> runs as its own process too.
+    for d in tests/frozen/$name/*/; do run_one "$name/$(basename "$d")" "${d%/}"; done
+    [ -e "tests/extra/$name" ] && run_one "$name/extra" "tests/extra/$name"
+    ;;
+  *)
+    run_one "$name" $existing
+    ;;
+  esac
 done
 
 if [ "$COV" = 1 ]; then

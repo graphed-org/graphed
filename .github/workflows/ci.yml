@@ -116,8 +116,14 @@ jobs:
           # separate invocations: a single pytest over multiple subtrees collides on duplicate
           # test basenames (test_topologies.py, test_external.py) — same reason run-tests.sh exists.
           pytest tests/frozen/core -p no:cacheprovider
-          pytest tests/frozen/frontend -p no:cacheprovider
-          pytest tests/frozen/numpy -p no:cacheprovider
+          # frontend/m40 (distributed joins) hard-imports awkward/pandas, whose 3.14t wheels lag, so it
+          # runs in the advisory backends job below, not this required awkward-free gate. Excluding it
+          # also drops the m39/m40 `shuffle_backends.py` top-level-name collision (only m39's remains).
+          pytest tests/frozen/frontend --ignore=tests/frozen/frontend/m40 -p no:cacheprovider
+          # numpy m5 and m40 both ship test_projection.py — separate invocations avoid the duplicate
+          # basename collision (m40 here is numpy-only, so it stays in this awkward-free gate).
+          pytest tests/frozen/numpy --ignore=tests/frozen/numpy/m40 -p no:cacheprovider
+          pytest tests/frozen/numpy/m40 -p no:cacheprovider
 
   test-freethreaded-backends:
     name: test py3.14t (free-threaded, backends — advisory)

@@ -105,11 +105,13 @@ testpaths = ["tests"]
 addopts = "-q"
 # Per-subtree runs (see scripts/run-tests.sh) keep each package's frozen suite in its own process
 # (prepend import mode + isolation, so duplicate test basenames and the sys.modules purity guard
-# behave as in the origin repos). Same-dir helper imports resolve via prepend automatically; the
-# pythonpath lists ONLY the vendored corpus package + the CROSS-dir helper providers (a test dir
-# importing a helper from a different dir). `analyses` is listed from checkpoint/m8 alone — awkward/m3
-# and debug/m6 also ship an `analyses.py`, but those are same-dir imports (prepend covers them), so
-# keeping them off the path avoids the top-level-name collision.
+# behave as in the origin repos). frontend/numpy/awkward run at FINER (per-milestone) granularity
+# because M40 added duplicate top-level basenames within them (m39/m40 shuffle_backends.py; m5/m40
+# test_projection.py). Same-dir helper imports resolve via prepend automatically; the pythonpath lists
+# ONLY the vendored corpus package + the CROSS-dir helper providers (a test dir importing a helper from
+# a different dir). `analyses` is listed from checkpoint/m8 alone — awkward/m3 and debug/m6 also ship an
+# `analyses.py`, but those are same-dir imports (prepend covers them), so keeping them off the path
+# avoids the top-level-name collision.
 pythonpath = [
   "python",
   "tests/_corpus",
@@ -118,6 +120,9 @@ pythonpath = [
   "tests/frozen/frontend/m13",
   "tests/frozen/frontend/m15",
   "tests/frozen/awkward/m16",
+  # awkward/m40 imports golden_route from awkward/m39 (cross-dir); needed once awkward runs per-mXX.
+  # numpy/m39 ships golden_route.py too, but resolves same-dir via prepend — only m39 here is on path.
+  "tests/frozen/awkward/m39",
   "tests/frozen/checkpoint/m8",
 ]
 
