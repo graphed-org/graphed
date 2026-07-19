@@ -88,7 +88,9 @@ def take(block: ak.Array, index: np.ndarray) -> ak.Array:
     idx = np.asarray(index).astype(np.int64)
     if len(block) == 0:  # empty carrier -> all-None option column of block's type, length len(idx)
         return ak.Array(
-            ak.contents.IndexedOptionArray(ak.index.Index64(np.full(len(idx), -1, dtype=np.int64)), block.layout)
+            ak.contents.IndexedOptionArray(
+                ak.index.Index64(np.full(len(idx), -1, dtype=np.int64)), block.layout
+            )
         )
     valid = idx >= 0
     gathered = block[np.where(valid, idx, np.int64(0))]  # clamp misses to 0, then mask them out
