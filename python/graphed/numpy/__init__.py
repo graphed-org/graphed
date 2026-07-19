@@ -364,8 +364,12 @@ class NumpyBackend:
             left, right = forms
             if left.fields is None or right.fields is None:
                 raise TypeError("join needs two record sources")
-            # intersection dedup keeping LEFT's copy (ignores `on`): fields = left ++ right-only. Matches
-            # merge_records exactly, so the inferred form == the evaluated record (field set AND order).
+            # intersection dedup keeping LEFT's copy (ignores `on`): fields = left ++ right-only, then the
+            # __valid_<n>__ nullability companions appended below. op_form's field set is thus a SUPERSET
+            # of the materialized block's DATA columns (the block carries nullability in .mask, not
+            # companions) — a sound over-declaration, never an under-declaration (§A.3.1). A form-vs-block
+            # check must assert op_form.fields ⊇ block.dtype.names, not equality. See
+            # docs/numpy/improvements.rst (M40).
             lnames = {f for f, _ in left.fields}
             rnames = {f for f, _ in right.fields}
             on_set = set(_decode_on(params.get("on", "")))
