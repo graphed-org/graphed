@@ -12,8 +12,9 @@ Load-bearing invariants:
   * ``pack_key`` is a deterministic big-endian integer bit-packing — ``run`` most-significant …
     ``event`` least-significant, 20-bit stride so zero high fields contribute zero bits — NEVER Python
     ``hash()`` (trap #6, reproducibility §A.3.1); both backends compute it identically;
-  * ``merge_records`` is the flat field-union minus the duplicate ``on`` key (left-wins on any other
-    name collision, so joining on the natural keys never collides the carried key columns).
+  * ``merge_records`` COALESCES the shared ``on`` key (present side wins, kept NON-option since a
+    coalesced key is never null) and REJECTS any shared non-key column (F7 — no silent SQL suffixing);
+    only the absent side's non-key fields become option ``None``.
 """
 
 from __future__ import annotations
@@ -79,8 +80,15 @@ def match_indices(
 def take(block: ak.Array, index: np.ndarray) -> ak.Array:
     """Gather rows of ``block`` by ``index``. A ``-1`` entry is a MISS → an awkward OPTION ``None``
     row (``ak.mask``), NEVER the last row — a plain ``block[index]`` would read ``block[-1]`` and pass a
-    row-count check while silently corrupting the value (plan M40 trap #1)."""
+    row-count check while silently corrupting the value (plan M40 trap #1). A ZERO-ROW ``block`` (a
+    schema-only carrier for a one-sided join dest, or a partition an upstream cut emptied) has no row 0
+    for the clamp-to-0 below to land on, and a gather from an empty block can only be misses — so it
+    short-circuits to ``len(index)`` typed ``None`` rows (the null-fill a left/right/outer join needs)."""
     idx = np.asarray(index).astype(np.int64)
+    if len(block) == 0:  # empty carrier -> all-None option column of block's type, length len(idx)
+        return ak.Array(
+            ak.contents.IndexedOptionArray(ak.index.Index64(np.full(len(idx), -1, dtype=np.int64)), block.layout)
+        )
     valid = idx >= 0
     gathered = block[np.where(valid, idx, np.int64(0))]  # clamp misses to 0, then mask them out
     if bool(valid.all()):
@@ -102,7 +110,10 @@ def merge_records(left: ak.Array, right: ak.Array, *, on: Sequence[str]) -> ak.A
     fields: dict[str, ak.Array] = {}
     for f in lf:
         if f in on_set and f in rf:  # coalesce the shared key: the present (non-None) side wins
-            fields[f] = ak.where(ak.is_none(left[f]), right[f], left[f])
+            # ...then STRIP the option: a row is emitted only when its present side carries the key, so the
+            # coalesced key is never null — drop_none removes the never-taken option layer WITHOUT dropping
+            # a row (length-preserving here), keeping the key non-option == op_form == numpy (the F4 class).
+            fields[f] = ak.drop_none(ak.where(ak.is_none(left[f]), right[f], left[f]))
         else:
             fields[f] = left[f]
     for f in rf:

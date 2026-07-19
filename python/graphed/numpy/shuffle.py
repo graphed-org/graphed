@@ -148,10 +148,16 @@ def match_indices(
 
 def _masked_gather(block: np.ndarray, index: np.ndarray) -> np.ndarray:
     """Gather rows by ``index`` into a structured MASKED array; ``index < 0`` rows are invalid.
-    Data at a miss is row 0's (clip-to-0), never the last row — so a masked value is not a real one."""
+    Data at a miss is row 0's (clip-to-0), never the last row — so a masked value is not a real one. A
+    ZERO-ROW ``block`` (a schema-only carrier for a one-sided join dest, or a cut-emptied partition) has
+    no row 0 for the clip to land on and can only be gathered as misses — so it short-circuits to
+    ``len(index)`` fully-masked null rows of ``block``'s dtype (the null-fill a non-inner join needs)."""
     src = np.ma.asanyarray(block)
     data = np.ma.getdata(src)
     idx = np.asarray(index)
+    if data.shape[0] == 0:  # empty carrier -> len(idx) fully-masked null rows (clip-to-0 has no row 0)
+        out = np.zeros(len(idx), dtype=data.dtype)
+        return np.ma.MaskedArray(out, mask=np.ones(len(idx), dtype=np.ma.make_mask_descr(data.dtype)))
     safe = np.where(idx < 0, 0, idx).astype(np.intp)
     gathered = data[safe]
     miss = idx < 0
