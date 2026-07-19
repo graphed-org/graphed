@@ -162,10 +162,16 @@ def _optional(arr: ak.Array) -> ak.Array:
     return ak.mask(arr, arr == arr)
 
 
+def _is_option(arr: ak.Array) -> bool:
+    """Whether a leaf/array is option-typed (its form carries a ``?``). Structural; reads no data."""
+    return bool(arr.layout.is_option)
+
+
 def join_form(inputs: Sequence[ak.Array], params: Mapping[str, Any]) -> ak.Array:
     """The op_form("join") output form: the relational field-union (see :func:`merge_records`) with the
-    missing side option-typed under ``how=left``/``right``/``outer`` (plan M40 §3.3, a3). Built
-    structurally on typetracers — no matching, no data read."""
+    missing side option-typed under ``how=left``/``right``/``outer`` and the coalesced ``on`` key
+    option-typed iff EITHER input key is (plan M40 §3.3, a3; §A.3.1 — op_form must not under-declare a
+    key whose null survives). Built structurally on typetracers — no matching, no data read."""
     left, right = inputs[0], inputs[1]
     how = str(params.get("how", "inner"))
     on_set = {str(c) for c in on_from_params(params)}
@@ -176,8 +182,16 @@ def join_form(inputs: Sequence[ak.Array], params: Mapping[str, Any]) -> ak.Array
     left_opt = how in ("right", "outer")  # left's NON-key fields can be null on a right-only row
     right_opt = how in ("left", "outer")  # right's NON-key fields can be null on a left-only row
     fields: dict[str, ak.Array] = {}
-    for f in lf:  # a coalesced shared key is NON-optional (always present); other left fields per `how`
-        fields[f] = left[f] if (f in on_set and f in rf) else (_optional(left[f]) if left_opt else left[f])
+    for f in lf:
+        if f in on_set and f in rf:  # coalesced shared key: OPTION iff EITHER input key is option — the
+            # surviving side of a right/outer join can carry a genuine null, so op_form must NOT
+            # under-declare the key non-option vs the materialised block (§A.3.1 durable-form soundness).
+            # A sound over-approximation: op_form ⊇ materialised (merge_records refines to the exact
+            # runtime type — non-option when no null actually survives).
+            k = left[f]
+            fields[f] = k if _is_option(k) else (_optional(k) if _is_option(right[f]) else k)
+        else:  # a non-key left field is null only on the absent (right-only) row of a right/outer join
+            fields[f] = _optional(left[f]) if left_opt else left[f]
     for f in rf:
         if f not in lf:
             fields[f] = _optional(right[f]) if right_opt else right[f]
