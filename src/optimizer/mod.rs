@@ -393,7 +393,8 @@ mod tests {
                 }
                 NodeKey::Reduction { inputs, .. }
                 | NodeKey::External { inputs, .. }
-                | NodeKey::Exchange { inputs, .. } => vals[inputs[0] as usize],
+                | NodeKey::Exchange { inputs, .. }
+                | NodeKey::Join { inputs, .. } => vals[inputs[0] as usize],
                 NodeKey::Stage { inputs, members } => {
                     let inv: Vec<i64> = inputs.iter().map(|&x| vals[x as usize]).collect();
                     let mut mv: Vec<i64> = Vec::new();
