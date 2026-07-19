@@ -22,7 +22,7 @@ from .projection import (
 )
 from .provenance import Provenance, capture, is_enabled, set_enabled
 from .session import Session
-from .shuffle import repartition, shuffle_plan
+from .shuffle import join, join_plan, pack_key, repartition, shuffle_plan
 
 __all__ = [
     "CONSERVATIVE",
@@ -47,6 +47,9 @@ __all__ = [
     "evaluate_ir",
     "handle_opaque",
     "is_enabled",
+    "join",
+    "join_plan",
+    "pack_key",
     "read_columns",
     "repartition",
     "resolve_backend",

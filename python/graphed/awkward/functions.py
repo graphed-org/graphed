@@ -15,6 +15,30 @@ from graphed import Array, ParamValue
 from . import payloads
 
 
+def join(left: Array, right: Array, *, on: Sequence[str], how: str = "inner", grouped: bool = False) -> Array:
+    """The awkward-only ``gak.join`` verb (plan §3.1, a4). ``grouped=False`` is a thin alias to the
+    neutral :func:`graphed.join` (relational, SQL-*duplicating*). ``grouped=True`` adds the awkward-only
+    convenience: the relational result regrouped by a deterministic ``ak.unflatten`` — one sublist per
+    matching build row — flattening back to the relational result. The grouped shape lives ONLY here
+    (numpy has no ``gak``), so the neutral ``graphed.join`` rejects ``grouped`` outright."""
+    # local imports: the neutral shuffle/join surface, kept off module-load to avoid an import cycle.
+    import graphed  # noqa: PLC0415
+    from graphed.errors import GraphedError  # noqa: PLC0415
+    from graphed.shuffle import JOINKEY  # noqa: PLC0415
+
+    if not grouped:
+        return graphed.join(left, right, on=on, how=how)
+    if left.session is not right.session:
+        raise GraphedError("gak.join: left and right must belong to the same Session")
+    session = left.session
+    lk = graphed.pack_key(left, on=on)
+    rk = graphed.pack_key(right, on=on)
+    le = session.record_exchange(lk, {"scheme": "hash", "key": JOINKEY})
+    re = session.record_exchange(rk, {"scheme": "hash", "key": JOINKEY})
+    # same co-partitioning as graphed.join; the grouped flag flips the Join op to the regroup post-op.
+    return session.record_join(le, re, {"on": JOINKEY, "how": how, "grouped": True})
+
+
 def _comb_params(
     n: int,
     replacement: bool,

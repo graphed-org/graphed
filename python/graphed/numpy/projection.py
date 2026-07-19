@@ -16,11 +16,13 @@ from graphed import CONSERVATIVE, Array, Projection, handle_opaque
 
 @dataclass(frozen=True)
 class _Tracer:
-    """A projection tracer: the (source, column) pairs read so far, and — if still a live record —
-    which source it is and that source's available columns."""
+    """A projection tracer: the (source, column) pairs read so far, and — if still a live record — a
+    per-field provenance map ``field_name -> (source, source_column)``. A single-source record maps
+    every field to its own source; a JOIN output (M40) maps each field to WHICHEVER side it came from,
+    so a later ``field`` access on the joined record is attributed to the correct source."""
 
     touched: frozenset[tuple[str, str]]
-    record: tuple[str, tuple[str, ...]] | None
+    fields: Mapping[str, tuple[str, str]] | None
 
 
 def _union(inputs: Sequence[object]) -> frozenset[tuple[str, str]]:
@@ -29,6 +31,10 @@ def _union(inputs: Sequence[object]) -> frozenset[tuple[str, str]]:
         if isinstance(t, _Tracer):
             out |= t.touched
     return out
+
+
+def _decode_on(params: Mapping[str, object]) -> list[str]:
+    return [f for f in str(params.get("on", "")).split(",") if f]
 
 
 def project(array: Array, *, on_fail: str = "raise") -> Projection:
@@ -44,7 +50,7 @@ def project(array: Array, *, on_fail: str = "raise") -> Projection:
         if fields:
             cols = tuple(f for f, _ in fields)
             all_columns[name] = set(cols)
-            source_tracer[nid] = _Tracer(frozenset(), (name, cols))
+            source_tracer[nid] = _Tracer(frozenset(), {f: (name, f) for f in cols})
         else:  # a flat source is a single whole-buffer "column" named after the source
             all_columns[name] = {name}
             source_tracer[nid] = _Tracer(frozenset({(name, name)}), None)
@@ -54,9 +60,23 @@ def project(array: Array, *, on_fail: str = "raise") -> Projection:
     def on_op(_nid: int, name: str, ins: list[object], params: Mapping[str, object]) -> object:
         if name == "field":
             rec = ins[0]
-            if isinstance(rec, _Tracer) and rec.record is not None:
-                src_name, _ = rec.record
-                return _Tracer(rec.touched | {(src_name, str(params["field"]))}, None)
+            if isinstance(rec, _Tracer) and rec.fields is not None:
+                origin = rec.fields.get(str(params["field"]))
+                if origin is not None:
+                    return _Tracer(rec.touched | {origin}, None)
+        if name == "exchange":  # a pure data-movement boundary is identity on the projection (§3.3a)
+            return ins[0]
+        if name == "pack_key":  # M40: reads the `on` key fields; the record (its fields) passes through
+            rec = ins[0]
+            if isinstance(rec, _Tracer) and rec.fields is not None:
+                read = {rec.fields[f] for f in _decode_on(params) if f in rec.fields}
+                return _Tracer(rec.touched | frozenset(read), rec.fields)
+        if name == "join":  # M40: merge the two sides' per-field provenance (intersection-dedup, left wins)
+            left, right = ins[0], ins[1]
+            lf = left.fields if isinstance(left, _Tracer) and left.fields is not None else {}
+            rf = right.fields if isinstance(right, _Tracer) and right.fields is not None else {}
+            merged = {**lf, **{f: v for f, v in rf.items() if f not in lf}}
+            return _Tracer(_union(ins), merged)
         return _Tracer(_union(ins), None)
 
     def on_external(_nid: int, _fn: object, ins: list[object]) -> object:

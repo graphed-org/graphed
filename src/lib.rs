@@ -217,6 +217,14 @@ impl PyGraphStore {
         self.store.add_exchange(inputs, p).map_err(map_err)
     }
 
+    /// Record a `Join` boundary (plan M40 §2.1). Two inputs `[left, right]`; identity is its
+    /// `scheme` ParamMap (`params`) + its ordered inputs; `nodes()[i]["kind"] == "join"`.
+    #[pyo3(signature = (inputs, params=None))]
+    fn add_join(&self, inputs: Vec<NodeId>, params: Option<Bound<'_, PyAny>>) -> PyResult<NodeId> {
+        let p = params_from_py(params.as_ref())?;
+        self.store.add_join(inputs, p).map_err(map_err)
+    }
+
     fn node_count(&self) -> usize {
         self.store.node_count()
     }
@@ -297,6 +305,11 @@ impl PyGraphStore {
                 }
                 node::NodeKey::Exchange { scheme, .. } => {
                     d.set_item("kind", "exchange")?;
+                    d.set_item("name", "")?;
+                    d.set_item("params", params_to_py(py, scheme)?)?;
+                }
+                node::NodeKey::Join { scheme, .. } => {
+                    d.set_item("kind", "join")?;
                     d.set_item("name", "")?;
                     d.set_item("params", params_to_py(py, scheme)?)?;
                 }

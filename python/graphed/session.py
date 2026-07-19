@@ -182,6 +182,27 @@ class Session:
         self._step_reducer()
         return self._array_cls(self, node_id)
 
+    def record_join(self, left: Array, right: Array, params: Mapping[str, ParamValue]) -> Array:
+        """Record a ``Join`` boundary (M40): a two-input co-partitioned relational combine. Its
+        ``params`` (``on``/``how``) + its ordered inputs ``[left, right]`` are its structural identity;
+        its output form is the backend's ``op_form("join", …)`` (flat record-merge; §3.3)."""
+        params_d: dict[str, ParamValue] = dict(params)
+        prov = capture()
+        in_forms = [self._forms[left.node_id], self._forms[right.node_id]]
+        try:
+            form = self._backend.op_form("join", in_forms, params_d)
+        except GraphedTypeError:
+            raise
+        except Exception as exc:  # backend type/shape error -> user-located error (as record_op)
+            raise GraphedTypeError("join", prov, str(exc)) from exc
+        ids = [left.node_id, right.node_id]
+        node_id = self._store.add_join(ids, params_d)
+        self._forms.setdefault(node_id, form)
+        self._ops.setdefault(node_id, ("join", params_d, ids))
+        self._provenance.setdefault(node_id, prov)
+        self._step_reducer()
+        return self._array_cls(self, node_id)
+
     def record_external(
         self,
         op: str,

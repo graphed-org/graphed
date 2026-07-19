@@ -138,6 +138,12 @@ impl GraphStore {
         self.intern(NodeKey::Exchange { scheme, inputs })
     }
 
+    /// Record a `Join` boundary (plan M40 §2.1): two co-partitioned inputs `[left, right]` combined
+    /// per `scheme` (`how`, `on`). Like `Exchange`, its identity is its `scheme` + its ordered inputs.
+    pub fn add_join(&self, inputs: Vec<NodeId>, scheme: ParamMap) -> Result<NodeId, BadNodeId> {
+        self.intern(NodeKey::Join { scheme, inputs })
+    }
+
     pub fn mark_output(&self, id: NodeId) -> Result<(), BadNodeId> {
         let mut g = self.lock();
         if id >= g.nodes.len() as NodeId {

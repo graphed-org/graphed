@@ -26,9 +26,13 @@ from typing import Generic, Protocol, TypeVar, runtime_checkable
 
 R = TypeVar("R")  # a partial result (e.g. a histogram array)
 Block = TypeVar("Block")  # a backend-native partition of rows (opaque to the engine)
-# a backend-native row-index handle: a phantom second parameter reserved for the M40 join half
-# (match_indices/take), so it appears in no M39 method and is therefore covariant.
+# M39: a phantom second parameter of ShuffleBackend (used by no exchange method). Covariant, as an
+# unused Protocol type parameter must be.
 Index_co = TypeVar("Index_co", covariant=True)
+# M40 (E3): the row-index handle the join half actually uses. INVARIANT — ``match_indices`` produces
+# it (return position) and ``take`` consumes it (parameter position), so it is neither purely
+# covariant nor contravariant. Lives on :class:`JoinBackend`, not on ``ShuffleBackend``.
+Index = TypeVar("Index")
 
 
 @runtime_checkable
@@ -72,6 +76,34 @@ class ShuffleBackend(Protocol[Block, Index_co]):
 
     def from_wire(self, data: bytes) -> Block:
         """Inverse of :meth:`to_wire`."""
+        ...
+
+
+@runtime_checkable
+class JoinBackend(ShuffleBackend[Block, Index], Protocol[Block, Index]):
+    """The M39 exchange half (inherited) **plus** the M40 relational join half (plan §3.0/§3.3). The
+    generic radix-hash join engine needs a backend that is BOTH a :class:`ShuffleBackend` (move/route
+    rows) AND supplies these relational primitives; the real array backends satisfy it, while an
+    exchange-only M39 backend stays a plain :class:`ShuffleBackend` (its frozen ``isinstance``
+    contract is unchanged — the join half is additive, not a widening of ``ShuffleBackend``)."""
+
+    def match_indices(
+        self, build: Block, probe: Block, *, on: Sequence[str], how: str = "inner"
+    ) -> tuple[Index, Index]:
+        """Relationally match two co-partitioned blocks on ``on`` and return aligned
+        ``(build_idx, probe_idx)`` **with duplication** — a probe row with k build matches yields k
+        aligned pairs (SQL/pandas semantics, NOT list-of-matches). ``how=left``/``outer`` emit a
+        ``-1`` sentinel where a side is missing (→ :meth:`take` yields a null/option row)."""
+        ...
+
+    def take(self, block: Block, index: Index) -> Block:
+        """Gather rows of ``block`` by ``index``. A ``-1`` entry is a **miss** → a null/option row,
+        **never** the last row (an ``np.take``-style gather is a bug — plan M40 trap #1)."""
+        ...
+
+    def merge_records(self, left: Block, right: Block, *, on: Sequence[str]) -> Block:
+        """Flat relational record-merge of two aligned taken blocks: the union of both sides' fields
+        minus the duplicated ``on`` key, one flat record per aligned row (plan M40 §3.3)."""
         ...
 
 

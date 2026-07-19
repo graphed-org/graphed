@@ -14,6 +14,8 @@ from typing import Any
 import awkward as ak
 import numpy as np
 
+from . import join
+
 # Elementwise ops: canonical name -> callable. Unary take 1 operand, binary take 2.
 # M16 (parity plan P0): the FULL M11 canonical ufunc tier — awkward arrays take numpy ufuncs
 # directly, and the typetracer infers forms for every one of them.
@@ -139,6 +141,10 @@ def _fields(params: Mapping[str, Any]) -> list[str]:
 def apply(
     op: str, operands: Sequence[Any], params: Mapping[str, Any], behavior: Mapping[str, Any] | None = None
 ) -> Any:
+    if op == "pack_key":  # M40 §2.1: add the big-endian-packed u64 __joinkey__ column
+        return join.pack_key(operands[0], join.on_from_params(params))
+    if op == "exchange":
+        return operands[0]  # a pure data-movement boundary is identity on values in-process (§3.3a)
     if op in _UNARY:
         return _UNARY[op](operands[0])
     if op in _BINARY:

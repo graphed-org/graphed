@@ -25,6 +25,9 @@ const T_STAGE: u8 = 4;
 // M39: the Exchange boundary variant. Tag APPENDED (magic stays GIR1) so tags 0..4 encode
 // byte-identically and the M8 determinism gate is untouched.
 const T_EXCHANGE: u8 = 5;
+// M40: the Join boundary variant. APPENDED for the same reason — tags 0..5 stay byte-identical, so
+// M39/M8 blobs and their determinism gate are untouched; an old reader meeting T_JOIN fails loudly.
+const T_JOIN: u8 = 6;
 
 // Param value tags (mirror ParamValue order).
 const P_INT: u8 = 0;
@@ -170,6 +173,11 @@ pub fn serialize_with(store: &GraphStore, outputs: &[NodeId]) -> Vec<u8> {
             }
             NodeKey::Exchange { scheme, inputs } => {
                 out.push(T_EXCHANGE);
+                put_params(&mut out, scheme);
+                put_inputs(&mut out, inputs);
+            }
+            NodeKey::Join { scheme, inputs } => {
+                out.push(T_JOIN);
                 put_params(&mut out, scheme);
                 put_inputs(&mut out, inputs);
             }
@@ -342,6 +350,11 @@ pub fn deserialize(data: &[u8]) -> Result<GraphStore, DecodeError> {
                 let scheme = r.params()?;
                 let inputs = r.inputs(idx)?;
                 NodeKey::Exchange { scheme, inputs }
+            }
+            T_JOIN => {
+                let scheme = r.params()?;
+                let inputs = r.inputs(idx)?;
+                NodeKey::Join { scheme, inputs }
             }
             T_STAGE => {
                 let inputs = r.inputs(idx)?;

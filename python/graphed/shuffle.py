@@ -32,6 +32,7 @@ from graphed.core import DurablePlanV2, GraphStore, OpSpec, Partition, StageSpec
 from .aggregate import resolve_backend
 from .array import Array
 from .backend import ParamValue
+from .errors import GraphedError
 from .execute import compile_ir
 from .session import Session
 from .write import PartitionedSource
@@ -75,6 +76,57 @@ def repartition(
     field (the join/keyed-shuffle case — a neutral module verb, NOT an ``Array`` method);
     ``target_bytes=`` coalesces by measured size; ``n=`` sets a target partition count."""
     return array.session.record_exchange(array, _scheme_params(by=by, n=n, target_bytes=target_bytes))
+
+
+JOINKEY = "__joinkey__"
+
+
+def pack_key(array: Array, *, on: Sequence[str]) -> Array:
+    """Record a neutral ``pack_key`` op that adds a flat unsigned-64 ``__joinkey__`` column derived
+    from the ``on`` fields (plan §2.1/§3.3, spec Impl Target 8). A fusible ``Op`` (not a boundary), so
+    it folds into the map stage; the backend computes it by big-endian integer bit-ops (never Python
+    ``hash()``). :func:`join` uses it internally; it is also public so a caller can pre-key a source."""
+    return array.session.record_op("pack_key", [array], {"on": ",".join(on)})
+
+
+def join(left: Array, right: Array, *, on: Sequence[str], how: str = "inner") -> Array:
+    """The neutral ``graphed.join`` MODULE verb (plan §3.1): a relational, SQL-*duplicating* join of
+    two arrays on ``on`` (a probe row with k build matches ⇒ k output rows). A join is neither an
+    awkward nor a numpy idiom, so — like :func:`repartition` — it is a module function, not an
+    ``Array`` method. It records ``pack_key`` → hash ``Exchange`` on each side (co-partitioning them on
+    the shared ``__joinkey__``) then a two-input ``Join`` boundary; the flat output record is the union
+    of both sides' fields with shared columns kept once. ``how`` ∈ {inner, left, outer}."""
+    if left.session is not right.session:
+        raise GraphedError("join: left and right must belong to the same Session")
+    session = left.session
+    lk = pack_key(left, on=on)
+    rk = pack_key(right, on=on)
+    le = session.record_exchange(lk, {"scheme": "hash", "key": JOINKEY})
+    re = session.record_exchange(rk, {"scheme": "hash", "key": JOINKEY})
+    # the co-partitioned sides are matched on the packed __joinkey__; ``on`` is a scalar (comma-joined
+    # for a composite key) since IR params carry only scalars.
+    return session.record_join(le, re, {"on": JOINKEY, "how": how})
+
+
+def join_blocks(
+    backend: Any, left: Any, right: Any, *, on: Sequence[str] = (JOINKEY,), how: str = "inner"
+) -> Any:
+    """The generic radix-hash join KERNEL over a ``JoinBackend`` (plan §3.3b): match co-partitioned
+    blocks, gather both sides by the aligned indices, merge to one flat relational record. Backend-
+    agnostic — it calls ONLY ``JoinBackend`` primitives, so the same kernel drives every backend and
+    no awkward/numpy leaks into ``graphed``. Used by the reference ``eval_stage("join")`` and by the
+    two-phase executor's gather-join."""
+    build_idx, probe_idx = backend.match_indices(left, right, on=list(on), how=how)
+    return backend.merge_records(backend.take(left, build_idx), backend.take(right, probe_idx), on=list(on))
+
+
+def partition_block(
+    backend: Any, block: Any, *, parts: int, salt: int = 0, boundaries: object = None
+) -> tuple[Any, ...]:
+    """The stage-1 map-write routing kernel (plan §3.3b / §4): route a block's rows to ``parts``
+    sub-blocks by the pinned hash of ``__joinkey__`` (a ``ShuffleBackend`` primitive). Module-level so
+    a durable plan references it by import path, not by value."""
+    return backend.partition(block, JOINKEY, parts, salt=salt, boundaries=boundaries)  # type: ignore[no-any-return]
 
 
 def _backend_identity(session: Session, backend: Callable[[], Any] | str | None) -> str:
@@ -136,3 +188,56 @@ def shuffle_plan(
         ),
     )
     return DurablePlanV2(ir=bytes(compiled.ir), stages=stages)
+
+
+def join_plan(
+    output: Array,
+    *,
+    backend: Callable[[], Any] | str | None = None,
+    steps_per_file: int = 1,
+) -> DurablePlanV2:
+    """Build the multi-stage :class:`~graphed.core.DurablePlanV2` for a two-source ``graphed.join``
+    (plan §3.2, contract E1/target 13). A join has TWO independently-partitioned sources, so the
+    single-source ``shuffle_plan`` guard cannot express it: this emits ONE ``map_write`` stage per side
+    (route + coalesce on ``__joinkey__``) that a single ``kind="gather_join"`` stage — ``inputs`` over
+    both map-writes — depends on (the two-input barrier edge). Cross-process execution is the
+    executor's ``run_join``; this builder is the durable, byte-deterministic plan artifact."""
+    session = output.session
+    compiled = compile_ir(session, output)
+    store = GraphStore.deserialize(bytes(compiled.ir))
+    if not any(n["kind"] == "join" for n in store.nodes()):
+        raise TypeError("join_plan needs a Join boundary in the graph (use graphed.join)")
+
+    partitioned = {nid: d for nid, d in session.sources().items() if isinstance(d, PartitionedSource)}
+    if len(partitioned) != 2:
+        raise TypeError(
+            f"join_plan needs exactly two partitioned sources; this session has {len(partitioned)}"
+        )
+
+    join_params = dict(next(n for n in store.nodes() if n["kind"] == "join")["params"])
+    how = str(join_params.get("how", "inner"))
+    exchanges = [n for n in store.nodes() if n["kind"] == "exchange"]
+    parts = int(dict(exchanges[0]["params"]).get("parts", steps_per_file)) if exchanges else steps_per_file
+    backend_id = _backend_identity(session, backend)
+    routing: dict[str, Any] = {"scheme": "hash", "key": JOINKEY, "parts": parts, "backend_id": backend_id}
+
+    # one map-write per side, in deterministic source order (by node id) -> the gather_join at the end
+    sides = [data for _nid, data in sorted(partitioned.items())]
+    map_stages = tuple(
+        StageSpec(
+            kind="map_write",
+            inputs=(),
+            process=OpSpec.from_callable(partition_block),
+            routing=routing,
+            tasks=tuple(Task(i, p) for i, p in enumerate(data.partitions(steps_per_file))),
+        )
+        for data in sides
+    )
+    gather = StageSpec(
+        kind="gather_join",
+        inputs=tuple(range(len(map_stages))),  # (0, 1): depends on BOTH map-writes (the barrier edge)
+        process=OpSpec.from_callable(join_blocks),
+        routing={"parts": parts, "backend_id": backend_id, "how": how},
+        tasks=tuple(Task(d, Partition("dest", "p", d, d + 1)) for d in range(parts)),
+    )
+    return DurablePlanV2(ir=bytes(compiled.ir), stages=(*map_stages, gather))

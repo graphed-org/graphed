@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import platform
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 
@@ -311,6 +311,27 @@ def _reduce_kwargs(params: Mapping[str, object]) -> dict[str, Any]:
     return kwargs
 
 
+def _decode_on(spec: object) -> list[str]:
+    """The join ``on`` fields, whether recorded as a list or a comma-joined string (ParamMap)."""
+    if isinstance(spec, str):
+        return [s for s in spec.split(",") if s]
+    return [str(c) for c in cast("Sequence[object]", spec)]
+
+
+def _join_nullable(
+    how: str, left_data: Sequence[tuple[str, str]], right_data: Sequence[tuple[str, str]]
+) -> list[tuple[str, str]]:
+    """The non-key fields a join makes nullable (⇒ a validity companion column, M40 a3): outer nulls
+    both sides, ``left``/``right`` null the opposite side, ``inner`` nulls nothing."""
+    if how == "outer":
+        return [*left_data, *right_data]
+    if how == "left":
+        return list(right_data)
+    if how == "right":
+        return list(left_data)
+    return []
+
+
 class NumpyBackend:
     """A `graphed.Backend` over numpy arrays: M2 seam + M5 records + the M11 elementwise tier.
 
@@ -329,6 +350,35 @@ class NumpyBackend:
         forms = [f for f in inputs if isinstance(f, NumpyForm)]
         if op == "exchange":
             return forms[0]  # a pure data-movement boundary is identity on the payload form (§3.3a)
+        if op == "pack_key":
+            (rec,) = forms
+            if rec.fields is None:
+                raise TypeError(f"pack_key needs a record source, got {rec.describe()}")
+            fd = dict(rec.fields)
+            for name in _decode_on(params["on"]):
+                if name not in fd:
+                    raise TypeError(f"pack_key field {name!r} absent; fields are {sorted(fd)}")
+            fields = (*rec.fields, ("__joinkey__", np.dtype(np.uint64).str))
+            return NumpyForm(np.dtype(object), kind="record", fields=fields)
+        if op == "join":
+            left, right = forms
+            if left.fields is None or right.fields is None:
+                raise TypeError("join needs two record sources")
+            # intersection dedup keeping LEFT's copy (ignores `on`): fields = left ++ right-only. Matches
+            # merge_records exactly, so the inferred form == the evaluated record (field set AND order).
+            lnames = {f for f, _ in left.fields}
+            rnames = {f for f, _ in right.fields}
+            right_only = [(n, t) for n, t in right.fields if n not in lnames]
+            left_only = [(n, t) for n, t in left.fields if n not in rnames]
+            # left/outer nullability rides in companion validity columns (NumpyForm has no option field,
+            # a3). ponytail: only the exclusive (non-shared) fields get companions; a shared col nulled on
+            # an outer-only row is untested — widen if an outer HEP form test lands.
+            companions = [
+                (f"__valid_{n}__", np.dtype(np.bool_).str)
+                for n, _ in _join_nullable(str(params.get("how", "inner")), left_only, right_only)
+            ]
+            fields = (*left.fields, *right_only, *companions)
+            return NumpyForm(np.dtype(object), kind="record", fields=fields)
         if op == "field":
             (rec,) = forms
             if rec.fields is None:
@@ -396,6 +446,16 @@ class NumpyBackend:
         raise TypeError(f"unsupported op {op!r}")
 
     def eval_stage(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> object:
+        if op == "exchange":
+            return inputs[0]  # a pure data-movement boundary is identity on values in-process (§3.3a)
+        if op == "pack_key":
+            return shuffle.pack_key(inputs[0], _decode_on(params["on"]))
+        if op == "join":
+            from graphed.shuffle import join_blocks  # noqa: PLC0415  (local: avoid import-order coupling)
+
+            return join_blocks(
+                self, inputs[0], inputs[1], on=_decode_on(params["on"]), how=str(params.get("how", "inner"))
+            )
         if op == "field":
             return np.asarray(inputs[0][str(params["field"])])  # type: ignore[index]
         if op == "filter":
@@ -454,6 +514,18 @@ class NumpyBackend:
 
     def from_wire(self, data: bytes) -> Any:
         return shuffle.from_wire(data)
+
+    # ---- JoinBackend join half (M40 §3.3) — thin delegates to the pure `shuffle` module ----
+    def match_indices(
+        self, build: Any, probe: Any, *, on: Sequence[str], how: str = "inner"
+    ) -> tuple[Any, Any]:
+        return shuffle.match_indices(build, probe, on=on, how=how)
+
+    def take(self, block: Any, index: Any) -> Any:
+        return shuffle.take(block, index)
+
+    def merge_records(self, left: Any, right: Any, *, on: Sequence[str]) -> Any:
+        return shuffle.merge_records(left, right, on=on)
 
 
 def from_array(session: Session, name: str, values: object, *, chunks: int | None = None) -> Array:

@@ -15,7 +15,7 @@ import awkward as ak
 from graphed import Session
 from graphed.core import PayloadDescriptor
 
-from . import payloads, shuffle
+from . import join, payloads, shuffle
 from ._ops import apply
 
 
@@ -53,6 +53,9 @@ class AwkwardBackend:
     def op_form(self, op: str, inputs: Sequence[AwkwardForm], params: Mapping[str, object]) -> AwkwardForm:
         if op == "exchange":
             return inputs[0]  # a pure data-movement boundary is identity on the payload form (§3.3a)
+        if op == "join":
+            # M40 (§3.3): flat relational record-merge form; how=left/outer ⇒ missing side option-typed
+            return AwkwardForm(join.join_form([f.tt for f in inputs], params))
         if op in _EXTERNAL:
             # Opaque/external op: output form is not derivable from inputs. Approximate it by the
             # first input's form (corrections/inference are ~shape-preserving for these fixtures).
@@ -61,7 +64,22 @@ class AwkwardBackend:
         return AwkwardForm(apply(op, operands, params, behavior=self._behavior))
 
     def eval_stage(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> object:
+        if op == "join":  # needs `self` (the shared kernel routes through JoinBackend primitives)
+            return self._eval_join(inputs, params)
         return apply(op, inputs, params, behavior=self._behavior)
+
+    def _eval_join(self, inputs: Sequence[object], params: Mapping[str, object]) -> object:
+        left, right = inputs[0], inputs[1]
+        on = join.on_from_params(params)
+        how = str(params.get("how", "inner"))
+        if ak.backend(left) == "typetracer":  # projection replay: structural merge, no matching/data read
+            return join.merge_records(left, right, on=on)
+        if bool(params.get("grouped", False)):  # gak.join(grouped=True): awkward-only regroup post-op
+            return join.join_grouped(left, right, on=on, how=how)
+        # the shared radix-hash kernel (JoinBackend prims only); local import avoids an import cycle.
+        from graphed.shuffle import join_blocks  # noqa: PLC0415
+
+        return join_blocks(self, left, right, on=on, how=how)
 
     def boundary_ops(self) -> frozenset[str]:
         return _BOUNDARY
@@ -115,6 +133,18 @@ class AwkwardBackend:
 
     def from_wire(self, data: bytes) -> Any:
         return shuffle.from_wire(data)
+
+    # ---- JoinBackend join half (M40 §3.3) — thin delegates to the pure `join` module ----
+    def match_indices(
+        self, build: Any, probe: Any, *, on: Sequence[str], how: str = "inner"
+    ) -> tuple[Any, Any]:
+        return join.match_indices(build, probe, on=on, how=how)
+
+    def take(self, block: Any, index: Any) -> Any:
+        return join.take(block, index)
+
+    def merge_records(self, left: Any, right: Any, *, on: Sequence[str]) -> Any:
+        return join.merge_records(left, right, on=on)
 
 
 def _typetracer(array: ak.Array) -> ak.Array:

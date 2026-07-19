@@ -73,6 +73,15 @@ pub enum NodeKey {
         scheme: ParamMap,
         inputs: Vec<NodeId>,
     },
+    /// A local co-partitioned relational combine (plan M40 §2.1): its two inputs `[left, right]`
+    /// (both co-partitioned `Exchange`es on the same key + `parts`) are joined per `scheme`
+    /// (`how=inner|left|outer`, `on=<field>`). Like `Exchange` it is NOT an `Op`, so it interns/CSEs,
+    /// ends a stage (fusion never crosses it), and survives reduction as itself. `inputs` is a flat
+    /// `Vec` by the fixed `[left, right]` convention, which `with_inputs` preserves in order.
+    Join {
+        scheme: ParamMap,
+        inputs: Vec<NodeId>,
+    },
 }
 
 impl NodeKey {
@@ -83,7 +92,8 @@ impl NodeKey {
             | NodeKey::Reduction { inputs, .. }
             | NodeKey::External { inputs, .. }
             | NodeKey::Stage { inputs, .. }
-            | NodeKey::Exchange { inputs, .. } => inputs,
+            | NodeKey::Exchange { inputs, .. }
+            | NodeKey::Join { inputs, .. } => inputs,
         }
     }
 
@@ -122,6 +132,10 @@ impl NodeKey {
             // a non-`op|` prefix, so the optimizer's `boundary_from_token` treats it as a boundary;
             // the scheme is in the token so distinct schemes are distinct templates on reconstruction.
             NodeKey::Exchange { scheme, .. } => with_params("exch".to_string(), scheme),
+            // a non-`op|` prefix so `boundary_from_token` treats it as a boundary; the two ordered
+            // inputs are e-graph children (build vs probe asymmetry preserved), the scheme is in the
+            // token so distinct join types/keys are distinct templates on reconstruction.
+            NodeKey::Join { scheme, .. } => with_params("join".to_string(), scheme),
         }
     }
 
@@ -158,6 +172,10 @@ impl NodeKey {
                 scheme: scheme.clone(),
                 inputs: new_inputs,
             },
+            NodeKey::Join { scheme, .. } => NodeKey::Join {
+                scheme: scheme.clone(),
+                inputs: new_inputs,
+            },
         }
     }
 
@@ -189,6 +207,13 @@ impl NodeKey {
                     "Exchange".to_string()
                 } else {
                     format!("Exchange {scheme}")
+                }
+            }
+            NodeKey::Join { scheme, .. } => {
+                if scheme.is_empty() {
+                    "Join".to_string()
+                } else {
+                    format!("Join {scheme}")
                 }
             }
         }
