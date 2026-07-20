@@ -262,3 +262,123 @@ impl fmt::Display for NodeKey {
         write!(f, "{}", self.label())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::param::ParamValue;
+
+    fn pm(entries: Vec<(&str, ParamValue)>) -> ParamMap {
+        ParamMap::new(
+            entries
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v))
+                .collect(),
+        )
+    }
+
+    fn ext_desc() -> PayloadDescriptor {
+        PayloadDescriptor {
+            kind: "onnx".into(),
+            content_hash: "abc".into(),
+            framework: "onnxruntime".into(),
+            version: "1.17".into(),
+            io_schema: "(f)->(f)".into(),
+            preprocessing_ref: None,
+        }
+    }
+
+    #[test]
+    fn exchange_and_join_are_input_bearing_boundaries() {
+        let exch = NodeKey::Exchange {
+            scheme: pm(vec![("parts", ParamValue::Int(4))]),
+            inputs: vec![7],
+        };
+        let join = NodeKey::Join {
+            scheme: pm(vec![("how", ParamValue::Str("inner".into()))]),
+            inputs: vec![1, 2],
+        };
+        assert_eq!(exch.inputs(), &[7]);
+        assert_eq!(join.inputs(), &[1, 2]);
+        assert!(exch.is_boundary() && join.is_boundary());
+        // non-`op|` token prefixes so the optimizer's boundary detection treats them as boundaries
+        assert!(exch.token().starts_with("exch"));
+        assert!(join.token().starts_with("join"));
+        // with_inputs swaps inputs, preserves scheme + the [left, right] order
+        let rejoined = join.with_inputs(vec![3, 4]);
+        assert_eq!(rejoined.inputs(), &[3, 4]);
+        match rejoined {
+            NodeKey::Join { scheme, .. } => {
+                assert_eq!(scheme, pm(vec![("how", ParamValue::Str("inner".into()))]))
+            }
+            _ => panic!("with_inputs must not change the variant"),
+        }
+        assert_eq!(exch.with_inputs(vec![9]).inputs(), &[9]);
+    }
+
+    #[test]
+    fn labels_and_display_cover_every_boundary_branch() {
+        // Exchange/Join labels: empty scheme -> bare name; non-empty -> "<Name> <scheme>"
+        assert_eq!(
+            NodeKey::Exchange {
+                scheme: pm(vec![]),
+                inputs: vec![0]
+            }
+            .label(),
+            "Exchange"
+        );
+        assert!(NodeKey::Exchange {
+            scheme: pm(vec![("parts", ParamValue::Int(2))]),
+            inputs: vec![0]
+        }
+        .label()
+        .starts_with("Exchange "));
+        assert_eq!(
+            NodeKey::Join {
+                scheme: pm(vec![]),
+                inputs: vec![0, 1]
+            }
+            .label(),
+            "Join"
+        );
+        let j1 = NodeKey::Join {
+            scheme: pm(vec![("how", ParamValue::Str("left".into()))]),
+            inputs: vec![0, 1],
+        };
+        assert!(j1.label().starts_with("Join "));
+        // Display delegates to label()
+        assert_eq!(format!("{j1}"), j1.label());
+        // External label with params (non-empty branch); Stage token
+        let ext = NodeKey::External {
+            descriptor: ext_desc(),
+            params: pm(vec![("k", ParamValue::Int(1))]),
+            inputs: vec![],
+        };
+        assert!(ext.label().contains("External onnx"));
+        assert_eq!(format!("{ext}"), ext.label());
+        let stage = NodeKey::Stage {
+            inputs: vec![1],
+            members: vec![StageOp {
+                token: "op|inc".into(),
+                inputs: vec![StageRef::Input(0)],
+            }],
+        };
+        assert_eq!(stage.token(), "stage|1");
+    }
+
+    #[test]
+    fn parse_op_token_decodes_op_and_red_and_rejects_boundaries() {
+        let (kind, name, params) = parse_op_token("op|inc").expect("op token decodes");
+        assert_eq!((kind.as_str(), name.as_str()), ("op", "inc"));
+        assert!(params.is_empty());
+        // a `red|` token WITH a params suffix round-trips through ParamMap::from_token
+        let pmap = pm(vec![("n", ParamValue::Int(5))]);
+        let tok = format!("red|sum|{}", pmap.token());
+        let (rk, rn, rp) = parse_op_token(&tok).expect("red token with params decodes");
+        assert_eq!((rk.as_str(), rn.as_str()), ("red", "sum"));
+        assert_eq!(rp, pmap);
+        // boundary/source tokens are not op-shaped -> None
+        assert!(parse_op_token("join").is_none());
+        assert!(parse_op_token("exch").is_none());
+    }
+}

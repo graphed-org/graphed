@@ -15,8 +15,8 @@ from __future__ import annotations
 
 import hashlib
 import io
-from collections.abc import Sequence
-from typing import Any
+from collections.abc import Callable, Sequence
+from typing import Any, cast
 
 import numpy as np
 
@@ -57,7 +57,10 @@ def concat(blocks: Sequence[np.ndarray]) -> np.ndarray:
     M40/E4: if any block is an option (masked) block, the per-field validity mask is preserved via
     ``np.ma.concatenate``; a pure-exchange (all-plain) merge stays the byte-identical M39 path."""
     if any(isinstance(b, np.ma.MaskedArray) for b in blocks):
-        return np.ma.concatenate([np.ma.asanyarray(b) for b in blocks])
+        # numpy<2.5's np.ma stubs leave concatenate untyped; call through a typed alias so the
+        # typed-context check passes identically on the leaner and complete (>=2.5) stubs.
+        ma_concatenate = cast("Callable[..., np.ndarray]", np.ma.concatenate)
+        return ma_concatenate([np.ma.asanyarray(b) for b in blocks])
     return np.concatenate([np.asarray(b) for b in blocks])
 
 
@@ -152,7 +155,7 @@ def _masked_gather(block: np.ndarray, index: np.ndarray) -> np.ndarray:
     ZERO-ROW ``block`` (a schema-only carrier for a one-sided join dest, or a cut-emptied partition) has
     no row 0 for the clip to land on and can only be gathered as misses — so it short-circuits to
     ``len(index)`` fully-masked null rows of ``block``'s dtype (the null-fill a non-inner join needs)."""
-    src = np.ma.asanyarray(block)
+    src: np.ma.MaskedArray = np.ma.asanyarray(block)
     data = np.ma.getdata(src)
     idx = np.asarray(index)
     if data.shape[0] == 0:  # empty carrier -> len(idx) fully-masked null rows (clip-to-0 has no row 0)
@@ -183,7 +186,8 @@ def merge_records(left: np.ndarray, right: np.ndarray, *, on: Sequence[str]) -> 
     fields with the shared ``on`` key kept ONCE (coalesced from whichever side is present, so an
     outer row's key survives). Per-field validity masks are preserved (E4)."""
     on_set = {str(c) for c in on}
-    lm, rm = np.ma.asanyarray(left), np.ma.asanyarray(right)
+    lm: np.ma.MaskedArray = np.ma.asanyarray(left)
+    rm: np.ma.MaskedArray = np.ma.asanyarray(right)
     ldata, lmask = np.ma.getdata(lm), np.ma.getmaskarray(lm)
     rdata, rmask = np.ma.getdata(rm), np.ma.getmaskarray(rm)
     lnames = list(ldata.dtype.names or ())
@@ -267,7 +271,7 @@ def _mask_to_wire(block: np.ndarray) -> bytes:
     """Serialize a structured masked block to Arrow IPC, carrying each field's mask as native
     validity (``pa.array(values, mask=...)``) — the E4 pin."""
     pa = _pa()
-    src = np.ma.asanyarray(block)
+    src: np.ma.MaskedArray = np.ma.asanyarray(block)
     data, mask = np.ma.getdata(src), np.ma.getmaskarray(src)
     cols = {
         name: pa.array(np.asarray(data[name]), mask=np.asarray(mask[name]))
