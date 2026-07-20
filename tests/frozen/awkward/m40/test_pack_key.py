@@ -46,6 +46,7 @@ guards against OTHER nondeterminism (dict/set iteration order, id()-based foldin
 from __future__ import annotations
 
 import itertools
+import os
 import subprocess
 import sys
 
@@ -156,7 +157,12 @@ def _pack_in_child(seed: str) -> list[str]:
     args = [f"{r},{lu},{e}" for r, lu, e in ROWS]
     proc = subprocess.run(
         [sys.executable, "-c", _CHILD, *args],
-        env={"PYTHONHASHSEED": seed, "PATH": "/usr/bin:/bin"},
+        # Inherit the parent environment (so the child can start on every OS — a hardcoded POSIX
+        # `PATH=/usr/bin:/bin` with no SystemRoot makes the Windows child fail Winsock init when
+        # `import awkward` pulls in asyncio, WinError 10106) and override ONLY PYTHONHASHSEED — the
+        # single variable under test. The two children still differ in that one variable, so a
+        # PYTHONHASHSEED-sensitive packer (dict/set-ordering, id-folding) is still caught.
+        env={**os.environ, "PYTHONHASHSEED": seed},
         capture_output=True,
         text=True,
     )
