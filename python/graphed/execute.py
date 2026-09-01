@@ -29,6 +29,7 @@ import graphed.core
 from .backend import Backend
 from .errors import GraphedError
 from .session import Session
+from .varied import refuse_container
 
 __all__ = ["CompiledGraph", "compile_ir", "evaluate_ir"]
 
@@ -40,6 +41,10 @@ class CompiledGraph:
 
     ir: bytes
     source_names: tuple[str, ...]
+    #: §2.5: registered variation labels that reach no marked output — a DIAGNOSTIC, sorted,
+    #: empty when every one does. DCE already prunes the work; this is what stops a systematic
+    #: being paid for at build time and quietly never filled.
+    unreached_labels: tuple[str, ...] = ()
 
     def evaluate(
         self,
@@ -63,6 +68,7 @@ def compile_ir(
     finishes from its maintained canonical view (per-step work already paid at record time).
     The artifact carries EXACTLY the requested outputs (M22), so compiling different
     expressions sequentially from one session never cross-talks."""
+    refuse_container("graphed.compile_ir", *outputs)
     if maximal_fusion and not optimize:
         raise ValueError("maximal_fusion requires optimize=True")
     if optimize and not outputs:
@@ -79,7 +85,11 @@ def compile_ir(
     else:
         blob = bytes(session._store.reduce(maximal_fusion=maximal_fusion, outputs=ids)[0].serialize())
     names = tuple(session.source_name(nid) for nid in session.source_ids())
-    return CompiledGraph(ir=blob, source_names=names)
+    reached: set[str] = set()
+    for arr in outputs:
+        reached |= getattr(arr, "_labels", None) or frozenset()
+    registered = {label for labels, _ref in session._varied for label in labels}
+    return CompiledGraph(ir=blob, source_names=names, unreached_labels=tuple(sorted(registered - reached)))
 
 
 def evaluate_ir(

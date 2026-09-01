@@ -21,8 +21,9 @@ from graphed.core import Partition
 from graphed.core.execution import Plan, Task, WorkerResources
 
 from .array import Array
-from .execute import compile_ir, evaluate_ir
+from .execute import CompiledGraph, compile_ir, evaluate_ir
 from .projection import read_columns
+from .varied import refuse_container
 from .write import PartitionedSource
 
 V = TypeVar("V")
@@ -53,6 +54,9 @@ class _PartitionReduce(Generic[V]):
     columns: tuple[str, ...] | None
     externals: tuple[tuple[str, Callable[..., object]], ...]
     reduce: Callable[[list[object]], V]
+    #: §8.2(i): the shipped closure's variation-label channel — declared here at m48 and fed by
+    #: `aggregate_plan(on_compiled=...)`'s return value; m49's lowering populates it.
+    variation_labels: tuple[Any, ...] | None = None
 
     def __call__(self, partition: Partition, resources: WorkerResources) -> V:
         chunk = self.reader.read_partition(partition, self.columns, resources)
@@ -74,13 +78,19 @@ def aggregate_plan(
     backend: Callable[[], Any] | str | None = None,
     steps_per_file: int = 1,
     partitions: Sequence[Partition] | None = None,
+    on_compiled: Callable[[CompiledGraph], Any] | None = None,
 ) -> Plan[V]:
     """Build a one-pass partition-wise reduction :class:`~graphed.core.execution.Plan` over the
     session's single partitioned source (see module docstring). ``outputs`` are the output Arrays
     (their shared sub-graph is compiled to one IR and evaluated once per partition); ``externals``
     binds any External payload evaluator; ``backend`` is the workers' evaluation backend (factory,
     class, or ``"module:attr"`` ref; defaults to the session backend's type). ``run(plan).value`` is
-    the ``reduce``+``combine`` aggregate over all partitions."""
+    the ``reduce``+``combine`` aggregate over all partitions.
+
+    ``on_compiled`` is §7.2's seam onto the internally compiled :class:`CompiledGraph` — the
+    artifact is otherwise unreachable from the caller. It fires ONCE, and whatever it returns is
+    carried onto the shipped closure's ``variation_labels``."""
+    refuse_container("graphed.aggregate_plan", *outputs)
     if not outputs:
         raise ValueError("aggregate_plan needs at least one output Array")
     session = outputs[0].session
@@ -101,6 +111,7 @@ def aggregate_plan(
         columns=read_columns(list(outputs), nid),
         externals=tuple((externals or {}).items()),
         reduce=reduce,
+        variation_labels=None if on_compiled is None else on_compiled(compiled),
     )
     if partitions is None:
         partitions = data.partitions(steps_per_file)
