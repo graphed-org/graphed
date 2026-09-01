@@ -107,7 +107,7 @@ both up with no change: it already runs `tests/extra/<pkg>` for the split packag
 
 `accessors.py` 68% -> 99%; `awkward/backend.py` 98% -> 100%.
 
-## Gate results (final)
+## Gate results at the dispute STOP (tip fdbc2ae, freeze `m48-freeze`)
 
 | gate | result |
 |---|---|
@@ -119,6 +119,32 @@ both up with no change: it already runs `tests/extra/<pkg>` for the split packag
 | mypy | clean, 76 source files, `files=["python"]` unchanged |
 | determinism | frozen F2 green |
 | precommit `--fast` | toml-valid ok, integrity-scan ok; workflows-valid skipped (pyyaml absent); prek cannot launch here (`rustup could not choose a version of cargo-clippy`), so ruff and mypy were run directly |
+
+## Iteration 9 — final gate pass on the re-freeze
+
+The dispute was upheld. The test-author applied both adjudicated corrections in affd355 — link kind
+(1) re-indexes `shifted.Photon.pt` (a collection the shift does not name, so the read is genuinely
+unvaried), and the §6.1d(B) identity arm keeps `sel.MET.pt` and asserts the identity over HANDLES:
+equal label lists plus per-label member node-id equality, which is strictly stronger than the single
+`.node_id` §2.2 refuses on a container. Suite re-frozen at `m48-freeze2`.
+
+**No implementation change was needed or made.** Every gate below ran against the source as it stood
+at the STOP; the only commits since are the test-author's re-freeze and this log entry.
+
+| gate | result | decisive output |
+|---|---|---|
+| m48 frozen | **112/112** | `pytest tests/frozen/awkward/m48 tests/frozen/frontend/m48` exit 0, zero FAILED |
+| whole frozen suite | only the known-env reds | 5 FAILED, all `awkward/m16` `ak.var`/`ak.std` typetracer `MaybeNone` |
+| coverage (combined) | green | `TOTAL 5905 314 1712 172 93%`; `coverage report --fail-under=90` printed no failure line |
+| coverage (frozen suite ALONE) | `TOTAL … 92%` | every m48 file >=91% except `accessors.py` 68% — the cross-repo shapes covered from `tests/extra` |
+| ruff | clean | `All checks passed!` / `84 files already formatted` |
+| mypy `--strict` | clean | `Success: no issues found in 76 source files`, `files=["python"]` unchanged |
+| determinism | green | frozen F2 passes inside the 112 |
+| precommit `--fast` | unchanged | `toml-valid ok`, `integrity-scan ok`; `workflows-valid --  pyyaml not installed`; `prek FAIL` on `rustup could not choose a version of cargo-clippy` |
+
+Per-file coverage under the frozen suite alone: `_tags` 98, `varied` 95, `vary` 91, `numpy/varied`
+100, `context` 92, `gnano` 100, `session` 96, `projection` 100, `execute` 93, `aggregate` 95,
+`array` 95, `awkward/backend` 98, `accessors` 68 (99 with `tests/extra`).
 
 ## Decision: `graphed.labels(ctx)` on a ROOT context
 
@@ -136,7 +162,7 @@ than silently filling nothing. The empty tuple would make "has this context any 
 `graphed.labels` on a plain `Array` raises instead — an array carries no universes, and answering
 `("nominal",)` there would let a dropped container read as a legitimate single-universe result.
 
-## Test dispute — STOPPED on two tests
+## Test dispute — STOPPED on two tests (UPHELD; re-frozen at `m48-freeze2`)
 
 `.graphed/m48/disputes/awkward-m48-test_lineage_seams.md`.
 
