@@ -57,8 +57,11 @@ def test_unify_contexts_raises_the_divergence_error_naming_both() -> None:
 
 def test_reindex_to_is_the_identity_for_a_value_already_at_the_target_or_context_free() -> None:
     _s, shifted, _mask, sel, root = _varied_mask_program()
-    at_target = sel.MET.pt
-    assert graphed.reindex_to(at_target, sel).node_id == at_target.node_id
+    at_target = sel.MET.pt  # Varied: §2.6c makes every read through a Varied-mask context Varied
+    result = graphed.reindex_to(at_target, sel)
+    assert list(graphed.labels(result)) == list(graphed.labels(at_target))
+    for label in graphed.labels(at_target):
+        assert graphed.universe(result, label).node_id == graphed.universe(at_target, label).node_id
     context_free = root.MET.pt  # read from the SOURCE, not through the context
     assert graphed.context_of(context_free) is None
     assert graphed.reindex_to(context_free, shifted).node_id == context_free.node_id
@@ -81,7 +84,7 @@ def test_link_kind_1_a_mask_derivation_makes_an_UNVARIED_value_varied() -> None:
     """Each member is re-indexed by THAT label's own mask; an implementation that unifies handles
     but never re-indexes gets the row count wrong for every non-nominal label."""
     session, shifted, mask, sel, _root = _varied_mask_program()
-    value = shifted.MET.pt
+    value = shifted.Photon.pt  # unvaried: Photon is not a collection the shift names (§2.6b)
     assert not isinstance(value, graphed.Varied)
     result = graphed.reindex_to(value, sel)
     assert isinstance(result, graphed.Varied)
