@@ -108,3 +108,13 @@ The `context_free` arm of test 2 (`root.MET.pt`) is unaffected and passes as wri
 Implementation STOPPED on these two tests. Nothing under `tests/frozen/**` was edited, skipped or
 weakened, and no implementation shortcut was taken to make either pass. The remaining 110 m48
 frozen tests are green.
+
+## Resolution
+
+UPHELD by independent adjudication (2026-09-01): the plan binds the disputed reads as `Varied`
+(§2.6b named-collection reads; §2.6c derivation property; `reindex_to` identity worded over
+handles, §6.1d(B); `.node_id` on `Varied` refused, §2.2 rule (1)). The anchors were sound; the
+operands were mis-chosen. Corrections applied by the test-author at `affd355`
+(test 1: operand → `shifted.Photon.pt`; test 2: adjudicated per-label `node_id`-equality body —
+strictly stronger than the original arm). Re-frozen as tag `m48-freeze2`. No implementation
+change was required.
