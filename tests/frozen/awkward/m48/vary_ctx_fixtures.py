@@ -37,10 +37,16 @@ def awkward_session() -> tuple[Session, Array]:
     return session, from_awkward(session, "events", EVENTS)
 
 
+def context_with_root(*, is_data: bool = False) -> tuple[Session, Any, Array]:
+    """The context and the CONTEXT-FREE root read it wraps, for the seams that need both."""
+    session, root = awkward_session()
+    return session, ga.gnano.events(root, is_data=is_data), root
+
+
 def events_context(*, is_data: bool = False) -> tuple[Session, Any]:
     """The §2.6 event context. `is_data=True` is the explicit constructor flag §2.6d guards on."""
-    session, root = awkward_session()
-    return session, ga.gnano.events(root, is_data=is_data)
+    session, context, _root = context_with_root(is_data=is_data)
+    return session, context
 
 
 def reserved_names_context() -> tuple[Session, Any]:
@@ -92,8 +98,12 @@ def jes_kwargs(source: Any) -> dict[str, dict[str, Array]]:
 
 
 def pu_weight(source: Any, scale: float) -> Array:
-    """A per-EVENT weight factor read through `source` (so it lives in that row space, §2.1(b))."""
-    return gak.full_like(source.MET.pt, 1.0) * scale
+    """A per-EVENT weight factor read through `source` (so it lives in that row space, §2.1(b)).
+
+    Deliberately NOT constant: §2.6c's re-indexing is asserted elementwise, and a constant factor
+    would compare equal under the wrong mask whenever two labels' row counts coincide.
+    """
+    return source.MET.pt * scale
 
 
 def btag_weight(jets: Array, scale: float = 1.0) -> Array:

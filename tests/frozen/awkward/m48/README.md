@@ -61,4 +61,36 @@ Every anchor here imports `graphed.awkward` — the gak enumerations and represe
 | `vary-m48-A6` | §2.5 unknown label lists the valid ones | `test_gak_variation_behaviour.py::test_an_unknown_label_raises_listing_the_valid_ones` |
 | `vary-m48-A6` | §2.5 form-incompatible member names the label | `test_gak_variation_behaviour.py::test_a_form_incompatible_member_is_a_construction_time_error_naming_the_label` |
 | `vary-m48-A6` | §2.1 cross-Session / cross-source members refused | `test_gak_variation_behaviour.py::test_members_from_another_session_or_another_source_are_refused` |
+| `vary-m48-A7` | §2.6b `vary` returns a NEW context; input unchanged | `test_event_context_lineage.py::test_vary_returns_a_new_context_and_the_input_is_unchanged` |
+| `vary-m48-A7` | §2.3e context-handle ORIGINATION | `test_event_context_lineage.py::test_the_same_read_through_a_derived_context_and_its_parent_has_one_node_id_and_two_handles` |
+| `vary-m48-A7` | §2.3e ancestor chain unifies to the most derived | `test_event_context_lineage.py::test_ancestor_chain_inputs_unify_to_the_most_derived_context` |
+| `vary-m48-A7` | §2.3e divergence AT THE OP, naming both | `test_event_context_lineage.py::test_divergent_contexts_raise_AT_THE_OP_naming_both` |
+| `vary-m48-A7` | §2.6b pure derivations are canonical | `test_event_context_lineage.py::test_pure_derivations_are_canonical_so_two_reads_of_one_universe_unify` |
+| `vary-m48-A7` | §2.1 divergence at `vary`'s own construction | `test_event_context_lineage.py::test_divergence_is_also_caught_at_varys_OWN_construction` |
+| `vary-m48-A7` | §2.2 `labels(ctx)` reports the shift labels | `test_event_context_lineage.py::test_labels_on_a_context_reports_the_shift_labels_it_carries` |
+| `vary-m48-A7` | §2.2 `universe`/`nominal` return a CHILD context | `test_event_context_lineage.py::test_universe_and_nominal_return_a_context_that_is_a_CHILD_of_the_argument` |
+| `vary-m48-A8` | §2.2 union terms (a) and (c) | `test_event_context_labels.py::test_term_a_and_term_c_together_the_union_is_not_the_masks_labels_alone` |
+| `vary-m48-A8` | §2.2 union term (b) alone | `test_event_context_labels.py::test_term_b_alone_a_shift_varied_collection_with_an_UNVARIED_derivation_mask` |
+| `vary-m48-A8` | §2.2 union term (c) alone | `test_event_context_labels.py::test_term_c_alone_a_mask_varied_through_the_LOOSE_primitive` |
+| `vary-m48-A9` | §2.6d data-context guard, both forms | `test_event_context_guards.py::test_a_data_context_refuses_BOTH_vary_forms` |
+| `vary-m48-A9` | §2.6a lockstep shared-tag-set validation | `test_event_context_guards.py::test_lockstep_collections_must_share_one_tag_set` |
+| `vary-m48-A9` | §2.6a no reserved names | `test_event_context_guards.py::test_the_context_reserves_no_names` |
+| `vary-m48-A9` | §2.6a slice/int subscript refusal + controls | `test_event_context_guards.py::test_slice_and_int_subscripts_are_refused_naming_the_supported_forms` |
+| `vary-m48-A9` | §2.2 the three verbs on both input shapes | `test_event_context_guards.py::test_universe_labels_and_nominal_answer_on_both_a_Varied_and_a_context` |
+| `vary-m48-A10` | §2.6c selection-scoped weight; parent untouched | `test_ambient_weight_registry.py::test_a_selection_scoped_weight_leaves_the_parent_untouched` |
+| `vary-m48-A10` | §2.6c per-label re-indexing, elementwise | `test_ambient_weight_registry.py::test_the_derived_registry_is_re_indexed_per_label_elementwise` |
+| `vary-m48-A10` | §2.6c the wrong-mask answer differs (instrument) | `test_ambient_weight_registry.py::test_re_indexing_every_label_by_nominals_mask_is_a_different_answer` |
+| `vary-m48-A10` | §2.1(b) weight answers in the context's row space | `test_ambient_weight_registry.py::test_the_ambient_weight_answers_in_the_contexts_OWN_row_space` |
+| `vary-m48-A11` | §6.1d(A) most-derived on one chain | `test_lineage_seams.py::test_unify_contexts_answers_the_most_derived_handle_on_one_chain` |
+| `vary-m48-A11` | §6.1d(A) `None` when all context-free | `test_lineage_seams.py::test_unify_contexts_is_None_when_every_argument_is_context_free` |
+| `vary-m48-A11` | §6.1d(A) adopt rule | `test_lineage_seams.py::test_unify_contexts_ignores_context_free_arguments_beside_contexted_ones` |
+| `vary-m48-A11` | §6.1d(A) divergence naming both | `test_lineage_seams.py::test_unify_contexts_raises_the_divergence_error_naming_both` |
+| `vary-m48-A11` | §6.1d(B) identity arms | `test_lineage_seams.py::test_reindex_to_is_the_identity_for_a_value_already_at_the_target_or_context_free` |
+| `vary-m48-A11` | §6.1d(B) descendant / divergent refusals | `test_lineage_seams.py::test_reindex_to_raises_when_the_values_handle_is_a_DESCENDANT_or_divergent` |
+| `vary-m48-A11` | §6.1d link kind (1) with its result labels | `test_lineage_seams.py::test_link_kind_1_a_mask_derivation_makes_an_UNVARIED_value_varied` |
+| `vary-m48-A11` | §6.1d link kind (2) with its result labels | `test_lineage_seams.py::test_link_kind_2_a_vary_link_is_the_IDENTITY_and_leaves_the_labels_alone` |
+| `vary-m48-A11` | §6.1d link kind (3) with its result labels | `test_lineage_seams.py::test_link_kind_3_a_projection_link_returns_an_UNVARIED_value_with_no_labels` |
+| `vary-m48-A12` | §4.1 one payload content hash across labels | `test_correctionlib_multiparam.py::test_all_labels_share_one_payload_content_hash` |
+| `vary-m48-A12` | §4.1 labels differ ONLY in `systematic` | `test_correctionlib_multiparam.py::test_the_labels_differ_only_in_the_systematic_param` |
+| `vary-m48-A12` | §1.2 only real content differences fork identity | `test_correctionlib_multiparam.py::test_the_three_universes_are_distinct_nodes_over_one_input` |
 | — | shared context/awkward fixtures | `vary_ctx_fixtures.py` |
