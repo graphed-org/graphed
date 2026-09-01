@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 
 from .backend import ParamValue
 from .errors import GraphedError
+from .varied import universes_of
 
 if TYPE_CHECKING:
     from .array import Array
@@ -118,30 +119,42 @@ def read_columns(arrays: Sequence[Array], source_nid: int) -> tuple[str, ...] | 
     the chunk, a superset of buffer-level projection — and is what a plan passes to
     ``PartitionedSource.read_partition(partition, columns, ...)`` (``None`` reads the source's full
     selection). The dask-awkward ``necessary_columns`` analogue for graphed plans; backend-agnostic,
-    using only the generic ``session.walk`` graph traversal."""
-    needed: set[str] = set()
-    conservative = False
+    using only the generic ``session.walk`` graph traversal.
+
+    A ``Varied`` entry contributes EVERY universe (§2.3d *expanding*): the answer is one union
+    read set, and the ``None`` a conservative member reports dominates it (§5.3)."""
     sentinel = object()
 
-    def on_source(nid: int) -> object:
-        return (sentinel, nid)
+    def one(array: Array) -> tuple[str, ...] | None:
+        needed: set[str] = set()
+        conservative = False
 
-    def on_op(_nid: int, name: str, ins: list[object], params: Mapping[str, ParamValue]) -> object:
-        nonlocal conservative
-        reads_source = any(
-            isinstance(x, tuple) and len(x) == 2 and x[0] is sentinel and x[1] == source_nid for x in ins
-        )
-        if reads_source:
-            if name == "field":
-                needed.add(str(params["field"]))
-            elif name == "fields":
-                needed.update(f for f in str(params["fields"]).split(",") if f)
-            else:  # a non-field op consumes the whole source record -> cannot narrow
-                conservative = True
-        return None
+        def on_source(nid: int) -> object:
+            return (sentinel, nid)
 
-    for array in arrays:
+        def on_op(_nid: int, name: str, ins: list[object], params: Mapping[str, ParamValue]) -> object:
+            nonlocal conservative
+            reads_source = any(
+                isinstance(x, tuple) and len(x) == 2 and x[0] is sentinel and x[1] == source_nid for x in ins
+            )
+            if reads_source:
+                if name == "field":
+                    needed.add(str(params["field"]))
+                elif name == "fields":
+                    needed.update(f for f in str(params["fields"]).split(",") if f)
+                else:  # a non-field op consumes the whole source record -> cannot narrow
+                    conservative = True
+            return None
+
         array.session.walk(array, source=on_source, op=on_op, external=lambda *_a: None)
-    if conservative or not needed:  # whole-record consumption or a bare source read -> read all
+        if conservative or not needed:  # whole-record consumption or a bare source read -> read all
+            return None
+        return tuple(sorted(needed))
+
+    # PER graph, so a conservative one dominates the union rather than being masked by a sibling
+    # that happens to narrow: reading a subset for one output still reads the whole record.
+    answers = [one(member) for arr in arrays for member in universes_of(arr)]
+    narrowed = [answer for answer in answers if answer is not None]
+    if not narrowed or len(narrowed) != len(answers):
         return None
-    return tuple(sorted(needed))
+    return tuple(sorted({column for answer in narrowed for column in answer}))

@@ -288,7 +288,8 @@ def apply(
             clip=bool(params.get("clip", False)),
         )
     if op == "ak.unflatten":
-        return ak.unflatten(operands[0], operands[1], axis=int(params.get("axis", 0)))
+        counts = operands[1] if len(operands) > 1 else int(params["counts"])
+        return ak.unflatten(operands[0], counts, axis=int(params.get("axis", 0)))
     if op == "ak.to_regular":
         return ak.to_regular(operands[0], axis=int(params.get("axis", 1)))
     if op == "ak.from_regular":

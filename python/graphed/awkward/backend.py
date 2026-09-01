@@ -87,6 +87,15 @@ class AwkwardBackend:
     def project(self, op: str, used: object, params: Mapping[str, object]) -> object:
         return used  # M5
 
+    def broadcast_like(self, value: object, factor: object) -> object:
+        """§6.1d's broadcast seam for this idiom: `factor` given `value`'s jagged structure.
+
+        A rectilinear idiom needs nothing here, which is why the seam is optional and
+        `graphed.broadcast_like` falls back to the identity when a backend omits it."""
+        from .functions import broadcast_arrays  # noqa: PLC0415  (functions imports this module)
+
+        return broadcast_arrays(value, factor)[1]  # type: ignore[arg-type]
+
     def external_payload(self, op: str, params: Mapping[str, object]) -> PayloadDescriptor | None:
         if op == "correction":
             return payloads.correctionlib_descriptor(str(params["path"]), str(params["name"]))

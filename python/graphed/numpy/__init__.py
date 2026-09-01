@@ -28,6 +28,7 @@ from .array import NumpyArray, _f, _i
 from .forms import NumpyForm, form_from_meta, is_numeric, meta, unit_meta
 from .gufunc import apply_gufunc, gufunc_form
 from .projection import project
+from .varied import SURFACE_DISPOSITIONS, NumpyVaried
 
 # canonical op name -> numpy callable. These are the evaluation AND the record-time form-inference
 # tables: op_form applies the same callable to zero-length meta arrays, so the two cannot drift.
@@ -575,12 +576,26 @@ from .creation import (  # noqa: E402
 from .random import GraphedRNG, default_rng  # noqa: E402
 from .reductions import Monoid, monoid  # noqa: E402
 
+#: §2.3d: the numpy idiom's public `Array`-consuming module verbs (`project` answers PER LABEL
+#: with its own `Projection`, never `read_columns`' union).
+VERB_DISPOSITIONS: dict[str, str] = {
+    "apply_gufunc": "broadcasting",
+    "empty_like": "broadcasting",
+    "full_like": "broadcasting",
+    "ones_like": "broadcasting",
+    "project": "expanding",
+    "zeros_like": "broadcasting",
+}
+
 __all__ = [
+    "SURFACE_DISPOSITIONS",
+    "VERB_DISPOSITIONS",
     "GraphedRNG",
     "Monoid",
     "NumpyArray",
     "NumpyBackend",
     "NumpyForm",
+    "NumpyVaried",
     "apply_gufunc",
     "arange",
     "default_rng",

@@ -18,7 +18,7 @@ from typing import Any
 
 import numpy as np
 
-from graphed import Array
+from graphed import Array, broadcasting
 
 from .array import NumpyArray
 from .forms import NumpyForm
@@ -71,6 +71,7 @@ def gufunc_form(forms: Sequence[NumpyForm], params: Any) -> NumpyForm:
     return NumpyForm(np.dtype(str(params["dtype"])), shape=(None, *out_dims))
 
 
+@broadcasting
 def apply_gufunc(
     fn: Callable[..., object],
     signature: str,

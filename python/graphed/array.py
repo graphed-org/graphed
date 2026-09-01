@@ -125,7 +125,11 @@ def _as_param(value: object) -> ParamValue:
 
 
 class Array:
-    __slots__ = ("_node_id", "_session")
+    # M48 adds two frontend-only slots (§2.3e): `_context` is the event-context handle a read was
+    # performed through, `_labels` the variation labels flowing into this expression. Both are
+    # underscore-prefixed so `__getattr__`'s guard keeps them out of field access, and NEITHER
+    # reaches NodeKey params/tokens/hashes — interning and §1.2 stay intact.
+    __slots__ = ("_context", "_labels", "_node_id", "_session")
 
     # let numpy defer to us for ufuncs (np.cos(array), np.hypot(a, b), ...)
     __array_priority__ = 1000.0
@@ -133,6 +137,8 @@ class Array:
     def __init__(self, session: Session, node_id: int) -> None:
         self._session = session
         self._node_id = node_id
+        self._context: object = None
+        self._labels: frozenset[str] | None = None
 
     @property
     def node_id(self) -> int:
@@ -144,6 +150,10 @@ class Array:
 
     # ---- elementwise recording -------------------------------------------------
     def _binary(self, op: str, other: object, *, reflected: bool = False) -> Array:
+        if getattr(other, "_varied_container", False):
+            # the container's reflected dunder maps the op per universe (mypy special-cases a
+            # NotImplemented return only in the dunders themselves, not in this shared helper)
+            return NotImplemented  # type: ignore[no-any-return]
         if isinstance(other, Array):
             inputs = [other, self] if reflected else [self, other]
             return self._session.record_op(op, inputs)
@@ -342,6 +352,10 @@ class Array:
         )
 
     def __getitem__(self, key: object) -> Array:
+        if getattr(key, "_varied_container", False):  # a Varied mask selects PER UNIVERSE
+            from .varied import expand  # noqa: PLC0415  (`varied` imports `Array`)
+
+            return expand(lambda arr, mask: arr[mask], (self, key), {})  # type: ignore[no-any-return]  # a Varied in, a Varied out
         if isinstance(key, Array):
             return self._session.record_op("getitem", [self, key])
         if isinstance(key, str):
@@ -372,6 +386,10 @@ class Array:
 
     # ---- M2 methods (kept) -----------------------------------------------------
     def filter(self, mask: Array) -> Array:
+        if getattr(mask, "_varied_container", False):
+            from .varied import expand  # noqa: PLC0415  (`varied` imports `Array`)
+
+            return expand(lambda arr, m: arr.filter(m), (self, mask), {})  # type: ignore[no-any-return]  # a Varied in, a Varied out
         return self._session.record_op("filter", [self, mask])
 
     def map(self, fn: Callable[[object], object], *, name: str | None = None) -> Array:
@@ -401,6 +419,10 @@ def apply(fn: Callable[..., object], *arrays: Array, name: str | None = None) ->
 
     The node carries the backend's ``PayloadDescriptor``: the opaque callable stays a flagged
     preservation risk (plan A.3.1). With one array this IS ``Array.map`` (interns with it)."""
+    from .varied import containers_in, expand  # noqa: PLC0415  (`varied` imports `Array`)
+
+    if containers_in(*arrays):  # §2.3d *expanding*: one External per universe
+        return expand(lambda *members: apply(fn, *members, name=name), arrays, {})  # type: ignore[no-any-return]  # a Varied in, a Varied out
     if not arrays or not all(isinstance(a, Array) for a in arrays):
         raise TypeError("apply needs at least one deferred Array operand")
     session = arrays[0].session
