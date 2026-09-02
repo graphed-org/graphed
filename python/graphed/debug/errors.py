@@ -39,6 +39,7 @@ class StageError(Exception):
         cause_type: str,
         cause_message: str,
         opt_level: int,
+        variation: str = "",
     ) -> None:
         self.op = op
         self.frames = tuple(frames)
@@ -47,6 +48,10 @@ class StageError(Exception):
         self.cause_type = cause_type
         self.cause_message = cause_message
         self.opt_level = opt_level
+        #: §8.1: the variation this failure belongs to. The EMPTY STRING is the single encoding of
+        #: nominal/unvaried (never the literal ``"nominal"``); several universes sharing one failing
+        #: node render sorted and joined by ``,`` (§8.2).
+        self.variation = variation
         super().__init__(self.summary())
 
     @property
@@ -56,8 +61,9 @@ class StageError(Exception):
 
     def summary(self) -> str:
         loc = self.user_frame
+        variation = f", variation={self.variation}" if self.variation else ""
         return (
-            f"StageError in op {self.op!r} at {loc} (partition {self.partition}, "
+            f"StageError in op {self.op!r} at {loc} (partition {self.partition}{variation}, "
             f"opt_level={self.opt_level}): {self.cause_type}: {self.cause_message}"
         )
 
@@ -78,4 +84,6 @@ class StageError(Exception):
         return self.__dict__ == other.__dict__
 
     def __hash__(self) -> int:
-        return hash((self.op, self.frames, self.partition, self.cause_type, self.cause_message))
+        return hash(
+            (self.op, self.frames, self.partition, self.cause_type, self.cause_message, self.variation)
+        )

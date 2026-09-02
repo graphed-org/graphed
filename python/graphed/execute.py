@@ -31,13 +31,16 @@ from .errors import GraphedError
 from .session import Session
 from .varied import refuse_container
 
-__all__ = ["CompiledGraph", "Correspondence", "compile_ir", "evaluate_ir"]
+__all__ = ["CompiledGraph", "Correspondence", "OnFailure", "compile_ir", "evaluate_ir"]
 
 #: A user source location as plain string/int data — `SourceFrame`'s fields, in its field order.
 Frame = tuple[str, int, str, str]
 #: A reduced-store address: the node id, plus the position inside a fused stage (`None` when the
 #: node reduced to itself, i.e. a boundary).
 Key = tuple[int, int | None]
+#: §8.2(iii)'s attribution hook: `(key, op name, input values, the failure) -> the exception to
+#: raise instead`, or `None` to re-raise the original untouched.
+OnFailure = Callable[[Key, str, list[object], BaseException], BaseException | None]
 
 
 @dataclass(frozen=True)
@@ -150,21 +153,48 @@ def _frames_by_key(session: Session, node_map: dict[int, Key]) -> tuple[tuple[Ke
     return tuple(sorted(chosen.items(), key=lambda e: (e[0][0], -1 if e[0][1] is None else e[0][1])))
 
 
+def _dispatch(
+    backend: Backend,
+    name: str,
+    ins: list[object],
+    params: Mapping[str, object],
+    key: Key,
+    on_failure: OnFailure | None,
+) -> object:
+    """§8.2(iii): one backend dispatch, annotated with the reduced address it failed at.
+
+    The hook decides what a failure becomes; returning ``None`` re-raises the original untouched,
+    which is what a caller with nothing to attribute to gets.
+    """
+    try:
+        return backend.eval_stage(name, ins, params)
+    except Exception as exc:
+        replacement = None if on_failure is None else on_failure(key, name, ins, exc)
+        if replacement is None:
+            raise
+        raise replacement from exc
+
+
 def evaluate_ir(
     compiled: CompiledGraph | bytes,
     backend: Backend,
     sources: Mapping[str, object],
     *,
     externals: Mapping[str, Callable[..., object]] | None = None,
+    on_failure: OnFailure | None = None,
 ) -> list[object]:
     """Evaluate a compiled (reduced) IR: one backend dispatch per reduced node, fused stage members
     inline. ``sources`` binds each source name to its data (or a zero-arg loader); ``externals``
     binds each External payload's ``content_hash`` to its evaluator. Returns the outputs in mark
-    order."""
+    order.
+
+    ``on_failure`` is §8.2(iii)'s attribution hook: it sees the reduced address of the failing
+    dispatch — ``(node_id, member_index)``, the member index being ``None`` outside a fused stage —
+    and returns the exception to raise instead, or ``None`` to let the original propagate."""
     blob = compiled.ir if isinstance(compiled, CompiledGraph) else compiled
     store = graphed.core.GraphStore.deserialize(bytes(blob))
     vals: list[object] = []
-    for nd in store.nodes():
+    for nid, nd in enumerate(store.nodes()):
         kind = nd["kind"]
         ins = [vals[i] for i in nd["inputs"]]
         if kind == "source":
@@ -174,12 +204,12 @@ def evaluate_ir(
             value = sources[name]
             vals.append(value() if callable(value) else value)
         elif kind in ("op", "reduction"):
-            vals.append(backend.eval_stage(nd["name"], ins, nd["params"]))
+            vals.append(_dispatch(backend, nd["name"], ins, nd["params"], (nid, None), on_failure))
         elif kind == "stage":
             mvals: list[object] = []
-            for m in nd["members"]:
+            for index, m in enumerate(nd["members"]):
                 mins = [ins[i] if tag == "input" else mvals[i] for tag, i in m["inputs"]]
-                mvals.append(backend.eval_stage(m["name"], mins, m["params"]))
+                mvals.append(_dispatch(backend, m["name"], mins, m["params"], (nid, index), on_failure))
             vals.append(mvals[-1])
         elif kind == "external":
             chash = nd["descriptor"]["content_hash"]

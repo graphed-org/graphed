@@ -138,6 +138,36 @@ def _fields(params: Mapping[str, Any]) -> list[str]:
     return [f for f in str(raw).split(",") if f]
 
 
+def _structure(x: Any) -> str:
+    """A value's type BELOW its outer length — the part a typetracer form and a real partition
+    render identically, so one blame message reads the same on either path."""
+    return str(ak.Array(x).type).split(" * ", 1)[-1]
+
+
+def _broadcast_blame(operands: Sequence[Any], exc: ValueError) -> Exception:
+    """§6.1d: translate awkward's two-anonymous-layouts complaint into a `graphed` error naming the
+    offending FACTOR — the operand `broadcast_like` broadcasts to the value's structure.
+
+    One site for both paths: a regular-vs-regular mismatch is decidable from the typetracer forms
+    and lands at record time (where `Session.record_op` re-raises this at the user's line), while a
+    jagged pair whose counts differ only in the data lands at execution time.
+    """
+    from graphed.errors import GraphedError  # noqa: PLC0415  (graphed.errors imports no backend)
+
+    value, factors = _structure(operands[0]), [_structure(f) for f in operands[1:]]
+    # Two LEAF structures can only disagree on outer length, which is the already-flattened-value
+    # case §6.1d names: a per-event factor against a per-object value someone flattened first.
+    unflatten = (
+        " — a per-event factor against a per-object value needs the value passed UNFLATTENED"
+        if " * " not in value and all(" * " not in f for f in factors)
+        else ""
+    )
+    return GraphedError(
+        f"cannot broadcast the factor ({', '.join(factors)}) to the value's structure "
+        f"({value}){unflatten}: {exc}"
+    )
+
+
 def apply(
     op: str, operands: Sequence[Any], params: Mapping[str, Any], behavior: Mapping[str, Any] | None = None
 ) -> Any:
@@ -326,7 +356,10 @@ def apply(
         return ak.without_field(operands[0], params["field"])
     if op == "ak.broadcast_arrays":
         dl = int(params["depth_limit"]) if "depth_limit" in params else None
-        return ak.broadcast_arrays(*operands, depth_limit=dl)[int(params["index"])]
+        try:
+            return ak.broadcast_arrays(*operands, depth_limit=dl)[int(params["index"])]
+        except ValueError as exc:  # §6.1d: awkward names two anonymous layouts; blame the factor
+            raise _broadcast_blame(operands, exc) from exc
     if op == "fields":
         names = [f for f in str(params["fields"]).split(",") if f]
         return operands[0][names]

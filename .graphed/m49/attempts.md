@@ -51,3 +51,30 @@ green. mypy strict clean; ruff check + format clean; combined branch coverage 94
 `by_label.py` at 100% and every new `context.py`/`execute.py` line covered from the FROZEN suite;
 determinism suites and the `core/m49` §3.3 benchmark green; `precommit . --fast` = ok. No Rust
 touched. +166 LOC.
+
+## C3 — the error path (iteration 1)
+
+Targeted: `frontend/m49/test_boundary_refusal.py` (4), `awkward/m49/test_join_refusal.py` (2) +
+`test_broadcast_blame.py` (2), `debug/m49/test_variation_attribution.py` (4) +
+`test_variation_process_boundary.py` (1) — the 13 reds C2 left.
+
+Design as bound by plan §8.1/§8.2(ii)(iii)/§5.4/§6.1d: `StageError` gains `variation: str = ""`
+(summary clause suppressed when empty, added to the hand-written `__hash__` tuple; the existing
+`__dict__` `__reduce__` carries it across a process boundary unchanged). `evaluate_ir` gains an
+optional `on_failure` hook; both dispatch points route through one `_dispatch` helper that annotates
+the failure with `(reduced_node_id, member_index | None)`. `_PartitionReduce.__call__` supplies the
+hook: an entry for the failing key in `variation_labels` becomes a `StageError` with that entry's
+labels (sorted, comma-joined; the empty tuple falls out as `""`) and its frame, no entry re-raises
+untouched. §5.4's message is widened as a class through one `boundary_refusal` helper shared by all
+three spellings; `refuse_container`'s m48-anchored wording is untouched. §6.1d's blame lives in
+`_ops.apply`'s `ak.broadcast_arrays` arm — the one site `op_form` and `eval_stage` share, so the
+record-time and execution-time legs are translated together.
+
+Gates: full `COV=1 ./scripts/run-tests.sh` = 0 failures over 55 processes (the `graphed` frozen red
+set is now EMPTY); `comm -13` against the pre-C3 FAILED set = 0 new, `comm -23` = the 13 targeted.
+Combined branch coverage 94%; every new line in the five touched modules covered, the residual
+misses in those files pre-existing. Determinism suites and the `core/m49` §3.3 benchmark green;
+the spawned-process picklability anchor green. mypy strict clean; ruff check + format clean;
+`precommit . --fast` = ok. No Rust touched. +143 src LOC, +98 in `tests/extra/{frontend,awkward}/m49`
+(the top-level dispatch point and the unflatten hint's discrimination, neither witnessed by the
+frozen suite; each verified by a restored mutant).

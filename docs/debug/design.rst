@@ -54,7 +54,13 @@ carrying:
 * ``partition`` — *which* chunk of data tripped it (data-dependent bugs fail on some
   partitions and not others; this field is how you find the culprit events);
 * ``cause_type`` / ``cause_message`` — the underlying exception, as data;
-* ``opt_level`` — which structure was executing.
+* ``opt_level`` — which structure was executing;
+* ``variation`` — *which universe* failed, when a systematic-variation label reaches the failing
+  node. The empty string is the single encoding of nominal/unvaried (never the literal
+  ``"nominal"``); several universes sharing one failing node render sorted and comma-joined. A
+  worker fills it from the label channel a variation-aware plan ships
+  (``graphed.aggregate_plan(on_compiled=...)``); a plan with no such channel, or a failure at a
+  node the channel does not cover, propagates the original exception exactly as before.
 
 Two properties are load-bearing and pinned by tests rather than promised:
 
