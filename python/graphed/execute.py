@@ -215,6 +215,9 @@ def evaluate_ir(
             name = nd["name"]
             if name not in sources:
                 raise GraphedError(f"evaluate_ir: no data bound for source {name!r}")
+            # deliberately not routed through _dispatch: a source key carries the union of
+            # every label (each cone reaches it), so attributing a load failure would
+            # misattribute it to all variations at once
             value = sources[name]
             vals.append(value() if callable(value) else value)
         elif kind in ("op", "reduction"):

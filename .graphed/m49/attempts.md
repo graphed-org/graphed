@@ -118,3 +118,10 @@ Gates: `COV=1 ./scripts/run-tests.sh` 0 FAILED, combined branch coverage 94%; `c
 green; ruff check + format clean; `mypy --strict` clean; `cargo clippy -D warnings` clean and
 `cargo test --release` 30 passed (comment-only Rust change); `precommit . --fast` ok with
 `workflows-valid` now LIVE (`ok`, not the `pyyaml not installed` skip C0-C3 recorded).
+
+## fix cycle 1b (4364beb) — corrects the cycle-1 A-1 record above
+A-1 SHIPPED under the adjudicated §8.2(ii) GraphedError carve-out (plan r42, df68e3e): the
+dispute is CLOSED, the external arm routes through _dispatch, the carve-out guard lives in
+aggregate._attribute, and the blame-parity anchors are green with the arm dispatched. The
+cycle-1 paragraph's "external arm keeps a comment pointing at the dispute" no longer describes
+the tree — that comment was replaced by the shipped repair.
