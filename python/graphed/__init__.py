@@ -5,6 +5,16 @@ No fusion (that is M4). The awkward backend lives in graphed-awkward (M3). Prove
 
 from __future__ import annotations
 
+from .accessors import (
+    broadcast_like,
+    context_of,
+    labels,
+    nominal,
+    reindex_to,
+    unify_contexts,
+    universe,
+    weight,
+)
 from .aggregate import aggregate_plan, resolve_backend
 from .array import Array, apply
 from .backend import Backend, Form, ParamValue
@@ -23,9 +33,30 @@ from .projection import (
 from .provenance import Provenance, capture, is_enabled, set_enabled
 from .session import Session
 from .shuffle import join, join_plan, pack_key, repartition, shuffle_plan
+from .varied import SURFACE_DISPOSITIONS, Varied, broadcasting, expanding
+from .vary import vary
+
+#: §2.3d: every public `Array`-consuming module verb's `Varied` disposition. `vary` is absent by
+#: construction — it PRODUCES containers — and `evaluate_ir`/`unify_contexts` never take an `Array`.
+VERB_DISPOSITIONS: dict[str, str] = {
+    "aggregate_plan": "refusing",
+    "apply": "expanding",
+    "broadcast_like": "broadcasting",
+    "compile_ir": "refusing",
+    "context_of": "eager-metadata",
+    "join": "refusing",
+    "join_plan": "refusing",
+    "pack_key": "refusing",
+    "read_columns": "expanding",
+    "reindex_to": "broadcasting",
+    "repartition": "refusing",
+    "shuffle_plan": "refusing",
+}
 
 __all__ = [
     "CONSERVATIVE",
+    "SURFACE_DISPOSITIONS",
+    "VERB_DISPOSITIONS",
     "Array",
     "Backend",
     "BufferNeed",
@@ -40,21 +71,33 @@ __all__ = [
     "ProjectionError",
     "Provenance",
     "Session",
+    "Varied",
     "aggregate_plan",
     "apply",
+    "broadcast_like",
+    "broadcasting",
     "capture",
     "compile_ir",
+    "context_of",
     "evaluate_ir",
+    "expanding",
     "handle_opaque",
     "is_enabled",
     "join",
     "join_plan",
+    "labels",
+    "nominal",
     "pack_key",
     "read_columns",
+    "reindex_to",
     "repartition",
     "resolve_backend",
     "set_enabled",
     "shuffle_plan",
+    "unify_contexts",
+    "universe",
+    "vary",
+    "weight",
 ]
 
 __version__ = "0.0.1"

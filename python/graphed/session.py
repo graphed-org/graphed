@@ -8,7 +8,9 @@ backend.
 
 from __future__ import annotations
 
+import weakref
 from collections.abc import Callable, Mapping, Sequence
+from typing import Any
 
 import graphed.core
 
@@ -37,10 +39,31 @@ class Session:
         # stays backend-idiom-neutral; backends without array_type get it unchanged.
         factory = getattr(backend, "array_type", None)
         self._array_cls: type[Array] = factory() if callable(factory) else Array
+        # M48 §2.5: every `Varied` registers here (weakly), so `compile_ir` can report a
+        # registered label that reaches no marked output instead of paying for it silently.
+        self._varied: list[tuple[tuple[str, ...], weakref.ref[Any]]] = []
 
     def _step_reducer(self) -> None:
         if self._reducer is not None:
             self._reducer.step(self._store)
+
+    def _wrap(self, node_id: int, inputs: Sequence[Array] = ()) -> Array:
+        """Build the frontend proxy for a recorded node, carrying the M48 §2.3e merge.
+
+        This is the propagation CHOKEPOINT: every `Array` in the repo is constructed here, so gak
+        functions and module verbs inherit context-handle and variation-label propagation by
+        construction. Handles on ONE ancestry chain merge to the most-derived one; divergent
+        handles are an error AT THIS OP naming both, which is §2.3e's early detection.
+        """
+        from .accessors import unify_contexts  # noqa: PLC0415  (import cycle: accessors -> array)
+
+        array = self._array_cls(self, node_id)
+        if inputs:
+            array._context = unify_contexts(*(item._context for item in inputs))
+            for item in inputs:
+                if item._labels:
+                    array._labels = (array._labels or frozenset()) | item._labels
+        return array
 
     # ---- introspection ---------------------------------------------------------
     @property
@@ -137,7 +160,7 @@ class Session:
         self._source_names.setdefault(node_id, name)
         self._provenance.setdefault(node_id, capture())
         self._step_reducer()
-        return self._array_cls(self, node_id)
+        return self._wrap(node_id)
 
     def record_op(
         self,
@@ -165,7 +188,7 @@ class Session:
         self._ops.setdefault(node_id, (op, params_d, ids))
         self._provenance.setdefault(node_id, prov)
         self._step_reducer()
-        return self._array_cls(self, node_id)
+        return self._wrap(node_id, inputs)
 
     def record_exchange(self, input_array: Array, params: Mapping[str, ParamValue]) -> Array:
         """Record an ``Exchange`` boundary (M39): a pure data-movement repartition of one input. Its
@@ -180,7 +203,7 @@ class Session:
         self._ops.setdefault(node_id, ("exchange", params_d, [input_array.node_id]))
         self._provenance.setdefault(node_id, prov)
         self._step_reducer()
-        return self._array_cls(self, node_id)
+        return self._wrap(node_id, [input_array])
 
     def record_join(self, left: Array, right: Array, params: Mapping[str, ParamValue]) -> Array:
         """Record a ``Join`` boundary (M40): a two-input co-partitioned relational combine. Its
@@ -201,7 +224,7 @@ class Session:
         self._ops.setdefault(node_id, ("join", params_d, ids))
         self._provenance.setdefault(node_id, prov)
         self._step_reducer()
-        return self._array_cls(self, node_id)
+        return self._wrap(node_id, [left, right])
 
     def record_external(
         self,
@@ -239,7 +262,7 @@ class Session:
         self._externals.setdefault(node_id, (fn, ids))
         self._provenance.setdefault(node_id, prov)
         self._step_reducer()
-        return self._array_cls(self, node_id)
+        return self._wrap(node_id, inputs)
 
     # ---- generic graph walk (shared by materialize + projection) ----------------
     def walk(

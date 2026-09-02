@@ -137,11 +137,13 @@ def _syntactic_fields(array: Any, source_node_id: int) -> set[str] | None:
     def on_source(nid: int) -> object:
         return (sentinel, nid)
 
-    def on_op(_nid: int, name: str, ins: list[object], params: Any) -> object:
-        touches_source = any(
+    def touches_source(ins: list[object]) -> bool:
+        return any(
             isinstance(x, tuple) and len(x) == 2 and x[0] is sentinel and x[1] == source_node_id for x in ins
         )
-        if touches_source:
+
+    def on_op(_nid: int, name: str, ins: list[object], params: Any) -> object:
+        if touches_source(ins):
             if name == "field":
                 found.add(str(params["field"]))
             elif name == "fields":
@@ -150,7 +152,14 @@ def _syntactic_fields(array: Any, source_node_id: int) -> set[str] | None:
                 whole[0] = True
         return None
 
-    array.session.walk(array, source=on_source, op=on_op, external=lambda *_a: None)
+    def on_external(_nid: int, _fn: Any, ins: list[object]) -> object:
+        """An External handed the source RECORD replays against every column, so the read list
+        cannot narrow — the same rule `on_op` applies to a non-field op."""
+        if touches_source(ins):
+            whole[0] = True
+        return None
+
+    array.session.walk(array, source=on_source, op=on_op, external=on_external)
     return None if (whole[0] or not found) else found
 
 

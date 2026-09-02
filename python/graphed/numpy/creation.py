@@ -13,7 +13,7 @@ from typing import Any
 
 import numpy as np
 
-from graphed import Array, Session
+from graphed import Array, Session, broadcasting
 
 from .forms import NumpyForm
 
@@ -74,18 +74,22 @@ def linspace(
     return _source(session, name or f"linspace[{start},{stop},{num},{arr.dtype}]", arr)
 
 
+@broadcasting
 def zeros_like(array: Array) -> Array:
     return array.session.record_op("zeros_like", [array])
 
 
+@broadcasting
 def ones_like(array: Array) -> Array:
     return array.session.record_op("ones_like", [array])
 
 
+@broadcasting
 def empty_like(array: Array) -> Array:
     """Deterministic ``empty_like``: recorded as ``zeros_like`` (same rationale as ``empty``)."""
     return array.session.record_op("zeros_like", [array])
 
 
+@broadcasting
 def full_like(array: Array, fill_value: float) -> Array:
     return array.session.record_op("full_like", [array], {"fill": float(fill_value)})

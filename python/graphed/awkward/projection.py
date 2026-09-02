@@ -25,6 +25,7 @@ from graphed import (
     BufferNeed,
     BufferProjection,
     Projection,
+    expanding,
     handle_opaque,
 )
 
@@ -102,6 +103,7 @@ def _replay(array: Array, on_fail: str) -> tuple[dict[int, tuple[object, object,
     return reports, conservative
 
 
+@expanding
 def project(array: Array, *, on_fail: str = "raise") -> Projection:
     """Compute the columns each source must read for ``array`` (metadata-only)."""
     reports, conservative = _replay(array, on_fail)
@@ -116,6 +118,7 @@ def project(array: Array, *, on_fail: str = "raise") -> Projection:
     return Projection(read_columns)
 
 
+@expanding
 def project_buffers(array: Array, *, on_fail: str = "raise") -> BufferProjection:
     """Compute, per source, each needed column with its :class:`graphed.BufferNeed`
     (metadata-only).

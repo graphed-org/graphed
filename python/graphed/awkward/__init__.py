@@ -8,19 +8,25 @@ nodes with a content-hashed ``PayloadDescriptor``. Reuse awkward/correctionlib/O
 
 from __future__ import annotations
 
-from . import functions, io, payloads, shuffle
+from . import functions, gnano, io, payloads, shuffle
 from . import functions as gak
 from .backend import AwkwardBackend, AwkwardForm, from_awkward
 from .io import from_parquet, read_parquet_partition, to_parquet
 from .projection import project, project_buffers
 
+#: §2.3d: the awkward idiom's public `Array`-consuming module verbs, each answering PER LABEL
+#: with its OWN return type (`Projection` / `BufferProjection`).
+VERB_DISPOSITIONS: dict[str, str] = {"project": "expanding", "project_buffers": "expanding"}
+
 __all__ = [
+    "VERB_DISPOSITIONS",
     "AwkwardBackend",
     "AwkwardForm",
     "from_awkward",
     "from_parquet",
     "functions",
     "gak",
+    "gnano",
     "io",
     "payloads",
     "project",

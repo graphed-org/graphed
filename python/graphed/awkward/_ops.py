@@ -176,6 +176,12 @@ def apply(
     if op in _AK_REDUCERS:
         return _AK_REDUCERS[op](operands[0], axis=_axis(params), **_reduce_kwargs(op, params, operands))
     if op in ("ak.std", "ak.var"):
+        if (
+            _axis(params) is None
+            and not any(k in params for k in ("mask_identity", "keepdims"))
+            and ak.backend(operands[0]) == "typetracer"
+        ):
+            return _global_moment(op, params, operands)
         fn = ak.std if op == "ak.std" else ak.var
         return fn(
             operands[0],
@@ -288,7 +294,8 @@ def apply(
             clip=bool(params.get("clip", False)),
         )
     if op == "ak.unflatten":
-        return ak.unflatten(operands[0], operands[1], axis=int(params.get("axis", 0)))
+        counts = operands[1] if len(operands) > 1 else int(params["counts"])
+        return ak.unflatten(operands[0], counts, axis=int(params.get("axis", 0)))
     if op == "ak.to_regular":
         return ak.to_regular(operands[0], axis=int(params.get("axis", 1)))
     if op == "ak.from_regular":
@@ -341,6 +348,24 @@ def _global_extremum(op: str, x: Any) -> Any:
         return ak.ptp(x, axis=None)
     fn = ak.min if op == "ak.min" else ak.max
     return fn(x, axis=None, mask_identity=False) if tracing else fn(x, axis=None)
+
+
+def _global_moment(op: str, params: Mapping[str, Any], operands: Sequence[Any]) -> Any:
+    """axis=None std/var need the same typetracer-aware handling as _global_extremum: awkward
+    2.13.0's ak_var._impl indexes its mean scalar (`xmean[(0,) * xmean.ndim]`), which to_layout
+    refuses for the tracer's unknown scalar whatever mask_identity says. Compose the abstract
+    result from typetracer-safe kernels with awkward's own dtype rules (float32 promotes to
+    float64 on both paths, measured); the REAL path keeps ak.std/ak.var semantics untouched.
+    A weighted moment needs no special arm: the weight cannot change a scalar reduction's
+    abstract form, and the real path still applies it."""
+    x = operands[0]
+    m1 = ak.mean(x, axis=None, mask_identity=False)
+    var = ak.mean(x * x, axis=None, mask_identity=False) - m1 * m1
+    ddof = int(params.get("ddof", 0))
+    if ddof:
+        n = ak.count(x, axis=None, mask_identity=False)
+        var = var * (n / (n - ddof))
+    return var if op == "ak.var" else np.sqrt(var)
 
 
 def _reduce_kwargs(op: str, params: Mapping[str, Any], operands: Sequence[Any]) -> dict[str, Any]:

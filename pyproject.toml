@@ -123,6 +123,12 @@ pythonpath = [
   # awkward/m40 imports golden_route from awkward/m39 (cross-dir); needed once awkward runs per-mXX.
   # numpy/m39 ships golden_route.py too, but resolves same-dir via prepend — only m39 here is on path.
   "tests/frozen/awkward/m39",
+  # awkward/m48's §4.1 anchor reads agc.correctionlib_json() out of preserve/m9 (cross-dir). This
+  # also exposes preserve/m9's `conftest` as an importable top-level module name. Three corpus/m05
+  # tests DO `from conftest import ...`; they stay correct because run-tests.sh runs corpus and
+  # preserve in separate processes and prepend mode seats the test's own dir first, so the same-dir
+  # conftest wins. pytest's own conftest collection is unaffected either way.
+  "tests/frozen/preserve/m9",
   "tests/frozen/checkpoint/m8",
 ]
 

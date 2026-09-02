@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
-from graphed import CONSERVATIVE, Array, Projection, handle_opaque
+from graphed import CONSERVATIVE, Array, Projection, expanding, handle_opaque
 
 
 @dataclass(frozen=True)
@@ -37,6 +37,7 @@ def _decode_on(params: Mapping[str, object]) -> list[str]:
     return [f for f in str(params.get("on", "")).split(",") if f]
 
 
+@expanding
 def project(array: Array, *, on_fail: str = "raise") -> Projection:
     """Compute the columns each source must read for ``array``."""
     session = array.session

@@ -35,6 +35,7 @@ from .backend import ParamValue
 from .errors import GraphedError
 from .execute import compile_ir
 from .session import Session
+from .varied import refuse_boundary
 from .write import PartitionedSource
 
 V = TypeVar("V")
@@ -75,6 +76,7 @@ def repartition(
     """Repartition ``array`` (plan §3.1). ``by=<field>`` records a hash ``Exchange`` keyed on that
     field (the join/keyed-shuffle case — a neutral module verb, NOT an ``Array`` method);
     ``target_bytes=`` coalesces by measured size; ``n=`` sets a target partition count."""
+    refuse_boundary("graphed.repartition", array)
     return array.session.record_exchange(array, _scheme_params(by=by, n=n, target_bytes=target_bytes))
 
 
@@ -86,6 +88,7 @@ def pack_key(array: Array, *, on: Sequence[str]) -> Array:
     from the ``on`` fields (plan §2.1/§3.3, spec Impl Target 8). A fusible ``Op`` (not a boundary), so
     it folds into the map stage; the backend computes it by big-endian integer bit-ops (never Python
     ``hash()``). :func:`join` uses it internally; it is also public so a caller can pre-key a source."""
+    refuse_boundary("graphed.pack_key", array)
     return array.session.record_op("pack_key", [array], {"on": ",".join(on)})
 
 
@@ -97,6 +100,7 @@ def join(left: Array, right: Array, *, on: Sequence[str], how: str = "inner") ->
     the shared ``__joinkey__``) then a two-input ``Join`` boundary; the flat output record is the union
     of both sides' fields, the shared key columns COALESCED (a left/right/outer miss keeps the present
     side's key, never null). ``how`` ∈ {inner, left, right, outer} (SQL/pandas relational semantics)."""
+    refuse_boundary("graphed.join", left, right)
     if left.session is not right.session:
         raise GraphedError("join: left and right must belong to the same Session")
     session = left.session
@@ -152,6 +156,7 @@ def shuffle_plan(
     §4.4). Mirrors ``aggregate_plan``'s signature. The recorded graph must carry a repartition
     ``Exchange`` (the barrier); the plan is a stage-1 map-write (route + coalesce over the session's
     partitioned source) that a stage-2 gather depends on — the real intra-run barrier edge."""
+    refuse_boundary("graphed.shuffle_plan", output)
     session = output.session
     compiled = compile_ir(session, output)
     store = GraphStore.deserialize(bytes(compiled.ir))
@@ -217,6 +222,7 @@ def join_plan(
     (route + coalesce on ``__joinkey__``) that a single ``kind=\"gather_join\"`` stage — ``inputs`` over
     both map-writes — depends on (the two-input barrier edge). Cross-process execution is the
     executor's ``run_join``; this builder is the durable, byte-deterministic plan artifact."""
+    refuse_boundary("graphed.join_plan", output)
     session = output.session
     compiled = compile_ir(session, output)
     store = GraphStore.deserialize(bytes(compiled.ir))
