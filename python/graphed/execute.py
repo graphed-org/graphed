@@ -21,7 +21,7 @@ hash, and fails loudly when one is missing.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import graphed.core
@@ -31,7 +31,32 @@ from .errors import GraphedError
 from .session import Session
 from .varied import refuse_container
 
-__all__ = ["CompiledGraph", "compile_ir", "evaluate_ir"]
+__all__ = ["CompiledGraph", "Correspondence", "compile_ir", "evaluate_ir"]
+
+#: A user source location as plain string/int data — `SourceFrame`'s fields, in its field order.
+Frame = tuple[str, int, str, str]
+#: A reduced-store address: the node id, plus the position inside a fused stage (`None` when the
+#: node reduced to itself, i.e. a boundary).
+Key = tuple[int, int | None]
+
+
+@dataclass(frozen=True)
+class Correspondence:
+    """§8.2(i): where the RECORD-time graph landed in the compiled reduced store.
+
+    The reduction re-indexes four times (DCE, canonicalization, CSE, stage fusion), so record-time
+    ids address nothing in the shipped IR. Both halves are keyed for a worker that only has the
+    reduced bytes.
+
+    Deliberately NOT ``slots=True``: consumers locate ``frames`` by LAYOUT (walking ``__dict__``)
+    rather than by name, since the field spelling is only pinned at the m49 freeze.
+    """
+
+    #: record node id -> where it landed. Absent for a record id DCE dropped.
+    node_map: dict[int, Key]
+    #: one frame per key of ``node_map``'s image, in key order. The re-keying is many-to-one, so
+    #: §8.2(ii)'s tie-break applies: the LOWEST record id mapping to a key supplies the frame.
+    frames: tuple[tuple[Key, Frame], ...]
 
 
 @dataclass(frozen=True)
@@ -45,6 +70,8 @@ class CompiledGraph:
     #: empty when every one does. DCE already prunes the work; this is what stops a systematic
     #: being paid for at build time and quietly never filled.
     unreached_labels: tuple[str, ...] = ()
+    #: §8.2(i): the record→reduced correspondence and the per-key user frames. Unconditional.
+    correspondence: Correspondence = field(default_factory=lambda: Correspondence({}, ()))
 
     def evaluate(
         self,
@@ -76,20 +103,44 @@ def compile_ir(
     ids = [arr.node_id for arr in outputs]
     if not optimize:
         blob = bytes(session._store.serialize(outputs=ids))
-    elif session._reducer is not None:
-        blob = bytes(
-            session._reducer.finalize(session._store, maximal_fusion=maximal_fusion, outputs=ids)[
-                0
-            ].serialize()
-        )
+        # opt_level=0 is 1:1 (M6): the serialized arena keeps the record ids it was built with
+        landings: list[Key | None] = [(nid, None) for nid in range(session._store.node_count())]
     else:
-        blob = bytes(session._store.reduce(maximal_fusion=maximal_fusion, outputs=ids)[0].serialize())
+        reduced = (
+            session._reducer.finalize(session._store, maximal_fusion=maximal_fusion, outputs=ids)[0]
+            if session._reducer is not None
+            else session._store.reduce(maximal_fusion=maximal_fusion, outputs=ids)[0]
+        )
+        blob, landings = bytes(reduced.serialize()), reduced.node_map()
+    node_map = {nid: landed for nid, landed in enumerate(landings) if landed is not None}
     names = tuple(session.source_name(nid) for nid in session.source_ids())
     reached: set[str] = set()
     for arr in outputs:
         reached |= getattr(arr, "_labels", None) or frozenset()
     registered = {label for labels, _ref in session._varied for label in labels}
-    return CompiledGraph(ir=blob, source_names=names, unreached_labels=tuple(sorted(registered - reached)))
+    return CompiledGraph(
+        ir=blob,
+        source_names=names,
+        unreached_labels=tuple(sorted(registered - reached)),
+        correspondence=Correspondence(node_map=node_map, frames=_frames_by_key(session, node_map)),
+    )
+
+
+def _frames_by_key(session: Session, node_map: dict[int, Key]) -> tuple[tuple[Key, Frame], ...]:
+    """Re-key ``Session._provenance`` onto §8.2(i)'s keys, in key order.
+
+    Many-to-one: the reducer merges record ids recorded at different user lines onto one key, even
+    inside a stage where ``member_index`` cannot separate them. §8.2(ii) binds the tie-break to the
+    LOWEST record id, matching the driver-side ``setdefault`` house rule and making the shipped
+    frame a function of the graph rather than of dict order.
+    """
+    chosen: dict[Key, Frame] = {}
+    for nid in sorted(node_map):
+        prov = session._provenance.get(nid)
+        if prov is None or node_map[nid] in chosen:
+            continue
+        chosen[node_map[nid]] = (prov.filename, prov.lineno, prov.function, prov.source)
+    return tuple(sorted(chosen.items(), key=lambda e: (e[0][0], -1 if e[0][1] is None else e[0][1])))
 
 
 def evaluate_ir(

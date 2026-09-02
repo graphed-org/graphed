@@ -121,12 +121,13 @@ impl IncrementalReducer {
         for &o in outputs {
             outs.push(self.map.get(o as usize).copied().ok_or(BadNodeId(o))?);
         }
-        Ok(super::reduce_with_mode(
-            &self.canon_nodes,
-            &outs,
-            engine,
-            mode,
-        ))
+        let mut red = super::reduce_with_mode(&self.canon_nodes, &outs, engine, mode);
+        // §8.2(i): the four passes answered in CANONICAL-arena ids, so compose this reducer's own
+        // original->canonical map in front. Without it the accessor silently mis-keys every
+        // `Session(incremental=True)` program.
+        let canonical = std::mem::take(&mut red.node_map);
+        red.node_map = self.map.iter().map(|&c| canonical[c as usize]).collect();
+        Ok(red)
     }
 }
 
@@ -183,6 +184,11 @@ mod tests {
         // identical reduced structure, node for node
         assert_eq!(inc.nodes, full.nodes);
         assert_eq!(inc.outputs, full.outputs);
+        // §8.2(i): and the same RECORD-keyed correspondence — the incremental path composes its
+        // own canonical map in front of the four passes so both answer in original-arena ids.
+        assert_eq!(inc.node_map.len(), s.node_count());
+        assert_eq!(inc.node_map, full.node_map);
+        assert_eq!(inc.node_map[one as usize], inc.node_map[ab as usize]);
     }
 
     #[test]

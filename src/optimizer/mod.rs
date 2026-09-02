@@ -43,11 +43,22 @@ pub struct ReductionReport {
     pub boundary_nodes: usize,
 }
 
+/// Where one input node landed in the reduced graph: the reduced node id, plus its position in
+/// that node's member list when the node fused into a Stage (`None` for a boundary, which reduces
+/// to itself).
+pub type Landing = (NodeId, Option<usize>);
+
+/// §8.2(i)'s record→reduced correspondence, indexed by input-arena node id. `None` where DCE
+/// dropped the node.
+pub type NodeMap = Vec<Option<Landing>>;
+
 /// The reduced graph: interned NodeKeys (topological), remapped outputs, and the report.
 pub struct Reduced {
     pub nodes: Vec<NodeKey>,
     pub outputs: Vec<NodeId>,
     pub report: ReductionReport,
+    /// §8.2(i): the four passes' re-indexings composed into one map keyed by INPUT-arena node id.
+    pub node_map: NodeMap,
 }
 
 /// Run the full reduction with an explicit fusion mode (see [`FusionMode`]). `nodes` is the
@@ -60,7 +71,7 @@ pub fn reduce_with_mode(
     mode: FusionMode,
 ) -> Reduced {
     // 1. DCE — keep only nodes reachable from the outputs.
-    let (reachable_keys, reachable_outputs) = dead_code_elimination(nodes, outputs);
+    let (reachable_keys, reachable_outputs, dce_map) = dead_code_elimination(nodes, outputs);
 
     // operator-token -> a NodeKey template, for reconstructing boundary nodes after canonicalization
     let mut templates: HashMap<String, NodeKey> = HashMap::new();
@@ -70,22 +81,35 @@ pub fn reduce_with_mode(
 
     // 2. canonicalize via the engine (equality saturation behind RewriteEngine).
     let eg = to_engine_graph(&reachable_keys, &reachable_outputs);
-    let canonical = engine.canonicalize(&eg);
+    let (canonical, canon_map) = engine.canonicalize(&eg);
 
     // 3. CSE — hash-cons identical (token, inputs) nodes (a plain pass, not the engine).
-    let deduped = cse(&canonical);
+    let (deduped, cse_map) = cse(&canonical);
 
     // 4. stage fusion + rebuild.
-    let mut out = stage_fusion(&deduped, &templates, mode);
+    let (mut out, landing) = stage_fusion(&deduped, &templates, mode);
     out.report.input_nodes = nodes.len();
     out.report.reachable_nodes = reachable_keys.len();
     out.report.canonical_nodes = deduped.nodes.len();
+    // §8.2(i): compose the four re-indexings each pass already computed. Read-only data the
+    // reducer produced anyway — no pass changes what it emits (§3.1).
+    out.node_map = dce_map
+        .iter()
+        .map(|&d| (d != DROPPED).then(|| landing[cse_map[canon_map[d]]]))
+        .collect();
     out
 }
 
+/// `dead_code_elimination`'s remap entry for a node the pass dropped.
+const DROPPED: usize = usize::MAX;
+
 /// Reachability from the outputs (plan M4: DCE = reachability; never drops a node on a path to an
-/// output). Returns the reachable nodes compacted into topological order + remapped outputs.
-pub fn dead_code_elimination(nodes: &[NodeKey], outputs: &[NodeId]) -> (Vec<NodeKey>, Vec<usize>) {
+/// output). Returns the reachable nodes compacted into topological order, the remapped outputs,
+/// and the `remap` vector itself (`DROPPED` for a node this pass dropped).
+pub fn dead_code_elimination(
+    nodes: &[NodeKey],
+    outputs: &[NodeId],
+) -> (Vec<NodeKey>, Vec<usize>, Vec<usize>) {
     let mut keep = vec![false; nodes.len()];
     let mut stack: Vec<usize> = outputs.iter().map(|&o| o as usize).collect();
     while let Some(i) = stack.pop() {
@@ -98,7 +122,7 @@ pub fn dead_code_elimination(nodes: &[NodeKey], outputs: &[NodeId]) -> (Vec<Node
         }
     }
     // compact, preserving topological (ascending-id) order
-    let mut remap = vec![usize::MAX; nodes.len()];
+    let mut remap = vec![DROPPED; nodes.len()];
     let mut kept: Vec<NodeKey> = Vec::new();
     for (i, node) in nodes.iter().enumerate() {
         if keep[i] {
@@ -112,7 +136,7 @@ pub fn dead_code_elimination(nodes: &[NodeKey], outputs: &[NodeId]) -> (Vec<Node
         }
     }
     let out_idx = outputs.iter().map(|&o| remap[o as usize]).collect();
-    (kept, out_idx)
+    (kept, out_idx, remap)
 }
 
 fn to_engine_graph(keys: &[NodeKey], outputs: &[usize]) -> EngineGraph {
@@ -130,8 +154,9 @@ fn to_engine_graph(keys: &[NodeKey], outputs: &[usize]) -> EngineGraph {
     }
 }
 
-/// Hash-cons identical (token, inputs) nodes — CSE as a plain pass.
-fn cse(graph: &EngineGraph) -> EngineGraph {
+/// Hash-cons identical (token, inputs) nodes — CSE as a plain pass. Returns the deduped graph and
+/// the `remap` it already builds (input index -> deduped index).
+fn cse(graph: &EngineGraph) -> (EngineGraph, Vec<usize>) {
     let mut remap = vec![0usize; graph.nodes.len()];
     let mut seen: HashMap<(String, Vec<usize>), usize> = HashMap::new();
     let mut nodes: Vec<EngineNode> = Vec::new();
@@ -149,7 +174,7 @@ fn cse(graph: &EngineGraph) -> EngineGraph {
         remap[i] = idx;
     }
     let outputs = graph.outputs.iter().map(|&o| remap[o]).collect();
-    EngineGraph { nodes, outputs }
+    (EngineGraph { nodes, outputs }, remap)
 }
 
 // ---- union-find over op nodes ------------------------------------------------
@@ -188,11 +213,14 @@ impl Dsu {
 /// boundary). `SingleUse`: an op fuses into its consumer only when it has exactly one use and that
 /// use is an op. `Maximal`: an op additionally fuses when ALL of its consumers are ops in one
 /// shared stage (a diamond inside an op region becomes one stage).
+///
+/// Also returns each input node's [`Landing`] — the component's reduced id plus, for a fused op,
+/// its index in that stage's sorted member list. Both are already computed to build the stages.
 fn stage_fusion(
     graph: &EngineGraph,
     templates: &HashMap<String, NodeKey>,
     mode: FusionMode,
-) -> Reduced {
+) -> (Reduced, Vec<Landing>) {
     let n = graph.nodes.len();
     // consumers + output marks
     let mut consumers: Vec<Vec<usize>> = vec![Vec::new(); n];
@@ -269,6 +297,7 @@ fn stage_fusion(
     let mut comp_to_reduced: HashMap<usize, NodeId> = HashMap::new();
     let mut stages = 0usize;
     let mut boundary_nodes = 0usize;
+    let mut landing: Vec<Landing> = vec![(0, None); n];
 
     for &comp in &comps {
         let members = &comp_members[&comp];
@@ -321,7 +350,17 @@ fn stage_fusion(
             });
             stages += 1;
         }
-        comp_to_reduced.insert(comp, (reduced.len() - 1) as NodeId);
+        let rid = (reduced.len() - 1) as NodeId;
+        comp_to_reduced.insert(comp, rid);
+        if graph.nodes[comp].boundary {
+            landing[comp] = (rid, None);
+        } else {
+            for (member_index, &op) in comp_members[&comp].iter().enumerate() {
+                // `comp_members` is built in ascending index order — the same order `ops` is
+                // sorted into above, so `member_index` is the op's slot in the emitted Stage.
+                landing[op] = (rid, Some(member_index));
+            }
+        }
     }
 
     let outputs: Vec<NodeId> = graph
@@ -330,18 +369,23 @@ fn stage_fusion(
         .map(|&o| comp_to_reduced[&comp_id[o]])
         .collect();
     let reduced_nodes = reduced.len();
-    Reduced {
-        nodes: reduced,
-        outputs,
-        report: ReductionReport {
-            input_nodes: 0,
-            reachable_nodes: 0,
-            canonical_nodes: 0,
-            stages,
-            reduced_nodes,
-            boundary_nodes,
+    (
+        Reduced {
+            nodes: reduced,
+            outputs,
+            report: ReductionReport {
+                input_nodes: 0,
+                reachable_nodes: 0,
+                canonical_nodes: 0,
+                stages,
+                reduced_nodes,
+                boundary_nodes,
+            },
+            // composed by `reduce_with_mode`, which holds the other three passes' remaps
+            node_map: Vec::new(),
         },
-    }
+        landing,
+    )
 }
 
 #[cfg(all(test, not(loom)))]
@@ -462,7 +506,7 @@ mod tests {
         let _dead = s.add_op("neg".into(), vec![a], empty()).unwrap(); // never marked output
         s.mark_output(used).unwrap();
         let (nodes, outs) = s.snapshot();
-        let (kept, _kout) = dead_code_elimination(&nodes, &outs);
+        let (kept, _kout, _remap) = dead_code_elimination(&nodes, &outs);
         // a + used kept; dead dropped
         assert_eq!(kept.len(), 2);
         // every node on the path to the output survives
@@ -518,6 +562,52 @@ mod tests {
         let (_reduced, report) = s.reduce(&EggEngine::default());
         // x + 0 -> x : no op remains, the output is the source itself (zero stages)
         assert_eq!(report.stages, 0);
+    }
+
+    #[test]
+    fn node_map_composes_all_four_re_indexings() {
+        // x -> a=inc(x) -> b=inc(a) -> id=b*1.0 (folded) -> out=neg(id); plus a dead branch.
+        let s = GraphStore::new();
+        let x = s.add_source("x".into(), empty());
+        let a = s.add_op("inc".into(), vec![x], empty()).unwrap();
+        let b = s.add_op("inc".into(), vec![a], empty()).unwrap();
+        let id = s
+            .add_op(
+                "mul".into(),
+                vec![b],
+                pm(vec![
+                    ("scalar", ParamValue::Float(1.0)),
+                    ("side", ParamValue::Str("r".into())),
+                ]),
+            )
+            .unwrap();
+        let out = s.add_op("neg".into(), vec![id], empty()).unwrap();
+        let dead = s.add_op("neg".into(), vec![x], empty()).unwrap();
+        s.mark_output(out).unwrap();
+
+        let (reduced, _) = s.reduce(&EggEngine::default());
+        let map = reduced.node_map();
+        assert_eq!(map.len(), s.node_count());
+        assert_eq!(map[dead as usize], None, "DCE dropped it");
+        let (src_id, src_member) = map[x as usize].unwrap();
+        assert_eq!(
+            src_member, None,
+            "a source reduces to itself, not into a stage"
+        );
+        // the three surviving ops fuse into ONE stage, in recording order; the identity op is
+        // folded onto its input, so it lands exactly where `b` did (the post-DCE passes).
+        let stage: Vec<_> = [a, b, id, out]
+            .iter()
+            .map(|&n| map[n as usize].unwrap())
+            .collect();
+        assert_ne!(stage[0].0, src_id);
+        assert!(stage.iter().all(|&(node, _)| node == stage[0].0));
+        assert_eq!(
+            stage.iter().map(|&(_, m)| m).collect::<Vec<_>>(),
+            vec![Some(0), Some(1), Some(1), Some(2)]
+        );
+        // the image really addresses the reduced store
+        assert_eq!(reduced.node_count(), 2);
     }
 
     #[test]
@@ -577,7 +667,7 @@ mod tests {
         let _dead = s.add_op("mul".into(), vec![a, x], empty()).unwrap(); // off the apex, not an output
         s.mark_output(out).unwrap();
         let (nodes, outs) = s.snapshot();
-        let (kept, _) = dead_code_elimination(&nodes, &outs);
+        let (kept, _, _) = dead_code_elimination(&nodes, &outs);
         assert_eq!(kept.len(), 5); // x, a, l, r, out kept; the dead mul dropped
         let sd = seeds(&[("x", 5)]);
         let (reduced, _) = s.reduce(&EggEngine::default());

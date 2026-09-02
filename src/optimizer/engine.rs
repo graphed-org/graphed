@@ -47,8 +47,13 @@ pub struct EngineGraph {
 
 /// The swappable optimizer engine boundary (egg today, egglog in Phase 2).
 pub trait RewriteEngine {
-    /// Canonicalize the DAG via equality saturation.
-    fn canonicalize(&self, graph: &EngineGraph) -> EngineGraph;
+    /// Canonicalize the DAG via equality saturation. Returns the canonical graph plus a TOTAL
+    /// `node_map`: for every input node index, the index of its representative in that graph.
+    ///
+    /// Which node represents its class is the engine's own decision and is not derivable from
+    /// outside, so the map has to come back across the boundary (§8.2(i)). It is a plain index
+    /// vector — no egg type leaks past the trait, so the Phase-2 `egglog` swap still stands.
+    fn canonicalize(&self, graph: &EngineGraph) -> (EngineGraph, Vec<usize>);
 }
 
 fn boundary_from_token(token: &str) -> bool {
@@ -87,7 +92,7 @@ impl Default for EggEngine {
 }
 
 impl RewriteEngine for EggEngine {
-    fn canonicalize(&self, graph: &EngineGraph) -> EngineGraph {
+    fn canonicalize(&self, graph: &EngineGraph) -> (EngineGraph, Vec<usize>) {
         // 1. load the DAG into an e-graph, recording each node's eclass (topo order).
         let mut egraph: EGraph<SymbolLang, ()> = EGraph::default();
         let mut node_eclass: Vec<Id> = Vec::with_capacity(graph.nodes.len());
@@ -138,6 +143,9 @@ impl RewriteEngine for EggEngine {
             .iter()
             .map(|&o| class_to_new[&canon[o]])
             .collect();
-        EngineGraph { nodes, outputs }
+        // total, because every class's representative is its EARLIEST member and so was emitted
+        // by the time any later member of that class is looked up.
+        let node_map = canon.iter().map(|c| class_to_new[c]).collect();
+        (EngineGraph { nodes, outputs }, node_map)
     }
 }
