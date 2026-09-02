@@ -18,8 +18,9 @@ from .varied import Varied, member_of, union_labels
 
 __all__ = ["cone", "impact_by_label", "read_columns_by_label"]
 
-#: §3.4's operand. `Any` on the members would defeat the §2.3d annotation filter, which discovers a
-#: verb by an `Array` mention anywhere in its parameter annotations.
+#: §3.4's operand, for the bodies below. NOT what the two verbs annotate: under
+#: `from __future__ import annotations` an alias stringifies to its own bare name, hiding the
+#: `Array` mention §2.3d's discovery filter reads, so both verbs spell this union INLINE.
 Outputs = Sequence[Varied] | Mapping[str, Sequence[Array]]
 
 
@@ -89,7 +90,7 @@ def _is_sequence(value: object) -> bool:
     return isinstance(value, Sequence) and not isinstance(value, str | bytes)
 
 
-def impact_by_label(outputs: Outputs) -> dict[str, tuple[int, ...]]:
+def impact_by_label(outputs: Sequence[Varied] | Mapping[str, Sequence[Array]]) -> dict[str, tuple[int, ...]]:
     """§3.4: per label, the record node ids that label reaches and `"nominal"` does not, sorted.
 
     The reachability DIFFERENCE, not an id watermark: interleaved broadcast recording makes
@@ -98,14 +99,20 @@ def impact_by_label(outputs: Outputs) -> dict[str, tuple[int, ...]]:
     """
     per_label = _per_label("graphed.impact_by_label", outputs)
     central = _reach(per_label.get("nominal", []))
-    return {label: tuple(sorted(_reach(arrays) - central)) for label, arrays in per_label.items()}
+    # `nominal` is `central - central`: answer it from the walk already done rather than repeating it
+    return {
+        label: () if label == "nominal" else tuple(sorted(_reach(arrays) - central))
+        for label, arrays in per_label.items()
+    }
 
 
 def _reach(arrays: Sequence[Array]) -> set[int]:
     return {nid for array in arrays for nid in cone(array.session, array.node_id)}
 
 
-def read_columns_by_label(outputs: Outputs, source_nid: int) -> dict[str, tuple[str, ...] | None]:
+def read_columns_by_label(
+    outputs: Sequence[Varied] | Mapping[str, Sequence[Array]], source_nid: int
+) -> dict[str, tuple[str, ...] | None]:
     """§5.3: per label, that label's sorted read set on source `source_nid`, making the read-width
     cost of a shift visible. `None` is `read_columns`' own conservative answer — "read every
     column" — and must never merge with `()`, which says the opposite.

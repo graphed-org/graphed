@@ -78,3 +78,43 @@ the spawned-process picklability anchor green. mypy strict clean; ruff check + f
 `precommit . --fast` = ok. No Rust touched. +143 src LOC, +98 in `tests/extra/{frontend,awkward}/m49`
 (the top-level dispatch point and the unflatten hint's discrimination, neither witnessed by the
 frozen suite; each verified by a restored mutant).
+
+## Fix cycle 1 — review wf_fa3d406b (A-1/A-3/A-4/A-8/A-11/A-12/A-13)
+
+**A-3 (MED, shipped)** — `CompiledGraph.shift_after_weight` is now per-PROGRAM. The design lens's
+proposed record-site edit was NOT made (the adjudicator's correction: `_report_shift_after_weight`
+is plan-faithful, §2.5 binds the check to the session-recorded families and their cone walk); the
+defect was the shipping site, so `Session._shift_after_weight` became `{(family, collection): the
+offending factor's member node ids}` and `compile_ir` keeps a pair only when those ids intersect
+this artifact's `node_map`. Both witnesses close, the three frozen anchors stay green.
+
+**A-4 (MED, shipped)** — both `by_label` verbs spell `Sequence[Varied] | Mapping[str,
+Sequence[Array]]` inline; under `from __future__ import annotations` the `Outputs` alias
+stringified to its own name and hid the `Array` mention §2.3d's filter reads. The alias comment
+claimed the opposite and is corrected. Closing witness is the ALREADY-FROZEN m48 anchor:
+`_discovered()` went from `False/False` to `True/True` for the two verbs, with
+`("graphed","read_columns")` `True` throughout as the live control and `("graphed","cone")` `False`
+as the negative one; `tests/frozen/awkward/m48/test_module_verb_dispositions.py` 13 passed.
+
+**A-8 / A-11 / A-12 / A-13 (shipped)** — `tests/extra/frontend/m49/test_unoptimized_correspondence.py`
+covers the `optimize=False` correspondence arm (identity map + still evaluates) against the
+optimized artifact of the same program as its control; `impact_by_label` answers `nominal` from the
+`central` walk it already did instead of re-walking; `CompiledGraph.__hash__ = None` states the
+unhashability a dict field already caused (`hash()` now says `CompiledGraph`, not `dict`);
+`from_reduced`'s re-key comment no longer claims a merge no input is known to produce — the remap
+is the same `map` the inputs and outputs ride, so there is nothing separate to delete or witness.
+
+**A-1 (HIGH) — NOT shipped, TEST DISPUTE filed.** Routing `evaluate_ir`'s `external` arm through
+`_dispatch` reds four frozen anchors in graphed-histogram's `freeze-m49` suite
+(`tests/frozen/m49/test_blame_parity.py`): §6.1d pins the plan path to re-raise an External
+evaluator's own `GraphedError` verbatim, which attribution replaces with a `StageError` (a bare
+`Exception`, so `pytest.raises(GraphedError)` does not even catch it). Measured both ways on one
+fixture: repair -> EXIT=1/4 failed; freeze behaviour -> EXIT=0/5 passed, while `graphed`'s own
+suite and `graphed-executors tests/frozen/m49` are green under both. Not routed around, not
+weakened: `graphed-histogram/.graphed/m49/disputes/test_blame_parity.md` carries the claim, the
+measurement and the ready-to-freeze witness; the `external` arm keeps a comment pointing at it.
+
+Gates: `COV=1 ./scripts/run-tests.sh` 0 FAILED, combined branch coverage 94%; `core/m49` benchmark
+green; ruff check + format clean; `mypy --strict` clean; `cargo clippy -D warnings` clean and
+`cargo test --release` 30 passed (comment-only Rust change); `precommit . --fast` ok with
+`workflows-valid` now LIVE (`ok`, not the `pyyaml not installed` skip C0-C3 recorded).

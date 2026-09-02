@@ -208,7 +208,9 @@ impl GraphStore {
                 .mark_output(map[o as usize])
                 .expect("reduced output is valid");
         }
-        // re-interning can merge two reduced nodes, so the correspondence has to follow it here
+        // the correspondence rides `map` — the same re-intern remap the inputs and outputs above
+        // ride, not a separate defensive leg. CSE has already deduplicated, so no known input
+        // makes this remap anything but the identity; composing keeps it correct if one does.
         store.lock().node_map = red
             .node_map
             .iter()

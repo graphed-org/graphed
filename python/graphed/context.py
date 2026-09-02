@@ -372,9 +372,13 @@ def _report_shift_after_weight(ctx: EventContext, collection: str, pre_shift: Ma
     if not session._weight_factors:
         return
     targets = {member.node_id for member in pre_shift.values()}
+    registry = session._shift_after_weight
     for family, nodes in session._weight_factors:
         if any(targets & cone(session, nid) for nid in nodes):
-            session._shift_after_weight.add((family, collection))
+            key = (family, collection)
+            # by value, with the factor's own ids: the shipping site filters on them (§2.5's
+            # report is about one compiled program, the registry is about the whole Session)
+            registry[key] = registry.get(key, frozenset()) | frozenset(nodes)
 
 
 def _check_lockstep(name: str, mapping: Mapping[str, Mapping[Any, Any]]) -> None:

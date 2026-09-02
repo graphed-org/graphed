@@ -47,7 +47,10 @@ class Session:
         # rebuilds a context's ambient weight after `register`, so `_varied`'s weak reference is
         # already dead at compile, and no Session-retained object ever carries a COLLECTION name.
         self._weight_factors: list[tuple[str, tuple[int, ...]]] = []
-        self._shift_after_weight: set[tuple[str, str]] = set()
+        # `(family, collection)` -> the offending factor's own member node ids. Carrying the ids is
+        # what keeps the report PER-PROGRAM: this registry accumulates for the Session's lifetime,
+        # and `compile_ir` ships only the pairs whose factor reaches the artifact it compiled.
+        self._shift_after_weight: dict[tuple[str, str], frozenset[int]] = {}
 
     def _step_reducer(self) -> None:
         if self._reducer is not None:

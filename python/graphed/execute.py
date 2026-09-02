@@ -82,6 +82,10 @@ class CompiledGraph:
     #: here, so the compile-time walk the unreached-label diagnostic uses cannot see it.
     shift_after_weight: tuple[tuple[str, str], ...] = ()
 
+    # unhashable BY DECISION since m49: `correspondence.node_map` is a dict and every consumer
+    # wants that shape, so the artifact refuses under its own name rather than through a member.
+    __hash__ = None  # type: ignore[assignment]  # object declares a Callable here
+
     def evaluate(
         self,
         backend: Backend,
@@ -132,7 +136,14 @@ def compile_ir(
         source_names=names,
         unreached_labels=tuple(sorted(registered - reached)),
         correspondence=Correspondence(node_map=node_map, frames=_frames_by_key(session, node_map)),
-        shift_after_weight=tuple(sorted(session._shift_after_weight)),
+        # per-program, like `unreached_labels` above: the Session's registry accumulates for its
+        # lifetime, so a pair ships only when the offending factor's own nodes reach THIS
+        # artifact. Without the filter a sound program reports a sibling program's violation.
+        shift_after_weight=tuple(
+            sorted(
+                pair for pair, nodes in session._shift_after_weight.items() if not nodes.isdisjoint(node_map)
+            )
+        ),
     )
 
 
@@ -218,6 +229,10 @@ def evaluate_ir(
                     f"evaluate_ir: External payload {chash!r} needs an evaluator "
                     "(pass externals={content_hash: callable})"
                 )
+            # NOT routed through `_dispatch`: §6.1d's frozen blame-parity anchor
+            # (graphed-histogram tests/frozen/m49/test_blame_parity.py, freeze-m49) pins the plan
+            # path to re-raise an External evaluator's own diagnostic verbatim, which attribution
+            # would replace with a StageError. See .graphed/m49/disputes/test_blame_parity.md.
             vals.append(externals[chash](*ins))
         else:  # pragma: no cover - the codec only emits the kinds above
             raise GraphedError(f"evaluate_ir: unknown node kind {kind!r}")
