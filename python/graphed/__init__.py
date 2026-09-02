@@ -18,6 +18,7 @@ from .accessors import (
 from .aggregate import aggregate_plan, resolve_backend
 from .array import Array, apply
 from .backend import Backend, Form, ParamValue
+from .by_label import impact_by_label, read_columns_by_label
 from .errors import GraphedError, GraphedTypeError
 from .execute import CompiledGraph, compile_ir, evaluate_ir
 from .projection import (
@@ -33,7 +34,7 @@ from .projection import (
 from .provenance import Provenance, capture, is_enabled, set_enabled
 from .session import Session
 from .shuffle import join, join_plan, pack_key, repartition, shuffle_plan
-from .varied import SURFACE_DISPOSITIONS, Varied, broadcasting, expanding
+from .varied import SURFACE_DISPOSITIONS, Varied, broadcasting, expanding, member_of
 from .vary import vary
 
 #: §2.3d: every public `Array`-consuming module verb's `Varied` disposition. `vary` is absent by
@@ -44,10 +45,12 @@ VERB_DISPOSITIONS: dict[str, str] = {
     "broadcast_like": "broadcasting",
     "compile_ir": "refusing",
     "context_of": "eager-metadata",
+    "impact_by_label": "expanding",
     "join": "refusing",
     "join_plan": "refusing",
     "pack_key": "refusing",
     "read_columns": "expanding",
+    "read_columns_by_label": "expanding",
     "reindex_to": "broadcasting",
     "repartition": "refusing",
     "shuffle_plan": "refusing",
@@ -82,13 +85,16 @@ __all__ = [
     "evaluate_ir",
     "expanding",
     "handle_opaque",
+    "impact_by_label",
     "is_enabled",
     "join",
     "join_plan",
     "labels",
+    "member_of",
     "nominal",
     "pack_key",
     "read_columns",
+    "read_columns_by_label",
     "reindex_to",
     "repartition",
     "resolve_backend",

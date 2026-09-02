@@ -892,19 +892,20 @@ def _dispatched(fn: Callable[..., Any], kind: str) -> Callable[..., Any]:
     Signatures do not change (R17.0's anti-drift pin): `functools.wraps` keeps `__wrapped__`, so
     `inspect.signature` still reports the underlying one.
     """
-    from graphed.varied import containers_in, expand, expand_tuple, narrow  # noqa: PLC0415
+    from graphed.varied import (  # noqa: PLC0415
+        boundary_refusal,
+        containers_in,
+        expand,
+        expand_tuple,
+        narrow,
+    )
 
     @functools.wraps(fn)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
         if not containers_in(*args, *kwargs.values()):
             return fn(*args, **kwargs)
         if kind == "refusing":
-            from graphed.errors import GraphedError  # noqa: PLC0415
-
-            raise GraphedError(
-                f"gak.{fn.__name__} is a boundary operation and does not accept a Varied; apply it "
-                "to one universe at a time with graphed.universe(v, label)"
-            )
+            raise boundary_refusal(f"gak.{fn.__name__}", *args, *kwargs.values())
         if kind == "eager-metadata":
             return fn(
                 *(narrow(arg, "nominal") for arg in args),

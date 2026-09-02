@@ -294,10 +294,7 @@ def _broadcast_method(name: str) -> Callable[..., Any]:
 
 def _refusing_method(name: str) -> Callable[..., Any]:
     def method(self: Varied, *args: object, **kwargs: object) -> Any:
-        raise GraphedError(
-            f"{name} is a boundary operation and does not accept a Varied (§5.4); apply it to one "
-            "universe at a time with graphed.universe(v, label)"
-        )
+        raise boundary_refusal(name, self, *args, *kwargs.values())
 
     method.__name__ = name
     method.__qualname__ = f"Varied.{name}"
@@ -332,13 +329,26 @@ def varied_class_for(array_cls: type) -> type[Varied]:
 
 
 # ---- §2.3d's two refusal contracts ---------------------------------------------------------
+def boundary_refusal(verb: str, *values: object) -> GraphedError:
+    """§5.4's message shape, shared by every spelling of the boundary refusal (the module verbs, the
+    `Varied` method surface, and gak's own dispatch).
+
+    Worded over what the site actually knows: there is no boundary NODE at an operand check, so it
+    names the refusing VERB and EVERY label the offending containers carry — `"nominal"` included,
+    since a boundary refuses the whole container, not its non-nominal half.
+    """
+    return GraphedError(
+        f"{verb} is a boundary operation and does not accept a Varied carrying labels "
+        f"[{', '.join(union_labels(*values))}]; apply it to one universe at a time with "
+        "graphed.universe(v, label)"
+    )
+
+
 def refuse_boundary(verb: str, *values: object) -> None:
     """Contract one: boundary and plan verbs (§5.4). They move or key rows, which has no
     per-universe meaning, so they refuse rather than silently compiling one universe."""
     if containers_in(*values):
-        raise GraphedError(
-            f"{verb} is a boundary operation and does not accept a Varied; apply it to one universe at a time"
-        )
+        raise boundary_refusal(verb, *values)
 
 
 def refuse_container(verb: str, *values: object) -> None:

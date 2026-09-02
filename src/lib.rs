@@ -357,6 +357,13 @@ impl PyGraphStore {
         self.store.outputs()
     }
 
+    /// §8.2(i): for each node of the arena this store was REDUCED FROM, where it landed here —
+    /// `(reduced_node_id, member_index | None)`, or `None` if DCE dropped it. Indexed by that
+    /// arena's node id. Empty for a store that did not come out of a reduction.
+    fn node_map(&self) -> Vec<Option<(NodeId, Option<usize>)>> {
+        self.store.node_map()
+    }
+
     /// Reduce via the M4 optimizer (DCE + CSE + equality-saturation stage fusion behind
     /// RewriteEngine). Returns the reduced store and a report dict. `maximal_fusion=True` opts in
     /// to fusing fan-out ops whose consumers all land in one stage (the default single-use rule is

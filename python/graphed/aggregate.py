@@ -21,7 +21,8 @@ from graphed.core import Partition
 from graphed.core.execution import Plan, Task, WorkerResources
 
 from .array import Array
-from .execute import CompiledGraph, compile_ir, evaluate_ir
+from .errors import GraphedError
+from .execute import CompiledGraph, Key, OnFailure, compile_ir, evaluate_ir
 from .projection import read_columns
 from .varied import refuse_container
 from .write import PartitionedSource
@@ -65,8 +66,43 @@ class _PartitionReduce(Generic[V]):
             resolve_backend(self.backend_factory),
             {self.source_name: chunk},
             externals=dict(self.externals),
+            on_failure=self._attribute(str(partition)),
         )
         return self.reduce(values)
+
+    def _attribute(self, partition: str) -> OnFailure | None:
+        """§8.2(ii): the worker-side wrap. A RAW failure at a key the label channel has an ENTRY for
+        becomes a `StageError` carrying that key's label and the user's line; a key with no entry —
+        and a closure with no channel at all — re-raises the original untouched, since `StageError`
+        needs frames at construction and there are none to build one from."""
+        entries = dict(self.variation_labels or ())
+        if not entries:
+            return None
+        from .debug.errors import SourceFrame, StageError  # noqa: PLC0415  (import cycle)
+
+        def attribute(key: Key, op: str, ins: list[object], exc: BaseException) -> BaseException | None:
+            # §8.2(ii): "a `GraphedError` re-raises untouched on EVERY arm regardless of entry — it
+            # is already an attributed error, and §6.1d's blame parity (the plan path re-raises the
+            # guard's message verbatim) binds it".
+            if isinstance(exc, GraphedError):
+                return None
+            entry = entries.get(key)
+            if entry is None:
+                return None
+            labels, frame = entry
+            return StageError(
+                op=op,
+                frames=(SourceFrame(*frame),),
+                # a worker holds values, not forms: the runtime types are what it can honestly report
+                input_forms=tuple(type(value).__name__ for value in ins),
+                partition=partition,
+                cause_type=type(exc).__name__,
+                cause_message=str(exc),
+                opt_level=1,  # `aggregate_plan` always compiles optimized
+                variation=",".join(sorted(labels)),
+            )
+
+        return attribute
 
 
 def aggregate_plan(

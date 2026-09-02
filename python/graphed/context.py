@@ -23,6 +23,7 @@ from typing import Any
 from . import accessors
 from ._tags import canonical_tag
 from .array import Array
+from .by_label import cone
 from .errors import GraphedError
 from .provenance import capture
 from .varied import Varied, expand, labels_of, member_of, rebuild
@@ -287,6 +288,8 @@ def _vary_weight(
     # links; a descendant or divergent one is a construction-time error naming the direction.
     factors = {label: accessors.reindex_to(factor, ctx) for label, factor in factors.items()}
     factor = rebuild(factors, tags={name: inherited + _tags_of(name, factors)}, context=ctx)
+    # §2.5's shift-after-weight operand one: this factor's OWN member node ids, by value.
+    ctx._session._weight_factors.append((name, _member_nodes(factor)))
 
     child = _child_of(ctx)
     ambient: dict[str, Any] = {}
@@ -345,8 +348,37 @@ def _vary_shift(
         replaced[collection_name] = child._stamp(
             register(rebuild({**existing, **resolved}, tags=tag_map, context=ctx))
         )
+        _report_shift_after_weight(ctx, collection_name, existing)
     child._collections = replaced
     return child
+
+
+def _member_nodes(value: Any) -> tuple[int, ...]:
+    """A container's member node ids, resolving §2.2's one legal level of nesting."""
+    if not isinstance(value, Varied):
+        return (value.node_id,)
+    return tuple(nid for member in value._members.values() for nid in _member_nodes(member))
+
+
+def _report_shift_after_weight(ctx: EventContext, collection: str, pre_shift: Mapping[str, Any]) -> None:
+    """§2.5/§2.1: a weight factor registered BEFORE the collection it reads is varied fills every
+    shift universe with its PRE-shift value, and the registry is not re-derived, so it is
+    unfixable after the fact. Report each such family paired with the collection it reads.
+
+    Diagnostic, not an error: a weight that legitimately does not track the shift is a valid
+    program — which is why the walk is per (family, collection) rather than a membership test.
+    """
+    session = ctx._session
+    if not session._weight_factors:
+        return
+    targets = {member.node_id for member in pre_shift.values()}
+    registry = session._shift_after_weight
+    for family, nodes in session._weight_factors:
+        if any(targets & cone(session, nid) for nid in nodes):
+            key = (family, collection)
+            # by value, with the factor's own ids: the shipping site filters on them (§2.5's
+            # report is about one compiled program, the registry is about the whole Session)
+            registry[key] = registry.get(key, frozenset()) | frozenset(nodes)
 
 
 def _check_lockstep(name: str, mapping: Mapping[str, Mapping[Any, Any]]) -> None:

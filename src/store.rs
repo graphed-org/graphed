@@ -22,7 +22,7 @@ use loom::sync::{Mutex, MutexGuard};
 use std::collections::HashMap;
 
 use crate::node::{NodeId, NodeKey, PayloadDescriptor};
-use crate::optimizer::{self, ReductionReport, RewriteEngine};
+use crate::optimizer::{self, NodeMap, ReductionReport, RewriteEngine};
 use crate::param::ParamMap;
 
 /// Error returned when a referenced node id is not in the arena.
@@ -39,6 +39,10 @@ struct Inner {
     nodes: Vec<NodeKey>,
     intern: HashMap<NodeKey, NodeId>,
     outputs: Vec<NodeId>,
+    /// §8.2(i), populated only by [`GraphStore::from_reduced`]: where each node of the arena this
+    /// store was REDUCED FROM landed here. Empty for every hand-built or deserialized store —
+    /// those have no arena behind them.
+    node_map: NodeMap,
 }
 
 pub struct GraphStore {
@@ -58,6 +62,7 @@ impl GraphStore {
                 nodes: Vec::new(),
                 intern: HashMap::new(),
                 outputs: Vec::new(),
+                node_map: Vec::new(),
             }),
         }
     }
@@ -159,6 +164,12 @@ impl GraphStore {
         self.lock().nodes.len()
     }
 
+    /// §8.2(i)'s record→reduced correspondence, indexed by the id of the arena this store was
+    /// reduced from. Empty unless this store came out of a reduction.
+    pub fn node_map(&self) -> NodeMap {
+        self.lock().node_map.clone()
+    }
+
     /// Intern a pre-built `NodeKey` (used when rebuilding the reduced graph).
     pub fn add_key(&self, key: NodeKey) -> Result<NodeId, BadNodeId> {
         self.intern(key)
@@ -197,6 +208,14 @@ impl GraphStore {
                 .mark_output(map[o as usize])
                 .expect("reduced output is valid");
         }
+        // the correspondence rides `map` — the same re-intern remap the inputs and outputs above
+        // ride, not a separate defensive leg. CSE has already deduplicated, so no known input
+        // makes this remap anything but the identity; composing keeps it correct if one does.
+        store.lock().node_map = red
+            .node_map
+            .iter()
+            .map(|landed| landed.map(|(r, member)| (map[r as usize], member)))
+            .collect();
         (store, red.report)
     }
 
