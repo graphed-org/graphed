@@ -53,3 +53,30 @@ Final gates:
 - Removed tests/extra/preserve/m50: run-tests.sh's `preserve` suite entry does not include
   tests/extra/preserve, so it was never collected by the gate (dead). Frozen preserve/m50 already
   carries the coverage story; not worth a shared-runner edit.
+
+## D1 — docs (how variations work)
+Changed:
+- docs/frontend/design.rst: new "How variations work" section — `graphed.vary`/`Varied`, the
+  `labels`/`universe`/`nominal`/`variations` verbs, sibling-mode vs axis-mode (analyst view,
+  cross-ref to graphed-histogram), varied preservation (build_bundle/reproduce/inspect over the
+  value/weight/spec triple, format_version 2 vs 1), and §7.3's THREE invalidation classes each
+  with scope: IR-level add/remove = UNCONDITIONAL; label-rename + one-time field churn (m48+m49)
+  = ONLY by-value (`OpSpec.from_callable`) journals; the documented `from_ref` idiom is immune.
+
+Executed examples (docs-sweep rule; all run against the shared venv, editable graphed @ G1):
+- loose `vary` + labels/nominal/universe on numpy → `('nominal','jes_up','jes_down')`,
+  `array([10.,20.,30.])`, `array([10.5,21.,31.5])` (exact reprs pasted).
+- `variations(ctx)` on an event context → weight kind w/ `Fraction(1,2)`/`Fraction(-3,2)` and
+  `None` for non-numeric `up`; shift kind `('shift', None)`.
+- varied `build_bundle`/`reproduce`/`inspect` → `format_version` 2, `{label:array}`, inspect
+  lists labels without executing (verified both on the 6-event and the chained 3-event fixture).
+- §7.3 claims verified against source (not asserted): `DurablePlan.task_id` =
+  sha256(domain, ir, process.identity(), partition) (plan.py); `OpSpec.from_ref` identity =
+  `b"ref\0"+ref` (no closure state); `from_callable` non-importable → opaque cloudpickle blob;
+  documented idiom in docs/checkpoint/design.rst is `from_ref`.
+
+Gates:
+- sphinx -W (docs/ → docs/_build/html): EXIT 0, zero warnings (`grep -c WARNING` = 0).
+- precommit --fast: toml/workflows/integrity/prek(ruff+format)/mypy(strict)/cargo fmt → all ok.
+- Docs-only change: pytest suite unaffected by an .rst edit (not re-run; the informative legs are
+  docs + integrity + lint/types, all green).
