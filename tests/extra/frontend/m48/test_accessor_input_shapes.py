@@ -37,6 +37,15 @@ def test_a_result_mapping_reads_as_its_keys_with_nominal_first() -> None:
     assert graphed.nominal(result) is result["nominal"]
 
 
+def test_a_mapping_without_nominal_is_not_given_one() -> None:
+    """§2.2 binds both verbs to the same input shapes, so they must not disagree about which
+    labels exist: seating `"nominal"` unconditionally claims a label `universe` refuses."""
+    result = {"jes_up": _Hist(), "jes_down": _Hist()}
+    assert graphed.labels(result) == ("jes_up", "jes_down")
+    with pytest.raises(KeyError, match="nominal"):
+        graphed.nominal(result)
+
+
 def test_an_unknown_label_on_a_result_mapping_lists_the_valid_ones() -> None:
     result = {"nominal": _Hist()}
     with pytest.raises(KeyError, match="jer_up"):

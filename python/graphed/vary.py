@@ -77,6 +77,7 @@ def _vary_loose(
     existing = dict(target._members) if isinstance(target, Varied) else {"nominal": target}
     resolved = {label: central_universe(member) for label, member in members.items()}
     handle = check_members({**existing, **resolved})
+    existing = {label: _align(member, handle) for label, member in existing.items()}
     resolved = {label: accessors.reindex_to(member, handle) for label, member in resolved.items()}
     for label in resolved:
         if label in existing:
@@ -84,6 +85,21 @@ def _vary_loose(
     inherited_tags = dict(target._tags) if isinstance(target, Varied) else {}
     inherited_tags[name] = inherited + tuple(label[len(name) + 1 :] for label in resolved)
     return register(rebuild({**existing, **resolved}, tags=inherited_tags, context=handle))
+
+
+def _align(member: Any, handle: Any) -> Any:
+    """§2.1's one-row-space rule for overload (a)'s INHERITED members, the target included.
+
+    Only across links that MOVE rows. `reindex_to` ends in a `with_context` stamp, so running it
+    across a pure `vary` identity link would re-stamp a member whose row space never changed and
+    lose the parent handle §2.3e pins on it.
+    """
+    src = accessors.context_of(member)
+    if src is None or src is handle:
+        return member
+    if not any(kind in ("mask", "project") for kind, _payload in handle._links_below(src)):
+        return member
+    return accessors.reindex_to(member, handle)
 
 
 # ---- shared construction machinery (the context overloads use it too) ---------------------

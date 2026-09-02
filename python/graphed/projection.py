@@ -9,7 +9,7 @@ configurable on-fail policy (`pass | warn | raise`) governs them — mirroring d
 from __future__ import annotations
 
 import warnings
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING
@@ -132,12 +132,14 @@ def read_columns(arrays: Sequence[Array], source_nid: int) -> tuple[str, ...] | 
         def on_source(nid: int) -> object:
             return (sentinel, nid)
 
-        def on_op(_nid: int, name: str, ins: list[object], params: Mapping[str, ParamValue]) -> object:
-            nonlocal conservative
-            reads_source = any(
+        def reads_source(ins: list[object]) -> bool:
+            return any(
                 isinstance(x, tuple) and len(x) == 2 and x[0] is sentinel and x[1] == source_nid for x in ins
             )
-            if reads_source:
+
+        def on_op(_nid: int, name: str, ins: list[object], params: Mapping[str, ParamValue]) -> object:
+            nonlocal conservative
+            if reads_source(ins):
                 if name == "field":
                     needed.add(str(params["field"]))
                 elif name == "fields":
@@ -146,7 +148,16 @@ def read_columns(arrays: Sequence[Array], source_nid: int) -> tuple[str, ...] | 
                     conservative = True
             return None
 
-        array.session.walk(array, source=on_source, op=on_op, external=lambda *_a: None)
+        def on_external(_nid: int, _fn: Callable[..., object], ins: list[object]) -> object:
+            """An External handed the source RECORD reads every column, exactly as a non-field op
+            does. Walking THROUGH externals narrows to their declared inputs, which is right when
+            those inputs are fields and wrong when one of them is the record itself."""
+            nonlocal conservative
+            if reads_source(ins):
+                conservative = True
+            return None
+
+        array.session.walk(array, source=on_source, op=on_op, external=on_external)
         if conservative or not needed:  # whole-record consumption or a bare source read -> read all
             return None
         return tuple(sorted(needed))

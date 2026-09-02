@@ -42,7 +42,8 @@ def labels(x: Introspectable) -> tuple[str, ...]:
             "a plain Array carries no variations; graphed.labels takes a Varied, an event context, a result mapping or a histogram"
         )
     if isinstance(x, Mapping):
-        return ("nominal", *(label for label in x if label != "nominal"))
+        seat = ("nominal",) if "nominal" in x else ()
+        return (*seat, *(label for label in x if label != "nominal"))
     if hasattr(x, "axes"):  # a bare unvaried histogram reads as the single label "nominal"
         return ("nominal",)
     raise GraphedError(f"graphed.labels does not know how to read {type(x).__name__}")

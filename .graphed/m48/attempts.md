@@ -94,11 +94,14 @@ removed two `Returning Any` errors honestly rather than by ignore.
 
 ## Iteration 8 — the accessor shapes the frozen tree cannot reach
 
-Frozen-suite-only coverage put `accessors.py` at 68%: the uncovered lines are §2.2's `{label: hist}`
-RESULT MAPPING and bare-histogram input shapes, the error branches of `labels`/`universe`/`weight`/
-`reindex_to`, and `broadcast_like`'s body. Those shapes are `graphed-histogram`'s anchors, in a
+Frozen-suite-only coverage put `accessors.py` at 68%. Only PART of that gap is cross-repo. The
+`{label: hist}` RESULT MAPPING and bare-histogram shapes are `graphed-histogram`'s anchors, in a
 different distribution, and `tests/frozen/frontend` must stay importable under
-`pytest hypothesis numpy` alone — so this repo's frozen suite cannot reach them.
+`pytest hypothesis numpy` alone — those this repo's frozen suite genuinely cannot reach. The rest
+— `labels`/`universe` on a plain `Array`, the two unknown-shape errors, `weight` on a non-context,
+`reindex_to` to a context-free target, and `broadcast_like`'s body — need neither a histogram nor
+awkward, and the awkward-free extra test added below covers exactly those, so a frozen anchor
+could have too. Carried to the m49 frontend freeze.
 
 Added `tests/extra/frontend/m48/test_accessor_input_shapes.py` (awkward-free, a duck-typed
 histogram on the one attribute §2.2 reads) and, with `AwkwardBackend.broadcast_like` recording
@@ -136,11 +139,11 @@ at the STOP; the only commits since are the test-author's re-freeze and this log
 | m48 frozen | **112/112** | `pytest tests/frozen/awkward/m48 tests/frozen/frontend/m48` exit 0, zero FAILED |
 | whole frozen suite | only the known-env reds | 5 FAILED, all `awkward/m16` `ak.var`/`ak.std` typetracer `MaybeNone` |
 | coverage (combined) | green | `TOTAL 5905 314 1712 172 93%`; `coverage report --fail-under=90` printed no failure line |
-| coverage (frozen suite ALONE) | `TOTAL … 92%` | every m48 file >=91% except `accessors.py` 68% — the cross-repo shapes covered from `tests/extra` |
+| coverage (frozen suite ALONE) | `TOTAL … 92%` whole-package | every m48 file >=91% except `accessors.py` 68% (see iteration 8) |
 | ruff | clean | `All checks passed!` / `84 files already formatted` |
 | mypy `--strict` | clean | `Success: no issues found in 76 source files`, `files=["python"]` unchanged |
 | determinism | green | frozen F2 passes inside the 112 |
-| precommit `--fast` | unchanged | `toml-valid ok`, `integrity-scan ok`; `workflows-valid --  pyyaml not installed`; `prek FAIL` on `rustup could not choose a version of cargo-clippy` |
+| precommit `--fast` | unchanged | `toml-valid ok`, `integrity-scan ok` — but measured over a CLEAN worktree, so it scanned an empty change set; the live arc scan is in iteration 10. `workflows-valid --  pyyaml not installed`; `prek FAIL` on `rustup could not choose a version of cargo-clippy` |
 
 Per-file coverage under the frozen suite alone: `_tags` 98, `varied` 95, `vary` 91, `numpy/varied`
 100, `context` 92, `gnano` 100, `session` 96, `projection` 100, `execute` 93, `aggregate` 95,
@@ -190,3 +193,104 @@ Regenerate with:
 
     git worktree add --detach <dir> m48-freeze && cp python/graphed/core/graphed_core.*.so <dir>/python/graphed/core/
     (cd <dir> && PYTHONPATH=<dir>/python python -m pytest tests/frozen/awkward/m16 -q --tb=line)
+
+## Iteration 10 — impl-review REJECT: the six fixes and their witnesses
+
+Three-lens review rejected the arc (1 HIGH, 5 MED, 5 LOW, 2 NIT). F4/F6 are m49 test-authoring
+constraints and F12 is the stray `uv.lock`, both carried elsewhere. The rest:
+
+**F1 (HIGH, `vary.py:_vary_loose`) — real defect.** Overload (a) re-indexed only the NEW members;
+`existing` — the target as `"nominal"`, plus every inherited label — reached `rebuild` untouched,
+so a container whose most-derived handle came from a new member advertised a handle its nominal
+universe did not honour. Fixed with `_align`, which re-indexes an inherited member only across a
+link that MOVES rows (`"mask"`/`"project"`). The blunt form — `reindex_to` over
+`{**existing, **resolved}` — was measured and reds a frozen anchor, because `reindex_to` ends in a
+`with_context` stamp even across a `vary` identity link.
+
+**F2 (MED, `context.py:_vary_weight`) — real defect.** The weight form had neither sibling's
+"already carried by this container" check, so a label produced under one `name` that collided with
+an ambient label registered under a DIFFERENT `name` was composed as `old[L] * factor[L]`, leaving
+a universe that differs from nominal in two knobs. Added the same check both siblings carry.
+
+**F3 (MED, `context.py:_mask_key`) — guard gap, NOT a defect.** The key already covers every
+member's node id (`tuple((label, member.node_id) for label, member in mask._members.items())`); no
+code change was needed or made. The witness is what was missing.
+
+**F5 (MED, `accessors.py:with_context`) — guard gap, NOT a defect.** `stamped._labels =
+value._labels` is present and correct; verified by mutation, not by reading. No code change.
+
+**F7 (LOW, `projection.py`)** — the walk's external callback never set `conservative`, so a graph
+whose External consumed the source RECORD while separately reading a field narrowed to that field.
+The callback now mirrors `on_op`'s non-field branch; `reads_source` was lifted out of `on_op` so
+both use one predicate.
+
+**F10 (LOW, `accessors.py:labels`)** — the Mapping branch seated `"nominal"` unconditionally,
+claiming a label `universe` refuses on the same argument. Seated only when present.
+
+**F13 (NIT, `context.py`)** — dropped the `provenance=` parameter (no caller anywhere) and the
+`__weakref__` slot (nothing weak-references a context; §2.5's registry weakrefs `Varied`).
+
+**F11 (LOW, `pyproject.toml`)** — the pythonpath comment claimed "nothing performs an explicit
+`import conftest`"; three corpus/m05 tests do. Rewritten to the real guarantee: separate processes
+per subtree plus prepend mode seating the test's own dir first.
+
+### Witnesses, each shown discriminating
+
+Mutate the named line, run the witness (`tests/extra/{awkward,frontend}/m48`):
+
+| finding | mutation | witness |
+|---|---|---|
+| F1 | drop the `_align` map over `existing` | RED |
+| F2 | drop the duplicate-label check | RED |
+| F3 | `_mask_key` -> nominal's id alone | RED |
+| F5 | drop `stamped._labels = value._labels` | RED |
+| F7 | `external=lambda *_a: None` | RED |
+| F10 | seat `"nominal"` unconditionally | RED |
+
+All six green unmutated. F1, F2 and F7 also carry a positive control (the `vary`-identity link
+that must NOT be re-indexed; the same-`name` family check and a legal fresh label; an External over
+FIELDS that must still narrow), so none of the three fixes can pass by refusing everything.
+
+### F9 — the live integrity scan
+
+The `integrity-scan ok` in both earlier tables was measured on a clean worktree, i.e. over an empty
+change set. Live scan over the arc, `git diff origin/main...HEAD | scan_diff`:
+
+    25 findings: frozen_test_modified 24, type_ignore_flood 1
+
+Substantively clean — no `assertion_removed`, `skip_or_xfail_added`, `tautological_assert`,
+`target_stubbed` or `except_pass_flood`. The 24 `frozen_test_modified` rows are the arc CREATING
+the frozen suite (`check_integrity`'s new-vs-modified split downgrades brand-new frozen files to
+advisory). The one `type_ignore_flood` is the threshold-3 heuristic over 14 added `# type: ignore`
+lines: 7 in `python/` (4 `array.py`, 2 `varied.py`, 1 `awkward/backend.py`), 6 in the test-author's
+frozen files, 1 quoted inside this log — none the blanket form §A.7 bans.
+
+Positive control, same invocation with a planted `-assert result == 3` / `+pass` and a
+`@pytest.mark.skip` appended to the diff: `assertion_removed` and `skip_or_xfail_added` both fire.
+The clean result is therefore a measurement, not a dead instrument.
+
+### F8 — the diff-coverage figure
+
+Frozen-suite-alone DIFF coverage over the arc's added `python/` lines: **94.25% line+branch**
+(1869/1983 — 795 executable added lines, 732 covered; 1188 branch arcs departing them, 1137
+covered), or 92.08% line-only (732/795). Whole-package frozen-alone is 92%.
+
+This does NOT reproduce the review's reported 90.24%; the method behind that number is not stated,
+so both are recorded rather than one transcribed. Regenerate mine with:
+
+    bash <scratch>/frozen_only.sh          # per-subtree frozen runs into .coverage.frozenonly
+    git diff origin/main...HEAD            # added-line population, python/ only
+
+### Gates after the fixes
+
+| gate | result | decisive output |
+|---|---|---|
+| m48 frozen | 112/112 | zero FAILED |
+| extra m48 witnesses | 21/21 | `tests/extra/{frontend,awkward}/m48` |
+| whole frozen suite | only known-env reds | 5 FAILED, all `awkward/m16` `MaybeNone` |
+| coverage (combined) | `TOTAL 5922 313 1722 171 93%` | gate >=90, no failure line |
+| coverage (frozen alone) | whole-package 92%; diff 94.25% | above |
+| ruff / format | clean | `All checks passed!` / `86 files already formatted` |
+| mypy `--strict` | clean | `Success: no issues found in 76 source files` |
+| determinism | green | frozen F2 inside the 112 |
+| precommit `--fast` | unchanged | `prek FAIL` on `cargo-clippy`; integrity now measured live, above |

@@ -24,7 +24,7 @@ from . import accessors
 from ._tags import canonical_tag
 from .array import Array
 from .errors import GraphedError
-from .provenance import Provenance, capture
+from .provenance import capture
 from .varied import Varied, expand, labels_of, member_of, rebuild
 from .vary import central_universe, check_members, gather_members, register
 
@@ -41,7 +41,7 @@ class EventContext:
     """An immutable event context (§2.6). Built by an idiom constructor, never directly."""
 
     __slots__ = (
-        "__weakref__", "_collections", "_derived", "_is_data", "_link", "_parent",
+        "_collections", "_derived", "_is_data", "_link", "_parent",
         "_projected", "_provenance", "_record", "_serial", "_session", "_weight",
     )  # fmt: skip
 
@@ -55,7 +55,6 @@ class EventContext:
         link: Link | None = None,
         collections: Mapping[str, Any] | None = None,
         weight: Varied | None = None,
-        provenance: Provenance | None = None,
     ) -> None:
         self._session = session
         self._record = record
@@ -65,7 +64,7 @@ class EventContext:
         self._collections: dict[str, Any] = dict(collections or {})
         self._weight = weight
         self._serial = next(_SERIAL)
-        self._provenance = provenance if provenance is not None else capture()
+        self._provenance = capture()
         self._derived: dict[tuple[tuple[str, int], ...], EventContext] = {}
         self._projected: dict[str, EventContext] = {}
 
@@ -267,6 +266,9 @@ def _vary_weight(
     old = ctx._weight
     inherited = old._tags.get(name, ()) if old is not None else ()
     members = gather_members(name, tags, variations, inherited)
+    for label in members:
+        if old is not None and label in old._members:
+            raise GraphedError(f"variation label {label!r} is already carried by this container")
     factors = {"nominal": central, **members}
     check_members(factors)
     # §2.1(b)'s ROW-SPACE rule: an ancestor-handled factor is re-indexed across the intervening
