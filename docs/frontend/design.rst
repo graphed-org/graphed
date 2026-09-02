@@ -290,20 +290,30 @@ a variation edit invalidates the checkpoint cache, and their scopes differ:
   graph (``DurablePlan.task_id`` = ``sha256(domain, ir, process.identity(), partition)``). No
   journal survives it. This is the exemplar's own "``skip_obj_systematics``" switch: turning the
   expensive shift class on or off between runs rebuilds the IR and invalidates the whole cache.
-* **Renaming a label — only by-value journals.** A pure rename leaves the IR byte-identical
-  (labels are not in it), so §1.2's *no-recompute at the interning level* still holds. But if the
-  journal's ``process`` embeds its worker closure **by value** (``OpSpec.from_callable`` on a
-  non-importable function — an ``"opaque"`` spec whose ``identity()`` is the cloudpickle blob
-  itself), the label *strings* travel inside that blob and the rename changes every ``task_id``.
+* **Renaming a label — sibling mode: only by-value journals; axis mode: unconditional.** Under
+  the default *sibling* lowering the labels are sibling-node identities, not IR content, so a pure
+  rename leaves the IR byte-identical and §1.2's *no-recompute at the interning level* still holds
+  — only a **by-value** journal churns: if its ``process`` embeds the worker closure by value
+  (``OpSpec.from_callable`` on a non-importable function — an ``"opaque"`` spec whose
+  ``identity()`` is the cloudpickle blob itself), the label *strings* travel inside that blob and
+  the rename changes every ``task_id``. Under §6.2's *axis* lowering the labels **are** IR
+  content — they become the ``StrCategory("variation")`` bin identities that enter the fill's
+  spec/params/``content_hash`` and hence the serialized graph — so an axis-mode rename rebuilds
+  the IR and invalidates **unconditionally**, ``from_ref`` journals included, exactly like adding
+  or removing a variation.
 * **The one-time field churn — only by-value journals, twice.** Landing the variation machinery
   added a field to the worker/artifact dataclasses (once at m48, once at m49); a dataclass field
   is in every pickled instance whatever its value, so any by-value journal's ``task_id`` churned
   once each time, unvaried programs included.
 
-The documented checkpoint idiom is immune to the last two. It references worker functions **by
-import path** — ``OpSpec.from_ref("myanalysis:hist_chunk")`` (see :doc:`../checkpoint/design`) —
-whose ``identity()`` is ``b"ref\0" + ref`` and carries no closure state, so neither a rename nor a
-field addition can perturb it. By-value journals arise only where a caller wrapped a closure with
+The documented checkpoint idiom is immune to the field churn in either mode, and to a rename
+**under the default sibling lowering**. It references worker functions **by import path** —
+``OpSpec.from_ref("myanalysis:hist_chunk")`` (see :doc:`../checkpoint/design`) — whose
+``identity()`` is ``b"ref\0" + ref`` and carries no closure state, so a field addition cannot
+perturb it and neither can a sibling-mode rename (the label strings never reach the IR). The one
+exception is an **axis-mode** rename: those labels *are* IR content, so it changes every
+``task_id`` however the ``process`` is referenced — a ``from_ref`` journal is invalidated just as
+add/remove would be. By-value journals arise only where a caller wrapped a closure with
 ``OpSpec.from_callable`` by hand. The scope is deliberately narrow, and the general fix
 (stage-granular content addressing) is named Phase 2.
 
