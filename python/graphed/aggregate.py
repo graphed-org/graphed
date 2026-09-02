@@ -21,6 +21,7 @@ from graphed.core import Partition
 from graphed.core.execution import Plan, Task, WorkerResources
 
 from .array import Array
+from .errors import GraphedError
 from .execute import CompiledGraph, Key, OnFailure, compile_ir, evaluate_ir
 from .projection import read_columns
 from .varied import refuse_container
@@ -70,7 +71,7 @@ class _PartitionReduce(Generic[V]):
         return self.reduce(values)
 
     def _attribute(self, partition: str) -> OnFailure | None:
-        """§8.2(ii): the worker-side wrap. A failure at a key the label channel has an ENTRY for
+        """§8.2(ii): the worker-side wrap. A RAW failure at a key the label channel has an ENTRY for
         becomes a `StageError` carrying that key's label and the user's line; a key with no entry —
         and a closure with no channel at all — re-raises the original untouched, since `StageError`
         needs frames at construction and there are none to build one from."""
@@ -80,6 +81,11 @@ class _PartitionReduce(Generic[V]):
         from .debug.errors import SourceFrame, StageError  # noqa: PLC0415  (import cycle)
 
         def attribute(key: Key, op: str, ins: list[object], exc: BaseException) -> BaseException | None:
+            # §8.2(ii): "a `GraphedError` re-raises untouched on EVERY arm regardless of entry — it
+            # is already an attributed error, and §6.1d's blame parity (the plan path re-raises the
+            # guard's message verbatim) binds it".
+            if isinstance(exc, GraphedError):
+                return None
             entry = entries.get(key)
             if entry is None:
                 return None

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from functools import partial
 from typing import Any
 
 import graphed.core
@@ -165,20 +166,22 @@ def _frames_by_key(session: Session, node_map: dict[int, Key]) -> tuple[tuple[Ke
 
 
 def _dispatch(
-    backend: Backend,
+    run: Callable[[], object],
     name: str,
     ins: list[object],
-    params: Mapping[str, object],
     key: Key,
     on_failure: OnFailure | None,
 ) -> object:
-    """§8.2(iii): one backend dispatch, annotated with the reduced address it failed at.
+    """§8.2(iii): one evaluation dispatch, annotated with the reduced address it failed at.
+
+    ``run`` is the call itself — a backend ``eval_stage`` or an External payload's evaluator; both
+    are dispatch points in the top-level node loop and both attribute the same way.
 
     The hook decides what a failure becomes; returning ``None`` re-raises the original untouched,
     which is what a caller with nothing to attribute to gets.
     """
     try:
-        return backend.eval_stage(name, ins, params)
+        return run()
     except Exception as exc:
         replacement = None if on_failure is None else on_failure(key, name, ins, exc)
         if replacement is None:
@@ -215,12 +218,15 @@ def evaluate_ir(
             value = sources[name]
             vals.append(value() if callable(value) else value)
         elif kind in ("op", "reduction"):
-            vals.append(_dispatch(backend, nd["name"], ins, nd["params"], (nid, None), on_failure))
+            name = nd["name"]
+            call = partial(backend.eval_stage, name, ins, nd["params"])
+            vals.append(_dispatch(call, name, ins, (nid, None), on_failure))
         elif kind == "stage":
             mvals: list[object] = []
             for index, m in enumerate(nd["members"]):
                 mins = [ins[i] if tag == "input" else mvals[i] for tag, i in m["inputs"]]
-                mvals.append(_dispatch(backend, m["name"], mins, m["params"], (nid, index), on_failure))
+                mcall = partial(backend.eval_stage, m["name"], mins, m["params"])
+                mvals.append(_dispatch(mcall, m["name"], mins, (nid, index), on_failure))
             vals.append(mvals[-1])
         elif kind == "external":
             chash = nd["descriptor"]["content_hash"]
@@ -229,11 +235,10 @@ def evaluate_ir(
                     f"evaluate_ir: External payload {chash!r} needs an evaluator "
                     "(pass externals={content_hash: callable})"
                 )
-            # NOT routed through `_dispatch`: §6.1d's frozen blame-parity anchor
-            # (graphed-histogram tests/frozen/m49/test_blame_parity.py, freeze-m49) pins the plan
-            # path to re-raise an External evaluator's own diagnostic verbatim, which attribution
-            # would replace with a StageError. See .graphed/m49/disputes/test_blame_parity.md.
-            vals.append(externals[chash](*ins))
+            # An External node carries no `name` — its identity is the descriptor — so an
+            # attributed External failure names the payload kind.
+            op = f"external:{nd['descriptor']['kind']}"
+            vals.append(_dispatch(partial(externals[chash], *ins), op, ins, (nid, None), on_failure))
         else:  # pragma: no cover - the codec only emits the kinds above
             raise GraphedError(f"evaluate_ir: unknown node kind {kind!r}")
     return [vals[o] for o in store.outputs()]
