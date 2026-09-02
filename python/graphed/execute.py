@@ -72,6 +72,12 @@ class CompiledGraph:
     unreached_labels: tuple[str, ...] = ()
     #: §8.2(i): the record→reduced correspondence and the per-key user frames. Unconditional.
     correspondence: Correspondence = field(default_factory=lambda: Correspondence({}, ()))
+    #: §2.5's shift-after-weight ordering diagnostic: sorted `(factor family, collection)` pairs,
+    #: one per ambient weight factor whose cone reaches a collection varied AFTER it was
+    #: registered — that factor fills every shift universe with its PRE-shift value. Empty when the
+    #: order is sound. Detected at RECORD time (`context._vary_shift`); neither operand survives to
+    #: here, so the compile-time walk the unreached-label diagnostic uses cannot see it.
+    shift_after_weight: tuple[tuple[str, str], ...] = ()
 
     def evaluate(
         self,
@@ -123,6 +129,7 @@ def compile_ir(
         source_names=names,
         unreached_labels=tuple(sorted(registered - reached)),
         correspondence=Correspondence(node_map=node_map, frames=_frames_by_key(session, node_map)),
+        shift_after_weight=tuple(sorted(session._shift_after_weight)),
     )
 
 
