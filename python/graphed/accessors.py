@@ -82,11 +82,10 @@ def universe(x: Introspectable, label: str) -> Any:
     if hasattr(x, "axes"):
         index = _variation_axis_index(x)
         if index is not None:
-            import boost_histogram as bh  # noqa: PLC0415  (only when slicing a real bh axis-mode hist)
-
-            # positional: h[{"variation": L}] is a TypeError on bare bh; bh.loc raises KeyError for
-            # an unknown label, so the unknown-label path needs no guard of our own.
-            return x[{index: bh.loc(label)}]
+            # resolve the bin to an integer position ourselves (§A.4: no boost_histogram import in
+            # the frontend). StrCategory.index raises KeyError for an unknown label, exactly as
+            # bh.loc did, so the unknown-label path still needs no guard of our own.
+            return x[{index: x.axes[index].index(label)}]
         if label != "nominal":
             raise KeyError(f"unknown variation label {label!r}; this histogram carries ['nominal']")
         return x
