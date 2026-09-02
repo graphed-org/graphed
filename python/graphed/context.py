@@ -266,8 +266,12 @@ def _vary_weight(
     old = ctx._weight
     inherited = old._tags.get(name, ()) if old is not None else ()
     members = gather_members(name, tags, variations, inherited)
+    # §1.1's within-the-container clause. The ambient container's `_members` is the §2.4 UNION
+    # built below — it carries shift and varied-selection labels too — so the check keys on what
+    # was actually REGISTERED as a weight, or a correlated `vary` after a shift is refused.
+    registered = {f"{n}_{t}" for n, ts in old._tags.items() for t in ts} if old is not None else set()
     for label in members:
-        if old is not None and label in old._members:
+        if label in registered:
             raise GraphedError(f"variation label {label!r} is already carried by this container")
     factors = {"nominal": central, **members}
     check_members(factors)

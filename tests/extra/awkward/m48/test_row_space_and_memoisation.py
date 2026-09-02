@@ -23,9 +23,16 @@ from graphed.awkward import AwkwardBackend, from_awkward, gak
 EVENTS = make_events(n_events=200, seed=48)
 
 
-def events_context() -> tuple[Session, Any]:
+def context_with_root() -> tuple[Session, Any, Any]:
+    """The context AND the context-free root read it wraps, for the seams that need both."""
     session = Session(AwkwardBackend())
-    return session, ga.gnano.events(from_awkward(session, "events", EVENTS))
+    root = from_awkward(session, "events", EVENTS)
+    return session, ga.gnano.events(root), root
+
+
+def events_context() -> tuple[Session, Any]:
+    session, context, _root = context_with_root()
+    return session, context
 
 
 def shifted_jets(source: Any, factor: float) -> Any:
@@ -52,6 +59,14 @@ def pu_weight(source: Any, scale: float) -> Any:
 
 def _rows(session: Any, value: Any, label: str) -> int:
     return len(ak.to_list(session.materialize(graphed.universe(value, label))))
+
+
+def _deep_rows(session: Any, value: Any, label: str) -> int:
+    """`label`'s rows through a NESTED container (§2.1's two-level shape), falling back to a
+    level's central universe when it does not carry the label."""
+    while isinstance(value, graphed.Varied):
+        value = graphed.universe(value, label) if label in graphed.labels(value) else graphed.nominal(value)
+    return len(ak.to_list(session.materialize(value)))
 
 
 # ---- F1: §2.1's one-row-space rule for overload (a) ------------------------------------------
@@ -153,3 +168,68 @@ def test_a_context_borne_label_that_reaches_no_output_IS_reported() -> None:
     shifted = graphed.vary(events, "jes", **jes_kwargs(events))
     compiled = compile_ir(session, gak.sum(graphed.nominal(shifted).MET.pt))
     assert set(compiled.unreached_labels) == {"jes_up", "jes_down"}
+
+
+# ---- A-1: the weight form's duplicate check keys on REGISTRATIONS, not the §2.4 union --------
+def test_a_correlated_weight_after_a_shift_is_accepted_in_BOTH_registration_orders() -> None:
+    """The ambient container's members are the §2.4 union — shift and selection labels included —
+    so a check keyed on them refuses `vary(ctx, "jes", up=…)` after a jes SHIFT, which registers
+    nothing under that label and stays one knob per universe."""
+    _s, events = events_context()
+    weight = pu_weight(events, 1.0)
+
+    shifted = graphed.vary(events, "jes", **jes_kwargs(events))
+    first = graphed.vary(shifted, "pu", weight, is_weight=True, up=weight * 1.2)
+    both = graphed.vary(first, "jes", weight, is_weight=True, up=weight * 1.1)
+    assert set(graphed.labels(graphed.weight(both))) >= {"nominal", "pu_up", "jes_up"}
+
+    swapped = graphed.vary(shifted, "jes", weight, is_weight=True, up=weight * 1.1)
+    swapped = graphed.vary(swapped, "pu", weight, is_weight=True, up=weight * 1.2)
+    assert set(graphed.labels(graphed.weight(swapped))) >= {"nominal", "pu_up", "jes_up"}
+
+
+def test_a_weight_duplicate_under_another_name_is_STILL_refused_with_a_shift_present() -> None:
+    """The population-axis control: narrowing the check to registrations must not disable it. The
+    shift on the context is what makes this see the axis the union-keyed version could not."""
+    _s, events = events_context()
+    weight = pu_weight(events, 1.0)
+    shifted = graphed.vary(events, "jes", **jes_kwargs(events))
+    first = graphed.vary(shifted, "sf_up", weight, is_weight=True, x=weight * 2.0)
+    with pytest.raises(GraphedError, match="already carried by this container"):
+        graphed.vary(first, "sf", weight, is_weight=True, up_x=weight * 3.0)
+
+
+def test_align_re_indexes_an_ancestor_member_across_a_VARIED_mask_link() -> None:
+    """The F1 witness drives `_align` across an unvaried mask; this drives the varied-mask path,
+    where each label is re-indexed by THAT label's own mask."""
+    session, events = events_context()
+
+    def counted(jets: Any) -> Any:
+        return gak.num(jets[jets.pt > 25.0]) >= 4
+
+    mask = graphed.vary(counted(events.Jet), "jes", up=counted(shifted_jets(events, 1.05)))
+    sel = events[mask]
+    varied = graphed.vary(events.MET.pt, "sf", up=sel.MET.pt * 1.1)
+
+    assert graphed.context_of(varied) is sel
+    # the ancestor-handled nominal is itself Varied now — re-indexed by EACH label's own mask
+    assert isinstance(graphed.nominal(varied), graphed.Varied)
+    for label in ("nominal", "jes_up"):
+        assert _deep_rows(session, varied, label) == _deep_rows(session, sel.MET.pt, label)
+    # the two labels must really select different counts, or the per-label claim is untested
+    assert _deep_rows(session, varied, "nominal") != _deep_rows(session, varied, "jes_up")
+
+
+# ---- A-2: the duplicate guard must fire before the row-space maps ----------------------------
+def test_a_duplicate_label_shadowing_a_contexted_member_raises_the_DESIGNED_error() -> None:
+    """Run after `_align`, the collision hides its member's handle from `check_members`; the
+    container is then left with no handle at all and `_align` dies on an internal AttributeError
+    where the duplicate-label error belongs."""
+    _s, events, root = context_with_root()
+    sel = events[gak.num(events.Jet) >= 4]
+    # both loose members are read from the SOURCE, so they are context-FREE: once the colliding
+    # label shadows the only contexted member, the container is left with no handle at all
+    target = graphed.vary(root.MET.pt, "jes_up", x=sel.MET.pt * 3.0)
+    assert graphed.context_of(target) is sel
+    with pytest.raises(GraphedError, match="already carried by this container"):
+        graphed.vary(target, "jes", up_x=root.MET.pt * 2.0)

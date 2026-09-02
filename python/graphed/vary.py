@@ -76,12 +76,15 @@ def _vary_loose(
     members = gather_members(name, tags, variations, inherited)
     existing = dict(target._members) if isinstance(target, Varied) else {"nominal": target}
     resolved = {label: central_universe(member) for label, member in members.items()}
-    handle = check_members({**existing, **resolved})
-    existing = {label: _align(member, handle) for label, member in existing.items()}
-    resolved = {label: accessors.reindex_to(member, handle) for label, member in resolved.items()}
+    # BEFORE the row-space maps: a colliding label shadows its existing member in the merged
+    # dict, so `check_members` never sees that member's handle and `_align` would work from a
+    # handle the container does not really have.
     for label in resolved:
         if label in existing:
             raise GraphedError(f"variation label {label!r} is already carried by this container")
+    handle = check_members({**existing, **resolved})
+    existing = {label: _align(member, handle) for label, member in existing.items()}
+    resolved = {label: accessors.reindex_to(member, handle) for label, member in resolved.items()}
     inherited_tags = dict(target._tags) if isinstance(target, Varied) else {}
     inherited_tags[name] = inherited + tuple(label[len(name) + 1 :] for label in resolved)
     return register(rebuild({**existing, **resolved}, tags=inherited_tags, context=handle))
@@ -90,9 +93,9 @@ def _vary_loose(
 def _align(member: Any, handle: Any) -> Any:
     """§2.1's one-row-space rule for overload (a)'s INHERITED members, the target included.
 
-    Only across links that MOVE rows. `reindex_to` ends in a `with_context` stamp, so running it
-    across a pure `vary` identity link would re-stamp a member whose row space never changed and
-    lose the parent handle §2.3e pins on it.
+    Only across a `mask` or `project` link — the two kinds `_follow` acts on. A `vary` link is
+    the identity in both row space and content, so re-indexing across it would do nothing but
+    re-stamp the handle, losing the parent identity §2.3e pins on the member.
     """
     src = accessors.context_of(member)
     if src is None or src is handle:

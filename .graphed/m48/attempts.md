@@ -254,16 +254,25 @@ FIELDS that must still narrow), so none of the three fixes can pass by refusing 
 ### F9 — the live integrity scan
 
 The `integrity-scan ok` in both earlier tables was measured on a clean worktree, i.e. over an empty
-change set. Live scan over the arc, `git diff origin/main...HEAD | scan_diff`:
+change set. Live scan over the arc, `git diff origin/main...HEAD | scan_diff`, measured on the tree
+this iteration ships (see iteration 11 for why the figures below moved once):
 
-    25 findings: frozen_test_modified 24, type_ignore_flood 1
+    26 findings: frozen_test_modified 24, skip_or_xfail_added 1, type_ignore_flood 1
 
-Substantively clean — no `assertion_removed`, `skip_or_xfail_added`, `tautological_assert`,
-`target_stubbed` or `except_pass_flood`. The 24 `frozen_test_modified` rows are the arc CREATING
-the frozen suite (`check_integrity`'s new-vs-modified split downgrades brand-new frozen files to
-advisory). The one `type_ignore_flood` is the threshold-3 heuristic over 14 added `# type: ignore`
-lines: 7 in `python/` (4 `array.py`, 2 `varied.py`, 1 `awkward/backend.py`), 6 in the test-author's
-frozen files, 1 quoted inside this log — none the blanket form §A.7 bans.
+No `assertion_removed`, `tautological_assert`, `target_stubbed` or `except_pass_flood`. The 24
+`frozen_test_modified` rows are the arc CREATING the frozen suite (`check_integrity`'s
+new-vs-modified split downgrades brand-new frozen files to advisory).
+
+Both remaining rows point at THIS FILE and are the scanner reading its own record:
+
+- `skip_or_xfail_added` — detail is the positive-control sentence below, which names the marker
+  the control plants. The scanner matches the added line, not its role, so the log's description
+  of the control reads as the thing itself. Nothing under `tests/frozen/**` carries the marker.
+- `type_ignore_flood` — the threshold-3 heuristic over 15 added `# type: ignore` lines: 7 in
+  `python/` (4 `array.py`, 2 `varied.py`, 1 `awkward/backend.py`), 6 in the test-author's frozen
+  files, 2 quoted inside this log. None is the blanket form §A.7 bans.
+
+Neither is reworded to make the scanner quiet; both are recorded as the instrument reports them.
 
 Positive control, same invocation with a planted `-assert result == 3` / `+pass` and a
 `@pytest.mark.skip` appended to the diff: `assertion_removed` and `skip_or_xfail_added` both fire.
@@ -294,3 +303,73 @@ so both are recorded rather than one transcribed. Regenerate mine with:
 | mypy `--strict` | clean | `Success: no issues found in 76 source files` |
 | determinism | green | frozen F2 inside the 112 |
 | precommit `--fast` | unchanged | `prek FAIL` on `cargo-clippy`; integrity now measured live, above |
+
+## Iteration 11 — delta re-review of 38eebf6: A-1, A-2, A-3, C2, A-4
+
+Three MED findings on the iteration-10 fixes, plus one lead-issued class completion. FC-3 was
+dropped by adjudication.
+
+**A-1 (`context.py:_vary_weight`) — the F2 check keyed on the wrong population.** `old._members`
+is the §2.4 UNION: after a shift, the ambient weight carries `jes_up`/`jes_down` as union members
+even though nothing was ever REGISTERED as a weight under `jes`. The check therefore refused the
+legal correlated pair (a `jes` shift, then a `jes` weight factor) — one knob per universe, exactly
+what §2.1 permits. Now keyed on `{f"{n}_{t}" for n, ts in old._tags.items() for t in ts}`, the
+labels actually registered as weight variations.
+
+**A-2 (`vary.py:_vary_loose`) — guard order.** The duplicate-label check ran after the row-space
+maps. A colliding label shadows its existing member in `{**existing, **resolved}`, so
+`check_members` never sees that member's handle; with the shadowed member the only contexted one,
+the container is left with no handle and `_align` dies on `AttributeError: 'NoneType' object has no
+attribute '_links_below'` where the designed `GraphedError` belongs. The check moved above both
+maps.
+
+**C2 (`awkward/io.py:_syntactic_fields`) — the F7 class, other member.** F7 repaired the walk in
+`projection.py`; the structurally identical walk here had the same gap, and it feeds
+`_evaluation_columns`, i.e. the per-task parquet read list. An External handed the source RECORD
+can replay against any column, so the list cannot narrow. `on_external` now applies `on_op`'s
+non-field rule; `touches_source` was lifted so both callbacks share one predicate.
+
+**A-4** — `_align`'s docstring stated the rule ("only across a link that moves rows") without the
+reason a `vary` link is excluded. It now names it: a `vary` link is the identity in row space and
+content, so re-indexing across it would re-stamp the handle and lose the parent identity §2.3e
+pins on the member.
+
+**A-3** — the F9 figures above were measured before this log existed and so were not true of the
+tree they shipped in. Re-measured on this tree and corrected in place: 26 findings, not 25, the
+extra row being `skip_or_xfail_added` against the F9 block's own positive-control sentence, and 15
+added suppression comments, not 14. Both remaining rows are attributed there as the scanner reports
+them; neither sentence was reworded to make the instrument quiet.
+
+### Witnesses, each shown discriminating
+
+New in `tests/extra/awkward/m48/`: `test_row_space_and_memoisation.py` gains three, and
+`test_syntactic_fields_whole_record.py` is new (3 tests).
+
+| finding | mutation | witness |
+|---|---|---|
+| A-1 | check keyed back on `old._members` | RED (both registration orders) |
+| A-1 | drop the check entirely | RED (the cross-name control still refuses) |
+| A-1c | `_align` returns `member` unconditionally | RED (varied-mask path) |
+| A-2 | move the check back below the maps | RED (`AttributeError` at `vary.py:103`) |
+| C2 | `external=lambda *_a: None` in `io.py` | RED |
+
+A-1 carries its population-axis control: the cross-name collision must STILL be refused with a
+shift present, or the narrowing degenerates into accepting everything. C2 carries the same control
+F7 does — an External over FIELDS alone must still narrow to those fields.
+
+A-1c is the varied-mask arm of `_align`: the F1 witness drives an UNVARIED mask link, so the
+per-label re-indexing path was unwitnessed. Its nominal member is itself a container, which is why
+the witness narrows recursively rather than reading `node_id` off it (§2.2 refuses that name).
+
+### Gates
+
+| gate | result | delta vs 38eebf6 |
+|---|---|---|
+| m48 frozen | 112/112 | none |
+| extra m48 witnesses | 28/28 | +7 (3 A-1/A-2, 3 C2, +1 from cycle 1 recount) |
+| whole frozen suite | only known-env reds | none: 5 FAILED, all `awkward/m16` `MaybeNone` |
+| coverage (combined) | `TOTAL 5928 312 1724 170 93%` | +6 statements, -1 miss |
+| ruff / format | clean | `All checks passed!` / `87 files already formatted` |
+| mypy `--strict` | clean | `Success: no issues found in 76 source files` |
+| determinism | green | frozen F2 inside the 112 |
+| integrity scan (live) | 26 findings, all attributed above | delta over 38eebf6 alone: 0 findings |
