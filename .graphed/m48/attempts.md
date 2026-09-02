@@ -263,14 +263,16 @@ No `assertion_removed`, `tautological_assert`, `target_stubbed` or `except_pass_
 `frozen_test_modified` rows are the arc CREATING the frozen suite (`check_integrity`'s
 new-vs-modified split downgrades brand-new frozen files to advisory).
 
-Both remaining rows point at THIS FILE and are the scanner reading its own record:
+Both remaining rows are inflated by this log's own text, but only one is a finding ABOUT it:
 
-- `skip_or_xfail_added` — detail is the positive-control sentence below, which names the marker
-  the control plants. The scanner matches the added line, not its role, so the log's description
-  of the control reads as the thing itself. Nothing under `tests/frozen/**` carries the marker.
-- `type_ignore_flood` — the threshold-3 heuristic over 15 added `# type: ignore` lines: 7 in
-  `python/` (4 `array.py`, 2 `varied.py`, 1 `awkward/backend.py`), 6 in the test-author's frozen
-  files, 2 quoted inside this log. None is the blanket form §A.7 bans.
+- `skip_or_xfail_added` — path `.graphed/m48/attempts.md`. The detail is the positive-control
+  sentence below, which names the marker the control plants; the scanner matches the added line,
+  not its role, so the log's description of the control reads as the thing itself. Nothing under
+  `tests/frozen/**` carries the marker.
+- `type_ignore_flood` — path `<diff>`, a whole-diff count attributable to no single file. The
+  threshold-3 heuristic over 15 added `# type: ignore` lines: 13 real suppressions — 7 in `python/`
+  (4 `array.py`, 2 `varied.py`, 1 `awkward/backend.py`) and 6 in the test-author's frozen files —
+  plus 2 quoted inside this log. None of the 13 is the blanket form §A.7 bans.
 
 Neither is reworded to make the scanner quiet; both are recorded as the instrument reports them.
 
@@ -373,3 +375,69 @@ the witness narrows recursively rather than reading `node_id` off it (§2.2 refu
 | mypy `--strict` | clean | `Success: no issues found in 76 source files` |
 | determinism | green | frozen F2 inside the 112 |
 | integrity scan (live) | 26 findings, all attributed above | delta over 38eebf6 alone: 0 findings |
+
+## Iteration 12 — delta-3 review of f7deb10: D3-1, D3-2
+
+**D3-1 (`context.py:_vary_weight`) — the A-1 re-key discriminated on the wrong axis.** Keying the
+population by carrier KIND (labels registered as weights) answers "is this label a weight?", but
+what makes the correlated case legal is a shared family NAME: one family, one knob. Two DIFFERENT
+families can spell one label, and carrier-kind keying let that through. Measured at f7deb10 with a
+`sf_up` shift carrying tag `x` and an `sf` weight carrying tag `up_x`, both spelling `sf_up_x`:
+
+    case B: ADMITTED   -> Jet.pt ratio 1.0500, weight ratio 3.0000
+
+— one label riding two independent knobs, the shift's Jet.pt and the weight's factor, which §2.1's
+one-at-a-time rule forbids. The same probe at this tip refuses it. The population is now keyed by
+family name over the three carriers `_context_labels` already reads (ambient weight, the `Varied`
+collections, the selection), excluding the call's own `name`: that exclusion IS the correlated
+case, and a repeated tag within one family is already refused by `check_family` ("variation tag
+'up' is already registered under 'jes'"), so no second guard was added.
+
+Probe (`d31_probe.py`, five arms, replayed at f7deb10 and at this tip):
+
+| arm | f7deb10 | tip |
+|---|---|---|
+| case B — shift family + weight family, one label | ADMITTED (1.05 / 3.0) | REFUSED |
+| case A — same family, shift then weight | ADMITTED | ADMITTED |
+| case A — same family, weight then shift | ADMITTED | ADMITTED |
+| control — cross-name WEIGHT collision | REFUSED | REFUSED |
+| control — cross-name SELECTION collision | ADMITTED | REFUSED |
+| control — fresh non-colliding label | ADMITTED | ADMITTED |
+
+The selection arm is a second admitted member the carrier-kind keying let through; it was found by
+walking the three carriers rather than by re-reading the finding.
+
+**D3-2 (`attempts.md`, F9)** — "Both remaining rows point at THIS FILE" was true of
+`skip_or_xfail_added` but not of `type_ignore_flood`, whose path is `<diff>`: a whole-diff count
+attributable to no single file. Corrected, and the 15 split into its 13 real suppressions plus the
+2 quoted here.
+
+### Witnesses, each shown discriminating
+
+Two arms added to the population control in
+`tests/extra/awkward/m48/test_row_space_and_memoisation.py`, which previously exercised only the
+weight carrier. The two existing `counted` closures were replaced by the shared `four_jets` helper
+the new arms needed.
+
+| mutation | witness |
+|---|---|
+| `registered` back to f7deb10's carrier-kind keying | RED — SHIFT arm and SELECTION arm, `DID NOT RAISE GraphedError` |
+| drop the `if n != name` clause | RED — the correlated both-orders admit, `variation label 'jes_up' is already carried` |
+
+The two mutations red in OPPOSITE directions: the first makes the check too permissive, the second
+too strict, so neither the population nor the exclusion can be dropped without a witness firing.
+Restored, all 30 extra witnesses green.
+
+### Gates
+
+| gate | result | delta vs f7deb10 |
+|---|---|---|
+| m48 frozen | 112/112 | none |
+| extra m48 witnesses | 30/30 | +2 (the shift and selection arms) |
+| whole frozen suite | 5 FAILED, all `awkward/m16` `MaybeNone` | none |
+| coverage (combined) | `TOTAL 5928 312 1724 170 93%` | none — byte-identical |
+| ruff check `python tests` | `All checks passed!` | none |
+| ruff format `--check python tests` | `94 files already formatted` | none (earlier tables ran `python tests/extra`, 87) |
+| mypy `--strict` | `Success: no issues found in 76 source files` | none |
+| determinism | green (frozen F2 inside the 112) | none |
+| integrity scan (live) | arc 26 findings, as attributed under F9 | delta f7deb10..HEAD = 0 findings |
