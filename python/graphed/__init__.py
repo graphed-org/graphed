@@ -13,6 +13,7 @@ from .accessors import (
     reindex_to,
     unify_contexts,
     universe,
+    variations,
     weight,
 )
 from .aggregate import aggregate_plan, resolve_backend
@@ -102,6 +103,7 @@ __all__ = [
     "shuffle_plan",
     "unify_contexts",
     "universe",
+    "variations",
     "vary",
     "weight",
 ]

@@ -182,6 +182,142 @@ formats it into the message. Runtime errors are the next package up
 provenance *exists* for every node, cheaply, from the moment it was recorded.
 
 
+How variations work
+-------------------
+
+A systematic *variation* is the same analysis re-run with one knob moved — a jet-energy scale
+shifted, a weight scaled up/down. ``graphed.vary(target, name, ...)`` records that intent and
+returns a :class:`~graphed.Varied`: a proxy that behaves like the ``target`` but carries a
+**family of labelled universes**, ``"nominal"`` plus one per tag. It never mutates — the target
+stays valid — and, per §1.2, the labels live **only in the frontend**: each universe lowers to
+an ordinary marked output in the IR (the *sibling* lowering), so the core, optimizer, and
+executor never learn the word "variation". Interning still deduplicates whatever the universes
+share::
+
+    import numpy as np
+    from graphed import Session, vary, labels, universe, nominal
+    from graphed.numpy import NumpyBackend, from_array
+
+    s = Session(NumpyBackend())
+    pt  = from_array(s, "pt", np.array([10.0, 20.0, 30.0]))
+    jes = vary(pt, "jes", up=pt * 1.05, down=pt * 0.95)   # a Varied: three universes
+
+    labels(jes)                            # -> ('nominal', 'jes_up', 'jes_down')
+    s.materialize(nominal(jes))            # -> array([10., 20., 30.])
+    s.materialize(universe(jes, "jes_up")) # -> array([10.5, 21. , 31.5])
+
+Three read-only verbs narrow a ``Varied`` (they also accept a plain value, returning it
+unchanged): ``labels`` lists the family, ``nominal`` is the central universe, and ``universe``
+selects one by label. ``compile_ir`` deliberately *refuses* a bare ``Varied`` — you compile the
+universes you name, not an ambiguous family.
+
+Weight and shift variations register into an **event context** (``graphed.awkward``'s
+``gnano.events``), and ``graphed.variations`` reports a context's registry as
+``{name: {tag: (kind, value)}}``. The *kind* is a two-word vocabulary — ``"weight"`` for a
+weight factor, ``"shift"`` for a collection shift — and numeric tags parse to an ordering value
+(the σ handle for envelope plots) under both the canonical e-form (``5em1`` → ½) and the
+datacard p-form (``2p5`` → 2½); a non-numeric tag carries ``None``::
+
+    import awkward as ak
+    import graphed.awkward as ga
+    from graphed import variations
+    from graphed.awkward import AwkwardBackend, from_awkward, gak
+
+    events = ak.Array({
+        "MET": ak.zip({"pt": [10.0, 20.0, 30.0]}),
+        "Jet": ak.zip({"pt": ak.Array([[40.0, 25.0], [55.0], [30.0, 60.0, 20.0]])}),
+    })
+    s   = Session(AwkwardBackend())
+    ev  = from_awkward(s, "events", events)
+    ctx = ga.gnano.events(ev)
+    w   = ev.MET.pt
+    ctx = vary(ctx, "pu", w, is_weight=True,
+               variations={"5em1": w, "m15em1": w * 1.1, "up": w * 1.3})
+    jets = ctx.Jet
+    ctx = vary(ctx, "jes",
+               collections={"Jet": {"up": gak.with_field(jets, jets.pt * 1.05, "pt"),
+                                    "down": gak.with_field(jets, jets.pt * 0.95, "pt")}})
+
+    variations(ctx)["pu"]
+    # -> {'5em1': ('weight', Fraction(1, 2)), 'm15em1': ('weight', Fraction(-3, 2)),
+    #     'up': ('weight', None)}
+    variations(ctx)["jes"]
+    # -> {'up': ('shift', None), 'down': ('shift', None)}
+
+**Sibling mode vs axis mode.** By default every universe is its own output — its own histogram,
+its own column. When the sink is a histogram fill, the analyst can instead opt a *single* fill
+into an **axis** that carries the universes as a ``StrCategory("variation")`` axis inside one
+histogram (``h.fill(..., variation_axis=True)``); weight-label universes then collapse into an
+evaluator-side loop rather than N separate fills. That machinery lives in ``graphed-histogram``
+(see its design doc); from the frontend's side the two modes are interchangeable — the same
+``labels``/``universe``/``nominal`` verbs read a result histogram's variation axis, and the
+plan-level ``{output: [labels]}`` listing answers identically regardless of which mode produced
+each output.
+
+Varied preservation
+~~~~~~~~~~~~~~~~~~~~
+
+A preservation bundle over a **varied** value/weight reproduces *every* universe from one
+bundle. ``build_bundle`` takes the ``value``/``weight``/``{name,bins,lo,hi}`` triple it already
+accepted; hand it a ``Varied`` and ``reproduce`` returns ``{label: counts}`` instead of a bare
+array, each universe bit-for-bit against build time. The manifest gains a per-label output map
+(sorted, so ``canonical_bytes`` stays deterministic) and its ``format_version`` bumps to ``2``;
+an **unvaried** bundle keeps today's singular shape and version ``1``. ``inspect`` lists the
+labels without executing::
+
+    from graphed.preserve import build_bundle, reproduce, inspect
+    from graphed.awkward import gak
+
+    value  = gak.sum(ev.Jet.pt, axis=1)
+    weight = vary(ev.MET.pt, "sf", up=ev.MET.pt * 1.1, down=ev.MET.pt * 0.9)
+    HIST   = {"name": "ht", "bins": 5, "lo": 0.0, "hi": 200.0}
+
+    bundle = build_bundle(root, session=s, value=value, weight=weight,
+                          datasets={"events": events}, histogram=HIST)
+    bundle.manifest["format_version"]        # -> 2
+    reproduce(bundle)                        # -> {'nominal': array(...), 'sf_down': ..., 'sf_up': ...}
+    all(l in inspect(bundle) for l in labels(weight))   # -> True  (no execution)
+
+Checkpoints and variation churn (honest limits)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Within one plan, checkpoint resume works per partition exactly as for an unvaried run — the
+N-universe composite partial is the journal unit. **Across** plan revisions there are three ways
+a variation edit invalidates the checkpoint cache, and their scopes differ:
+
+* **Adding or removing a variation — unconditional.** A variation is sibling nodes in the IR
+  (§1.2), so toggling one changes the serialized graph, and every ``task_id`` is a hash over that
+  graph (``DurablePlan.task_id`` = ``sha256(domain, ir, process.identity(), partition)``). No
+  journal survives it. This is the exemplar's own "``skip_obj_systematics``" switch: turning the
+  expensive shift class on or off between runs rebuilds the IR and invalidates the whole cache.
+* **Renaming a label — sibling mode: only by-value journals; axis mode: unconditional.** Under
+  the default *sibling* lowering the labels are sibling-node identities, not IR content, so a pure
+  rename leaves the IR byte-identical and §1.2's *no-recompute at the interning level* still holds
+  — only a **by-value** journal churns: if its ``process`` embeds the worker closure by value
+  (``OpSpec.from_callable`` on a non-importable function — an ``"opaque"`` spec whose
+  ``identity()`` is the cloudpickle blob itself), the label *strings* travel inside that blob and
+  the rename changes every ``task_id``. Under §6.2's *axis* lowering the labels **are** IR
+  content — they become the ``StrCategory("variation")`` bin identities that enter the fill's
+  spec/params/``content_hash`` and hence the serialized graph — so an axis-mode rename rebuilds
+  the IR and invalidates **unconditionally**, ``from_ref`` journals included, exactly like adding
+  or removing a variation.
+* **The one-time field churn — only by-value journals, twice.** Landing the variation machinery
+  added a field to the worker/artifact dataclasses (once at m48, once at m49); a dataclass field
+  is in every pickled instance whatever its value, so any by-value journal's ``task_id`` churned
+  once each time, unvaried programs included.
+
+The documented checkpoint idiom is immune to the field churn in either mode, and to a rename
+**under the default sibling lowering**. It references worker functions **by import path** —
+``OpSpec.from_ref("myanalysis:hist_chunk")`` (see :doc:`../checkpoint/design`) — whose
+``identity()`` is ``b"ref\0" + ref`` and carries no closure state, so a field addition cannot
+perturb it and neither can a sibling-mode rename (the label strings never reach the IR). The one
+exception is an **axis-mode** rename: those labels *are* IR content, so it changes every
+``task_id`` however the ``process`` is referenced — a ``from_ref`` journal is invalidated just as
+add/remove would be. By-value journals arise only where a caller wrapped a closure with
+``OpSpec.from_callable`` by hand. The scope is deliberately narrow, and the general fix
+(stage-granular content addressing) is named Phase 2.
+
+
 Phase 2 (deliberately not built)
 --------------------------------
 
