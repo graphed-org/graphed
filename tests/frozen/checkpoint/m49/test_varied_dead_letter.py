@@ -19,7 +19,7 @@ DESCRIPTOR_KEYS = frozenset(
 )
 
 
-def _run(store, *, poison, partitions=None, retry=None):  # type: ignore[no-untyped-def]
+def _run(store, *, poison, partitions=None, retry=None):
     plan, compiled, tags = A.build_plan(poison=poison)
     dp = A.durable(plan, compiled)
     if partitions is not None:
@@ -28,7 +28,7 @@ def _run(store, *, poison, partitions=None, retry=None):  # type: ignore[no-unty
     return dp, tags, run_resumable(dp, store, retry=retry)
 
 
-def test_a_poison_free_twin_dead_letters_nothing(tmp_path) -> None:  # type: ignore[no-untyped-def]
+def test_a_poison_free_twin_dead_letters_nothing(tmp_path) -> None:
     """Positive control: the fixture's shape, minus the poison, runs every partition clean."""
     dp, tags, res = _run(Store(tmp_path), poison=False)
     assert res.report.dead == 0 and res.report.dead_letters == []
@@ -36,7 +36,7 @@ def test_a_poison_free_twin_dead_letters_nothing(tmp_path) -> None:  # type: ign
     assert len(set(res.value.tolist())) == len(tags)
 
 
-def test_one_poisoned_variation_dead_letters_the_whole_composite(tmp_path) -> None:  # type: ignore[no-untyped-def]
+def test_one_poisoned_variation_dead_letters_the_whole_composite(tmp_path) -> None:
     dp, _tags, poisoned = _run(Store(tmp_path / "poisoned"), poison=True)
     first, rest = dp.partitions[0], dp.partitions[1:]
 
@@ -59,7 +59,7 @@ def test_one_poisoned_variation_dead_letters_the_whole_composite(tmp_path) -> No
     assert poisoned.value[nominal] != clean.value[nominal]
 
 
-def test_retry_reruns_the_whole_composite_not_the_failing_universe(tmp_path) -> None:  # type: ignore[no-untyped-def]
+def test_retry_reruns_the_whole_composite_not_the_failing_universe(tmp_path) -> None:
     """`process` IS the composite, so an attempt reads the WHOLE partition once, `n+1` times over."""
     _dp, _tags, quarantined = _run(Store(tmp_path / "q"), poison=True, retry=Quarantine())
     first_reads = Counter(A.READS)
@@ -78,7 +78,7 @@ def test_retry_reruns_the_whole_composite_not_the_failing_universe(tmp_path) -> 
     assert quarantined.value.tobytes() == retried.value.tobytes()
 
 
-def test_the_descriptor_keeps_its_fixed_key_list_and_gains_no_variation_key(tmp_path) -> None:  # type: ignore[no-untyped-def]
+def test_the_descriptor_keeps_its_fixed_key_list_and_gains_no_variation_key(tmp_path) -> None:
     _dp, _tags, res = _run(Store(tmp_path), poison=True)
     (descriptor,) = res.report.dead_letters
     assert set(descriptor) == DESCRIPTOR_KEYS

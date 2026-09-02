@@ -16,12 +16,12 @@ from graphed.checkpoint.runner import _SimulatedInterrupt
 from graphed.core import GraphStore
 
 
-def _durable():  # type: ignore[no-untyped-def]
+def _durable():
     plan, compiled, tags = A.build_plan()
     return A.durable(plan, compiled), tags
 
 
-def test_the_journal_unit_is_the_whole_variation_composite(tmp_path) -> None:  # type: ignore[no-untyped-def]
+def test_the_journal_unit_is_the_whole_variation_composite(tmp_path) -> None:
     """The mechanism this suite rests on: ONE plan, ONE IR, one marked output per universe.
 
     A per-variation re-execution (§7.1) would show as anything other than `len(labels)` compiled
@@ -36,7 +36,7 @@ def test_the_journal_unit_is_the_whole_variation_composite(tmp_path) -> None:  #
     assert len(A.READS) == len(dp.partitions), "one read per partition, not one per universe"
 
 
-def test_kill_then_resume_is_byte_identical_and_does_less_work(tmp_path) -> None:  # type: ignore[no-untyped-def]
+def test_kill_then_resume_is_byte_identical_and_does_less_work(tmp_path) -> None:
     dp, _tags = _durable()
     reference = run_resumable(dp, Store(tmp_path / "clean")).value
 
@@ -52,7 +52,7 @@ def test_kill_then_resume_is_byte_identical_and_does_less_work(tmp_path) -> None
     assert res.value.tobytes() == reference.tobytes()
 
 
-def test_no_double_count_at_any_kill_boundary(tmp_path) -> None:  # type: ignore[no-untyped-def]
+def test_no_double_count_at_any_kill_boundary(tmp_path) -> None:
     """Every universe must contribute each partition exactly once, wherever the crash landed."""
     dp, _tags = _durable()
     reference = run_resumable(dp, Store(tmp_path / "clean")).value.tobytes()
@@ -65,7 +65,7 @@ def test_no_double_count_at_any_kill_boundary(tmp_path) -> None:  # type: ignore
         assert res.value.tobytes() == reference, f"kill after {k} changed the composite"
 
 
-def test_resume_after_completion_recomputes_no_universe(tmp_path) -> None:  # type: ignore[no-untyped-def]
+def test_resume_after_completion_recomputes_no_universe(tmp_path) -> None:
     dp, _tags = _durable()
     store = Store(tmp_path)
     first = run_resumable(dp, store)
