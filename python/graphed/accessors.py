@@ -12,11 +12,14 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, TypeGuard
 
+from ._tags import numeric_value
 from .array import Array
 from .errors import GraphedError
 from .varied import Varied, member_of, rebuild
 
 if TYPE_CHECKING:
+    from fractions import Fraction
+
     from .context import EventContext
 
 #: §2.2's input shapes. Deliberately NOT `Array`: a plain array carries no universes, and the
@@ -29,6 +32,16 @@ def _is_context(value: object) -> TypeGuard[EventContext]:
     from .context import EventContext  # noqa: PLC0415  (import cycle: context reads these verbs)
 
     return isinstance(value, EventContext)
+
+
+def _variation_axis_index(hist: Any) -> int | None:
+    """§6.2(i-bis): the position of the axis-mode variation axis, `None` when there is none.
+
+    Recognised by the name carried on the axis' `__dict__` — `bh.axis.StrCategory(..., name=)` is a
+    `TypeError`, so the frontend (and the fixtures) stamp the name that way. `hist.axes.name` is NOT
+    the oracle: bh maps that attribute over every axis and raises when one lacks it.
+    """
+    return next((i for i, a in enumerate(hist.axes) if a.__dict__.get("name") == "variation"), None)
 
 
 def labels(x: Introspectable) -> tuple[str, ...]:
@@ -44,7 +57,12 @@ def labels(x: Introspectable) -> tuple[str, ...]:
     if isinstance(x, Mapping):
         seat = ("nominal",) if "nominal" in x else ()
         return (*seat, *(label for label in x if label != "nominal"))
-    if hasattr(x, "axes"):  # a bare unvaried histogram reads as the single label "nominal"
+    if hasattr(x, "axes"):  # a bare histogram: an axis-mode variation axis, else "nominal"-only
+        index = _variation_axis_index(x)
+        if index is not None:  # §6.2: reorder "nominal"-first over the lexicographic stored order
+            stored = tuple(x.axes[index])
+            seat = ("nominal",) if "nominal" in stored else ()
+            return (*seat, *(bin_ for bin_ in stored if bin_ != "nominal"))
         return ("nominal",)
     raise GraphedError(f"graphed.labels does not know how to read {type(x).__name__}")
 
@@ -62,6 +80,13 @@ def universe(x: Introspectable, label: str) -> Any:
             raise KeyError(f"unknown variation label {label!r}; this result carries {list(x)}")
         return x[label]
     if hasattr(x, "axes"):
+        index = _variation_axis_index(x)
+        if index is not None:
+            import boost_histogram as bh  # noqa: PLC0415  (only when slicing a real bh axis-mode hist)
+
+            # positional: h[{"variation": L}] is a TypeError on bare bh; bh.loc raises KeyError for
+            # an unknown label, so the unknown-label path needs no guard of our own.
+            return x[{index: bh.loc(label)}]
         if label != "nominal":
             raise KeyError(f"unknown variation label {label!r}; this histogram carries ['nominal']")
         return x
@@ -90,6 +115,27 @@ def weight(ctx: Any) -> Varied | None:
     if not _is_context(ctx):
         raise GraphedError("graphed.weight reads an event context's ambient weight registry")
     return ctx._ambient_weight()
+
+
+def variations(ctx: Any) -> dict[str, dict[str, tuple[str, Fraction | None]]]:
+    """A context's registered variations as `{name: {tag: (kind, value | None)}}` (§9.1).
+
+    The kind vocabulary is exactly two words: `"weight"` for a §2.1 overload-(b) registration
+    (found in the ambient weight's tag map) and `"shift"` for an overload-(c) one (found on the
+    context's `Varied` collections). The value is the tag's parsed numeric magnitude — the
+    ordering handle §6.2's lexicographic axis cannot give — and `None` for a non-numeric tag.
+    """
+    if not _is_context(ctx):
+        raise GraphedError("graphed.variations reads an event context's registered variations")
+    out: dict[str, dict[str, tuple[str, Fraction | None]]] = {}
+    ambient = ctx._ambient_weight()
+    if ambient is not None:
+        for name, tags in ambient._tags.items():
+            out.setdefault(name, {}).update({tag: ("weight", numeric_value(tag)) for tag in tags})
+    for collection in ctx._collections.values():
+        for name, tags in getattr(collection, "_tags", {}).items():
+            out.setdefault(name, {}).update({tag: ("shift", numeric_value(tag)) for tag in tags})
+    return out
 
 
 def unify_contexts(*handles: Any) -> Any:

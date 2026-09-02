@@ -29,6 +29,8 @@ from .manifest import FORMAT_VERSION, canonical_bytes, fingerprint
 
 # rounded for cross-platform-stable histogram contents (mirrors graphed-corpus STABLE_DECIMALS)
 _STABLE_DECIMALS = 6
+#: §9.2: the manifest version a varied bundle writes; an unvaried bundle keeps FORMAT_VERSION (1).
+_VARIED_FORMAT_VERSION = FORMAT_VERSION + 1
 _ENV_PACKAGES = (
     "graphed-core",
     "graphed",
@@ -118,6 +120,8 @@ def build_bundle(
     self-contained bundle. ``datasets`` maps each source name to its input array; ``payloads`` maps
     each External descriptor ``content_hash`` to the correction/model file bytes; ``histogram`` is the
     ``{name, bins, lo, hi}`` spec applied to ``value`` weighted by ``weight``."""
+    from graphed.varied import Varied, member_of, union_labels  # noqa: PLC0415  (import cycle)
+
     if (weight is None) != (histogram is None):
         raise PreserveError(
             "weight= and histogram= must be given together (the value/weight/spec triple) or both omitted (a histogram-terminal analysis)"
@@ -128,8 +132,21 @@ def build_bundle(
     root.mkdir(parents=True, exist_ok=True)
     store = Store(root / "store")
 
-    # 1. the canonical IR (opt_level=0: auditable, 1:1 with user ops, no stage fusion)
-    outputs_arrays = (value,) if weight is None else (value, weight)
+    # §9.2: a Varied value/weight makes this the varied path — one bundle, N universes.
+    varied = weight is not None and (isinstance(value, Varied) or isinstance(weight, Varied))
+
+    # 1. the canonical IR (opt_level=0: auditable, 1:1 with user ops, no stage fusion). The varied
+    # path marks EVERY universe's value/weight node as an output so all their subgraphs survive.
+    label_outputs: dict[str, dict[str, int]] = {}
+    outputs_arrays: list[Any]
+    if varied:
+        outputs_arrays = []
+        for label in union_labels(value, weight):
+            v_member, w_member = member_of(value, label), member_of(weight, label)
+            outputs_arrays.extend((v_member, w_member))
+            label_outputs[label] = {"value": int(v_member.node_id), "weight": int(w_member.node_id)}
+    else:
+        outputs_arrays = [value] if weight is None else [value, weight]
     ir = session.serialized_ir(*outputs_arrays, optimize=False)
     ir_hash = store.put(ir)
     nodes = GraphStore.deserialize(ir).nodes()
@@ -180,16 +197,24 @@ def build_bundle(
     prov_hash = store.put(json.dumps(sourcemap, sort_keys=True).encode("utf-8"))
 
     # 5. the content-addressed bill-of-materials
+    outputs: dict[str, int | None]
+    if varied:  # nominal is the singular back-compat pair; `variations` carries every universe
+        outputs = dict(label_outputs["nominal"])
+    else:
+        outputs = {
+            "value": int(value.node_id),
+            "weight": None if weight is None else int(weight.node_id),
+        }
+    analysis: dict[str, Any] = {
+        "ir": ir_hash,
+        "outputs": outputs,
+        "histogram": None if histogram is None else dict(histogram),
+    }
+    if varied:  # sorted so canonical_bytes is deterministic regardless of union order
+        analysis["variations"] = dict(sorted(label_outputs.items()))
     manifest: dict[str, Any] = {
-        "format_version": FORMAT_VERSION,
-        "analysis": {
-            "ir": ir_hash,
-            "outputs": {
-                "value": int(value.node_id),
-                "weight": None if weight is None else int(weight.node_id),
-            },
-            "histogram": None if histogram is None else dict(histogram),
-        },
+        "format_version": _VARIED_FORMAT_VERSION if varied else FORMAT_VERSION,
+        "analysis": analysis,
         "sources": sources_manifest,
         "externals": externals_manifest,
         "opaque_nodes": opaque_nodes,
@@ -244,12 +269,19 @@ def reproduce(bundle: Bundle) -> Any:
             external=external,
             eval_op=lambda name, ins, params: backend.eval_stage(name, ins, params),
         )
-        out = m["analysis"]["outputs"]
-        if m["analysis"]["histogram"] is None:
+        analysis = m["analysis"]
+        spec = analysis["histogram"]
+        if "variations" in analysis:  # §9.2: one histogram per universe, {label: array}
+            return {
+                label: _histogram(values[o["value"]], values[o["weight"]], spec)
+                for label, o in analysis["variations"].items()
+            }
+        out = analysis["outputs"]
+        if spec is None:
             # a histogram-terminal analysis: the preserved IR ends AT the fill — the evaluated
             # value IS the histogram (M25; no value/weight/spec triple)
             return values[out["value"]]
-        return _histogram(values[out["value"]], values[out["weight"]], m["analysis"]["histogram"])
+        return _histogram(values[out["value"]], values[out["weight"]], spec)
     finally:
         resources.close()  # release loaded models / close connections at the end of the run
 
@@ -286,6 +318,8 @@ def inspect(bundle: Bundle) -> str:
         f"  histogram: {m['analysis']['histogram']}",
         "  graph (IR, opt_level=0):",
     ]
+    if "variations" in m["analysis"]:  # §9.1: list the universes without executing them
+        lines.insert(-1, f"  variation universes: {list(m['analysis']['variations'])}")
     for node in nodes:
         prov = sourcemap.get(str(node["id"]), {})
         loc = f"{prov.get('filename', '?')}:{prov.get('lineno', '?')}"
