@@ -49,7 +49,10 @@ def _noop_close(resource: Any) -> None:
     return None
 
 
-SynthesizePayload = Callable[[Mapping[str, Any]], "bytes | None"]
+# (params, recorded_content_hash) -> payload bytes. The recorded hash is passed because one params
+# set can be minted under two ids (e.g. a histogram fill's discriminated vs bare spec hash), and the
+# synthesized payload must reproduce the id the node actually recorded.
+SynthesizePayload = Callable[[Mapping[str, Any], str], "bytes | None"]
 
 
 @dataclass(frozen=True)

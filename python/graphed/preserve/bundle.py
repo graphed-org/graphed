@@ -168,7 +168,7 @@ def build_bundle(
             opaque_nodes.append(node["id"])
             continue
         if ch not in payloads and plugin.synthesize is not None:
-            synthesized = plugin.synthesize(node["params"])
+            synthesized = plugin.synthesize(node["params"], ch)
             if synthesized is not None:  # M25: derivable payloads (e.g. a fill's canonical spec)
                 payloads[ch] = synthesized
         if ch not in payloads:
