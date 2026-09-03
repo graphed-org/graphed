@@ -11,7 +11,7 @@ from __future__ import annotations
 from . import functions, gnano, io, payloads, shuffle
 from . import functions as gak
 from .backend import AwkwardBackend, AwkwardForm, from_awkward
-from .io import from_parquet, read_parquet_partition, to_parquet
+from .io import from_parquet, read_parquet_partition, read_varied, to_parquet
 from .projection import project, project_buffers
 
 #: §2.3d: the awkward idiom's public `Array`-consuming module verbs, each answering PER LABEL
@@ -32,6 +32,7 @@ __all__ = [
     "project",
     "project_buffers",
     "read_parquet_partition",
+    "read_varied",
     "shuffle",
     "to_parquet",
 ]

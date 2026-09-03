@@ -25,6 +25,8 @@ from graphed import Backend, CompiledGraph, Session, compile_ir, evaluate_ir
 from graphed import parquet as gpq
 from graphed.core import Partition
 from graphed.core.execution import Plan, SequentialRunner, WorkerResources
+from graphed.errors import GraphedError
+from graphed.varied import Varied
 
 from . import NumpyBackend, project
 from .forms import NumpyForm
@@ -194,6 +196,14 @@ def to_parquet(
     With ``compute=False`` returns the task graph of write tasks; ``compute=True`` runs that SAME
     plan (sequential reference runner by default; any R7 executor pluggable). Exactly one source;
     the per-task read list is the M5 field-touch projection (exact for flat columns)."""
+    if isinstance(array, Varied):
+        # §6.4f: the numpy idiom hard-caps output at one 1-D column and gains no variation-aware
+        # write-out — a `Varied` first positional is refused here rather than dying on §2.2's
+        # reserved-name AttributeError, pointing the analyst at the backend that DOES write variations.
+        raise GraphedError(
+            "graphed.numpy.io.to_parquet does not write variations; a numpy bag holds one 1-D "
+            "column — write varied skims through the awkward backend (graphed.awkward.to_parquet)"
+        )
     session: Session = array.session
     sources = session.sources()
     if len(sources) != 1:

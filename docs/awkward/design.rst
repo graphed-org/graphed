@@ -135,6 +135,65 @@ source — writes through this one entry point, without its whole-dataset loader
 evaluates the compiled IR per partition with the merged syntactic+buffer read list, and writes
 one part per partition with worker-derived names.
 
+How variation-aware write-out works
+-----------------------------------
+
+``to_parquet(record, select=…)`` writes a **skim that carries every systematic universe in one
+file**, then ``read_varied(path)`` reconstructs each universe's post-selection data. It is an
+*accepting* verb (§2.3d): a plain part-path list comes back, and the unvaried call (no ``select=``)
+is byte-identical to before (:doc:`../frontend/design`, §6.4g).
+
+``select=`` is the per-level selection: a single ``Varied`` row mask (``⇔ {0: mask}``), or a mapping
+keyed by a bare depth ``int`` (the record's own axis) or a ``(field_name, depth≥1)`` tuple (a
+field-scoped object cut). The writer then, in **one pass over one compiled IR** (never once per
+universe — §7.1):
+
+* materializes the **superset** of rows: the level-0 OR over every universe's mask, so no universe's
+  selected rows are dropped;
+* stores the **nominal** field values on those rows, and for each structurally-varied leaf a
+  same-dtype **XOR delta** against nominal (zero wherever a universe equals nominal — a leaf that is
+  equal across all universes, or only coupled through a ``zip``, contributes no column);
+* stores each universe's per-level validity mask as a row-aligned **packbits** column;
+* records a JSON **manifest** in the parquet file's key-value metadata (key
+  ``b"graphed.variations"``) naming every stored column's representation, field, and level.
+
+Reconstruction is the exact inverse: nominal ``XOR`` delta recovers each universe's values, then the
+level-0 mask selects rows and every level-≥1 mask filters objects, so ``read_varied(path)[label]`` is
+bit-for-bit the analyst's selected data for that universe.
+
+.. code-block:: python
+
+    import graphed
+    import graphed.awkward as ga
+    from graphed import Session
+    from graphed.awkward import AwkwardBackend, from_awkward, gak
+    import awkward as ak
+
+    session = Session(AwkwardBackend())
+    events = ga.gnano.events(from_awkward(session, "events", ak.Array(
+        [{"Jet": [{"pt": 40.0}, {"pt": 12.0}]}, {"Jet": [{"pt": 55.0}]}, {"Jet": [{"pt": 8.0}]}])))
+
+    jets = events.Jet
+    up = gak.with_field(jets, jets.pt * 1.05, "pt")
+    down = gak.with_field(jets, jets.pt * 0.95, "pt")
+    ctx = graphed.vary(events, "jes", collections={"Jet": {"up": up, "down": down}})
+    vjets = ctx.Jet
+
+    evt = gak.any(vjets.pt > 30.0, axis=1)   # level-0 event mask (migrates with the shift)
+    jet = vjets.pt > 25.0                     # level-1 per-jet mask
+
+    paths = ga.to_parquet(vjets, "/tmp/jes_skim", select={0: evt, 1: jet})
+    universes = ga.read_varied(paths[0])      # {"nominal": ak.Array, "jes_up": …, "jes_down": …}
+    ak.to_list(universes["jes_up"].pt)        # -> [[42.0], [57.75]]  (nominal 40/55 -> ×1.05, pt>25 kept)
+
+The on-disk names embed labels for humans (``__vary_jes_up__Jet_pt``,
+``__vary_jes_up__mask__Jet_1``); the machine channel is the manifest, so a field-name/flattened-name
+collision (a nested ``Jet.pt`` beside a flat ``Jet_pt``) is refused rather than guessed (§6.4b), and a
+universe whose stored variation would change a field's *multiplicity* (per-universe offsets differ) is
+refused at execution — a same-shaped XOR delta cannot represent it (§6.4d, Phase 2). The manifest is
+serialized ``json.dumps(sort_keys=True)`` with an explicit ``levels`` order, so it is
+``PYTHONHASHSEED``-independent and determinism-gate clean.
+
 Externals: corrections and models
 ---------------------------------
 
