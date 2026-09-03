@@ -304,7 +304,13 @@ a variation edit invalidates the checkpoint cache, and their scopes differ:
 * **The one-time field churn — only by-value journals, twice.** Landing the variation machinery
   added a field to the worker/artifact dataclasses (once at m48, once at m49); a dataclass field
   is in every pickled instance whatever its value, so any by-value journal's ``task_id`` churned
-  once each time, unvaried programs included.
+  once each time, unvaried programs included. **Variation-aware write-out (m51) adds no third
+  churn**: the unvaried write task (``graphed.awkward.io._WritePart``) is untouched, and the
+  varied path is a *separate* task (``_VariedWritePart``) reached only through ``to_parquet(...,
+  select=…)``. Both run under ``write_plan``, which builds a plain-callable ``Plan`` — not a
+  ``DurablePlan`` — so a write plan carries no ``task_id`` and journals nothing. Only a caller who
+  hand-wraps the varied write task in an ``OpSpec.from_callable`` by-value journal would see its
+  ``task_id`` reflect that task's fields, and that journal is opaque by construction anyway.
 
 The documented checkpoint idiom is immune to the field churn in either mode, and to a rename
 **under the default sibling lowering**. It references worker functions **by import path** —
