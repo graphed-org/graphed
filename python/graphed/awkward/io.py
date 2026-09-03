@@ -14,6 +14,7 @@ part index from its partition (R15.9), and writes one parquet part.
 from __future__ import annotations
 
 import functools
+import json
 import operator
 import os
 from collections.abc import Mapping, Sequence
@@ -229,6 +230,8 @@ _VARY_PREFIX = "__vary_"
 #: a bare jagged-collection record (`to_parquet(events.Jet, …)`) is a LIST of records, not a
 #: row-level record, so it cannot carry sibling columns; it is wrapped under this reserved field.
 _BASE_FIELD = "__base__"
+#: §6.4e: the manifest lives in parquet key-value file metadata (greenfield — graphed writes none).
+_MANIFEST_KEY = b"graphed.variations"
 
 _SelectKey = Any  # `int` (bare depth) or `tuple[str, int]` (field-scoped, depth >= 1)
 
@@ -557,9 +560,45 @@ class _VariedWritePart:
 
 
 def _write_augmented(payload: ak.Array, path: str, manifest: Mapping[str, Any] | None) -> None:
-    """Write the augmented record. C4 merges the §6.4e manifest through the PUBLIC arrow route; until
-    then a plain `ak.to_parquet` (the unvaried byte-golden path is a separate branch, never touched)."""
+    """Write the augmented record, merging the §6.4e manifest into the parquet file KV metadata.
+
+    `ak.to_parquet` writes awkward's own form KV (needed so `read_varied`/`ak.from_parquet` still
+    reconstruct the record); we then re-stamp the file-level metadata through the PUBLIC arrow route
+    (`Table.replace_schema_metadata`, preserving awkward's entries and every field's metadata), never
+    `awkward._connect`. `manifest is None` is the unvaried byte-golden path — untouched (§6.4g)."""
     ak.to_parquet(payload, path)
+    if manifest is None:
+        return
+    import pyarrow.parquet as pq  # noqa: PLC0415
+
+    table = pq.read_table(path)
+    meta = dict(table.schema.metadata or {})
+    meta[_MANIFEST_KEY] = json.dumps(manifest, sort_keys=True).encode()
+    pq.write_table(table.replace_schema_metadata(meta), path)
+
+
+def _build_manifest(
+    labels: Sequence[str], value_specs: Sequence[_ValueSpec], mask_specs: Sequence[_MaskSpec]
+) -> dict[str, Any]:
+    """§6.4e: the driver-derived reconstruction manifest — every label's stored columns (value deltas
+    keyed `xor`/field, masks keyed `packbits`/entry) plus the reserved ordered `levels` list. Mirrors
+    exactly the columns `_VariedWritePart.__call__` writes, so it is data-independent and deterministic
+    (serialized `json.dumps(sort_keys=True)`; `levels` order is the explicit key `sorted()` cannot give)."""
+    manifest: dict[str, Any] = {label: {} for label in labels}
+    for spec in value_specs:
+        for label in labels:
+            if label == "nominal":
+                continue
+            manifest[label][f"{_VARY_PREFIX}{label}__{spec.flat}"] = {
+                "representation": "xor", "field": spec.flat, "entry": None,
+            }
+    for ms in mask_specs:
+        for label in labels:
+            manifest[label][f"{_VARY_PREFIX}{label}__mask__{ms.entry_flat}"] = {
+                "representation": "packbits", "field": None, "entry": ms.manifest,
+            }
+    manifest["levels"] = [ms.manifest for ms in mask_specs]
+    return manifest
 
 
 def _evaluation_columns_union(
@@ -639,6 +678,7 @@ def _write_varied(
     compiled = compile_ir(session, *outputs)
     _refuse_optimizer_merge(session, outputs, compiled)
 
+    manifest = _build_manifest(labels, value_specs, mask_specs)
     rank = {node_id: i for i, node_id in enumerate(dict.fromkeys(out.node_id for out in outputs))}
     wrapped = _tt(session, nominal_record).ndim > 1
 
@@ -662,6 +702,7 @@ def _write_varied(
         "mask_specs": tuple(mask_specs),
         "wrapped": wrapped,
         "behavior": behavior,
+        "manifest": manifest,
     }
     if isinstance(data, PartitionedSource):
         partitions = data.partitions(steps_per_file)
@@ -788,3 +829,131 @@ def to_parquet(
         return plan
     runner = executor if executor is not None else SequentialRunner()
     return list(runner.run(plan).value)
+
+
+# ---- variation-aware read-back (§6.4c/e reconstruction contract) ------------------------------
+def _label_order(fields: Sequence[str]) -> list[str]:
+    """Universes in §2.4 order (nominal first) — recovered from the on-disk vary-column order: value
+    deltas precede masks, so a first-occurrence walk yields the variations in registration order; the
+    reserved `nominal` label (present only in mask columns) is forced to the front."""
+    seen: list[str] = []
+    for name in fields:
+        if name.startswith(_VARY_PREFIX):
+            label = name[len(_VARY_PREFIX) :].split("__", 1)[0]
+            if label not in seen:
+                seen.append(label)
+    return ["nominal", *(label for label in seen if label != "nominal")]
+
+
+def _dotted_for_flat(record: ak.Array, flat: str) -> str:
+    """The record's leaf path whose `_`-flattening equals `flat` (unique — §6.4b refuses collisions)."""
+    for path in record.layout.form.columns():
+        if _flat_field(path) == flat:
+            return str(path)
+    raise GraphedError(f"no stored leaf flattens to the manifest field {flat!r}")
+
+
+def _get_leaf(record: ak.Array, path: str) -> ak.Array:
+    leaf = record
+    for part in path.split("."):
+        leaf = leaf[part]
+    return leaf
+
+
+def _apply_xor(nominal_value: ak.Array, delta: ak.Array, jagged: bool) -> ak.Array:
+    """§6.4c inverse: the label value is `nominal XOR delta` on the shared uint view, reinterpreted
+    back to nominal's dtype (XOR is its own inverse, so this is exact)."""
+    if jagged:
+        nom = ak.to_numpy(ak.flatten(nominal_value))
+        del_ = ak.to_numpy(ak.flatten(delta))
+        restored = (_uint_view(nom) ^ _uint_view(del_)).view(nom.dtype)
+        return ak.unflatten(restored, np.asarray(ak.num(nominal_value)))
+    nom = ak.to_numpy(nominal_value)
+    restored = (_uint_view(nom) ^ _uint_view(np.asarray(delta))).view(nom.dtype)
+    return ak.Array(restored)
+
+
+def _decode_level0(packed: ak.Array) -> np.ndarray:
+    """A flat level-0 validity mask: one packbits byte per row → one bool per row."""
+    bits = [bool(np.unpackbits(np.asarray(row, dtype=np.uint8), count=1)[0]) for row in ak.to_list(packed)]
+    out: np.ndarray = np.array(bits, dtype=bool)
+    return out
+
+
+def _decode_jagged(packed: ak.Array, counts: np.ndarray) -> ak.Array:
+    """A level->=1 validity mask: each row's packbits bytes → its `count` object bits."""
+    return ak.Array([
+        np.unpackbits(np.asarray(byte_row, dtype=np.uint8), count=int(n)).astype(bool).tolist()
+        for byte_row, n in zip(ak.to_list(packed), counts, strict=True)
+    ])
+
+
+def _entry_key(entry: int | list[Any]) -> tuple[str | None, int]:
+    """A manifest `entry` (bare `int` depth, or `[flat_field, depth]`) as `(field_path|None, depth)`."""
+    return (None, entry) if isinstance(entry, int) else (entry[0], entry[1])
+
+
+def _reconstruct_universe(
+    base: ak.Array, full: ak.Array, manifest: Mapping[str, Any], label: str
+) -> ak.Array:
+    """§6.4c: universe `label`'s post-selection record — nominal `base` (on the superset rows) with the
+    label's XOR value deltas applied, then its stored level-0 row mask AND every level->=1 object mask
+    (each stored at superset granularity, restricted to the kept rows)."""
+    columns = manifest[label]
+    rec = base
+    for col, info in columns.items():
+        if info["representation"] == "xor":
+            path = _dotted_for_flat(rec, info["field"])
+            nominal_value = _get_leaf(rec, path)
+            value = _apply_xor(nominal_value, full[col], nominal_value.ndim > 1)
+            rec = ak.with_field(rec, value, where=path.split("."))
+
+    packed = {  # entry -> the label's packbits column, still at superset granularity
+        _entry_key(info["entry"]): full[col]
+        for col, info in columns.items()
+        if info["representation"] == "packbits"
+    }
+    # level 0 selects rows; a higher level's mask is decoded over the PRE-selection field counts, then
+    # restricted to the kept rows — `X[m0][m_k[m0]]` == the analyst's `X[event][object]` (§6.4c).
+    higher: list[tuple[str | None, ak.Array]] = []
+    m0: np.ndarray | None = None
+    for entry in manifest["levels"]:
+        key = _entry_key(entry)
+        field_path, depth = key
+        if depth == 0:
+            m0 = _decode_level0(packed[key])
+        else:
+            target = rec if field_path is None else rec[field_path]
+            higher.append((field_path, _decode_jagged(packed[key], np.asarray(ak.num(target)))))
+
+    if m0 is not None:
+        rec = rec[m0]
+    for field_path, mask in higher:
+        inner = mask if m0 is None else mask[m0]
+        if field_path is None:
+            rec = rec[inner]
+        else:
+            rec = ak.with_field(rec, rec[field_path][inner], where=field_path.split("."))
+    return rec
+
+
+def read_varied(path: str) -> dict[str, ak.Array]:
+    """Reconstruct every universe of a §6.4 variation-aware skim: `{label: ak.Array}` in §2.4 order
+    (nominal first). Each value is universe `label`'s post-selection record — its rows passing the
+    stored level-0 mask and, at every supplied level, its objects passing the stored mask — bit-exact
+    vs the in-memory varied run. The symmetric partner of `to_parquet(..., select=…)`."""
+    import pyarrow.parquet as pq  # noqa: PLC0415
+
+    meta = pq.ParquetFile(path).metadata.metadata or {}
+    blob = meta.get(_MANIFEST_KEY)
+    if blob is None:
+        raise GraphedError(f"{path!r} carries no {_MANIFEST_KEY!r} manifest — not a variation-aware skim")
+    manifest = json.loads(blob)
+
+    full = ak.from_parquet(path)
+    if _BASE_FIELD in full.fields:
+        base = full[_BASE_FIELD]  # a bare jagged-collection skim (the record IS the collection)
+    else:
+        base_fields = [f for f in full.fields if not f.startswith(_VARY_PREFIX)]
+        base = ak.zip({f: full[f] for f in base_fields}, depth_limit=1)
+    return {label: _reconstruct_universe(base, full, manifest, label) for label in _label_order(full.fields)}
