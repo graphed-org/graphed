@@ -11,6 +11,7 @@ from .accessors import (
     labels,
     nominal,
     reindex_to,
+    selection,
     unify_contexts,
     universe,
     variations,
@@ -53,6 +54,7 @@ VERB_DISPOSITIONS: dict[str, str] = {
     "read_columns": "expanding",
     "read_columns_by_label": "expanding",
     "reindex_to": "broadcasting",
+    "selection": "eager-metadata",
     "repartition": "refusing",
     "shuffle_plan": "refusing",
 }
@@ -99,6 +101,7 @@ __all__ = [
     "reindex_to",
     "repartition",
     "resolve_backend",
+    "selection",
     "set_enabled",
     "shuffle_plan",
     "unify_contexts",

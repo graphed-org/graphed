@@ -138,6 +138,26 @@ class EventContext:
             node = node._parent
         return None
 
+    def _selection_bridge(self) -> Any:
+        """§9.1's `graphed.selection(ctx)` — the FULL three-case bridge, NOT `_selection()`.
+
+        Case 1 (mask-derived): the mask that derived this context, skipping `vary` identity links.
+        Case 2 (universe/nominal-derived): that label's member of the PARENT's selection — an
+        unvaried `Array` in the GRANDparent's row space, `None` when the parent is root (where
+        `_selection()` returns `None`, the row-space/context reason §6.4a's universe/nominal REFUSE
+        control relies on). Case 3 (root): `None`.
+        """
+        node: EventContext | None = self
+        while node is not None and node._link is not None:
+            kind, payload = node._link
+            if kind == "mask":
+                return payload
+            if kind == "project":
+                parent_selection = node._parent._selection() if node._parent is not None else None
+                return None if parent_selection is None else member_of(parent_selection, payload)
+            node = node._parent  # `vary` identity link: skip
+        return None
+
     def _ambient_weight(self) -> Varied | None:
         return self._weight
 

@@ -106,6 +106,19 @@ def context_of(value: Array | Varied) -> Any:
     return getattr(value, "_context", None)
 
 
+def selection(ctx: Any) -> Any:
+    """§9.1's bridge: the `Varied`/Array mask that derived a context from its parent (§6.4a).
+
+    `None` for a root context. On a universe/nominal-derived context it returns that label's member
+    of the argument's own selection — an unvaried `Array` in the grandparent's row space; on a
+    `vary`-derived one it skips the identity links and answers with the mask below. The verb that
+    makes the m51 skim sink reachable from the §2.6 context idiom.
+    """
+    if not _is_context(ctx):
+        raise GraphedError("graphed.selection reads an event context's derivation mask")
+    return ctx._selection_bridge()
+
+
 def weight(ctx: Any) -> Varied | None:
     """A context's ambient event weight as a `Varied`, `None` when nothing is registered (§9.1).
 
