@@ -119,13 +119,14 @@ def test_selection_on_a_universe_nominal_context_is_a_grandparent_array_and_refu
     selection — an UNVARIED Array in the GRANDparent's row space (here `sel`'s parent selection mask),
     `None` for a root argument. Passing it as `select=` for a record read from `sel` is REFUSED by
     (2a): a universe/nominal projection link is not admitted, so the mask lives one row space up."""
-    _session, events = events_context()
+    session, events = events_context()
     mask = _event_mask(events)
     sel = events[mask]
 
     projected = graphed.selection(graphed.nominal(sel))  # type: ignore[attr-defined]
     assert not isinstance(projected, graphed.Varied)  # an unvaried Array, not a container
-    assert as_list(projected) == as_list(mask)  # the argument's selection, in the grandparent space
+    # both operands are deferred graphed arrays; materialize before ak.to_list (m48/m49 idiom)
+    assert as_list(session.materialize(projected)) == as_list(session.materialize(mask))
     assert graphed.selection(graphed.nominal(events)) is None  # type: ignore[attr-defined]  # root argument
 
     # (b): the projected mask lives one row space above a record read from `sel` -> record-time refuse
