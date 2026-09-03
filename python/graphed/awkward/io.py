@@ -272,8 +272,11 @@ def _normalize_select(select: Any) -> dict[_SelectKey, Any]:
         out: dict[_SelectKey, Any] = {}
         for key, mask in select.items():
             field_scoped = (
-                isinstance(key, tuple) and len(key) == 2
-                and isinstance(key[0], str) and isinstance(key[1], int) and key[1] >= 1
+                isinstance(key, tuple)
+                and len(key) == 2
+                and isinstance(key[0], str)
+                and isinstance(key[1], int)
+                and key[1] >= 1
             )
             if not (isinstance(key, int) or field_scoped):
                 raise GraphedError(
@@ -431,10 +434,12 @@ def _encode_delta(nominal: ak.Array, label: ak.Array, jagged: bool) -> ak.Array:
 def _encode_mask(mask: ak.Array) -> ak.Array:
     """§6.4c: a per-row `packbits` validity mask stored as `var * uint8` (row-aligned; a flat level-0
     mask packs one bit per row, a jagged level-k>=1 mask packs its row's objects)."""
-    return ak.Array([
-        list(np.packbits(np.asarray(row, dtype=bool) if isinstance(row, list) else [bool(row)]))
-        for row in ak.to_list(mask)
-    ])
+    return ak.Array(
+        [
+            list(np.packbits(np.asarray(row, dtype=bool) if isinstance(row, list) else [bool(row)]))
+            for row in ak.to_list(mask)
+        ]
+    )
 
 
 @dataclass(frozen=True)
@@ -489,9 +494,9 @@ class _VariedWritePart:
 
     def _chunk(self, partition: Partition, resources: WorkerResources) -> tuple[Any, int]:
         if self.reader is not None:
-            return self.reader.read_partition(partition, self.columns or None, resources), gw.blind_part_index(
-                partition, dict(self.bases)
-            )
+            return self.reader.read_partition(
+                partition, self.columns or None, resources
+            ), gw.blind_part_index(partition, dict(self.bases))
         if self.memory_data is not None:
             return self.memory_data[partition.entry_start : partition.entry_stop], _memory_step(
                 partition, self.memory_rows, self.steps_per_file
@@ -590,12 +595,16 @@ def _build_manifest(
             if label == "nominal":
                 continue
             manifest[label][f"{_VARY_PREFIX}{label}__{spec.flat}"] = {
-                "representation": "xor", "field": spec.flat, "entry": None,
+                "representation": "xor",
+                "field": spec.flat,
+                "entry": None,
             }
     for ms in mask_specs:
         for label in labels:
             manifest[label][f"{_VARY_PREFIX}{label}__mask__{ms.entry_flat}"] = {
-                "representation": "packbits", "field": None, "entry": ms.manifest,
+                "representation": "packbits",
+                "field": None,
+                "entry": ms.manifest,
             }
     manifest["levels"] = [ms.manifest for ms in mask_specs]
     return manifest
@@ -714,7 +723,9 @@ def _write_varied(
         whole = ak.Array(data() if callable(data) else data)
         n = len(whole)
         partitions = tuple(
-            Partition(f"memory://{source_name}", "", (s * n) // steps_per_file, ((s + 1) * n) // steps_per_file)
+            Partition(
+                f"memory://{source_name}", "", (s * n) // steps_per_file, ((s + 1) * n) // steps_per_file
+            )
             for s in range(steps_per_file)
         )
         writer = _VariedWritePart(bases=(), memory_data=whole, memory_rows=n, **common)
@@ -769,8 +780,14 @@ def to_parquet(
     unchanged (byte-identical, §6.4g)."""
     if select is not None:
         return _write_varied(
-            array, destination, select, steps_per_file=steps_per_file, compute=compute,
-            executor=executor, prefix=prefix, behavior=behavior,
+            array,
+            destination,
+            select,
+            steps_per_file=steps_per_file,
+            compute=compute,
+            executor=executor,
+            prefix=prefix,
+            behavior=behavior,
         )
     session: Session = array.session
     sources = session.sources()
@@ -882,10 +899,12 @@ def _decode_level0(packed: ak.Array) -> np.ndarray:
 
 def _decode_jagged(packed: ak.Array, counts: np.ndarray) -> ak.Array:
     """A level->=1 validity mask: each row's packbits bytes → its `count` object bits."""
-    return ak.Array([
-        np.unpackbits(np.asarray(byte_row, dtype=np.uint8), count=int(n)).astype(bool).tolist()
-        for byte_row, n in zip(ak.to_list(packed), counts, strict=True)
-    ])
+    return ak.Array(
+        [
+            np.unpackbits(np.asarray(byte_row, dtype=np.uint8), count=int(n)).astype(bool).tolist()
+            for byte_row, n in zip(ak.to_list(packed), counts, strict=True)
+        ]
+    )
 
 
 def _entry_key(entry: int | list[Any]) -> tuple[str | None, int]:
