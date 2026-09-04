@@ -1,9 +1,14 @@
 name: wheels
 
-# Build-only release artifacts (plan A.5 / M0): per-interpreter wheels via maturin on every
-# OS x arch target, including a DEDICATED free-threaded 3.14t wheel, plus the sdist. macOS builds
-# universal2 (x86_64 + arm64 in one wheel). Each wheel carries the compiled core AND all pure-Python
-# subpackages (one distribution). No PyPI upload here — see release.yml.
+# Standalone binary wheels for the full plan §A.5 matrix, built by cibuildwheel driving the maturin
+# (PyO3/Rust) backend. One driver, one config ([tool.cibuildwheel] in pyproject.toml):
+#   Linux   x86_64 + aarch64 — BOTH manylinux (glibc) AND musllinux (musl/Alpine): fully standalone
+#   macOS   x86_64 + arm64 (native per-arch runners)
+#   Windows x86_64
+# Each target ships one abi3 wheel (cp311-abi3, serves CPython 3.11-3.14) plus a dedicated
+# free-threaded cp314t wheel (no GIL-disabled stable ABI yet, so maturin builds it version-specific).
+# The Rust toolchain is pinned (1.98.1): Linux containers install it via the cibuildwheel before-all;
+# macOS/Windows use the pinned host toolchain below. No PyPI upload here — see release.yml.
 
 on:
   push:
@@ -16,48 +21,33 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
-    name: wheel ${{ matrix.os }} py${{ matrix.python }}
+  wheels:
+    name: wheels ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest]
-        python: ["3.11", "3.12", "3.13", "3.14", "3.14t"]
+        include:
+          - { name: linux-x86_64, os: ubuntu-latest, archs: x86_64 }
+          - { name: linux-aarch64, os: ubuntu-24.04-arm, archs: aarch64 }
+          # ponytail: macos-15-intel is the last Intel runner (retires Fall 2027 with x86_64 macOS);
+          # when it goes, drop this row or switch to cross-compiling x86_64 on the arm64 runner.
+          - { name: macos-x86_64, os: macos-15-intel, archs: x86_64 }
+          - { name: macos-arm64, os: macos-14, archs: arm64 }
+          - { name: windows-x86_64, os: windows-latest, archs: AMD64 }
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python }}
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Add macOS universal2 targets
-        if: runner.os == 'macOS'
-        run: rustup target add x86_64-apple-darwin aarch64-apple-darwin
-      - name: Build wheel (universal2 on macOS)
-        shell: bash
-        run: |
-          python -m pip install --upgrade pip maturin
-          if [ "$RUNNER_OS" = "macOS" ]; then
-            maturin build --release --out dist --target universal2-apple-darwin -i python
-          elif [ "$RUNNER_OS" = "Linux" ]; then
-            # EL8/Rocky 8 (glibc 2.28) support: the runner is Ubuntu 24.04 (glibc 2.39), so a bare
-            # maturin build links symbols up to GLIBC_2.34 and tags the wheel manylinux_2_34.
-            # --zig retargets the actual glibc floor to manylinux_2_28 without a container, keeping
-            # the setup-python interpreter matrix (incl. 3.14t) exactly as-is. See issue #2.
-            python -m pip install ziglang
-            maturin build --release --out dist --zig --compatibility manylinux_2_28 -i python
-          else
-            maturin build --release --out dist -i python
-          fi
-      - name: Smoke-test the wheel (base install stays light)
-        shell: bash
-        run: |
-          python -m pip install dist/*.whl
-          python -c "import graphed, graphed.core; print('graphed', graphed.__version__, '/ core', graphed.core.version())"
+      # Pinned host toolchain for the native macOS/Windows builds. Linux builds in a container that
+      # installs its own Rust via the before-all, so the host toolchain there is unused — skip it.
+      - if: runner.os != 'Linux'
+        uses: dtolnay/rust-toolchain@1.98.1
+      - uses: pypa/cibuildwheel@v4.2.0
+        env:
+          CIBW_ARCHS: ${{ matrix.archs }}
       - uses: actions/upload-artifact@v4
         with:
-          name: wheel-${{ matrix.os }}-py${{ matrix.python }}
-          path: dist/*.whl
+          name: wheels-${{ matrix.name }}
+          path: wheelhouse/*.whl
 
   sdist:
     name: sdist
@@ -67,7 +57,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.98.1
       - run: |
           python -m pip install --upgrade pip maturin
           maturin sdist --out dist

@@ -1,6 +1,8 @@
 name: release
 
-# Publish to PyPI on a version tag (vX.Y.Z).
+# Publish to PyPI on a version tag (vX.Y.Z). Wheels are built by cibuildwheel driving maturin — the
+# same standalone §A.5 matrix as wheels.yml (Linux manylinux+musllinux x86_64/aarch64, macOS x86_64+
+# arm64, Windows x86_64; one abi3 wheel per target + a dedicated free-threaded cp314t wheel).
 #
 # Auth:  a PyPI API token stored as the repo secret PYPI_TOKEN (uploaded as user __token__).
 # Verify: every wheel + the sdist gets an OIDC-signed GitHub build-provenance attestation
@@ -24,42 +26,29 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
-    name: build wheels + sdist (maturin)
+  wheels:
+    name: wheels ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest]
-        python: ["3.11", "3.12", "3.13", "3.14", "3.14t"]
+        include:
+          - { name: linux-x86_64, os: ubuntu-latest, archs: x86_64 }
+          - { name: linux-aarch64, os: ubuntu-24.04-arm, archs: aarch64 }
+          - { name: macos-x86_64, os: macos-15-intel, archs: x86_64 }
+          - { name: macos-arm64, os: macos-14, archs: arm64 }
+          - { name: windows-x86_64, os: windows-latest, archs: AMD64 }
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python }}
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Add macOS universal2 targets
-        if: runner.os == 'macOS'
-        run: rustup target add x86_64-apple-darwin aarch64-apple-darwin
-      - shell: bash
-        run: |
-          python -m pip install --upgrade pip maturin
-          if [ "$RUNNER_OS" = "macOS" ]; then
-            maturin build --release --out dist --target universal2-apple-darwin -i python
-          elif [ "$RUNNER_OS" = "Linux" ]; then
-            # EL8/Rocky 8 (glibc 2.28) support: the runner is Ubuntu 24.04 (glibc 2.39), so a bare
-            # maturin build links symbols up to GLIBC_2.34 and tags the wheel manylinux_2_34.
-            # --zig retargets the actual glibc floor to manylinux_2_28 without a container, keeping
-            # the setup-python interpreter matrix (incl. 3.14t) exactly as-is. See issue #2.
-            python -m pip install ziglang
-            maturin build --release --out dist --zig --compatibility manylinux_2_28 -i python
-          else
-            maturin build --release --out dist -i python
-          fi
+      - if: runner.os != 'Linux'
+        uses: dtolnay/rust-toolchain@1.98.1
+      - uses: pypa/cibuildwheel@v4.2.0
+        env:
+          CIBW_ARCHS: ${{ matrix.archs }}
       - uses: actions/upload-artifact@v4
         with:
-          name: dist-${{ matrix.os }}-py${{ matrix.python }}
-          path: dist/*
+          name: dist-${{ matrix.name }}
+          path: wheelhouse/*.whl
 
   sdist:
     runs-on: ubuntu-latest
@@ -68,7 +57,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.98.1
       - run: |
           python -m pip install --upgrade pip maturin
           maturin sdist --out dist
@@ -79,7 +68,7 @@ jobs:
 
   publish:
     name: publish to PyPI (token auth + OIDC build provenance)
-    needs: [build, sdist]
+    needs: [wheels, sdist]
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
