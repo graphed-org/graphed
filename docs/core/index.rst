@@ -1,19 +1,45 @@
 graphed.core
 ============
 
-The Rust+PyO3 spine of the graphed ecosystem: a **thread-safe interned graph IR**, the
-**optimizer** that reduces recorded analyses to a few fused stages (DCE + CSE +
-equality-saturation canonicalization + stage fusion — with an incremental mode so the
-un-reduced graph never has to exist), and the **deterministic durable codec** (``GIR1``) plus
-the ``DurablePlan`` layer executors and checkpoint stores consume.
+Between the analysis you write and the workers that run it there has to be something small,
+fixed and portable: a description of the work that the driver can hold in memory without
+strain, that two runs agree on exactly, and that a worker with none of your source files can
+still execute. ``graphed.core`` is that middle piece — the recording of your analysis, the
+optimizer that shrinks it, and the plan a runner consumes.
 
-Structurally identical nodes share one ``NodeId`` (``node_count()`` equals the number of
-distinct structural keys); identical graphs serialize to identical bytes; reduction is
-deterministic and benchmarked against super-linear scaling in CI. This package must not import
-awkward — array semantics live in the backends.
+Most of the time you never import it. You write ``graphed.awkward`` code, hand the result to a
+runner, and ``graphed.core`` does its work out of sight. You reach for it directly when you are
 
-Start with :doc:`design` for the engineering walkthrough (the optimizer section is written to
-be read, not skimmed), then the :doc:`/api` reference for the surface.
+* writing or adapting a runner (the ``Plan`` / ``Task`` / ``Partition`` contract is here),
+* checkpointing a long job, or shipping a compiled analysis to a machine that has no copy of
+  your code, or
+* trying to find out why your graph is the size it is.
+
+Here is the whole idea in eight lines — record an expression twice, get it once, and reduce
+what you recorded to what a runner has to dispatch:
+
+.. code-block:: python
+
+    import graphed.core as gc
+
+    s = gc.GraphStore()
+    src = s.add_source("events", {"uri": "skim.root"})
+    pt = s.add_op("pt", [src])
+    pt_again = s.add_op("pt", [src])          # the same expression, written somewhere else
+    total = s.add_reduction("sum", [pt])
+
+    print("recorded twice, stored once:", pt == pt_again, "-- nodes so far:", s.node_count())
+    reduced, report = s.reduce(outputs=[total])
+    print("an executor sees", report["reduced_nodes"], "nodes in", report["stages"], "stage")
+
+which prints::
+
+    recorded twice, stored once: True -- nodes so far: 3
+    an executor sees 3 nodes in 1 stage
+
+:doc:`design` is the walkthrough: what the optimizer removes and why it cannot be wrong, why
+reduction stays fast as your analysis grows, and why the thing you save to disk is a plan
+rather than a pickle. :doc:`/api` is the generated reference.
 
 .. toctree::
    :maxdepth: 2

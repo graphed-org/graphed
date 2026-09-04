@@ -1,340 +1,611 @@
 How graphed works
 =================
 
-``graphed`` is the recording frontend of the ecosystem. A user writes ordinary array
-expressions; this package turns each operation into a node in the Rust-backed
-:mod:`graphed.core` store and hands back a lightweight proxy. Nothing computes until something
-asks — and when something asks, what runs is the *reduced* graph, never a replay of the user's
-operations one by one.
-
-The package is strictly **backend-agnostic**: it knows nothing about numpy or awkward. Array
-semantics (type inference, evaluation, column projection) arrive through a small ``Backend``
-protocol, implemented by ``graphed.numpy`` and ``graphed.awkward``. This document explains what
-the frontend itself contributes: the recording session, the proxy, forms and provenance, the
-projection machinery, compilation/evaluation, and the two shared I/O bases.
-
 .. contents::
    :local:
    :depth: 2
 
+You write the analysis you always write: fields, cuts, sums, a histogram fill. None of it runs as
+you write it. Each operation becomes a node in a graph carrying the type of its result and the
+line of your file that made it; when you ask for a value, what executes is the *reduced* graph —
+duplicate work collapsed, unused branches dropped, the survivors fused into a few passes over the
+data.
 
-Recording: Session and the Array proxy
---------------------------------------
+This page is how that works and how to drive it: why the graph stays small while you build it,
+how a systematic variation rides through the whole analysis, what actually gets read off disk,
+and how a recorded analysis becomes a plan a cluster can run.
 
-A :class:`~graphed.Session` owns one ``graphed.core.GraphStore`` plus the side tables the core
-deliberately does not hold: per-node **forms** (backend type/shape descriptions), **provenance**
-(the user source line that recorded each node), and source/external metadata. Recording an op is
-three steps::
 
-    in_forms = [forms[a.node_id] for a in inputs]
-    form     = backend.op_form(op, in_forms, params)   # typetracer-style inference, NO data
-    node_id  = store.add_op(op, input_ids, params)     # interned: duplicates return the old id
+Your code, kept instead of run
+------------------------------
 
-The important property: **type errors surface at the recording line.** ``op_form`` runs the
-backend's inference on metadata only; if the user wrote something ill-typed (a missing field, a
-shape mismatch), the resulting :class:`~graphed.GraphedTypeError` carries the captured user
-frame — before any data is read. Try it::
+.. code-block:: python
 
     import numpy as np
-    from graphed import Session
+    from graphed import Session, compile_ir, evaluate_ir
     from graphed.numpy import NumpyBackend, from_array
 
     s = Session(NumpyBackend())
-    x = from_array(s, "x", np.arange(6.0))
-    y = (x * 2.0 + 1.0)[x > 2.0]      # records 4 nodes; computes nothing
-    s.materialize(y)                   # -> array([ 7.,  9., 11.])
-    s.form(y).describe()               # -> 'vector[float64]'
-    s.provenance(y)                    # -> the file:line of the `y = ...` statement
+    pt = from_array(s, "pt", np.arange(6.0))
+    sel = (pt * 2.0 + 1.0)[pt > 2.0]        # four operations recorded, nothing computed
 
-What the user holds is an :class:`~graphed.Array` — a proxy carrying only ``(session,
-node_id)``. The proxy implements the *common* surface of deferred arrays: arithmetic and
-comparison dunders, ``__array_ufunc__`` (so ``np.sqrt(x)`` records instead of executing),
-boolean/slice/integer/field-list ``__getitem__``, and the shared helpers backends build on
-(axis normalization, the reduction/scan recording rule). Everything *idiomatic to one array
-library* lives outside this class: a backend may supply a richer proxy via its
-``array_type()`` factory (graphed.numpy's ``NumpyArray`` adds ``.shape``, ``.sum()``,
-``__array_function__`` and friends), while graphed.awkward deliberately keeps the base proxy
-and exposes its idiom as free functions. The split keeps one library's conventions from
-leaking into another's.
+    p = s.provenance(sel)
+    print(s.form(sel).describe())
+    print(f"{p.lineno}: {p.source}")
+    print(s.materialize(sel))
 
-Two recording details with outsized consequences:
+    compiled = compile_ir(s, sel)           # reduce the graph for this one output
+    print(evaluate_ir(compiled, NumpyBackend(), {"pt": np.arange(6.0)}))
 
-* **Interning means recording is idempotent.** Writing the same subexpression twice — directly
-  or via a helper — yields the same node id. Sessions can be long-lived and exploratory; the
-  graph holds the *set* of distinct computations, not the history of statements.
-* **Incremental reduction is opt-in at the session.** ``Session(backend, incremental=True)``
-  maintains the reduced canonical form *as the graph is built* (a ``graphed.core``
-  ``IncrementalReducer`` consuming deltas), so a large un-reduced graph never exists; the
-  one-shot and incremental paths are pinned byte-identical.
+Prints::
 
-The Backend protocol
---------------------
+    vector[float64]
+    7: (pt * 2.0 + 1.0)[pt > 2.0]
+    [ 7.  9. 11.]
+    [array([ 7.,  9., 11.])]
 
-Five methods are the entire seam between the frontend and an array library::
+A :class:`~graphed.Session` owns the graph plus the three side tables that make the rest of this
+page possible:
 
-    op_form(op, input_forms, params) -> Form        # record-time inference (metadata only)
-    eval_stage(op, inputs, params)   -> value       # evaluation of one op / fused member
-    boundary_ops()                   -> frozenset   # which op names are stage boundaries
-    project(op, used, params)        -> used'       # reporting-tracer step for projection
-    external_payload(op, params)     -> descriptor  # M3-family Externals (corrections, models)
+* the **form** of every node — the type and shape of its result, computed from metadata with no
+  data touched (awkward calls this a form; ``graphed.numpy`` reports dtype and shape the same
+  way);
+* the **provenance** of every node — file, line, enclosing function, and the exact
+  sub-expression text, captured as you record;
+* the **sources** — what each input name will be bound to at run time.
 
-A backend never sees the graph; the frontend never sees an array. ``Form`` is likewise a
-protocol (``describe() -> str``) — the frontend stores and forwards forms, it does not
-interpret them.
+What you hold is a :class:`~graphed.Array`: a proxy carrying a session and a node id, nothing
+else. It implements the surface every deferred array shares — arithmetic and comparison
+operators, ``__array_ufunc__`` (so ``np.sqrt(x)`` records instead of computing), boolean, slice,
+integer and field-list indexing. Anything idiomatic to *one* array library lives in that
+library's package: ``graphed.numpy`` hands you a richer proxy with ``.shape``, ``.sum()`` and
+``__array_function__``; ``graphed.awkward`` keeps the plain proxy and exposes its idiom as free
+functions, exactly as ``ak.*`` does. One library's conventions never leak into the other's.
 
-For External nodes recorded *by other packages* (histogram fills are the canonical example),
-``Session.record_external`` accepts explicit ``descriptor=`` and ``form=`` arguments, skipping
-the backend entirely — the mechanism that lets ``graphed-histogram`` exist without teaching any
-backend about histograms.
+Two ways to get a value out. ``materialize`` walks the graph in this process and is right for
+small, local data and for poking at things interactively. ``compile_ir`` + ``evaluate_ir`` is the
+path everything else takes: reduce once, then evaluate the reduced node list wherever the data
+is. ``evaluate_ir`` returns one entry per requested output.
 
 
-Projection: what would this result actually read?
---------------------------------------------------
+Why the graph stays small while you build it
+--------------------------------------------
 
-Before reading anything, an executor wants the *minimal* input. The frontend supplies the
-machinery; backends supply the semantics. ``Session.walk`` is a generic cached graph traversal
-with caller-supplied handlers for sources, ops, and externals — ``materialize`` is just ``walk``
-with evaluating handlers; projection is ``walk`` with *reporting tracers* flowing through the
-backend's ``project``.
+The failure mode this design exists to avoid is the one you have already met: a graph that grows
+for an hour, then an optimizer whose own runtime dominates the analysis. So the collapsing happens
+on the way in, not at the end.
 
-Two granularities, and the distinction matters:
-
-* :class:`~graphed.Projection` — the **column** view: which named columns of each source are
-  touched. Right for "what should I read for *this value*".
-* :class:`~graphed.BufferProjection` — the **buffer** view: per column, whether its *data* is
-  needed or only its *offsets* (list structure). ``len(jets.pt)`` per event needs Jet offsets
-  but no leaf data; a column view either over-reads or under-specifies that. Writers translate
-  an offsets-only need into the cheapest carrier their format allows.
-
-One projection lesson is encoded as API rather than prose: **evaluation read lists are
-syntactic, not buffer-projected.** Compiled-IR evaluation replays *every* recorded node — a
-zip's untouched legs included — so consumers that will re-evaluate a graph must cover every
-source field the graph mentions, then refine leaves by the buffer view. The buffer projection
-answers "what data is needed"; only the syntactic walk answers "what must exist".
-
-Opaque ops (a cloudpickled ``map``) cannot be projected through. The ``on_fail`` policy
-(``pass`` — optimistically assume nothing extra, ``warn`` — conservative full read with a
-warning, ``raise``) is explicit at every projection entry point, mirroring dask-awkward's
-choice but never silently.
-
-
-Compile once, evaluate anywhere
--------------------------------
-
-``compile_ir(session, *outputs)`` reduces the graph **for exactly those outputs** and returns a
-:class:`~graphed.CompiledGraph` — the serialized reduced bytes plus source names. Outputs are a
-property of the compile request: compiling ``a`` then ``b`` from one session yields two
-independent single-output artifacts, byte-identical to fresh-session compiles (and a deliberate
-multi-output ``compile_ir(s, a, b)`` carries both, evaluated in one pass).
-
-``evaluate_ir(compiled, backend, sources, externals=...)`` walks the *reduced* node list once:
-one backend dispatch per reduced node, fused stage members run inline. ``sources`` binds source
-names to data (or zero-arg loaders); ``externals`` resolves External payloads **by content
-hash**, failing loudly when one is missing — an opaque payload is never silently skipped.
-Continuing the example above::
-
-    from graphed import compile_ir, evaluate_ir
-
-    compiled = compile_ir(s, y)
-    evaluate_ir(compiled, NumpyBackend(), {"x": np.arange(6.0)})
-    # -> [array([ 7.,  9., 11.])]   (a list: one entry per requested output)
-
-This is the deployment seam: the bytes inside ``compiled.ir`` are the durable artifact.
-``Session.serialized_ir(*outputs)`` exposes them directly (``optimize=False`` gives the 1:1
-auditable form); identical analyses serialize byte-identically, which is what checkpoint
-stores, preservation bundles, and the determinism CI gate all build on.
-
-
-The shared I/O bases
---------------------
-
-Two small modules host what every I/O integration shares, with **no array-library content**:
-
-:mod:`graphed.parquet`
-    Deterministic dataset discovery (directories/globs sorted; explicit lists keep caller
-    order — the list is part of the dataset's identity), metadata-only row counts, blind
-    partitioning, and the deferred-source recording convention. The array codecs live in the
-    backends.
-
-:mod:`graphed.write`
-    The format-agnostic partitioned-write skeleton: ``write_plan`` builds a task graph whose
-    tasks write one part each and *report their paths* up a deterministic combine tree;
-    ``graphed.core.execution.SequentialRunner`` is the dependency-free reference runner (any real executor accepts the
-    same plan); ``file_bases``/``blind_part_index``/``step_of``/``part_path`` let a worker
-    derive its own part name from its partition plus an O(#files) table. The module also
-    defines :class:`~graphed.write.PartitionedSource` — the read-side protocol (``partitions()``
-    blind, ``read_partition(partition, columns, resources)``) that lets *generic* consumers
-    (the parquet writer, the histogram aggregator) process any source partition-by-partition
-    without ever invoking its whole-dataset loader.
-
-Partitions are **blind** wherever possible: planning opens no files; a worker resolves its
-entry range against the file it already opened. This is both a performance property and a
-correctness one — a plan built on machine A is valid on machine B whose files it has never
-seen.
-
-
-Errors and provenance
----------------------
-
-``capture()`` records the nearest user frame at every recording call; ``GraphedTypeError``
-formats it into the message. Runtime errors are the next package up
-(``graphed.debug``'s source-mapped ``StageError``) — the frontend's contribution is that the
-provenance *exists* for every node, cheaply, from the moment it was recorded.
-
-
-How variations work
--------------------
-
-A systematic *variation* is the same analysis re-run with one knob moved — a jet-energy scale
-shifted, a weight scaled up/down. ``graphed.vary(target, name, ...)`` records that intent and
-returns a :class:`~graphed.Varied`: a proxy that behaves like the ``target`` but carries a
-**family of labelled universes**, ``"nominal"`` plus one per tag. It never mutates — the target
-stays valid — and, per §1.2, the labels live **only in the frontend**: each universe lowers to
-an ordinary marked output in the IR (the *sibling* lowering), so the core, optimizer, and
-executor never learn the word "variation". Interning still deduplicates whatever the universes
-share::
+.. code-block:: python
 
     import numpy as np
-    from graphed import Session, vary, labels, universe, nominal
+    from graphed import Session, compile_ir
+    from graphed.core import GraphStore
     from graphed.numpy import NumpyBackend, from_array
 
     s = Session(NumpyBackend())
-    pt  = from_array(s, "pt", np.array([10.0, 20.0, 30.0]))
-    jes = vary(pt, "jes", up=pt * 1.05, down=pt * 0.95)   # a Varied: three universes
+    pt = from_array(s, "pt", np.arange(6.0))
 
-    labels(jes)                            # -> ('nominal', 'jes_up', 'jes_down')
-    s.materialize(nominal(jes))            # -> array([10., 20., 30.])
-    s.materialize(universe(jes, "jes_up")) # -> array([10.5, 21. , 31.5])
+    def tight(a):                 # a helper you call from two places
+        return a[a > 2.0]
 
-Three read-only verbs narrow a ``Varied`` (they also accept a plain value, returning it
-unchanged): ``labels`` lists the family, ``nominal`` is the central universe, and ``universe``
-selects one by label. ``compile_ir`` deliberately *refuses* a bare ``Varied`` — you compile the
-universes you name, not an ambiguous family.
+    first, second = tight(pt), tight(pt)
+    print("same node:", first.node_id == second.node_id)
 
-Weight and shift variations register into an **event context** (``graphed.awkward``'s
-``gnano.events``), and ``graphed.variations`` reports a context's registry as
-``{name: {tag: (kind, value)}}``. The *kind* is a two-word vocabulary — ``"weight"`` for a
-weight factor, ``"shift"`` for a collection shift — and numeric tags parse to an ordering value
-(the σ handle for envelope plots) under both the canonical e-form (``5em1`` → ½) and the
-datacard p-form (``2p5`` → 2½); a non-numeric tag carries ``None``::
+    scaled = pt * 1.0             # a no-op left behind by somebody's helper
+    unused = pt * 99.0            # nothing you asked for depends on this
+    print("recorded:", s.node_count())
+
+    compiled = compile_ir(s, first, scaled)
+    for node in GraphStore.deserialize(bytes(compiled.ir)).nodes():
+        print(node["kind"], [m["name"] for m in node.get("members", [])])
+
+Prints::
+
+    same node: True
+    recorded: 5
+    source []
+    stage ['gt', 'getitem']
+
+Read that from the bottom. Five nodes were recorded and two survive: the source, and one fused
+run of operations. The cut written twice was one node the second time you wrote it — recording
+the same expression on the same inputs returns the node that already exists (*interning*), so
+a session can be long-lived and exploratory and still hold the set of distinct computations
+rather than the history of your statements. ``pt * 1.0`` collapsed into ``pt`` itself, so
+``scaled`` is the source node. ``pt * 99.0`` fed nothing you asked for and is gone. The two
+operations that remained were fused into one *stage* — a run of operations executed together as a
+single pass over the data — so the interpreter is entered once for the group instead of once per
+operation.
+
+That collapsing is not a fixed list of rewrites applied in a fixed order. The optimizer holds the
+equivalent forms of your expression together and picks the cheapest (equality saturation over
+e-graphs, in a compiled Rust extension). A stage ends where the data has to change shape or leave:
+reading a source, a reduction, a repartition, a join, or a call out to something
+graphed does not look inside — a correction, an ML model, a histogram fill.
+
+Reduction can also run continuously rather than at compile time. ``Session(backend,
+incremental=True)`` maintains the reduced form as you build, so the un-reduced graph never
+exists at all; both paths produce byte-identical output for the same analysis, so the choice
+costs you nothing in reproducibility.
+
+
+Where a mistake shows up
+------------------------
+
+At the line you wrote it, before any file is opened:
+
+.. code-block:: python
+
+    import awkward as ak
+    from graphed import GraphedTypeError, Session
+    from graphed.awkward import AwkwardBackend, from_awkward
+
+    s = Session(AwkwardBackend())
+    ev = from_awkward(s, "events", ak.Array({"Jet": ak.zip({"pt": [[40.0, 25.0], [55.0]]})}))
+
+    try:
+        ht = ev.Jet.et                       # there is no `et` field — only `pt`
+    except GraphedTypeError as exc:
+        print(exc.detail)
+        print(f"line {exc.provenance.lineno}: {exc.provenance.source}")
+
+Prints::
+
+    no field named 'et'
+    line 9: ev.Jet.et
+
+Type inference runs on the recorded forms, so a missing field, a non-boolean mask or a shape
+mismatch is a :class:`~graphed.GraphedTypeError` raised while you are still recording — not an
+exception from worker 47 four hours in. The exception carries the operation, the detail, and the
+provenance record shown above.
+
+Failures that can only happen at run time are the job of ``graphed.debug``, which re-raises them
+on your machine pointing at your analysis line; see :doc:`../debug/design`. The frontend's
+contribution is that the provenance is there for every node, cheaply, from the moment it was
+recorded.
+
+
+Vary once, get every universe
+-----------------------------
+
+A systematic variation is the same analysis with one knob moved: a jet-energy scale shifted, a
+scale factor scaled up and down. You write the analysis once. ``graphed.vary`` attaches the knob,
+and everything downstream carries the whole family.
+
+.. code-block:: python
+
+    import numpy as np
+    from graphed import Session, compile_ir, labels, nominal, universe, vary
+    from graphed.numpy import NumpyBackend, from_array
+
+    s = Session(NumpyBackend())
+    pt = from_array(s, "pt", np.array([10.0, 20.0, 30.0]))
+
+    jes = vary(pt, "jes", up=pt * 1.05, down=pt * 0.95)
+
+    print(labels(jes))
+    print(s.materialize(nominal(jes)))
+    print(s.materialize(universe(jes, "jes_up")))
+
+    try:
+        compile_ir(s, jes)
+    except Exception as exc:
+        print(type(exc).__name__, exc)
+
+Prints::
+
+    ('nominal', 'jes_up', 'jes_down')
+    [10. 20. 30.]
+    [10.5 21.  31.5]
+    GraphedError graphed.compile_ir does not accept a Varied output; pass one universe with graphed.universe(v, label), or build the varied plan through the histogram group API
+
+``vary`` returns a :class:`~graphed.Varied`: a handle that behaves like the value you varied but
+carries a labelled family — ``"nominal"`` plus one universe per tag. It never mutates anything, so
+``pt`` stays exactly as valid as it was. Three read-only verbs narrow a family, and each also
+accepts a plain value and returns it unchanged, so helper code does not need to care whether its
+input is varied: ``labels`` lists the family, ``nominal`` is the central universe, and
+``universe`` picks one by label. Compiling refuses an ambiguous family on purpose — you compile
+the universes you name.
+
+The labels live in the frontend only. Each universe lowers to an ordinary marked output, so the
+optimizer, the plan format and the executor never learn the word "variation" — and interning
+still shares whatever the universes have in common, which is usually almost everything.
+
+Variations that ride an event context
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Varying one array by hand is fine for one knob. A real analysis varies a whole collection, or a
+weight that every histogram must pick up, and does it once at the top. That is what an **event
+context** is for: wrap your event record in one, read your collections through it, and the
+context remembers which variations are in play and which weight is ambient. ``graphed.awkward``
+supplies the NanoEvents-flavoured constructor, ``gnano.events``.
+
+.. code-block:: python
 
     import awkward as ak
     import graphed.awkward as ga
-    from graphed import variations
+    from graphed import Session, labels, universe, variations, vary, weight
     from graphed.awkward import AwkwardBackend, from_awkward, gak
 
     events = ak.Array({
         "MET": ak.zip({"pt": [10.0, 20.0, 30.0]}),
         "Jet": ak.zip({"pt": ak.Array([[40.0, 25.0], [55.0], [30.0, 60.0, 20.0]])}),
     })
+
     s   = Session(AwkwardBackend())
     ev  = from_awkward(s, "events", events)
     ctx = ga.gnano.events(ev)
+
     w   = ev.MET.pt
     ctx = vary(ctx, "pu", w, is_weight=True,
-               variations={"5em1": w, "m15em1": w * 1.1, "up": w * 1.3})
+               variations={"1p0": w * 1.1, "m1p0": w * 0.9, "extreme": w * 1.3})
+
     jets = ctx.Jet
-    ctx = vary(ctx, "jes",
-               collections={"Jet": {"up": gak.with_field(jets, jets.pt * 1.05, "pt"),
-                                    "down": gak.with_field(jets, jets.pt * 0.95, "pt")}})
+    ctx  = vary(ctx, "jes", collections={"Jet": {
+        "up":   gak.with_field(jets, jets.pt * 1.05, "pt"),
+        "down": gak.with_field(jets, jets.pt * 0.95, "pt")}})
 
-    variations(ctx)["pu"]
-    # -> {'5em1': ('weight', Fraction(1, 2)), 'm15em1': ('weight', Fraction(-3, 2)),
-    #     'up': ('weight', None)}
-    variations(ctx)["jes"]
-    # -> {'up': ('shift', None), 'down': ('shift', None)}
+    ht  = gak.sum(ctx.Jet.pt, axis=1)   # written once, computed in every jet-scale universe
+    sel = ctx[ht > 70.0]                # the cut follows the variations too
 
-**Sibling mode vs axis mode.** By default every universe is its own output — its own histogram,
-its own column. When the sink is a histogram fill, the analyst can instead opt a *single* fill
-into an **axis** that carries the universes as a ``StrCategory("variation")`` axis inside one
-histogram (``h.fill(..., variation_axis=True)``); weight-label universes then collapse into an
-evaluator-side loop rather than N separate fills. That machinery lives in ``graphed-histogram``
-(see its design doc); from the frontend's side the two modes are interchangeable — the same
-``labels``/``universe``/``nominal`` verbs read a result histogram's variation axis, and the
-plan-level ``{output: [labels]}`` listing answers identically regardless of which mode produced
-each output.
+    print(labels(ht))
+    print(labels(sel.Jet.pt))
+    print(labels(weight(ctx)))
+    print(variations(ctx)["jes"])
+    print(variations(ctx)["pu"])
+    print(s.materialize(universe(ht, "jes_up")))
 
-Varied preservation
-~~~~~~~~~~~~~~~~~~~~
+Prints::
 
-A preservation bundle over a **varied** value/weight reproduces *every* universe from one
-bundle. ``build_bundle`` takes the ``value``/``weight``/``{name,bins,lo,hi}`` triple it already
-accepted; hand it a ``Varied`` and ``reproduce`` returns ``{label: counts}`` instead of a bare
-array, each universe bit-for-bit against build time. The manifest gains a per-label output map
-(sorted, so ``canonical_bytes`` stays deterministic) and its ``format_version`` bumps to ``2``;
-an **unvaried** bundle keeps today's singular shape and version ``1``. ``inspect`` lists the
-labels without executing::
+    ('nominal', 'jes_up', 'jes_down')
+    ('nominal', 'jes_up', 'jes_down')
+    ('nominal', 'pu_1p0', 'pu_m1p0', 'pu_extreme')
+    {'up': ('shift', None), 'down': ('shift', None)}
+    {'1p0': ('weight', Fraction(1, 1)), 'm1p0': ('weight', Fraction(-1, 1)), 'extreme': ('weight', None)}
+    [68.2, 57.8, 116]
 
-    from graphed.preserve import build_bundle, reproduce, inspect
-    from graphed.awkward import gak
+``ht`` was written once and is varied because it reads a varied collection through the context.
+The cut is written once and applies inside every universe. The pile-up weight does not appear in
+``ht``'s labels because a weight is not part of the value — it is applied where the fill happens,
+automatically, to every universe.
+
+Two kinds of knob, and the distinction is the one that matters for cost. A ``"shift"`` changes
+the *values* — a shifted jet collection — so every universe needs its own pass over the data. A
+``"weight"`` changes only the multiplicative factor, so all its universes can share one pass.
+``graphed.variations`` reports a context's registry as ``{name: {tag: (kind, ordering)}}``.
+Numeric tags parse to an ordering value — the σ handle you want for envelope plots — under both
+the exponent form (``5em1`` is ½) and the datacard form (``1p0`` is 1, ``m1p0`` is −1); a
+non-numeric tag such as ``"extreme"`` carries ``None`` and is simply unordered.
+
+One histogram per variation, or one variation axis
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+You have jet-energy up/down and a scale factor up/down. Do you want five histograms, or one
+histogram with a ``variation`` axis? By default each universe is its own output — its own
+histogram, its own written column. Passing ``variation_axis=True`` to a fill gives you the second
+shape instead: one histogram carrying its universes on a ``StrCategory("variation")`` axis, with
+the weight-only universes collapsing into a loop inside the fill rather than into separate fills.
+That machinery lives in ``graphed-histogram``; from here the two are interchangeable, because
+``labels``, ``nominal`` and ``universe`` read a result histogram's variation axis exactly as they
+read a family of separate outputs.
+
+Every universe out of one preservation bundle
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A preservation bundle built over a varied value or weight reproduces *every* universe from the
+one directory. Hand ``build_bundle`` a ``Varied`` and ``reproduce`` gives you ``{label: counts}``
+instead of a single array, each universe identical to what you got at build time; ``inspect``
+lists the labels without executing anything.
+
+.. code-block:: python
+
+    import tempfile
+
+    import awkward as ak
+    from graphed import Session, labels, vary
+    from graphed.awkward import AwkwardBackend, from_awkward, gak
+    from graphed.preserve import build_bundle, inspect, reproduce
+
+    events = ak.Array({
+        "MET": ak.zip({"pt": [10.0, 20.0, 30.0]}),
+        "Jet": ak.zip({"pt": ak.Array([[40.0, 25.0], [55.0], [30.0, 60.0, 20.0]])}),
+    })
+
+    s  = Session(AwkwardBackend())
+    ev = from_awkward(s, "events", events)
 
     value  = gak.sum(ev.Jet.pt, axis=1)
     weight = vary(ev.MET.pt, "sf", up=ev.MET.pt * 1.1, down=ev.MET.pt * 0.9)
     HIST   = {"name": "ht", "bins": 5, "lo": 0.0, "hi": 200.0}
 
+    root = tempfile.mkdtemp()
     bundle = build_bundle(root, session=s, value=value, weight=weight,
                           datasets={"events": events}, histogram=HIST)
-    bundle.manifest["format_version"]        # -> 2
-    reproduce(bundle)                        # -> {'nominal': array(...), 'sf_down': ..., 'sf_up': ...}
-    all(l in inspect(bundle) for l in labels(weight))   # -> True  (no execution)
 
-Checkpoints and variation churn (honest limits)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    print(bundle.manifest["format_version"])
+    print(reproduce(bundle))
+    print(all(lbl in inspect(bundle) for lbl in labels(weight)))
 
-Within one plan, checkpoint resume works per partition exactly as for an unvaried run — the
-N-universe composite partial is the journal unit. **Across** plan revisions there are three ways
-a variation edit invalidates the checkpoint cache, and their scopes differ:
+Prints::
 
-* **Adding or removing a variation — unconditional.** A variation is sibling nodes in the IR
-  (§1.2), so toggling one changes the serialized graph, and every ``task_id`` is a hash over that
-  graph (``DurablePlan.task_id`` = ``sha256(domain, ir, process.identity(), partition)``). No
-  journal survives it. This is the exemplar's own "``skip_obj_systematics``" switch: turning the
-  expensive shift class on or off between runs rebuilds the IR and invalidates the whole cache.
-* **Renaming a label — sibling mode: only by-value journals; axis mode: unconditional.** Under
-  the default *sibling* lowering the labels are sibling-node identities, not IR content, so a pure
-  rename leaves the IR byte-identical and §1.2's *no-recompute at the interning level* still holds
-  — only a **by-value** journal churns: if its ``process`` embeds the worker closure by value
-  (``OpSpec.from_callable`` on a non-importable function — an ``"opaque"`` spec whose
-  ``identity()`` is the cloudpickle blob itself), the label *strings* travel inside that blob and
-  the rename changes every ``task_id``. Under §6.2's *axis* lowering the labels **are** IR
-  content — they become the ``StrCategory("variation")`` bin identities that enter the fill's
-  spec/params/``content_hash`` and hence the serialized graph — so an axis-mode rename rebuilds
-  the IR and invalidates **unconditionally**, ``from_ref`` journals included, exactly like adding
-  or removing a variation.
-* **The one-time field churn — only by-value journals, twice.** Landing the variation machinery
-  added a field to the worker/artifact dataclasses (once at m48, once at m49); a dataclass field
-  is in every pickled instance whatever its value, so any by-value journal's ``task_id`` churned
-  once each time, unvaried programs included. **Variation-aware write-out (m51) adds no third
-  churn**: the unvaried write task (``graphed.awkward.io._WritePart``) is untouched, and the
-  varied path is a *separate* task (``_VariedWritePart``) reached only through ``to_parquet(...,
-  select=…)``. Both run under ``write_plan``, which builds a plain-callable ``Plan`` — not a
-  ``DurablePlan`` — so a write plan carries no ``task_id`` and journals nothing. Only a caller who
-  hand-wraps the varied write task in an ``OpSpec.from_callable`` by-value journal would see its
-  ``task_id`` reflect that task's fields, and that journal is opaque by construction anyway.
+    2
+    {'nominal': array([ 0., 30., 30.,  0.,  0.]), 'sf_down': array([ 0., 27., 27.,  0.,  0.]), 'sf_up': array([ 0., 33., 33.,  0.,  0.])}
+    True
 
-The documented checkpoint idiom is immune to the field churn in either mode, and to a rename
-**under the default sibling lowering**. It references worker functions **by import path** —
-``OpSpec.from_ref("myanalysis:hist_chunk")`` (see :doc:`../checkpoint/design`) — whose
-``identity()`` is ``b"ref\0" + ref`` and carries no closure state, so a field addition cannot
-perturb it and neither can a sibling-mode rename (the label strings never reach the IR). The one
-exception is an **axis-mode** rename: those labels *are* IR content, so it changes every
-``task_id`` however the ``process`` is referenced — a ``from_ref`` journal is invalidated just as
-add/remove would be. By-value journals arise only where a caller wrapped a closure with
-``OpSpec.from_callable`` by hand. The scope is deliberately narrow, and the general fix
-(stage-granular content addressing) is named Phase 2.
+The manifest carries a per-label output map and declares format version ``2``; an unvaried bundle
+keeps its single-output shape and version ``1``, so older bundles stay readable. See
+:doc:`../preserve/design` for what else goes in the directory.
+
+Writing every universe to one skim file is the same idea on the I/O side —
+``graphed.awkward.to_parquet(..., select=...)`` writes the superset of rows any universe keeps,
+plus enough to reconstruct each one; :doc:`../awkward/design` covers it.
+
+What a variation edit does to cached results
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Within one run, resuming from a checkpoint works per partition exactly as for an unvaried
+analysis: the N-universe result for a partition is one journal entry. Between runs, three edits
+behave differently, and you can predict all three from one rule — a cached result is keyed by the
+recorded graph plus the worker function, so anything that changes either invalidates it:
+
+* **Adding or removing a variation invalidates everything.** Universes are nodes, so toggling one
+  changes the graph and therefore every cached entry. Flipping an expensive shift class on or off
+  between runs is a full recompute.
+* **Renaming a label usually costs nothing.** With one output per universe the labels are not part
+  of the recorded graph, so a rename leaves it byte-identical and the cache survives. The
+  exception is the variation-axis shape above: there the labels *are* axis categories inside the
+  recorded fill, so renaming one invalidates the cache just as adding a variation would.
+* **How you name your worker function decides the rest.** Refer to it by import path —
+  ``OpSpec.from_ref("myanalysis:hist_chunk")`` — and its identity is that path, so editing
+  unrelated code nearby cannot disturb the cache. Carry it by value instead (a lambda, a closure,
+  anything defined in ``__main__``) and its identity is its pickled bytes, so editing the body —
+  or anything it closes over, label strings included — invalidates its cached results. The
+  import-path form is the documented idiom for this reason; see :doc:`../checkpoint/design`.
 
 
-Phase 2 (deliberately not built)
+What actually gets read off disk
 --------------------------------
 
-* **Predicate pushdown.** Projection covers columns/buffers; pushing *filters* into readers is
-  explicitly out of scope for the MVP.
-* **Behavior methods with arguments through the proxy.** Behavior *properties* record (the
-  ragged backend resolves them); ``a.deltaR(b)``-style method calls do not — analyses write the
-  explicit formula today.
-* **Output isolation conveniences.** Compile-request scoping is done; higher-level helpers
-  (e.g. compiling output *groups* with shared sub-plans) are future work.
-* **Non-local sources for the parquet base.** Discovery and row counts are local-filesystem
-  (and fsspec-compatible only incidentally); remote-store-aware planning is Phase 2.
+Before reading anything, a runner wants the minimal input. The frontend walks the graph; the
+backend supplies the semantics — the same generic walk that ``materialize`` uses, but with
+reporting tracers flowing through instead of values. There are two granularities and the
+difference is worth money:
 
-See :doc:`improvements` for the live tracked list.
+.. code-block:: python
+
+    import awkward as ak
+    from graphed import Session
+    from graphed.awkward import AwkwardBackend, from_awkward, gak
+    from graphed.awkward.projection import project, project_buffers
+
+    events = ak.Array({
+        "Jet": ak.zip({"pt": [[40.0, 25.0], [55.0]], "eta": [[0.1, 2.0], [1.0]]}),
+        "MET": ak.zip({"pt": [10.0, 20.0]}),
+    })
+
+    s  = Session(AwkwardBackend())
+    ev = from_awkward(s, "events", events)
+
+    njet = gak.num(ev.Jet, axis=1)          # how many jets, never their values
+
+    print(sorted(project(njet).read_columns["events"]))
+    print(sorted(project_buffers(njet).offsets_only_for("events")))
+    print(sorted(project_buffers(gak.sum(ev.Jet.pt, axis=1)).columns_for("events")))
+
+Prints::
+
+    []
+    ['Jet']
+    ['Jet.pt']
+
+:class:`~graphed.Projection` is the column view: which named columns of each source are touched.
+It is the right answer for "what should I read to get this value", and for a jet-count analysis
+it says *no columns* — true, and useless to a reader, which would either read nothing or give up
+and read everything. :class:`~graphed.BufferProjection` is finer: per column, whether its leaf
+*data* is needed or only its list structure. Counting jets needs the ``Jet`` offsets and none of
+the payload, and a writer can serve that from a counter branch or an index column. Ask for
+columns and you get the coarse view back (``to_projection``); ask for buffers and you get the
+cheapest correct read.
+
+One more distinction, which is API rather than prose. ``read_columns`` reports what a compiled
+graph *syntactically* mentions — including the untouched legs of a ``zip`` — because evaluating a
+reduced graph replays every recorded node, and a field the replay mentions has to exist in the
+chunk. Buffer projection answers "what data is needed"; ``read_columns`` answers "what must be
+present". Plans pass the latter to the reader and let buffer projection narrow the leaves.
+
+Some things cannot be projected through: a callable graphed cannot look inside is opaque by
+definition, so no replay can say which columns it reads. Every
+projection entry point takes an explicit policy, so this is your choice and never a silent one:
+``on_fail="pass"`` assumes the callable adds nothing, ``"warn"`` falls back to reading everything
+and tells you, ``"raise"`` refuses.
+
+
+Compile once, evaluate anywhere
+-------------------------------
+
+``compile_ir(session, *outputs)`` reduces the graph *for exactly those outputs* and returns a
+:class:`~graphed.CompiledGraph` — the serialized reduced bytes plus the source names it needs.
+Outputs are a property of the request, not of the session: compiling ``a`` and then ``b`` from one
+session gives two independent single-output artifacts, each byte-identical to what a fresh session
+would have produced, while ``compile_ir(s, a, b)`` carries both and evaluates them in one pass.
+
+``evaluate_ir(compiled, backend, sources, externals=...)`` walks the reduced node list once — one
+backend dispatch per reduced node, fused members inline. ``sources`` binds source names to data or
+to zero-argument loaders. ``externals`` resolves each call-out payload by its content hash and
+fails loudly when one is missing, so a correction or a model is never silently skipped.
+
+The bytes in ``compiled.ir`` are the durable artifact, and ``Session.serialized_ir(*outputs)``
+hands them to you directly (``optimize=False`` gives the unfused, one-node-per-operation form,
+which is what you want when you are auditing what an analysis does). The same analysis always
+serializes to the same bytes. Checkpoint keys, preservation bundles and cross-run comparison all
+rest on that.
+
+
+One pass over the dataset, many outputs
+---------------------------------------
+
+Most analyses want several results out of one read. ``aggregate_plan`` compiles the outputs you
+name into one graph, then builds a plan that reads each partition once, evaluates all of them, and
+folds partial results with the reduce/combine functions you supply. The example writes two small
+parquet files first so that it runs anywhere:
+
+.. code-block:: python
+
+    import tempfile
+
+    import awkward as ak
+    import numpy as np
+    from graphed import Session, aggregate_plan, read_columns
+    from graphed.awkward import AwkwardBackend, from_parquet, gak
+    from graphed.core.execution import SequentialRunner
+
+    # Two small parquet files standing in for a dataset.
+    root = tempfile.mkdtemp()
+    for i in range(2):
+        ak.to_parquet(
+            ak.Array({
+                "Jet_pt": ak.Array([[40.0, 25.0], [55.0], [30.0, 60.0, 20.0]]),
+                "MET_pt": np.array([10.0, 20.0, 30.0]) + 100.0 * i,
+                "run": np.array([1, 1, 2]),
+            }),
+            f"{root}/part{i}.parquet",
+        )
+
+    s = Session(AwkwardBackend())
+    ev = from_parquet(s, "events", root, steps_per_file=1)
+
+    ht = gak.sum(ev.Jet_pt, axis=1)          # shared by both outputs
+    n_high = gak.sum(ht > 60.0, axis=None)
+    total_ht = gak.sum(ht, axis=None)
+
+    plan = aggregate_plan(
+        n_high,
+        total_ht,
+        reduce=lambda outs: [float(o) for o in outs],
+        combine=lambda a, b: [x + y for x, y in zip(a, b, strict=True)],
+        empty=lambda: [0.0, 0.0],
+    )
+    print(SequentialRunner().run(plan).value)
+    print(sorted(read_columns([n_high, total_ht], s.source_ids()[0])))
+
+Prints::
+
+    [4.0, 460.0]
+    ['Jet_pt']
+
+Both outputs share the ``ht`` sub-expression, so it is read and evaluated once per partition, not
+once per output — and of the three columns in each file, only ``Jet_pt`` is read at all.
+``SequentialRunner`` runs the plan here with no extra dependencies; the same plan object is what
+you hand to a process pool, a dask cluster or a parsl pool from ``graphed-executors`` (``pip
+install graphed-executors``). ``backend=`` names the workers' evaluation backend, ``partitions=``
+overrides the partitioning, and ``steps_per_file=`` splits each file into more tasks.
+``graphed-histogram``'s ``gh.plan(...)`` is the same entry point specialised to histograms.
+
+
+Joining and repartitioning datasets
+-----------------------------------
+
+Joins and repartitions are neither an awkward idiom nor a numpy one, so they are module verbs
+rather than array methods. ``repartition(array, by=)`` records a hash exchange on a field,
+``n=`` targets a partition count and ``target_bytes=`` coalesces by measured size. ``join`` gives
+you relational, row-duplicating semantics — a probe row with *k* matches on the build side yields
+*k* output rows — with ``how`` in ``{"inner", "left", "right", "outer"}``, matching
+``pandas.merge`` rather than an awkward broadcast. ``pack_key`` is the same key-packing step the
+join uses internally, public so you can pre-key a source.
+
+Because a join or a repartition is a barrier, the plan for it has stages:
+
+.. code-block:: python
+
+    import tempfile
+
+    import awkward as ak
+    import numpy as np
+    from graphed import Session, join, join_plan
+    from graphed.awkward import AwkwardBackend, from_parquet
+
+    root = tempfile.mkdtemp()
+    ak.to_parquet(ak.Array({"run": np.array([1, 1, 2]), "MET_pt": np.array([10.0, 20.0, 30.0])}),
+                  f"{root}/events.parquet")
+    ak.to_parquet(ak.Array({"run": np.array([1, 2]), "lumi_w": np.array([0.9, 1.1])}),
+                  f"{root}/lumi.parquet")
+
+    s = Session(AwkwardBackend())
+    events = from_parquet(s, "events", f"{root}/events.parquet")
+    lumi = from_parquet(s, "lumi", f"{root}/lumi.parquet")
+
+    joined = join(events, lumi, on=["run"], how="inner")
+    plan = join_plan(joined)
+    print([(st.kind, len(st.tasks)) for st in plan.stages])
+
+Prints::
+
+    [('map_write', 1), ('map_write', 1), ('gather_join', 1)]
+
+Each side is routed and written by its own map stage; one gather stage depends on both and does
+the matching. ``shuffle_plan`` is the single-source counterpart for a plain repartition: a
+map-write stage and a gather stage, with the barrier edge between them. Both builders produce a
+durable, byte-deterministic plan; running one across processes is ``graphed-executors``' job, and
+its shuffle documentation covers where the blocks actually travel.
+
+
+Reading and writing partitioned files
+-------------------------------------
+
+Two modules hold what every I/O integration shares, with no array-library content of their own:
+
+:mod:`graphed.parquet`
+    Dataset discovery that is deterministic (directories and globs sorted; an explicit list keeps
+    your order, because the list is part of the dataset's identity), row counts from metadata,
+    partitioning, and the convention for recording a deferred source. The array codecs live in the
+    backends.
+
+:mod:`graphed.write`
+    The format-agnostic partitioned write: ``write_plan`` builds a plan whose tasks each write one
+    part and report their paths up a deterministic combine tree, so the returned file list does
+    not depend on which task finished first. ``file_bases``, ``blind_part_index``, ``step_of`` and
+    ``part_path`` let a worker derive its own part name from its partition alone. The module also
+    defines :class:`~graphed.write.PartitionedSource`: implement ``partitions()`` and
+    ``read_partition(partition, columns, resources)`` and any generic consumer — the parquet
+    writer, the histogram aggregator, ``aggregate_plan`` — can drive your source partition by
+    partition without ever calling its whole-dataset loader.
+
+Partitions are **blind** wherever possible: planning opens no files, and a worker resolves its own
+entry range against the file it has just opened. You do not pay for a metadata scan of the whole
+dataset before work starts, and a plan built on one machine stays valid on another that has never
+seen the files.
+
+
+Using another array library
+---------------------------
+
+Five methods are everything a backend has to provide::
+
+    op_form(op, input_forms, params) -> Form        # record-time type/shape inference, no data
+    eval_stage(op, inputs, params)   -> value       # evaluate one operation or fused member
+    boundary_ops()                   -> frozenset   # which operations end a stage
+    project(op, used, params)        -> used'       # narrow the read set through this operation
+    external_payload(op, params)     -> descriptor  # identify a correction, model, or other call-out
+
+A backend never sees the graph and the frontend never sees an array. ``Form`` is likewise minimal
+— anything with ``describe() -> str``; the frontend stores and forwards forms, it does not
+interpret them.
+
+A package that records its *own* call-outs — histogram fills are the example — passes
+``descriptor=`` and ``form=`` to ``Session.record_external`` and the backend is not consulted at
+all. That is how ``graphed-histogram`` exists without teaching either backend what a histogram is,
+and it is the path to follow for your own deferred operation.
+
+
+Not supported yet
+-----------------
+
+* **Predicate pushdown.** Projection narrows what is read to the columns and buffers you touch,
+  but a cut is applied after the read, not handed to the reader.
+* **Behavior methods that take arguments.** Behavior *properties* record — ``jets.pt`` resolves
+  through a registered behavior — but ``a.deltaR(b)`` does not. Write the formula, or wrap it in a
+  function of plain arrays.
+* **Output groups.** Compiling a chosen set of outputs together is done; there is no higher-level
+  helper for organising many such groups with shared sub-plans.
+* **Remote stores in the parquet base.** Discovery and row counts assume local filesystem paths.
+
+:doc:`improvements` lists the limits you are most likely to hit, with the workaround for each.
