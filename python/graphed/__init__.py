@@ -1,6 +1,8 @@
-"""graphed: deferred-array frontend that records a backend-agnostic program into graphed-core.
+"""graphed: the deferred-array recording surface.
 
-No fusion (that is M4). The awkward backend lives in graphed-awkward (M3). Provenance is real (M3).
+Array expressions record into ``graphed.core`` instead of running, carrying the result form and
+the user's source line with them; a backend (``graphed.awkward`` for ragged data,
+``graphed.numpy`` for flat) supplies form inference and evaluation.
 """
 
 from __future__ import annotations
@@ -39,8 +41,9 @@ from .shuffle import join, join_plan, pack_key, repartition, shuffle_plan
 from .varied import SURFACE_DISPOSITIONS, Varied, broadcasting, expanding, member_of
 from .vary import vary
 
-#: §2.3d: every public `Array`-consuming module verb's `Varied` disposition. `vary` is absent by
-#: construction — it PRODUCES containers — and `evaluate_ir`/`unify_contexts` never take an `Array`.
+#: How each public `Array`-consuming module verb treats a `Varied` container: expand it per label,
+#: broadcast against it, read its metadata eagerly, or refuse it. `vary` is absent by construction —
+#: it PRODUCES containers — and `evaluate_ir`/`unify_contexts` never take an `Array`.
 VERB_DISPOSITIONS: dict[str, str] = {
     "aggregate_plan": "refusing",
     "apply": "expanding",

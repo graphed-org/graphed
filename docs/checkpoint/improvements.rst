@@ -1,40 +1,33 @@
 Improvements
 ============
 
-Tracked design improvements and known limitations for ``graphed.checkpoint`` (plan M0 requires this
-file in every package).
-
-Delivered
----------
-
-- **Compile once, run on N datasets.** Record + optimize an analysis once
-  (``graphed.Session.serialized_ir``), wrap it in a ``graphed.core.DurablePlan``, then re-target it
-  at many datasets with ``DurablePlan.with_partitions`` / ``for_dataset`` / ``for_datasets`` (built
-  from ``Dataset`` + ``partition_dataset``). The optimized interned IR is shared unchanged across
-  datasets, and per-dataset content-addressed ``task_id``\\ s let a single ``Store`` checkpoint them
-  all without collision. See ``tests/frozen/checkpoint/m8/test_deployment.py``.
+What ``graphed.checkpoint`` does not do yet, and what to do instead. :doc:`design` has the longer
+version of each, with the reasoning.
 
 Current limitations
 -------------------
 
-- **Local filesystem store only.** The M8 guardrail. A distributed / object-store backend is
-  Phase-2; the ``Store`` interface (content-addressed ``put``/``get`` + append-only journal) is
-  deliberately backend-shaped so a remote store can slot in later.
-- **Sequential, resumable runner.** Resume correctness (skip-completed, no double-count, no lost
-  partition, bit-for-bit) is independent of parallelism, so the runner reduces per-task partials in
-  deterministic task order. Driving ``process`` through the M7 executors (thread/process pools) for
-  parallel recompute is a straightforward, tracked extension — the Store contract is unchanged.
-- **Codec-by-convention.** Per-task partials are stored via a ``Codec`` (pickle by default, a
-  deterministic numpy ``.npy`` codec for arrays). A typed, self-describing partial format is a
-  possible improvement.
+- **The store is a local directory.** ``Store`` writes to a filesystem path; there is no
+  object-store or xrootd backend. Use a shared filesystem every worker can see, or give each node
+  its own journal under one root with ``Store(root, node="A")`` — reading replays them all.
 
-Planned
--------
+- **Recompute is sequential.** ``run_resumable`` processes missing partitions one at a time, in
+  order. That is what makes the combine order fixed and the resumed answer bit-for-bit, but it
+  means a large recompute is not faster than the work itself. Parallel recompute — a pool doing the
+  processing while the final combine stays in order — is the next thing to land here; until then,
+  run the analysis through ``graphed-executors`` and use the store for the resume boundary.
 
-- Parallel recompute of missing tasks via a ``graphed_exec_local`` executor while preserving the
-  deterministic final reduction order.
-- ``retry_elsewhere`` becomes meaningful once a multi-worker / multi-host executor exists (Phase-2);
-  today it re-runs on a fresh local worker context.
-- Backpressure / partial-accumulator checkpoints for very large fan-ins (the current design
-  recombines all per-task partials at the end, which is correct and simple but holds them in memory).
-- This same content-addressed ``Store`` backs M9's preservation-bundle payload references.
+- **Everything is combined at the end.** All of a run's per-partition results are held and reduced
+  once the last one is in. For a very wide fan-in that is a lot of memory; partial accumulators
+  with backpressure would fix it.
+
+- **Nothing prunes the store.** Results accumulate under the store root. Delete the directory when
+  a set of results is stale.
+
+- **Results are stored by convention, not self-description.** A result becomes bytes through a
+  ``Codec`` — ``numpy.save`` for arrays, pinned-protocol pickle otherwise — and the store does not
+  record which codec wrote a given blob. Read a store back with a different codec than you wrote it
+  with and you get a decode error, not a helpful one.
+
+- **``RetryElsewhere`` retries locally.** It builds a fresh ``resources`` object for the next
+  attempt; it does not move the task to a different host.

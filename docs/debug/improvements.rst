@@ -1,24 +1,32 @@
-Future improvements
-===================
+Current limits
+==============
 
-Catalogued, not silently dropped (plan A.7 / Part F).
+What debugging does not do yet, and what to do instead.
 
-- **Interactive debugger / time-travel replay** is explicitly Phase 2 (M6 guardrail): this milestone
-  ships static lowering + traceback surfacing only.
-- **Richer inter-op assertions** at ``opt_level=0`` (dtype/shape contracts per op) beyond the current
-  consistency checks.
-- **Fused-kernel single-call execution.** The debug runner currently executes a fused stage's members
-  sequentially to localize an error; a real fused kernel (M7 executor) would execute once and, on
-  failure, re-run op-by-op to localize. The provenance mapping is identical either way.
-- **Graphviz rendering to image** (the ``visualize`` text output is Graphviz/Mermaid source; rendering
-  to PNG/SVG is left to the caller's toolchain).
-- **Dashboard run-control** (M37 / root prompt R20.6): the websocket transport is bidirectional, so
-  browser→run commands (pause/cancel) are a natural extension — they need a control seam back into
-  the executor, which the MVP deliberately omits (the dashboard is observe-only).
-- **Persisted run-report** — folding a run's event log + profile into the M9 preservation bundle as a
-  reproducible artifact (the live Perspective tables are in-memory only today).
-- **Profile as a flamegraph** — the profile is currently a Perspective table (group-by-function self
-  µs, plus a treemap view); a true flamegraph plugin would render the call tree's shape.
-- **Per-worker push** — workers currently forward through the driver's collector; a future
-  distributed executor could have each remote worker open its own ``NetworkMonitor`` to the server
-  (the transport already supports it).
+**No stepping or time travel.** You cannot pause a run at an operation, inspect it, and step
+forward, and you cannot replay a finished run against captured data. Debugging is static: lower
+the graph, read it, run it, read the error. To narrow down where a value first goes wrong, run
+with ``opt_level=0`` (one operation at a time) and bisect by materializing intermediate results
+yourself.
+
+**No value capture.** The extra checks at ``opt_level=0`` are structural — they catch an
+operation that produced nothing, not one that produced the wrong number. If you need to see an
+intermediate array, split the analysis and materialize it.
+
+**Per-operation contracts are coarse.** Beyond "this operation produced something", there are no
+per-operation dtype and shape assertions at ``opt_level=0``. The recorded type and shape of every
+node are still there for you to check yourself: ``lower(...)`` gives you ``.form`` on each member.
+
+**The dashboard is observe-only.** There is no pause, cancel, or resubmit from the browser; stop
+a run the way you would stop any Python job. The live view is in memory only — it is not written
+into a preservation bundle or replayable after the process exits, so take a screenshot or keep
+``dash.snapshot()`` if you want the numbers afterwards.
+
+**Worker events reach a remote dashboard through the driver.** In a process pool, workers forward
+their events to the driver process, which relays them to the server; a worker does not open its
+own connection. For a run whose driver is behind a firewall from your browser, put the
+``DashboardServer`` where the browser is and point the driver's ``NetworkMonitor`` at it.
+
+**Graph pictures need your own renderer.** ``visualize`` emits Mermaid or Graphviz source text;
+turning it into a PNG or an SVG is your toolchain's job (``mmdc``, the Mermaid live editor,
+``dot``). There are no cost overlays or diffing renderers.

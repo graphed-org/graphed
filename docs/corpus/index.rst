@@ -1,30 +1,25 @@
-graphed-corpus
-==============
+How graphed's results are checked
+=================================
 
-Ground-truth **requirements + runnable canonical-analysis fixtures** for ``graphed`` (milestone
-M0.5), distilled from the A.8 reference corpus. The fixtures run on a deterministic synthetic
-NanoAOD-like dataset and emit stored reference histograms so later milestones can assert
-``graphed`` reproduces plain awkward bit-for-bit.
+Every claim ``graphed`` makes about correctness reduces to one check: the same analysis,
+written in plain awkward, must produce the same histogram — exact bin counts, no
+tolerances. The reference suite (the *corpus*) is where that plain-awkward side lives: a
+set of standard HEP analyses, a deterministic synthetic dataset to run them on, and the
+stored histograms they produce.
 
-Unlike the subpackages, ``graphed-corpus`` is **not** part of the consolidated distribution — there
-is no ``graphed.corpus`` import. It is a separate package (``graphed_corpus``), vendored under
-``tests/_corpus/`` for this repository's own suite and published on its own for downstream
-repositories that consume the fixtures. It is documented here because the requirements it encodes
-are the specification the whole project is measured against.
+The corpus is a validation fixture, not a library. It ships inside the source checkout
+under ``tests/_corpus/`` — there is no ``graphed.corpus`` to import, and you never need it
+to run your own analysis.
 
-Start with :doc:`design` for the engineering walkthrough.
+:doc:`design` describes what the suite contains and what a check looks like.
+:doc:`graph_bloat_note` is worth reading on its own — it quantifies the graph-size problem
+that motivates ``graphed``, in terms a dask-awkward user will recognise.
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
    :caption: Contents
 
-   requirements/ops_catalog
-   graph_bloat_note
    design
+   graph_bloat_note
+   requirements/ops_catalog
    improvements
-
-Indices
--------
-
-* :ref:`genindex`
-* :ref:`modindex`

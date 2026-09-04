@@ -1,147 +1,185 @@
-Repository structure & architecture
-===================================
+How a run fits together
+=======================
 
-``graphed`` is **one pip-installable distribution** that used to be eight separate prototype
-repositories. The former packages are now *subpackages* of ``graphed`` (``graphed_core`` →
-``graphed.core``, and so on); the compiled Rust core ships inside the same wheel. This page maps the
-import surface, the processing pipeline, the on-disk layout, and the packages that remain separate.
+.. contents::
+   :local:
 
-One package, several subpackages
----------------------------------
+Between the awkward code you type and the filled histogram you plot, ``graphed`` records what
+you wrote and reduces it on your machine, then runs it — and the running happens a chunk at a
+time, inside whatever worker got that chunk. This page is the map: who does what, which parts
+you install, and what actually crosses a process boundary when the work goes to a cluster. Read
+:doc:`quickstart` first if you want the code; this page explains the shape it has.
 
-The base install is deliberately light — the deferred-array frontend, the compiled core, and two
-small pure-Python dependencies: ``executing`` (provenance line lookup) and ``cloudpickle``
-(serializing genuinely-opaque user callables in a durable plan). Everything heavier is an opt-in
-extra.
+From your code to a result
+--------------------------
 
-How a missing extra behaves depends on the subpackage. The two array backends *eagerly* import their
-array library, so ``import graphed.awkward`` / ``import graphed.numpy`` without ``[awkward]`` /
-``[numpy]`` raises a clear ``ImportError``. ``graphed.debug``, ``graphed.checkpoint`` and
-``graphed.preserve`` instead import at the base level and pull their heavier dependencies *lazily*,
-only when a feature needs them — the live dashboard (``[dashboard]``) or the correctionlib/ONNX
-preservation payloads (``[preserve]``). ``graphed.checkpoint`` needs no extra at all: its
-``[checkpoint]`` is an empty back-compat marker, and the ``cloudpickle`` it relies on is already a base
-dependency.
+Nothing builds a large graph and then simplifies it. Each operation you write is folded into the
+reduced form as it arrives, so the only graph that ever exists is the concise one.
+
+.. code-block:: text
+
+    on your machine                              on each worker
+    ---------------                              --------------
+    graphed        records what you write
+      |
+      v
+    graphed.core   reduces it as it arrives,
+      (optimizer)  builds the plan
+      |
+      |  ---- plan + partitions ---->            graphed.awkward / graphed.numpy
+      |                                          evaluate one stage of the plan
+      |  <--- partial results -------            on one chunk of data
+      v
+    the answer, combined in an order the plan fixes
+
+Even on your laptop the right-hand column is real: with one process it is the same code running
+in the same interpreter, but it is still a stage at a time on a chunk at a time.
+
+**Record.** ``graphed`` itself. ``gak.max(...)``, ``jets.pt > 25.0``, ``h.fill(...)`` — each one
+returns a proxy and records a node. Two things are settled at this moment, on your machine,
+before any file is opened: the type and shape of the result (awkward calls this a *form*, and
+computes it from metadata alone), and the source line you wrote it on. That is why a shape
+mistake is reported at the line that made it rather than three hours into a cluster job.
+
+**Reduce.** ``graphed.core``, a compiled Rust extension. Write the same cut in two places and
+you get one node, not two: identical expressions collapse on the way in. Anything no output
+depends on is dropped. Then the optimizer looks at the equivalent ways your expression could be
+written — all at once, rather than applying rewrites in a fixed order — and keeps the cheapest,
+fusing maximal runs of array operations into groups that execute as a single pass over the data
+(a *stage*). A group ends where the data has to change shape or leave: a read, a cross-event
+reduction, a repartition, a checkpoint, a call out to a correction or a model. The consequence
+is that the Python interpreter is touched once per group instead of once per operation, and
+that the reduced form of a given analysis is byte-identical every time you produce it.
+
+**Evaluate.** A backend, *inside the worker*. ``graphed.awkward`` is the one HEP analyses live
+on — ``gak`` carries the ``ak.*`` names — and ``graphed.numpy`` is the same idea for flat
+arrays. A backend turns one stage into real array calls on one chunk of data. Nothing about
+awkward or numpy reaches the frontend or the optimizer, which is why a plan compiled with one is
+not tied to it.
+
+**Run.** A runner. It receives a plan — a list of partitions, a function to run on each, and a
+way to combine partial results — hands the tasks out, and gives back one answer. ``graphed.core``
+defines that contract and ships one runner of its own: ``SequentialRunner``, in-process, no extra
+dependencies, which is what the examples in these docs use. ``graphed-executors`` supplies the
+pooled and cluster runners — thread and process pools, dask, parsl — for the same plan.
+
+**Debug, restart, preserve** attach to the boundary between the two columns rather than sitting
+in the line. ``graphed.debug`` re-raises a failure that happened inside a fused stage on a remote
+worker as an exception on your machine that points at your analysis line, and shows task events
+live as they cross back. ``graphed.checkpoint`` remembers partial results as they arrive, so a
+killed run resumes without changing the answer. ``graphed.preserve`` exports a directory someone
+else can reproduce or inspect. They are three independent things you can attach; none feeds
+another.
+
+What crosses a process boundary
+-------------------------------
+
+When a run goes to workers, what travels is the *recording* — a versioned, self-describing byte
+string — plus the partition each task should read. Your Python objects do not travel; neither
+does the session you built them in. That has three consequences worth knowing before you
+debug a cluster job:
+
+* A worker needs to be able to import whatever your analysis imports. If a helper module is on
+  your laptop but not on the cluster, the failure is at import time on the worker.
+* Genuinely opaque callables — a lambda you passed to ``apply``, say — are the one exception:
+  they are serialized by value, and the recording marks them as a reproducibility risk. Refer to
+  a function by import path instead and it stays readable, and its cached results survive.
+* Partial results come back and are combined in an order fixed by the plan, not by which worker
+  finished first — so your totals do not wobble between runs or between worker counts.
+
+Errors travel intact in the same way: a failure inside a stage arrives at your machine as a
+:class:`~graphed.debug.StageError` carrying the operation, the input shapes, the partition and
+your source frame, not as an opaque string from another process.
+
+When rows have to move between partitions
+-----------------------------------------
+
+Most analysis is partition-local: each task reads its own chunk and never needs anyone else's.
+Two things are not.
+
+``graphed.join`` and ``graphed.repartition`` (with ``join_plan`` and ``shuffle_plan`` for the
+plan-level form) match or redistribute rows across partitions by key. Because that means every
+task potentially sending data to every other, the exchange is a boundary — a stage cannot fuse
+across it — and the runner batches the transfers rather than opening a file per pair. On a
+cluster the workers exchange blocks with each other where the backend can address them, and
+route through your submit node where it cannot; the choice is made from the plan, so every
+worker agrees on it and two runs of the same plan take the same route.
+
+``graphed.aggregate_plan`` goes the other way: several outputs that share a sub-expression — one
+selection feeding two histograms, a sum and a count over the same cut — compile into one
+recording, so the shared part is read and evaluated once rather than once per output. That is
+what ``graphed_histogram``'s ``plan({...})`` is built on, and what makes hundreds of histograms
+with systematic variations one pass over the data instead of hundreds.
+
+What you install
+----------------
+
+The base install is light: the recording frontend, the compiled core, and two small pure-Python
+dependencies (``executing``, for the source line, and ``cloudpickle``, for opaque callables).
+Everything heavier is an extra.
 
 .. list-table::
    :header-rows: 1
    :widths: 22 58 20
 
    * - Import path
-     - What it is
+     - What it gives you
      - Install extra
    * - ``graphed``
-     - deferred-array **frontend**: ``Session``, ``Array``, the five-method ``Backend`` protocol,
-       provenance, and the backend-agnostic machinery (projection, compilation, the parquet/write
-       I/O bases)
+     - the recording surface: ``Session``, ``Array``, ``vary``, provenance, projection,
+       compilation, joins and repartition, multi-output aggregation plans
      - (base)
    * - ``graphed.core``
-     - Rust+PyO3 **interned IR**, the equality-saturation optimiser, the deterministic durable codec
-       (``GIR1``) and ``DurablePlan``, and the executor/monitor protocols
+     - the compiled optimizer, the durable formats — a saved plan, its content hashes — the
+       runner and monitor contracts, and ``SequentialRunner``, the in-process runner
      - (base)
    * - ``graphed.awkward``
-     - the **ragged backend** HEP analyses live on: awkward typetracer forms, the ``gak`` namespace
-       (``ak.*`` parity), vector behaviours, buffer-level column projection, parquet I/O (with the
-       separate ``[parquet]`` extra), and correctionlib/ONNX ``External`` payloads
+     - ragged analysis: the ``gak`` namespace at ``ak.*`` parity, ``gnano.events``, vector
+       behaviours, column and buffer projection, parquet I/O (add ``[parquet]``), and
+       correctionlib/ONNX calls
      - ``[awkward]``
    * - ``graphed.numpy``
-     - the **rectilinear backend**: deferred numpy idiom over the graph (ufunc/array-function
-       recording, monoidal reductions)
+     - deferred numpy for flat arrays: ufuncs, array functions, reductions
      - ``[numpy]``
    * - ``graphed.debug``
-     - opt-level lowering, source-mapped **picklable** tracebacks (a remote-worker error points at
-       the user's line), and the live Perspective dashboard
-     - ``[dashboard]``
+     - the unfused 1:1 view, source-mapped tracebacks, and the live run dashboard
+     - (base); ``[dashboard]`` for the live view
    * - ``graphed.checkpoint``
-     - content-addressed ``Store``, deterministic ``run_resumable`` resume, retry policies +
-       dead-letter
-     - ``[checkpoint]``
+     - results filed by what they compute, so a restart redoes only what was in flight; plus
+       retry policies and a dead-letter queue
+     - (base)
    * - ``graphed.preserve``
-     - self-contained content-addressed **preservation bundle** (build / reproduce / inspect) plus
-       the ML-framework ``External`` plugins (torch, tf, xgboost, jax, ONNX, correctionlib, Triton)
-     - ``[preserve]``
+     - a self-contained bundle that reproduces or is inspected elsewhere, plus plugins for
+       torch, TensorFlow, XGBoost, JAX, ONNX, correctionlib and Triton payloads
+     - (base); ``[preserve]`` for correctionlib/ONNX payloads
 
-Parquet I/O (``to_parquet`` / ``from_parquet``, available in either backend) needs the separate
-``[parquet]`` extra (``pyarrow``). ``pip install "graphed[all]"`` pulls every extra — including
-``[parquet]`` — except the heavy ML frameworks; ``[ml]`` adds those (torch/tensorflow/xgboost/jax/
-tritonclient), and ``[dev]`` the full test/lint/type toolchain. See :doc:`the migration table </index>`
-— or ``MIGRATION.md`` in the repository — for the old-name → import-path mapping.
+A missing extra behaves in one of two ways. The array backends import their array library
+eagerly, so ``import graphed.awkward`` without ``[awkward]`` fails immediately with a clear
+message. ``graphed.debug``, ``graphed.checkpoint`` and ``graphed.preserve`` import fine on the
+base install and pull their heavy dependencies only when a feature reaches for one — the
+dashboard, or a correctionlib/ONNX payload. ``graphed.checkpoint`` needs nothing extra at all;
+its ``[checkpoint]`` marker exists so an old install line keeps working.
 
-The processing pipeline
------------------------
+``pip install "graphed[all]"`` pulls every extra including ``[parquet]``, but not the heavy ML
+frameworks — those are ``[ml]``. Import paths from before the packages were combined are mapped
+in ``MIGRATION.md`` in the repository.
 
-A ``graphed`` analysis flows through the subpackages in one direction. Nothing builds a large graph
-first: the frontend hands each recorded operation to the core, which interns and reduces it
-incrementally, so only the concise fused-stage graph ever exists.
+The pieces that ship separately
+-------------------------------
 
-.. code-block:: text
+Two packages you will want are their own installs, because executors and histograms are things
+you swap:
 
-    record              intern + reduce            evaluate                  run
-    ┌──────────┐  op    ┌──────────────┐  plan   ┌──────────────────┐ tasks ┌────────────────────┐
-    │ graphed  │ ─────▶ │ graphed.core │ ──────▶ │  graphed.awkward │ ────▶ │ graphed-exec-local │
-    │(frontend)│        │ (Rust optim.)│         │  graphed.numpy   │       │  (separate package)│
-    └──────────┘        └──────────────┘         └──────────────────┘       └─────────┬──────────┘
-                                                                                       │ results
-          graphed.debug  ── source-mapped errors + live dashboard (cross-cutting) ─────┤
-          graphed.checkpoint ── content-addressed resume ──▶ graphed.preserve ── bundle ┘
+* `graphed-executors <https://github.com/graphed-org/graphed-executors>`_ — the runners past
+  ``SequentialRunner``. Thread and process pools on one machine, with straggler-tolerant tree
+  reduction, file-handle
+  reuse across the operations in a partition, work stealing, and worker-to-worker exchange;
+  dask and parsl backends under ``[dask]`` and ``[parsl]`` for batch clusters. Every one of them
+  takes the same plan.
+* `graphed-histogram <https://github.com/graphed-org/graphed-histogram>`_ — deferred
+  ``boost-histogram`` and ``hist`` fills, the dask-histogram analogue. A ``.fill()`` records;
+  ``plan()`` exports the task graph a runner aggregates. It also backs ``hist.graphed``, so the
+  ``Hist.new.Reg(...).Double()`` builder you already use works on deferred arrays.
 
-1. **Record** — ``graphed`` (frontend). Ordinary array expressions become nodes through the
-   pluggable ``Backend`` protocol; type errors surface at the recording line (form inference on
-   metadata only).
-2. **Intern + reduce** — ``graphed.core``. Structurally identical nodes share one ``NodeId``
-   (hash-consing gives CSE for free); DCE is reachability from the outputs; equality saturation
-   canonicalises and fuses maximal runs of array ops into stages. Reduction is incremental and
-   deterministic (identical graphs serialise to identical bytes) and is CI-guarded against
-   super-linear scaling.
-3. **Evaluate** — a backend. ``graphed.awkward`` is the default HEP backend (ragged data, ``gak``
-   ≙ ``ak.*``); ``graphed.numpy`` is the rectilinear one. Backends never leak into the frontend or
-   the core.
-4. **Run** — an executor. The reference executor, ``graphed-exec-local``, is a **separate package**
-   (single-machine thread/process pools, tree reduction, inter-worker comms). ``graphed.core`` only
-   defines the plan/executor protocol it consumes.
-5. **Debug & preserve** cut across the pipeline. ``graphed.debug`` re-raises any failure — even one
-   deep inside a fused stage on a remote worker — pointing at the user's analysis line, and streams
-   a live dashboard. ``graphed.checkpoint`` makes a killed run resumable bit-for-bit;
-   ``graphed.preserve`` exports a bundle that reproduces the histograms on a clean machine.
-
-On-disk layout
---------------
-
-.. code-block:: text
-
-    graphed/
-    ├── Cargo.toml, src/*.rs        # the Rust core crate → compiled to graphed.core.graphed_core
-    ├── pyproject.toml              # maturin build backend; [project.optional-dependencies] = the extras
-    ├── python/graphed/             # the pure-Python distribution
-    │   ├── __init__.py, session.py, array.py, backend.py, provenance.py, …   # the frontend
-    │   ├── core/                   # thin Python wrapper re-exporting the compiled extension
-    │   ├── awkward/  numpy/        # the two backends
-    │   ├── debug/  checkpoint/  preserve/            # debugging, resume, preservation
-    │   └── preserve/externals/     # the ML-framework External plugins
-    ├── tests/frozen/<pkg>/mX/      # the frozen acceptance suites, one subtree per subpackage
-    └── tests/_corpus/              # the graphed-corpus fixtures, vendored for this repo's tests
-
-The compiled extension keeps its leaf name — it lives at ``graphed.core.graphed_core`` and is
-re-exported by ``graphed.core``; import from ``graphed.core``, never the extension directly. Because
-the frozen suites of the eight former repositories carry duplicate basenames, they are run **one
-subtree at a time** (``scripts/run-tests.sh``); see ``CONTRIBUTING.md``.
-
-Packages that stay separate
----------------------------
-
-Not everything folded into the distribution. These remain their own repositories and depend on
-``graphed``:
-
-- `graphed-exec-local <https://github.com/graphed-org/graphed-exec-local-mvp>`_ — the reference
-  **executor** (single machine): thread/process pools, tree reduction, work-stealing, inter-worker
-  comms. Kept separate because executors are pluggable and this is only the local reference one.
-- `graphed-histogram <https://github.com/graphed-org/graphed-histogram-mvp>`_ — deferred
-  boost-histogram/``hist`` fills on ``graphed`` graphs (the dask-histogram analogue); powers
-  ``hist.graphed``.
-- `graphed-orchestrator <https://github.com/graphed-org/graphed-orchestrator>`_ — the deterministic
-  state machine that drives the gated three-role (test-author / implementer / reviewer)
-  development pipeline; not imported by analyses.
-- `graphed-corpus <https://github.com/graphed-org/graphed-corpus-mvp>`_ — the M0.5 Required
-  Operations Catalog and canonical-analysis fixtures. Vendored under ``tests/_corpus/`` here for
-  this repository's own suite, and still published separately for downstream repositories that
-  consume the fixtures (see :doc:`corpus/index`).
+``graphed``'s numbers are checked against the same analyses written in plain awkward — exactly,
+with no tolerances. :doc:`corpus/index` describes those reference analyses and what they cover.
