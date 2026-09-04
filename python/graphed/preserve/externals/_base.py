@@ -241,14 +241,36 @@ def record_external(
             for k, v in (params or {}).items()
         },
     }
-    holder: dict[str, Any] = {}  # load the resource once for this node (build-time materialize)
+    return session.record_external(
+        "external", _PluginEvaluator(plugin, payload, node_params), list(inputs), node_params
+    )
 
-    def _fn(*values: Any) -> Any:
-        if "resource" not in holder:
-            holder["resource"] = plugin.load(payload, node_params)
-        return plugin.evaluate(holder["resource"], node_params, list(values))
 
-    return session.record_external("external", _fn, list(inputs), node_params)
+# Per-process cache of loaded External resources, keyed by (kind, content_hash). A loaded resource
+# (e.g. a correctionlib CorrectionSet — a C++ binding that does not pickle) is materialized ONCE per
+# worker process and reused across every call and every systematic universe off the same payload; it
+# never rides the pickle, which is what keeps `_PluginEvaluator` picklable for process pools.
+_RESOURCE_CACHE: dict[tuple[str, str], Any] = {}
+
+
+@dataclass
+class _PluginEvaluator:
+    """The build- and worker-time evaluator for one recorded External: a PICKLABLE callable — unlike
+    a closure — so a plan carrying it ships to a process pool (the core "hundreds of histograms with
+    systematic variations" path). Only the payload bytes + scalar params ride the pickle; the loaded
+    resource is materialized lazily per process via ``_RESOURCE_CACHE`` (``open_once`` semantics)."""
+
+    plugin: ExternalPlugin
+    payload: bytes
+    node_params: Mapping[str, Any]
+
+    def __call__(self, *values: Any) -> Any:
+        key = (self.plugin.kind, str(self.node_params.get("content_hash", "")))
+        resource = _RESOURCE_CACHE.get(key)
+        if resource is None:
+            resource = self.plugin.load(self.payload, self.node_params)
+            _RESOURCE_CACHE[key] = resource
+        return self.plugin.evaluate(resource, self.node_params, list(values))
 
 
 # ---- a trivial template: hash == sha256 of the raw payload bytes --------------------------------

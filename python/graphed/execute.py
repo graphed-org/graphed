@@ -20,6 +20,7 @@ hash, and fails loudly when one is missing.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from functools import partial
@@ -189,6 +190,22 @@ def _dispatch(
         raise replacement from exc
 
 
+def external_key(node: Mapping[str, Any]) -> str:
+    """The execution-resolution key for an External node: its payload ``content_hash`` PLUS a
+    canonical digest of its ``params``.
+
+    An External's ``descriptor.content_hash`` is over the payload BYTES alone, so several nodes that
+    share one payload but differ in HOW it is evaluated — the canonical case being N systematic
+    universes off one correctionlib CorrectionSet, distinguished only by ``params["systematic"]`` /
+    ``params["args"]`` — collide on that hash. Keying execution by ``(content_hash, params)`` gives
+    each its OWN evaluator while leaving the preservation ``content_hash`` shared (§A.3.1). Two nodes
+    that agree on both genuinely evaluate identically, so sharing one evaluator is correct."""
+    descriptor = node["descriptor"]
+    params = node.get("params") or {}
+    chash: str = descriptor["content_hash"]
+    return chash + "|" + json.dumps(params, sort_keys=True, separators=(",", ":"))
+
+
 def evaluate_ir(
     compiled: CompiledGraph | bytes,
     backend: Backend,
@@ -199,8 +216,9 @@ def evaluate_ir(
 ) -> list[object]:
     """Evaluate a compiled (reduced) IR: one backend dispatch per reduced node, fused stage members
     inline. ``sources`` binds each source name to its data (or a zero-arg loader); ``externals``
-    binds each External payload's ``content_hash`` to its evaluator. Returns the outputs in mark
-    order.
+    binds each External payload's evaluator, keyed by :func:`external_key` (preferred, so N
+    systematic universes off one payload stay distinct) or by its bare ``content_hash``. Returns the
+    outputs in mark order.
 
     ``on_failure`` is §8.2(iii)'s attribution hook: it sees the reduced address of the failing
     dispatch — ``(node_id, member_index)``, the member index being ``None`` outside a fused stage —
@@ -232,16 +250,22 @@ def evaluate_ir(
                 mvals.append(_dispatch(mcall, m["name"], mins, (nid, index), on_failure))
             vals.append(mvals[-1])
         elif kind == "external":
+            # Resolve by the specific (content_hash, params) `external_key` first — that is what
+            # `aggregate_plan` wires, and it keeps N systematic universes off one payload distinct.
+            # Fall back to the bare `content_hash` so a direct `evaluate_ir` caller may key by it
+            # (the single-payload case, and the frozen attribution contract).
             chash = nd["descriptor"]["content_hash"]
-            if externals is None or chash not in externals:
+            fn = None if externals is None else (externals.get(external_key(nd)) or externals.get(chash))
+            if fn is None:
                 raise GraphedError(
-                    f"evaluate_ir: External payload {chash!r} needs an evaluator "
-                    "(pass externals={content_hash: callable})"
+                    f"evaluate_ir: External payload {chash!r} needs an evaluator. `aggregate_plan`"
+                    " wires these from the recording session; a bare `evaluate_ir` call must pass"
+                    " externals keyed by `graphed.execute.external_key(node)` or by `content_hash`."
                 )
             # An External node carries no `name` — its identity is the descriptor — so an
             # attributed External failure names the payload kind.
             op = f"external:{nd['descriptor']['kind']}"
-            vals.append(_dispatch(partial(externals[chash], *ins), op, ins, (nid, None), on_failure))
+            vals.append(_dispatch(partial(fn, *ins), op, ins, (nid, None), on_failure))
         else:  # pragma: no cover - the codec only emits the kinds above
             raise GraphedError(f"evaluate_ir: unknown node kind {kind!r}")
     return [vals[o] for o in store.outputs()]

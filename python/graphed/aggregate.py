@@ -17,13 +17,14 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Generic, TypeVar
 
-from graphed.core import Partition
+from graphed.core import GraphStore, Partition
 from graphed.core.execution import Plan, Task, WorkerResources
 
 from .array import Array
 from .errors import GraphedError
-from .execute import CompiledGraph, Key, OnFailure, compile_ir, evaluate_ir
+from .execute import CompiledGraph, Key, OnFailure, compile_ir, evaluate_ir, external_key
 from .projection import read_columns
+from .session import Session
 from .varied import refuse_container
 from .write import PartitionedSource
 
@@ -105,6 +106,31 @@ class _PartitionReduce(Generic[V]):
         return attribute
 
 
+def _external_evaluators(session: Session, compiled: CompiledGraph) -> dict[str, Callable[..., object]]:
+    """Every External surviving in the compiled IR, keyed by :func:`external_key`, resolved to the
+    evaluator the recording session holds for it.
+
+    This is the SINGLE wiring point for a plan's External evaluators. Every External — a
+    ``hist.graphed`` fill FillEvaluator AND an upstream correctionlib/ONNX scale factor alike — is
+    registered on ``session._externals`` at record time, so one pass over the compiled External nodes
+    wires them all: a fill whose input cone reads a correctionlib SF now carries that SF's evaluator,
+    which is what makes "hundreds of histograms with systematic variations" run through a plan. The
+    key includes the node's params, so N systematic universes off one CorrectionSet each resolve to
+    their OWN evaluator (they share a payload ``content_hash`` but not a params digest)."""
+    by_key: dict[str, Callable[..., object]] = {}
+    recorded = session._store.nodes()
+    for node_id, (fn, _inputs) in session._externals.items():
+        by_key[external_key(recorded[node_id])] = fn
+    wired: dict[str, Callable[..., object]] = {}
+    for node in GraphStore.deserialize(bytes(compiled.ir)).nodes():
+        if node["kind"] == "external":
+            key = external_key(node)
+            evaluator = by_key.get(key)
+            if evaluator is not None:
+                wired[key] = evaluator
+    return wired
+
+
 def aggregate_plan(
     *outputs: Array,
     reduce: Callable[[list[Any]], V],
@@ -139,13 +165,18 @@ def aggregate_plan(
         )
     ((nid, data),) = partitioned.items()
     compiled = compile_ir(session, *outputs)
+    # Wire EVERY External surviving in the compiled IR from the session (fills + upstream corrections
+    # alike); an explicit `externals=` (keyed by `external_key`) overrides the auto-wired evaluator.
+    wired = _external_evaluators(session, compiled)
+    if externals:
+        wired.update(externals)
     process = _PartitionReduce(
         ir=bytes(compiled.ir),
         source_name=session.source_name(nid),
         backend_factory=backend if backend is not None else type(session.backend),
         reader=data,
         columns=read_columns(list(outputs), nid),
-        externals=tuple((externals or {}).items()),
+        externals=tuple(wired.items()),
         reduce=reduce,
         variation_labels=None if on_compiled is None else on_compiled(compiled),
     )
