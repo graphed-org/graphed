@@ -8,10 +8,6 @@ have produced if nothing had gone wrong.
 
 This page is the argument for why that holds, and how to use it.
 
-.. contents::
-   :local:
-   :depth: 2
-
 
 Why re-running is a lookup
 --------------------------

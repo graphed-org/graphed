@@ -6,10 +6,6 @@ The answer is this suite. It contains no ``graphed`` code at all — its analyse
 in plain awkward and numpy, so a disagreement is unambiguous: if ``graphed`` and the
 plain-awkward version differ on the same input, ``graphed`` is wrong.
 
-.. contents::
-   :local:
-   :depth: 1
-
 What a check looks like
 -----------------------
 

@@ -49,10 +49,6 @@ Transcripts on this page show your analysis file by name; you will see its full 
 The arrow is on the line you wrote. Above it is the trail of how that value was built, oldest
 first — the same "most recent call last" convention Python uses, but every frame is your code.
 
-.. contents::
-   :local:
-   :depth: 2
-
 
 Reading the error
 -----------------

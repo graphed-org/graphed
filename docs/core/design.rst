@@ -1,10 +1,6 @@
 How graphed.core works
 ======================
 
-.. contents::
-   :local:
-   :depth: 2
-
 You wrote two hundred lines of array code and fifty systematic variations of it. Somewhere
 between your keyboard and a thousand batch workers that has to become a small, fixed,
 portable description of work — small enough that your driver process is not the bottleneck,

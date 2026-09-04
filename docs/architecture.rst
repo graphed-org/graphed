@@ -1,9 +1,6 @@
 How a run fits together
 =======================
 
-.. contents::
-   :local:
-
 Between the awkward code you type and the filled histogram you plot, ``graphed`` records what
 you wrote and reduces it on your machine, then runs it — and the running happens a chunk at a
 time, inside whatever worker got that chunk. This page is the map: who does what, which parts

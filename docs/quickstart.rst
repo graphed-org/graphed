@@ -1,9 +1,6 @@
 Port your awkward analysis
 ==========================
 
-.. contents::
-   :local:
-
 You already have an analysis: read a dataset, cut on jets, fill a histogram, and do the whole
 thing again for every systematic variation. This page runs that shape end to end. Everything
 below is one program — copy it, run it, then read the walkthrough underneath.

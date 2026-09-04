@@ -1,10 +1,6 @@
 How graphed works
 =================
 
-.. contents::
-   :local:
-   :depth: 2
-
 You write the analysis you always write: fields, cuts, sums, a histogram fill. None of it runs as
 you write it. Each operation becomes a node in a graph carrying the type of its result and the
 line of your file that made it; when you ask for a value, what executes is the *reduced* graph —

@@ -1,10 +1,6 @@
 How graphed.awkward works
 =========================
 
-.. contents::
-   :local:
-   :depth: 2
-
 You have a NanoAOD file with four hundred branches and an analysis that uses six of them. You
 want the type errors at the line you wrote, the systematic variations for free, and the run to
 read six branches — not four hundred, and not six whole branches when three of them were only
