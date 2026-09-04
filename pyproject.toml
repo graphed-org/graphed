@@ -1,5 +1,8 @@
 [build-system]
-requires = ["maturin>=1.7,<2"]
+# >=1.9.4: emits the version-specific cp314t wheel when abi3 is enabled but the interpreter is
+# free-threaded (older maturin errored instead). cibuildwheel isolates the build and pulls the
+# newest maturin<2, so CI uses this floor or later.
+requires = ["maturin>=1.9.4,<2"]
 build-backend = "maturin"
 
 [project]
@@ -58,7 +61,34 @@ Homepage = "https://github.com/graphed-org/graphed"
 # `[lib] name` are unchanged; only this dotted module-name moved.
 python-source = "python"
 module-name = "graphed.core.graphed_core"
-features = ["pyo3/extension-module"]
+# abi3-py311: one limited-API wheel (cp311-abi3) serves 3.11-3.14 (and up). maturin falls back to a
+# version-specific build per interpreter that can't use it — notably free-threaded cp314t, which has
+# no GIL-disabled stable ABI yet (abi3t/PEP 803 lands in 3.15), so it ships a dedicated cp314t wheel.
+features = ["pyo3/extension-module", "pyo3/abi3-py311"]
+
+[tool.cibuildwheel]
+# One driver (cibuildwheel invoking the maturin PEP 517 backend) builds the whole §A.5 matrix.
+# The abi3-py311 wheel (cp311-abi3) is built ONCE and reused: cibuildwheel detects the abi3 wheel and
+# skips rebuilding on cp312/cp313/cp314, still running the smoke test on each. cp314t is free-threaded
+# (no GIL-disabled stable ABI yet) so maturin emits a dedicated version-specific cp314t wheel.
+# Linux gets manylinux AND musllinux (glibc + musl) for x86_64 and aarch64 — fully standalone wheels.
+build = ["cp311-*", "cp312-*", "cp313-*", "cp314-*", "cp314t-*"]
+# 32-bit is dropped everywhere (Rust ships no Cargo for musllinux 32-bit; the project targets 64-bit).
+skip = ["*_i686", "*-win32", "*-musllinux_i686"]
+# Base install is light (executing + cloudpickle), so the compiled core imports with no extra deps.
+test-command = 'python -c "import graphed, graphed.core; print(graphed.__version__, graphed.core.version())"'
+
+[tool.cibuildwheel.linux]
+# manylinux/musllinux containers ship no Rust — install a pinned toolchain via rustup (works on both
+# glibc and Alpine/musl images; only musllinux 32-bit lacks Cargo, already skipped above).
+# ponytail: plain rustup install per the cibuildwheel Rust FAQ; if a musllinux image ever drops
+# curl/gcc, add a `*-musllinux*` override that `apk add`s them before this line.
+before-all = "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain 1.98.1"
+environment = { PATH = "$HOME/.cargo/bin:$PATH" }
+
+[tool.cibuildwheel.macos.environment]
+# Rust's minimum macOS target is 10.12; raise CPython's default floor to match on the x86_64 build.
+MACOSX_DEPLOYMENT_TARGET = "10.12"
 
 [tool.ruff]
 line-length = 110
