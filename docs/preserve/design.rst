@@ -11,10 +11,6 @@ Nothing in it is a new file format. Corrections are correctionlib JSON, models a
 framework's own export, histograms follow UHI, and everything is identified by a SHA-256 of its
 contents.
 
-.. contents::
-   :local:
-   :depth: 2
-
 
 Build one and read it back
 --------------------------

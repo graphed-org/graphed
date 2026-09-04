@@ -6,10 +6,6 @@ optimized, and run later — on one core or many — without rewriting it. ``gra
 does that. A large slice of the ``np.*`` surface records into the graph through numpy's own
 dispatch protocols, so the code below is the code you already write.
 
-.. contents::
-   :local:
-   :depth: 2
-
 
 The backend in one example
 --------------------------
