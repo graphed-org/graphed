@@ -17,7 +17,7 @@ in `graphed.awkward.gnano` (the §2.1 factorization rule).
 from __future__ import annotations
 
 import itertools
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
 from . import accessors
@@ -240,7 +240,9 @@ def vary_context(
     is_weight: bool,
     variations: Mapping[Any, Any] | None,
     collections: Mapping[str, Mapping[Any, Any]] | None,
-    points: Mapping[Any, Mapping[str, Any]] | None,
+    points: Iterable[Mapping[str, Any]] | None,
+    composes_as_union: bool,
+    max_universes: int,
     tags: Mapping[str, Any],
 ) -> EventContext:
     if ctx._is_data:
@@ -249,8 +251,12 @@ def vary_context(
             "and accepting a registration whose labels the fill then drops would be a silent drop"
         )
     if is_weight:
-        return _vary_weight(ctx, name, nominal, variations, collections, points, tags)
-    return _vary_shift(ctx, name, nominal, variations, collections, points, tags)
+        return _vary_weight(
+            ctx, name, nominal, variations, collections, points, composes_as_union, max_universes, tags
+        )
+    return _vary_shift(
+        ctx, name, nominal, variations, collections, points, composes_as_union, max_universes, tags
+    )
 
 
 def _carriers(ctx: EventContext) -> tuple[Any, ...]:
@@ -279,7 +285,9 @@ def _vary_weight(
     central: object,
     variations: Mapping[Any, Any] | None,
     collections: Mapping[str, Mapping[Any, Any]] | None,
-    points: Mapping[Any, Mapping[str, Any]] | None,
+    points: Iterable[Mapping[str, Any]] | None,
+    composes_as_union: bool,
+    max_universes: int,
     tags: Mapping[str, Any],
 ) -> EventContext:
     """Overload (b): register a per-event weight factor into the returned context's ambient
@@ -293,8 +301,16 @@ def _vary_weight(
         )
     old = ctx._weight
     inherited = old._tags.get(name, ()) if old is not None else ()
-    members = gather_members(
-        name, tags, variations, inherited, points, session=ctx._session, carriers=_carriers(ctx)
+    # a nuisance the ambient weight registers AS A WEIGHT (`old._tags`) is stacked: the composition
+    # below resolves it label-aligned into the union via `_two_level(old, ...)`, so fanning it out
+    # would double-count it. It is excluded from the discriminator (§2 stacked-weight case). A
+    # nuisance the ambient merely CARRIES as labels — a shift leaked in, its `_tags` empty (§8-g) —
+    # is a genuine dependency the member reads, and still fans out.
+    composed = frozenset(old._tags) if old is not None else frozenset()
+    one_at_a_time, joints = gather_members(
+        name, tags, variations, inherited, points, session=ctx._session,
+        carriers=_carriers(ctx), composes_as_union=composes_as_union, max_universes=max_universes,
+        composed=composed,
     )
     # §1.1's within-the-container clause, keyed by family NAME over the three carriers
     # `_context_labels` reads. `_members` alone is the §2.4 union and cannot say which family a
@@ -308,15 +324,17 @@ def _vary_weight(
         if n != name
         for t in ts
     }
-    for label in members:
+    for label in one_at_a_time:
         if label in registered:
             raise GraphedError(f"variation label {label!r} is already carried by this container")
-    factors = {"nominal": central, **members}
+    # a machine-minted joint joins the factor container as a flat cross node so `_two_level` reads it
+    # by name, but it is a cross-coordinate, not a tag of this family, so it stays out of `_tags`.
+    factors = {"nominal": central, **one_at_a_time, **joints}
     check_members(factors)
     # §2.1(b)'s ROW-SPACE rule: an ancestor-handled factor is re-indexed across the intervening
     # links; a descendant or divergent one is a construction-time error naming the direction.
     factors = {label: accessors.reindex_to(factor, ctx) for label, factor in factors.items()}
-    factor = rebuild(factors, tags={name: inherited + _tags_of(name, factors)}, context=ctx)
+    factor = rebuild(factors, tags={name: inherited + _tags_of(name, one_at_a_time)}, context=ctx)
     # §2.5's shift-after-weight operand one: this factor's OWN member node ids, by value.
     ctx._session._weight_factors.append((name, _member_nodes(factor)))
 
@@ -326,7 +344,7 @@ def _vary_weight(
         applied = _two_level(factor, label)
         ambient[label] = applied if old is None else _two_level(old, label) * applied
     tag_map = dict(old._tags) if old is not None else {}
-    tag_map[name] = inherited + _tags_of(name, members)
+    tag_map[name] = inherited + _tags_of(name, one_at_a_time)
     child._weight = child._stamp(register(rebuild(ambient, tags=tag_map, context=child)))
     return child
 
@@ -337,7 +355,9 @@ def _vary_shift(
     nominal: object,
     variations: Mapping[Any, Any] | None,
     collections: Mapping[str, Mapping[Any, Any]] | None,
-    points: Mapping[Any, Mapping[str, Any]] | None,
+    points: Iterable[Mapping[str, Any]] | None,
+    composes_as_union: bool,
+    max_universes: int,
     tags: Mapping[str, Any],
 ) -> EventContext:
     """Overload (c): replace each named collection with a `Varied` over one shared tag set."""
@@ -365,20 +385,25 @@ def _vary_shift(
     for collection_name, inner in mapping.items():
         current = ctx._read(collection_name)
         inherited = current._tags.get(name, ()) if isinstance(current, Varied) else ()
-        members = gather_members(
-            name, inner, None, inherited, points, session=ctx._session, carriers=_carriers(ctx)
+        one_at_a_time, joints = gather_members(
+            name, inner, None, inherited, points, session=ctx._session,
+            carriers=_carriers(ctx), composes_as_union=composes_as_union, max_universes=max_universes,
         )
         existing = dict(current._members) if isinstance(current, Varied) else {"nominal": current}
         # §4.6: a supplied member is projected by the label's own point, not flattened to its
-        # central universe — which is what makes a shift (x) shift joint point expressible
-        resolved = {label: member_of(member, label) for label, member in members.items()}
+        # central universe — which is what makes a shift (x) shift joint point expressible; a
+        # machine-minted joint is already the cross node, so `member_of` on it is the identity
+        resolved = {
+            label: member_of(member, label) for label, member in {**one_at_a_time, **joints}.items()
+        }
         check_members({**existing, **resolved})
         resolved = {label: accessors.reindex_to(member, ctx) for label, member in resolved.items()}
         for label in resolved:
             if label in existing:
                 raise GraphedError(f"variation label {label!r} already varies {collection_name!r}")
         tag_map = dict(current._tags) if isinstance(current, Varied) else {}
-        tag_map[name] = inherited + _tags_of(name, resolved)
+        # a joint is a cross-coordinate, not a tag of this single family, so it stays out of `_tags`
+        tag_map[name] = inherited + _tags_of(name, one_at_a_time)
         replaced[collection_name] = child._stamp(
             register(rebuild({**existing, **resolved}, tags=tag_map, context=ctx))
         )
