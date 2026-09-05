@@ -26,9 +26,10 @@ _session, ctx = two_axis_context()
 weight = ctx["pt"] * 0.5
 registered = graphed.vary(ctx, "corr", weight, is_weight=True,
                           variations={{"a": weight * 3.0}},
-                          points={{"a": {{"jes": "up", "jer": "up"}}}})
-print(repr(graphed.points(registered)))
-print(",".join(graphed.labels(registered)))
+                          points=[{{"corr": "a", "jes": "up"}}])
+ambient = graphed.weight(registered)
+print(repr(graphed.points(ambient)))
+print(",".join(graphed.labels(ambient)))
 print(hash("graphed"))
 """
 
@@ -67,12 +68,13 @@ def test_points_is_sorted_and_stable_across_hash_seeds() -> None:
         weight,
         is_weight=True,
         variations={"a": weight * 3.0},
-        points={"a": {"jes": "up", "jer": "up"}},
+        points=[{"corr": "a", "jes": "up"}],
     )
 
-    reported = graphed.points(registered)
+    reported = graphed.points(graphed.weight(registered))
     assert list(reported) == sorted(reported)
     assert reported["nominal"] == {}
+    assert reported["corr_a__jes_up"] == {"corr": "a", "jes": "up"}
     for point in reported.values():
         assert list(point) == sorted(point)
 

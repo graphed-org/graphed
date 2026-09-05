@@ -29,9 +29,9 @@ never at module import, so the suite COLLECTS against `origin/main`.
 | `vary-m52-C3` | §4.6/§8-d a joint label resolves to the single-axis container's SHIFTED member (and a one-at-a-time label still to nominal) | `test_projection_resolution.py::test_a_joint_label_resolves_to_the_shifted_member_not_the_nominal_one` |
 | `vary-m52-C3` | §4.6 the fast path is kept — a carried label returns the container's own member by IDENTITY | `test_projection_resolution.py::test_the_fast_path_returns_the_containers_own_member_by_identity` |
 | `vary-m52-C3` | §4.6/§8-e `_two_level` reaches the true inner cross member; the diagonal stays the diagonal | `test_two_level_projection.py::test_two_level_reaches_the_true_inner_cross_member` |
-| `vary-m52-C3` | §4.4/§4.6 a shift ⊗ shift joint point keeps the inner `jes` universe through registration | `test_registration_projection.py::test_a_shift_shift_joint_point_keeps_the_inner_jes_universe_through_registration` |
-| `vary-m52-C3` | §4.6/§7.1-2/§8-j a default-point registration keeps the member's own label when it carries it | `test_registration_projection.py::test_a_default_point_registration_keeps_the_members_own_label_when_it_carries_it` |
-| `vary-m52-C3` | §4.6/§8-j the boundary half: a different tag, or another family, still reduces to nominal (+ the family-guard control) | `test_registration_projection.py::test_a_default_point_registration_still_reduces_a_different_tag_or_family_to_nominal` |
+| `vary-m53` | §2 a shift ⊗ shift joint is auto-fanned and reaches the inner `jes` universe (the one-at-a-time stays the diagonal) | `test_registration_projection.py::test_a_shift_shift_joint_is_auto_fanned_and_reaches_the_inner_jes_universe` |
+| `vary-m52-C3` (survivor) | §4.6/§7.1-2/§8-j a default-point registration keeps the member's own label when it carries it | `test_registration_projection.py::test_a_default_point_registration_keeps_the_members_own_label_when_it_carries_it` |
+| `vary-m53` | §2 same family still reduces to nominal, but a FOREIGN one fans out the joint alongside the diagonal (+ the family-guard control) | `test_registration_projection.py::test_a_default_point_registration_reduces_same_family_but_fans_out_a_foreign_one` |
 | `vary-m52-C3` | §4.6 row space — `reindex_to` follows a label by its POINT's own mask | `test_row_space_follow.py::test_reindex_to_follows_a_label_by_its_points_own_mask` |
 | `vary-m52-C3` | §4.6 `_follow`'s `project` branch follows the same projection | `test_row_space_follow.py::test_the_project_branch_follows_the_same_projection` |
 | `vary-m52-C3` | §4.7's frozen §2.4 union ORDER, unchanged where projection changes WHICH member | `test_union_order_determinism.py::test_the_union_order_is_unchanged` |
@@ -39,16 +39,17 @@ never at module import, so the suite COLLECTS against `origin/main`.
 
 ## Spellings this freeze pins
 
-* **`points=`** as `{tag: {nuisance: coordinate}}` on the weight, loose and shift overloads, and
-  **`graphed.points(obj)`** — the same surface `tests/frozen/frontend/m52` freezes.
+* Re-authored for m53: the joints are AUTO-FANNED from dependent members — no `points=` in this tree.
+  **`graphed.points(obj)`** reports each label's point, the same surface `tests/frozen/frontend/m52`
+  freezes.
 * **`graphed.member_of(container, label)`** is the ONE resolution entry point. `vary.central_universe`
   is gone, so the registration anchors spell the reduction candidate `graphed.nominal(member)`,
   which is the same node today.
 * **`context._two_level(container, label)`** keeps its `(container, label)` signature — §4.5's whole
   reason for the Session registry is that no narrowing call site changes signature.
-* The four joint labels of §4.4's R1-c comprehension: `btag_jes{up,dn}_hf_{up,down}`, each naming
-  the point `{"btag": "hf_<side>", "jes": "<up|down>"}`, with the four joint members the SAME
-  expression objects as the two one-at-a-time members.
+* The four machine-minted joint labels: `btag_hf_{up,down}__jes_{up,down}` (`f"{name}_{tag}__{fl}"`),
+  each naming the point `{"btag": "hf_<side>", "jes": "<up|down>"}`, with each joint member the SAME
+  expression object as its one-at-a-time sibling.
 
 ## Fixture families (`m52_projection_fixtures.py`)
 
@@ -56,26 +57,26 @@ never at module import, so the suite COLLECTS against `origin/main`.
 * **`btag_scale_factors`** — a pT-DEPENDENT per-event SF product and its two siblings, evaluated on
   the jets of whatever universe they are read from (R1-a propagation). The pT dependence is what
   makes the joint universe differ from the factorized product.
-* **`joint_weight_program`** — §4.4's R1-c spelling verbatim, plus the containers the resolution is
-  asked about: `jes_only` (one axis, so a joint point restricts onto it), `two_axis` (`jes` + `jer`,
-  so a union has labels new to the second operand) and `factor_members` (the nested factor container
-  `_two_level` is handed, each member itself `Varied` over `jes`).
+* **`joint_weight_program`** — the m53 auto-fanout spelling (a plain weight `vary` over two
+  jes-dependent SF members), plus the containers the resolution is asked about: `jes_only` (one axis,
+  so a joint point restricts onto it), `two_axis` (`jes` + `jer`, so a union has labels new to the
+  second operand) and `factor_members` (the nested factor container `_two_level` is handed, each
+  member itself `Varied` over `jes`).
 * **`selection_program`** — a `jes`-varied event mask and a parent-read carrier holding one joint
   label, for the row-space follow. The two masks select a DIFFERENT number of rows, asserted in the
   test before it can conclude which one was applied.
 
-## Non-vacuity (baseline: 9 failed / 1 passed against `origin/main`)
+## Non-vacuity (re-authored for m53: fails on the current union-collapse tree for the right reason)
 
-`test_a_default_point_registration_keeps_the_members_own_label_when_it_carries_it` fails on the
-measured INVERTED relation, which is the shape the decomposition's TEST_SANITY table names: today
-`graphed.universe(z, "jes_up")` is `graphed.nominal(other)` and not `graphed.member_of(other,
-"jes_up")`, and the two are distinct nodes. Its boundary sibling
-`test_a_default_point_registration_still_reduces_a_different_tag_or_family_to_nominal` is the one
-green test — the half C3 must NOT change — and the two are the design's stated discriminating pair.
+The two same-family survivors — `test_the_fast_path_returns_the_containers_own_member_by_identity`
+and `test_a_default_point_registration_keeps_the_members_own_label_when_it_carries_it` — PASS on the
+current tree: they pin laws m53 preserves, and their passing is the live-harness control.
 
-The other eight anchors register a MULTI-coordinate point, which no spelling reaches without the
-`points=` keyword, so against `origin/main` they fail where the keyword falls through into `**tags`
-(`a variation member must be an Array or a Varied, got dict`; in the shift form, `no field named
-'points'`). That is a run-time failure for the feature-absent reason, not a collection or import
-error, and it is recorded as a measured delta from the decomposition's §5 expected-baseline table in
-`.graphed/m52/disputes/awkward_m52_baseline_reason.md`.
+Every re-authored anchor drives a machine-minted joint (`btag_hf_up__jes_up`, `jer_up__jes_up`,
+`jes_up__jer_up`), which the current tree never mints — a dependent member collapses to the union, so
+`member_of(container, "<joint>")` silently returns the NOMINAL member. The projection anchors fail on
+the measured relation (the joint node ≠ the shifted/cross node; e.g. `member_of(second, JOINT) == 50`
+nominal, not `51` jes_up); `test_a_default_point_registration_reduces_same_family_but_fans_out_a_
+foreign_one` keeps its same-family assertion green and fails only on the newly-minted foreign joint.
+`test_the_joint_program_is_byte_deterministic_across_two_runs` asserts a determinism law m53
+preserves and passes on both trees. Feature-absent, at run time, past import.

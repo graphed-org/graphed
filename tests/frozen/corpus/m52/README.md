@@ -16,26 +16,29 @@ basename here is distinct from m05's four and the helper carries the `m52_` pref
 `graphed_corpus` resolves through `pyproject.toml`'s `pythonpath` entry for the vendored mirror
 `tests/_corpus`, never an installed copy.
 
-Every m52-new symbol (`graphed.points`, the `points=` keyword, the two new corpus functions) is
-reached from a test BODY — the two corpus functions as module *attributes* — so the tree COLLECTS
-against `origin/main` and fails at run time for the RIGHT reason.
+Re-authored for m53 (dependency-driven fanout): the b-tag SF members are computed on the jes-varied
+jets, so a plain `graphed.vary` mints the full jes(3) x btag(5) grid automatically — no `points=`,
+no hand-named joint tags. The auto-fanout is reached from a test BODY, so the tree COLLECTS against
+a tree with no m53 implementation and fails at run time for the RIGHT reason.
 
 | anchor | design § | test |
 |---|---|---|
-| `vary-m52-C6` | §4.4 / §6-C6 — joint ≠ factorized product; joint == the eager reference; the flat/frozen machine-zero control | `test_joint_factorization.py::test_the_joint_universe_is_not_the_factorized_product_and_equals_the_direct_reference` |
-| `vary-m52-C6` | §4.4 / §4.10 — the symmetric four are registered with their points and every universe is distinct | `test_joint_universe_set.py::test_the_joint_set_is_the_symmetric_four_and_every_universe_is_distinct` |
-| `vary-m52-C6` | §4.4 — the four joint members are the two one-at-a-time SF expressions, the point choosing the inner universe | `test_joint_member_sharing.py::test_the_four_joint_members_are_the_same_expression_objects_as_the_two_one_at_a_time_ones` |
+| `vary-m53` | §2 / §6-C6 — joint ≠ factorized product; joint == the eager reference; the flat/frozen machine-zero control | `test_joint_factorization.py::test_the_joint_universe_is_not_the_factorized_product_and_equals_the_direct_reference` |
+| `vary-m53` | §2 / §4.10 — a plain vary over dependent members mints the full jes x btag grid (15), all registered with their points and every universe distinct | `test_joint_universe_set.py::test_the_auto_fanout_set_is_the_full_grid_and_every_universe_is_distinct` |
+| `vary-m53` | §2 — the auto-minted joint members are the one-at-a-time SF expressions, the point choosing the inner universe | `test_joint_member_sharing.py::test_the_four_joint_members_are_the_same_expression_objects_as_the_two_one_at_a_time_ones` |
 
 ## Fixture family — `m52_corpus_fixtures.py`
 
 * `EVENTS` — `graphed_corpus.make_events()`, the canonical dataset `corpus/m05`'s 23 stored
   references are built on. `REGION = "4j1b"` (the HT observable); `JES_FACTOR` is
   `systematics._apply_jes`' jet-pT scale.
-* `joint_program()` — §4.4's R1-c spelling over the corpus ttbar analysis: a `jes` shift on `Jet`,
-  the region's own selection, then one `vary(..., "btag", ..., is_weight=True, variations=…,
-  points=JOINT_POINTS)` whose four joint tags take the **same two** `sf_hf_*` objects as the
-  one-at-a-time pair. Returns the session, the HT observable, the ambient weight and both SF
-  containers.
+* `joint_program()` — the m53 auto-fanout spelling over the corpus ttbar analysis: a `jes` shift on
+  `Jet`, the region's own selection, then one plain `vary(..., "btag", ..., is_weight=True,
+  variations={hf_up, hf_down, lf_up, lf_down})`. Each SF member depends on the jes-varied jets, so
+  the eight joints are minted automatically and each binds the **same** `sf_hf_*` object as its
+  one-at-a-time sibling. Returns the session, the HT observable, the ambient weight and both hf SF
+  containers. `EXPECTED_POINTS` is the full 15-universe grid; `HF_JOINTS` maps each hf joint label to
+  its `(source, inner jes universe)`.
 * `universe_hist` / `reference_hist` — one graphed universe, and the eager reference at one
   coordinate pair, both filled into `Hist.new.Reg(40, 0, 800, name="ht").Double()`.
 * `integral` / `factorized` / `reldiff` / `reference_reldiff` — the one instrument all three legs of
@@ -84,10 +87,12 @@ write the same analysis.
 * 6.3 asserts node-id RELATIONS between two named candidate members, never a pinned integer — node
   ids are fixture-dependent.
 
-## Non-vacuity (TEST_SANITY: 3 failed / 60 passed at freeze, m05's 60 untouched)
+## Non-vacuity (fails on the current union-collapse tree for the RIGHT reason, m05 untouched)
 
-* 6.1 fails with `AttributeError: module 'graphed_corpus.analyses.systematics' has no attribute
-  'ttbar_joint_reference'` — it measures the reference legs before touching graphed.
-* 6.2 and 6.3 fail with `GraphedError: a variation member must be an Array or a Varied, got dict`:
-  `vary` has `**tags`, so at baseline `points=` is swallowed as a variation TAG and its mapping is
-  refused as a member. Feature-absent, at run time, past import — not a `TypeError`.
+* `test_joint_universe_set` fails with `points(weight)` short the 8 joints (`Right contains 8 more
+  items`) — the current tree collapses dependent members to the 7-universe union, minting no joints.
+* `test_joint_member_sharing` fails on the cross-node relation (`member.node_id != cross.node_id`):
+  `member_of(weight, "btag_hf_up__jes_up")` silently returns the nominal weight, not the hf SF's
+  jes_up universe — the exact silent drop this arc removes.
+* `test_joint_factorization` fails because the joint universe collapses to nominal and no longer
+  reproduces the eager reference at `(jes_up, btag_up)`. Feature-absent, at run time, past import.

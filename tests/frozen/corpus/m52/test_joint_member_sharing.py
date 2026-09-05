@@ -1,15 +1,16 @@
-"""vary-m52-C6 — design §4.4: the four joint members are the two one-at-a-time expressions.
+"""vary-m53 — design §2: the auto-minted joint members are the one-at-a-time expressions.
 
-The R1-c recipe passes the SAME `sf_hf_up` / `sf_hf_down` objects into the joint tags and lets the
-POINT pick the inner JES universe. Building an arithmetically equal but distinct expression instead
-adds a node the M4 reducer may merge back, which the histogram builders refuse at compile time with
-a message about optimizer merges rather than about points; the node-id relations below pin the
-recipe that avoids it. No histogram is needed — this is the recorded structure alone.
+The fanout binds each joint label to the SAME `sf_hf_up` / `sf_hf_down` object as its one-at-a-time
+sibling and lets the POINT pick the inner JES universe. Building an arithmetically equal but
+distinct expression instead adds a node the M4 reducer may merge back, which the histogram builders
+refuse at compile time with a message about optimizer merges rather than about points; the node-id
+relations below pin the sharing that avoids it. No histogram is needed — this is the recorded
+structure alone.
 """
 
 from __future__ import annotations
 
-from m52_corpus_fixtures import JOINT_POINTS, joint_program
+from m52_corpus_fixtures import HF_JOINTS, joint_program
 
 import graphed
 
@@ -32,9 +33,9 @@ def test_the_four_joint_members_are_the_same_expression_objects_as_the_two_one_a
             == graphed.nominal(source).node_id
         )
 
-    # each joint label reads that same container's inner JES universe — no second SF expression
-    for tag, point in JOINT_POINTS.items():
-        source = sources[point["btag"]]
-        member = graphed.member_of(weight, f"btag_{tag}")
-        assert member.node_id == graphed.member_of(source, f"jes_{point['jes']}").node_id
+    # each auto-minted joint label reads that same container's inner JES universe — no second SF
+    for label, (src_key, jes_universe) in HF_JOINTS.items():
+        source = sources[src_key]
+        member = graphed.member_of(weight, label)
+        assert member.node_id == graphed.member_of(source, jes_universe).node_id
         assert member.node_id != graphed.nominal(source).node_id
