@@ -57,7 +57,7 @@ def test_points_prunes_on_the_loose_overload() -> None:
     dependent = jes * 3.0  # jes-dependent, so the corr family fans out over jes
 
     registered = graphed.vary(
-        jes, "corr", variations={"a": dependent}, points=[{"corr": "a", "jes": "up"}]
+        jes, "corr", variations=[("a", dependent), {"corr": "a", "jes": "up"}]
     )
 
     labels = graphed.labels(registered)
@@ -76,8 +76,7 @@ def test_points_prunes_on_the_weight_overload() -> None:
         "corr",
         weight,
         is_weight=True,
-        variations={"a": weight * 3.0},
-        points=[{"corr": "a", "jes": "up"}],
+        variations=[("a", weight * 3.0), {"corr": "a", "jes": "up"}],
     )
 
     ambient = graphed.weight(registered)
@@ -94,7 +93,7 @@ def test_points_prunes_on_the_shift_overload() -> None:
     pt = ctx["pt"]  # jes-varied
 
     registered = graphed.vary(
-        ctx, "corr", collections={"pt": {"a": pt * 3.0}}, points=[{"corr": "a", "jes": "up"}]
+        ctx, "corr", collections={"pt": {"a": pt * 3.0}}, variations=[{"corr": "a", "jes": "up"}]
     )
 
     labels = graphed.labels(registered)
@@ -104,15 +103,15 @@ def test_points_prunes_on_the_shift_overload() -> None:
 
 
 def test_a_variation_tagged_points_still_registers_through_variations() -> None:
-    """`points` leaves BOTH keyword namespaces: a variation literally tagged `points` registers
-    through `variations=` while `points=` prunes the grid, exactly as before the inversion."""
+    """`points` is freed as a legal tag name by the unification: a declare tuple `("points", array)`
+    registers the member and a placement selecting it prunes the grid, side by side in one list."""
     _session, record = source()
     pt = record["pt"]
     jes = graphed.vary(pt, "jes", up=pt * JES_UP, down=pt * JES_DOWN)
     dependent = jes * 3.0
 
     registered = graphed.vary(
-        jes, "corr", variations={"points": dependent}, points=[{"corr": "points", "jes": "up"}]
+        jes, "corr", variations=[("points", dependent), {"corr": "points", "jes": "up"}]
     )
 
     labels = graphed.labels(registered)
@@ -131,7 +130,7 @@ def test_a_collection_named_points_still_registers_through_collections() -> None
         ctx,
         "corr",
         collections={"points": {"a": collection * pt}},
-        points=[{"corr": "a", "jes": "up"}],
+        variations=[{"corr": "a", "jes": "up"}],
     )
 
     labels = graphed.labels(registered)

@@ -25,7 +25,7 @@ def _repoint(entry: dict[str, object]) -> dict[str, dict[str, str]]:
     _session, ctx = two_axis_context()
     factor = independent_weight(ctx)
     registered = graphed.vary(
-        ctx, "corr", factor, is_weight=True, variations={"a": factor * 3.0}, points=[entry]
+        ctx, "corr", factor, is_weight=True, variations=[("a", factor * 3.0), entry]
     )
     return graphed.points(graphed.weight(registered))
 
@@ -35,7 +35,7 @@ def _refused(entry: dict[str, object]) -> GraphedError:
     factor = independent_weight(ctx)
     with pytest.raises(GraphedError) as caught:
         graphed.vary(
-            ctx, "corr", factor, is_weight=True, variations={"a": factor * 3.0}, points=[entry]
+            ctx, "corr", factor, is_weight=True, variations=[("a", factor * 3.0), entry]
         )
     return caught.value
 
@@ -77,8 +77,9 @@ def test_two_additive_entries_re_pointing_to_one_point_are_refused() -> None:
             "corr",
             factor,
             is_weight=True,
-            variations={"a": factor * 3.0, "b": factor * 4.0},
-            points=[
+            variations=[
+                ("a", factor * 3.0),
+                ("b", factor * 4.0),
                 {"corr": "a", "jes": "up", "jer": "up"},
                 {"corr": "b", "jes": "up", "jer": "up"},  # same foreign point as corr_a
             ],
@@ -94,7 +95,7 @@ def test_an_all_zero_point_drops_to_empty_and_is_refused_but_a_zero_beside_live_
         _session, ctx, pt = triple_numeric()  # jes / btag / jer numeric families, tags 1 / -1
         base = pt * 0.5  # independent
         registered = graphed.vary(
-            ctx, "corr", base, is_weight=True, variations={"a": base * 1.1}, points=[entry]
+            ctx, "corr", base, is_weight=True, variations=[("a", base * 1.1), entry]
         )
         return graphed.points(graphed.weight(registered))
 
@@ -108,8 +109,8 @@ def test_an_all_zero_point_drops_to_empty_and_is_refused_but_a_zero_beside_live_
     base = pt * 0.5
     with pytest.raises(GraphedError):
         graphed.vary(
-            ctx, "corr", base, is_weight=True, variations={"a": base * 1.1},
-            points=[{"corr": "a", "jes": 0, "btag": 0}],
+            ctx, "corr", base, is_weight=True,
+            variations=[("a", base * 1.1), {"corr": "a", "jes": 0, "btag": 0}],
         )
 
 
@@ -120,8 +121,8 @@ def test_a_dependent_members_uncarried_axis_is_refused_by_prune_not_silently_add
     _s1, ctx = two_axis_context()
     dependent = ctx["pt"] * 0.5  # jes-varied → the corr family fans out over jes
     kept = graphed.vary(
-        ctx, "corr", dependent, is_weight=True, variations={"dep": dependent * 1.3},
-        points=[{"corr": "dep", "jes": "up"}],
+        ctx, "corr", dependent, is_weight=True,
+        variations=[("dep", dependent * 1.3), {"corr": "dep", "jes": "up"}],
     )
     assert graphed.points(graphed.weight(kept))["corr_dep__jes_up"] == {"corr": "dep", "jes": "up"}
 
@@ -129,7 +130,7 @@ def test_a_dependent_members_uncarried_axis_is_refused_by_prune_not_silently_add
     dep2 = ctx2["pt"] * 0.5
     with pytest.raises(GraphedError) as caught:
         graphed.vary(
-            ctx2, "corr", dep2, is_weight=True, variations={"dep": dep2 * 1.3},
-            points=[{"corr": "dep", "nosuch": "up"}],
+            ctx2, "corr", dep2, is_weight=True,
+            variations=[("dep", dep2 * 1.3), {"corr": "dep", "nosuch": "up"}],
         )
     assert "nosuch" in str(caught.value)

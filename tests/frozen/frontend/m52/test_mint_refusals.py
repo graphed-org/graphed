@@ -72,8 +72,7 @@ def test_a_points_coordinate_that_is_not_a_tag_of_this_call_is_refused() -> None
             "corr",
             weight,
             is_weight=True,
-            variations={"up": weight * 3.0},
-            points=[{"corr": "down", "jes": "up"}],  # 'down' is not a corr tag of this call
+            variations=[("up", weight * 3.0), {"corr": "down", "jes": "up"}],  # 'down' is not a corr tag
         )
     message = str(caught.value)
     assert "down" in message
@@ -87,8 +86,7 @@ def test_a_points_coordinate_that_is_not_a_tag_of_this_call_is_refused() -> None
         "corr",
         spelled_weight,
         is_weight=True,
-        variations={"0.5": spelled_weight * 3.0},
-        points=[{"corr": "5em1", "jes": "up"}],
+        variations=[("0.5", spelled_weight * 3.0), {"corr": "5em1", "jes": "up"}],
     )
     admitted = [
         point
@@ -107,8 +105,7 @@ def test_a_points_coordinate_that_is_not_a_tag_of_this_call_is_refused() -> None
             "corr",
             adversarial_weight,
             is_weight=True,
-            variations={"0p5": adversarial_weight * 3.0},
-            points=[{"corr": "0.5", "jes": "up"}],
+            variations=[("0p5", adversarial_weight * 3.0), {"corr": "0.5", "jes": "up"}],
         )
     assert "0p5" in str(adversarial_caught.value)
 
@@ -131,8 +128,7 @@ def test_an_origin_points_entry_is_refused_while_a_zero_tag_still_mints() -> Non
             "corr",
             weight,
             is_weight=True,
-            variations={"up": weight * 3.0},
-            points=[{"corr": "up", "jes": 0}],
+            variations=[("up", weight * 3.0), {"corr": "up", "jes": 0}],
         )
     message = str(caught.value)
     assert "central" in message or "nominal" in message or "0" in message
@@ -145,8 +141,7 @@ def test_an_origin_points_entry_is_refused_while_a_zero_tag_still_mints() -> Non
         "corr",
         survivor_weight,
         is_weight=True,
-        variations={"up": survivor_weight * 3.0},
-        points=[{"corr": "up", "jes": 1, "btag": 0}],
+        variations=[("up", survivor_weight * 3.0), {"corr": "up", "jes": 1, "btag": 0}],
     )
     kept = [
         point
@@ -170,14 +165,13 @@ def test_a_failed_vary_leaves_the_registry_untouched_and_the_label_reregistrable
             "sf",
             descendant_weight(ctx),
             is_weight=True,
-            variations={"up": descendant_weight(ctx)},
-            points=[{"sf": "up", "jes": "up"}],
+            variations=[("up", descendant_weight(ctx)), {"sf": "up", "jes": "up"}],
         )
     assert "descendant" in str(caught.value)
     assert graphed.points(ctx) == before
 
     good = ctx["pt"] * 0.5  # jes-dependent
     recovered = graphed.vary(
-        ctx, "sf", good, is_weight=True, variations={"up": good * 3.0}, points=[{"sf": "up", "jes": "up"}]
+        ctx, "sf", good, is_weight=True, variations=[("up", good * 3.0), {"sf": "up", "jes": "up"}]
     )
     assert graphed.points(graphed.weight(recovered))["sf_up__jes_up"] == {"jes": "up", "sf": "up"}

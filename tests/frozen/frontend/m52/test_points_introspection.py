@@ -25,8 +25,7 @@ from m52_point_fixtures import two_axis_context
 _session, ctx = two_axis_context()
 weight = ctx["pt"] * 0.5
 registered = graphed.vary(ctx, "corr", weight, is_weight=True,
-                          variations={{"a": weight * 3.0}},
-                          points=[{{"corr": "a", "jes": "up"}}])
+                          variations=[("a", weight * 3.0), {{"corr": "a", "jes": "up"}}])
 ambient = graphed.weight(registered)
 print(repr(graphed.points(ambient)))
 print(",".join(graphed.labels(ambient)))
@@ -67,8 +66,7 @@ def test_points_is_sorted_and_stable_across_hash_seeds() -> None:
         "corr",
         weight,
         is_weight=True,
-        variations={"a": weight * 3.0},
-        points=[{"corr": "a", "jes": "up"}],
+        variations=[("a", weight * 3.0), {"corr": "a", "jes": "up"}],
     )
 
     reported = graphed.points(graphed.weight(registered))

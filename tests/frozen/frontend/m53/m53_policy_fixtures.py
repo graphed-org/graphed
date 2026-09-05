@@ -60,28 +60,32 @@ def _jes_context() -> tuple[Session, EventContext]:
     return session, shifted
 
 
-def fanout_weight(**vary_kwargs: Any) -> tuple[Session, EventContext, Any]:
-    """A jes-dependent b-tag weight family: jes(3) x btag(5) = 15. Extra keywords pass straight
-    through to `graphed.vary` (`composes_as_union=`, `points=`, `max_universes=`)."""
+def fanout_weight(*, points: Any = None, **vary_kwargs: Any) -> tuple[Session, EventContext, Any]:
+    """A jes-dependent b-tag weight family: jes(3) x btag(5) = 15. ``points`` (placement entries)
+    merge into the unified ``variations=`` list; a pure-declare call (``points is None``) keeps the
+    dict channel. Extra keywords (``composes_as_union=``, ``max_universes=``) pass through."""
     session, shifted = _jes_context()
     pt = shifted["pt"]  # jes-varied
     central = pt * 1.0
     members = {tag: pt * factor for tag, factor in BTAG_FACTOR.items()}
+    variations: Any = members if points is None else [*members.items(), *points]
     registered = graphed.vary(
-        shifted, "btag", central, is_weight=True, variations=members, **vary_kwargs
+        shifted, "btag", central, is_weight=True, variations=variations, **vary_kwargs
     )
     return session, registered, graphed.weight(registered)
 
 
-def numeric_fanout(**vary_kwargs: Any) -> EventContext:
+def numeric_fanout(*, points: Any = None, **vary_kwargs: Any) -> EventContext:
     """A jes-dependent weight family over NUMERICALLY tagged jes universes ('2' / '0p5'), for a
-    precision (numeric-coordinate) `points=` entry."""
+    precision (numeric-coordinate) placement. ``points`` merges into the ``variations=`` list."""
     session = Session(NumpyBackend())
     record = from_record(session, "ev", pt=VECTOR)
     pt = record["pt"]
     ctx = EventContext(session, pt, collections={"pt": pt})
     shifted = graphed.vary(ctx, "jes", collections={"pt": {"2": pt * 1.2, "0p5": pt * 0.8}})
     spt = shifted["pt"]  # jes-varied, numeric tags '2' / '0p5'
+    members = {"2": spt * 1.1}
+    variations: Any = members if points is None else [*members.items(), *points]
     return graphed.vary(
-        shifted, "muF", spt * 1.0, is_weight=True, variations={"2": spt * 1.1}, **vary_kwargs
+        shifted, "muF", spt * 1.0, is_weight=True, variations=variations, **vary_kwargs
     )

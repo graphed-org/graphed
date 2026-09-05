@@ -21,4 +21,4 @@ def test_composes_as_union_collapses_a_dependent_family_to_the_union() -> None:
 def test_composes_as_union_with_points_is_a_construction_error() -> None:
     with pytest.raises(GraphedError) as caught:
         fanout_weight(composes_as_union=True, points=[{"btag": "hf_up", "jes": "up"}])
-    assert "points" in str(caught.value)  # names the incompatible keyword, not a bad member
+    assert "composes_as_union" in str(caught.value)  # names the incompatible combination, not a bad member

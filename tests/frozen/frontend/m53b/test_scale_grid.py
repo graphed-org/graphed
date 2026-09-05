@@ -35,8 +35,9 @@ def _grid() -> dict[str, dict[str, str]]:
         "scale",
         base,
         is_weight=True,
-        variations={"upup": base * 1.5, "dndn": base * 0.87},
-        points=[
+        variations=[
+            ("upup", base * 1.5),
+            ("dndn", base * 0.87),
             {"scale": "upup", "muR": 2, "muF": 2},
             {"scale": "dndn", "muR": 0.5, "muF": 0.5},
         ],
