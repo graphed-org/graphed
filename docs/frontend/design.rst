@@ -163,9 +163,12 @@ recorded.
 Vary once, get every universe
 -----------------------------
 
-A systematic variation is the same analysis with one knob moved: a jet-energy scale shifted, a
-scale factor scaled up and down. You write the analysis once. ``graphed.vary`` attaches the knob,
-and everything downstream carries the whole family.
+Each label **names a point** in nuisance space. A label registered without ``points=`` carries the
+default point ``{name: tag}`` and so differs from ``nominal`` on exactly one axis — a jet-energy
+scale shifted, a scale factor scaled up and down; that axis-aligned set is the default and is what
+most analyses need. A universe displaced on two or more axes at once is registered explicitly with
+``points=`` (below) and is never produced implicitly. Either way you write the analysis once:
+``graphed.vary`` attaches the knob, and everything downstream carries the whole family.
 
 .. code-block:: python
 
@@ -271,6 +274,214 @@ the *values* — a shifted jet collection — so every universe needs its own pa
 Numeric tags parse to an ordering value — the σ handle you want for envelope plots — under both
 the exponent form (``5em1`` is ½) and the datacard form (``1p0`` is 1, ``m1p0`` is −1); a
 non-numeric tag such as ``"extreme"`` carries ``None`` and is simply unordered.
+
+Three ways two things can be correlated
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+"These two systematics are correlated" means three different things, and graphed keeps them apart
+because they cost different amounts and only one of them is new:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 38 46 16
+
+   * - What you mean
+     - How you say it
+     - New?
+   * - Two registrations are the *same fit parameter*
+     - **Share the nuisance name.** Two ``vary`` calls with one ``name``.
+     - no
+   * - A correction *depends on* a quantity a nuisance moves
+     - **Propagation.** Compute the correction from the varied quantity, with
+       ``gak.apply_correction`` or ordinary ops.
+     - no
+   * - One universe is displaced on *two or more axes at once*
+     - **``points=``.** Register the universe with its coordinate map.
+     - yes
+
+Propagation is a recording detail worth spelling out: record a correction with
+``graphed.awkward.gak.apply_correction``, not with ``Session.record_external`` directly.
+``apply_correction`` goes through the ``gak`` dispatch layer, so a ``Varied`` input fans out and the
+correction is *re-evaluated* in each universe — a scale factor whose jet crosses a binning edge
+under the shift gets the other bin's value. ``Session.record_external`` is the raw seam underneath;
+it takes plain ``Array`` inputs and knows nothing about labels.
+
+.. code-block:: python
+
+    import awkward as ak
+    import correctionlib
+    import correctionlib.schemav2 as cs
+    import graphed.awkward as ga
+    from graphed import Session, labels, universe, vary
+    from graphed.awkward import AwkwardBackend, from_awkward, gak
+
+    payload = cs.CorrectionSet(schema_version=2, corrections=[cs.Correction(
+        name="jet_sf", version=1, inputs=[cs.Variable(name="pt", type="real")],
+        output=cs.Variable(name="sf", type="real"),
+        data=cs.Binning(nodetype="binning", input="pt", edges=[0.0, 40.0, 1000.0],
+                        content=[0.95, 1.05], flow="clamp"))],
+    ).model_dump_json(exclude_unset=True).encode()
+    evaluator = correctionlib.CorrectionSet.from_string(payload.decode())["jet_sf"]
+
+    s   = Session(AwkwardBackend())
+    ev  = from_awkward(s, "events", ak.Array({"Jet": [[{"pt": 38.0}], [{"pt": 70.0}]]}))
+    ctx = ga.gnano.events(ev)
+
+    jets = ctx.Jet
+    ctx  = vary(ctx, "jes", collections={"Jet": {
+        "up": gak.with_field(jets, jets.pt * 1.10, "pt")}})
+
+    sf = gak.apply_correction(payload, "jet_sf", [gak.flatten(ctx.Jet.pt)],
+                              lambda pt: evaluator.evaluate(pt), args=["$0"])
+    print(labels(sf))
+    print(s.materialize(universe(sf, "nominal")).to_list())
+    print(s.materialize(universe(sf, "jes_up")).to_list())
+
+This example needs ``pip install "graphed[preserve]"`` for ``correctionlib``. Prints::
+
+    ('nominal', 'jes_up')
+    [0.95, 1.05]
+    [1.05, 1.05]
+
+The 38 GeV jet crosses the 40 GeV edge under the shift, so its scale factor changes from 0.95 to
+1.05 — you never wrote a second correction call. :doc:`../awkward/design` covers the recording
+itself, content hashing and all.
+
+A universe at two coordinates at once
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The b-tag scale factor above is itself computed from jets, so it already varies with the jet scale.
+What you cannot get from name-sharing or propagation alone is a *universe* that sits at
+``jes = up`` **and** ``btag = hf_up`` together. Sharing a nuisance *name* is what correlates two
+templates in the fit (one nuisance parameter moves both); this joint universe is a different thing.
+It measures the *factorization error* — how far the true two-coordinate response departs from the
+sum of the one-coordinate shifts the fit actually interpolates, which has no slot for a joint
+template. It is registered, not inferred: ``points=`` maps a tag to the coordinates its universe
+occupies, and resolution projects that point onto whatever axes each container downstream happens
+to know.
+
+.. code-block:: python
+
+    import awkward as ak
+    import graphed.awkward as ga
+    from graphed import Session, points, universe, vary, weight
+    from graphed.awkward import AwkwardBackend, from_awkward, gak
+
+    events = ak.Array({
+        "MET": ak.zip({"pt": [10.0, 20.0, 30.0]}),
+        "Jet": ak.zip({"pt": ak.Array([[40.0, 25.0], [55.0], [30.0, 60.0, 20.0]])}),
+    })
+
+    s   = Session(AwkwardBackend())
+    ctx = ga.gnano.events(from_awkward(s, "events", events))
+
+    jets = ctx.Jet
+    ctx  = vary(ctx, "jes", collections={"Jet": {
+        "up":   gak.with_field(jets, jets.pt * 1.05, "pt"),
+        "down": gak.with_field(jets, jets.pt * 0.95, "pt")}})
+
+    # a pT-dependent b-tag scale factor, propagated: recomputed on each universe's jets
+    jets = ctx.Jet
+    rel  = 0.05 * jets.pt / 100.0
+    sf_c, sf_up, sf_dn = (gak.prod(1.0 + k * rel, axis=1) for k in (0.0, 1.0, -1.0))
+
+    ctx = vary(ctx, "btag", sf_c, is_weight=True,
+               variations={"hf_up": sf_up, "hf_down": sf_dn,
+                           "jesup_hf_up": sf_up, "jesdn_hf_up": sf_up},
+               points={"jesup_hf_up": {"btag": "hf_up", "jes": "up"},
+                       "jesdn_hf_up": {"btag": "hf_up", "jes": "down"}})
+
+    w = weight(ctx)
+    print(points(ctx)["btag_hf_up"])
+    print(points(ctx)["btag_jesup_hf_up"])
+    print([round(x, 4) for x in s.materialize(universe(w, "btag_hf_up")).to_list()])
+    print([round(x, 4) for x in s.materialize(universe(w, "btag_jesup_hf_up")).to_list()])
+    print([round(x, 4) for x in s.materialize(universe(w, "btag_jesdn_hf_up")).to_list()])
+
+Prints::
+
+    {'btag': 'hf_up'}
+    {'btag': 'hf_up', 'jes': 'up'}
+    [1.0328, 1.0275, 1.0559]
+    [1.0344, 1.0289, 1.0587]
+    [1.0311, 1.0261, 1.0531]
+
+Three things to read off that. The four scale-factor universes are the **same expression objects**
+— ``sf_up`` is passed twice — because the point, not the object, decides which inner universe a
+label reads; building an arithmetically equal but distinct expression instead only adds a node the
+optimizer may merge back. ``btag_hf_up`` names no ``jes`` coordinate, so it keeps nominal
+kinematics, exactly as it does today. ``btag_jesup_hf_up`` names one, so it reads the shifted jets,
+and the three numbers differ — which is the whole point, and is what silently taking the nominal
+would hide.
+
+The label grammar does not change: a point is metadata attached to an ordinary ``name_tag`` label,
+never rendered into one. ``graphed.points(obj)`` is the authoritative coordinate view — label-sorted,
+each map nuisance-sorted, ``"nominal"`` mapping to ``{}`` — and it answers only on record-time
+shapes (a ``Varied``, an event context), because points are not carried on disk and a label cannot be
+parsed back into a point. ``graphed.variations`` keeps reporting a point family as a family.
+
+Numbers reach numeric tags, and zero is asymmetric
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A coordinate is an ordinary tag, and tags come in two flavours that do not mix. An identifier tag
+(``up``, ``hf_up``) is opaque and is *not* promoted to ±1σ — that reading is a stats-export
+convention, not a frontend fact. A numeric tag is canonicalised by value, so ``"0p5"``, ``"0.5"``,
+``0.5`` and ``Fraction(1, 2)`` are one coordinate. Writing a point with numbers therefore reaches
+only families registered with numeric tags, and the mismatch is refused rather than silently
+resolved to nominal:
+
+.. code-block:: python
+
+    import numpy as np
+    from graphed import Session, labels, points, vary
+    from graphed.numpy import NumpyBackend, from_array
+
+    s  = Session(NumpyBackend())
+    pt = from_array(s, "pt", np.array([10.0, 20.0, 30.0]))
+
+    named  = vary(pt, "jes", up=pt * 1.05, down=pt * 0.95)
+    sigmas = vary(pt, "jes", **{"1": pt * 1.05, "0p5": pt * 1.025})
+    print(points(sigmas))
+
+    try:                                    # numbers against identifier tags
+        vary(named, "corr", variations={"up": pt}, points={"up": {"jes": 1}})
+    except Exception as exc:
+        print(type(exc).__name__, exc)
+
+    zero = vary(pt, "shift", **{"0": pt * 1.01})    # a tag that happens to be "0"
+    print(labels(zero), points(zero)["shift_0"])
+
+    try:                                    # a point that IS the origin
+        vary(sigmas, "corr", variations={"c": pt}, points={"c": {"jes": 0}})
+    except Exception as exc:
+        print(type(exc).__name__, exc)
+
+Prints::
+
+    {'jes_0p5': {'jes': '5em1'}, 'jes_1': {'jes': '1'}, 'nominal': {}}
+    GraphedError points= on graphed.vary('corr'): '1' is not a registered tag of nuisance 'jes', whose tags are ['down', 'up']
+    ('nominal', 'shift_0') {'shift': '0'}
+    GraphedError points= entry 'c' names the central universe — every coordinate sits at 0, which is what absence already says; nominal is not a variation
+
+Every nuisance and coordinate a ``points=`` entry names must already be registered somewhere the
+call can see; otherwise a joint point written before its ``jes`` axis exists would quietly produce a
+b-tag-only universe wearing a joint name. Labels *inherited* from upstream keep the ordinary silent
+fallback to nominal — partial coverage is a legitimate pattern; a coordinate you typed is not.
+
+Note the asymmetry in the last two cases, which is deliberate. In an explicit ``points=`` map a
+coordinate of 0 means "this axis sits at its central value", which is what leaving it out already
+says, so ``{jes: 1, btag: 0}`` and ``{jes: 1}`` are one point and an entry that canonicalises to the
+empty point is refused — that is ``nominal``, not a variation. A *default* point is never
+zero-dropped: its coordinate is the tag you registered, a name for a universe rather than a
+displacement, so the legal tag ``0`` mints the ordinary label ``shift_0`` sitting at ``{shift: 0}``,
+distinct from ``nominal``, exactly as it does today. To name a universe that sits at zero on some
+axis, register it as a tag; ``points=`` cannot spell it.
+
+Also worth knowing: ``points=`` earns a new label only for a genuinely multi-coordinate universe. A
+single-coordinate entry is refused, because the plain tag already names that universe and two labels
+for one point would mean two slots, two category bins and two templates for a fit to reconcile.
+There is no ``explode=`` verb either — a factorial grid falls out of a dict comprehension over
+``points=``, and the full grid is a closure study of that factorization error, not fit input.
 
 One histogram per variation, or one variation axis
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

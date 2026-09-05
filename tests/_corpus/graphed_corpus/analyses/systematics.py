@@ -45,6 +45,17 @@ def _apply_jes(jets: ak.Array, *, variation: str) -> ak.Array:
     return jets
 
 
+def _region_mask(good: ak.Array, *, region: str) -> ak.Array:
+    """Event mask: >=4 good jets, and the region's b-tag multiplicity."""
+    base = ak.num(good, axis=1) >= 4
+    n_b = ak.sum(good.btag > 0.7, axis=1)
+    if region == "4j1b":
+        return base & (n_b == 1)
+    if region == "4j2b":
+        return base & (n_b >= 2)
+    raise ValueError(region)  # pragma: no cover - guarded by the fixture catalog
+
+
 def _round_hist(h: Hist) -> Hist:
     view = h.view()
     view[...] = np.round(view, STABLE_DECIMALS)
@@ -59,25 +70,64 @@ def ttbar_region(events: ak.Array, *, region: str, variation: str) -> Hist:
     """
     jets = _apply_jes(events.Jet, variation=variation)
     good = jets[jets.pt > 25]
-    n_good = ak.num(good, axis=1)
-    is_b = good.btag > 0.7
-    n_b = ak.sum(is_b, axis=1)
-
-    base = n_good >= 4
-    if region == "4j1b":
-        sel = base & (n_b == 1)
-    elif region == "4j2b":
-        sel = base & (n_b >= 2)
-    else:  # pragma: no cover - guarded by the fixture catalog
-        raise ValueError(region)
-
-    sel_jets = good[sel]
+    sel_jets = good[_region_mask(good, region=region)]
     ht = ak.sum(sel_jets.pt, axis=1)
     weight = _btag_weight(sel_jets, variation=variation)
 
     h = Hist.new.Reg(40, 0, 800, name="ht").Double()
     h.fill(np.round(ak.to_numpy(ht), STABLE_DECIMALS), weight=ak.to_numpy(weight))
     return _round_hist(h)
+
+
+def btag_sf_rel_uncertainty(pt: ak.Array) -> ak.Array:
+    """Per-jet *fractional* b-tag SF uncertainty, as a function of the jet pT it is evaluated at.
+
+    Rising from 1% to a 6% plateau at 100 GeV. Because it reads the pT of the universe being
+    computed, a JES shift changes the size of the b-tag uncertainty as well as the selection —
+    which is exactly why the two axes do not factorize.
+    """
+    return 0.01 + 0.05 * np.minimum(pt / 100.0, 1.0)
+
+
+#: b-tag direction as a signed multiple of the fractional uncertainty; 0 reproduces the SF exactly.
+_BTAG_DIRECTION = {"nominal": 0.0, "btag_up": 1.0, "btag_down": -1.0}
+
+#: the pT-independent uncertainty `_btag_weight`'s flat +-3% rule uses.
+_FLAT_REL_UNCERTAINTY = 0.03
+
+
+def ttbar_joint_reference(
+    events: ak.Array,
+    *,
+    region: str,
+    jes: str,
+    btag: str,
+    pt_dependent: bool = True,
+    freeze_selection: bool = False,
+) -> Hist:
+    """`ttbar_region` at an arbitrary *(jes, btag)* coordinate PAIR rather than one variation.
+
+    `jes` is nominal / jes_up / jes_down, `btag` is nominal / btag_up / btag_down; selection,
+    observable and binning are `ttbar_region`'s. Contents are returned unrounded — rounding is the
+    comparison helpers' job (:func:`~graphed_corpus.histograms.bin_values`).
+
+    The two knobs isolate where the two axes' cross term comes from: `pt_dependent=False` falls back
+    to the flat +-3% rule, leaving only JES selection migration; `freeze_selection=True` additionally
+    takes the jet and event selection from nominal kinematics while still evaluating the observable
+    and the SF at the shifted pT, which removes the migration too and so leaves no cross term at all.
+    """
+    shifted = _apply_jes(events.Jet, variation=jes)
+    selector = events.Jet if freeze_selection else shifted
+    keep = selector.pt > 25
+    sel = _region_mask(selector[keep], region=region)
+    sel_jets = shifted[keep][sel]
+
+    rel = btag_sf_rel_uncertainty(sel_jets.pt) if pt_dependent else _FLAT_REL_UNCERTAINTY
+    sf = (0.95 + 0.10 * sel_jets.btag) * (1.0 + _BTAG_DIRECTION[btag] * rel)
+
+    h = Hist.new.Reg(40, 0, 800, name="ht").Double()
+    h.fill(ak.to_numpy(ak.sum(sel_jets.pt, axis=1)), weight=ak.to_numpy(ak.prod(sf, axis=1)))
+    return h
 
 
 def ttgamma_region(events: ak.Array, *, variation: str) -> Hist:

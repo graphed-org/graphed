@@ -14,10 +14,11 @@ from collections.abc import Mapping
 from typing import Any
 
 from . import accessors
+from ._points import Point, coordinate, default, render
 from ._tags import canonical_tag, numeric_value
 from .array import Array
 from .errors import GraphedError
-from .varied import Varied, rebuild
+from .varied import Varied, member_of, rebuild, registered_points, session_of
 
 
 def vary(
@@ -29,25 +30,44 @@ def vary(
     is_weight: bool = False,
     variations: Mapping[Any, Any] | None = None,
     collections: Mapping[str, Mapping[Any, Any]] | None = None,
+    points: Mapping[Any, Mapping[str, Any]] | None = None,
     **tags: Any,
 ) -> Any:
     """Register a variation family `name` on `target`, returning a NEW object (§2.1).
 
     `**tags` and `variations=` carry tag/member pairs under the §1.1 grammar; the signature's own
-    keyword names (`nominal`, `is_weight`, `variations`, `collections`) are legal tags AND legal
-    collection names, so one so named arrives through a mapping channel instead.
+    keyword names (`nominal`, `is_weight`, `variations`, `collections`, `points`) are legal tags AND
+    legal collection names, so one so named arrives through a mapping channel instead.
+
+    `points=` is keyed by tag exactly like `variations=` and gives that tag's universe its full
+    `{nuisance: coordinate}` map (§4.4); a tag absent from it carries the default point
+    `{name: tag}`, which is the implicit rule made explicit.
     """
     if not isinstance(name, str) or not name.isidentifier():
         raise GraphedError(f"a variation name must be a Python identifier, got {name!r}")
-    if isinstance(target, Array | Varied):
-        return _vary_loose(target, name, nominal, is_weight, variations, collections, tags)
     from .context import EventContext, vary_context  # noqa: PLC0415  (import cycle)
 
-    if isinstance(target, EventContext):
-        return vary_context(target, name, nominal, is_weight, variations, collections, tags)
-    raise GraphedError(
-        f"graphed.vary takes an Array, a Varied or an event context, got {type(target).__name__}"
-    )
+    overload: Any  # the two context overloads take one arg shape; mypy keeps its own narrowing
+    if isinstance(target, Array | Varied):
+        session = session_of(target)
+        overload = _vary_loose
+    elif isinstance(target, EventContext):
+        session = target._session
+        overload = vary_context
+    else:
+        raise GraphedError(
+            f"graphed.vary takes an Array, a Varied or an event context, got {type(target).__name__}"
+        )
+    # §4.5's TRANSACTIONAL mint: everything that can raise after `gather_members` has minted — the
+    # label-collision check, `check_members`, `_align`/`reindex_to` — must leave no binding behind,
+    # or one failed call poisons a label for the life of the Session with no escape but a new one.
+    saved = dict(session._points)
+    try:
+        return overload(target, name, nominal, is_weight, variations, collections, points, tags)
+    except BaseException:
+        session._points.clear()
+        session._points.update(saved)
+        raise
 
 
 def _vary_loose(
@@ -57,6 +77,7 @@ def _vary_loose(
     is_weight: bool,
     variations: Mapping[Any, Any] | None,
     collections: Mapping[str, Mapping[Any, Any]] | None,
+    points: Mapping[Any, Mapping[str, Any]] | None,
     tags: Mapping[str, Any],
 ) -> Varied:
     """Overload (a): the loose primitive. `is_weight=` and `nominal=` have no meaning here — a
@@ -73,9 +94,14 @@ def _vary_loose(
     if collections is not None:
         raise GraphedError("collections= needs an event-context target (the shift form)")
     inherited = target._tags.get(name, ()) if isinstance(target, Varied) else ()
-    members = gather_members(name, tags, variations, inherited)
+    # the loose form's own carrier for §4.11-4 is the target it registers on
+    members = gather_members(
+        name, tags, variations, inherited, points, session=session_of(target), carriers=(target,)
+    )
     existing = dict(target._members) if isinstance(target, Varied) else {"nominal": target}
-    resolved = {label: central_universe(member) for label, member in members.items()}
+    # §4.6: registration resolves by the label's OWN point, so a supplied `Varied` contributes the
+    # inner universe the point names instead of being flattened to its central one
+    resolved = {label: member_of(member, label) for label, member in members.items()}
     # BEFORE the row-space maps: a colliding label shadows its existing member in the merged
     # dict, so `check_members` never sees that member's handle and `_align` would work from a
     # handle the container does not really have.
@@ -111,11 +137,17 @@ def gather_members(
     tags: Mapping[str, Any],
     variations: Mapping[Any, Any] | None,
     inherited: tuple[str, ...],
+    points: Mapping[Any, Mapping[str, Any]] | None = None,
+    *,
+    session: Any,
+    carriers: tuple[Any, ...] = (),
 ) -> dict[str, Any]:
     """The §1.1 tag channels, canonicalized and family-checked, as `{label: member}`.
 
     Validation is CHANNEL-INDEPENDENT: literal kwarg syntax cannot spell a dotted or digit-leading
     tag, but `**`-unpacking admits any string key, so every channel takes the same rules.
+
+    §4.5: this is the ONE place a label is minted, so it is also the one place a POINT is minted.
     """
     raw: dict[Any, Any] = dict(tags)
     for tag, member in (variations or {}).items():
@@ -134,7 +166,111 @@ def gather_members(
             )
         canonical[canonical_form] = member
     check_family(name, inherited, tuple(canonical))
+    _mint_points(name, tuple(canonical), points, session, carriers)
     return {f"{name}_{tag}": member for tag, member in canonical.items()}
+
+
+def _mint_points(
+    name: str,
+    tags: tuple[str, ...],
+    points: Mapping[Any, Mapping[str, Any]] | None,
+    session: Any,
+    carriers: tuple[Any, ...],
+) -> None:
+    """§4.4/§4.11: give every label this call mints its point, and register it on the Session.
+
+    A single-coordinate `points=` entry has no way through: §4.11-4 makes its coordinate a
+    registered tag of its nuisance, so that (nuisance, tag)'s own default label already owns the
+    point and §4.11-2 refuses a second name for it. `points=` therefore earns a new label only for
+    a >=2-coordinate universe, which is its whole purpose (§4.8, §4.9).
+    """
+    keyed: dict[str, Mapping[str, Any]] = {}
+    for tag, coordinates in (points or {}).items():
+        # matched AFTER canonicalization, so `"0.5"` and `"5em1"` are one key while the p-form
+        # `"0p5"` is its own (§1.1's one residual duplicate class)
+        key = canonical_tag(tag)
+        if key not in tags:
+            raise GraphedError(
+                f"points= key {tag!r} is not a tag of this graphed.vary({name!r}) call, whose tags "
+                f"are {sorted(tags)}"
+            )
+        keyed[key] = coordinates
+    reachable = _reachable(name, tags, carriers)
+    minted: dict[str, Point] = {}
+    for tag in tags:
+        point = default(name, tag)
+        if tag in keyed:
+            point = Point(keyed[tag])
+            if not point:
+                raise GraphedError(
+                    f"points= entry {tag!r} names the central universe — every coordinate sits at "
+                    "0, which is what absence already says; nominal is not a variation"
+                )
+            _check_reachable(name, point, reachable)
+        minted[f"{name}_{tag}"] = point
+    _check_unique(minted, session._points)
+    session._points.update(minted)
+
+
+def _reachable(name: str, tags: tuple[str, ...], carriers: tuple[Any, ...]) -> dict[str, set[str]]:
+    """§4.11-4's carrier walk: `{nuisance: {coordinate}}` over the family being registered in this
+    call plus the carriers' own labels.
+
+    Read through the REGISTRY's points over those labels, never through the carriers' `_tags` — a
+    per-family map that legitimately omits inherited families, so a shift-then-weight ambient
+    weight carries `jes_up` while its `_tags` has no `jes` key at all (§8-g).
+    """
+    found: dict[str, set[str]] = {name: {coordinate(tag) for tag in tags}}
+    for carrier in carriers:
+        if isinstance(carrier, Varied):
+            for point in registered_points(carrier).values():
+                for nuisance, value in point:
+                    found.setdefault(nuisance, set()).add(value)
+    return found
+
+
+def _check_reachable(name: str, point: Point, reachable: Mapping[str, set[str]]) -> None:
+    """§4.11-4: a TYPED coordinate names a real universe or the call fails naming what does.
+
+    This is what stops `{"jes": 1}` typed against a family registered `up` from silently returning
+    nominal kinematics, and a joint point registered before its axis exists from producing a
+    one-axis universe wearing a joint name. INHERITED labels keep the silent fallback (§4.7):
+    partial coverage is a legitimate pattern, a typed coordinate is not.
+    """
+    for nuisance, value in point:
+        registered = reachable.get(nuisance)
+        if registered is None:
+            raise GraphedError(
+                f"points= on graphed.vary({name!r}): nuisance {nuisance!r} is registered nowhere "
+                f"this call can see; the registered nuisances are {sorted(reachable)}"
+            )
+        if value not in registered:
+            raise GraphedError(
+                f"points= on graphed.vary({name!r}): {value!r} is not a registered tag of nuisance "
+                f"{nuisance!r}, whose tags are {sorted(registered)}"
+            )
+
+
+def _check_unique(minted: Mapping[str, Point], registry: Mapping[str, Point]) -> None:
+    """§4.11-1/2: within a Session a label names one point and a point wears one label.
+
+    Minting the same label with the same point — two independent containers each registering
+    `vary(., "jes", up=.)` — is idempotent and stays legal.
+    """
+    for label, point in minted.items():
+        seen = registry.get(label)
+        if seen is not None and seen != point:
+            raise GraphedError(
+                f"variation label {label!r} already names the point {render(seen)} in this "
+                f"Session, and this call names {render(point)}; one label names one universe"
+            )
+        for other, other_point in (*registry.items(), *minted.items()):
+            if other != label and other_point == point:
+                raise GraphedError(
+                    f"point {render(point)} is already registered under label {other!r}, so label "
+                    f"{label!r} would be a second name for one universe — two slots, two "
+                    "StrCategory bins and two content hashes"
+                )
 
 
 def check_family(name: str, inherited: tuple[str, ...], added: tuple[str, ...]) -> None:
@@ -153,11 +289,6 @@ def check_family(name: str, inherited: tuple[str, ...], added: tuple[str, ...]) 
                 f"variation tags {twin!r} and {tag!r} in family {name!r} name the same value "
                 f"({value}); two labels for one universe would mean two bins and two content hashes"
             )
-
-
-def central_universe(member: object) -> Any:
-    """§2.1's member rule for overloads (a)/(c): a `Varied` member is reduced as SUPPLIED."""
-    return accessors.nominal(member) if isinstance(member, Varied) else member
 
 
 def check_members(labelled: Mapping[str, Any]) -> Any:

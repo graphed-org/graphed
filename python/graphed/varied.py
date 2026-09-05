@@ -15,6 +15,7 @@ import functools
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from typing import Any
 
+from ._points import Point, restrict
 from .array import Array
 from .errors import GraphedError
 
@@ -58,8 +59,27 @@ class Varied:
             ) from None
 
     def _member_for(self, label: str) -> Member:
-        """§2.4's fallback: this container's member for L, else its central universe."""
-        return self._members.get(label, self._members["nominal"])
+        """§4.6: the member whose point equals `restrict(point(L), axes(self))`, else the central
+        universe.
+
+        The fast path — a label this container carries — is not a special case but a theorem:
+        `keys(point(L)) ⊆ axes(C)` makes the restriction the identity and point→label is unique
+        (§4.11-2). Only the FALLBACK branch projects, and on a container all of whose labels carry
+        default points it lands on today's answer (§4.7's theorem), since the only label whose
+        point is `{n: t}` is `f"{n}_{t}"`, which the fast path would already have returned.
+        """
+        member = self._members.get(label)
+        if member is not None:
+            return member
+        point = point_registry(self).get(label)
+        if point is not None:
+            carried = registered_points(self)
+            wanted = restrict(point, frozenset(n for own in carried.values() for n, _ in own))
+            if wanted:
+                for own_label, own_point in carried.items():
+                    if own_point == wanted:
+                        return self._members[own_label]
+        return self._members["nominal"]
 
     def apply(self, fn: Callable[[Any], Any]) -> Varied:
         """Apply a record-time ``Array -> Array`` function per universe (§2.2).
@@ -96,6 +116,35 @@ class Varied:
 
     def __repr__(self) -> str:
         return f"Varied(labels={list(self._members)})"
+
+
+# ---- §4.5's Session label -> point registry, read through the nominal member ----------------
+def session_of(value: object) -> Any:
+    """The Session `value` records into, `None` when it is not a recorded value.
+
+    Reached through the nominal member because §2.2 RESERVES `session` on a `Varied` — resolution
+    has no other legal spelling (§4.5).
+    """
+    while isinstance(value, Varied):
+        value = value._members["nominal"]
+    return getattr(value, "session", None)
+
+
+def point_registry(value: object) -> Mapping[str, Point]:
+    """The `{label: point}` registry of the Session `value` records into (§4.5)."""
+    session = session_of(value)
+    return {} if session is None else session._points
+
+
+def registered_points(container: Varied) -> dict[str, Point]:
+    """The registered point of each label `container` carries, in its label order.
+
+    A label with no entry is ABSENT rather than mapped to the origin: it resolves by exact match,
+    which is today's rule and what keeps `graphed.varied.rebuild` usable as a hand-built escape
+    hatch (§4.5). `"nominal"` is one such label on every container.
+    """
+    registry = point_registry(container)
+    return {label: registry[label] for label in container._members if label in registry}
 
 
 # ---- the §2.4 combination rule ------------------------------------------------------------
