@@ -88,3 +88,6 @@ Two old tour levels are held out of 61f4f47; the off-grid rebuild decides whethe
   semantics → rebuild with the off-grid mode; (a) now entangles with auto-fanout + the injective-label
   check under m53 (`shift_0__jes_up` collapses onto `jes_up` → refused) and is partly covered by the
   m53 frozen mint-refusal contract (dispute ruling #4 names "0"/"central"/"nominal").
+- REBUILD prose note (lead): phrase any off-grid reference in ANALYST terms — drop internal-process
+  framing like "second gated cycle, in design" from user-facing tour cells. The rebuild replaces
+  cell 0 anyway, so the current 61f4f47 pointer stands as-is until then.
