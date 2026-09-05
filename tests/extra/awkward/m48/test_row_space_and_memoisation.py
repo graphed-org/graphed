@@ -118,7 +118,7 @@ def test_a_weight_label_colliding_with_the_ambient_registry_under_ANOTHER_name_i
     first = graphed.vary(events, "jes_up", weight, is_weight=True, x=weight * 2.0)
     assert "jes_up_x" in graphed.labels(graphed.weight(first))
 
-    with pytest.raises(GraphedError, match="already carried by this container"):
+    with pytest.raises(GraphedError, match="one label names one universe"):
         graphed.vary(first, "jes", weight, is_weight=True, up_x=weight * 3.0)
 
 
@@ -201,7 +201,7 @@ def test_a_weight_duplicate_under_another_name_is_STILL_refused_with_a_shift_pre
     weight = pu_weight(events, 1.0)
     shifted = graphed.vary(events, "jes", **jes_kwargs(events))
     first = graphed.vary(shifted, "sf_up", weight, is_weight=True, x=weight * 2.0)
-    with pytest.raises(GraphedError, match="already carried by this container"):
+    with pytest.raises(GraphedError, match="one label names one universe"):
         graphed.vary(first, "sf", weight, is_weight=True, up_x=weight * 3.0)
 
 
@@ -213,7 +213,7 @@ def test_a_SHIFT_carried_label_colliding_under_another_family_is_refused() -> No
     weight = pu_weight(events, 1.0)
     shifted = graphed.vary(events, "sf_up", **shift_kwargs(events, "x", 1.05))
     assert "sf_up_x" in graphed.labels(shifted.Jet)
-    with pytest.raises(GraphedError, match="already carried by this container"):
+    with pytest.raises(GraphedError, match="one label names one universe"):
         graphed.vary(shifted, "sf", weight, is_weight=True, up_x=weight * 3.0)
 
 
@@ -225,7 +225,7 @@ def test_a_SELECTION_carried_label_colliding_under_another_family_is_refused() -
     mask = graphed.vary(four_jets(events.Jet), "sf_up", x=four_jets(shifted_jets(events, 1.05)))
     sel = events[mask]
     assert "sf_up_x" in graphed.labels(sel.MET.pt)
-    with pytest.raises(GraphedError, match="already carried by this container"):
+    with pytest.raises(GraphedError, match="one label names one universe"):
         graphed.vary(sel, "sf", weight, is_weight=True, up_x=weight * 3.0)
 
 
@@ -258,5 +258,5 @@ def test_a_duplicate_label_shadowing_a_contexted_member_raises_the_DESIGNED_erro
     # label shadows the only contexted member, the container is left with no handle at all
     target = graphed.vary(root.MET.pt, "jes_up", x=sel.MET.pt * 3.0)
     assert graphed.context_of(target) is sel
-    with pytest.raises(GraphedError, match="already carried by this container"):
+    with pytest.raises(GraphedError, match="one label names one universe"):
         graphed.vary(target, "jes", up_x=root.MET.pt * 2.0)

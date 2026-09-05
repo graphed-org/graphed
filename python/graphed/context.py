@@ -27,7 +27,7 @@ from .by_label import cone
 from .errors import GraphedError
 from .provenance import capture
 from .varied import Varied, expand, labels_of, member_of, rebuild
-from .vary import central_universe, check_members, gather_members, register
+from .vary import check_members, gather_members, register
 
 #: contexts are compared by IDENTITY (§2.6b), so a divergence error must name two distinguishable
 #: objects; the serial plus the user line where the context was built is that name
@@ -240,6 +240,7 @@ def vary_context(
     is_weight: bool,
     variations: Mapping[Any, Any] | None,
     collections: Mapping[str, Mapping[Any, Any]] | None,
+    points: Mapping[Any, Mapping[str, Any]] | None,
     tags: Mapping[str, Any],
 ) -> EventContext:
     if ctx._is_data:
@@ -248,8 +249,13 @@ def vary_context(
             "and accepting a registration whose labels the fill then drops would be a silent drop"
         )
     if is_weight:
-        return _vary_weight(ctx, name, nominal, variations, collections, tags)
-    return _vary_shift(ctx, name, nominal, variations, collections, tags)
+        return _vary_weight(ctx, name, nominal, variations, collections, points, tags)
+    return _vary_shift(ctx, name, nominal, variations, collections, points, tags)
+
+
+def _carriers(ctx: EventContext) -> tuple[Any, ...]:
+    """§4.11-4's carrier list for the context forms — the three `_context_labels` already reads."""
+    return (ctx._weight, *ctx._collections.values(), ctx._selection())
 
 
 def _child_of(ctx: EventContext) -> EventContext:
@@ -273,6 +279,7 @@ def _vary_weight(
     central: object,
     variations: Mapping[Any, Any] | None,
     collections: Mapping[str, Mapping[Any, Any]] | None,
+    points: Mapping[Any, Mapping[str, Any]] | None,
     tags: Mapping[str, Any],
 ) -> EventContext:
     """Overload (b): register a per-event weight factor into the returned context's ambient
@@ -286,7 +293,9 @@ def _vary_weight(
         )
     old = ctx._weight
     inherited = old._tags.get(name, ()) if old is not None else ()
-    members = gather_members(name, tags, variations, inherited)
+    members = gather_members(
+        name, tags, variations, inherited, points, session=ctx._session, carriers=_carriers(ctx)
+    )
     # §1.1's within-the-container clause, keyed by family NAME over the three carriers
     # `_context_labels` reads. `_members` alone is the §2.4 union and cannot say which family a
     # label came from; the same `name` is the correlated case (one knob, §2.1) and is admitted —
@@ -328,6 +337,7 @@ def _vary_shift(
     nominal: object,
     variations: Mapping[Any, Any] | None,
     collections: Mapping[str, Mapping[Any, Any]] | None,
+    points: Mapping[Any, Mapping[str, Any]] | None,
     tags: Mapping[str, Any],
 ) -> EventContext:
     """Overload (c): replace each named collection with a `Varied` over one shared tag set."""
@@ -355,9 +365,13 @@ def _vary_shift(
     for collection_name, inner in mapping.items():
         current = ctx._read(collection_name)
         inherited = current._tags.get(name, ()) if isinstance(current, Varied) else ()
-        members = gather_members(name, inner, None, inherited)
+        members = gather_members(
+            name, inner, None, inherited, points, session=ctx._session, carriers=_carriers(ctx)
+        )
         existing = dict(current._members) if isinstance(current, Varied) else {"nominal": current}
-        resolved = {label: central_universe(member) for label, member in members.items()}
+        # §4.6: a supplied member is projected by the label's own point, not flattened to its
+        # central universe — which is what makes a shift (x) shift joint point expressible
+        resolved = {label: member_of(member, label) for label, member in members.items()}
         check_members({**existing, **resolved})
         resolved = {label: accessors.reindex_to(member, ctx) for label, member in resolved.items()}
         for label in resolved:

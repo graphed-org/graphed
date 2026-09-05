@@ -14,6 +14,7 @@ from typing import Any
 
 import graphed.core
 
+from ._points import Point
 from .array import Array
 from .backend import Backend, Form, ParamValue
 from .errors import GraphedTypeError
@@ -51,6 +52,10 @@ class Session:
         # what keeps the report PER-PROGRAM: this registry accumulates for the Session's lifetime,
         # and `compile_ir` ships only the pairs whose factor reaches the artifact it compiled.
         self._shift_after_weight: dict[tuple[str, str], frozenset[int]] = {}
+        # M52 §4.5: every label `vary` mints is minted with its POINT here, so resolution stays a
+        # pure f(label) and no narrowing call site grows a Point argument. Record-time only —
+        # points are not written to disk (§5.3).
+        self._points: dict[str, Point] = {}
 
     def _step_reducer(self) -> None:
         if self._reducer is not None:

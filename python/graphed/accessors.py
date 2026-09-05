@@ -12,10 +12,11 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, TypeGuard
 
+from ._points import Point, render
 from ._tags import numeric_value
 from .array import Array
 from .errors import GraphedError
-from .varied import Varied, member_of, rebuild
+from .varied import Varied, member_of, point_registry, rebuild
 
 if TYPE_CHECKING:
     from fractions import Fraction
@@ -97,6 +98,31 @@ def nominal(x: Introspectable) -> Any:
     return universe(x, "nominal")
 
 
+def points(x: Introspectable) -> dict[str, dict[str, str]]:
+    """`{label: {nuisance: coordinate}}` — the authoritative coordinate view (§4.10).
+
+    Label-sorted, each coordinate map nuisance-sorted, `"nominal"` mapping to `{}`. Coordinates
+    render BY VALUE, so the view predicts resolution and deliberately does not round-trip the tag
+    spelling the label keeps.
+
+    Defined on the RECORD-TIME shapes alone — a `Varied` and an event context. Points are not
+    carried on disk (§5.3) and a label cannot be parsed back into a point (§4.3), so answering
+    `{label: {}}` for an executed result would assert that every executed universe is the origin.
+    """
+    if isinstance(x, Varied):
+        registry: Mapping[str, Point] = point_registry(x)
+        carried = labels(x)
+    elif _is_context(x):
+        registry, carried = x._session._points, x._context_labels()
+    else:
+        raise GraphedError(
+            f"graphed.points reads a record-time shape — a Varied or an event context — not "
+            f"{type(x).__name__}: points are not carried on an executed result, and a label cannot "
+            "be parsed back into a point"
+        )
+    return {label: render(registry.get(label, Point({}))) for label in sorted(carried)}
+
+
 def context_of(value: Array | Varied) -> Any:
     """The §2.3e context handle this value was read through, `None` when it is context-free.
 
@@ -132,21 +158,28 @@ def weight(ctx: Any) -> Varied | None:
 def variations(ctx: Any) -> dict[str, dict[str, tuple[str, Fraction | None]]]:
     """A context's registered variations as `{name: {tag: (kind, value | None)}}` (§9.1).
 
-    The kind vocabulary is exactly two words: `"weight"` for a §2.1 overload-(b) registration
-    (found in the ambient weight's tag map) and `"shift"` for an overload-(c) one (found on the
-    context's `Varied` collections). The value is the tag's parsed numeric magnitude — the
+    The kind vocabulary is three words, PER (name, tag): `"weight"` for a §2.1 overload-(b)
+    registration (found in the ambient weight's tag map), `"shift"` for an overload-(c) one (found
+    on the context's `Varied` collections), and `"both"` when it is in both — §4.8's mechanism for
+    "these two registrations are the same fit parameter", which the collections pass used to hide
+    by `update()`ing over the weight pass. The value is the tag's parsed numeric magnitude — the
     ordering handle §6.2's lexicographic axis cannot give — and `None` for a non-numeric tag.
     """
     if not _is_context(ctx):
         raise GraphedError("graphed.variations reads an event context's registered variations")
     out: dict[str, dict[str, tuple[str, Fraction | None]]] = {}
+    weighted: dict[str, frozenset[str]] = {}
     ambient = ctx._ambient_weight()
     if ambient is not None:
         for name, tags in ambient._tags.items():
+            weighted[name] = weighted.get(name, frozenset()) | frozenset(tags)
             out.setdefault(name, {}).update({tag: ("weight", numeric_value(tag)) for tag in tags})
     for collection in ctx._collections.values():
         for name, tags in getattr(collection, "_tags", {}).items():
-            out.setdefault(name, {}).update({tag: ("shift", numeric_value(tag)) for tag in tags})
+            dual = weighted.get(name, frozenset())
+            out.setdefault(name, {}).update(
+                {tag: ("both" if tag in dual else "shift", numeric_value(tag)) for tag in tags}
+            )
     return out
 
 
