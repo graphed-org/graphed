@@ -213,20 +213,26 @@ def gather_members(
                 f"graphed.vary({name!r}) got both composes_as_union=True and a points= selection; "
                 "the union collapses every joint away, so there is no joint for points= to keep"
             )
-        _mint_defaults(name, tuple(canonical), session)
+        _mint_defaults(name, tuple(canonical), session, {})
         return one_at_a_time, {}
 
-    joints, joint_points = _fanout(name, canonical, carriers, composed, points_list, max_universes)
-    _mint_defaults(name, tuple(canonical), session)
+    joints, joint_points, additive = _fanout(name, canonical, carriers, composed, points_list, max_universes)
+    _mint_defaults(name, tuple(canonical), session, additive)
     if joint_points:
         _check_unique(joint_points, session._points)
         session._points.update(joint_points)
     return one_at_a_time, joints
 
 
-def _mint_defaults(name: str, tags: tuple[str, ...], session: Any) -> None:
-    """§4.4: give every one-at-a-time label its default point `{name: tag}` and register it."""
-    minted = {f"{name}_{tag}": default(name, tag) for tag in tags}
+def _mint_defaults(name: str, tags: tuple[str, ...], session: Any, overrides: Mapping[str, Point]) -> None:
+    """§4.4: give every one-at-a-time label its default point `{name: tag}` and register it.
+
+    §3.4: a tag whose one-at-a-time label an additive `points=` entry RE-POINTS is SKIPPED here and
+    minted from `overrides` instead — else `_check_unique` would reject two points (the default
+    `{name: tag}` and the foreign-only override) for the one label.
+    """
+    minted = {f"{name}_{tag}": default(name, tag) for tag in tags if f"{name}_{tag}" not in overrides}
+    minted.update(overrides)
     _check_unique(minted, session._points)
     session._points.update(minted)
 
@@ -282,15 +288,16 @@ def _fanout(
     composed: frozenset[str],
     points: list[Mapping[str, Any]] | None,
     max_universes: int,
-) -> tuple[dict[str, Any], dict[str, Point]]:
-    """§2/§3/§4: the joint universes a dependent family mints — `(joints, joint_points)`.
+) -> tuple[dict[str, Any], dict[str, Point], dict[str, Point]]:
+    """§2/§3/§4: the joint universes a dependent family mints — `(joints, joint_points, additive)`.
 
     For each dependent tag `t` (in this call's canonical order) and each foreign universe `(fl, fp)`
     (in the member's own label order), the machine-minted joint label `f"{name}_{t}__{fl}"` binds the
     real cross node `member._members[fl]` and carries the merged point `{name: t, **fp}`. Both loops
     are over insertion-ordered dicts, so the sequence is a pure function of registration order. A
-    non-empty `points=` selection then PRUNES the grid to the named joints (§3); the un-selected
-    default grid is bounded by the §4 guard.
+    non-empty `points=` selection then routes per-entry (§3): a dependent member's entry PRUNES the
+    grid to the named joint, an independent member's entry RE-POINTS its one-at-a-time label — the
+    `additive` overrides. The un-selected default grid is bounded by the §4 guard.
     """
     carrier_nuisances = _carrier_nuisances(carriers)
     foreign_by_tag = {
@@ -304,11 +311,15 @@ def _fanout(
             joints[joint_label] = member._members[fl]
             joint_points[joint_label] = Point({**dict(default(name, tag)), **dict(fp)})
     if points:  # an explicit selection is the analyst's own enumeration — never guarded (§4)
-        kept = _prune(name, tuple(canonical), points, joint_points, carriers)
-        return ({label: joints[label] for label in kept}, {label: joint_points[label] for label in kept})
+        kept, additive = _route(name, tuple(canonical), points, joint_points, foreign_by_tag, carriers)
+        return (
+            {label: joints[label] for label in kept},
+            {label: joint_points[label] for label in kept},
+            additive,
+        )
     if joints:
         _guard(name, canonical, foreign_by_tag, max_universes)
-    return joints, joint_points
+    return joints, joint_points, {}
 
 
 def _guard(
@@ -339,24 +350,31 @@ def _guard(
         )
 
 
-def _prune(
+def _route(
     name: str,
     tags: tuple[str, ...],
     points: list[Mapping[str, Any]],
     joint_points: Mapping[str, Point],
+    foreign_by_tag: Mapping[str, Mapping[str, Point]],
     carriers: tuple[Any, ...],
-) -> list[str]:
-    """§3: resolve each `points=` map to the auto-grid joint it names, keeping only those.
+) -> tuple[list[str], dict[str, Point]]:
+    """§3: route each `points=` entry by its named member's genuine foreign dependence.
 
-    Validation is member-resolution (owner ruling): the own-family coordinate must be a tag of this
-    call (matched AFTER `canonical_tag`, so `"0.5"` and `"5em1"` are one tag while `"0p5"` is its
-    own), the foreign coordinates must name registered universes (`_check_reachable`), and the whole
-    point must resolve to a real joint the fanout derived — an unreachable or non-derived point is
-    refused loudly (nothing silent). A point with no foreign coordinate names no cross universe.
+    Returns `(kept_joint_labels, additive_overrides)`. Per entry, with `t = canonical_tag(E[name])`:
+    a `t` that names no member is a typo; an entry with no surviving foreign coordinate names the
+    central universe nominal already is. Then `foreign_by_tag[t]` is the discriminator — non-empty
+    (member DEPENDENT) PRUNES the auto-grid (frozen behavior: member-resolution against the derived
+    joints, own axis kept); empty (member INDEPENDENT) is ADDITIVE — the foreign coordinates are
+    validated by CARRIER-reachability, then the one-at-a-time label `f"{name}_{t}"` is re-pointed
+    from its default `{name: t}` to the foreign-only point (own axis dropped). A dependent member's
+    entry naming a foreign axis it does not carry is refused by the prune path, never re-routed to
+    additive to mint a bogus universe. The own-tag/canonical rule (`"0.5"` and `"5em1"` one tag,
+    `"0p5"` its own) and the reachability helpers are shared verbatim by both branches.
     """
     reachable = _reachable(name, tags, carriers)
     by_point = {point: label for label, point in joint_points.items()}
     kept: list[str] = []
+    additive: dict[str, Point] = {}
     for entry in points:
         own = entry.get(name)
         if own is None or canonical_tag(own) not in tags:
@@ -364,21 +382,27 @@ def _prune(
                 f"points= entry {dict(entry)}: {own!r} is not a tag of graphed.vary({name!r}), "
                 f"whose tags are {sorted(tags)}"
             )
+        tag = canonical_tag(own)
         point = Point(entry)
         if not any(nuisance != name for nuisance, _ in point):
             raise GraphedError(
                 f"points= entry {dict(entry)} has only the {name!r} coordinate; a foreign coordinate "
                 "at 0 names the central universe, which is what nominal already is"
             )
-        _check_reachable(name, point, reachable)
-        label = by_point.get(point)
-        if label is None:
-            raise GraphedError(
-                f"points= entry {dict(entry)} names no joint the fanout of {name!r} derives; the "
-                f"derived joints are {sorted(joint_points)}"
-            )
-        kept.append(label)
-    return kept
+        if foreign_by_tag[tag]:  # member DEPENDENT → PRUNE (frozen; own axis kept)
+            _check_reachable(name, point, reachable)
+            label = by_point.get(point)
+            if label is None:
+                raise GraphedError(
+                    f"points= entry {dict(entry)} names no joint the fanout of {name!r} derives; the "
+                    f"derived joints are {sorted(joint_points)}"
+                )
+            kept.append(label)
+        else:  # member INDEPENDENT → ADDITIVE (re-point the one-at-a-time label, own axis dropped)
+            foreign = Point({axis: value for axis, value in entry.items() if axis != name})
+            _check_reachable(name, foreign, reachable)
+            additive[f"{name}_{tag}"] = foreign
+    return kept, additive
 
 
 def _reachable(name: str, tags: tuple[str, ...], carriers: tuple[Any, ...]) -> dict[str, set[str]]:

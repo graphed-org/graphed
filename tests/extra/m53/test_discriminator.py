@@ -9,10 +9,12 @@ carrier that shares the foreign nuisance both fan out.
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 import graphed
 from graphed import Session
 from graphed.context import EventContext
+from graphed.errors import GraphedError
 from graphed.numpy import NumpyBackend, from_record
 
 
@@ -49,6 +51,24 @@ def test_a_carrier_sharing_the_foreign_nuisance_fans_out() -> None:
     corr = graphed.vary(jes, "corr", variations={"a": dependent})
     assert "corr_a__jes_up" in graphed.labels(corr)
     assert "corr_a__jes_down" in graphed.labels(corr)
+
+
+def test_a_dependent_members_reachable_uncrossed_axis_is_refused_by_prune() -> None:
+    """The additive router (m53b) must keep the frozen prune refusal for a DEPENDENT member named
+    with a foreign axis that IS reachable (a carrier) but that the member does not cross — refused
+    loudly as "names no joint", never re-routed to additive to mint a bogus universe. Distinct from
+    the m53b `nosuch` guardrail, which is refused earlier by carrier-reachability."""
+    _s, record = _record()
+    x = record["pt"]
+    jes = graphed.vary(x, "jes", up=x * 1.1, down=x * 0.9)  # carrier varies jes ...
+    both = graphed.vary(jes, "jer", up=graphed.nominal(jes) * 1.01)  # ... and jer (independent)
+    dependent = jes * 3.0  # depends on jes ONLY → corr_a fans out over jes, never jer
+
+    with pytest.raises(GraphedError) as caught:
+        graphed.vary(both, "corr", variations={"a": dependent}, points=[{"corr": "a", "jer": "up"}])
+    message = str(caught.value)
+    assert "names no joint" in message  # the prune refusal, not an additive re-point
+    assert "corr_a__jes_up" in message  # names the joints the fanout actually derived
 
 
 def test_a_stacked_weight_stays_the_union() -> None:

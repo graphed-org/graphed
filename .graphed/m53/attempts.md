@@ -91,3 +91,32 @@ Two old tour levels are held out of 61f4f47; the off-grid rebuild decides whethe
 - REBUILD prose note (lead): phrase any off-grid reference in ANALYST terms — drop internal-process
   framing like "second gated cycle, in design" from user-facing tour cells. The rebuild replaces
   cell 0 anyway, so the current 61f4f47 pointer stands as-is until then.
+
+## Off-grid / additive `points=` (m53-freeze2) — implementer iteration
+
+Target: `tests/frozen/frontend/m53b` 17 FAIL / 3 PASS -> 20/20; CORE (corpus/m52 + awkward/m52
++ awkward/m53 + frontend/m52 + frontend/m53) stays 72/0. One concern, one file: `python/graphed/vary.py`.
+
+Change (plan §3/§7): reworked `_prune` -> per-entry router `_route`, returning
+`(kept_joint_labels, additive_overrides)`. Per entry, `t = canonical_tag(E[name])`; the discriminator
+is `foreign_by_tag[t]` (already computed in `_fanout`): non-empty (member DEPENDENT) -> the frozen
+prune path unchanged (member-resolution, own axis kept); empty (member INDEPENDENT) -> ADDITIVE —
+validate the foreign coords by carrier-reachability (`_check_reachable(name, Point(foreign),
+_reachable(...))`) and re-point the one-at-a-time label `f"{name}_{t}"` from `{name:t}` to the
+foreign-only point (own axis dropped). `_fanout` now returns the additive overrides as a 3rd element;
+`_mint_defaults` SKIPS any tag with an additive override then mints the overrides (the ONE coordination
+change — else `_check_unique` rejects two points for one label). `context.py` untouched (gather_members
+signature `(one_at_a_time, joints)` unchanged). The shared "only-name-coordinate" check (`Point(entry)`
+zero-drops) refuses both the foreign-empty entry and the all-zero point in one place; the collision and
+single-foreign-already-owned refusals fall out of `_check_unique`.
+
+Gates: m53b 20/20; core 72/0; `git diff m53-freeze2 -- tests/frozen` and `git diff HEAD -- tests/frozen`
+both empty (no frozen file touched — vary.py is the only working-tree change). ruff check + format clean;
+mypy clean (78 files). Determinism: μRxμF grid registry byte-identical across PYTHONHASHSEED 0/12345,
+plus the two frozen determinism tests. Diff line+branch coverage on the changed vary.py lines from the
+FROZEN suite = 24/26 = 92.3% (>90 gate). The one frozen-uncovered line is the prune "names no joint"
+refusal for a DEPENDENT member named with a reachable-but-uncrossed axis (on m53-freeze that line was
+hit by the m53b additive entries themselves, which the OLD prune refused; they now correctly route
+additive). Added `tests/extra/m53/test_a_dependent_members_reachable_uncrossed_axis_is_refused_by_prune`
+(distinct from the m53b `nosuch` guardrail, which is refused earlier at `_check_reachable`) -> combined
+diff coverage 26/26 = 100%.
