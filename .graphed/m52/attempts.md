@@ -59,3 +59,31 @@ The one remaining red in the whole tree is `frozen/corpus/m52::test_the_joint_un
 factorized_product_and_equals_the_direct_reference`, blocked on C6's corpus half
 (`AttributeError: module 'graphed_corpus.analyses.systematics' has no attribute
 'ttbar_joint_reference'`) — not a C1-C4 target.
+
+## C7 — docs (`docs/frontend/design.rst` "Vary once, get every universe")
+
+Iteration 1 (2026-09-04), docs-only, no source or test files touched.
+
+Changed: the section's opening sentence replaced with §6-C0's §2.1 wording (a label NAMES A POINT;
+without `points=` the default point `{name: tag}` differs on exactly one axis; a ≥2-axis universe is
+registered explicitly and never produced implicitly). Three new subsections added:
+
+* *Three ways two things can be correlated* — §4.8's table (name identity / propagation / `points=`)
+  plus the `gak.apply_correction`-not-`record_external` note, with a runnable correctionlib example
+  whose 38 GeV jet crosses the 40 GeV bin edge under a 10 % shift (0.95 -> 1.05).
+* *A universe at two coordinates at once* — `points=` on the weight overload, the same expression
+  objects shared across the joint and one-at-a-time members, `graphed.points()`, and the three
+  measurably different weight universes.
+* *Numbers reach numeric tags, and zero is asymmetric* — §4.2's identifier-vs-numeric rule with the
+  §4.11-4 refusal, and the zero asymmetry (`shift_0` mints; a `points=` origin entry is refused),
+  plus the one-coordinate refusal and why there is no `explode=` verb.
+
+Gates:
+* `sphinx -W -b html docs` — **build succeeded** (the instrument is live: it reported three
+  `Title underline too short` warnings on the first run of this same command, which were then fixed).
+* Every `.. code-block:: python` in the file executed in a fresh process against the m52 venv and its
+  stdout diffed against the documented `Prints::` literal — **12/12 match, 0 problems**, including
+  the three new blocks. Extractor: scratchpad `extract.py`.
+* `git diff m52-freeze -- tests/frozen/` — empty. `git status --porcelain` — only
+  `M docs/frontend/design.rst`.
+* ruff/mypy/coverage: no Python source changed, so no new lines enter those gates.
