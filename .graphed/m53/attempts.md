@@ -23,3 +23,9 @@ Result: 56 pass, 16 fail (all C3 points= prune + C4 guard). awkward/m48 green (r
 coord checked via canonical_tag tag-membership (so '0.5'!='0p5'), foreign coords via `_check_reachable`
 (names registered universes), origin (no foreign coord) refused. Kept joints pruned from the grid.
 All 14 points= tests pass. 2 guard tests remain (C4).
+
+## C4 — the loud guard
+`_guard` raises when the un-selected default grid `prod(family sizes)` (this family x each foreign
+family, nominal included) exceeds `max_universes` (default 64), naming the count and families. points=
+and composes_as_union bypass it; an independent family (no joints) is never guarded. Target suite: 72
+passed (42 made green + 30 survivors).

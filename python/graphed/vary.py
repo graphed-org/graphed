@@ -203,7 +203,7 @@ def gather_members(
         _mint_defaults(name, tuple(canonical), session)
         return one_at_a_time, {}
 
-    joints, joint_points = _fanout(name, canonical, carriers, composed, points_list)
+    joints, joint_points = _fanout(name, canonical, carriers, composed, points_list, max_universes)
     _mint_defaults(name, tuple(canonical), session)
     if joint_points:
         _check_unique(joint_points, session._points)
@@ -268,28 +268,62 @@ def _fanout(
     carriers: tuple[Any, ...],
     composed: frozenset[str],
     points: list[Mapping[str, Any]] | None,
+    max_universes: int,
 ) -> tuple[dict[str, Any], dict[str, Point]]:
-    """§2/§3: the joint universes a dependent family mints — `(joints, joint_points)`.
+    """§2/§3/§4: the joint universes a dependent family mints — `(joints, joint_points)`.
 
     For each dependent tag `t` (in this call's canonical order) and each foreign universe `(fl, fp)`
     (in the member's own label order), the machine-minted joint label `f"{name}_{t}__{fl}"` binds the
     real cross node `member._members[fl]` and carries the merged point `{name: t, **fp}`. Both loops
     are over insertion-ordered dicts, so the sequence is a pure function of registration order. A
-    non-empty `points=` selection then PRUNES the grid to the named joints (§3).
+    non-empty `points=` selection then PRUNES the grid to the named joints (§3); the un-selected
+    default grid is bounded by the §4 guard.
     """
     carrier_nuisances = _carrier_nuisances(carriers)
+    foreign_by_tag = {
+        tag: _foreign(name, member, carrier_nuisances, composed) for tag, member in canonical.items()
+    }
     joints: dict[str, Any] = {}
     joint_points: dict[str, Point] = {}
     for tag, member in canonical.items():
-        for fl, fp in _foreign(name, member, carrier_nuisances, composed).items():
+        for fl, fp in foreign_by_tag[tag].items():
             joint_label = f"{name}_{tag}__{fl}"
             joints[joint_label] = member._members[fl]
             joint_points[joint_label] = Point({**dict(default(name, tag)), **dict(fp)})
-    if points:
+    if points:  # an explicit selection is the analyst's own enumeration — never guarded (§4)
         kept = _prune(name, tuple(canonical), points, joint_points, carriers)
-        joints = {label: joints[label] for label in kept}
-        joint_points = {label: joint_points[label] for label in kept}
+        return ({label: joints[label] for label in kept}, {label: joint_points[label] for label in kept})
+    if joints:
+        _guard(name, canonical, foreign_by_tag, max_universes)
     return joints, joint_points
+
+
+def _guard(
+    name: str,
+    canonical: Mapping[str, Any],
+    foreign_by_tag: Mapping[str, Mapping[str, Point]],
+    max_universes: int,
+) -> None:
+    """§4: refuse an un-selected default grid larger than `max_universes`, naming the count and the
+    families that produced it. The bound is `prod(family sizes)` — this family times each foreign
+    family (nominal included), exact for the full grid and a conservative over-estimate otherwise.
+    """
+    foreign_coords: dict[str, set[str]] = {}
+    for foreign in foreign_by_tag.values():
+        for point in foreign.values():
+            for nuisance, value in point:
+                foreign_coords.setdefault(nuisance, set()).add(value)
+    sizes = [(family, len(coords) + 1) for family, coords in sorted(foreign_coords.items())]
+    sizes.append((name, len(canonical) + 1))
+    total = 1
+    for _, size in sizes:
+        total *= size
+    if total > max_universes:
+        grid = " x ".join(f"{family}({size})" for family, size in sizes)
+        raise GraphedError(
+            f"graphed.vary({name!r}) would fan out to {total} universes ({grid}); pass points=[...] "
+            f"to select a subset, or raise max_universes (currently {max_universes})"
+        )
 
 
 def _prune(
