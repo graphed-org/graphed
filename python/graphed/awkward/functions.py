@@ -475,6 +475,45 @@ def _ml_matrix(entry: _TemplateEntry, vals: Sequence[object]) -> object:
     return _np.stack(cols, axis=1)
 
 
+@dataclass
+class _TemplateExternal:
+    """The template path's recorded evaluator — PICKLABLE, unlike the closure it replaced.
+
+    In-process it calls the recording-time ``call`` (the user's ``evaluator``/``runner``, routed
+    through the template). A stdlib pickle — a plan shipped to a process pool, or a checkpointed
+    plan — DROPS that callable, because neither a closure nor a live correctionlib/onnxruntime
+    handle survives one; the worker rebuilds the resource from ``payload`` through the matching
+    preserve plugin, which obeys the same template and the same content identity. So a ``call``
+    that is NOT the plugin's own evaluation (an ``evaluator`` that scales or wraps it) diverges
+    silently between in-process and out-of-process backends — for a backend-agnostic plan, ``call``
+    must be the plugin's evaluation. No cloudpickle: these payloads are preservable, not opaque
+    (§A.3.1)."""
+
+    kind: str
+    payload: bytes
+    params: dict[str, str]
+    call: Callable[..., object] | None
+
+    def __getstate__(self) -> dict[str, Any]:
+        return {**self.__dict__, "call": None}
+
+    def __call__(self, *values: object) -> object:
+        if self.call is None:
+            from ..preserve.externals import get_plugin  # noqa: PLC0415  (import cycle)
+            from ..preserve.externals._base import _PluginEvaluator  # noqa: PLC0415
+
+            plugin = get_plugin(self.kind)
+            if plugin is None:
+                raise RuntimeError(
+                    f"external payload kind {self.kind!r} has no registered plugin, so a worker "
+                    "cannot rebuild it from the payload bytes"
+                )
+            # _PluginEvaluator keys the per-process resource cache on (kind, content_hash), so the
+            # correction set / inference session is built once per worker, not once per partition.
+            self.call = _PluginEvaluator(plugin, self.payload, self.params)
+        return self.call(*values)
+
+
 def apply_correction(
     payload: str | bytes,
     name: str,
@@ -488,10 +527,14 @@ def apply_correction(
     With ``args=`` (e.g. ``["nominal", "$0", "$1"]``): the M28 preservation-aligned path —
     content-identity descriptor, no path in the IR, inputs passed to ``evaluator`` NATIVELY
     (awkward/numpy, jagged preserved) per the template, which replay obeys identically.
-    Without it: the original M3 recording, unchanged (``payload`` must then be a path)."""
+    Without it: the original M3 recording, unchanged (``payload`` must then be a path).
+
+    Out-of-process backends (checkpoint, process pool) re-evaluate the correction canonically from
+    the payload; ``evaluator`` is only the in-process eager path, so pass the plugin's own
+    evaluation (e.g. ``cset[name].evaluate``) — a wrapper that alters it will diverge by backend."""
     if args is None:
         return inputs[0].session.record_external(
-            "correction", lambda *vals: evaluator(*vals), list(inputs), {"path": str(payload), "name": name}
+            "correction", evaluator, list(inputs), {"path": str(payload), "name": name}
         )
     blob = _payload_bytes(payload)
     entries = _parse_template(args, len(inputs), constants=True, groups=False)
@@ -502,12 +545,14 @@ def apply_correction(
         return evaluator(*call)
 
     session = inputs[0].session
+    descriptor = payloads.correctionlib_contents_descriptor(blob, name)
+    params = {"name": name, "args": json.dumps(args, sort_keys=False)}
     return session.record_external(
         "correction",
-        _fn,
+        _TemplateExternal(descriptor.kind, blob, {**params, "content_hash": descriptor.content_hash}, _fn),
         list(inputs),
-        {"name": name, "args": json.dumps(args, sort_keys=False)},
-        descriptor=payloads.correctionlib_contents_descriptor(blob, name),
+        params,
+        descriptor=descriptor,
         form=session.form(inputs[first_slot]),
     )
 
@@ -525,11 +570,12 @@ def onnx_inference(
     With ``args=``/``kwargs=`` (e.g. ``args=[["$0", "$1"]]``): the M28 preservation-aligned
     path — weights-identity descriptor, no path in the IR, template entries materialized as
     float32 feature matrices (groups stack) and passed to ``runner`` positionally/by keyword.
-    Without them: the original M3 recording, unchanged (``payload`` must then be a path)."""
+    Without them: the original M3 recording, unchanged (``payload`` must then be a path).
+
+    Out-of-process backends re-run the model canonically from the payload; ``runner`` is only the
+    in-process eager path, so it must be the plugin's own inference (a wrapper diverges by backend)."""
     if args is None and kwargs is None:
-        return inputs[0].session.record_external(
-            "onnx", lambda *vals: runner(*vals), list(inputs), {"path": str(payload)}
-        )
+        return inputs[0].session.record_external("onnx", runner, list(inputs), {"path": str(payload)})
     blob = _payload_bytes(payload)
     arg_entries = _parse_template(args or [], len(inputs), constants=False, groups=True)
     kw_entries = {
@@ -551,12 +597,13 @@ def onnx_inference(
         params["args"] = json.dumps(args, sort_keys=False)
     if kwargs is not None:
         params["kwargs"] = json.dumps(kwargs, sort_keys=True)
+    descriptor = payloads.onnx_weights_descriptor(blob)
     return session.record_external(
         "onnx",
-        _fn,
+        _TemplateExternal(descriptor.kind, blob, {**params, "content_hash": descriptor.content_hash}, _fn),
         list(inputs),
         params,
-        descriptor=payloads.onnx_weights_descriptor(blob),
+        descriptor=descriptor,
         form=session.form(inputs[first]),
     )
 
