@@ -87,3 +87,18 @@ Gates:
 * `git diff m52-freeze -- tests/frozen/` — empty. `git status --porcelain` — only
   `M docs/frontend/design.rst`.
 * ruff/mypy/coverage: no Python source changed, so no new lines enter those gates.
+
+## Iteration (REVIEW repairs) — R1-B1, R3-B1
+Gated REVIEW rejected on three blocking findings (two graphed, one histogram). Graphed half:
+- R1-B1 (design/intent): docs/frontend/design.rst called the joint universe "the fit's correlated
+  template" (design §1.3 forbids; the fit correlates BY NAME, a joint universe measures the
+  FACTORIZATION ERROR — §3.2/§3.3). Rewrote both flagged spots to the factorization-error framing;
+  class sweep confirms the banned vocab is gone and "factorization" now appears (was absent).
+- R3-B1 (discrimination hole): the sole frozen §4.11-2 anchor exercises only the cross-call
+  registry end; _check_unique also guards the intra-call end (labels minted in ONE vary() call).
+  Added tests/extra/frontend/m52/test_intra_call_point_uniqueness.py (one call, two labels at one
+  point -> refused, naming both; admitted member = two labels at DISTINCT points mint). Discrimination
+  proven: under the mutant (loop -> registry.items() only) the new test REDS while the frozen anchor
+  stays GREEN. Impl (vary.py) unchanged — the code already refuses; the gap was suite coverage.
+Gates re-run green: graphed runner exit 0 (new extra test integrated, all subtrees), sphinx -W
+build succeeded, frozen diff vs m52-freeze empty.

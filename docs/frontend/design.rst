@@ -352,9 +352,13 @@ A universe at two coordinates at once
 
 The b-tag scale factor above is itself computed from jets, so it already varies with the jet scale.
 What you cannot get from name-sharing or propagation alone is a *universe* that sits at
-``jes = up`` **and** ``btag = hf_up`` together — the fit's correlated template. That universe is
-registered, not inferred: ``points=`` maps a tag to the coordinates its universe occupies, and
-resolution projects that point onto whatever axes each container downstream happens to know.
+``jes = up`` **and** ``btag = hf_up`` together. Sharing a nuisance *name* is what correlates two
+templates in the fit (one nuisance parameter moves both); this joint universe is a different thing.
+It measures the *factorization error* — how far the true two-coordinate response departs from the
+sum of the one-coordinate shifts the fit actually interpolates, which has no slot for a joint
+template. It is registered, not inferred: ``points=`` maps a tag to the coordinates its universe
+occupies, and resolution projects that point onto whatever axes each container downstream happens
+to know.
 
 .. code-block:: python
 
@@ -477,7 +481,7 @@ Also worth knowing: ``points=`` earns a new label only for a genuinely multi-coo
 single-coordinate entry is refused, because the plain tag already names that universe and two labels
 for one point would mean two slots, two category bins and two templates for a fit to reconcile.
 There is no ``explode=`` verb either — a factorial grid falls out of a dict comprehension over
-``points=``, and the full grid is a closure study rather than something a fit ingests.
+``points=``, and the full grid is a closure study of that factorization error, not fit input.
 
 One histogram per variation, or one variation axis
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
