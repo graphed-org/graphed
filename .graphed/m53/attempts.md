@@ -75,3 +75,16 @@ control = 5), L14 grid control (union 5 / points= diagonal 7 / max_universes=8 g
 refusals (unreachable coord / prune+collapse / over-budget). Off-grid Levels 15-18 and the tangential
 numeric-canonicalization level HELD OUT. Full end-to-end nbclient run: 0 errored, exec_counts 1-16
 monotonic.
+
+## Held-out tour levels — rebuild notes (for the off-grid Option-2 cycle)
+Two old tour levels are held out of 61f4f47; the off-grid rebuild decides whether to restore them:
+- old L17 "numeric coordinates canonicalized by VALUE": `vary(x,"morph",variations={numeric-string tags})`
+  — the label keeps your spelling, `graphed.points()` renders the value; two spellings of one value
+  ("0.5"/"0p5"/0.5/Fraction(1,2)) are ONE universe and registering both is refused. Fold into the
+  μR×μF level (it uses numeric coordinates), where it is naturally motivated.
+- old L19 "zero asymmetry": (a) a TAG literally named "0" mints a real universe `shift_0` (point
+  {shift:0}) distinct from nominal; (b) a zero COORDINATE inside a points= map is dropped to origin,
+  so a point reducing to a duplicate-of-default or to {} is refused. (b) is additive off-grid points=
+  semantics → rebuild with the off-grid mode; (a) now entangles with auto-fanout + the injective-label
+  check under m53 (`shift_0__jes_up` collapses onto `jes_up` → refused) and is partly covered by the
+  m53 frozen mint-refusal contract (dispute ruling #4 names "0"/"central"/"nominal").
