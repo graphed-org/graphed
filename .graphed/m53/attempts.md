@@ -48,3 +48,30 @@ Plan §3's "precision knob for off-grid points" was never realized in the frozen
 precision test is grid-resident). Surfaced to lead: (A) add explicit additive off-grid points= mode,
 (B) declare correlated-grid-over-independent-nuisances Phase-2 + recast 15-18 as markdown [recommended],
 (C) other. Tour rewrite PAUSED pending decision.
+
+## C5 notebooks — DONE (consolidated rulings, 2026-09-05)
+Two separate commits in coffea-benchmarks-graphed-mvp @ graphed-mvp (docs; only the edited notebook
+staged each time — coffea-adl-benchmarks.ipynb's pre-existing edit left untouched). Executed via
+nbclient on the m52 .venv python3 kernel. NOTE: an earlier combined commit (5be40c4) that markdown-
+recast tour Levels 15-18 as "Phase-2" was reset before push — superseded by the ruling below.
+
+Ruling reconciliation: I first recast off-grid Levels 15-18 (muR x muF/PDF) as Phase-2 markdown per an
+option-B reading; surfaced the tension; the OWNER then chose to BUILD the additive off-grid points=
+mode (its own gated cycle, in design). So 15-18 are HELD OUT of the tour, NOT markdown-recast — they
+will be authored against the new mode.
+
+ADL b1bc05f: cells 31 (markdown 7->15, joints named) + 32 (STYLE programmatic over the 15 labels,
+joint colour = b-tag component + jes-leg linestyle; titles 7->15; comment reframed to auto-fanout).
+vary call UNCHANGED — auto-fanout fires on the real correctionlib/gak construction (verified 15
+universes, 8 joints, 2-axis points). Executed cell 1 (setup) + cell 32 only; spliced outputs
+preserving execution_count=21; Q1-Q8 (cells 2-31) and the parallel-speedup study (33+) byte-identical.
+Witness numbers unchanged (49625.198758 -> 49634.770145) since m53 augments the 7.
+
+Tour 7513eba: Levels 0-9 (cells 1-20) byte-identical. Cell 0 map: mechanism 3 = auto-fanout (was
+points=), companion = full-15-grid. Second half rebuilt (44->34 cells), levels END at 15: L10
+auto-fanout headline (9u), L11 projection resolution, L12 factorization-error (auto-fanned joints;
+ordering 2.21% > 0.62% > 1.5e-16 control holds), L13 real-data+pool (9u survives pool; composes_as_union
+control = 5), L14 grid control (union 5 / points= diagonal 7 / max_universes=8 guard), L15 the 3 m53
+refusals (unreachable coord / prune+collapse / over-budget). Off-grid Levels 15-18 and the tangential
+numeric-canonicalization level HELD OUT. Full end-to-end nbclient run: 0 errored, exec_counts 1-16
+monotonic.
