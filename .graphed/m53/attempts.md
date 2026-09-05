@@ -17,3 +17,9 @@ vary.py or mypy/runtime break). Two refinements the frozen suite forced beyond t
    sharing the foreign nuisance fans out. Both member objects are byte-identical, so the signal is
    the CARRIER, not the member.
 Result: 56 pass, 16 fail (all C3 points= prune + C4 guard). awkward/m48 green (regression fixed).
+
+## C3 — points= prune inversion
+`_prune` resolves each `{nuisance:coord}` map to an auto-grid joint by point-equality: own-family
+coord checked via canonical_tag tag-membership (so '0.5'!='0p5'), foreign coords via `_check_reachable`
+(names registered universes), origin (no foreign coord) refused. Kept joints pruned from the grid.
+All 14 points= tests pass. 2 guard tests remain (C4).

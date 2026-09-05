@@ -203,7 +203,7 @@ def gather_members(
         _mint_defaults(name, tuple(canonical), session)
         return one_at_a_time, {}
 
-    joints, joint_points = _fanout(name, canonical, carriers, composed)
+    joints, joint_points = _fanout(name, canonical, carriers, composed, points_list)
     _mint_defaults(name, tuple(canonical), session)
     if joint_points:
         _check_unique(joint_points, session._points)
@@ -263,14 +263,19 @@ def _carrier_nuisances(carriers: tuple[Any, ...]) -> frozenset[str]:
 
 
 def _fanout(
-    name: str, canonical: Mapping[str, Any], carriers: tuple[Any, ...], composed: frozenset[str]
+    name: str,
+    canonical: Mapping[str, Any],
+    carriers: tuple[Any, ...],
+    composed: frozenset[str],
+    points: list[Mapping[str, Any]] | None,
 ) -> tuple[dict[str, Any], dict[str, Point]]:
-    """§2: the full grid of joint universes a dependent family mints — `(joints, joint_points)`.
+    """§2/§3: the joint universes a dependent family mints — `(joints, joint_points)`.
 
     For each dependent tag `t` (in this call's canonical order) and each foreign universe `(fl, fp)`
     (in the member's own label order), the machine-minted joint label `f"{name}_{t}__{fl}"` binds the
     real cross node `member._members[fl]` and carries the merged point `{name: t, **fp}`. Both loops
-    are over insertion-ordered dicts, so the sequence is a pure function of registration order.
+    are over insertion-ordered dicts, so the sequence is a pure function of registration order. A
+    non-empty `points=` selection then PRUNES the grid to the named joints (§3).
     """
     carrier_nuisances = _carrier_nuisances(carriers)
     joints: dict[str, Any] = {}
@@ -280,7 +285,53 @@ def _fanout(
             joint_label = f"{name}_{tag}__{fl}"
             joints[joint_label] = member._members[fl]
             joint_points[joint_label] = Point({**dict(default(name, tag)), **dict(fp)})
+    if points:
+        kept = _prune(name, tuple(canonical), points, joint_points, carriers)
+        joints = {label: joints[label] for label in kept}
+        joint_points = {label: joint_points[label] for label in kept}
     return joints, joint_points
+
+
+def _prune(
+    name: str,
+    tags: tuple[str, ...],
+    points: list[Mapping[str, Any]],
+    joint_points: Mapping[str, Point],
+    carriers: tuple[Any, ...],
+) -> list[str]:
+    """§3: resolve each `points=` map to the auto-grid joint it names, keeping only those.
+
+    Validation is member-resolution (owner ruling): the own-family coordinate must be a tag of this
+    call (matched AFTER `canonical_tag`, so `"0.5"` and `"5em1"` are one tag while `"0p5"` is its
+    own), the foreign coordinates must name registered universes (`_check_reachable`), and the whole
+    point must resolve to a real joint the fanout derived — an unreachable or non-derived point is
+    refused loudly (nothing silent). A point with no foreign coordinate names no cross universe.
+    """
+    reachable = _reachable(name, tags, carriers)
+    by_point = {point: label for label, point in joint_points.items()}
+    kept: list[str] = []
+    for entry in points:
+        own = entry.get(name)
+        if own is None or canonical_tag(own) not in tags:
+            raise GraphedError(
+                f"points= entry {dict(entry)}: {own!r} is not a tag of graphed.vary({name!r}), "
+                f"whose tags are {sorted(tags)}"
+            )
+        point = Point(entry)
+        if not any(nuisance != name for nuisance, _ in point):
+            raise GraphedError(
+                f"points= entry {dict(entry)} has only the {name!r} coordinate; a foreign coordinate "
+                "at 0 names the central universe, which is what nominal already is"
+            )
+        _check_reachable(name, point, reachable)
+        label = by_point.get(point)
+        if label is None:
+            raise GraphedError(
+                f"points= entry {dict(entry)} names no joint the fanout of {name!r} derives; the "
+                f"derived joints are {sorted(joint_points)}"
+            )
+        kept.append(label)
+    return kept
 
 
 def _reachable(name: str, tags: tuple[str, ...], carriers: tuple[Any, ...]) -> dict[str, set[str]]:
