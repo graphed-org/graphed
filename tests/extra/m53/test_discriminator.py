@@ -58,9 +58,7 @@ def test_a_stacked_weight_stays_the_union() -> None:
     weight = ctx["pt"] * 0.5
     first = graphed.vary(ctx, "btag", weight, is_weight=True, variations={"up": weight * 1.2})
     ambient = graphed.weight(first)  # its _tags carries btag → a stacked weight nuisance
-    second = graphed.vary(
-        first, "mu", ambient, is_weight=True, variations={"up": ambient * 1.05}
-    )
+    second = graphed.vary(first, "mu", ambient, is_weight=True, variations={"up": ambient * 1.05})
     labels = graphed.labels(graphed.weight(second))
     assert not [label for label in labels if "__" in label]  # mu does NOT fan out over stacked btag
     assert set(labels) == {"nominal", "btag_up", "mu_up"}

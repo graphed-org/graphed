@@ -308,8 +308,15 @@ def _vary_weight(
     # is a genuine dependency the member reads, and still fans out.
     composed = frozenset(old._tags) if old is not None else frozenset()
     one_at_a_time, joints = gather_members(
-        name, tags, variations, inherited, points, session=ctx._session,
-        carriers=_carriers(ctx), composes_as_union=composes_as_union, max_universes=max_universes,
+        name,
+        tags,
+        variations,
+        inherited,
+        points,
+        session=ctx._session,
+        carriers=_carriers(ctx),
+        composes_as_union=composes_as_union,
+        max_universes=max_universes,
         composed=composed,
     )
     # §1.1's within-the-container clause, keyed by family NAME over the three carriers
@@ -386,16 +393,21 @@ def _vary_shift(
         current = ctx._read(collection_name)
         inherited = current._tags.get(name, ()) if isinstance(current, Varied) else ()
         one_at_a_time, joints = gather_members(
-            name, inner, None, inherited, points, session=ctx._session,
-            carriers=_carriers(ctx), composes_as_union=composes_as_union, max_universes=max_universes,
+            name,
+            inner,
+            None,
+            inherited,
+            points,
+            session=ctx._session,
+            carriers=_carriers(ctx),
+            composes_as_union=composes_as_union,
+            max_universes=max_universes,
         )
         existing = dict(current._members) if isinstance(current, Varied) else {"nominal": current}
         # §4.6: a supplied member is projected by the label's own point, not flattened to its
         # central universe — which is what makes a shift (x) shift joint point expressible; a
         # machine-minted joint is already the cross node, so `member_of` on it is the identity
-        resolved = {
-            label: member_of(member, label) for label, member in {**one_at_a_time, **joints}.items()
-        }
+        resolved = {label: member_of(member, label) for label, member in {**one_at_a_time, **joints}.items()}
         check_members({**existing, **resolved})
         resolved = {label: accessors.reindex_to(member, ctx) for label, member in resolved.items()}
         for label in resolved:

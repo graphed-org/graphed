@@ -72,8 +72,16 @@ def vary(
     saved = dict(session._points)
     try:
         return overload(
-            target, name, nominal, is_weight, variations, collections, points,
-            composes_as_union, max_universes, tags,
+            target,
+            name,
+            nominal,
+            is_weight,
+            variations,
+            collections,
+            points,
+            composes_as_union,
+            max_universes,
+            tags,
         )
     except BaseException:
         session._points.clear()
@@ -109,16 +117,21 @@ def _vary_loose(
     inherited = target._tags.get(name, ()) if isinstance(target, Varied) else ()
     # the loose form's own carrier for §4.11-4 is the target it registers on
     one_at_a_time, joints = gather_members(
-        name, tags, variations, inherited, points, session=session_of(target), carriers=(target,),
-        composes_as_union=composes_as_union, max_universes=max_universes,
+        name,
+        tags,
+        variations,
+        inherited,
+        points,
+        session=session_of(target),
+        carriers=(target,),
+        composes_as_union=composes_as_union,
+        max_universes=max_universes,
     )
     existing = dict(target._members) if isinstance(target, Varied) else {"nominal": target}
     # §4.6: registration resolves by the label's OWN point, so a supplied `Varied` contributes the
     # inner universe the point names instead of being flattened to its central one. A machine-minted
     # joint is already that inner cross node, so `member_of` on it is the identity.
-    resolved = {
-        label: member_of(member, label) for label, member in {**one_at_a_time, **joints}.items()
-    }
+    resolved = {label: member_of(member, label) for label, member in {**one_at_a_time, **joints}.items()}
     # BEFORE the row-space maps: a colliding label shadows its existing member in the merged
     # dict, so `check_members` never sees that member's handle and `_align` would work from a
     # handle the container does not really have.
