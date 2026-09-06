@@ -35,15 +35,15 @@ def test_two_labels_for_one_point_in_a_single_vary_call_are_refused() -> None:
     the registry when the call begins, so ONLY the intra-call half of ``_check_unique`` can catch
     it — the guard the frozen registry-end anchor never reaches."""
     _session, ctx = two_axis_context()
-    weight = ctx["pt"] * 0.5
+    weight = graphed.nominal(ctx["pt"]) * 0.5  # INDEPENDENT: both placements route ADDITIVE
     with pytest.raises(GraphedError) as caught:
         graphed.vary(
             ctx,
             "corr",
             weight,
             is_weight=True,
-            variations={"a": weight * 3.0, "b": weight * 4.0},
-            points={"a": JOINT, "b": JOINT},  # corr_a and corr_b at ONE point
+            # both re-point to ONE point → corr_a and corr_b collide intra-call
+            variations=[("a", weight * 3.0), ("b", weight * 4.0), {"corr": "a", **JOINT}, {"corr": "b", **JOINT}],
         )
     message = str(caught.value)
     assert "corr_a" in message
@@ -52,14 +52,18 @@ def test_two_labels_for_one_point_in_a_single_vary_call_are_refused() -> None:
     # the admitted member at the SAME end: two labels at DISTINCT points in one call BOTH mint, so
     # the guard refuses only a genuine intra-call collision, not every two-label call.
     _other_session, ok = two_axis_context()
-    ok_weight = ok["pt"] * 0.5
+    ok_weight = graphed.nominal(ok["pt"]) * 0.5
     registered = graphed.vary(
         ok,
         "corr",
         ok_weight,
         is_weight=True,
-        variations={"a": ok_weight * 3.0, "b": ok_weight * 4.0},
-        points={"a": JOINT, "b": OTHER_JOINT},
+        variations=[
+            ("a", ok_weight * 3.0),
+            ("b", ok_weight * 4.0),
+            {"corr": "a", **JOINT},
+            {"corr": "b", **OTHER_JOINT},  # DISTINCT points → both mint
+        ],
     )
     points = graphed.points(registered)
     assert points["corr_a"] == JOINT

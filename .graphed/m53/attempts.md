@@ -163,4 +163,19 @@ Gates (all reproduced):
 - Integrity: no `# type: ignore`/`except: pass`/`NotImplementedError`/`todo!`/`pragma: no cover`/`skip`/
   `xfail` in changed source (only pre-existing PLC0415 import-cycle noqa). No named target stubbed.
 
-No `tests/extra/m53/` needed — the frozen suite covers every changed line.
+Diff coverage is fully carried by the frozen suite (no NEW `tests/extra` needed for coverage), BUT
+the reshape broke two STALE `points=` call-sites in the pre-existing extra suite that I failed to
+re-run at first pass (reviewer REJECT: one blocking finding + a sibling). Swept the WHOLE
+`tests/extra` tree:
+- `tests/extra/m53/test_discriminator.py`: dependent-member prune refusal re-authored to the list
+  form `variations=[("a", dependent), {"corr": "a", "jer": "up"}]` (raises `VariationError`, is-a
+  `GraphedError`; "names no joint" now in `.detail`).
+- `tests/extra/frontend/m52/test_intra_call_point_uniqueness.py`: the m52 MAPPING form `points={tag:
+  point}` no longer exists. Members made INDEPENDENT (`graphed.nominal(ctx["pt"]) * 0.5`) so both
+  placements route ADDITIVE and collide at ONE point via `_check_unique`'s intra-call half — collision
+  call re-points corr_a/corr_b to one point (refused, naming both); admit call re-points to distinct
+  points (both mint, own axis dropped, `points["corr_a"]==JOINT`). Docstring premise (JOINT absent
+  from the registry at call start) preserved.
+- `uv run pytest tests/extra -p no:cacheprovider`: 70 passed / 5 skipped (pre-existing optional-dep
+  imports: graphed_histogram/exec_local/executors) / 0 failed. `git diff m53-unified-freeze --
+  tests/frozen` stays EMPTY (only `tests/extra/**` touched this iteration).

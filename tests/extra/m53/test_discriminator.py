@@ -65,7 +65,7 @@ def test_a_dependent_members_reachable_uncrossed_axis_is_refused_by_prune() -> N
     dependent = jes * 3.0  # depends on jes ONLY → corr_a fans out over jes, never jer
 
     with pytest.raises(GraphedError) as caught:
-        graphed.vary(both, "corr", variations={"a": dependent}, points=[{"corr": "a", "jer": "up"}])
+        graphed.vary(both, "corr", variations=[("a", dependent), {"corr": "a", "jer": "up"}])
     message = str(caught.value)
     assert "names no joint" in message  # the prune refusal, not an additive re-point
     assert "corr_a__jes_up" in message  # names the joints the fanout actually derived
