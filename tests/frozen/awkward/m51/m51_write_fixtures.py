@@ -209,7 +209,7 @@ def weight_collapse_context(events: Any) -> Any:
     interning to nominal's node id (§7.2 collapse) — the anchor-B replication discriminator, and the
     e-canonical `murf_5em1` label carrier."""
     w = gak.prod(1.0 + events.Jet.btag, axis=1)
-    return graphed.vary(events, "murf", w, is_weight=True, variations={"1": w, "0.5": w * 0.5, "2": w * 2.0})
+    return graphed.vary(events, "murf", w, is_weight=True, points={"1": w, "0.5": w * 0.5, "2": w * 2.0})
 
 
 def weight_skim_inputs(events: Any) -> tuple[Any, Any]:

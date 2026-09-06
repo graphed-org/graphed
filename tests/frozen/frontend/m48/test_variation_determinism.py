@@ -52,7 +52,7 @@ def test_two_fresh_processes_compile_the_same_bytes() -> None:
 
 def test_label_order_is_nominal_first_then_insertion_order() -> None:
     _s, x = vector_source()
-    varied = graphed.vary(x, "mur", variations={"2": x * 2.0, "0.5": x * 0.5, "0.25": x * 0.25})
+    varied = graphed.vary(x, "mur", points={"2": x * 2.0, "0.5": x * 0.5, "0.25": x * 0.25})
     assert list(graphed.labels(varied)) == ["nominal", "mur_2", "mur_5em1", "mur_25em2"]
 
 

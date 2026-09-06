@@ -25,7 +25,7 @@ def test_additive_repoints_on_the_loose_overload() -> None:
     value = graphed.nominal(target) * 3.0  # independent of jes / jer
 
     registered = graphed.vary(
-        target, "corr", variations=[("a", value), {"corr": "a", "jes": "up", "jer": "up"}]
+        target, "corr", points=[("a", value), {"corr": "a", "jes": "up", "jer": "up"}]
     )
 
     point = graphed.points(registered)["corr_a"]
@@ -44,7 +44,7 @@ def test_additive_repoints_on_the_weight_overload() -> None:
         "corr",
         factor,
         is_weight=True,
-        variations=[("a", factor * 3.0), {"corr": "a", "jes": "up", "jer": "up"}],
+        points=[("a", factor * 3.0), {"corr": "a", "jes": "up", "jer": "up"}],
     )
 
     point = graphed.points(graphed.weight(registered))["corr_a"]
@@ -60,7 +60,7 @@ def test_additive_repoints_on_the_shift_overload() -> None:
     independent = graphed.nominal(ctx["pt"]) * 3.0  # off the nominal → carries no jes / jer
 
     registered = graphed.vary(
-        ctx, "corr", collections={"pt": {"a": independent}}, variations=[{"corr": "a", "jes": "up", "jer": "up"}]
+        ctx, "corr", collections={"pt": {"a": independent}}, points=[{"corr": "a", "jes": "up", "jer": "up"}]
     )
 
     point = graphed.points(registered)["corr_a"]

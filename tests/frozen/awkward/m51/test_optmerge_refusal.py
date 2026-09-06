@@ -8,7 +8,7 @@ record ids. §6.4f settles that the varied `to_parquet` is a varied unpack path 
 the same distinct-outputs-vs-distinct-marked-ids shortfall check runs there, RECORD-TIME (the call
 already compiles, `compile_ir` runs in `awkward/io.py`), with §7.2's message and workaround.
 
-`w * 1.0` is §1.1-legal via `variations={tag: w * float(tag)}` and the M4 identity tokens merge it
+`w * 1.0` is §1.1-legal via `points={tag: w * float(tag)}` and the M4 identity tokens merge it
 with nominal's `w` (confirmed in `tests/frozen/frontend/m48/test_label_out_of_identity.py`:
 `compile_ir(s, b, b * 1.0)` yields ONE output), so its two distinct marked ids collapse to one
 compiled output — the exact shortfall. The UNVARIED write path is unchanged (§6.3), the positive
@@ -34,7 +34,7 @@ def _optimizer_mergeable_record(events: Any) -> tuple[Any, Any]:
     """A weight family with a `w * 1.0` member: distinct record id, but the M4 optimizer merges it
     with nominal's `w` into ONE compiled output."""
     w = gak.prod(1.0 + events.Jet.btag, axis=1)
-    ctx = graphed.vary(events, "sys", w, is_weight=True, variations={"one": w * 1.0})
+    ctx = graphed.vary(events, "sys", w, is_weight=True, points={"one": w * 1.0})
     record = gak.zip({"met": events.MET.pt, "w": graphed.weight(ctx)}, depth_limit=1)
     return record, events.MET.pt > 0.0
 

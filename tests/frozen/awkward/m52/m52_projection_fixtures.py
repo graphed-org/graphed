@@ -93,7 +93,7 @@ def joint_weight_program() -> JointProgram:
         "btag",
         central,
         is_weight=True,
-        variations={"hf_up": sf_hf_up, "hf_down": sf_hf_down},
+        points={"hf_up": sf_hf_up, "hf_down": sf_hf_down},
     )
 
     # the joint labels bind the SAME SF source as their one-at-a-time sibling; two-level resolution
@@ -128,5 +128,5 @@ def selection_program() -> tuple[Session, Any, Any, Any]:
     central, sf_hf_up, _sf_hf_down = btag_scale_factors(jets)
     # `sf_hf_up` is jes-dependent, so the loose fanout mints `btag_hf_up__jes_up` alongside the
     # one-at-a-time `btag_hf_up`
-    carrier = graphed.vary(central, "btag", variations={"hf_up": sf_hf_up * 1.5})
+    carrier = graphed.vary(central, "btag", points={"hf_up": sf_hf_up * 1.5})
     return session, mask, selected, carrier

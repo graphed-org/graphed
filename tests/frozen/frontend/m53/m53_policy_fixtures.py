@@ -62,7 +62,7 @@ def _jes_context() -> tuple[Session, EventContext]:
 
 def fanout_weight(*, points: Any = None, **vary_kwargs: Any) -> tuple[Session, EventContext, Any]:
     """A jes-dependent b-tag weight family: jes(3) x btag(5) = 15. ``points`` (placement entries)
-    merge into the unified ``variations=`` list; a pure-declare call (``points is None``) keeps the
+    merge into the unified ``points=`` list; a pure-declare call (``points is None``) keeps the
     dict channel. Extra keywords (``composes_as_union=``, ``max_universes=``) pass through."""
     session, shifted = _jes_context()
     pt = shifted["pt"]  # jes-varied
@@ -70,14 +70,14 @@ def fanout_weight(*, points: Any = None, **vary_kwargs: Any) -> tuple[Session, E
     members = {tag: pt * factor for tag, factor in BTAG_FACTOR.items()}
     variations: Any = members if points is None else [*members.items(), *points]
     registered = graphed.vary(
-        shifted, "btag", central, is_weight=True, variations=variations, **vary_kwargs
+        shifted, "btag", central, is_weight=True, points=variations, **vary_kwargs
     )
     return session, registered, graphed.weight(registered)
 
 
 def numeric_fanout(*, points: Any = None, **vary_kwargs: Any) -> EventContext:
     """A jes-dependent weight family over NUMERICALLY tagged jes universes ('2' / '0p5'), for a
-    precision (numeric-coordinate) placement. ``points`` merges into the ``variations=`` list."""
+    precision (numeric-coordinate) placement. ``points`` merges into the ``points=`` list."""
     session = Session(NumpyBackend())
     record = from_record(session, "ev", pt=VECTOR)
     pt = record["pt"]
@@ -87,5 +87,5 @@ def numeric_fanout(*, points: Any = None, **vary_kwargs: Any) -> EventContext:
     members = {"2": spt * 1.1}
     variations: Any = members if points is None else [*members.items(), *points]
     return graphed.vary(
-        shifted, "muF", spt * 1.0, is_weight=True, variations=variations, **vary_kwargs
+        shifted, "muF", spt * 1.0, is_weight=True, points=variations, **vary_kwargs
     )

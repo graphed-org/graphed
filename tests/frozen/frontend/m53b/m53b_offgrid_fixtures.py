@@ -86,10 +86,10 @@ def scale_grid() -> tuple[Session, EventContext, Any]:
     session, record = _record()
     pt = record["pt"]
     ctx = EventContext(session, pt, collections={"pt": pt})
-    mu_r = graphed.vary(ctx, "muR", pt * 0.5, is_weight=True, variations={"2": pt * 0.6, "0.5": pt * 0.4})
+    mu_r = graphed.vary(ctx, "muR", pt * 0.5, is_weight=True, points={"2": pt * 0.6, "0.5": pt * 0.4})
     ambient = graphed.weight(mu_r)
     mu_f = graphed.vary(
-        mu_r, "muF", ambient, is_weight=True, variations={"2": ambient * 1.3, "0.5": ambient * 0.7}
+        mu_r, "muF", ambient, is_weight=True, points={"2": ambient * 1.3, "0.5": ambient * 0.7}
     )
     return session, mu_f, pt
 
@@ -100,10 +100,10 @@ def offdiag_axes() -> tuple[Session, EventContext, Any]:
     session, record = _record()
     pt = record["pt"]
     ctx = EventContext(session, pt, collections={"pt": pt})
-    jes = graphed.vary(ctx, "jes", pt * 0.5, is_weight=True, variations={"1": pt * 0.6, "-1": pt * 0.4})
+    jes = graphed.vary(ctx, "jes", pt * 0.5, is_weight=True, points={"1": pt * 0.6, "-1": pt * 0.4})
     ambient = graphed.weight(jes)
     btag = graphed.vary(
-        jes, "btag", ambient, is_weight=True, variations={"1": ambient * 1.3, "-1": ambient * 0.7}
+        jes, "btag", ambient, is_weight=True, points={"1": ambient * 1.3, "-1": ambient * 0.7}
     )
     return session, btag, pt
 
@@ -122,9 +122,9 @@ def triple_numeric() -> tuple[Session, EventContext, Any]:
     session, record = _record()
     pt = record["pt"]
     ctx = EventContext(session, pt, collections={"pt": pt})
-    jes = graphed.vary(ctx, "jes", pt * 0.5, is_weight=True, variations={"1": pt * 0.6, "-1": pt * 0.4})
+    jes = graphed.vary(ctx, "jes", pt * 0.5, is_weight=True, points={"1": pt * 0.6, "-1": pt * 0.4})
     w1 = graphed.weight(jes)
-    btag = graphed.vary(jes, "btag", w1, is_weight=True, variations={"1": w1 * 1.3, "-1": w1 * 0.7})
+    btag = graphed.vary(jes, "btag", w1, is_weight=True, points={"1": w1 * 1.3, "-1": w1 * 0.7})
     w2 = graphed.weight(btag)
-    jer = graphed.vary(btag, "jer", w2, is_weight=True, variations={"1": w2 * 1.1, "-1": w2 * 0.9})
+    jer = graphed.vary(btag, "jer", w2, is_weight=True, points={"1": w2 * 1.1, "-1": w2 * 0.9})
     return session, jer, pt

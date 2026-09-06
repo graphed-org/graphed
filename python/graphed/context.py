@@ -375,7 +375,7 @@ def _vary_shift(
         )
     if variations is not None:
         raise GraphedError(
-            "variations= is not accepted in the shift form; its tags are the INNER keys of the "
+            "points= is not accepted in the shift form; its tags are the INNER keys of the "
             "collection mappings, so pass collections={Name: {tag: record}}"
         )
     mapping: dict[str, Mapping[Any, Any]] = dict(tags)

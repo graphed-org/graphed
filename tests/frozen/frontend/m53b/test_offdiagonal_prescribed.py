@@ -30,7 +30,7 @@ def test_a_prescribed_off_diagonal_repoints_an_independent_member() -> None:
         "corr",
         base,
         is_weight=True,
-        variations=[("off", base * 1.1), {"corr": "off", "jes": 1, "btag": -1}],
+        points=[("off", base * 1.1), {"corr": "off", "jes": 1, "btag": -1}],
     )
 
     point = graphed.points(graphed.weight(registered))["corr_off"]
@@ -47,7 +47,7 @@ def test_a_prescribed_off_diagonal_repoints_an_independent_member() -> None:
             "corr",
             bare,
             is_weight=True,
-            variations=[("off", bare * 1.1), {"corr": "off", "jes": 1, "btag": -1}],
+            points=[("off", bare * 1.1), {"corr": "off", "jes": 1, "btag": -1}],
         )
     message = str(caught.value)
     assert "btag" in message  # names the unreachable axis

@@ -57,7 +57,7 @@ def test_points_prunes_on_the_loose_overload() -> None:
     dependent = jes * 3.0  # jes-dependent, so the corr family fans out over jes
 
     registered = graphed.vary(
-        jes, "corr", variations=[("a", dependent), {"corr": "a", "jes": "up"}]
+        jes, "corr", points=[("a", dependent), {"corr": "a", "jes": "up"}]
     )
 
     labels = graphed.labels(registered)
@@ -76,7 +76,7 @@ def test_points_prunes_on_the_weight_overload() -> None:
         "corr",
         weight,
         is_weight=True,
-        variations=[("a", weight * 3.0), {"corr": "a", "jes": "up"}],
+        points=[("a", weight * 3.0), {"corr": "a", "jes": "up"}],
     )
 
     ambient = graphed.weight(registered)
@@ -93,7 +93,7 @@ def test_points_prunes_on_the_shift_overload() -> None:
     pt = ctx["pt"]  # jes-varied
 
     registered = graphed.vary(
-        ctx, "corr", collections={"pt": {"a": pt * 3.0}}, variations=[{"corr": "a", "jes": "up"}]
+        ctx, "corr", collections={"pt": {"a": pt * 3.0}}, points=[{"corr": "a", "jes": "up"}]
     )
 
     labels = graphed.labels(registered)
@@ -111,7 +111,7 @@ def test_a_variation_tagged_points_still_registers_through_variations() -> None:
     dependent = jes * 3.0
 
     registered = graphed.vary(
-        jes, "corr", variations=[("points", dependent), {"corr": "points", "jes": "up"}]
+        jes, "corr", points=[("points", dependent), {"corr": "points", "jes": "up"}]
     )
 
     labels = graphed.labels(registered)
@@ -130,7 +130,7 @@ def test_a_collection_named_points_still_registers_through_collections() -> None
         ctx,
         "corr",
         collections={"points": {"a": collection * pt}},
-        variations=[{"corr": "a", "jes": "up"}],
+        points=[{"corr": "a", "jes": "up"}],
     )
 
     labels = graphed.labels(registered)

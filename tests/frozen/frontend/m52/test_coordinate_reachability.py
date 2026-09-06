@@ -37,7 +37,7 @@ def test_r2_verbatim_against_numerically_tagged_families() -> None:
         "jesbtag_corr",
         factor,
         is_weight=True,
-        variations=[("up", factor * JOINT_FACTOR), {"jesbtag_corr": "up", "jes": 1}],
+        points=[("up", factor * JOINT_FACTOR), {"jesbtag_corr": "up", "jes": 1}],
     )
 
     reported = graphed.points(graphed.weight(registered))
@@ -63,7 +63,7 @@ def test_a_typed_coordinate_naming_no_registered_tag_is_refused_naming_what_is()
         "corr",
         admitted_weight,
         is_weight=True,
-        variations=[("a", admitted_weight * 3.0), {"corr": "a", "jes": "up"}],
+        points=[("a", admitted_weight * 3.0), {"corr": "a", "jes": "up"}],
     )
     assert graphed.points(graphed.weight(registered))["corr_a__jes_up"] == {"corr": "a", "jes": "up"}
 
@@ -75,7 +75,7 @@ def test_a_typed_coordinate_naming_no_registered_tag_is_refused_naming_what_is()
             "corr",
             weight,
             is_weight=True,
-            variations=[("a", weight * 3.0), {"corr": "a", "jes": 1}],
+            points=[("a", weight * 3.0), {"corr": "a", "jes": 1}],
         )
 
     message = str(caught.value)
@@ -93,7 +93,7 @@ def test_a_nuisance_registered_nowhere_is_refused() -> None:
             "corr",
             admitted_weight,
             is_weight=True,
-            variations=[("a", admitted_weight * 3.0), {"corr": "a", "jes": "up"}],
+            points=[("a", admitted_weight * 3.0), {"corr": "a", "jes": "up"}],
         )
     )
 
@@ -105,7 +105,7 @@ def test_a_nuisance_registered_nowhere_is_refused() -> None:
             "corr",
             weight,
             is_weight=True,
-            variations=[("a", weight * 3.0), {"corr": "a", "nosuch": "up"}],
+            points=[("a", weight * 3.0), {"corr": "a", "nosuch": "up"}],
         )
 
     message = str(caught.value)
@@ -124,7 +124,7 @@ def test_a_joint_point_registered_before_its_axis_exists_is_refused() -> None:
             "corr",
             early_weight,
             is_weight=True,
-            variations=[("a", early_weight * 3.0), {"corr": "a", "jes": "up"}],
+            points=[("a", early_weight * 3.0), {"corr": "a", "jes": "up"}],
         )
     assert "jes" in str(caught.value)
 
@@ -138,7 +138,7 @@ def test_a_joint_point_registered_before_its_axis_exists_is_refused() -> None:
         "corr",
         later_weight,
         is_weight=True,
-        variations=[("a", later_weight * 3.0), {"corr": "a", "jes": "up"}],
+        points=[("a", later_weight * 3.0), {"corr": "a", "jes": "up"}],
     )
     assert graphed.points(graphed.weight(registered))["corr_a__jes_up"] == {"corr": "a", "jes": "up"}
 
@@ -177,7 +177,7 @@ def test_the_reachability_walk_reads_carried_labels_not_tags(builder, nuisance: 
         "corr",
         factor,
         is_weight=True,
-        variations=[("a", factor * 3.0), {"corr": "a", nuisance: "up"}],
+        points=[("a", factor * 3.0), {"corr": "a", nuisance: "up"}],
     )
     joint_label = f"corr_a__{nuisance}_up"
     assert graphed.points(graphed.weight(registered))[joint_label] == {"corr": "a", nuisance: "up"}
@@ -192,7 +192,7 @@ def test_a_nuisance_on_none_of_the_carriers_is_refused() -> None:
             "corr",
             weight,
             is_weight=True,
-            variations=[("a", weight * 3.0), {"corr": "a", "nowhere": "up"}],
+            points=[("a", weight * 3.0), {"corr": "a", "nowhere": "up"}],
         )
     assert "nowhere" in str(caught.value)
 
@@ -205,12 +205,12 @@ def test_the_loose_forms_carrier_is_the_targets_own_tag_map() -> None:
     jes = graphed.vary(pt, "jes", up=pt * 1.1, down=pt * 0.9)
     dependent = jes * 3.0
 
-    registered = graphed.vary(jes, "corr", variations=[("a", dependent), {"corr": "a", "jes": "up"}])
+    registered = graphed.vary(jes, "corr", points=[("a", dependent), {"corr": "a", "jes": "up"}])
     assert graphed.points(registered)["corr_a__jes_up"] == {"corr": "a", "jes": "up"}
 
     with pytest.raises(GraphedError) as caught:
         graphed.vary(
-            jes, "corr2", variations=[("a", dependent), {"corr2": "a", "nosuch": "up"}]
+            jes, "corr2", points=[("a", dependent), {"corr2": "a", "nosuch": "up"}]
         )
     assert "nosuch" in str(caught.value)
 

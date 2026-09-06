@@ -10,7 +10,7 @@ Every anchor here imports `graphed.awkward` — the gak enumerations and represe
 | anchor | plan clause | test |
 |---|---|---|
 | `vary-m48-A1` | §1.1 kwarg channel, exact-decimal normalization | `test_tag_grammar.py::test_kwarg_tags_canonicalize_by_exact_decimal_arithmetic` |
-| `vary-m48-A1` | §1.1 `variations=` channel; PDF indices untouched | `test_tag_grammar.py::test_the_variations_channel_carries_tags_kwarg_syntax_cannot_spell` |
+| `vary-m48-A1` | §1.1 `points=` channel; PDF indices untouched | `test_tag_grammar.py::test_the_variations_channel_carries_tags_kwarg_syntax_cannot_spell` |
 | `vary-m48-A1` | §1.1 collection-mapping inner keys (third channel) | `test_tag_grammar.py::test_the_collection_mapping_inner_keys_are_the_third_channel` |
 | `vary-m48-A1` | §1.1 non-minimal canonical tags re-rendered | `test_tag_grammar.py::test_non_minimal_canonical_grammar_tags_are_re_rendered` |
 | `vary-m48-A1` | §1.1 unification ACROSS calls | `test_tag_grammar.py::test_two_spellings_of_one_value_unify_ACROSS_calls` |
@@ -24,7 +24,7 @@ Every anchor here imports `graphed.awkward` — the gak enumerations and represe
 | `vary-m48-A1` | §1.1 integer-magnitude rejection as a distinct case | `test_tag_grammar.py::test_an_integer_magnitude_over_the_cap_names_the_magnitude` |
 | `vary-m48-A1` | §2.1 signature-shadowed names incl. self-reference | `test_tag_grammar.py::test_signature_shadowed_names_reach_tags_through_the_mapping_channels` |
 | `vary-m48-A1` | §1.1 the tag `nominal` is legal | `test_tag_grammar.py::test_the_tag_nominal_is_legal_and_yields_an_ordinary_label` |
-| `vary-m48-A1` | §2.1 `variations=` refused in the shift form | `test_tag_grammar.py::test_variations_is_refused_in_the_shift_form` |
+| `vary-m48-A1` | §2.1 `points=` refused in the shift form | `test_tag_grammar.py::test_variations_is_refused_in_the_shift_form` |
 | `vary-m48-A1` | §2.1 `nominal=` refused, naming `collections=` | `test_tag_grammar.py::test_nominal_is_refused_in_the_shift_form_with_an_error_naming_collections` |
 | `vary-m48-A1` | §1.1 no label contains `.` or `-` | `test_tag_grammar.py::test_no_label_ever_contains_a_dot_or_a_dash` |
 | `vary-m48-A1` | §1.1 tag given twice / empty tag set | `test_tag_grammar.py::test_a_tag_given_twice_and_an_empty_tag_set_are_rejected` |
