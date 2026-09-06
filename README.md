@@ -56,8 +56,8 @@ events = ak.Array(
 session = Session(AwkwardBackend())
 evts = from_awkward(session, "events", events)
 
-good = evts.Jet[evts.Jet.pt > 30.0]          # records, doesn't run
-leading_pt = gak.max(good.pt, axis=1)        # gak mirrors ak.* signatures
+good = evts.Jet[evts.Jet.pt > 30.0]  # records, doesn't run
+leading_pt = gak.max(good.pt, axis=1)  # gak mirrors ak.* signatures
 
 compiled = graphed.compile_ir(session, leading_pt)
 (result,) = graphed.evaluate_ir(compiled, AwkwardBackend(), {"events": events})

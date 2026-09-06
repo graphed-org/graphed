@@ -17,6 +17,7 @@ The prototype was split across one repository per package. It is now a single di
 # before
 from graphed_core import GraphStore, DurablePlan
 from graphed_awkward import AwkwardBackend, from_awkward
+
 # after
 from graphed.core import GraphStore, DurablePlan
 from graphed.awkward import AwkwardBackend, from_awkward

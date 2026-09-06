@@ -43,7 +43,12 @@ def test_two_labels_for_one_point_in_a_single_vary_call_are_refused() -> None:
             weight,
             is_weight=True,
             # both re-point to ONE point → corr_a and corr_b collide intra-call
-            variations=[("a", weight * 3.0), ("b", weight * 4.0), {"corr": "a", **JOINT}, {"corr": "b", **JOINT}],
+            variations=[
+                ("a", weight * 3.0),
+                ("b", weight * 4.0),
+                {"corr": "a", **JOINT},
+                {"corr": "b", **JOINT},
+            ],
         )
     message = str(caught.value)
     assert "corr_a" in message

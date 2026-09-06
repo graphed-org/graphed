@@ -19,8 +19,9 @@ The child is spawned (helper `_pack_in_child`) with a **hardcoded minimal POSIX 
 ```python
 proc = subprocess.run(
     [sys.executable, "-c", _CHILD, *args],
-    env={"PYTHONHASHSEED": seed, "PATH": "/usr/bin:/bin"},   # POSIX-only: no SystemRoot, no Windows sys dirs
-    capture_output=True, text=True,
+    env={"PYTHONHASHSEED": seed, "PATH": "/usr/bin:/bin"},  # POSIX-only: no SystemRoot, no Windows sys dirs
+    capture_output=True,
+    text=True,
 )
 assert proc.returncode == 0, proc.stderr
 ```
@@ -49,7 +50,7 @@ Preserve the `PYTHONHASHSEED` override (the property under test) but inherit the
 instead of replacing it, so the child is launchable on every OS:
 
 ```python
-env={**os.environ, "PYTHONHASHSEED": seed}
+env = {**os.environ, "PYTHONHASHSEED": seed}
 ```
 
 This keeps the seed override and the determinism assertion **exactly as-is** — it only stops stripping
