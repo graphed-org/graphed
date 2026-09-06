@@ -48,7 +48,7 @@ def test_a_carrier_sharing_the_foreign_nuisance_fans_out() -> None:
     x = record["pt"]
     jes = graphed.vary(x, "jes", up=x * 1.1, down=x * 0.9)
     dependent = jes * 3.0  # jes-varied, and the carrier (jes) shares that nuisance
-    corr = graphed.vary(jes, "corr", variations={"a": dependent})
+    corr = graphed.vary(jes, "corr", points={"a": dependent})
     assert "corr_a__jes_up" in graphed.labels(corr)
     assert "corr_a__jes_down" in graphed.labels(corr)
 
@@ -65,7 +65,7 @@ def test_a_dependent_members_reachable_uncrossed_axis_is_refused_by_prune() -> N
     dependent = jes * 3.0  # depends on jes ONLY → corr_a fans out over jes, never jer
 
     with pytest.raises(GraphedError) as caught:
-        graphed.vary(both, "corr", variations=[("a", dependent), {"corr": "a", "jer": "up"}])
+        graphed.vary(both, "corr", points=[("a", dependent), {"corr": "a", "jer": "up"}])
     message = str(caught.value)
     assert "names no joint" in message  # the prune refusal, not an additive re-point
     assert "corr_a__jes_up" in message  # names the joints the fanout actually derived
@@ -76,9 +76,9 @@ def test_a_stacked_weight_stays_the_union() -> None:
     pt = record["pt"]
     ctx = EventContext(_s, pt, collections={"pt": pt})
     weight = ctx["pt"] * 0.5
-    first = graphed.vary(ctx, "btag", weight, is_weight=True, variations={"up": weight * 1.2})
+    first = graphed.vary(ctx, "btag", weight, is_weight=True, points={"up": weight * 1.2})
     ambient = graphed.weight(first)  # its _tags carries btag → a stacked weight nuisance
-    second = graphed.vary(first, "mu", ambient, is_weight=True, variations={"up": ambient * 1.05})
+    second = graphed.vary(first, "mu", ambient, is_weight=True, points={"up": ambient * 1.05})
     labels = graphed.labels(graphed.weight(second))
     assert not [label for label in labels if "__" in label]  # mu does NOT fan out over stacked btag
     assert set(labels) == {"nominal", "btag_up", "mu_up"}

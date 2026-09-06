@@ -66,7 +66,7 @@ against `origin/main` and fails at RUN time for the RIGHT reason.
   inner map nuisance-sorted, `"nominal"` mapping to `{}`. Defined on a `Varied` and an event
   context; raises on a result mapping.
 * **`points=`** — keyword-only on all three `vary` overloads, `{tag: {nuisance: coordinate}}`, keyed
-  by tag exactly like `variations=`, and out of `**tags` so a variation or a collection genuinely
+  by tag exactly like `points=`, and out of `**tags` so a variation or a collection genuinely
   named `points` still registers.
 * **`variations()`' third kind word is `"both"`**, per (name, tag), with the frozen
   `{name: {tag: (kind, value | None)}}` shape and `numeric_value(tag)` still in the value half.
@@ -102,7 +102,7 @@ against `origin/main` and fails at RUN time for the RIGHT reason.
 Every test fails against a tree with no m52 implementation for the RIGHT reason —
 `ModuleNotFoundError: graphed._points`, `AttributeError: module 'graphed' has no attribute
 'points'`, the `points=` map arriving as a variation member (`a variation member must be an Array
-or a Varied, got dict` / `variation tag 'points' was given both as a keyword and in variations=` /
+or a Varied, got dict` / `variation tag 'points' was given both as a keyword and in points=` /
 `collection 'points' was named twice`), a `DID NOT RAISE` on a refusal that does not exist yet, or
 the measured wrong answer (`variations()` reporting `("shift", None)` where `("both", None)` is
 required) — never a collection or import error.

@@ -59,7 +59,7 @@ def test_a_pure_prune_selection_is_byte_identical_to_the_frozen_behavior() -> No
         "btag",
         varied * 1.0,
         is_weight=True,
-        variations=[*members.items(), {"btag": "hf_up", "jes": "up"}, {"btag": "lf_down", "jes": "down"}],
+        points=[*members.items(), {"btag": "hf_up", "jes": "up"}, {"btag": "lf_down", "jes": "down"}],
     )
 
     assert graphed.points(graphed.weight(registered)) == {
@@ -84,7 +84,7 @@ from m53b_offgrid_fixtures import two_axis_context, independent_weight
 _session, ctx = two_axis_context()
 factor = independent_weight(ctx)
 registered = graphed.vary(ctx, "corr", factor, is_weight=True,
-                          variations=[("a", factor * 3.0), {{"corr": "a", "jes": "up", "jer": "up"}}])
+                          points=[("a", factor * 3.0), {{"corr": "a", "jes": "up", "jer": "up"}}])
 ambient = graphed.weight(registered)
 print(repr(graphed.points(ambient)))
 print(",".join(graphed.labels(ambient)))

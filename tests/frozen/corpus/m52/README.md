@@ -34,7 +34,7 @@ a tree with no m53 implementation and fails at run time for the RIGHT reason.
   `systematics._apply_jes`' jet-pT scale.
 * `joint_program()` — the m53 auto-fanout spelling over the corpus ttbar analysis: a `jes` shift on
   `Jet`, the region's own selection, then one plain `vary(..., "btag", ..., is_weight=True,
-  variations={hf_up, hf_down, lf_up, lf_down})`. Each SF member depends on the jes-varied jets, so
+  points={hf_up, hf_down, lf_up, lf_down})`. Each SF member depends on the jes-varied jets, so
   the eight joints are minted automatically and each binds the **same** `sf_hf_*` object as its
   one-at-a-time sibling. Returns the session, the HT observable, the ambient weight and both hf SF
   containers. `EXPECTED_POINTS` is the full 15-universe grid; `HF_JOINTS` maps each hf joint label to

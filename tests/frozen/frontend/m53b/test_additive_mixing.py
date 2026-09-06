@@ -29,7 +29,7 @@ def _mixed() -> dict[str, dict[str, str]]:
         "corr",
         dependent,
         is_weight=True,
-        variations=[
+        points=[
             ("dep", dependent * 1.3),
             ("ind", independent * 1.1),
             {"corr": "dep", "jes": "up"},  # PRUNE: keep this joint, drop corr_dep__jes_down

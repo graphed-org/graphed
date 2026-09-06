@@ -127,7 +127,7 @@ def joint_program() -> JointProgram:
         "btag",
         gak.prod(sf, axis=1),
         is_weight=True,
-        variations={"hf_up": hf_up, "hf_down": hf_down, "lf_up": lf_up, "lf_down": lf_down},
+        points={"hf_up": hf_up, "hf_down": hf_down, "lf_up": lf_up, "lf_down": lf_down},
     )
     return JointProgram(session, observable, graphed.weight(sel), hf_up, hf_down)
 

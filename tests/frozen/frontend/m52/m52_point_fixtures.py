@@ -84,7 +84,7 @@ def weight_context() -> tuple[Session, EventContext]:
         "btag",
         weight,
         is_weight=True,
-        variations={"up": weight * BTAG_UP, "down": weight * BTAG_DOWN},
+        points={"up": weight * BTAG_UP, "down": weight * BTAG_DOWN},
     )
     return session, varied
 
@@ -121,7 +121,7 @@ def stacked_weight_context() -> tuple[Session, EventContext]:
         "mu",
         ambient,
         is_weight=True,
-        variations={"up": ambient * MU_UP, "down": ambient * MU_DOWN},
+        points={"up": ambient * MU_UP, "down": ambient * MU_DOWN},
     )
     return session, varied
 
@@ -182,7 +182,7 @@ def shift_then_weight_context() -> tuple[Session, EventContext]:
         "btag",
         weight,
         is_weight=True,
-        variations={"up": weight * BTAG_UP, "down": weight * BTAG_DOWN},
+        points={"up": weight * BTAG_UP, "down": weight * BTAG_DOWN},
     )
     return session, varied
 
@@ -233,7 +233,7 @@ def numeric_families() -> tuple[Session, EventContext]:
         "btag",
         weight,
         is_weight=True,
-        variations={"1": weight * BTAG_UP, "-1": weight * BTAG_DOWN},
+        points={"1": weight * BTAG_UP, "-1": weight * BTAG_DOWN},
     )
     ambient = graphed.weight(tagged)
     return session, graphed.vary(
@@ -241,7 +241,7 @@ def numeric_families() -> tuple[Session, EventContext]:
         "jer",
         ambient,
         is_weight=True,
-        variations={"1": ambient * MU_UP, "-1": ambient * MU_DOWN},
+        points={"1": ambient * MU_UP, "-1": ambient * MU_DOWN},
     )
 
 
@@ -257,7 +257,7 @@ def dual_registered_family(*, numeric: bool = False) -> tuple[Session, EventCont
     )
     weight = shifted["pt"] * 0.5
     return session, graphed.vary(
-        shifted, "jes", weight, is_weight=True, variations={up: weight * 1.3}
+        shifted, "jes", weight, is_weight=True, points={up: weight * 1.3}
     )
 
 
@@ -274,7 +274,7 @@ def identifier_families() -> tuple[Session, EventContext]:
         "btag",
         weight,
         is_weight=True,
-        variations={"up": weight * BTAG_UP, "down": weight * BTAG_DOWN},
+        points={"up": weight * BTAG_UP, "down": weight * BTAG_DOWN},
     )
 
 

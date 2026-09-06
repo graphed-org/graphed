@@ -39,7 +39,7 @@ def _ctx_with_families() -> Any:
     w = ev.MET.pt
     ctx = vary(
         ctx, "sf", w, is_weight=True,
-        variations={"5em1": w, "m15em1": w * 1.1, "2p5": w * 1.2, "up": w * 1.3},
+        points={"5em1": w, "m15em1": w * 1.1, "2p5": w * 1.2, "up": w * 1.3},
     )  # fmt: skip
     jets = ctx.Jet
     ctx = vary(

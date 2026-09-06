@@ -11,11 +11,11 @@ class GraphedError(Exception):
     """Base class for graphed frontend errors."""
 
 
-class VariationError(GraphedError):
-    """A ``variations=`` entry that does not fit the situation it names (design §4).
+class PointError(GraphedError):
+    """A ``points=`` entry that does not fit the situation it names (design §4).
 
     ``situation`` discriminates the misuse — one of ``"unresolved" | "unreachable" | "duplicate" |
-    "empty" | "conflict"`` — so a caller can ``except VariationError`` and branch on ``.situation``
+    "empty" | "conflict"`` — so a caller can ``except PointError`` and branch on ``.situation``
     without parsing the message. ``entry`` is the offending declare/placement and ``valid`` the set
     it should have named; ``detail`` is the human explanation the message carries.
     """

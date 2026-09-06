@@ -17,7 +17,7 @@ from . import accessors
 from ._points import Point, coordinate, default, render
 from ._tags import canonical_tag, numeric_value
 from .array import Array
-from .errors import GraphedError, GraphedTypeError, VariationError
+from .errors import GraphedError, GraphedTypeError, PointError
 from .provenance import capture
 from .varied import Varied, member_of, rebuild, registered_points, session_of
 
@@ -34,7 +34,7 @@ def vary(
     nominal: Array | Varied | None = None,
     *,
     is_weight: bool = False,
-    variations: Mapping[Any, Any] | Iterable[Any] | None = None,
+    points: Mapping[Any, Any] | Iterable[Any] | None = None,
     collections: Mapping[str, Mapping[Any, Any]] | None = None,
     composes_as_union: bool = False,
     max_universes: int = DEFAULT_MAX_UNIVERSES,
@@ -42,11 +42,11 @@ def vary(
 ) -> Any:
     """Register a variation family `name` on `target`, returning a NEW object (§2.1).
 
-    `**tags` and `variations=` carry tag/member pairs under the §1.1 grammar; the signature's own
-    keyword names (`nominal`, `is_weight`, `variations`, `collections`) are legal tags AND legal
+    `**tags` and `points=` carry tag/member pairs under the §1.1 grammar; the signature's own
+    keyword names (`nominal`, `is_weight`, `points`, `collections`) are legal tags AND legal
     collection names, so one so named arrives through a mapping channel instead.
 
-    `variations=` is either a `Mapping[tag, member]` (declares only, the common case) or an iterable
+    `points=` is either a `Mapping[tag, member]` (declares only, the common case) or an iterable
     mixing 2-`tuple` `(tag, member)` declares with `{nuisance: coordinate}` placement mappings that
     SELECT a derived joint (dependent member) or RE-POINT a label off-grid (independent member)
     (§2/§3). When a member is computed over another registered nuisance's varied nodes the family
@@ -56,7 +56,7 @@ def vary(
     """
     if not isinstance(name, str) or not name.isidentifier():
         raise GraphedError(f"a variation name must be a Python identifier, got {name!r}")
-    declares, placements = _parse_variations(variations)
+    declares, placements = _parse_points(points)
     from .context import EventContext, vary_context  # noqa: PLC0415  (import cycle)
 
     overload: Any  # the two context overloads take one arg shape; mypy keeps its own narrowing
@@ -93,21 +93,21 @@ def vary(
         raise
 
 
-def _parse_variations(
-    variations: Mapping[Any, Any] | Iterable[Any] | None,
+def _parse_points(
+    points: Mapping[Any, Any] | Iterable[Any] | None,
 ) -> tuple[Mapping[Any, Any] | None, list[Mapping[str, Any]] | None]:
-    """Split the unified `variations=` surface into the internal (declares, placements) channels.
+    """Split the unified `points=` surface into the internal (declares, placements) channels.
 
     A `Mapping` (or `None`) is declares-only — today's path, passed straight through. A non-Mapping
     iterable mixes 2-`tuple` `(tag, member)` declares with `{nuisance: coordinate}` placement
     mappings; an entry that is neither is ill-typed input (`GraphedTypeError`). The result feeds the
     old two-parameter seam unchanged, so `gather_members`/`_route` stay byte-identical.
     """
-    if variations is None or isinstance(variations, Mapping):
-        return variations, None
+    if points is None or isinstance(points, Mapping):
+        return points, None
     declares: dict[Any, Any] = {}
     placements: list[Mapping[str, Any]] = []
-    for entry in variations:
+    for entry in points:
         if isinstance(entry, Mapping):
             placements.append(entry)
         elif isinstance(entry, tuple) and len(entry) == 2:
@@ -117,7 +117,7 @@ def _parse_variations(
             raise GraphedTypeError(
                 "vary",
                 capture(),
-                f"a variations= entry must be a (tag, member) declare 2-tuple or a "
+                f"a points= entry must be a (tag, member) declare 2-tuple or a "
                 f"{{nuisance: coordinate}} placement mapping, got {entry!r}",
             )
     return (declares or None), (placements or None)
@@ -222,7 +222,7 @@ def gather_members(
     raw: dict[Any, Any] = dict(tags)
     for tag, member in (variations or {}).items():
         if tag in raw:
-            raise GraphedError(f"variation tag {tag!r} was given both as a keyword and in variations=")
+            raise GraphedError(f"variation tag {tag!r} was given both as a keyword and in points=")
         raw[tag] = member
     if not raw:
         raise GraphedError(f"graphed.vary({name!r}) needs at least one tag")
@@ -243,7 +243,7 @@ def gather_members(
         # §2.5: collapse every foreign coordinate to nominal — the pre-m53 union. There is nothing
         # for a `points=` selection to keep once the joints are gone, so pairing them is an error.
         if points_list:
-            raise VariationError(
+            raise PointError(
                 "conflict",
                 points_list,
                 detail=(
@@ -383,7 +383,7 @@ def _guard(
     if total > max_universes:
         grid = " x ".join(f"{family}({size})" for family, size in sizes)
         raise GraphedError(
-            f"graphed.vary({name!r}) would fan out to {total} universes ({grid}); pass variations= "
+            f"graphed.vary({name!r}) would fan out to {total} universes ({grid}); pass points= "
             f"placements to select a subset, or raise max_universes (currently {max_universes})"
         )
 
@@ -416,23 +416,23 @@ def _route(
     for entry in points:
         own = entry.get(name)
         if own is None or canonical_tag(own) not in tags:
-            raise VariationError(
+            raise PointError(
                 "unresolved",
                 dict(entry),
                 valid=sorted(tags),
                 detail=(
-                    f"variations= entry {dict(entry)}: {own!r} is not a tag of graphed.vary({name!r}), "
+                    f"points= entry {dict(entry)}: {own!r} is not a tag of graphed.vary({name!r}), "
                     f"whose tags are {sorted(tags)}"
                 ),
             )
         tag = canonical_tag(own)
         point = Point(entry)
         if not any(nuisance != name for nuisance, _ in point):
-            raise VariationError(
+            raise PointError(
                 "empty",
                 dict(entry),
                 detail=(
-                    f"variations= entry {dict(entry)} has only the {name!r} coordinate; a foreign "
+                    f"points= entry {dict(entry)} has only the {name!r} coordinate; a foreign "
                     "coordinate at 0 names the central universe, which is what nominal already is"
                 ),
             )
@@ -440,12 +440,12 @@ def _route(
             _check_reachable(name, point, reachable)
             label = by_point.get(point)
             if label is None:
-                raise VariationError(
+                raise PointError(
                     "unresolved",
                     dict(entry),
                     valid=sorted(joint_points),
                     detail=(
-                        f"variations= entry {dict(entry)} names no joint the fanout of {name!r} "
+                        f"points= entry {dict(entry)} names no joint the fanout of {name!r} "
                         f"derives; the derived joints are {sorted(joint_points)}"
                     ),
                 )
@@ -485,7 +485,7 @@ def _check_reachable(name: str, point: Point, reachable: Mapping[str, set[str]])
     for nuisance, value in point:
         registered = reachable.get(nuisance)
         if registered is None:
-            raise VariationError(
+            raise PointError(
                 "unresolved",
                 dict(point),
                 valid=sorted(reachable),
@@ -495,7 +495,7 @@ def _check_reachable(name: str, point: Point, reachable: Mapping[str, set[str]])
                 ),
             )
         if value not in registered:
-            raise VariationError(
+            raise PointError(
                 "unreachable",
                 dict(point),
                 valid=sorted(registered),
@@ -515,7 +515,7 @@ def _check_unique(minted: Mapping[str, Point], registry: Mapping[str, Point]) ->
     for label, point in minted.items():
         seen = registry.get(label)
         if seen is not None and seen != point:
-            raise VariationError(
+            raise PointError(
                 "duplicate",
                 label,
                 valid=render(seen),
@@ -526,7 +526,7 @@ def _check_unique(minted: Mapping[str, Point], registry: Mapping[str, Point]) ->
             )
         for other, other_point in (*registry.items(), *minted.items()):
             if other != label and other_point == point:
-                raise VariationError(
+                raise PointError(
                     "duplicate",
                     label,
                     valid=other,

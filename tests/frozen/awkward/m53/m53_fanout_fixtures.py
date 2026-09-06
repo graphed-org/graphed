@@ -107,7 +107,7 @@ def fanout_weight(**vary_kwargs: Any) -> FanoutProgram:
 
     central, members = _btag_members(sgood)
     registered = graphed.vary(
-        sel, "btag", central, is_weight=True, variations=members, **vary_kwargs
+        sel, "btag", central, is_weight=True, points=members, **vary_kwargs
     )
     return FanoutProgram(
         session=session,
