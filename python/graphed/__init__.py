@@ -24,7 +24,7 @@ from .aggregate import aggregate_plan, resolve_backend
 from .array import Array, apply
 from .backend import Backend, Form, ParamValue
 from .by_label import impact_by_label, read_columns_by_label
-from .errors import GraphedError, GraphedTypeError
+from .errors import GraphedError, GraphedTypeError, VariationError
 from .execute import CompiledGraph, compile_ir, evaluate_ir
 from .projection import (
     CONSERVATIVE,
@@ -81,6 +81,7 @@ __all__ = [
     "ProjectionError",
     "Provenance",
     "Session",
+    "VariationError",
     "Varied",
     "aggregate_plan",
     "apply",

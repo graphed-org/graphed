@@ -120,3 +120,47 @@ hit by the m53b additive entries themselves, which the OLD prune refused; they n
 additive). Added `tests/extra/m53/test_a_dependent_members_reachable_uncrossed_axis_is_refused_by_prune`
 (distinct from the m53b `nosuch` guardrail, which is refused earlier at `_check_reachable`) -> combined
 diff coverage 26/26 = 100%.
+
+---
+
+## m53-unified — unify `points=` into one `variations=` surface + `VariationError` (implementer, freeze `m53-unified-freeze` @ e8c351a)
+
+Front-door reshape only; the APPROVED router (`d090625`) stays byte-identical. Source-only, 3 files.
+
+- `errors.py`: `VariationError(GraphedError)` — `__init__(situation, entry, *, valid=None, detail="")`
+  storing `.situation/.entry/.valid/.detail`, message `f"{situation}: {detail}"`. Exported from
+  `__init__.py` (`__all__` + import).
+- `vary.py`: dropped the `points=` param; widened `variations=` to `Mapping | Iterable[entry]`. New
+  `_parse_variations(variations)` splits a non-Mapping iterable into (declares dict, placements list)
+  and feeds the EXISTING internal `variations`(declares)/`points`(placements) seam unchanged — a
+  2-`tuple` is a declare, a `Mapping` a placement, anything else -> `GraphedTypeError(capture())`. A
+  Mapping/None passes straight through as declares. Empty channels collapse to `None` so the two-param
+  seam stays byte-identical.
+- Re-typed the §4 raises (control flow untouched, only the exception class + stale `points=` wording):
+  `_route` (no-joint->`unresolved`, own-not-a-tag->`unresolved`, own-only->`empty`), `_check_reachable`
+  (unknown-nuisance->`unresolved`, unreachable-value->`unreachable`), `_check_unique` (both->`duplicate`),
+  `gather_members` composes+placement guard (->`conflict`). Every asserted message substring preserved
+  (enumerated across all vary-arc frozen trees: joint/nosuch/down/sideways/jer/jes_btag_up/central/
+  nominal/composes_as_union/"already registered under"/typo/btag/corr/nowhere/up — none was "points").
+  `_guard`'s user-facing message ("pass points=[...]") reworded to "pass variations= placements"
+  (test_guard asserts only 15/jes/btag); logic unchanged, stays `GraphedError`.
+
+Gates (all reproduced):
+- Frozen vary-arc suite `pytest corpus/m52 awkward/{m52,m53} frontend/{m52,m53,m53b}`: **101 passed / 0
+  failed / 0 skipped** (frontend 83, corpus+awkward 18). The 49 pre-impl failures now pass, 33 controls
+  green; `test_variation_error.py` 9/9 (8 situations + positive control).
+- `git diff m53-unified-freeze -- tests/frozen` EMPTY (no frozen file touched; source diff = errors.py
+  +19, __init__.py +3, vary.py). 
+- Diff coverage from the FROZEN suite alone: **100% (33/33 lines, 0 missing)** via `diff-cover
+  --compare-branch=m53-unified-freeze`. `coverage report -m` branch partials (`vary.py 635->640` in
+  `register()`, `errors.py 39->41` in pre-existing `GraphedTypeError`) are OLD lines outside the diff;
+  no changed line carries an arc-partial (the `_parse_variations` if/elif/else + None-return branches
+  are all exercised: Mapping/None/list-with-declares/list-with-placements/malformed).
+- ruff check + ruff format --check clean; mypy --strict clean (78 files).
+- Determinism: determinism-bearing frozen tests identical across two runs (`diff` empty); frozen
+  `test_...byte_deterministic_across_two_runs` (awkward, fresh interpreters) + `test_the_mixed_registry
+  _is_deterministic_across_two_runs` pass.
+- Integrity: no `# type: ignore`/`except: pass`/`NotImplementedError`/`todo!`/`pragma: no cover`/`skip`/
+  `xfail` in changed source (only pre-existing PLC0415 import-cycle noqa). No named target stubbed.
+
+No `tests/extra/m53/` needed — the frozen suite covers every changed line.

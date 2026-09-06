@@ -17,7 +17,8 @@ from . import accessors
 from ._points import Point, coordinate, default, render
 from ._tags import canonical_tag, numeric_value
 from .array import Array
-from .errors import GraphedError
+from .errors import GraphedError, GraphedTypeError, VariationError
+from .provenance import capture
 from .varied import Varied, member_of, rebuild, registered_points, session_of
 
 #: §4's fanout budget: the default grid a plain `vary` mints is bounded by this many universes, above
@@ -33,9 +34,8 @@ def vary(
     nominal: Array | Varied | None = None,
     *,
     is_weight: bool = False,
-    variations: Mapping[Any, Any] | None = None,
+    variations: Mapping[Any, Any] | Iterable[Any] | None = None,
     collections: Mapping[str, Mapping[Any, Any]] | None = None,
-    points: Iterable[Mapping[str, Any]] | None = None,
     composes_as_union: bool = False,
     max_universes: int = DEFAULT_MAX_UNIVERSES,
     **tags: Any,
@@ -43,16 +43,20 @@ def vary(
     """Register a variation family `name` on `target`, returning a NEW object (§2.1).
 
     `**tags` and `variations=` carry tag/member pairs under the §1.1 grammar; the signature's own
-    keyword names (`nominal`, `is_weight`, `variations`, `collections`, `points`) are legal tags AND
-    legal collection names, so one so named arrives through a mapping channel instead.
+    keyword names (`nominal`, `is_weight`, `variations`, `collections`) are legal tags AND legal
+    collection names, so one so named arrives through a mapping channel instead.
 
-    When a member is computed over another registered nuisance's varied nodes the family fans out to
-    the full grid of joint universes automatically (§2). `composes_as_union=True` collapses it back to
-    the one-at-a-time datacard union; `points=` is an ITERABLE of `{nuisance: coordinate}` maps that
-    PRUNES the auto grid to a named subset (§3); `max_universes=` raises the §4 guard's budget.
+    `variations=` is either a `Mapping[tag, member]` (declares only, the common case) or an iterable
+    mixing 2-`tuple` `(tag, member)` declares with `{nuisance: coordinate}` placement mappings that
+    SELECT a derived joint (dependent member) or RE-POINT a label off-grid (independent member)
+    (§2/§3). When a member is computed over another registered nuisance's varied nodes the family
+    fans out to the full grid of joint universes automatically (§2). `composes_as_union=True`
+    collapses it back to the one-at-a-time datacard union; `max_universes=` raises the §4 guard's
+    budget.
     """
     if not isinstance(name, str) or not name.isidentifier():
         raise GraphedError(f"a variation name must be a Python identifier, got {name!r}")
+    declares, placements = _parse_variations(variations)
     from .context import EventContext, vary_context  # noqa: PLC0415  (import cycle)
 
     overload: Any  # the two context overloads take one arg shape; mypy keeps its own narrowing
@@ -76,9 +80,9 @@ def vary(
             name,
             nominal,
             is_weight,
-            variations,
+            declares,
             collections,
-            points,
+            placements,
             composes_as_union,
             max_universes,
             tags,
@@ -87,6 +91,36 @@ def vary(
         session._points.clear()
         session._points.update(saved)
         raise
+
+
+def _parse_variations(
+    variations: Mapping[Any, Any] | Iterable[Any] | None,
+) -> tuple[Mapping[Any, Any] | None, list[Mapping[str, Any]] | None]:
+    """Split the unified `variations=` surface into the internal (declares, placements) channels.
+
+    A `Mapping` (or `None`) is declares-only — today's path, passed straight through. A non-Mapping
+    iterable mixes 2-`tuple` `(tag, member)` declares with `{nuisance: coordinate}` placement
+    mappings; an entry that is neither is ill-typed input (`GraphedTypeError`). The result feeds the
+    old two-parameter seam unchanged, so `gather_members`/`_route` stay byte-identical.
+    """
+    if variations is None or isinstance(variations, Mapping):
+        return variations, None
+    declares: dict[Any, Any] = {}
+    placements: list[Mapping[str, Any]] = []
+    for entry in variations:
+        if isinstance(entry, Mapping):
+            placements.append(entry)
+        elif isinstance(entry, tuple) and len(entry) == 2:
+            tag, member = entry
+            declares[tag] = member
+        else:
+            raise GraphedTypeError(
+                "vary",
+                capture(),
+                f"a variations= entry must be a (tag, member) declare 2-tuple or a "
+                f"{{nuisance: coordinate}} placement mapping, got {entry!r}",
+            )
+    return (declares or None), (placements or None)
 
 
 def _vary_loose(
@@ -209,9 +243,13 @@ def gather_members(
         # §2.5: collapse every foreign coordinate to nominal — the pre-m53 union. There is nothing
         # for a `points=` selection to keep once the joints are gone, so pairing them is an error.
         if points_list:
-            raise GraphedError(
-                f"graphed.vary({name!r}) got both composes_as_union=True and a points= selection; "
-                "the union collapses every joint away, so there is no joint for points= to keep"
+            raise VariationError(
+                "conflict",
+                points_list,
+                detail=(
+                    f"graphed.vary({name!r}) got both composes_as_union=True and a placement; the "
+                    "union collapses every joint away, so there is no joint for a placement to keep"
+                ),
             )
         _mint_defaults(name, tuple(canonical), session, {})
         return one_at_a_time, {}
@@ -345,8 +383,8 @@ def _guard(
     if total > max_universes:
         grid = " x ".join(f"{family}({size})" for family, size in sizes)
         raise GraphedError(
-            f"graphed.vary({name!r}) would fan out to {total} universes ({grid}); pass points=[...] "
-            f"to select a subset, or raise max_universes (currently {max_universes})"
+            f"graphed.vary({name!r}) would fan out to {total} universes ({grid}); pass variations= "
+            f"placements to select a subset, or raise max_universes (currently {max_universes})"
         )
 
 
@@ -378,24 +416,38 @@ def _route(
     for entry in points:
         own = entry.get(name)
         if own is None or canonical_tag(own) not in tags:
-            raise GraphedError(
-                f"points= entry {dict(entry)}: {own!r} is not a tag of graphed.vary({name!r}), "
-                f"whose tags are {sorted(tags)}"
+            raise VariationError(
+                "unresolved",
+                dict(entry),
+                valid=sorted(tags),
+                detail=(
+                    f"variations= entry {dict(entry)}: {own!r} is not a tag of graphed.vary({name!r}), "
+                    f"whose tags are {sorted(tags)}"
+                ),
             )
         tag = canonical_tag(own)
         point = Point(entry)
         if not any(nuisance != name for nuisance, _ in point):
-            raise GraphedError(
-                f"points= entry {dict(entry)} has only the {name!r} coordinate; a foreign coordinate "
-                "at 0 names the central universe, which is what nominal already is"
+            raise VariationError(
+                "empty",
+                dict(entry),
+                detail=(
+                    f"variations= entry {dict(entry)} has only the {name!r} coordinate; a foreign "
+                    "coordinate at 0 names the central universe, which is what nominal already is"
+                ),
             )
         if foreign_by_tag[tag]:  # member DEPENDENT → PRUNE (frozen; own axis kept)
             _check_reachable(name, point, reachable)
             label = by_point.get(point)
             if label is None:
-                raise GraphedError(
-                    f"points= entry {dict(entry)} names no joint the fanout of {name!r} derives; the "
-                    f"derived joints are {sorted(joint_points)}"
+                raise VariationError(
+                    "unresolved",
+                    dict(entry),
+                    valid=sorted(joint_points),
+                    detail=(
+                        f"variations= entry {dict(entry)} names no joint the fanout of {name!r} "
+                        f"derives; the derived joints are {sorted(joint_points)}"
+                    ),
                 )
             kept.append(label)
         else:  # member INDEPENDENT → ADDITIVE (re-point the one-at-a-time label, own axis dropped)
@@ -433,14 +485,24 @@ def _check_reachable(name: str, point: Point, reachable: Mapping[str, set[str]])
     for nuisance, value in point:
         registered = reachable.get(nuisance)
         if registered is None:
-            raise GraphedError(
-                f"points= on graphed.vary({name!r}): nuisance {nuisance!r} is registered nowhere "
-                f"this call can see; the registered nuisances are {sorted(reachable)}"
+            raise VariationError(
+                "unresolved",
+                dict(point),
+                valid=sorted(reachable),
+                detail=(
+                    f"a placement on graphed.vary({name!r}): nuisance {nuisance!r} is registered "
+                    f"nowhere this call can see; the registered nuisances are {sorted(reachable)}"
+                ),
             )
         if value not in registered:
-            raise GraphedError(
-                f"points= on graphed.vary({name!r}): {value!r} is not a registered tag of nuisance "
-                f"{nuisance!r}, whose tags are {sorted(registered)}"
+            raise VariationError(
+                "unreachable",
+                dict(point),
+                valid=sorted(registered),
+                detail=(
+                    f"a placement on graphed.vary({name!r}): {value!r} is not a registered tag of "
+                    f"nuisance {nuisance!r}, whose tags are {sorted(registered)}"
+                ),
             )
 
 
@@ -453,16 +515,26 @@ def _check_unique(minted: Mapping[str, Point], registry: Mapping[str, Point]) ->
     for label, point in minted.items():
         seen = registry.get(label)
         if seen is not None and seen != point:
-            raise GraphedError(
-                f"variation label {label!r} already names the point {render(seen)} in this "
-                f"Session, and this call names {render(point)}; one label names one universe"
+            raise VariationError(
+                "duplicate",
+                label,
+                valid=render(seen),
+                detail=(
+                    f"variation label {label!r} already names the point {render(seen)} in this "
+                    f"Session, and this call names {render(point)}; one label names one universe"
+                ),
             )
         for other, other_point in (*registry.items(), *minted.items()):
             if other != label and other_point == point:
-                raise GraphedError(
-                    f"point {render(point)} is already registered under label {other!r}, so label "
-                    f"{label!r} would be a second name for one universe — two slots, two "
-                    "StrCategory bins and two content hashes"
+                raise VariationError(
+                    "duplicate",
+                    label,
+                    valid=other,
+                    detail=(
+                        f"point {render(point)} is already registered under label {other!r}, so label "
+                        f"{label!r} would be a second name for one universe — two slots, two "
+                        "StrCategory bins and two content hashes"
+                    ),
                 )
 
 
