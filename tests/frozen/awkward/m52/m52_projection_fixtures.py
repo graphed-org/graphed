@@ -1,11 +1,12 @@
-"""Fixtures for the m52 projection-resolution suite (C3).
+"""Fixtures for the m53 projection-resolution suite.
 
 This tree runs in its own pytest process (`scripts/run-tests.sh` splits `tests/frozen/awkward` per
 milestone directory), but the `m52_` prefix is still required: the pytest `pythonpath` publishes
 cross-dir helpers, so a bare helper name is a global name.
 
-The `points=` keyword is reached only inside these functions, never at import, so the suite COLLECTS
-against a tree with no m52 implementation.
+The b-tag SF members are computed on the jes-varied jets, so a plain `graphed.vary` mints the jes x
+btag joints automatically. The auto-fanout is reached only inside these functions, never at import,
+so the suite COLLECTS against a tree with no m53 implementation.
 """
 
 from __future__ import annotations
@@ -27,19 +28,9 @@ JES_UP, JES_DOWN = 1.10, 0.90
 JER_UP = 1.05
 JET_PT_CUT = 25.0
 
-#: `{jes tag: the label component §4.4's R1-c comprehension spells}`
-JES_DIRECTIONS = (("up", "up"), ("dn", "down"))
-BTAG_SIDES = ("up", "down")
-
-#: the four joint labels the R1-c program registers, and the point each names
-JOINT_POINTS: dict[str, dict[str, str]] = {
-    f"btag_jes{short}_hf_{side}": {"btag": f"hf_{side}", "jes": full}
-    for short, full in JES_DIRECTIONS
-    for side in BTAG_SIDES
-}
-
-#: the joint label 3.1/3.3/3.7/3.8 drive, and the one-at-a-time label that must NOT follow it
-JOINT_LABEL = "btag_jesup_hf_up"
+#: the machine-minted joint label the projection tests drive, and the one-at-a-time label that must
+#: NOT follow it (`f"{name}_{tag}__{fl}"`, §2)
+JOINT_LABEL = "btag_hf_up__jes_up"
 ONE_AT_A_TIME_LABEL = "btag_hf_up"
 
 
@@ -90,31 +81,28 @@ class JointProgram:
 
 
 def joint_weight_program() -> JointProgram:
-    """§4.4's R1-c spelling verbatim: the four joint members are the SAME expression objects as the
-    two one-at-a-time members, and the POINT selects which inner universe each label reads."""
+    """The m53 auto-fanout spelling: a plain weight `vary` over two jes-dependent b-tag SF members.
+    Each joint the fanout mints binds the SAME expression object as its one-at-a-time sibling, and
+    the POINT selects which inner universe each label reads."""
     session, shifted = jes_shifted_context()
     jets = shifted.Jet
     central, sf_hf_up, sf_hf_down = btag_scale_factors(jets)
-    sides = {"up": sf_hf_up, "down": sf_hf_down}
 
-    joint = {
-        f"jes{short}_hf_{side}": sides[side] for short, _full in JES_DIRECTIONS for side in BTAG_SIDES
-    }
     registered = graphed.vary(
         shifted,
         "btag",
         central,
         is_weight=True,
-        variations={"hf_up": sf_hf_up, "hf_down": sf_hf_down, **joint},
-        points={
-            f"jes{short}_hf_{side}": {"btag": f"hf_{side}", "jes": full}
-            for short, full in JES_DIRECTIONS
-            for side in BTAG_SIDES
-        },
+        variations={"hf_up": sf_hf_up, "hf_down": sf_hf_down},
     )
 
+    # the joint labels bind the SAME SF source as their one-at-a-time sibling; two-level resolution
+    # then reads the inner jes universe named by each joint's point
+    sources = {"hf_up": sf_hf_up, "hf_down": sf_hf_down}
     factor_members = {"nominal": central, "btag_hf_up": sf_hf_up, "btag_hf_down": sf_hf_down}
-    factor_members.update({f"btag_{tag}": member for tag, member in joint.items()})
+    for side, source in sources.items():
+        for jes in ("jes_up", "jes_down"):
+            factor_members[f"btag_{side}__{jes}"] = source
 
     jes_only = gak.sum(jets.pt, axis=1)
     met = shifted.MET.pt
@@ -137,11 +125,8 @@ def selection_program() -> tuple[Session, Any, Any, Any]:
     mask = gak.num(jets[jets.pt > JET_PT_CUT]) >= 4
     selected = shifted[mask]
 
-    central, _sf_hf_up, _sf_hf_down = btag_scale_factors(jets)
-    carrier = graphed.vary(
-        central,
-        "btag",
-        variations={"hf_up": central * 1.5, "jesup_hf_up": central * 1.7},
-        points={"jesup_hf_up": {"btag": "hf_up", "jes": "up"}},
-    )
+    central, sf_hf_up, _sf_hf_down = btag_scale_factors(jets)
+    # `sf_hf_up` is jes-dependent, so the loose fanout mints `btag_hf_up__jes_up` alongside the
+    # one-at-a-time `btag_hf_up`
+    carrier = graphed.vary(central, "btag", variations={"hf_up": sf_hf_up * 1.5})
     return session, mask, selected, carrier

@@ -38,7 +38,7 @@ against `origin/main` and fails at RUN time for the RIGHT reason.
 | `vary-m52-C1` | §4.2 a nuisance name is a Python identifier (+ positive control) | `test_point_value.py::test_a_nuisance_name_must_be_a_python_identifier`, `::test_an_identifier_nuisance_name_is_accepted` |
 | `vary-m52-C2` | §4.5 a point is minted for EVERY label — six existing shapes, literal maps | `test_point_registry.py::test_every_existing_shape_reports_its_default_points` |
 | `vary-m52-C2` | §8-g the ambient weight's axes include the inherited shift family | `test_point_registry.py::test_the_ambient_weights_axes_include_the_inherited_shift_family` |
-| `vary-m52-C2` | §4.4 `points=` on the loose / weight / shift overloads | `test_point_registry.py::test_points_is_accepted_on_the_loose_overload`, `::test_points_is_accepted_on_the_weight_overload`, `::test_points_is_accepted_on_the_shift_overload` |
+| `vary-m53` | §3 `points=` PRUNES the auto grid on the loose / weight / shift overloads | `test_point_registry.py::test_points_prunes_on_the_loose_overload`, `::test_points_prunes_on_the_weight_overload`, `::test_points_prunes_on_the_shift_overload` |
 | `vary-m52-C2` | §4.4 `points` leaves BOTH keyword namespaces | `test_point_registry.py::test_a_variation_tagged_points_still_registers_through_variations`, `::test_a_collection_named_points_still_registers_through_collections` |
 | `vary-m52-C2` | §4.11-1 one label, one point (+ the idempotent re-mint) | `test_mint_refusals.py::test_one_label_under_two_points_is_refused_naming_both` |
 | `vary-m52-C2` | §4.11-2 one point, one label | `test_mint_refusals.py::test_one_point_under_two_labels_is_refused_naming_both` |
@@ -51,7 +51,7 @@ against `origin/main` and fails at RUN time for the RIGHT reason.
 | `vary-m52-C4` | §4.11-4/§8-i a typed coordinate naming no registered tag, naming what is | `test_coordinate_reachability.py::test_a_typed_coordinate_naming_no_registered_tag_is_refused_naming_what_is` |
 | `vary-m52-C4` | §4.11-4 a nuisance registered nowhere | `test_coordinate_reachability.py::test_a_nuisance_registered_nowhere_is_refused` |
 | `vary-m52-C4` | §4.11-4 a joint point registered BEFORE its axis exists | `test_coordinate_reachability.py::test_a_joint_point_registered_before_its_axis_exists_is_refused` |
-| `vary-m52-C4` | §4.11-4 the carrier walk: ambient weight / `Varied` collections / selection | `test_coordinate_reachability.py::test_the_carrier_walk_covers_all_three_context_carriers`, `::test_a_nuisance_on_none_of_the_three_carriers_is_refused`, `::test_the_loose_forms_carrier_is_the_targets_own_tag_map` |
+| `vary-m53` | §3 reachability walk reads carried labels not `_tags` (ambient weight / `Varied` collections) | `test_coordinate_reachability.py::test_the_reachability_walk_reads_carried_labels_not_tags`, `::test_a_nuisance_on_none_of_the_carriers_is_refused`, `::test_the_loose_forms_carrier_is_the_targets_own_tag_map` |
 | `vary-m52-C4` | §4.7/§8-b an inherited label with partial coverage still falls back silently | `test_coordinate_reachability.py::test_an_inherited_label_with_partial_coverage_still_falls_back_silently` |
 | `vary-m52-C4` | §4.10 `variations()`' third kind, and the m50 anchor guard | `test_variations_kind.py::test_a_family_registered_as_both_shift_and_weight_reports_both`, `::test_the_dual_kind_keeps_the_frozen_value_half`, `::test_disjoint_families_report_exactly_the_two_m50_kinds` |
 

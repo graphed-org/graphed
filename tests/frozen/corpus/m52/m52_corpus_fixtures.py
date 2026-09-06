@@ -1,11 +1,16 @@
-"""Fixtures for the m52 corpus tree — the arc's end-to-end NUMERIC acceptance (design §4.4, §6-C6).
+"""Fixtures for the m53 corpus tree — the arc's end-to-end NUMERIC acceptance (design §4.4, §6-C6).
 
 Two halves that must not be confused:
 
 * the **eager reference** lives in `graphed_corpus` (`btag_sf_rel_uncertainty`,
   `ttbar_joint_reference`) and knows nothing about `graphed` — that independence is what makes the
   joint-vs-reference comparison non-circular;
-* the **`points=` program** lives here, because `graphed_corpus` is framework-free.
+* the **auto-fanout program** lives here, because `graphed_corpus` is framework-free.
+
+Under m53 the b-tag SF is computed over the jes-varied jets, so its members DEPEND on the jes
+nuisance and a plain `graphed.vary` mints the full jes x btag grid automatically — no `points=`, no
+hand-named joint tags. The joint labels are machine-generated `f"{name}_{tag}__{fl}"`, e.g.
+`btag_hf_up__jes_up`.
 
 The histogram producer is eager `hist.Hist`, never `graphed_histogram`: `graphed`'s CI does not
 install it, so a tree reaching for it would `skip` and this arc's only physics check would contribute
@@ -39,36 +44,39 @@ REGION = "4j1b"
 #: `graphed_corpus.analyses.systematics`' own JES shift, as a jet-pT scale
 JES_FACTOR = {"up": 1.05, "down": 0.95}
 
-#: §4.4's R1-c joint tags: b-tag heavy-flavour SF ⊗ JES, both directions on both axes
-JOINT_TAGS = tuple(f"jes{d}_hf_{s}" for d in ("up", "dn") for s in ("up", "down"))
+#: the four b-tag SF tags the family carries: heavy- and light-flavour, both directions. Each is
+#: computed over the jes-varied jets, so all four members depend on the jes nuisance.
+BTAG_TAGS = ("hf_up", "hf_down", "lf_up", "lf_down")
 
-#: {tag: point} — the coordinate map §4.4's R1-c comprehension registers for those tags
-JOINT_POINTS = {
-    f"jes{d}_hf_{s}": {"jes": full, "btag": f"hf_{s}"}
-    for d, full in (("up", "up"), ("dn", "down"))
-    for s in ("up", "down")
-}
-
-#: every label the program mints -> its point (§4.10), the two one-at-a-time b-tag points and the
-#: JES pair carrying the default point `{name: tag}` beside the four registered joint points
+#: every label the auto-fanout mints -> its point (§4.10): nominal, the JES pair leaked from the
+#: foreign family, the four one-at-a-time b-tag points, and the eight machine-named joint points =
+#: the full jes(3) x btag(5) grid
 EXPECTED_POINTS = {
     "nominal": {},
     "jes_up": {"jes": "up"},
     "jes_down": {"jes": "down"},
-    "btag_hf_up": {"btag": "hf_up"},
-    "btag_hf_down": {"btag": "hf_down"},
-    "btag_jesup_hf_up": {"btag": "hf_up", "jes": "up"},
-    "btag_jesup_hf_down": {"btag": "hf_down", "jes": "up"},
-    "btag_jesdn_hf_up": {"btag": "hf_up", "jes": "down"},
-    "btag_jesdn_hf_down": {"btag": "hf_down", "jes": "down"},
+    **{f"btag_{tag}": {"btag": tag} for tag in BTAG_TAGS},
+    **{
+        f"btag_{tag}__jes_{d}": {"btag": tag, "jes": d}
+        for tag in BTAG_TAGS
+        for d in ("up", "down")
+    },
 }
 
 #: the joint universe the acceptance is measured at, and the eager reference's coordinates for it
-JOINT_LABEL = "btag_jesup_hf_up"
+JOINT_LABEL = "btag_hf_up__jes_up"
 JOINT_COORD = {"jes": "jes_up", "btag": "btag_up"}
 
 #: the one-at-a-time universe the joint would COLLAPSE onto if resolution took nominal for JES
 BTAG_ONLY_LABEL = "btag_hf_up"
+
+#: {machine joint label: (btag source key, jes universe)} — the heavy-flavour cross terms whose
+#: member-sharing `test_joint_member_sharing` pins; each reads its SF source's inner jes universe
+HF_JOINTS = {
+    f"btag_hf_{s}__jes_{d}": (f"hf_{s}", f"jes_{d}")
+    for s in ("up", "down")
+    for d in ("up", "down")
+}
 
 
 @dataclass(frozen=True)
@@ -83,9 +91,12 @@ class JointProgram:
 
 
 def joint_program() -> JointProgram:
-    """§4.4's R1-c spelling over the corpus ttbar analysis.
+    """The m53 auto-fanout spelling over the corpus ttbar analysis.
 
-    `points=` is m52-new, so this is reachable only from a test body (TEST_SANITY §5-1).
+    A plain `graphed.vary` over the four b-tag SF members: each is computed on the jes-varied jets,
+    so the family depends on `jes` and the full jes x btag grid is minted automatically — no
+    `points=`, no hand-named joint tags. The auto-fanout is m53-new, so this is reachable only from
+    a test body (TEST_SANITY §5-1).
     """
     session = Session(AwkwardBackend())
     ctx = ga.gnano.events(from_awkward(session, "events", EVENTS))
@@ -102,21 +113,21 @@ def joint_program() -> JointProgram:
     observable = gak.sum(sgood.pt, axis=1)
     sf = 0.95 + 0.1 * sgood.btag
     # `gak` has no element-wise minimum; `where` is the reference's arithmetic, `pt == 100` included
-    rel = 0.01 + 0.05 * gak.where(sgood.pt < 100.0, sgood.pt / 100.0, 1.0)
-    hf_up = gak.prod(sf * (1.0 + rel), axis=1)
-    hf_down = gak.prod(sf * (1.0 - rel), axis=1)
+    rel_hf = 0.01 + 0.05 * gak.where(sgood.pt < 100.0, sgood.pt / 100.0, 1.0)
+    # a light-flavour component with a distinct pT dependence, so its universes never coincide with
+    # the heavy-flavour ones
+    rel_lf = 0.02 + 0.04 * gak.where(sgood.pt < 60.0, sgood.pt / 60.0, 1.0)
+    hf_up = gak.prod(sf * (1.0 + rel_hf), axis=1)
+    hf_down = gak.prod(sf * (1.0 - rel_hf), axis=1)
+    lf_up = gak.prod(sf * (1.0 + rel_lf), axis=1)
+    lf_down = gak.prod(sf * (1.0 - rel_lf), axis=1)
 
-    # the four joint tags take the SAME two expression objects as the one-at-a-time pair; the POINT
-    # is what selects which inner JES universe each label reads (§4.4)
-    variations: dict[str, Any] = {"hf_up": hf_up, "hf_down": hf_down}
-    variations.update({t: (hf_up if t.endswith("_hf_up") else hf_down) for t in JOINT_TAGS})
     sel = graphed.vary(
         sel,
         "btag",
         gak.prod(sf, axis=1),
         is_weight=True,
-        variations=variations,
-        points=JOINT_POINTS,
+        variations={"hf_up": hf_up, "hf_down": hf_down, "lf_up": lf_up, "lf_down": lf_down},
     )
     return JointProgram(session, observable, graphed.weight(sel), hf_up, hf_down)
 

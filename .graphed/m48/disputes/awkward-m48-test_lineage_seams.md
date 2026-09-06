@@ -82,14 +82,14 @@ Test 1 — its stated intent ("an UNVARIED value" re-indexed across a `Varied`-m
 only the branch it picks is varied. Read a collection the shift does not name:
 
 ```python
-value = shifted.Photon.pt          # Photon is not in jes_kwargs, so this read is unvaried
+value = shifted.Photon.pt  # Photon is not in jes_kwargs, so this read is unvaried
 ```
 
 Test 2 — the "already at the target" arm needs a target context whose collections are unvaried. A
 `Varied`-mask-derived context has none, so either take the target from a nominal-projected context:
 
 ```python
-central = graphed.nominal(sel)     # a link-kind-(3) projection: collections read unvaried
+central = graphed.nominal(sel)  # a link-kind-(3) projection: collections read unvaried
 at_target = central.MET.pt
 assert graphed.reindex_to(at_target, central).node_id == at_target.node_id
 ```

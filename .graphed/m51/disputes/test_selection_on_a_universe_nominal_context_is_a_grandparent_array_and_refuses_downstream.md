@@ -5,14 +5,14 @@ Anchor: `vary-m51-C` (§9.1 case-2 universe/nominal → grandparent Array + (2a)
 
 ## The test (lines 117-133), the offending assertion
 ```python
-mask = _event_mask(events)          # = gak.num(events.Jet) >= 2  -> a DEFERRED graphed.Array
+mask = _event_mask(events)  # = gak.num(events.Jet) >= 2  -> a DEFERRED graphed.Array
 sel = events[mask]
-projected = graphed.selection(graphed.nominal(sel))   # -> a DEFERRED graphed.Array (grandparent mask)
-assert not isinstance(projected, graphed.Varied)      # PASSES (projected is a graphed.Array)
-assert as_list(projected) == as_list(mask)            # <-- ERRORS: ak.to_list on a DEFERRED array
-assert graphed.selection(graphed.nominal(events)) is None   # PASSES
+projected = graphed.selection(graphed.nominal(sel))  # -> a DEFERRED graphed.Array (grandparent mask)
+assert not isinstance(projected, graphed.Varied)  # PASSES (projected is a graphed.Array)
+assert as_list(projected) == as_list(mask)  # <-- ERRORS: ak.to_list on a DEFERRED array
+assert graphed.selection(graphed.nominal(events)) is None  # PASSES
 with pytest.raises(GraphedError):
-    ga.to_parquet(sel.Jet, str(tmp_path / "nope"), select=projected)   # PASSES (6.4b row-space refuse)
+    ga.to_parquet(sel.Jet, str(tmp_path / "nope"), select=projected)  # PASSES (6.4b row-space refuse)
 ```
 
 `as_list` (the fixture helper, `m51_write_fixtures.py`) is `ak.to_list(value)` — verbatim m50's

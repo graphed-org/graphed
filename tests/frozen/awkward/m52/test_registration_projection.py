@@ -22,26 +22,26 @@ from graphed.awkward import gak
 from graphed.errors import GraphedError
 
 
-def test_a_shift_shift_joint_point_keeps_the_inner_jes_universe_through_registration() -> None:
-    """JES ⊗ JER. `_vary_shift` reduces each supplied member to its central universe today, so a
-    shift-side joint point loses the inner JES universe before any point can reach it."""
+def test_a_shift_shift_joint_is_auto_fanned_and_reaches_the_inner_jes_universe() -> None:
+    """JES ⊗ JER. The supplied `jer` member is itself jes-`Varied`, so the shift fanout mints the
+    joint `jer_up__jes_up` that reaches the inner JES universe the one-at-a-time `jer_up` restricts
+    away — no `points=` and no silent drop."""
     _session, shifted = jes_shifted_context()
     jets = shifted.Jet
     supplied = gak.with_field(jets, jets.pt * JER_UP, "pt")  # itself `Varied` over `jes`
 
-    registered = graphed.vary(
-        shifted,
-        "jer",
-        collections={"Jet": {"up": supplied}},
-        points={"up": {"jer": "up", "jes": "up"}},
-    )
+    registered = graphed.vary(shifted, "jer", collections={"Jet": {"up": supplied}})
 
-    member = graphed.universe(registered.Jet, "jer_up")
     cross = graphed.member_of(supplied, "jes_up")
     central = graphed.nominal(supplied)
-    assert cross.node_id != central.node_id
-    assert member.node_id == cross.node_id
-    assert member.node_id != central.node_id
+    assert cross.node_id != central.node_id  # the two candidate answers are distinct nodes
+
+    joint = graphed.universe(registered.Jet, "jer_up__jes_up")
+    assert joint.node_id == cross.node_id
+    assert joint.node_id != central.node_id
+
+    # the one-at-a-time jer_up stays the diagonal: its point restricts the jes axis to nominal
+    assert graphed.universe(registered.Jet, "jer_up").node_id == central.node_id
 
 
 def test_a_default_point_registration_keeps_the_members_own_label_when_it_carries_it() -> None:
@@ -62,19 +62,31 @@ def test_a_default_point_registration_keeps_the_members_own_label_when_it_carrie
     assert graphed.universe(z, "jes_up").node_id != central.node_id
 
 
-def test_a_default_point_registration_still_reduces_a_different_tag_or_family_to_nominal() -> None:
-    """The boundary half: a member holding a DIFFERENT tag of that family, or only other families,
-    still restricts to nominal. This is not "prefer the newest label"."""
+def test_a_default_point_registration_reduces_same_family_but_fans_out_a_foreign_one() -> None:
+    """The same-family boundary half is unchanged: a member holding a DIFFERENT tag of that family
+    still restricts to nominal, not "prefer the newest label". The cross-family half is what m53
+    changes — a foreign-varied member no longer silently drops its foreign coordinate; the
+    one-at-a-time label stays the diagonal while the joint is minted alongside it."""
     _session, ctx = events_context()
     x = ctx.MET.pt
 
+    # same family: a different jes tag on the member still restricts to nominal
     other_tag = graphed.vary(x, "jes", down=x * 7.0)
     z_tag = graphed.vary(x * 3.0, "jes", up=other_tag)
     assert graphed.universe(z_tag, "jes_up") is graphed.nominal(other_tag)
 
+    # cross family: the member carries a foreign `jer` universe
     other_family = graphed.vary(x, "jer", up=x * 5.0)
     z_family = graphed.vary(x * 4.0, "jes", up=other_family)
+    cross = graphed.member_of(other_family, "jer_up")
+    assert cross.node_id != graphed.nominal(other_family).node_id
+
+    # the one-at-a-time jes_up still restricts the foreign jer axis to nominal (the diagonal)
     assert graphed.universe(z_family, "jes_up") is graphed.nominal(other_family)
+    # but m53 mints the joint alongside it, reaching the real foreign universe — not a silent drop
+    joint = graphed.member_of(z_family, "jes_up__jer_up")
+    assert joint.node_id == cross.node_id
+    assert joint.node_id != graphed.nominal(other_family).node_id
 
     # §8-j's own positive control: the family guard is live, so the target-vs-member asymmetry that
     # makes the case above reachable at all is real

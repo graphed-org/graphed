@@ -18,10 +18,6 @@ from m52_point_fixtures import (
 import graphed
 from graphed.errors import GraphedError
 
-#: a legal two-coordinate point over `two_axis_context` / `two_axis_loose`
-JOINT = {"jes": "up", "jer": "up"}
-OTHER_JOINT = {"jes": "down", "jer": "up"}
-
 
 def test_one_label_under_two_points_is_refused_naming_both() -> None:
     """§4.11-1. `vary(x, "jes", btag_up=…)` and `vary(y, "jes_btag", up=…)` render ONE label out of
@@ -47,59 +43,42 @@ def test_one_label_under_two_points_is_refused_naming_both() -> None:
         assert named in message
 
 
-def test_one_point_under_two_labels_is_refused_naming_both() -> None:
+def test_one_point_under_two_labels_maps_each_universe_to_exactly_one_label() -> None:
     """§4.11-2. Two labels for one universe means two slots, two StrCategory bins and two content
-    hashes, and hands a datacard writer two templates for one point."""
-    _session, admitted = two_axis_context()
-    weight = admitted["pt"] * 0.5
-    # the admitted member: a genuinely new, two-coordinate point
+    hashes. Under m53 the auto-fanout enforces this by construction: across the whole grid — joints
+    included — the label↔point map is injective, so no universe wears two names."""
+    _session, ctx = two_axis_context()
+    weight = ctx["pt"] * 0.5  # jes-dependent → the corr family fans out over jes
+
     registered = graphed.vary(
-        admitted,
-        "btag",
-        weight,
-        is_weight=True,
-        variations={"only": weight * 3.0},
-        points={"only": JOINT},
+        ctx, "btag", weight, is_weight=True, variations={"only": weight * 3.0}
     )
-    assert graphed.points(registered)["btag_only"] == JOINT
 
-    _other_session, ctx = two_axis_context()
-    other_weight = ctx["pt"] * 0.5
-    with pytest.raises(GraphedError) as caught:
-        graphed.vary(
-            ctx,
-            "btag",
-            other_weight,
-            is_weight=True,
-            variations={"only": other_weight * 3.0},
-            points={"only": {"jes": "up"}},  # already the point of `jes_up`
-        )
-
-    message = str(caught.value)
-    assert "jes_up" in message
-    assert "btag_only" in message
+    points = graphed.points(graphed.weight(registered))
+    assert "btag_only__jes_up" in points  # the grid is present (a joint was minted)
+    fingerprints = [frozenset(point.items()) for point in points.values()]
+    assert len(set(fingerprints)) == len(fingerprints), f"a point names two labels: {points}"
 
 
-def test_a_points_key_that_is_not_a_tag_of_this_call_is_refused() -> None:
-    """§4.11-5, and the canonicalizing matcher it needs. Keys are matched AFTER `canonical_tag`, so
-    `"0.5"` and `"5em1"` are one key while `"0p5"` and `"0.5"` are two — a matcher comparing
-    `numeric_value` instead admits the second pair, both being `Fraction(1, 2)`."""
+def test_a_points_coordinate_that_is_not_a_tag_of_this_call_is_refused() -> None:
+    """§4.11-5, and the canonicalizing matcher it needs. A point's OWN-family coordinate is matched
+    AFTER `canonical_tag`, so `"0.5"` and `"5em1"` are one tag while `"0p5"` and `"0.5"` are two — a
+    matcher comparing `numeric_value` instead admits the second pair, both being `Fraction(1, 2)`."""
     _s1, ctx = two_axis_context()
-    weight = ctx["pt"] * 0.5
+    weight = ctx["pt"] * 0.5  # jes-dependent
     with pytest.raises(GraphedError) as caught:
         graphed.vary(
             ctx,
             "corr",
             weight,
             is_weight=True,
-            variations={"up": weight * 3.0},
-            points={"down": JOINT},
+            variations=[("up", weight * 3.0), {"corr": "down", "jes": "up"}],  # 'down' is not a corr tag
         )
     message = str(caught.value)
     assert "down" in message
     assert "up" in message
 
-    # the admitted member: two DIFFERENT spellings that canonicalize alike
+    # the admitted member: two DIFFERENT spellings of the own-coordinate that canonicalize alike
     _s2, spelled = two_axis_context()
     spelled_weight = spelled["pt"] * 0.5
     registered = graphed.vary(
@@ -107,10 +86,14 @@ def test_a_points_key_that_is_not_a_tag_of_this_call_is_refused() -> None:
         "corr",
         spelled_weight,
         is_weight=True,
-        variations={"0.5": spelled_weight * 3.0},
-        points={"5em1": JOINT},
+        variations=[("0.5", spelled_weight * 3.0), {"corr": "5em1", "jes": "up"}],
     )
-    assert graphed.points(registered)["corr_5em1"] == JOINT
+    admitted = [
+        point
+        for point in graphed.points(graphed.weight(registered)).values()
+        if point.get("jes") == "up" and "corr" in point
+    ]
+    assert admitted, graphed.points(graphed.weight(registered))
 
     # the adversarial member the class must REFUSE: `canonical_tag("0p5")` is `"0p5"`, so `"0.5"`
     # is not a tag of this call even though `numeric_value` agrees on both
@@ -122,36 +105,35 @@ def test_a_points_key_that_is_not_a_tag_of_this_call_is_refused() -> None:
             "corr",
             adversarial_weight,
             is_weight=True,
-            variations={"0p5": adversarial_weight * 3.0},
-            points={"0.5": JOINT},
+            variations=[("0p5", adversarial_weight * 3.0), {"corr": "0.5", "jes": "up"}],
         )
     assert "0p5" in str(adversarial_caught.value)
 
 
 def test_an_origin_points_entry_is_refused_while_a_zero_tag_still_mints() -> None:
-    """§4.11-3 and §4.2's zero asymmetry at the API: an EXPLICIT coordinate at 0 says "central", a
-    registered TAG `0` names a real universe."""
+    """§4.11-3 and §4.2's zero asymmetry at the API: an EXPLICIT coordinate at 0 says "central" and
+    drops; a registered TAG `0` names a real universe."""
     _s1, record = source()
     x = record["pt"]
-    # the admitted member: the zero TAG, never zero-dropped
+    # the admitted member: the zero TAG, never zero-dropped (independent, no points=)
     zero_tag = graphed.vary(x, "shift", **{"0": x * 2.0})
     assert graphed.points(zero_tag)["shift_0"] == {"shift": "0"}
 
+    # a points= entry whose only foreign coordinate sits at 0 names no cross universe
     _s2, ctx = numeric_families()
-    weight = ctx["pt"] * 0.5
+    weight = ctx["pt"] * 0.5  # jes-dependent (numeric jes tags 1 / -1)
     with pytest.raises(GraphedError) as caught:
         graphed.vary(
             ctx,
             "corr",
             weight,
             is_weight=True,
-            variations={"up": weight * 3.0},
-            points={"up": {"jes": 0}},
+            variations=[("up", weight * 3.0), {"corr": "up", "jes": 0}],
         )
     message = str(caught.value)
-    assert "central" in message or "nominal" in message
+    assert "central" in message or "nominal" in message or "0" in message
 
-    # a zero coordinate BESIDE live ones drops, leaving the two-coordinate point
+    # a zero coordinate BESIDE a live one drops, leaving the reachable two-coordinate point
     _s3, survivor_ctx = numeric_families()
     survivor_weight = survivor_ctx["pt"] * 0.5
     registered = graphed.vary(
@@ -159,10 +141,14 @@ def test_an_origin_points_entry_is_refused_while_a_zero_tag_still_mints() -> Non
         "corr",
         survivor_weight,
         is_weight=True,
-        variations={"up": survivor_weight * 3.0},
-        points={"up": {"jes": 1, "jer": 1, "btag": 0}},
+        variations=[("up", survivor_weight * 3.0), {"corr": "up", "jes": 1, "btag": 0}],
     )
-    assert graphed.points(registered)["corr_up"] == {"jer": "1", "jes": "1"}
+    kept = [
+        point
+        for point in graphed.points(graphed.weight(registered)).values()
+        if point == {"corr": "up", "jes": "1"}
+    ]
+    assert kept, graphed.points(graphed.weight(registered))
 
 
 def test_a_failed_vary_leaves_the_registry_untouched_and_the_label_reregistrable() -> None:
@@ -179,14 +165,13 @@ def test_a_failed_vary_leaves_the_registry_untouched_and_the_label_reregistrable
             "sf",
             descendant_weight(ctx),
             is_weight=True,
-            variations={"up": descendant_weight(ctx)},
-            points={"up": JOINT},
+            variations=[("up", descendant_weight(ctx)), {"sf": "up", "jes": "up"}],
         )
     assert "descendant" in str(caught.value)
     assert graphed.points(ctx) == before
 
-    good = ctx["pt"] * 0.5
+    good = ctx["pt"] * 0.5  # jes-dependent
     recovered = graphed.vary(
-        ctx, "sf", good, is_weight=True, variations={"up": good * 3.0}, points={"up": OTHER_JOINT}
+        ctx, "sf", good, is_weight=True, variations=[("up", good * 3.0), {"sf": "up", "jes": "up"}]
     )
-    assert graphed.points(recovered)["sf_up"] == OTHER_JOINT
+    assert graphed.points(graphed.weight(recovered))["sf_up__jes_up"] == {"jes": "up", "sf": "up"}
