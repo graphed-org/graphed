@@ -56,6 +56,10 @@ class Session:
         # pure f(label) and no narrowing call site grows a Point argument. Record-time only —
         # points are not written to disk (§5.3).
         self._points: dict[str, Point] = {}
+        # §4.11-2's inverse of `_points` (point -> owning label), kept in sync by `vary._bind_points`
+        # so `vary._check_unique` tests "one point wears one label" in O(1) instead of rescanning the
+        # whole registry per minted label — the difference between O(N) and O(N^2) in Session universes.
+        self._points_by_point: dict[Point, str] = {}
 
     def _step_reducer(self) -> None:
         if self._reducer is not None:
