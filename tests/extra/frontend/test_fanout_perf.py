@@ -58,7 +58,9 @@ def test_registry_accumulation_is_not_quadratic() -> None:
     # Families grow 8x. Near-linear construction lands ~10x (a small residual super-linearity in the
     # per-call minted scan); the pre-fix O(N^2) registry rescan lands ~30x. A bound between the two
     # catches a reintroduced quadratic without tripping on timing noise.
-    assert growth < 20.0, f"registry-accumulation scaling looks super-linear: 8x families -> {growth:.1f}x time"
+    assert growth < 20.0, (
+        f"registry-accumulation scaling looks super-linear: 8x families -> {growth:.1f}x time"
+    )
 
 
 def test_source_ids_memoizes_the_shared_prefix() -> None:
