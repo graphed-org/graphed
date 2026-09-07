@@ -9,7 +9,7 @@ reads the calling thread's own stack). It is toggleable so builds can opt out of
 from __future__ import annotations
 
 import ast
-import inspect
+import sys
 import threading
 from dataclasses import dataclass
 from types import FrameType
@@ -64,16 +64,24 @@ def _source_text(frame: FrameType) -> str:
 
 
 def capture() -> Provenance:
-    """Return provenance for the first stack frame outside the graphed* packages (the user's line)."""
+    """Return provenance for the first stack frame outside the graphed* packages (the user's line).
+
+    Walks the frame chain directly (`f_back`) rather than `inspect.stack()`, which builds a
+    `FrameInfo` — reading and `stat`ing the source file — for EVERY frame before we discard all but
+    the first user frame. `record_op` calls this on every op, so a systematics fanout pays it per
+    universe; the direct walk stats no source and reads it only for the one frame it keeps (via
+    `executing` in `_source_text`), the fields being lifted straight off the frame object.
+    """
     if not _enabled:
         return _DISABLED
-    for info in inspect.stack()[1:]:
-        module = info.frame.f_globals.get("__name__", "")
-        if not module.startswith("graphed"):
+    frame: FrameType | None = sys._getframe(1)  # capture()'s caller; its own frame is graphed*
+    while frame is not None:
+        if not frame.f_globals.get("__name__", "").startswith("graphed"):
             return Provenance(
-                filename=info.filename,
-                lineno=info.lineno,
-                function=info.function,
-                source=_source_text(info.frame),
+                filename=frame.f_code.co_filename,
+                lineno=frame.f_lineno,
+                function=frame.f_code.co_name,
+                source=_source_text(frame),
             )
+        frame = frame.f_back
     return Provenance("<unknown>", 0)
