@@ -74,6 +74,7 @@ def vary(
     # label-collision check, `check_members`, `_align`/`reindex_to` — must leave no binding behind,
     # or one failed call poisons a label for the life of the Session with no escape but a new one.
     saved = dict(session._points)
+    saved_by_point = dict(session._points_by_point)
     try:
         return overload(
             target,
@@ -90,6 +91,8 @@ def vary(
     except BaseException:
         session._points.clear()
         session._points.update(saved)
+        session._points_by_point.clear()
+        session._points_by_point.update(saved_by_point)
         raise
 
 
@@ -257,8 +260,8 @@ def gather_members(
     joints, joint_points, additive = _fanout(name, canonical, carriers, composed, points_list, max_universes)
     _mint_defaults(name, tuple(canonical), session, additive)
     if joint_points:
-        _check_unique(joint_points, session._points)
-        session._points.update(joint_points)
+        _check_unique(joint_points, session._points, session._points_by_point)
+        _bind_points(session, joint_points)
     return one_at_a_time, joints
 
 
@@ -271,8 +274,18 @@ def _mint_defaults(name: str, tags: tuple[str, ...], session: Any, overrides: Ma
     """
     minted = {f"{name}_{tag}": default(name, tag) for tag in tags if f"{name}_{tag}" not in overrides}
     minted.update(overrides)
-    _check_unique(minted, session._points)
+    _check_unique(minted, session._points, session._points_by_point)
+    _bind_points(session, minted)
+
+
+def _bind_points(session: Any, minted: Mapping[str, Point]) -> None:
+    """Record `{label: point}` in the Session registry AND its point->label inverse together, so
+    `_check_unique`'s one-point-one-label test (§4.11-2) stays an O(1) lookup. The two maps are only
+    ever written here and rolled back together in `vary`, so the inverse never drifts from `_points`.
+    """
     session._points.update(minted)
+    for label, point in minted.items():
+        session._points_by_point[point] = label
 
 
 def _foreign(
@@ -506,11 +519,19 @@ def _check_reachable(name: str, point: Point, reachable: Mapping[str, set[str]])
             )
 
 
-def _check_unique(minted: Mapping[str, Point], registry: Mapping[str, Point]) -> None:
+def _check_unique(
+    minted: Mapping[str, Point], registry: Mapping[str, Point], by_point: Mapping[Point, str]
+) -> None:
     """§4.11-1/2: within a Session a label names one point and a point wears one label.
 
     Minting the same label with the same point — two independent containers each registering
     `vary(., "jes", up=.)` — is idempotent and stays legal.
+
+    `by_point` is the registry's point->label inverse (§4.11-2), so the one-point-one-label test is
+    an O(1) lookup against the whole registry; the only linear scan left is over `minted` itself (a
+    single call's handful of labels), which the inverse cannot yet answer. This is exactly the old
+    `(*registry.items(), *minted.items())` order — the registry's unique owner of a point, else the
+    first other label in this call that names it — with the registry half made O(1).
     """
     for label, point in minted.items():
         seen = registry.get(label)
@@ -524,18 +545,24 @@ def _check_unique(minted: Mapping[str, Point], registry: Mapping[str, Point]) ->
                     f"Session, and this call names {render(point)}; one label names one universe"
                 ),
             )
-        for other, other_point in (*registry.items(), *minted.items()):
-            if other != label and other_point == point:
-                raise PointError(
-                    "duplicate",
-                    label,
-                    valid=other,
-                    detail=(
-                        f"point {render(point)} is already registered under label {other!r}, so label "
-                        f"{label!r} would be a second name for one universe — two slots, two "
-                        "StrCategory bins and two content hashes"
-                    ),
-                )
+        owner = by_point.get(point)
+        # A registry self-owner (idempotent re-mint of `label`) is not an "other" match, so fall
+        # through to the minted scan exactly as the old (*registry, *minted) walk did — otherwise a
+        # sibling label in THIS call naming the same point would be reported one iteration late,
+        # under the wrong label. `next(..., owner)` keeps the self-owner when minted has no other.
+        if owner is None or owner == label:
+            owner = next((o for o, p in minted.items() if o != label and p == point), owner)
+        if owner is not None and owner != label:
+            raise PointError(
+                "duplicate",
+                label,
+                valid=owner,
+                detail=(
+                    f"point {render(point)} is already registered under label {owner!r}, so label "
+                    f"{label!r} would be a second name for one universe — two slots, two "
+                    "StrCategory bins and two content hashes"
+                ),
+            )
 
 
 def check_family(name: str, inherited: tuple[str, ...], added: tuple[str, ...]) -> None:
@@ -605,21 +632,55 @@ def _compatible(session: Any, reference: Any, form: Any) -> bool:
 
 
 def _source_ids(session: Any, array: Array) -> frozenset[int]:
+    """The source node_ids reachable from `array`, memoized per node on the Session.
+
+    `check_members` calls this once per member array, and every member of a family shares the same
+    (often deep) prefix; walking it afresh each time is O(members x depth) — the dominant construction
+    cost on a realistic deep reconstruction graph. The IR is append-only and hash-consed, so a
+    node_id maps to an immutable subgraph and its reachable-source set never changes: the memo needs
+    no invalidation, and the shared prefix is resolved once and reused across members.
+    """
+    cache: dict[int, frozenset[int]] = session._source_ids_cache
+    root = array.node_id
+    hit = cache.get(root)
+    if hit is not None:
+        return hit
+
+    def _inputs(node_id: int) -> Any:
+        if node_id in session._externals:
+            return session._externals[node_id][1]
+        return session._ops[node_id][2]
+
+    # Iterative post-order (a deep chain blows the recursion limit): a node is appended only after
+    # every input it reaches, so the forward pass reads each input's set already resolved. Inputs
+    # already in `cache` from an earlier call are not re-pushed — that is what shares the prefix.
+    order: list[int] = []
     seen: set[int] = set()
-    found: set[int] = set()
-    stack = [array.node_id]
+    stack: list[tuple[int, bool]] = [(root, False)]
     while stack:
-        node_id = stack.pop()
+        node_id, done = stack.pop()
+        if node_id in cache:
+            continue
+        if done:
+            order.append(node_id)
+            continue
         if node_id in seen:
             continue
         seen.add(node_id)
+        stack.append((node_id, True))
+        if node_id not in session._sources:
+            for input_id in _inputs(node_id):
+                if input_id not in cache and input_id not in seen:
+                    stack.append((input_id, False))
+    for node_id in order:
         if node_id in session._sources:
-            found.add(node_id)
-        elif node_id in session._externals:
-            stack.extend(session._externals[node_id][1])
+            cache[node_id] = frozenset((node_id,))
         else:
-            stack.extend(session._ops[node_id][2])
-    return frozenset(found)
+            reached: frozenset[int] = frozenset()
+            for input_id in _inputs(node_id):
+                reached |= cache[input_id]
+            cache[node_id] = reached
+    return cache[root]
 
 
 def register(container: Varied) -> Varied:
