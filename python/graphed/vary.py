@@ -546,8 +546,12 @@ def _check_unique(
                 ),
             )
         owner = by_point.get(point)
-        if owner is None:
-            owner = next((o for o, p in minted.items() if o != label and p == point), None)
+        # A registry self-owner (idempotent re-mint of `label`) is not an "other" match, so fall
+        # through to the minted scan exactly as the old (*registry, *minted) walk did — otherwise a
+        # sibling label in THIS call naming the same point would be reported one iteration late,
+        # under the wrong label. `next(..., owner)` keeps the self-owner when minted has no other.
+        if owner is None or owner == label:
+            owner = next((o for o, p in minted.items() if o != label and p == point), owner)
         if owner is not None and owner != label:
             raise PointError(
                 "duplicate",
@@ -628,21 +632,55 @@ def _compatible(session: Any, reference: Any, form: Any) -> bool:
 
 
 def _source_ids(session: Any, array: Array) -> frozenset[int]:
+    """The source node_ids reachable from `array`, memoized per node on the Session.
+
+    `check_members` calls this once per member array, and every member of a family shares the same
+    (often deep) prefix; walking it afresh each time is O(members x depth) — the dominant construction
+    cost on a realistic deep reconstruction graph. The IR is append-only and hash-consed, so a
+    node_id maps to an immutable subgraph and its reachable-source set never changes: the memo needs
+    no invalidation, and the shared prefix is resolved once and reused across members.
+    """
+    cache: dict[int, frozenset[int]] = session._source_ids_cache
+    root = array.node_id
+    hit = cache.get(root)
+    if hit is not None:
+        return hit
+
+    def _inputs(node_id: int) -> Any:
+        if node_id in session._externals:
+            return session._externals[node_id][1]
+        return session._ops[node_id][2]
+
+    # Iterative post-order (a deep chain blows the recursion limit): a node is appended only after
+    # every input it reaches, so the forward pass reads each input's set already resolved. Inputs
+    # already in `cache` from an earlier call are not re-pushed — that is what shares the prefix.
+    order: list[int] = []
     seen: set[int] = set()
-    found: set[int] = set()
-    stack = [array.node_id]
+    stack: list[tuple[int, bool]] = [(root, False)]
     while stack:
-        node_id = stack.pop()
+        node_id, done = stack.pop()
+        if node_id in cache:
+            continue
+        if done:
+            order.append(node_id)
+            continue
         if node_id in seen:
             continue
         seen.add(node_id)
+        stack.append((node_id, True))
+        if node_id not in session._sources:
+            for input_id in _inputs(node_id):
+                if input_id not in cache and input_id not in seen:
+                    stack.append((input_id, False))
+    for node_id in order:
         if node_id in session._sources:
-            found.add(node_id)
-        elif node_id in session._externals:
-            stack.extend(session._externals[node_id][1])
+            cache[node_id] = frozenset((node_id,))
         else:
-            stack.extend(session._ops[node_id][2])
-    return frozenset(found)
+            reached: frozenset[int] = frozenset()
+            for input_id in _inputs(node_id):
+                reached |= cache[input_id]
+            cache[node_id] = reached
+    return cache[root]
 
 
 def register(container: Varied) -> Varied:

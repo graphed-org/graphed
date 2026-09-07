@@ -60,6 +60,11 @@ class Session:
         # so `vary._check_unique` tests "one point wears one label" in O(1) instead of rescanning the
         # whole registry per minted label — the difference between O(N) and O(N^2) in Session universes.
         self._points_by_point: dict[Point, str] = {}
+        # Per-node memo of `vary._source_ids` (node_id -> reachable source node_ids). The IR is
+        # append-only + hash-consed, so a node's reachable-source set is immutable and never needs
+        # invalidation; the memo turns check_members' per-member walk of a shared (deep) prefix from
+        # O(members x depth) into O(depth + members).
+        self._source_ids_cache: dict[int, frozenset[int]] = {}
 
     def _step_reducer(self) -> None:
         if self._reducer is not None:
