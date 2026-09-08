@@ -65,6 +65,26 @@ class Session:
         # invalidation; the memo turns check_members' per-member walk of a shared (deep) prefix from
         # O(members x depth) into O(depth + members).
         self._source_ids_cache: dict[int, frozenset[int]] = {}
+        # Per-Session memo of `context._mul_form` ((left, right) form DESCRIPTIONS -> product form).
+        # Per-Session and not module-global because the answer depends on THIS backend instance —
+        # an `AwkwardBackend`'s registered behavior can decide an op the plain one refuses — and
+        # because a module-global would keep every form string a process ever inferred.
+        self._mul_forms: dict[tuple[str, str], Any] = {}
+        # Per-Session memo of `context._two_level`, keyed by container id -> {label: the pair of
+        # member KEYS the label resolves through}. §5's record-time check re-runs the whole
+        # composition at every registration, so without this every factor pays §4.6's point
+        # restriction once per label per registration. Keys and never members, so the memo pins
+        # nothing: a member would hold its context and through it every factor of the analysis,
+        # outliving the finalizer that drops a dead container's page. Entries are stored only where
+        # a later mint cannot move the answer (`context._settled`); `vary`'s rollback, the one
+        # place the registry is not purely extended, drops the memo wholesale.
+        self._universes: dict[int, dict[str, tuple[str, str | None]]] = {}
+        # §5's MINT EPOCH: one counter over every extension of `_points` (`vary._bind_points`) and
+        # every rollback of it. A context's composed ambient weight is a cache stamped with the
+        # epoch it was composed at, so a mint landing after the composition makes the next read
+        # remake it and resolve every factor against the registry AS OF THAT READ (§3 clause 1).
+        # A counter and not a hash of the registry: exact, and O(1) to test.
+        self._mint_epoch = 0
 
     def _step_reducer(self) -> None:
         if self._reducer is not None:

@@ -58,19 +58,21 @@ class Varied:
                 f"unknown variation label {label!r}; this container carries {list(self._members)}"
             ) from None
 
-    def _member_for(self, label: str) -> Member:
-        """§4.6: the member whose point equals `restrict(point(L), axes(self))`, else the central
-        universe.
+    def _key_for(self, label: str) -> str:
+        """§4.6: the KEY of the member whose point equals `restrict(point(L), axes(self))`, else
+        `"nominal"`.
 
         The fast path — a label this container carries — is not a special case but a theorem:
         `keys(point(L)) ⊆ axes(C)` makes the restriction the identity and point→label is unique
         (§4.11-2). Only the FALLBACK branch projects, and on a container all of whose labels carry
         default points it lands on today's answer (§4.7's theorem), since the only label whose
         point is `{n: t}` is `f"{n}_{t}"`, which the fast path would already have returned.
+
+        The key and not the member, so a caller that must not retain a member — an array carries
+        its context and a context its factors — can name the resolution and look it up later.
         """
-        member = self._members.get(label)
-        if member is not None:
-            return member
+        if label in self._members:
+            return label
         point = point_registry(self).get(label)
         if point is not None:
             carried = registered_points(self)
@@ -78,8 +80,14 @@ class Varied:
             if wanted:
                 for own_label, own_point in carried.items():
                     if own_point == wanted:
-                        return self._members[own_label]
-        return self._members["nominal"]
+                        return own_label
+        return "nominal"
+
+    def _member_for(self, label: str) -> Member:
+        """The member §4.6 resolves `label` to. The carried-label theorem above is spelled again
+        here rather than paid for as a call: this is the hot path of every narrowed op."""
+        member = self._members.get(label)
+        return member if member is not None else self._members[self._key_for(label)]
 
     def apply(self, fn: Callable[[Any], Any]) -> Varied:
         """Apply a record-time ``Array -> Array`` function per universe (§2.2).
