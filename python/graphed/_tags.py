@@ -1,7 +1,8 @@
 """The §1.1 variation-tag grammar: validation, canonicalization, and the two cap refusals.
 
 A tag is the user-facing half of a variation label (`f"{name}_{tag}"`). Identifier tags (`up`,
-`pdf_1`, the datacard p-form `2p5`) are kept verbatim; numeric spellings are canonicalized by
+`pdf_1`, the datacard p-form `2p5`) are kept verbatim; numeric spellings — and bare `int`/`float`
+keys, read as their exact / shortest round-tripping decimal spelling — are canonicalized by
 EXACT DECIMAL arithmetic to the e-form `m?\\d+(em\\d+)?`, so `"2"`, `"2.0"`, `"2e0"` and `"20e-1"`
 all name one label and no IEEE round-trip artifact ever reaches a name.
 
@@ -12,6 +13,7 @@ count before any string is rendered — `"1e1000000000"` must refuse, not alloca
 
 from __future__ import annotations
 
+import numbers
 import re
 from fractions import Fraction
 
@@ -66,10 +68,13 @@ def _render(negative: bool, digits: str, exp10: int, source: str) -> str:
 
 def canonical_tag(tag: object) -> str:
     """The §1.1 tag a user spelling names, or a `GraphedError` saying which rule it broke."""
+    if isinstance(tag, numbers.Integral) and not isinstance(tag, bool):
+        tag = str(int(tag))
+    elif isinstance(tag, numbers.Real) and not isinstance(tag, numbers.Rational):
+        # the shortest round-tripping decimal, never an IEEE expansion: `2.5` and `"2.5"` are one tag
+        tag = repr(float(tag))
     if not isinstance(tag, str):
-        raise GraphedError(
-            f"variation tags must be strings, got {tag!r} — pass the spelling you want in the label"
-        )
+        raise GraphedError(f"variation tags must be strings, integers or floats, got {tag!r}")
     if not tag:
         raise GraphedError("a variation tag must not be empty")
     if tag.lower() in _NOT_FINITE:

@@ -274,6 +274,10 @@ the *values* — a shifted jet collection — so every universe needs its own pa
 Numeric tags parse to an ordering value — the σ handle you want for envelope plots — under both
 the exponent form (``5em1`` is ½) and the datacard form (``1p0`` is 1, ``m1p0`` is −1); a
 non-numeric tag such as ``"extreme"`` carries ``None`` and is simply unordered.
+Tags may be given as numbers rather than spellings — ``{+2.5: pt * 1.1, -2.5: pt * 0.9}``
+mints ``jes_25em1`` and ``jes_m25em1`` — an ``int`` exactly, a ``float`` through its shortest
+round-tripping decimal, so ``2.5`` and ``"2.5"`` are one tag and ``{2.0: ..., "2": ...}`` is
+refused as one value naming two universes.
 
 Three ways two things can be correlated
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
