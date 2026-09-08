@@ -190,6 +190,58 @@ Projection sees straight through the property. ``.px`` of a pt/eta/phi/mass vect
 ``pt·cos(phi)``, so it reads ``pt`` and ``phi`` and nothing else; ``.pt`` reads ``pt`` alone.
 Four-vector convenience costs you no extra bytes off disk.
 
+Behavior *methods* record the same way, arguments and all:
+
+.. code-block:: python
+
+    class JetArray(vector.backends.awkward.MomentumArray4D):
+        def scaled(self, k, *, offset=0.0):
+            return self.pt * k + offset
+
+    behavior = dict(vector.backends.awkward.behavior)
+    behavior[("*", "Jet")] = JetArray
+    s = Session(AwkwardBackend(behavior=behavior))
+    jets = gak.with_name(from_awkward(s, "events", ak.Array({"Jet": [
+        [{"pt": 50.0, "eta": 0.1, "phi": 0.3, "mass": 5.0},
+         {"pt": 30.0, "eta": 2.2, "phi": -1.1, "mass": 4.0}],
+        [{"pt": 70.0, "eta": -0.5, "phi": 2.0, "mass": 6.0}],
+    ]})).Jet, "Jet")
+    leading = gak.firsts(jets)
+
+    print(jets.deltaR)
+    print(ak.to_list(s.materialize(jets.deltaR(leading))))
+    print(ak.to_list(s.materialize(jets.scaled(2.0, offset=1.0))))
+    print(sorted(project(jets.deltaR(leading)).columns_for("events")))
+
+Printed output:
+
+.. code-block:: text
+
+    BoundMethod('deltaR' of Array(node_id=2))
+    [[0.0, 2.5238858928247927], [0.0]]
+    [[101.0, 61.0], [141.0]]
+    ['Jet.eta', 'Jet.phi', 'Jet.pt']
+
+``jets.deltaR`` is a callable, not an array: the call is what records. Every graphed array among
+the arguments becomes a graph input; every other argument must be a JSON-representable constant
+(``None``, ``bool``, ``int``, finite ``float``, ``str``, and lists, tuples or dicts of those — numpy
+scalars are coerced), so the plan stays IR-canonical with no pickled closure. Constants compare as
+JSON: ``scaled(2)`` and ``scaled(2.0)`` are two nodes, a tuple and a list of the same values are
+one node, and the method body receives a tuple as a list. A method whose typetracer result is a
+tuple of arrays returns a tuple of graphed arrays; a Python-scalar result, an eager array, a
+callable, a NaN, a dict whose only key is ``"$"`` (the reference marker's shape) or an array from
+another ``Session`` among the arguments is refused with ``GraphedTypeError`` at the call, before
+any node is recorded. Column projection replays the method on the reporting typetracer, so it
+reads exactly what the method reads — here ``pt``, ``eta`` and ``phi``, never ``mass``. A behavior
+registered on the backend alone, like ``JetArray`` above, resolves exactly as one registered in
+``ak.behavior``; a process pool needs that backend rebuilt in the worker, which is what the
+``backend="module:factory"`` import reference of ``aggregate_plan`` is for.
+
+A method runs **per partition** and must be row-wise, the same rule ``map_partitions`` has. A
+body that consumes the event axis (``self[:1]``, an ``axis=0`` reduction) still records, because
+the typetracer has forgotten the outer length, and then answers per partition rather than
+globally; only a scalar result is refused.
+
 Two consequences follow from behavior dicts holding lambdas, which do not pickle to a worker
 process. First, a worker is given the backend by *import reference*, not by value — which is why
 ``to_parquet`` takes ``behavior="vector.backends.awkward:behavior"`` as well as a dict. Second,
@@ -526,9 +578,6 @@ Not supported yet
 
 - **Calling** ``ak.*`` **on a deferred array** (``ak.num(g.Jet)`` instead of
   ``gak.num(g.Jet)``). Use the ``gak`` module; it is the supported surface.
-- **Behavior methods that take arguments** (``a.deltaR(b)``). Properties record; method calls do
-  not. Write the formula, or reach for the ``vector`` components you need and combine them with
-  ``gak``.
 - **A handful of parameter tails**: ``zip``'s ``right_broadcast`` and
   ``optiontype_outside_record``, ``broadcast_arrays``' rule controls, ``mergebool`` on
   ``concatenate``/``where``, ``including_unknown`` on the ``*_like`` constructors and

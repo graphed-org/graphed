@@ -21,7 +21,7 @@ from .accessors import (
     weight,
 )
 from .aggregate import aggregate_plan, resolve_backend
-from .array import Array, apply
+from .array import Array, BoundMethod, apply
 from .backend import Backend, Form, ParamValue
 from .by_label import impact_by_label, read_columns_by_label
 from .errors import GraphedError, GraphedTypeError, PointError
@@ -69,6 +69,7 @@ __all__ = [
     "VERB_DISPOSITIONS",
     "Array",
     "Backend",
+    "BoundMethod",
     "BufferNeed",
     "BufferProjection",
     "CompiledGraph",

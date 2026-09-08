@@ -130,8 +130,12 @@ What changes when you port
   friends work through plain attribute access from then on.
 - **No** ``highlevel=`` **or** ``attrs=``. Both describe how an array is built eagerly, and
   nothing is built eagerly here.
-- **Behavior properties record; behavior methods do not.** ``a.pt`` is fine, ``a.deltaR(b)`` is
-  not — write the formula.
+- **Behavior properties and methods both record.** ``a.pt`` records a field read; ``a.deltaR(b)``
+  and ``jets.scaled(2.0, offset=1.0)`` record one ``method`` op whose arguments are other graphed
+  arrays or JSON-representable constants. ``a.deltaR`` without the call is a ``BoundMethod``, not
+  an array. A method that returns a tuple returns a tuple of arrays; one that returns a Python
+  scalar, or is handed an eager array, a callable or a NaN, raises ``GraphedTypeError`` at the
+  call before anything is recorded.
 - **Reductions carry their axis into the plan.** ``axis=1`` is per-event work that rides along
   with everything else in the same pass; ``axis=None`` or ``axis=0`` combines across events and
   becomes a step of its own. Nothing to configure; it just changes what a run costs.

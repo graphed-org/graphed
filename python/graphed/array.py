@@ -8,6 +8,7 @@ dispatch keys); they are backend-agnostic strings, so graphed stays free of nump
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, SupportsFloat
 
@@ -339,9 +340,19 @@ class Array:
         return self._session.record_op(kind, [self], params)
 
     # ---- structural access -----------------------------------------------------
-    def __getattr__(self, name: str) -> Array:
+    def __getattr__(self, name: str) -> Any:
         if name.startswith("_"):
             raise AttributeError(name)
+        # M54: a backend that can tell a behavior METHOD from a field or property answers here;
+        # a method is handed back as a callable, everything else records `field` as before.
+        classify = getattr(self._session.backend, "attribute_kind", None)
+        if classify is not None:
+            try:
+                kind = classify(self._session.form(self), name)
+            except AttributeError:
+                kind = None
+            if kind == "method":
+                return BoundMethod(self, name)
         return self._session.record_op("field", [self], {"field": name})
 
     def __iter__(self) -> Any:
@@ -430,3 +441,109 @@ def apply(fn: Callable[..., object], *arrays: Array, name: str | None = None) ->
         raise TypeError("apply operands must come from one Session")
     fn_name: str = name or str(getattr(fn, "__name__", "lambda"))
     return session.record_external("map", fn, list(arrays), {"fn": fn_name})
+
+
+# ---- M54: behavior methods with arguments ----------------------------------------------------
+class BoundMethod:
+    """`arr.<name>` when `name` is a behavior METHOD: a callable that records the call.
+
+    It is deliberately not an `Array` — it has no node until it is called — so using it as an
+    operand or subscripting it fails at once instead of recording a nonsense `field` op.
+    """
+
+    __slots__ = ("_name", "_receiver")
+
+    def __init__(self, receiver: Any, name: str) -> None:
+        self._receiver = receiver
+        self._name = name
+
+    def __repr__(self) -> str:
+        return f"BoundMethod({self._name!r} of {self._receiver!r})"
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        from .varied import containers_in, expand, expand_tuple, narrow  # noqa: PLC0415  (cycle)
+
+        if containers_in(self._receiver, *args, *kwargs.values()):
+            # a `Varied` among the operands maps the call over the label union; the nominal
+            # call decides between the single- and the tuple-valued shape (it interns, so the
+            # expansion's own nominal call records nothing new)
+            def call(receiver: Any, *a: Any, **k: Any) -> Any:
+                return getattr(receiver, self._name)(*a, **k)
+
+            nominal = call(
+                narrow(self._receiver, "nominal"),
+                *(narrow(a, "nominal") for a in args),
+                **{key: narrow(value, "nominal") for key, value in kwargs.items()},
+            )
+            mapper = expand_tuple if isinstance(nominal, tuple) else expand
+            return mapper(call, (self._receiver, *args), kwargs)
+        return _record_method(self._receiver, self._name, args, kwargs)
+
+
+def _record_method(receiver: Array, name: str, args: tuple[Any, ...], kwargs: dict[str, Any]) -> Any:
+    """Record `receiver.<name>(*args, **kwargs)` as one `method` op per output.
+
+    Every `Array` among the arguments joins the input list and stands in the JSON as its input
+    index; constants must be JSON-representable so the plan stays IR-canonical (no pickled
+    closure). A refused argument raises before anything is recorded.
+    """
+    from .errors import GraphedTypeError  # noqa: PLC0415  (cycle: errors -> provenance -> array)
+    from .provenance import capture  # noqa: PLC0415
+
+    session = receiver._session
+    prov = capture()
+    inputs: list[Array] = [receiver]
+
+    def refuse(where: str, value: Any) -> GraphedTypeError:
+        return GraphedTypeError(
+            "method",
+            prov,
+            f"{name}(): {where} is a {type(value).__name__}; arguments must be recorded graphed "
+            "arrays or JSON-representable constants (None, bool, int, finite float, str, and "
+            "lists/tuples/dicts of those)",
+        )
+
+    def encode(value: Any, where: str) -> Any:
+        if isinstance(value, Array):
+            inputs.append(value)
+            return {"$": len(inputs) - 1}
+        if isinstance(value, list | tuple):
+            return [encode(item, f"{where}[{i}]") for i, item in enumerate(value)]
+        if isinstance(value, dict):
+            if not all(isinstance(key, str) for key in value):
+                raise refuse(where, value)
+            if set(value) == {"$"}:  # the array-reference marker's own shape
+                raise GraphedTypeError(
+                    "method", prov, f'{name}(): {where} is a dict whose only key is "$", which is reserved'
+                )
+            # sorted at every level: nested array inputs join in key order, not spelling order
+            return {key: encode(value[key], f"{where}[{key!r}]") for key in sorted(value)}
+        if getattr(value, "shape", None) == () and hasattr(value, "item"):
+            value = value.item()  # a numpy scalar
+        if value is None or isinstance(value, bool | int | str):
+            return value
+        if isinstance(value, float):
+            if value != value or value in (float("inf"), float("-inf")):
+                raise refuse(where, value)
+            return value
+        raise refuse(where, value)
+
+    params: dict[str, ParamValue] = {
+        "method": name,
+        "args": json.dumps([encode(a, f"args[{i}]") for i, a in enumerate(args)], sort_keys=True),
+        # keywords are encoded in sorted order so that the input indices, and with them the node,
+        # do not depend on the order the call spelled them in
+        "kwargs": json.dumps(
+            {k: encode(kwargs[k], f"kwargs[{k!r}]") for k in sorted(kwargs)}, sort_keys=True
+        ),
+    }
+    outputs = getattr(session.backend, "method_outputs", None)
+    if outputs is None:
+        raise GraphedTypeError("method", prov, f"{name}(): this backend records no behavior methods")
+    try:
+        width = outputs([session.form(a) for a in inputs], params)
+    except Exception as exc:  # the typetracer refused the call -> located at the user's line
+        raise GraphedTypeError("method", prov, f"{name}(): {exc}") from exc
+    if width is None:
+        return session.record_op("method", inputs, params)
+    return tuple(session.record_op("method", inputs, {**params, "index": i}) for i in range(width))
