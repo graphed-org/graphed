@@ -215,6 +215,10 @@ class Session:
     ) -> Array:
         params_d: dict[str, ParamValue] = dict(params or {})
         prov = capture()
+        # a node id only means something in its own store: an input recorded by another
+        # Session would be spliced in as whatever node happens to share its id here
+        if any(a._session is not self for a in inputs):
+            raise GraphedTypeError(op, prov, "an input was recorded in a different Session")
         in_forms = [self._forms[a.node_id] for a in inputs]
         try:
             form = self._backend.op_form(op, in_forms, params_d)

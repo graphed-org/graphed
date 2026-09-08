@@ -44,18 +44,13 @@ to infer the result form and keep it usable downstream. For anything else, recor
 yourself with ``Session.record_external(op, fn, inputs, descriptor=..., form=...)`` and declare
 the form you are producing. Typed transformations are better expressed as operations than as opaque callables.
 
-Behavior methods with arguments do not record
----------------------------------------------
+Behavior methods with arguments
+-------------------------------
 
-Behavior *properties* work: register a behavior dict on the backend
-(``AwkwardBackend(behavior=vector.backends.awkward.behavior)``), name the records in the graph with
-``gak.with_name(g.Muon, "Momentum4D")``, and ``.pt`` or ``.mass`` records like any other field
-access — projection even reports the leaves the property really reads. Methods that take
-arguments, ``a.deltaR(b)`` and friends, do not: the attribute is a recorded array, and calling it
-raises ``TypeError: 'Array' object is not callable``.
-
-**Instead:** write the formula over the recorded fields, and put it in a function of plain arrays
-if you use it more than once. Interning means calling that helper twice costs one node, not two.
+Recorded since m54: ``a.deltaR(b)``, ``jets.scaled(2.0, offset=1.0)`` and any other callable
+attribute of the record's behavior class record one node per call, arguments and all. See
+:doc:`../awkward/design` ("Behavior *methods* record the same way") for the constant rules, the
+refusals and the per-partition limitation.
 
 Cuts are not pushed into the reader
 -----------------------------------

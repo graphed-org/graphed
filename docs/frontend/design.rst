@@ -816,9 +816,6 @@ Not supported yet
 
 * **Predicate pushdown.** Projection narrows what is read to the columns and buffers you touch,
   but a cut is applied after the read, not handed to the reader.
-* **Behavior methods that take arguments.** Behavior *properties* record — ``jets.pt`` resolves
-  through a registered behavior — but ``a.deltaR(b)`` does not. Write the formula, or wrap it in a
-  function of plain arrays.
 * **Output groups.** Compiling a chosen set of outputs together is done; there is no higher-level
   helper for organising many such groups with shared sub-plans.
 * **Remote stores in the parquet base.** Discovery and row counts assume local filesystem paths.

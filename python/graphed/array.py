@@ -512,6 +512,10 @@ def _record_method(receiver: Array, name: str, args: tuple[Any, ...], kwargs: di
         if isinstance(value, dict):
             if not all(isinstance(key, str) for key in value):
                 raise refuse(where, value)
+            if set(value) == {"$"}:  # the array-reference marker's own shape
+                raise GraphedTypeError(
+                    "method", prov, f'{name}(): {where} is a dict whose only key is "$", which is reserved'
+                )
             # sorted at every level: nested array inputs join in key order, not spelling order
             return {key: encode(value[key], f"{where}[{key!r}]") for key in sorted(value)}
         if getattr(value, "shape", None) == () and hasattr(value, "item"):
