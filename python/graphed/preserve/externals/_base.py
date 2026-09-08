@@ -268,7 +268,15 @@ class _PluginEvaluator:
         key = (self.plugin.kind, str(self.node_params.get("content_hash", "")))
         resource = _RESOURCE_CACHE.get(key)
         if resource is None:
-            resource = self.plugin.load(self.payload, self.node_params)
+            try:
+                resource = self.plugin.load(self.payload, self.node_params)
+            except ImportError as err:
+                # a bare "No module named 'correctionlib'" from inside a worker names neither the
+                # payload that needs it nor the extra that ships it
+                raise PreserveError(
+                    f"the {self.plugin.kind!r} plugin cannot rebuild its payload: "
+                    f"{self.plugin.framework} is not importable here ({err})"
+                ) from err
             _RESOURCE_CACHE[key] = resource
         return self.plugin.evaluate(resource, self.node_params, list(values))
 

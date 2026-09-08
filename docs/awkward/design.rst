@@ -320,7 +320,6 @@ payload, not by a path on your filesystem:
     import json
 
     import awkward as ak
-    import correctionlib
     import correctionlib.schemav2 as cs
     from graphed import Session
     from graphed.awkward import AwkwardBackend, from_awkward, gak, payloads
@@ -338,13 +337,16 @@ payload, not by a path on your filesystem:
         )],
     ).model_dump_json(exclude_unset=True).encode()
 
-    evaluator = correctionlib.CorrectionSet.from_string(payload.decode())["jet_sf"]
-
     s = Session(AwkwardBackend())
     g = from_awkward(s, "events", ak.Array({"Jet": [[{"pt": 50.0}, {"pt": 30.0}], [{"pt": 70.0}]]}))
 
+    # unread on this path (see below): `payload` is what gets evaluated, so if the `evaluator`
+    # positional were still consulted this example would raise instead of printing
+    def never_called(*_: object) -> object:
+        raise AssertionError("the template path does not consult the caller's callable")
+
     sf = gak.apply_correction(payload, "jet_sf", [gak.flatten(g.Jet.pt)],
-                              lambda pt: evaluator.evaluate(pt), args=["$0"])
+                              never_called, args=["$0"])
     print(ak.to_list(s.materialize(sf)))
 
     # reformatting the JSON does not change what the correction IS
@@ -370,6 +372,12 @@ weights and the graph structure rather than the ``.onnx`` file.
 The payload itself never rides in the graph. The graph carries the hash; the multi-megabyte
 correction set or model lives in a content-addressed store, and a run resolves it by hash — and
 says so loudly if it cannot.
+
+With ``args=``, the callable you pass is not what runs. The correction is evaluated from the
+payload bytes through graphed's ``correctionlib`` plugin — in your own process exactly as in a
+worker — so a wrapper around ``evaluate`` cannot make one backend disagree with another, and the
+in-process call gets the plugin's flat-buffer evaluation rather than correctionlib's per-call
+``ak.transform``. Without ``args=`` (the older recording) your callable is still the evaluation.
 
 Reading and writing parquet
 ---------------------------

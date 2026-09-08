@@ -7,6 +7,7 @@ import json
 from collections.abc import Callable, Mapping
 from typing import Any
 
+from ..errors import PreserveError
 from ._base import ExternalPlugin
 from ._helpers import parse_call_template
 
@@ -111,25 +112,40 @@ def _flat_buffer_fast_path(evaluate: Callable[..., Any], call: list[Any]) -> Any
     return _rebuild(layers, out)
 
 
+def _resolve(cset: Any, name: str) -> Any:
+    """A *compound* correction (the JEC L1L2L3 stack) lives in ``cset.compound``, not in ``cset``.
+    Both ``__getitem__``s raise ``IndexError`` on a miss instead of ``KeyError``, so membership is
+    tested against the key sets rather than caught."""
+    if name in set(cset):
+        return cset[name]
+    if name in set(cset.compound):
+        return cset.compound[name]
+    raise PreserveError(
+        f"correctionlib payload has no correction named {name!r} "
+        f"(corrections: {sorted(cset)}; compound_corrections: {sorted(cset.compound)})"
+    )
+
+
 def eval_correctionlib(cset: Any, params: Mapping[str, Any], inputs: list[Any]) -> Any:
     import awkward as ak  # noqa: PLC0415
     import numpy as np  # noqa: PLC0415
 
     name = str(params.get("name", ""))
+    corr = _resolve(cset, name)
     template = parse_call_template(
         params, len(inputs), allow_constants=True, allow_groups=False, allow_kwargs=False
     )
     if template is None:  # the legacy (systematic, inputs[0]) shape, unchanged
         systematic = str(params.get("systematic", "nominal"))
         x = np.asarray(ak.to_numpy(ak.Array(inputs[0])), dtype="float64")
-        return ak.Array(np.asarray(cset[name].evaluate(systematic, x), dtype="float64"))
+        return ak.Array(np.asarray(corr.evaluate(systematic, x), dtype="float64"))
     args, _ = template
     # correctionlib accepts numpy AND awkward natively (jagged included) — pass inputs through
     call = [inputs[v] if kind == "slot" else v for kind, v in args]
-    fast = _flat_buffer_fast_path(cset[name].evaluate, call)
+    fast = _flat_buffer_fast_path(corr.evaluate, call)
     if fast is not None:
         return fast
-    out = cset[name].evaluate(*call)
+    out = corr.evaluate(*call)
     return out if isinstance(out, ak.Array) else ak.Array(np.asarray(out))
 
 
