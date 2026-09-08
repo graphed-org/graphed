@@ -75,6 +75,10 @@ def vary(
     # or one failed call poisons a label for the life of the Session with no escape but a new one.
     saved = dict(session._points)
     saved_by_point = dict(session._points_by_point)
+    # §2.5's diagnostic registries are written per collection inside the shift form, so a refusal
+    # on a LATER collection would otherwise leave the first collection's report behind
+    saved_after_weight = dict(session._shift_after_weight)
+    saved_factors = list(session._weight_factors)
     try:
         return overload(
             target,
@@ -93,6 +97,9 @@ def vary(
         session._points.update(saved)
         session._points_by_point.clear()
         session._points_by_point.update(saved_by_point)
+        session._shift_after_weight.clear()
+        session._shift_after_weight.update(saved_after_weight)
+        session._weight_factors[:] = saved_factors
         # the only place the registry is not purely extended, and so the only place a resolution
         # can move BACKWARDS: the epoch moves for it like any mint, and `context._two_level`'s memo
         # — which stores answers on the premise that the registry only grows — is dropped wholesale
