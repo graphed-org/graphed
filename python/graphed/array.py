@@ -537,8 +537,6 @@ def _record_method(receiver: Array, name: str, args: tuple[Any, ...], kwargs: di
         raise GraphedTypeError("method", prov, f"{name}(): this backend records no behavior methods")
     try:
         width = outputs([session.form(a) for a in inputs], params)
-    except GraphedTypeError:
-        raise
     except Exception as exc:  # the typetracer refused the call -> located at the user's line
         raise GraphedTypeError("method", prov, f"{name}(): {exc}") from exc
     if width is None:
