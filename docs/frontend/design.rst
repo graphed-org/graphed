@@ -236,7 +236,7 @@ supplies the NanoEvents-flavoured constructor, ``gnano.events``.
 
     w   = ev.MET.pt
     ctx = vary(ctx, "pu", w, is_weight=True,
-               variations={"1p0": w * 1.1, "m1p0": w * 0.9, "extreme": w * 1.3})
+               points={"1p0": w * 1.1, "m1p0": w * 0.9, "extreme": w * 1.3})
 
     jets = ctx.Jet
     ctx  = vary(ctx, "jes", collections={"Jet": {
@@ -274,6 +274,10 @@ the *values* — a shifted jet collection — so every universe needs its own pa
 Numeric tags parse to an ordering value — the σ handle you want for envelope plots — under both
 the exponent form (``5em1`` is ½) and the datacard form (``1p0`` is 1, ``m1p0`` is −1); a
 non-numeric tag such as ``"extreme"`` carries ``None`` and is simply unordered.
+Tags may be given as numbers rather than spellings — ``{+2.5: pt * 1.1, -2.5: pt * 0.9}``
+mints ``jes_25em1`` and ``jes_m25em1`` — an ``int`` exactly, a ``float`` through its shortest
+round-tripping decimal, so ``2.5`` and ``"2.5"`` are one tag and ``{2.0: ..., "2": ...}`` is
+refused as one value naming two universes.
 
 Three ways two things can be correlated
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -360,9 +364,10 @@ What you cannot get from name-sharing or propagation alone is a *universe* that 
 templates in the fit (one nuisance parameter moves both); this joint universe is a different thing.
 It measures the *factorization error* — how far the true two-coordinate response departs from the
 sum of the one-coordinate shifts the fit actually interpolates, which has no slot for a joint
-template. It is registered, not inferred: ``points=`` maps a tag to the coordinates its universe
-occupies, and resolution projects that point onto whatever axes each container downstream happens
-to know.
+template. A member computed from a jet-scale-varied quantity *depends* on ``jes``, and ``vary`` mints its
+joint universes for you — one per combination of its own tag and the nuisance's tags. A placement
+entry in ``points=`` names the coordinates of the joint universes you want to keep, and resolution
+projects each point onto whatever axes each container downstream happens to know.
 
 .. code-block:: python
 
@@ -390,17 +395,16 @@ to know.
     sf_c, sf_up, sf_dn = (gak.prod(1.0 + k * rel, axis=1) for k in (0.0, 1.0, -1.0))
 
     ctx = vary(ctx, "btag", sf_c, is_weight=True,
-               variations={"hf_up": sf_up, "hf_down": sf_dn,
-                           "jesup_hf_up": sf_up, "jesdn_hf_up": sf_up},
-               points={"jesup_hf_up": {"btag": "hf_up", "jes": "up"},
-                       "jesdn_hf_up": {"btag": "hf_up", "jes": "down"}})
+               points=[("hf_up", sf_up), ("hf_down", sf_dn),
+                       {"btag": "hf_up", "jes": "up"},
+                       {"btag": "hf_up", "jes": "down"}])
 
     w = weight(ctx)
     print(points(ctx)["btag_hf_up"])
-    print(points(ctx)["btag_jesup_hf_up"])
+    print(points(ctx)["btag_hf_up__jes_up"])
     print([round(x, 4) for x in s.materialize(universe(w, "btag_hf_up")).to_list()])
-    print([round(x, 4) for x in s.materialize(universe(w, "btag_jesup_hf_up")).to_list()])
-    print([round(x, 4) for x in s.materialize(universe(w, "btag_jesdn_hf_up")).to_list()])
+    print([round(x, 4) for x in s.materialize(universe(w, "btag_hf_up__jes_up")).to_list()])
+    print([round(x, 4) for x in s.materialize(universe(w, "btag_hf_up__jes_down")).to_list()])
 
 Prints::
 
@@ -410,19 +414,19 @@ Prints::
     [1.0344, 1.0289, 1.0587]
     [1.0311, 1.0261, 1.0531]
 
-Three things to read off that. The four scale-factor universes are the **same expression objects**
-— ``sf_up`` is passed twice — because the point, not the object, decides which inner universe a
-label reads; building an arithmetically equal but distinct expression instead only adds a node the
-optimizer may merge back. ``btag_hf_up`` names no ``jes`` coordinate, so it keeps nominal
-kinematics, exactly as it does today. ``btag_jesup_hf_up`` names one, so it reads the shifted jets,
-and the three numbers differ — which is the whole point, and is what silently taking the nominal
-would hide.
+Three things to read off that. The joint universes are **minted, not declared** — ``sf_up`` is
+passed once, and ``btag_hf_up__jes_up`` reads it on the shifted jets because the point, not the
+object, decides which inner universe a label reads. Without a placement entry the registration
+keeps every joint (``btag_hf_down__jes_up`` and its siblings too); the two placements here keep
+``hf_up``'s pair and prune ``hf_down``'s. ``btag_hf_up`` names no ``jes`` coordinate, so it keeps
+nominal kinematics, exactly as it does today. ``btag_hf_up__jes_up`` names one, so it reads the
+shifted jets, and the three numbers differ — which is the whole point, and is what silently taking
+the nominal would hide.
 
-The label grammar does not change: a point is metadata attached to an ordinary ``name_tag`` label,
-never rendered into one. ``graphed.points(obj)`` is the authoritative coordinate view — label-sorted,
-each map nuisance-sorted, ``"nominal"`` mapping to ``{}`` — and it answers only on record-time
-shapes (a ``Varied``, an event context), because points are not carried on disk and a label cannot be
-parsed back into a point. ``graphed.variations`` keeps reporting a point family as a family.
+A joint label is spelled ``<family>_<tag>__<nuisance>_<coordinate>``; ``graphed.points(obj)`` is
+the authoritative coordinate view — label-sorted, each map nuisance-sorted, ``"nominal"`` mapping
+to ``{}`` — and it answers only on record-time shapes (a ``Varied``, an event context), because
+points are not carried on disk. ``graphed.variations`` keeps reporting a point family as a family.
 
 Numbers reach numeric tags, and zero is asymmetric
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -448,24 +452,24 @@ resolved to nominal:
     print(points(sigmas))
 
     try:                                    # numbers against identifier tags
-        vary(named, "corr", variations={"up": pt}, points={"up": {"jes": 1}})
+        vary(named, "corr", points=[("up", pt), {"corr": "up", "jes": 1}])
     except Exception as exc:
         print(type(exc).__name__, exc)
 
     zero = vary(pt, "shift", **{"0": pt * 1.01})    # a tag that happens to be "0"
     print(labels(zero), points(zero)["shift_0"])
 
-    try:                                    # a point that IS the origin
-        vary(sigmas, "corr", variations={"c": pt}, points={"c": {"jes": 0}})
+    try:                                    # a placement whose only foreign coordinate is 0
+        vary(sigmas, "corr", points=[("c", pt), {"corr": "c", "jes": 0}])
     except Exception as exc:
         print(type(exc).__name__, exc)
 
 Prints::
 
     {'jes_0p5': {'jes': '5em1'}, 'jes_1': {'jes': '1'}, 'nominal': {}}
-    GraphedError points= on graphed.vary('corr'): '1' is not a registered tag of nuisance 'jes', whose tags are ['down', 'up']
+    PointError unreachable: a placement on graphed.vary('corr'): '1' is not a registered tag of nuisance 'jes', whose tags are ['down', 'up']
     ('nominal', 'shift_0') {'shift': '0'}
-    GraphedError points= entry 'c' names the central universe — every coordinate sits at 0, which is what absence already says; nominal is not a variation
+    PointError empty: points= entry {'corr': 'c', 'jes': 0} has only the 'corr' coordinate; a foreign coordinate at 0 names the central universe, which is what nominal already is
 
 Every nuisance and coordinate a ``points=`` entry names must already be registered somewhere the
 call can see; otherwise a joint point written before its ``jes`` axis exists would quietly produce a
@@ -474,8 +478,8 @@ fallback to nominal — partial coverage is a legitimate pattern; a coordinate y
 
 Note the asymmetry in the last two cases, which is deliberate. In an explicit ``points=`` map a
 coordinate of 0 means "this axis sits at its central value", which is what leaving it out already
-says, so ``{jes: 1, btag: 0}`` and ``{jes: 1}`` are one point and an entry that canonicalises to the
-empty point is refused — that is ``nominal``, not a variation. A *default* point is never
+says, so ``{jes: 1, btag: 0}`` and ``{jes: 1}`` are one point, and an entry left with no foreign
+coordinate is refused — that is the plain tag's own universe, not a joint one. A *default* point is never
 zero-dropped: its coordinate is the tag you registered, a name for a universe rather than a
 displacement, so the legal tag ``0`` mints the ordinary label ``shift_0`` sitting at ``{shift: 0}``,
 distinct from ``nominal``, exactly as it does today. To name a universe that sits at zero on some
