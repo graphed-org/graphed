@@ -16,7 +16,7 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from typing import Any
 
 from ._points import Point, restrict
-from .array import Array
+from .array import Array, BoundMethod
 from .errors import GraphedError
 
 #: §2.2's reserved names: resolving them as label-mapped field access would let
@@ -115,6 +115,10 @@ class Varied:
             )
         if name.startswith("_"):
             raise AttributeError(name)
+        # M54: a behavior METHOD answers as one callable over the container (its call expands);
+        # the nominal probe interns, so the expansion below records nothing twice
+        if isinstance(getattr(self._members["nominal"], name), BoundMethod):
+            return BoundMethod(self, name)
         return expand(lambda member: getattr(member, name), (self,), {})
 
     def __iter__(self) -> Iterator[Any]:

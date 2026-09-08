@@ -6,6 +6,8 @@ runs the same ops on real arrays. Both go through the single `apply` dispatch in
 
 from __future__ import annotations
 
+import functools
+import inspect
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -67,6 +69,39 @@ class AwkwardBackend:
         if op == "join":  # needs `self` (the shared kernel routes through JoinBackend primitives)
             return self._eval_join(inputs, params)
         return apply(op, inputs, params, behavior=self._behavior)
+
+    # ---- M54: behavior methods with arguments ------------------------------------------------
+    def attribute_kind(self, form: AwkwardForm, name: str) -> str:
+        """Classify `arr.<name>`: a record FIELD shadows the behavior (as `apply`'s `field` branch
+        resolves it), a behavior function is a "method" the frontend hands back as a callable, and
+        anything else that resolves is a "property" recorded as a `field` op. An unresolved name
+        raises `AttributeError` and the frontend keeps today's path."""
+        tt = self._with_behavior(form.tt)
+        if name in tt.fields:
+            return "field"
+        static = inspect.getattr_static(tt, name)
+        # dask-awkward's rule: a callable class attribute is a method (a plain function, a
+        # staticmethod/classmethod, a partial, a callable object); a property or any other
+        # descriptor is read like a field
+        if isinstance(static, staticmethod | classmethod | functools.partialmethod) or callable(static):
+            return "method"
+        return "property"
+
+    def method_outputs(self, forms: Sequence[AwkwardForm], params: Mapping[str, object]) -> int | None:
+        """Run the call on the typetracers BEFORE anything is recorded: `None` for one awkward
+        array, the width for a tuple of them; anything else is not recordable and raises."""
+        result = apply("method", [self._with_behavior(f.tt) for f in forms], params, behavior=self._behavior)
+        if isinstance(result, ak.Array):
+            return None
+        if isinstance(result, tuple) and result and all(isinstance(item, ak.Array) for item in result):
+            return len(result)
+        raise TypeError(
+            f"{params['method']}() returned {type(result).__name__}, which is not an awkward array "
+            "or a tuple of awkward arrays, so it cannot be recorded"
+        )
+
+    def _with_behavior(self, tt: ak.Array) -> ak.Array:
+        return ak.Array(tt.layout, behavior=self._behavior) if self._behavior else tt
 
     def _eval_join(self, inputs: Sequence[object], params: Mapping[str, object]) -> object:
         left, right = inputs[0], inputs[1]

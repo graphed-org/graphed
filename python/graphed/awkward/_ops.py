@@ -168,9 +168,29 @@ def _broadcast_blame(operands: Sequence[Any], exc: ValueError) -> Exception:
     )
 
 
+def _decode_call(text: str, operands: Sequence[Any]) -> Any:
+    """Rebuild a `method` op's argument structure: `{"$": i}` becomes operand `i` (M54)."""
+
+    def walk(value: Any) -> Any:
+        if isinstance(value, dict):
+            if set(value) == {"$"}:
+                return operands[int(value["$"])]
+            return {key: walk(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [walk(item) for item in value]
+        return value
+
+    return walk(json.loads(text))
+
+
 def apply(
     op: str, operands: Sequence[Any], params: Mapping[str, Any], behavior: Mapping[str, Any] | None = None
 ) -> Any:
+    if behavior:
+        # M54: the backend's behavior dict rides on every operand, typetracer or real, so a
+        # behavior registered on the backend alone (not in the global ak.behavior) resolves its
+        # properties, methods and operator overloads exactly like a globally registered one
+        operands = [ak.Array(x.layout, behavior=behavior) if isinstance(x, ak.Array) else x for x in operands]
     if op == "pack_key":  # M40 §2.1: add the big-endian-packed u64 __joinkey__ column
         return join.pack_key(operands[0], join.on_from_params(params))
     if op == "exchange":
@@ -189,6 +209,15 @@ def apply(
         # pattern); works on the typetracer and real arrays alike when the array carries the
         # behavior. An unknown attribute raises here -> a record-time GraphedTypeError.
         return getattr(x, name)
+    if op == "method":
+        # M54: a behavior METHOD called with arguments. Array-valued arguments arrived as operands
+        # and stand in the JSON as {"$": index}; constants are plain JSON. Typetracer and real
+        # arrays share this branch, so form inference, projection replay and evaluation agree.
+        target = getattr(operands[0], str(params["method"]))
+        result = target(
+            *_decode_call(str(params["args"]), operands), **_decode_call(str(params["kwargs"]), operands)
+        )
+        return result[int(params["index"])] if "index" in params else result
     if op in ("getitem", "filter"):
         return operands[0][operands[1]]
     if op == "slice":  # the M13 common axis-0 slice (start/stop/step present-only)
