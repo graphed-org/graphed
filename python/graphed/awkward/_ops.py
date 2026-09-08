@@ -187,10 +187,13 @@ def apply(
     op: str, operands: Sequence[Any], params: Mapping[str, Any], behavior: Mapping[str, Any] | None = None
 ) -> Any:
     if behavior:
-        # M54: the backend's behavior dict rides on every operand, typetracer or real, so a
+        # M54: the backend's behavior dict rides on every operand (with its own attrs), so a
         # behavior registered on the backend alone (not in the global ak.behavior) resolves its
         # properties, methods and operator overloads exactly like a globally registered one
-        operands = [ak.Array(x.layout, behavior=behavior) if isinstance(x, ak.Array) else x for x in operands]
+        operands = [
+            ak.Array(x.layout, behavior=behavior, attrs=x.attrs) if isinstance(x, ak.Array) else x
+            for x in operands
+        ]
     if op == "pack_key":  # M40 §2.1: add the big-endian-packed u64 __joinkey__ column
         return join.pack_key(operands[0], join.on_from_params(params))
     if op == "exchange":
@@ -322,7 +325,7 @@ def apply(
     if op == "ak.with_name":
         named = ak.with_name(operands[0], str(params["name"]))
         if behavior:
-            return ak.Array(named.layout, behavior=dict(behavior))
+            return ak.Array(named.layout, behavior=dict(behavior), attrs=named.attrs)
         return named
     if op == "ak.with_parameter":
         return ak.with_parameter(operands[0], str(params["key"]), params["value"])

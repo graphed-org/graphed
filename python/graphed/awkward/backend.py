@@ -101,7 +101,7 @@ class AwkwardBackend:
         )
 
     def _with_behavior(self, tt: ak.Array) -> ak.Array:
-        return ak.Array(tt.layout, behavior=self._behavior) if self._behavior else tt
+        return ak.Array(tt.layout, behavior=self._behavior, attrs=tt.attrs) if self._behavior else tt
 
     def _eval_join(self, inputs: Sequence[object], params: Mapping[str, object]) -> object:
         left, right = inputs[0], inputs[1]
