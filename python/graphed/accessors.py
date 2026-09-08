@@ -145,8 +145,9 @@ def selection(ctx: Any) -> Any:
     return ctx._selection_bridge()
 
 
-def weight(ctx: Any) -> Varied | None:
-    """A context's ambient event weight as a `Varied`, `None` when nothing is registered (§9.1).
+def weight(ctx: Any) -> Varied | Array | None:
+    """A context's ambient event weight as a `Varied`, `None` when nothing is registered (§9.1);
+    a projected context's (`graphed.universe(ctx, label)`) is that one universe's member.
 
     Read-only: it returns the registry's current container, it never mutates.
     """

@@ -185,8 +185,9 @@ class EventContext:
             node = node._parent  # `vary` identity link: skip
         return None
 
-    def _ambient_weight(self) -> Varied | None:
-        """The composed ambient weight, `None` while nothing is registered.
+    def _ambient_weight(self) -> Varied | Array | None:
+        """The composed ambient weight, `None` while nothing is registered; a projection's is the
+        one member it adopted (§2.2).
 
         A cache read: the memo answers when it still stands at the Session's mint epoch, and any
         mint since it was stamped makes this REMAKE the composition from the original factors, so
@@ -196,6 +197,12 @@ class EventContext:
         """
         if not self._factors:
             return None
+        if len(self._factors) == 1 and not isinstance(self._factors[0], Varied):
+            # §2.2: a projection adopted ONE resolved member and nothing registered after it, so
+            # there is no universe left to resolve — composing would only wrap it in a one-label
+            # container, and the read's type would then depend on what minted since the projection
+            adopted: Array = self._factors[0]
+            return adopted
         epoch = self._session._mint_epoch
         memo = self._memo
         if memo is not None and memo[0] == epoch and memo[1] == len(self._factors):
