@@ -123,7 +123,7 @@ def test_malformed_and_non_string_tags_are_rejected() -> None:
         with pytest.raises(GraphedError):
             _weight_context(ctx, "sig", points={tag: pu_weight(ctx, 1.0)})
     with pytest.raises(GraphedError):
-        _weight_context(ctx, "sig", points={0.5: pu_weight(ctx, 1.0)})  # a Python float, not a string
+        _weight_context(ctx, "sig", points={True: pu_weight(ctx, 1.0)})  # a bool is not the number 1
 
 
 def test_negative_zero_canonicalizes_to_zero() -> None:
