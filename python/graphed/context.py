@@ -340,7 +340,7 @@ def vary_context(
     nominal: object,
     is_weight: bool,
     variations: Mapping[Any, Any] | None,
-    collections: Mapping[str, Mapping[Any, Any]] | None,
+    collections: Mapping[str, Mapping[Any, Any] | Varied] | None,
     points: Iterable[Mapping[str, Any]] | None,
     composes_as_union: bool,
     max_universes: int,
@@ -396,7 +396,7 @@ def _vary_weight(
     name: str,
     central: object,
     variations: Mapping[Any, Any] | None,
-    collections: Mapping[str, Mapping[Any, Any]] | None,
+    collections: Mapping[str, Mapping[Any, Any] | Varied] | None,
     points: Iterable[Mapping[str, Any]] | None,
     composes_as_union: bool,
     max_universes: int,
@@ -492,7 +492,7 @@ def _vary_shift(
     name: str,
     nominal: object,
     variations: Mapping[Any, Any] | None,
-    collections: Mapping[str, Mapping[Any, Any]] | None,
+    collections: Mapping[str, Mapping[Any, Any] | Varied] | None,
     points: Iterable[Mapping[str, Any]] | None,
     composes_as_union: bool,
     max_universes: int,
@@ -507,15 +507,19 @@ def _vary_shift(
     if variations is not None:
         raise GraphedError(
             "points= is not accepted in the shift form; its tags are the INNER keys of the "
-            "collection mappings, so pass collections={Name: {tag: record}}"
+            "collection mappings (or a Varied member's own tags), so pass "
+            "collections={Name: {tag: record}} or collections={Name: varied}"
         )
-    mapping: dict[str, Mapping[Any, Any]] = dict(tags)
+    mapping: dict[str, Any] = dict(tags)
     for collection_name, inner in (collections or {}).items():
         if collection_name in mapping:
             raise GraphedError(f"collection {collection_name!r} was named twice")
         mapping[collection_name] = inner
     if not mapping:
         raise GraphedError(f"the shift form of graphed.vary({name!r}) needs at least one collection")
+    for collection_name, inner in list(mapping.items()):
+        if isinstance(inner, Varied):  # m55: lockstep by propagation, unpacked to the hand form
+            mapping[collection_name] = _unpack_varied(ctx, name, collection_name, inner, points)
     _check_lockstep(name, mapping)
 
     child = _child_of(ctx)
@@ -583,13 +587,53 @@ def _report_shift_after_weight(ctx: EventContext, collection: str, pre_shift: Ma
             registry[key] = registry.get(key, frozenset()) | frozenset(nodes)
 
 
+def _unpack_varied(
+    ctx: EventContext,
+    name: str,
+    collection_name: str,
+    varied: Varied,
+    points: Iterable[Mapping[str, Any]] | None,
+) -> dict[str, Any]:
+    """m55: a `Varied` collection member is accepted only when it carries EXACTLY the family being
+    registered and its nominal is this context's own collection; it unpacks to the `{tag: member}`
+    map the hand form passes, so nothing downstream changes. Everything else is refused here,
+    before any label is minted."""
+    hand = f"collections={{{collection_name!r}: {{tag: record}}}}"
+    if points:
+        raise GraphedError(
+            f"points= placements are not accepted beside a Varied collection member ({collection_name!r}): "
+            f"its members carry no fan-out to prune; pass {hand} for a placed registration"
+        )
+    tags = dict(varied._tags)
+    expected = {"nominal", *(f"{name}_{tag}" for tag in tags.get(name, ()))}
+    extra = sorted(set(labels_of(varied)) - expected)
+    if set(tags) != {name} or extra:
+        raise GraphedError(
+            f"collection {collection_name!r}: a Varied member must carry exactly the family {name!r} being "
+            f"registered, got families {sorted(tags)} with extra labels {extra}; build it as "
+            f"graphed.vary(graphed.nominal(ctx[{collection_name!r}]), {name!r}, ...) on the context's central "
+            f"collection with only the tags being added, or pass {hand}"
+        )
+    current = ctx._read(collection_name)
+    central = member_of(current, "nominal") if isinstance(current, Varied) else current
+    nominal = accessors.reindex_to(member_of(varied, "nominal"), ctx)
+    if nominal.node_id != central.node_id:
+        raise GraphedError(
+            f"collection {collection_name!r}: the Varied member's nominal is node {nominal.node_id}, not this "
+            f"context's {collection_name!r} (node {central.node_id}), so its members are not shifts of this "
+            f"collection; build it on the context's central collection or pass {hand}"
+        )
+    return {tag: member_of(varied, f"{name}_{tag}") for tag in tags[name]}
+
+
 def _check_lockstep(name: str, mapping: Mapping[str, Mapping[Any, Any]]) -> None:
     """§2.6a: all collections in one call MUST share one tag set (the lockstep Jet+MET form)."""
     sets = {}
     for collection_name, inner in mapping.items():
         if not isinstance(inner, Mapping):
             raise GraphedError(
-                f"collection {collection_name!r} needs a {{tag: record}} mapping, got {type(inner).__name__}"
+                f"collection {collection_name!r} needs a {{tag: record}} mapping or a Varied, "
+                f"got {type(inner).__name__}"
             )
         sets[collection_name] = frozenset(canonical_tag(tag) for tag in inner)
     if len({frozenset(tags) for tags in sets.values()}) > 1:

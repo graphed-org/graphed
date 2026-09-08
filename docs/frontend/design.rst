@@ -267,6 +267,44 @@ The cut is written once and applies inside every universe. The pile-up weight do
 ``ht``'s labels because a weight is not part of the value — it is applied where the fill happens,
 automatically, to every universe.
 
+A collection that is a *function* of the varied one — Type-1 MET recomputed from the jets — has
+to move with it, and two ``{tag: record}`` maps would spell the same shifts twice. The shift form
+therefore also takes a ``Varied`` as a collection member: vary the context's central jets with the
+loose form, compute MET from that container, and pass both. Such a member is accepted only when it
+carries exactly the family being registered and its nominal is the context's own collection;
+anything else — another family's labels, a container built on a rescaled nominal — is refused with
+a message naming both spellings, and the hand map stays the spelling for those programs.
+
+.. code-block:: python
+
+    from graphed import nominal
+    from graphed.context import EventContext
+
+    def type1_met(met, jets, central):
+        return gak.with_field(met, met.pt - gak.sum(jets.pt - central.pt, axis=1), "pt")
+
+    raw  = ev.MET
+    ctx  = EventContext(s, ev, collections={"Jet": ev.Jet, "MET": type1_met(raw, ev.Jet, ev.Jet)})
+    jets = ctx.Jet
+    jets = vary(jets, "jes", up=gak.with_field(jets, jets.pt * 1.05, "pt"),
+                             down=gak.with_field(jets, jets.pt * 0.95, "pt"))
+    met  = type1_met(raw, jets, nominal(jets))              # Varied over jes by propagation
+    ctx  = vary(ctx, "jes", collections={"Jet": jets, "MET": met})
+
+    up = universe(ctx, "jes_up")
+    print(labels(met))
+    print(s.materialize(up.MET.pt))
+    print(s.materialize(type1_met(raw, universe(jets, "jes_up"), ev.Jet).pt))
+
+Prints::
+
+    ('nominal', 'jes_up', 'jes_down')
+    [6.75, 17.2, 24.5]
+    [6.75, 17.2, 24.5]
+
+The context's MET is the Type-1 MET of its central jets, so the propagated container's nominal is
+that very node and the ``jes_up`` universe's MET is the MET of the ``jes_up`` jets.
+
 Two kinds of knob, and the distinction is the one that matters for cost. A ``"shift"`` changes
 the *values* — a shifted jet collection — so every universe needs its own pass over the data. A
 ``"weight"`` changes only the multiplicative factor, so all its universes can share one pass.

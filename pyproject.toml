@@ -145,6 +145,7 @@ addopts = "-q"
 pythonpath = [
   "python",
   "tests/_corpus",
+  "tests/frozen/awkward/m55",
   "tests/frozen/frontend/m2",
   "tests/frozen/frontend/m10",
   "tests/frozen/frontend/m13",
