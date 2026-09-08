@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import weakref
 from collections.abc import Iterable, Mapping
-from typing import Any
+from typing import Any, NamedTuple
 
 from . import accessors
 from ._points import Point, coordinate, default, render
@@ -93,6 +93,11 @@ def vary(
         session._points.update(saved)
         session._points_by_point.clear()
         session._points_by_point.update(saved_by_point)
+        # the only place the registry is not purely extended, and so the only place a resolution
+        # can move BACKWARDS: the epoch moves for it like any mint, and `context._two_level`'s memo
+        # — which stores answers on the premise that the registry only grows — is dropped wholesale
+        session._mint_epoch += 1
+        session._universes.clear()
         raise
 
 
@@ -286,6 +291,9 @@ def _bind_points(session: Any, minted: Mapping[str, Point]) -> None:
     session._points.update(minted)
     for label, point in minted.items():
         session._points_by_point[point] = label
+    # the sole extension point of the registry, so the sole place a composed ambient weight can go
+    # stale: every mint moves the epoch a context's composition memo is stamped with (§5)
+    session._mint_epoch += 1
 
 
 def _foreign(
@@ -321,13 +329,40 @@ def _foreign(
     return out
 
 
+class AmbientCarrier(NamedTuple):
+    """§4.11-4's carrier for a context's ambient weight: the labels it carries, plus the Session
+    that maps them to points.
+
+    A lazily composed ambient has no container to hand over, and a bare label tuple would not do:
+    both carrier readers reach a carrier's registered points through the Session found ON it, and
+    both skip a non-`Varied` silently — so a tuple drops the ambient's own nuisances out of the
+    spectator gate and out of the reachability walk without erroring.
+    """
+
+    session: Any
+    labels: tuple[str, ...]
+
+
+def _carrier_points(carrier: Any) -> Mapping[str, Point]:
+    """A carrier's registered points, in its own label order — the one resolution both readers use.
+
+    The pair resolves through the Session registry over its labels, which is what
+    `registered_points` does for a container, so the two spellings agree entry for entry.
+    """
+    if isinstance(carrier, AmbientCarrier):
+        registry = carrier.session._points
+        return {label: registry[label] for label in carrier.labels if label in registry}
+    if isinstance(carrier, Varied):
+        return registered_points(carrier)
+    return {}
+
+
 def _carrier_nuisances(carriers: tuple[Any, ...]) -> frozenset[str]:
     """The foreign nuisances the carriers a family registers on already vary (§1's spectator gate)."""
     return frozenset(
         nuisance
         for carrier in carriers
-        if isinstance(carrier, Varied)
-        for point in registered_points(carrier).values()
+        for point in _carrier_points(carrier).values()
         for nuisance, _ in point
     )
 
@@ -480,10 +515,9 @@ def _reachable(name: str, tags: tuple[str, ...], carriers: tuple[Any, ...]) -> d
     """
     found: dict[str, set[str]] = {name: {coordinate(tag) for tag in tags}}
     for carrier in carriers:
-        if isinstance(carrier, Varied):
-            for point in registered_points(carrier).values():
-                for nuisance, value in point:
-                    found.setdefault(nuisance, set()).add(value)
+        for point in _carrier_points(carrier).values():
+            for nuisance, value in point:
+                found.setdefault(nuisance, set()).add(value)
     return found
 
 
@@ -621,8 +655,11 @@ def _flatten(member: object) -> list[Array]:
 def _compatible(session: Any, reference: Any, form: Any) -> bool:
     """Form compatibility, backend-checked: identical forms pass outright, and otherwise the
     backend's own binary inference decides — so dtype promotion is fine while a record meeting a
-    number is not."""
-    if str(reference) == str(form):
+    number is not.
+
+    The fast path compares `describe()`, never `str(form)`: an abbreviating repr (awkward elides
+    the middle of a deep type) would call two incompatible forms identical and skip the check."""
+    if reference.describe() == form.describe():
         return True
     try:
         session.backend.op_form("add", [reference, form], {})
@@ -683,19 +720,38 @@ def _source_ids(session: Any, array: Array) -> frozenset[int]:
     return cache[root]
 
 
-def register(container: Varied) -> Varied:
-    """§2.5: each container registers with its Session (weakly) so `compile_ir` can report a label
-    that reaches no marked output, and each non-central member carries its label for that walk."""
-    session = None
+def stamp_labels(container: Varied) -> Varied:
+    """§2.5's MEMBER half: each non-central member carries its label for `compile_ir`'s walk.
+
+    Split from the Session record below because the two halves happen at different times once an
+    ambient weight composes lazily: stamping the user's own `up=`/`down=` arrays at registration
+    would make any output built from one count the label as reached, silencing the very
+    unreached-label diagnostic §2.5 exists for.
+    """
     for label, member in container._members.items():
         if label == "nominal":
             continue
         for array in _flatten(member):
             array._labels = (array._labels or frozenset()) | {label}
-            session = array.session
-    if session is not None:
-        # The LABELS are held by value: a container the analysis discards is exactly the silent-cost
-        # case the diagnostic exists to report, so it must outlive the weak reference to it.
-        labels = tuple(label for label in container._members if label != "nominal")
+    return container
+
+
+def record_labels(container: Varied) -> Varied:
+    """§2.5's SESSION half: the container's labels, so `compile_ir` can report one that reaches no
+    marked output.
+
+    The LABELS are held by value: a container the analysis discards is exactly the silent-cost case
+    the diagnostic exists to report, so they must outlive the weak reference beside them (which
+    `compile_ir` never dereferences). A container whose members reach no Session records nothing:
+    there is no diagnostic to feed, and the alternative is an attribute error on `None`.
+    """
+    session = session_of(container)
+    labels = tuple(label for label in container._members if label != "nominal")
+    if labels and session is not None:
         session._varied.append((labels, weakref.ref(container)))
     return container
+
+
+def register(container: Varied) -> Varied:
+    """§2.5's two halves together, for the containers whose members compose at registration."""
+    return record_labels(stamp_labels(container))

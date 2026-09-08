@@ -169,11 +169,10 @@ def variations(ctx: Any) -> dict[str, dict[str, tuple[str, Fraction | None]]]:
         raise GraphedError("graphed.variations reads an event context's registered variations")
     out: dict[str, dict[str, tuple[str, Fraction | None]]] = {}
     weighted: dict[str, frozenset[str]] = {}
-    ambient = ctx._ambient_weight()
-    if ambient is not None:
-        for name, tags in ambient._tags.items():
-            weighted[name] = weighted.get(name, frozenset()) | frozenset(tags)
-            out.setdefault(name, {}).update({tag: ("weight", numeric_value(tag)) for tag in tags})
+    # the ambient's TAG MAP, not its composed container: introspection must record no node
+    for name, tags in ctx._ambient_tags().items():
+        weighted[name] = weighted.get(name, frozenset()) | frozenset(tags)
+        out.setdefault(name, {}).update({tag: ("weight", numeric_value(tag)) for tag in tags})
     for collection in ctx._collections.values():
         for name, tags in getattr(collection, "_tags", {}).items():
             dual = weighted.get(name, frozenset())
