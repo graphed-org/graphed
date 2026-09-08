@@ -492,6 +492,23 @@ def test_a_projection_leaves_a_bare_factor_the_walk_still_multiplies() -> None:
     assert id(projected._factors[0]) not in session._universes
 
 
+def test_a_projected_weight_stays_the_member_across_a_later_mint() -> None:
+    """A projected context's ambient is ONE resolved member. A mint elsewhere in the Session moves
+    the epoch, and the read must still hand back that member — not a one-label container around
+    it — so what a projection returns does not depend on what registered since."""
+    _session, ctx, record = _context()
+    weight = record["w"]
+    registered = graphed.vary(ctx, "pu", weight, is_weight=True, up=weight * 1.1)
+    projected = graphed.universe(registered, "pu_up")
+    before = graphed.weight(projected)
+    graphed.vary(registered, "sf", weight * 2.0, is_weight=True, up=weight * 2.1)  # a mint, elsewhere
+    after = graphed.weight(projected)
+    assert before is not None and after is not None
+    assert not isinstance(before, Varied)
+    assert not isinstance(after, Varied)
+    assert after.node_id == before.node_id == (weight * 1.1).node_id
+
+
 def _minting_shapes() -> dict[str, Any]:
     """Every way a program can change the point registry, as a callable on a fresh context."""
 
