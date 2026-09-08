@@ -126,21 +126,18 @@ def _session() -> tuple[Session, Any]:
 
 
 def test_apply_correction_with_a_template_records_path_free_and_obeys_it() -> None:
+    # The template path evaluates through the correctionlib plugin on every backend, in-process
+    # included: the caller's callable is not consulted at all, and `unusable` says so loudly if it
+    # ever is. The values are the payload's own, over inputs that stayed jagged through the routing.
     s, ev = _session()
-    seen: list[tuple[Any, ...]] = []
 
-    def evaluator(*call: Any) -> Any:
-        seen.append(call)
-        assert call[0] == "nominal"  # the CONSTANT, routed by the template
-        return call[1] * 0.0 + 1.5  # jagged-shaped SF
+    def unusable(*call: Any) -> Any:
+        raise AssertionError("the template path evaluated through the caller's callable")
 
-    sf = gak.apply_correction(CSET, "jetsf", [ev.Jet.pt, ev.Jet.eta], evaluator, args=["nominal", "$0", "$1"])
+    sf = gak.apply_correction(CSET, "jetsf", [ev.Jet.pt, ev.Jet.eta], unusable, args=["nominal", "$0", "$1"])
     out = ak.Array(s.materialize(sf))
     assert ak.num(out, axis=1).tolist() == [2, 0, 1]  # jagged structure all the way through
-
-    (call,) = seen
-    assert len(call) == 3
-    assert ak.num(ak.Array(call[1]), axis=1).tolist() == [2, 0, 1]  # inputs passed NATIVELY (jagged)
+    assert ak.to_list(out) == [[1.5, 1.5], [], [1.5]]  # the payload's own SF, not a stand-in's
 
     node = _node(s, sf)
     assert "path" not in node["params"]  # no filesystem leakage into the IR

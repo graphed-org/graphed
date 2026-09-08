@@ -479,15 +479,15 @@ def _ml_matrix(entry: _TemplateEntry, vals: Sequence[object]) -> object:
 class _TemplateExternal:
     """The template path's recorded evaluator — PICKLABLE, unlike the closure it replaced.
 
-    In-process it calls the recording-time ``call`` (the user's ``evaluator``/``runner``, routed
-    through the template). A stdlib pickle — a plan shipped to a process pool, or a checkpointed
-    plan — DROPS that callable, because neither a closure nor a live correctionlib/onnxruntime
-    handle survives one; the worker rebuilds the resource from ``payload`` through the matching
-    preserve plugin, which obeys the same template and the same content identity. So a ``call``
-    that is NOT the plugin's own evaluation (an ``evaluator`` that scales or wraps it) diverges
-    silently between in-process and out-of-process backends — for a backend-agnostic plan, ``call``
-    must be the plugin's evaluation. No cloudpickle: these payloads are preservable, not opaque
-    (§A.3.1)."""
+    ``call=None`` means "evaluate through the preserve plugin": the resource is rebuilt from
+    ``payload`` and cached per process, which is exactly what a worker does after a stdlib pickle
+    drops a live handle. Recording with ``call=None`` therefore makes in-process and out-of-process
+    evaluation the same code by construction — a ``call`` that is NOT the plugin's own evaluation
+    diverges silently between backends. ``apply_correction`` records ``None``; ``onnx_inference``
+    still records the user's ``runner``, whose inference session may be configured (providers,
+    devices) in ways the plugin's CPU-only ``load`` would not reproduce.
+
+    No cloudpickle: these payloads are preservable, not opaque (§A.3.1)."""
 
     kind: str
     payload: bytes
@@ -505,8 +505,8 @@ class _TemplateExternal:
             plugin = get_plugin(self.kind)
             if plugin is None:
                 raise RuntimeError(
-                    f"external payload kind {self.kind!r} has no registered plugin, so a worker "
-                    "cannot rebuild it from the payload bytes"
+                    f"external payload kind {self.kind!r} has no registered plugin, so it "
+                    "cannot be rebuilt from the payload bytes"
                 )
             # _PluginEvaluator keys the per-process resource cache on (kind, content_hash), so the
             # correction set / inference session is built once per worker, not once per partition.
@@ -525,13 +525,15 @@ def apply_correction(
     """Record a correctionlib scale-factor application as an External node.
 
     With ``args=`` (e.g. ``["nominal", "$0", "$1"]``): the M28 preservation-aligned path —
-    content-identity descriptor, no path in the IR, inputs passed to ``evaluator`` NATIVELY
-    (awkward/numpy, jagged preserved) per the template, which replay obeys identically.
+    content-identity descriptor, no path in the IR, inputs passed NATIVELY (awkward/numpy, jagged
+    preserved) per the template, which replay obeys identically.
     Without it: the original M3 recording, unchanged (``payload`` must then be a path).
 
-    Out-of-process backends (checkpoint, process pool) re-evaluate the correction canonically from
-    the payload; ``evaluator`` is only the in-process eager path, so pass the plugin's own
-    evaluation (e.g. ``cset[name].evaluate``) — a wrapper that alters it will diverge by backend."""
+    ``evaluator`` is the eager evaluation for the ``args=None`` (M3) path ONLY. On the template
+    path EVERY backend — in-process included — evaluates through the correctionlib preserve
+    plugin, rebuilt from the payload bytes under the recorded template, so ``evaluator`` is
+    ignored: the two cannot diverge, and in-process gets the plugin's flat-buffer evaluation
+    instead of correctionlib's per-call ``ak.transform`` wrapper."""
     if args is None:
         return inputs[0].session.record_external(
             "correction", evaluator, list(inputs), {"path": str(payload), "name": name}
@@ -539,17 +541,13 @@ def apply_correction(
     blob = _payload_bytes(payload)
     entries = _parse_template(args, len(inputs), constants=True, groups=False)
     first_slot = next(int(i) for kind, i in entries if kind == "slot")
-
-    def _fn(*vals: object) -> object:
-        call = [vals[int(v)] if kind == "slot" else v for kind, v in entries]
-        return evaluator(*call)
-
     session = inputs[0].session
     descriptor = payloads.correctionlib_contents_descriptor(blob, name)
     params = {"name": name, "args": json.dumps(args, sort_keys=False)}
     return session.record_external(
         "correction",
-        _TemplateExternal(descriptor.kind, blob, {**params, "content_hash": descriptor.content_hash}, _fn),
+        # call=None: the plugin owns evaluation on every backend (see _TemplateExternal)
+        _TemplateExternal(descriptor.kind, blob, {**params, "content_hash": descriptor.content_hash}, None),
         list(inputs),
         params,
         descriptor=descriptor,

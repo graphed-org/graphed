@@ -309,7 +309,6 @@ it takes plain ``Array`` inputs and knows nothing about labels.
 .. code-block:: python
 
     import awkward as ak
-    import correctionlib
     import correctionlib.schemav2 as cs
     import graphed.awkward as ga
     from graphed import Session, labels, universe, vary
@@ -321,7 +320,6 @@ it takes plain ``Array`` inputs and knows nothing about labels.
         data=cs.Binning(nodetype="binning", input="pt", edges=[0.0, 40.0, 1000.0],
                         content=[0.95, 1.05], flow="clamp"))],
     ).model_dump_json(exclude_unset=True).encode()
-    evaluator = correctionlib.CorrectionSet.from_string(payload.decode())["jet_sf"]
 
     s   = Session(AwkwardBackend())
     ev  = from_awkward(s, "events", ak.Array({"Jet": [[{"pt": 38.0}], [{"pt": 70.0}]]}))
@@ -331,8 +329,14 @@ it takes plain ``Array`` inputs and knows nothing about labels.
     ctx  = vary(ctx, "jes", collections={"Jet": {
         "up": gak.with_field(jets, jets.pt * 1.10, "pt")}})
 
+    # with `args=`, `payload` IS the evaluation: the correction is rebuilt from those bytes through
+    # graphed's correctionlib plugin on every backend, so the `evaluator` positional goes unread --
+    # if it did not, this example would raise instead of printing
+    def never_called(*_: object) -> object:
+        raise AssertionError("the template path does not consult the caller's callable")
+
     sf = gak.apply_correction(payload, "jet_sf", [gak.flatten(ctx.Jet.pt)],
-                              lambda pt: evaluator.evaluate(pt), args=["$0"])
+                              never_called, args=["$0"])
     print(labels(sf))
     print(s.materialize(universe(sf, "nominal")).to_list())
     print(s.materialize(universe(sf, "jes_up")).to_list())
@@ -345,7 +349,7 @@ This example needs ``pip install "graphed[preserve]"`` for ``correctionlib``. Pr
 
 The 38 GeV jet crosses the 40 GeV edge under the shift, so its scale factor changes from 0.95 to
 1.05 — you never wrote a second correction call. :doc:`../awkward/design` covers the recording
-itself, content hashing and all.
+itself, content hashing and the reason ``evaluator`` is unread on this path.
 
 A universe at two coordinates at once
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

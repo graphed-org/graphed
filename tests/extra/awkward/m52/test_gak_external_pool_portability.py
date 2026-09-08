@@ -7,8 +7,10 @@ templated correction or ONNX score died on submission with
     AttributeError: Can't get local object 'apply_correction.<locals>._fn'
 
 — `pickle.dumps(plan.process)` and `ProcessPoolExecutor.run(plan)` alike. The recorded evaluator is now
-a module-level `_TemplateExternal`: in-process it still calls the user's `evaluator`/`runner` through the
-template, and across a pickle it rebuilds the resource from the payload bytes via the preserve plugin.
+a module-level `_TemplateExternal`, which rebuilds the resource from the payload bytes via the preserve
+plugin. `apply_correction` records that rebuild for EVERY backend, in-process included, so the two
+cannot diverge; `onnx_inference` still keeps the user's `runner` in-process, because an inference
+session carries provider/device configuration the plugin's CPU-only load would not reproduce.
 Nothing else moves — same template semantics, same content descriptor, same output form.
 """
 
@@ -18,7 +20,7 @@ import ast
 import json
 import pickle
 import tempfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -29,10 +31,11 @@ from graphed_corpus import make_events
 
 from graphed import Array, Session
 from graphed.aggregate import aggregate_plan
-from graphed.awkward import AwkwardBackend, AwkwardForm, gak
+from graphed.awkward import AwkwardBackend, AwkwardForm, from_awkward, gak
 from graphed.awkward.payloads import correctionlib_contents_hash, onnx_weights_hash
 from graphed.core import Partition
 from graphed.core.execution import SequentialRunner, WorkerResources
+from graphed.preserve.errors import PreserveError
 
 EVENTS = make_events(n_events=1_500, seed=52)
 SYSTEMATICS = ("nominal", "up", "down")
@@ -82,6 +85,55 @@ def _correctionlib_json() -> bytes:
 
 
 CSET = _correctionlib_json()
+
+
+def _compound_correctionlib_json() -> bytes:
+    """The JEC L1L2L3 shape in miniature: two plain corrections plus a `compound_corrections` stack
+    that multiplies them. The stack members differ, so their product identifies both."""
+
+    def _level(name: str, content: list[float]) -> dict[str, Any]:
+        return {
+            "name": name,
+            "version": 1,
+            "inputs": [{"name": "pt", "type": "real"}],
+            "output": {"name": "c", "type": "real"},
+            "data": {
+                "nodetype": "binning",
+                "input": "pt",
+                "edges": [0.0, 40.0, 1000.0],
+                "content": content,
+                "flow": "clamp",
+            },
+        }
+
+    return json.dumps(
+        {
+            "schema_version": 2,
+            "corrections": [_level("l1", [0.9, 1.1]), _level("l2", [2.0, 3.0])],
+            "compound_corrections": [
+                {
+                    "name": "jec",
+                    "inputs": [{"name": "pt", "type": "real"}],
+                    "output": {"name": "c", "type": "real"},
+                    "inputs_update": [],
+                    "input_op": "*",
+                    "output_op": "*",
+                    "stack": ["l1", "l2"],
+                }
+            ],
+        },
+        sort_keys=True,
+    ).encode("utf-8")
+
+
+COMPOUND_CSET = _compound_correctionlib_json()
+#: pt values straddling the 40 GeV edge, jagged with an empty middle list
+_COMPOUND_EVENTS = ak.Array({"Jet": [[{"pt": 30.0}, {"pt": 50.0}], [], [{"pt": 80.0}]]})
+
+
+def _unusable(*call: Any) -> Any:
+    """An `evaluator` that fails loudly if the template path ever consults the caller's callable."""
+    raise AssertionError("the template path called the user's evaluator")
 
 
 def _onnx_model() -> bytes:
@@ -268,9 +320,104 @@ def test_the_recorded_evaluator_round_trips_through_stdlib_pickle() -> None:
     assert ak.to_list(ak.Array(restored(x))) == ak.to_list(ak.Array(fn(x)))
 
 
+def test_the_template_path_evaluates_in_process_through_the_plugin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`evaluator` is not what runs on the template path — the correctionlib plugin is, in-process
+    exactly as in a worker. So a wrapping/scaling `evaluator` can no longer make one backend
+    disagree with another, and the in-process call gets the plugin's flat-buffer evaluation rather
+    than correctionlib's per-call `ak.transform` wrapper. The evaluator passed here fails loudly if
+    it is still consulted; the values pin that the real correction answered instead."""
+    correctionlib = pytest.importorskip("correctionlib")
+    import graphed.preserve.externals.correctionlib_external as clx  # noqa: PLC0415
+
+    session = Session(AwkwardBackend())
+    events = _events(session)
+    njet = gak.num(events.Jet[events.Jet.pt > 25], axis=1)
+    # "up", not nominal: nominal's SF is all-ones, which any broken evaluation could also produce
+    sf = gak.apply_correction(CSET, "btag_sf", [njet], _unusable, args=["up", "$0"])
+
+    answered: list[Any] = []
+    real = clx._flat_buffer_fast_path
+
+    def spy(evaluate: Any, call: list[Any]) -> Any:
+        out = real(evaluate, call)
+        answered.append(out)
+        return out
+
+    monkeypatch.setattr(clx, "_flat_buffer_fast_path", spy)
+    got = ak.Array(session.materialize(sf))
+
+    # ENGAGED, not merely consulted: a None return is a silent fall back to correctionlib's wrapper
+    assert len(answered) == 1 and answered[0] is not None
+    ref_njet = ak.num(EVENTS.Jet[EVENTS.Jet.pt > 25], axis=1)
+    ref = correctionlib.CorrectionSet.from_string(CSET.decode())["btag_sf"].evaluate("up", ref_njet)
+    assert ak.to_list(got) == ak.to_list(ref)  # bit-for-bit, and not the all-ones nominal
+    assert set(ak.to_list(got)) == set(_SF_CONTENT["up"])  # every bin of the varied SF was read
+
+
+def test_a_compound_correction_resolves_out_of_cset_compound() -> None:
+    """A *compound* correction — the JEC L1L2L3 shape — is keyed in `cset.compound`, not in `cset`,
+    and correctionlib's `__getitem__` raises `IndexError` on the miss (not `KeyError`). Now that the
+    plugin owns in-process evaluation, resolving only `cset[name]` would turn every compound payload
+    into an opaque `IndexError: map::at: key not found` where the caller's own `evaluate` answered
+    before. The two stack members have different contents, so the product pins that both applied."""
+    correctionlib = pytest.importorskip("correctionlib")
+    session = Session(AwkwardBackend())
+    ev = from_awkward(session, "events", _COMPOUND_EVENTS)
+    jec = gak.apply_correction(COMPOUND_CSET, "jec", [ev.Jet.pt], _unusable, args=["$0"])
+
+    got = ak.Array(session.materialize(jec))
+    flat_pt = ak.to_numpy(ak.flatten(_COMPOUND_EVENTS.Jet.pt))
+    ref = correctionlib.CorrectionSet.from_string(COMPOUND_CSET.decode()).compound["jec"].evaluate(flat_pt)
+    assert ak.num(got, axis=1).tolist() == [2, 0, 1]  # jagged structure survives the compound call
+    assert ak.to_list(ak.flatten(got)) == list(ref)  # bit-for-bit against correctionlib itself
+    assert set(ak.to_list(ak.flatten(got))) == {0.9 * 2.0, 1.1 * 3.0}  # neither factor on its own
+
+
+def test_an_unknown_correction_name_names_both_key_sets() -> None:
+    """The miss is an `IndexError: map::at: key not found` out of pybind11 otherwise — it names
+    neither the correction asked for nor what the payload does hold, plain or compound."""
+    pytest.importorskip("correctionlib")
+    session = Session(AwkwardBackend())
+    ev = from_awkward(session, "events", _COMPOUND_EVENTS)
+    sf = gak.apply_correction(COMPOUND_CSET, "l3", [ev.Jet.pt], _unusable, args=["$0"])
+
+    with pytest.raises(PreserveError, match=r"no correction named 'l3'.*\['l1', 'l2'\].*\['jec'\]"):
+        session.materialize(sf)
+
+
+def test_a_missing_framework_is_attributed_to_the_plugin() -> None:
+    """Rebuilding from the payload bytes means the framework must be importable wherever evaluation
+    happens. A bare `ImportError: No module named 'correctionlib'` out of a worker names neither the
+    External that needed it nor the payload kind; the branded error names both."""
+    from graphed.preserve.externals._base import _PluginEvaluator  # noqa: PLC0415
+    from graphed.preserve.externals.correctionlib_external import CORRECTIONLIB_PLUGIN  # noqa: PLC0415
+
+    def _no_lib(payload: bytes, params: Any) -> Any:
+        raise ImportError("No module named 'correctionlib'")
+
+    def _corrupt(payload: bytes, params: Any) -> Any:
+        raise RuntimeError("payload is not a correction set")
+
+    # content_hashes no real load ever cached, so `_RESOURCE_CACHE` cannot answer instead
+    def _params(tag: str) -> dict[str, Any]:
+        return {"name": "btag_sf", "content_hash": f"sha256:{tag}", "args": '["up", "$0"]'}
+
+    with pytest.raises(PreserveError, match=r"'correctionlib' plugin.*correctionlib is not importable"):
+        _PluginEvaluator(replace(CORRECTIONLIB_PLUGIN, load=_no_lib), CSET, _params("no-lib"))(ak.Array([3]))
+
+    # only a missing import is a missing framework: any other load failure keeps its own type
+    with pytest.raises(RuntimeError, match="not a correction set"):
+        _PluginEvaluator(replace(CORRECTIONLIB_PLUGIN, load=_corrupt), CSET, _params("corrupt"))(
+            ak.Array([3])
+        )
+
+
 # ---------------------------------- 2. numeric identity -------------------------------------------
 def test_sequential_numbers_match_the_pre_fix_golden() -> None:
-    """In-process the user's `cset[...].evaluate` is still what runs, through the same template."""
+    """Routing in-process evaluation through the plugin changed no number: the SFs the user's
+    `cset[...].evaluate` produced pre-fix are still the SFs that come out."""
     pytest.importorskip("correctionlib")
     got = SequentialRunner().run(_plan(_correction_universes)).value
     assert got.tolist() == GOLDEN_SF_SUMS
