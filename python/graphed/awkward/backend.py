@@ -80,12 +80,12 @@ class AwkwardBackend:
         if name in tt.fields:
             return "field"
         static = inspect.getattr_static(tt, name)
-        # dask-awkward's rule: a callable class attribute is a method (a plain function, a
-        # staticmethod/classmethod, a partial, a callable object); a property or any other
-        # descriptor is read like a field
-        if isinstance(static, staticmethod | classmethod | functools.partialmethod) or callable(static):
-            return "method"
-        return "property"
+        # the PROPERTY side is the closed set (a data descriptor or a cached_property is read
+        # like a field); anything else that is callable or a descriptor is a method, so a method
+        # descriptor the stdlib adds later (partialmethod, singledispatchmethod, ...) still counts
+        if hasattr(type(static), "__set__") or isinstance(static, functools.cached_property):
+            return "property"
+        return "method" if callable(static) or hasattr(static, "__get__") else "property"
 
     def method_outputs(self, forms: Sequence[AwkwardForm], params: Mapping[str, object]) -> int | None:
         """Run the call on the typetracers BEFORE anything is recorded: `None` for one awkward

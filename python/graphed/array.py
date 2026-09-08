@@ -512,7 +512,8 @@ def _record_method(receiver: Array, name: str, args: tuple[Any, ...], kwargs: di
         if isinstance(value, dict):
             if not all(isinstance(key, str) for key in value):
                 raise refuse(where, value)
-            return {key: encode(item, f"{where}[{key!r}]") for key, item in value.items()}
+            # sorted at every level: nested array inputs join in key order, not spelling order
+            return {key: encode(value[key], f"{where}[{key!r}]") for key in sorted(value)}
         if getattr(value, "shape", None) == () and hasattr(value, "item"):
             value = value.item()  # a numpy scalar
         if value is None or isinstance(value, bool | int | str):
