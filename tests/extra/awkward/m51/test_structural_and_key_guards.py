@@ -33,7 +33,7 @@ pytest.importorskip("pyarrow")
 
 
 def _write(record: Any, dest: str, select: Any, *, compute: bool = True) -> Any:
-    return ga.to_parquet(record, dest, select=select, compute=compute)  # type: ignore[call-arg]
+    return ga.to_parquet(record, dest, select=select, compute=compute)
 
 
 def _multifield() -> tuple[Any, Any, Any, Any]:

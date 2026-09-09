@@ -111,14 +111,26 @@ exclude = ["tests/frozen/**"]
 # 3.12 pin: numpy 2.5.0 (py>=3.12) ships PEP695 stubs that require mypy on 3.12+.
 python_version = "3.12"
 strict = true
-files = ["python"]
+files = ["python", "tests", "conftest.py"]
+# The test tree has no `__init__.py` (pytest prepend-import isolation depends on that), so bare
+# basenames collide across packages — m5/m40 `test_projection.py`, m39/m40 `shuffle_backends.py`.
+# `explicit_package_bases` + these roots give every test file a unique dotted name derived from the
+# repo root (tests.frozen.awkward.m39.golden_route) while `python/graphed/x.py` still resolves as
+# `graphed.x` and the vendored corpus mirror as `graphed_corpus`. The CROSS-dir helper providers that
+# `[tool.pytest.ini_options] pythonpath` lists are deliberately NOT roots here: making them roots
+# renames those milestones' files to bare top-level modules, which puts them outside the
+# `tests.frozen.*` override below (measured: 87 frozen errors escaped it) and hands preserve/m9's
+# conftest the top-level `conftest` name, colliding with the repo-root one. The bare-name imports
+# they serve are covered by the two overrides below instead.
+explicit_package_bases = true
+mypy_path = ["python", ".", "tests/_corpus"]
 
 [[tool.mypy.overrides]]
 module = [
   "awkward.*", "numpy.*", "onnx.*", "onnxruntime.*", "correctionlib.*", "cloudpickle.*",
   "pyarrow.*", "perspective.*", "tornado.*", "websocket.*", "boost_histogram.*", "hist.*",
   "vector.*", "pandas.*", "keras.*", "tensorflow.*", "torch.*", "xgboost.*", "jax.*",
-  "tritonclient.*", "graphed_histogram.*",
+  "tritonclient.*", "graphed_histogram.*", "triton_python_backend_utils",
 ]
 ignore_missing_imports = true
 follow_imports = "skip"
@@ -129,6 +141,33 @@ module = [
   "graphed.awkward.shuffle", "graphed.numpy", "graphed.numpy.shuffle",
 ]
 warn_return_any = false
+
+# Frozen helper modules that NON-frozen suites import by bare name: pytest reaches them through
+# `[tool.pytest.ini_options] pythonpath` or an explicit `sys.path.insert` inside the importing test,
+# and mypy resolves neither. Making their directories `mypy_path` roots would rename that whole
+# frozen milestone out from under the `tests.frozen.*` override below, so treat the bare names as
+# unresolvable instead.
+[[tool.mypy.overrides]]
+module = [
+  "analyses", "backends", "m13_toy", "m52_point_fixtures", "m55_lockstep_fixtures",
+  "test_vary_stacking",
+]
+ignore_missing_imports = true
+
+# tests/frozen/** is read-only under the §A.7 integrity rule, so the frozen suites cannot be
+# annotated. They are still PARSED and import-resolved here (that is what catches a broken helper
+# path); only the codes they actually trip are switched off, enumerated rather than hidden behind
+# `ignore_errors` so the debt is visible and can be retired file-by-file if the frozen tags are ever
+# re-cut. Regenerate the list with:
+#   mypy 2>&1 | grep '^tests/frozen/' | sed -E 's/.*\[([a-z-]+)\]$/\1/' | sort -u
+[[tool.mypy.overrides]]
+module = ["tests.frozen.*"]
+disable_error_code = [
+  "arg-type", "assignment", "attr-defined", "call-arg", "call-overload", "comparison-overlap",
+  "dict-item", "func-returns-value", "has-type", "import-not-found", "index", "misc",
+  "name-defined", "no-any-return", "no-untyped-call", "no-untyped-def", "operator",
+  "return-value", "type-arg", "union-attr", "unused-ignore", "var-annotated",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

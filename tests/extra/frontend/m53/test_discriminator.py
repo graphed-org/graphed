@@ -8,6 +8,8 @@ carrier that shares the foreign nuisance both fan out.
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 import pytest
 
@@ -18,7 +20,7 @@ from graphed.errors import GraphedError
 from graphed.numpy import NumpyBackend, from_record
 
 
-def _record() -> tuple[Session, object]:
+def _record() -> tuple[Session, Any]:
     session = Session(NumpyBackend())
     return session, from_record(session, "ev", pt=np.arange(1.0, 7.0), eta=np.arange(1.0, 7.0) / 6)
 
@@ -77,7 +79,7 @@ def test_a_stacked_weight_stays_the_union() -> None:
     ctx = EventContext(_s, pt, collections={"pt": pt})
     weight = ctx["pt"] * 0.5
     first = graphed.vary(ctx, "btag", weight, is_weight=True, points={"up": weight * 1.2})
-    ambient = graphed.weight(first)  # its _tags carries btag → a stacked weight nuisance
+    ambient: Any = graphed.weight(first)  # its _tags carries btag → a stacked weight nuisance
     second = graphed.vary(first, "mu", ambient, is_weight=True, points={"up": ambient * 1.05})
     labels = graphed.labels(graphed.weight(second))
     assert not [label for label in labels if "__" in label]  # mu does NOT fan out over stacked btag

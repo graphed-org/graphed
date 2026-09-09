@@ -48,4 +48,5 @@ def test_full_parquet_path_without_pandas(no_pandas, tmp_path) -> None:  # type:
     chunk = gio.read_parquet_partition(part)
     assert set(chunk) == {"x", "n", "f"}
     paths = gio.to_parquet(g["x"] * 2.0, os.path.join(tmp_path, "out"), steps_per_file=2)
+    assert isinstance(paths, list)  # the eager arm; the deferred arm answers a Plan
     assert len(paths) == 2

@@ -10,11 +10,12 @@ import functools
 import inspect
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import awkward as ak
 
 from graphed import Session
+from graphed.backend import Form
 from graphed.core import PayloadDescriptor
 
 from . import join, payloads, shuffle
@@ -52,17 +53,22 @@ class AwkwardBackend:
         # plain attribute access — on the typetracer at record time and on real arrays in eval.
         self._behavior = dict(behavior) if behavior else None
 
-    def op_form(self, op: str, inputs: Sequence[AwkwardForm], params: Mapping[str, object]) -> AwkwardForm:
+    def op_form(self, op: str, inputs: Sequence[Form], params: Mapping[str, object]) -> AwkwardForm:
+        # `inputs` is the protocol-wide `Sequence[Form]`, not `Sequence[AwkwardForm]`: narrowing a
+        # parameter would make AwkwardBackend structurally incompatible with `graphed.Backend`
+        # (contravariance), so `Session(AwkwardBackend())` would not type-check. A session only ever
+        # feeds a backend the forms that same backend produced.
+        forms = cast("Sequence[AwkwardForm]", inputs)
         if op == "exchange":
-            return inputs[0]  # a pure data-movement boundary is identity on the payload form (§3.3a)
+            return forms[0]  # a pure data-movement boundary is identity on the payload form (§3.3a)
         if op == "join":
             # M40 (§3.3): flat relational record-merge form; how=left/outer ⇒ missing side option-typed
-            return AwkwardForm(join.join_form([f.tt for f in inputs], params))
+            return AwkwardForm(join.join_form([f.tt for f in forms], params))
         if op in _EXTERNAL:
             # Opaque/external op: output form is not derivable from inputs. Approximate it by the
             # first input's form (corrections/inference are ~shape-preserving for these fixtures).
-            return inputs[0]
-        operands = [f.tt for f in inputs]
+            return forms[0]
+        operands = [f.tt for f in forms]
         return AwkwardForm(apply(op, operands, params, behavior=self._behavior))
 
     def eval_stage(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> object:

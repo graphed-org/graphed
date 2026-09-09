@@ -21,7 +21,7 @@ import pytest
 
 import graphed
 import graphed.accessors
-from graphed import Kind, Session, compile_ir, context
+from graphed import Array, Kind, Session, compile_ir, context
 from graphed.context import EventContext
 from graphed.errors import GraphedTypeError
 from graphed.numpy import NumpyBackend, from_record
@@ -40,6 +40,13 @@ def _context() -> tuple[Session, Any, Any]:
     record = from_record(session, "ev", pt=VEC, w=np.ones(12))
     collections = {"pt": record["pt"], "w": record["w"]}
     return session, EventContext(session, record["pt"], collections=collections), record
+
+
+def _ambient(ctx: Any) -> Array | Varied:
+    """`graphed.weight` answers `... | None`; every context read below has registered factors."""
+    ambient = graphed.weight(ctx)
+    assert ambient is not None
+    return ambient
 
 
 def _shift(ctx: Any, name: str, pt: Any, scale: float = 1e-3) -> Any:
@@ -265,13 +272,13 @@ def test_the_composed_ambient_carries_the_registering_context_not_the_reading_on
     left = _shift(registered, "jes", pt)
     right = _shift(registered, "jer", pt, scale=2e-3)
 
-    assert graphed.accessors.context_of(graphed.weight(left)) is registered
-    assert graphed.accessors.context_of(graphed.weight(right)) is registered
+    assert graphed.accessors.context_of(_ambient(left)) is registered
+    assert graphed.accessors.context_of(_ambient(right)) is registered
     # what the moved handle would break: §2.3e refuses to combine a descendant-stamped ambient
     # with a sibling's read, and refuses to re-index it back to the context that registered it
     product = graphed.nominal(graphed.weight(left)) * right["w"]
     assert graphed.accessors.context_of(product) is right
-    assert graphed.accessors.reindex_to(graphed.weight(left), registered) is graphed.weight(left)
+    assert graphed.accessors.reindex_to(_ambient(left), registered) is graphed.weight(left)
 
 
 def test_variations_answers_an_empty_registry_on_a_projected_context() -> None:
@@ -346,11 +353,12 @@ def _resolved_product(session: Session, ctx: Any, label: str) -> np.ndarray:
     """The oracle: the eager product of what each registered factor resolves to at `label` under
     the registry as it stands NOW, read two levels deep and multiplied here rather than by the
     composition under test."""
-    product = None
+    product: Any = None
     for factor in ctx._factors:
         member = member_of(member_of(factor, label), label)
         product = member if product is None else product * member
-    return np.asarray(session.materialize(product))
+    resolved: np.ndarray = np.asarray(session.materialize(product))
+    return resolved
 
 
 def _minted_by_the_second_registration(*, read_first: bool) -> tuple[Session, Any]:
@@ -375,7 +383,7 @@ def _minted_by_a_later_loose_vary(*, read_first: bool) -> tuple[Session, Any]:
     shifted = _shift(ctx, "jes", record["pt"])
     shifted._collections = _hand_built_joint(shifted, record)
     for name in ("a", "b_weight"):
-        factor = rebuild(
+        factor: Any = rebuild(
             {"nominal": record["w"] * 1.0, "jes_up": record["w"] * 1.01, "jes_down": record["w"] * 1.0},
             context=shifted,
         )

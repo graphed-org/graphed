@@ -23,7 +23,7 @@ from graphed.core import DurablePlan
 
 
 def _one_partition_plan() -> DurablePlan:
-    plan = analyses.build_plan("analyses:histogram_chunk", 1)
+    plan: DurablePlan = analyses.build_plan("analyses:histogram_chunk", 1)
     assert len(plan.partitions) == 1, "the regression needs a plan smaller than the kill point"
     return plan
 
