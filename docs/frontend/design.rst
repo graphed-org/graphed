@@ -529,9 +529,11 @@ Numbers reach numeric tags, and zero is asymmetric
 A coordinate is an ordinary tag, and tags come in two flavours that do not mix. An identifier tag
 (``up``, ``hf_up``) is opaque and is *not* promoted to ±1σ — that reading is a stats-export
 convention, not a frontend fact. A numeric tag is canonicalised by value, so ``"0p5"``, ``"0.5"``,
-``0.5`` and ``Fraction(1, 2)`` are one coordinate. Writing a point with numbers therefore reaches
-only families registered with numeric tags, and the mismatch is refused rather than silently
-resolved to nominal:
+``0.5`` and ``Fraction(1, 2)`` are one coordinate — as is a numpy scalar of that value, read
+through ``numbers`` rather than through ``int``/``float``, so ``np.float64(0.5)``, ``np.float32``
+and ``np.int64`` spell the tags their Python values do. Writing a point with numbers therefore
+reaches only families registered with numeric tags, and the mismatch is refused rather than
+silently resolved to nominal:
 
 .. code-block:: python
 
