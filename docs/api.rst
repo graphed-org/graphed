@@ -16,7 +16,7 @@ The recording surface. ``Session`` owns the recording and ``Array`` is the proxy
 ``compile_ir`` and ``evaluate_ir`` turn a recording into something a worker evaluates, and
 ``aggregate_plan`` builds the task graph that computes several outputs in one pass over the
 data. ``vary`` declares a systematic variation, and ``labels`` / ``nominal`` / ``universe`` /
-``variations`` read the results back. ``join``, ``repartition``, ``join_plan`` and
+``variations`` read the results back (each tag's ``Kind``, a flag, beside its ordering). ``join``, ``repartition``, ``join_plan`` and
 ``shuffle_plan`` move rows between partitions; ``read_columns`` and ``impact_by_label`` tell you
 what a recording will actually read off disk.
 

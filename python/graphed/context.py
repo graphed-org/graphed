@@ -53,7 +53,7 @@ class EventContext:
     __slots__ = (
         "_collections", "_derived", "_factors", "_is_data", "_link", "_memo",
         "_origin", "_parent", "_projected", "_provenance", "_record", "_recorded", "_serial",
-        "_session",
+        "_session", "_weight_tags",
     )  # fmt: skip
 
     def __init__(
@@ -79,6 +79,10 @@ class EventContext:
         # families registered whatever the association, because each one rewrites every label the
         # ambient already carries.
         self._factors: list[Any] = [] if weight is None else [weight]
+        #: the weight families REGISTERED on this lineage, `{name: tags}` — the record `variations`
+        #: and a same-name registration read, as opposed to the ambient container's tag map, which
+        #: a row-space change widens with every shift the mask carries
+        self._weight_tags: dict[str, tuple[str, ...]] = {} if parent is None else dict(parent._weight_tags)
         self._recorded: tuple[str, ...] = _union(("nominal",), labels_of(weight))
         #: the cache: `(mint epoch, factors it covers, composed container, settled)`, assigned as
         #: one immutable tuple so a concurrent reader sees either the old state or the new, both
@@ -309,6 +313,7 @@ class EventContext:
         }
         if self._factors:
             child._adopt_ambient(child._stamp(member_of(self._ambient_weight(), label)))
+        child._weight_tags = {}  # a projection drops the registry (§2.2)
         child._record = child._stamp(child._record)
         self._projected[label] = child
         return child
@@ -412,7 +417,7 @@ def _vary_weight(
             "third positional argument"
         )
     ambient_tags = ctx._ambient_tags()
-    inherited = ambient_tags.get(name, ())
+    inherited = ctx._weight_tags.get(name, ())
     # What the next composition will multiply, decided HERE, before this registration mints, and by
     # the same predicate the read uses: onto a foldable memo the new factor folds (today's
     # two-element chain step, so a program reading at every intermediate context pays today's node
@@ -476,6 +481,7 @@ def _vary_weight(
     ctx._session._weight_factors.append((name, _member_nodes(factor)))
 
     child = _child_of(ctx)
+    child._weight_tags[name] = inherited + _tags_of(name, one_at_a_time)
     child._factors.append(factor)
     child._recorded = recorded
     child._origin = child

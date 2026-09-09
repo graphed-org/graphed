@@ -258,8 +258,8 @@ Prints::
     ('nominal', 'jes_up', 'jes_down')
     ('nominal', 'jes_up', 'jes_down')
     ('nominal', 'pu_1p0', 'pu_m1p0', 'pu_extreme')
-    {'up': ('shift', None), 'down': ('shift', None)}
-    {'1p0': ('weight', Fraction(1, 1)), 'm1p0': ('weight', Fraction(-1, 1)), 'extreme': ('weight', None)}
+    {'up': (Kind.SHIFT, None), 'down': (Kind.SHIFT, None)}
+    {'1p0': (Kind.WEIGHT, Fraction(1, 1)), 'm1p0': (Kind.WEIGHT, Fraction(-1, 1)), 'extreme': (Kind.WEIGHT, None)}
     [68.2, 57.8, 116]
 
 ``ht`` was written once and is varied because it reads a varied collection through the context.
@@ -305,10 +305,14 @@ Prints::
 The context's MET is the Type-1 MET of its central jets, so the propagated container's nominal is
 that very node and the ``jes_up`` universe's MET is the MET of the ``jes_up`` jets.
 
-Two kinds of knob, and the distinction is the one that matters for cost. A ``"shift"`` changes
-the *values* — a shifted jet collection — so every universe needs its own pass over the data. A
-``"weight"`` changes only the multiplicative factor, so all its universes can share one pass.
-``graphed.variations`` reports a context's registry as ``{name: {tag: (kind, ordering)}}``.
+Two kinds of knob, and the distinction is the one that matters for cost. ``Kind.SHIFT`` changes
+the *values* — a shifted jet collection — so every universe needs its own pass over the data.
+``Kind.WEIGHT`` changes only the multiplicative factor, so all its universes can share one pass.
+``graphed.Kind`` is a flag, so a tag registered both ways — the weight form by name identity on a
+family the shift form already carries — reports the union ``Kind.WEIGHT | Kind.SHIFT``, and a
+consumer asks ``Kind.SHIFT in kind`` rather than matching a word. ``graphed.variations`` reports a
+context's registry as ``{name: {tag: (kind, ordering)}}``; the weight side comes from the
+lineage's registration record, so a cut (``ctx[mask]``) reports exactly what its parent does.
 Numeric tags parse to an ordering value — the σ handle you want for envelope plots — under both
 the exponent form (``5em1`` is ½) and the datacard form (``1p0`` is 1, ``m1p0`` is −1); a
 non-numeric tag such as ``"extreme"`` carries ``None`` and is simply unordered.

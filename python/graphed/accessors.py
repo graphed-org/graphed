@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, TypeGuard
 
+from ._kinds import Kind
 from ._points import Point, render
 from ._tags import numeric_value
 from .array import Array
@@ -156,31 +157,30 @@ def weight(ctx: Any) -> Varied | Array | None:
     return ctx._ambient_weight()
 
 
-def variations(ctx: Any) -> dict[str, dict[str, tuple[str, Fraction | None]]]:
+def variations(ctx: Any) -> dict[str, dict[str, tuple[Kind, Fraction | None]]]:
     """A context's registered variations as `{name: {tag: (kind, value | None)}}` (§9.1).
 
-    The kind vocabulary is three words, PER (name, tag): `"weight"` for a §2.1 overload-(b)
-    registration (found in the ambient weight's tag map), `"shift"` for an overload-(c) one (found
-    on the context's `Varied` collections), and `"both"` when it is in both — §4.8's mechanism for
-    "these two registrations are the same fit parameter", which the collections pass used to hide
-    by `update()`ing over the weight pass. The value is the tag's parsed numeric magnitude — the
-    ordering handle §6.2's lexicographic axis cannot give — and `None` for a non-numeric tag.
+    The kind is a `graphed.Kind` PER (name, tag): `Kind.WEIGHT` for a §2.1 overload-(b)
+    registration, `Kind.SHIFT` for an overload-(c) one, and their union when the tag was registered
+    both ways — §4.8's mechanism for "these two registrations are the same fit parameter". The
+    weight side is read from the lineage's registration record, never from the ambient container's
+    tag map, which a row-space change widens with the shifts the mask carries. The value is the
+    tag's parsed numeric magnitude — the ordering handle §6.2's lexicographic axis cannot give —
+    and `None` for a non-numeric tag.
     """
     if not _is_context(ctx):
         raise GraphedError("graphed.variations reads an event context's registered variations")
-    out: dict[str, dict[str, tuple[str, Fraction | None]]] = {}
-    weighted: dict[str, frozenset[str]] = {}
-    # the ambient's TAG MAP, not its composed container: introspection must record no node
-    for name, tags in ctx._ambient_tags().items():
-        weighted[name] = weighted.get(name, frozenset()) | frozenset(tags)
-        out.setdefault(name, {}).update({tag: ("weight", numeric_value(tag)) for tag in tags})
+    kinds: dict[str, dict[str, Kind]] = {}
+    for name, tags in ctx._weight_tags.items():
+        for tag in tags:
+            kinds.setdefault(name, {})[tag] = kinds.get(name, {}).get(tag, Kind(0)) | Kind.WEIGHT
     for collection in ctx._collections.values():
         for name, tags in getattr(collection, "_tags", {}).items():
-            dual = weighted.get(name, frozenset())
-            out.setdefault(name, {}).update(
-                {tag: ("both" if tag in dual else "shift", numeric_value(tag)) for tag in tags}
-            )
-    return out
+            for tag in tags:
+                kinds.setdefault(name, {})[tag] = kinds.get(name, {}).get(tag, Kind(0)) | Kind.SHIFT
+    return {
+        name: {tag: (kind, numeric_value(tag)) for tag, kind in tags.items()} for name, tags in kinds.items()
+    }
 
 
 def unify_contexts(*handles: Any) -> Any:

@@ -13,12 +13,13 @@ from fractions import Fraction
 from m52_point_fixtures import dual_registered_family, shift_then_weight_context
 
 import graphed
+from graphed import Kind
 
 
 def test_a_family_registered_as_both_shift_and_weight_reports_both() -> None:
     _session, ctx = dual_registered_family()
 
-    assert graphed.variations(ctx)["jes"] == {"up": ("both", None), "down": ("shift", None)}
+    assert graphed.variations(ctx)["jes"] == {"up": (Kind.WEIGHT | Kind.SHIFT, None), "down": (Kind.SHIFT, None)}
 
 
 def test_the_dual_kind_keeps_the_frozen_value_half() -> None:
@@ -26,8 +27,8 @@ def test_the_dual_kind_keeps_the_frozen_value_half() -> None:
     _session, ctx = dual_registered_family(numeric=True)
 
     assert graphed.variations(ctx)["jes"] == {
-        "1": ("both", Fraction(1, 1)),
-        "m1": ("shift", Fraction(-1, 1)),
+        "1": (Kind.WEIGHT | Kind.SHIFT, Fraction(1, 1)),
+        "m1": (Kind.SHIFT, Fraction(-1, 1)),
     }
 
 
@@ -38,6 +39,6 @@ def test_disjoint_families_report_exactly_the_two_m50_kinds() -> None:
 
     reported = graphed.variations(ctx)
     kinds = {kind for family in reported.values() for kind, _value in family.values()}
-    assert kinds == {"weight", "shift"}
-    assert reported["jes"] == {"up": ("shift", None), "down": ("shift", None)}
-    assert reported["btag"] == {"up": ("weight", None), "down": ("weight", None)}
+    assert kinds == {Kind.WEIGHT, Kind.SHIFT}
+    assert reported["jes"] == {"up": (Kind.SHIFT, None), "down": (Kind.SHIFT, None)}
+    assert reported["btag"] == {"up": (Kind.WEIGHT, None), "down": (Kind.WEIGHT, None)}

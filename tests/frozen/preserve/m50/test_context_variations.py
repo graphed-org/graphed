@@ -25,7 +25,7 @@ from graphed_corpus import make_events
 
 import graphed
 import graphed.awkward as ga
-from graphed import Session, vary
+from graphed import Kind, Session, vary
 from graphed.awkward import AwkwardBackend, from_awkward, gak
 
 
@@ -53,14 +53,14 @@ def _ctx_with_families() -> Any:
 def test_variations_reports_kind_and_parsed_value_per_tag() -> None:
     v = graphed.variations(_ctx_with_families())
     # weight family: both parsers, and the non-numeric tag carries no value (does not raise)
-    assert v["sf"]["5em1"] == ("weight", 0.5)
-    assert v["sf"]["m15em1"] == ("weight", -1.5)
-    assert v["sf"]["2p5"] == ("weight", 2.5)
-    assert v["sf"]["up"] == ("weight", None)
+    assert v["sf"]["5em1"] == (Kind.WEIGHT, 0.5)
+    assert v["sf"]["m15em1"] == (Kind.WEIGHT, -1.5)
+    assert v["sf"]["2p5"] == (Kind.WEIGHT, 2.5)
+    assert v["sf"]["up"] == (Kind.WEIGHT, None)
     # shift family: the OTHER kind of the two-word vocabulary; identifier tags carry no value
-    assert v["jes"]["up"] == ("shift", None)
-    assert v["jes"]["down"] == ("shift", None)
-    assert {kind for fam in v.values() for kind, _ in fam.values()} == {"weight", "shift"}
+    assert v["jes"]["up"] == (Kind.SHIFT, None)
+    assert v["jes"]["down"] == (Kind.SHIFT, None)
+    assert {kind for fam in v.values() for kind, _ in fam.values()} == {Kind.WEIGHT, Kind.SHIFT}
 
 
 # ---- §6.2(i-bis): narrowing helpers over a bare axis-mode histogram ------------------------------
