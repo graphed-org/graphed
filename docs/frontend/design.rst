@@ -465,6 +465,59 @@ nominal kinematics, exactly as it does today. ``btag_hf_up__jes_up`` names one, 
 shifted jets, and the three numbers differ — which is the whole point, and is what silently taking
 the nominal would hide.
 
+What decides whether a coordinate fans out is the member's **dataflow**, not the nuisance's kind.
+A coordinate the member reaches through the *ambient weight* — a factor computed from
+``weight(ctx)``, or from a registered factor's member at that label where that member is not the
+factor's nominal — is already composed label-aligned into the union, so it is not fanned out (it
+would multiply that factor in twice). A coordinate the member reaches through *shifted objects* is
+a dependency and mints its joints, even when the same nuisance is also registered as a weight, and
+even when the member also multiplies a factor that does not vary at that label (the event weight
+the context was seeded with, an unrelated family's central member). That case is the CMS b-tag prescription: the
+SF's jes-correlated table replaces the central table inside the ``jes`` universe (name identity),
+so ``jes`` is a shift and a weight at once, and a further b-tag source evaluated on the jes-shifted
+jets still fans out over ``jes``, whichever of the two registrations comes first.
+
+.. code-block:: python
+
+    from graphed import labels, member_of, variations
+
+    s   = Session(AwkwardBackend())
+    ctx = ga.gnano.events(from_awkward(s, "events", events))
+    jets = ctx.Jet
+    ctx  = vary(ctx, "jes", collections={"Jet": {
+        "up":   gak.with_field(jets, jets.pt * 1.05, "pt"),
+        "down": gak.with_field(jets, jets.pt * 0.95, "pt")}})
+    jets = ctx.Jet                                        # Varied over jes
+
+    def sf(jets, k):                                      # one SF table per k, pT-dependent
+        return gak.prod(1.0 + k * 0.05 * jets.pt / 100.0, axis=1)
+
+    # the SF's jes-correlated table REPLACES the central one inside the jes universes (name identity),
+    # so jes is now a shift AND a weight
+    ctx = vary(ctx, "jes", sf(jets, 0.0), is_weight=True,
+               up=sf(member_of(jets, "jes_up"), 0.5), down=sf(member_of(jets, "jes_down"), -0.5))
+    # an independent b-tag source over the SAME varied jets: it depends on jes through the jets
+    one = sf(jets, 0.0) * 0.0 + 1.0
+    ctx = vary(ctx, "hf", one, is_weight=True,
+               up=sf(jets, 1.0) / sf(jets, 0.0), down=sf(jets, -1.0) / sf(jets, 0.0))
+
+    w = weight(ctx)
+    print(variations(ctx)["jes"]["up"][0])
+    print([l for l in labels(w) if "__" in l])
+    up = member_of(jets, "jes_up")
+    print([round(x, 4) for x in s.materialize(universe(w, "hf_up__jes_up")).to_list()])
+    print([round(x, 4) for x in s.materialize(sf(up, 0.5) * sf(up, 1.0) / sf(up, 0.0)).to_list()])
+
+Prints::
+
+    Kind.WEIGHT|SHIFT
+    ['hf_up__jes_up', 'hf_up__jes_down', 'hf_down__jes_up', 'hf_down__jes_down']
+    [1.0521, 1.0437, 1.0896]
+    [1.0521, 1.0437, 1.0896]
+
+The joint's weight is the two-level product — the ``jes`` factor's ``jes_up`` member times ``hf``'s
+cross member, both on the ``jes_up`` jets — which the last line rebuilds by hand.
+
 A joint label is spelled ``<family>_<tag>__<nuisance>_<coordinate>``; ``graphed.points(obj)`` is
 the authoritative coordinate view — label-sorted, each map nuisance-sorted, ``"nominal"`` mapping
 to ``{}`` — and it answers only on record-time shapes (a ``Varied``, an event context), because

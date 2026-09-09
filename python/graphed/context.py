@@ -28,7 +28,15 @@ from .by_label import cone
 from .errors import GraphedError, GraphedTypeError
 from .provenance import capture
 from .varied import Varied, expand, labels_of, member_of, point_registry, rebuild, session_of
-from .vary import AmbientCarrier, check_members, gather_members, record_labels, register, stamp_labels
+from .vary import (
+    AmbientCarrier,
+    _member_nodes,
+    check_members,
+    gather_members,
+    record_labels,
+    register,
+    stamp_labels,
+)
 
 #: contexts are compared by IDENTITY (§2.6b), so a divergence error must name two distinguishable
 #: objects; the serial plus the user line where the context was built is that name
@@ -371,7 +379,34 @@ def _carriers(ctx: EventContext) -> tuple[Any, ...]:
     The ambient contributes the `(session, labels)` pair, not a container: both readers want labels
     and points only, so composing here would record nodes for a walk that never does arithmetic.
     """
-    return (AmbientCarrier(ctx._session, ctx._recorded), *ctx._collections.values(), ctx._selection())
+    factors = _lineage_factors(ctx)
+
+    def resolve(label: str) -> frozenset[int]:
+        # A factor whose member at `label` is its nominal carries nothing of the label (the seed
+        # weight, a family with no coordinate there): reading it is not composition at `label`.
+        out: set[int] = set()
+        for factor in factors:
+            out.update(
+                set(_member_nodes(_two_level(factor, label)))
+                - set(_member_nodes(_two_level(factor, "nominal")))
+            )
+        return frozenset(out)
+
+    ambient = AmbientCarrier(ctx._session, ctx._recorded, resolve)
+    return (ambient, *ctx._collections.values(), ctx._selection())
+
+
+def _lineage_factors(ctx: EventContext) -> tuple[Any, ...]:
+    """Every registered factor along the context's ancestry, once each. A row-space change adopts
+    the ONE composed container as the child's factor, so a member computed from an ancestor's
+    ambient reads the ancestor's factors, never the adopted node (§2.1(b))."""
+    seen: dict[int, Any] = {}
+    node: EventContext | None = ctx
+    while node is not None:
+        for factor in node._factors:
+            seen.setdefault(id(factor), factor)
+        node = node._parent
+    return tuple(seen.values())
 
 
 def _child_of(ctx: EventContext) -> EventContext:
@@ -563,13 +598,6 @@ def _vary_shift(
         _report_shift_after_weight(ctx, collection_name, existing)
     child._collections = replaced
     return child
-
-
-def _member_nodes(value: Any) -> tuple[int, ...]:
-    """A container's member node ids, resolving §2.2's one legal level of nesting."""
-    if not isinstance(value, Varied):
-        return (value.node_id,)
-    return tuple(nid for member in value._members.values() for nid in _member_nodes(member))
 
 
 def _report_shift_after_weight(ctx: EventContext, collection: str, pre_shift: Mapping[str, Any]) -> None:
