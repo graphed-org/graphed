@@ -664,12 +664,39 @@ def _extension(ctx: EventContext, central: Any) -> tuple[str, Any] | None:
             continue
         # the entry as it stands here, then what it was in each row space it came through: an
         # expansion re-indexed it, and the central names the node of the space it was built in
-        if any(
-            _same_node(candidate, node)
-            for candidate in (_two_level(factor, "nominal"), *priors.get(slot, ()))
-        ):
-            return ("factor", slot)
+        for candidate in (_two_level(factor, "nominal"), *priors.get(slot, ())):
+            if not _same_node(candidate, node):
+                continue
+            owned = _owned_projection(ctx, candidate, factor)
+            return ("factor", slot) if owned is None else ("owned", owned)
     return None
+
+
+def _owned_projection(ctx: EventContext, candidate: Any, factor: Any) -> str | None:
+    """§2.3: the universe projected into between the candidate's row space and `ctx` that this
+    factor OWNS — a family of its container is a coordinate of that universe's point — or `None`.
+
+    A projection to another universe keeps the entries' identity (it re-indexes the composed
+    product, not the nodes a central names), which is what lets a central built above it name its
+    factor there. For the factor the universe is OF, that is a trap: its member at the label IS the
+    universe projected into, so joining would put the central back and erase it. A joint label is
+    owned by every family in its point, which is why the point decides and not the label's name.
+    """
+    home = accessors.context_of(candidate)
+    if home is None or not home._is_ancestor_of(ctx):
+        return None
+    families = getattr(factor, "_tags", None) or {}
+    registry = point_registry(factor)
+    return next(
+        (
+            payload
+            for kind, payload in ctx._links_below(home)
+            if kind == "project"
+            and payload != "nominal"
+            and any(name in families for name, _tag in registry.get(payload, ()))
+        ),
+        None,
+    )
 
 
 def _overlay_index(ctx: EventContext, read: tuple[int, ...]) -> int | None:
@@ -892,6 +919,16 @@ def _vary_weight(
             f"registration added universes to the weight factor it composed ({match[1]}), so the "
             "handle's universes are no longer that composition; read the handle again after that "
             "registration (`w = graphed.weight(ctx)`) and register this family on the new handle"
+        )
+    if match is not None and match[0] == "owned":
+        # §2.3: this context IS that universe, and the named factor's member there is what makes it
+        # one — joining would put the central back and the projection would vanish
+        raise GraphedError(
+            f"graphed.vary({name!r}): its central names the weight factor that the universe "
+            f"{match[1]!r} this context is projected into is OF, whose member there is that "
+            "universe rather than the central; register this family on the factor at the parent, "
+            "before the projection, or re-derive the central from this context's collections, "
+            "which names nothing and starts a new factor"
         )
     # The ambient's tag-map families are only CANDIDATES for composition (m56): a member's coordinate
     # on one of them is dropped iff the member's node at that label reads a lineage factor's varied
