@@ -111,11 +111,13 @@ def _universes() -> tuple[Session, list[Array]]:
 
 def _sums(vals: list[object]) -> np.ndarray:
     # reduce runs at execution time on CONCRETE awkward arrays (not deferred graphed Arrays)
-    return np.array([float(ak.sum(v)) for v in vals], dtype="float64")
+    sums: np.ndarray = np.array([float(ak.sum(v)) for v in vals], dtype="float64")
+    return sums
 
 
 def _add(a: np.ndarray, b: np.ndarray) -> np.ndarray:
-    return a + b
+    total: np.ndarray = a + b
+    return total
 
 
 def _zeros() -> np.ndarray:
@@ -125,7 +127,8 @@ def _zeros() -> np.ndarray:
 def _totals(executor: Any) -> np.ndarray:
     _session, outs = _universes()
     plan = aggregate_plan(*outs, reduce=_sums, combine=_add, empty=_zeros, steps_per_file=N_PARTITIONS)
-    return executor.run(plan).value
+    totals: np.ndarray = executor.run(plan).value
+    return totals
 
 
 def test_multiparam_universes_execute_to_distinct_totals() -> None:

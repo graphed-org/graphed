@@ -15,21 +15,21 @@ from backends import ListBackend, from_list
 
 import graphed.core
 from graphed import Session
-from graphed.execute import Key, compile_ir, evaluate_ir
+from graphed.execute import CompiledGraph, Key, compile_ir, evaluate_ir
 
 
 class Boom(RuntimeError):
     pass
 
 
-class PoisonedSum(ListBackend):
+class PoisonedSum(ListBackend):  # type: ignore[misc]  # `backends` is off mypy's path (see pyproject)
     def eval_stage(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> object:
         if op == "sum":
             raise Boom("the reduction failed")
         return super().eval_stage(op, inputs, params)
 
 
-def _compiled() -> tuple[object, int]:
+def _compiled() -> tuple[CompiledGraph, int]:
     session = Session(PoisonedSum())
     x = from_list(session, "x", [1.0, 2.0])
     compiled = compile_ir(session, (x * x).reduce("sum"))

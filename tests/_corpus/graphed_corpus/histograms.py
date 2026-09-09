@@ -22,7 +22,8 @@ STABLE_DECIMALS = 6
 
 def stable(values: ak.Array | np.ndarray) -> np.ndarray:
     """Round to a fixed precision for cross-platform-stable cut/bin decisions."""
-    return np.round(np.asarray(ak.to_numpy(ak.flatten(values, axis=None))), STABLE_DECIMALS)
+    rounded: np.ndarray = np.round(np.asarray(ak.to_numpy(ak.flatten(values, axis=None))), STABLE_DECIMALS)
+    return rounded
 
 
 def hist1d(values: ak.Array | np.ndarray, *, bins: int, start: float, stop: float, name: str) -> Hist:
@@ -48,7 +49,8 @@ def reference_record(h: Hist) -> dict[str, object]:
 
 
 def load_reference(path: Path) -> dict[str, object]:
-    return json.loads(path.read_text(encoding="utf-8"))
+    reference: dict[str, object] = json.loads(path.read_text(encoding="utf-8"))
+    return reference
 
 
 def write_reference(path: Path, h: Hist) -> None:

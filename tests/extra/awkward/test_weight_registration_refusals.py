@@ -374,7 +374,7 @@ def _clash_at_an_unwalked_label() -> tuple[Session, Any]:
     ctx._collections = {**ctx._collections, "hand": rebuild({"nominal": ctx["w"], JOINT: ctx["w"] * 2.0})}
     flat = ctx["w"] * 1.0
     for name, field in (("A", "r3"), ("B", "r5")):
-        factor = rebuild({"nominal": flat, "q_up": ctx[field] * 1.0}, context=ctx)
+        factor: Any = rebuild({"nominal": flat, "q_up": ctx[field] * 1.0}, context=ctx)
         ctx = graphed.vary(ctx, name, factor, is_weight=True, up=factor * 1.1)
     return session, ctx
 

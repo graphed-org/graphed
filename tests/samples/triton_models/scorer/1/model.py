@@ -6,6 +6,8 @@ The weights W/B are the served model's content; the test content-addresses this 
 Keep W/B in sync with W/B in tests/frozen/m9/test_triton_server.py.
 """
 
+from typing import Any
+
 import numpy as np
 import triton_python_backend_utils as pb_utils  # provided by the Triton python backend
 
@@ -14,7 +16,7 @@ B = -0.1
 
 
 class TritonPythonModel:
-    def execute(self, requests):
+    def execute(self, requests: list[Any]) -> list[Any]:
         responses = []
         for request in requests:
             x = pb_utils.get_input_tensor_by_name(request, "x").as_numpy().astype("float32")

@@ -228,11 +228,13 @@ def _onnx_score() -> tuple[Session, list[Array]]:
 
 
 def _sums(vals: list[object]) -> np.ndarray:
-    return np.array([float(ak.sum(v)) for v in vals], dtype="float64")
+    sums: np.ndarray = np.array([float(ak.sum(v)) for v in vals], dtype="float64")
+    return sums
 
 
 def _add(a: np.ndarray, b: np.ndarray) -> np.ndarray:
-    return a + b
+    total: np.ndarray = a + b
+    return total
 
 
 def _zeros_for(n: int) -> Any:

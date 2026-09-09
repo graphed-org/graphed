@@ -23,6 +23,7 @@ family is out of INT-1's scope.
 from __future__ import annotations
 
 import json
+from typing import Any
 
 import awkward as ak
 import boost_histogram as bh
@@ -53,7 +54,8 @@ def _axis_spec() -> str:
     StrCategory (declared over the SORTED label set, §6.2(ii))."""
     var_ax = bh.axis.StrCategory(sorted(NODE_LABELS))
     var_ax.__dict__["name"] = "variation"  # the kwarg form is a TypeError; the codec round-trips this
-    return gh.spec_of(bh.Histogram(bh.axis.Regular(4, 0.0, 8.0), var_ax, storage=bh.storage.Weight()))
+    spec: str = gh.spec_of(bh.Histogram(bh.axis.Regular(4, 0.0, 8.0), var_ax, storage=bh.storage.Weight()))
+    return spec
 
 
 def _eager_axis_reference(spec: str) -> bh.Histogram:
@@ -86,7 +88,7 @@ def test_axis_mode_variation_fill_preserves_and_reproduces(tmp_path) -> None:  #
     stored = next(n for n in s._store.nodes() if n["id"] == fill.node_id)
     assert stored["descriptor"]["content_hash"] == disc_hash  # recorded the DISCRIMINATED id
 
-    reference = s.materialize(fill)  # record-time eval through the real FillEvaluator
+    reference: Any = s.materialize(fill)  # record-time eval through the real FillEvaluator
 
     # build_bundle would raise "hashes to X not recorded Y" if the plugin re-derived only sha256(spec)
     bundle = build_bundle(tmp_path / "b", session=s, value=fill, datasets={"events": EVENTS}, payloads={})
@@ -135,7 +137,9 @@ def test_same_spec_pair_discriminated_and_bare_both_preserve(tmp_path) -> None: 
         )
         entry = next(e for e in bundle.manifest["externals"] if e["kind"] == "histogram")
         assert entry["content_hash"] == expect_hash, label
-        assert HISTOGRAM_PLUGIN.content_hash(bundle.store.get(entry["store"])) == expect_hash, label
+        stored_payload = bundle.store.get(entry["store"])
+        assert stored_payload is not None
+        assert HISTOGRAM_PLUGIN.content_hash(stored_payload) == expect_hash, label
 
         got = reproduce(bundle)
         eager = bh.Histogram(bh.axis.Regular(4, 0.0, 8.0), storage=bh.storage.Weight())

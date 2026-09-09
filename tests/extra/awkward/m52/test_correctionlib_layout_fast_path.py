@@ -10,6 +10,8 @@ contract is bit-identity with the wrapper: values, None mask and type.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
+from typing import Any
 
 import awkward as ak
 import correctionlib
@@ -63,7 +65,7 @@ def _evaluate(monkeypatch: pytest.MonkeyPatch, cset: object, inputs: list[ak.Arr
     engaged: list[bool] = []
     real = clx._flat_buffer_fast_path
 
-    def spy(evaluate: object, call: list[object]) -> object:
+    def spy(evaluate: Callable[..., Any], call: list[object]) -> object:
         out = real(evaluate, call)
         engaged.append(out is not None)
         return out

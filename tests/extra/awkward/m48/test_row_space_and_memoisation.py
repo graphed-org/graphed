@@ -45,7 +45,7 @@ def shifted_met(source: Any, factor: float) -> Any:
     return gak.with_field(met, met.pt * factor, "pt")
 
 
-def jes_kwargs(source: Any) -> dict[str, dict[str, Any]]:
+def jes_kwargs(source: Any) -> dict[str, Any]:
     """The lockstep shift form: Jet and MET move together."""
     return {
         "Jet": {"up": shifted_jets(source, 1.05), "down": shifted_jets(source, 0.95)},
@@ -53,7 +53,7 @@ def jes_kwargs(source: Any) -> dict[str, dict[str, Any]]:
     }
 
 
-def shift_kwargs(source: Any, tag: str, factor: float) -> dict[str, dict[str, Any]]:
+def shift_kwargs(source: Any, tag: str, factor: float) -> dict[str, Any]:
     """A one-tag shift, for the collision arms that need the tag spelled to order."""
     return {"Jet": {tag: shifted_jets(source, factor)}, "MET": {tag: shifted_met(source, factor)}}
 

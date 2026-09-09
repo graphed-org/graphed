@@ -9,6 +9,8 @@ blame parity (the plan path re-raises the guard's message verbatim) binds it.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import pytest
 from backends import ListBackend, ListForm, from_list
 
@@ -18,7 +20,7 @@ from graphed.aggregate import _PartitionReduce
 from graphed.core import PayloadDescriptor
 from graphed.debug.errors import StageError
 from graphed.errors import GraphedError
-from graphed.execute import Key, compile_ir, evaluate_ir
+from graphed.execute import CompiledGraph, Key, OnFailure, compile_ir, evaluate_ir
 
 CHASH = "probe-payload-hash"
 KIND = "probe"
@@ -38,7 +40,7 @@ def _refuse(*ins: object) -> object:
     raise GraphedError(REFUSAL)
 
 
-def _compiled() -> tuple[object, int]:
+def _compiled() -> tuple[CompiledGraph, int]:
     """One External node, marked as the output, over a list source."""
     session = Session(ListBackend())
     x = from_list(session, "x", [1.0, 2.0])
@@ -60,14 +62,14 @@ def _compiled() -> tuple[object, int]:
     return compiled, output
 
 
-def _worker_hook(entries: tuple[object, ...]) -> object:
+def _worker_hook(entries: tuple[object, ...]) -> OnFailure | None:
     """The shipped §8.2(ii) wrap. `_attribute` reads only the label channel, so the rest of the
     closure's fields are inert here."""
     return _PartitionReduce(
         ir=b"",
         source_name="x",
         backend_factory=ListBackend,
-        reader=None,  # `_attribute` never reads it
+        reader=None,  # type: ignore[arg-type]  # `_attribute` never reads it
         columns=None,
         externals=(),
         reduce=list,
@@ -75,7 +77,7 @@ def _worker_hook(entries: tuple[object, ...]) -> object:
     )._attribute("toy://list:0")
 
 
-def _run(evaluator: object, on_failure: object) -> list[object]:
+def _run(evaluator: Callable[..., object], on_failure: OnFailure | None) -> list[object]:
     compiled, _ = _compiled()
     return evaluate_ir(
         compiled,

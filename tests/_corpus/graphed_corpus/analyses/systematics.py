@@ -146,7 +146,7 @@ def ttgamma_region(events: ak.Array, *, variation: str) -> Hist:
         sf = 1.01
     elif variation == "pho_down":
         sf = 0.95
-    weight = np.full(int(ak.sum(sel)), sf, dtype=np.float64)
+    weight: np.ndarray = np.full(int(ak.sum(sel)), sf, dtype=np.float64)
 
     h = Hist.new.Reg(30, 0, 300, name="photon_pt").Double()
     h.fill(np.round(ak.to_numpy(ak.drop_none(lead_pho_pt)), STABLE_DECIMALS), weight=weight)
