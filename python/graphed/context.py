@@ -1282,8 +1282,11 @@ def _compose_ordered(
     class. An OVERLAY then replaces the running value at the labels its family spans, because its
     members ARE the whole ambient rescaled: the operations up to it compose exactly to the node
     they were built from, so multiplying would count it twice. Whether an overlay spans a label is
-    the same MEMBER-IDENTITY test the product walk uses. Order is registration order, so a factor
-    registered after an overlay multiplies the overlay's result.
+    the same MEMBER-IDENTITY test the product walk uses, EXCEPT at a universe another family
+    PLACED at a point carrying the overlay's coordinate (§2.1): the member declared there is the
+    user's value for that point, and the join reads the same member two-level, so both outcomes
+    agree there. Order is registration order, so a factor registered after an overlay multiplies
+    the overlay's result.
     """
     runs: list[dict[str, Any]] = []
     marks: list[Any] = []
@@ -1302,13 +1305,34 @@ def _compose_ordered(
         running: Any = runs[0].get(label)
         for index, overlay in enumerate(marks):
             applied = _two_level(overlay, label)
-            if running is None or _member_nodes(applied) != nominal_ids[index]:
+            spans = _member_nodes(applied) != nominal_ids[index] and not _placed_elsewhere(overlay, label)
+            if running is None or spans:
                 running = project(applied, label)
             part = runs[index + 1].get(label)
             if part is not None:
                 running = part if running is None else mul(running, part, label)
         composed[label] = running
     return composed
+
+
+def _placed_elsewhere(overlay: Any, label: str) -> bool:
+    """§2.1: whether `label` is a universe ANOTHER family PLACED at a point carrying this overlay's
+    coordinate — the tour's `scale_upup` over a `muR` factor and a relative-delta `muF`. The member
+    the placing family declared there is the user's value for that point, and the join reads the
+    same member two-level, so the overlay must leave it alone for the two outcomes to agree.
+
+    `_route` drops the placing family's OWN axis from an additive placement's point, so a placed
+    universe is exactly one that no coordinate of its own point names; a default one-at-a-time
+    label and a fanned-out joint both carry theirs (`{name: tag}` and `{name: tag, **foreign}` under
+    `f"{name}_{tag}"` and `f"{name}_{tag}__{foreign label}"`). The overlay's own universes are its
+    members, placed or not, and it still replaces there.
+    """
+    if label in labels_of(overlay):
+        return False
+    point = point_registry(overlay).get(label)
+    if point is None:
+        return False
+    return not any(label == f"{n}_{t}" or label.startswith(f"{n}_{t}__") for n, t in point)
 
 
 def _product(parts: Sequence[Any], mul: Callable[[Any, Any, str], Any], label: str) -> Any:
