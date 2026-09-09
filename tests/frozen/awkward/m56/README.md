@@ -43,6 +43,9 @@ Fixtures — `m56_fanout_fixtures.py`:
 | item 5: `composes_as_union=True` collapses the new joints | `test_downstream_knobs.py::test_composes_as_union_collapses_the_cross_kind_joints` |
 | item 5: a placement keeps a named cross-kind joint and prunes the rest | `test_downstream_knobs.py::test_a_placement_keeps_a_named_cross_kind_joint_and_prunes_the_rest` |
 | item 5: the guard's bound is the product over EVERY foreign family | `test_downstream_knobs.py::test_the_guard_bounds_the_grid_over_every_foreign_family` |
+| item 1 precision: the member is judged at the label, not over all its universes | `test_label_precision.py::test_a_factor_read_in_the_nominal_universe_alone_fans_out_at_every_label` |
+| item 1 precision: a read of the factor's OTHER universe is not composition here | `test_label_precision.py::test_reading_the_factors_other_universe_is_not_composition_at_this_label` |
+| item 1 precision: the factor is resolved two-level and point-restricted at the label | `test_label_precision.py::test_a_member_that_is_a_factors_two_level_member_is_composed_at_that_label_alone` |
 
 ## Non-vacuity — what each test does on a pre-m56 tree, and why
 
@@ -62,6 +65,10 @@ whatever the member's dataflow.
 * the ambient / mixed / parent-ambient / spectator exclusion legs — the EXCLUSION half already holds
   pre-m56 (nothing minted), so each fails on its live instrument: the sibling that must mint. An
   empty set from these legs is therefore a decision, not a dead fixture.
+* the three `test_label_precision.py` legs — FAIL: each minted the empty set instead of its four
+  joints. They separate the label set from the rule that produces it: a rule reading every universe
+  of the member mints only the `__jes_down` pair in the first two, and a one-level `member_of`
+  resolution of the factor adds four `probe__jes` joints to the third.
 * `test_a_pure_weight_coordinate_is_composed_while_the_carried_shift_still_fans_out` PASSES pre-m56
   — the declared positive control. A pure-weight family's coordinate is composition then and now,
   and the plain shift the member also carries fans out then and now (the m53 answer m56 preserves).
