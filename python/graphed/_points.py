@@ -1,9 +1,9 @@
 """The §4.2 point value type: a universe's coordinates in nuisance space.
 
 A **coordinate** is a canonical tag. Three input spellings share one value space — an identifier
-token kept verbatim, a numeric string, and a `int`/`float`/`Fraction`, which is decomposed to an
-exact (sign, digits, power-of-ten) triple and rendered by `_tags._render`, the same path a numeric
-string takes. A number is never `str()`-ed into a tag (`str(Fraction(1, 2))` is `"1/2"`, which is
+token kept verbatim, a numeric string, and a number (`int`/`float`/`Fraction`, or a numpy scalar,
+read through `numbers` by `_tags.python_number`), which is decomposed to an exact (sign, digits,
+power-of-ten) triple and rendered by `_tags._render`, the same path a numeric string takes. A number is never `str()`-ed into a tag (`str(Fraction(1, 2))` is `"1/2"`, which is
 no tag at all) and coordinates are never compared as floats.
 
 A **point** is `{nuisance -> coordinate}` stored as a tuple of pairs sorted by nuisance name, so a
@@ -19,7 +19,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from fractions import Fraction
 
-from ._tags import _normalize, _render, canonical_tag, numeric_value
+from ._tags import _normalize, _render, canonical_tag, numeric_value, python_number
 from .errors import GraphedError
 
 
@@ -76,14 +76,15 @@ def coordinate(value: object) -> str:
         tag = canonical_tag(value)
         exact = numeric_value(tag)
         return tag if exact is None else _decimal(exact, value)
-    if isinstance(value, bool) or not isinstance(value, int | float | Fraction):
+    number = value if isinstance(value, Fraction) else python_number(value)
+    if number is None:
         raise GraphedError(
             f"a coordinate is a variation tag or a number, got {value!r} — spell an identifier "
             "coordinate as a string"
         )
     # a float goes through its shortest round-tripping decimal (never its IEEE expansion); an int
     # and a Fraction are already exact
-    return _decimal(Fraction(repr(value)) if isinstance(value, float) else Fraction(value), value)
+    return _decimal(Fraction(repr(number)) if isinstance(number, float) else Fraction(number), value)
 
 
 def _decimal(value: Fraction, source: object) -> str:
