@@ -60,8 +60,8 @@ class EventContext:
 
     __slots__ = (
         "_adopted", "_collections", "_derived", "_factors", "_is_data", "_link", "_memo",
-        "_origin", "_parent", "_projected", "_provenance", "_record", "_recorded", "_serial",
-        "_session", "_weight_tags",
+        "_origin", "_overlays", "_parent", "_projected", "_provenance", "_record", "_recorded",
+        "_serial", "_session", "_weight_tags",
     )  # fmt: skip
 
     def __init__(
@@ -90,6 +90,11 @@ class EventContext:
         #: whether `_factors[0]` is the composed container a row-space change ADOPTED, and so
         #: stands for the parent's own factors (`_live_factors` walks back through it)
         self._adopted = False
+        #: §2.1's ORDERED operations: an entry of `_factors` named here is an OVERLAY — a
+        #: relative-delta family whose members are the whole ambient, so the composition REPLACES
+        #: the running value at its labels instead of multiplying. By `id`, which the list's own
+        #: entries keep alive, so a re-indexed or copied list carries the marks with the objects.
+        self._overlays: frozenset[int] = frozenset()
         #: the weight families REGISTERED on this lineage, `{name: tags}` — the record `variations`
         #: and a same-name registration read, as opposed to the ambient container's tag map, which
         #: a row-space change widens with every shift the mask carries
@@ -251,7 +256,9 @@ class EventContext:
         """Compose `operands` over the recorded union, with the verdict on whether a later mint
         could still move any resolution it just made (`_settled` over every operand and label)."""
         composed = rebuild(
-            _compose(operands, self._recorded), tags=self._ambient_tags(), context=self._origin
+            _compose(operands, self._recorded, overlays=self._overlays),
+            tags=self._ambient_tags(),
+            context=self._origin,
         )
         stamped = accessors.with_context(stamp_labels(composed), self._origin)
         return stamped, _all_settled(self._session, operands, self._recorded)
@@ -337,6 +344,7 @@ class EventContext:
         """
         self._factors = [composed]
         self._adopted = True
+        self._overlays = frozenset()
         self._memo = (self._session._mint_epoch, 1, composed, True)
         self._recorded = _union(("nominal",), labels_of(composed))
         self._origin = self
@@ -413,10 +421,11 @@ def _lineage_factors(ctx: EventContext) -> tuple[Any, ...]:
     return tuple(seen.values())
 
 
-def _live_factors(ctx: EventContext) -> list[Any]:
-    """The factors whose product IS `ctx`'s ambient weight, in registration order.
+def _live_factors(ctx: EventContext) -> tuple[list[Any], frozenset[int]]:
+    """The entries `ctx`'s ambient weight is composed FROM, in registration order, with the ids of
+    the overlays among them.
 
-    A row-space change adopts the ONE composed container, so the factors it stands for are the
+    A row-space change adopts the ONE composed container, so the entries it stands for are the
     adopting parent's own live list; walking back through the adoption is what lets a weight
     registered on a mask-derived child name a factor of its parent (§2.1). Not `_lineage_factors`,
     which answers with every factor ever registered on the ancestry: one that an extension has
@@ -429,13 +438,15 @@ def _live_factors(ctx: EventContext) -> list[Any]:
         if not node._adopted:
             break
         node = node._parent
-    # by id, root-first: a `vary` child copies its parent's list, so the same factor is met again
+    # by id, root-first: a `vary` child copies its parent's list, so the same entry is met again
     # at every context below the one that registered it
     seen: dict[int, Any] = {}
+    overlays: frozenset[int] = frozenset()
     for context in reversed(chain):
+        overlays |= context._overlays
         for factor in context._factors[1:] if context._adopted else context._factors:
             seen.setdefault(id(factor), factor)
-    return list(seen.values())
+    return list(seen.values()), overlays & frozenset(seen)
 
 
 def _child_of(ctx: EventContext) -> EventContext:
@@ -454,6 +465,7 @@ def _child_of(ctx: EventContext) -> EventContext:
     )
     child._factors = list(ctx._factors)
     child._adopted = ctx._adopted
+    child._overlays = ctx._overlays
     child._recorded = ctx._recorded
     child._memo = ctx._memo
     child._origin = ctx._origin
@@ -471,8 +483,11 @@ def _extension(ctx: EventContext, central: Any) -> tuple[str, Any] | None:
     node = _two_level(central, "nominal")
     if isinstance(node, Varied):  # nested past §2.2's one level; `_check_forms` names it properly
         return None
-    for factor in _live_factors(ctx):
-        if _same_node(_two_level(factor, "nominal"), node):
+    live, overlays = _live_factors(ctx)
+    # an OVERLAY's nominal is the ambient's own nominal, so it would answer the ambient test below
+    # in the factor's place; only a product factor names a factor
+    for factor in live:
+        if id(factor) not in overlays and _same_node(_two_level(factor, "nominal"), node):
             return ("factor", factor)
     # the ambient's nominal WITHOUT composing: passing the ambient means having read it, and a read
     # leaves the composed container in the memo covering every factor. A stale epoch is no obstacle
@@ -503,35 +518,49 @@ def _same_node(left: Any, right: Any) -> bool:
 
 def _extend(
     ctx: EventContext,
-    match: tuple[str, Any],
+    target: Any,
     members: Mapping[str, Any],
     name: str,
     family: tuple[str, ...],
     ambient_tags: Mapping[str, tuple[str, ...]],
-) -> tuple[Varied, list[Any]]:
-    """§2.1's two extending outcomes as `(the container the family joined, the new factor list)`,
-    written so the named container is multiplied in exactly ONCE.
+) -> tuple[Varied, list[Any], frozenset[int]]:
+    """§2.1's extends-a-factor outcome as `(the container the family joined, the new entry list,
+    the overlay ids in it)`, written so the named container is multiplied in exactly ONCE.
 
-    Extending the ambient collapses the product into one factor, which is what makes the family's
-    members the whole ambient in their universes. Extending a factor of an ANCESTOR replaces the
-    composed container this context adopted by the factors it stands for, re-indexed here — the
-    one place that pays §2.1(b)'s factors x labels, and only for the context that asked.
+    A factor of an ANCESTOR replaces the composed container this context adopted by the entries it
+    stands for, re-indexed here — the one place that pays §2.1(b)'s factors x labels, and only for
+    the context that asked. Order and kind are preserved, so a family joining a factor registered
+    before an overlay keeps that factor's position and the overlay still reads the same product.
     """
     added = {label: member for label, member in members.items() if label != "nominal"}
-    if match[0] == "ambient":
-        extended = _joined(ctx._ambient_weight(), added, name, family, ctx)
-        return extended, [extended]
-    target = match[1]
     if any(factor is target for factor in ctx._factors):
         extended = _joined(target, added, name, family, ctx)
-        return extended, [extended if factor is target else factor for factor in ctx._factors]
-    moved = [(factor, accessors.reindex_to(factor, ctx)) for factor in _live_factors(ctx)]
+        entries = [extended if factor is target else factor for factor in ctx._factors]
+        return extended, entries, ctx._overlays
+    live, overlays = _live_factors(ctx)
+    moved = [(factor, accessors.reindex_to(factor, ctx)) for factor in live]
     # the dropped container carried the shift tags a row-space change leaks into it, and m56's
     # composition test reads them off the ambient tag map, so they ride on the extended factor
     extended = _joined(
         next(here for factor, here in moved if factor is target), added, name, family, ctx, ambient_tags
     )
-    return extended, [extended if factor is target else here for factor, here in moved]
+    entries = [extended if factor is target else here for factor, here in moved]
+    return extended, entries, frozenset(id(here) for factor, here in moved if id(factor) in overlays)
+
+
+def _overlay(ctx: EventContext, members: Mapping[str, Any], name: str, family: tuple[str, ...]) -> Varied:
+    """§2.1's relative-delta family as an ORDERED operation on the ambient.
+
+    Its NOMINAL is the ambient's own nominal node, which is what makes it an overlay rather than a
+    factor: the composition REPLACES the running value with its member at the family's labels
+    instead of multiplying, because that member already IS the whole ambient rescaled. Every other
+    label reads its nominal, so it contributes nothing there and the factors compose as before.
+    """
+    return rebuild(
+        {**members, "nominal": _two_level(members["nominal"], "nominal")},
+        tags={name: family},
+        context=ctx,
+    )
 
 
 def _joined(
@@ -628,22 +657,29 @@ def _vary_weight(
     # links; a descendant or divergent one is a construction-time error naming the direction.
     factors = {label: accessors.reindex_to(factor, ctx) for label, factor in factors.items()}
     family = inherited + _tags_of(name, one_at_a_time)
-    if match is None:
-        factor = rebuild(factors, tags={name: family}, context=ctx)
+    if match is not None and match[0] == "factor":
+        # joining an existing factor REMAKES the composition from the new entry list: the fold memo
+        # is built on the premise that a registration only ever appends
+        factor, updated, overlays = _extend(ctx, match[1], factors, name, family, ambient_tags)
+        operands = updated
+    else:
+        # a new factor and an OVERLAY are both appends, and both fold: the overlay replaces the
+        # folded composition at its own labels, which is what its members already are
+        if match is None:
+            factor = rebuild(factors, tags={name: family}, context=ctx)
+            overlays = ctx._overlays
+        else:
+            factor = _overlay(ctx, factors, name, family)
+            overlays = ctx._overlays | {id(factor)}
         updated = [*ctx._factors, factor]
         operands = [*base, factor]
-    else:
-        # an extension REMAKES the composition from the new factor list: the fold memo is built on
-        # the premise that a registration only ever appends
-        factor, updated = _extend(ctx, match, factors, name, family, ambient_tags)
-        operands = updated
     # the §2.4 union is RECORDED here, never recomputed at the read: recomputing it from the
     # context would hand the ambient every shift registered after it, and recomputing it from the
     # factors would drop the shift labels a factor computed on shifted objects is read through.
     recorded = _union(ctx._context_labels(), tuple(factors))
     # the record-time type check, run BEFORE anything is recorded so a refused registration leaves
     # no trace at all
-    _check_forms(ctx._session, operands, recorded)
+    _check_forms(ctx._session, operands, recorded, overlays)
     record_labels(factor)  # §2.5's vary-time half; the members are stamped when they compose
     # §2.5's shift-after-weight operand one: this factor's OWN member node ids, by value.
     ctx._session._weight_factors.append((name, _member_nodes(factor)))
@@ -651,12 +687,13 @@ def _vary_weight(
     child = _child_of(ctx)
     child._weight_tags[name] = family
     child._factors = updated
+    child._overlays = overlays
     # the adoption marker outlives a registration only while the container the row-space change
     # adopted is still the head of the list an extension may expand back into its own factors
     child._adopted = ctx._adopted and updated[0] is ctx._factors[0]
     child._recorded = recorded
     child._origin = child
-    if match is None and folds:
+    if (match is None or match[0] == "ambient") and folds:
         folded, settled = child._materialise(operands)
         child._memo = (ctx._session._mint_epoch, len(child._factors), folded, settled)
     else:
@@ -915,9 +952,13 @@ def _compose(
     labels: Sequence[str],
     project: Callable[[Any, str], Any] = _member,
     mul: Callable[[Any, Any, str], Any] = _times,
+    overlays: frozenset[int] = frozenset(),
 ) -> dict[str, Any]:
     """The ambient at every label: the product of each factor's member for that label, read two
     levels deep so a factor computed on shifted objects contributes in the label's own universe.
+
+    An OVERLAY among the entries makes the ambient an ordered sequence of operations rather than a
+    product, so it takes the walk below instead of this one.
 
     The association is chosen so the work shared between labels is built once — a balanced product
     tree over the nominal members, a complement pushdown handing each index the product of all the
@@ -930,6 +971,8 @@ def _compose(
     inference is not associative for raise/no-raise, so a check that MODELLED this walk instead of
     running it would admit clashes the composition then refuses at the read.
     """
+    if overlays:
+        return _compose_ordered(factors, labels, project, mul, overlays)
     centrals = [_two_level(factor, "nominal") for factor in factors]
     central_ids = [_member_nodes(central) for central in centrals]
     count = len(centrals)
@@ -947,6 +990,43 @@ def _compose(
             rest = _outside(tree, count, varying, mul)
         parts = [project(applied[i], label) for i in varying]
         composed[label] = _product(parts if rest is None else [rest, *parts], mul, label)
+    return composed
+
+
+def _compose_ordered(
+    factors: Sequence[Any],
+    labels: Sequence[str],
+    project: Callable[[Any, str], Any],
+    mul: Callable[[Any, Any, str], Any],
+    overlays: frozenset[int],
+) -> dict[str, Any]:
+    """§2.1's ORDERED operations, for a factor list carrying an overlay.
+
+    A product factor multiplies the running value; an OVERLAY replaces it at the labels its family
+    spans, because its members ARE the whole ambient rescaled — the running product up to that
+    entry is exactly the node they were built from, so multiplying would count it twice. Both
+    conditions are the same MEMBER-IDENTITY test the product walk uses: an entry whose two-level
+    member at the label is its nominal has no coordinate there. Order is registration order, so a
+    factor registered after an overlay multiplies the overlay's result.
+
+    ponytail: linear in the entries at every label, where the product walk shares a tree across
+    them. An ordered fold has no such sharing to give; if a program ever carries an overlay beside
+    many factors, the segments BETWEEN overlays are products and can take the tree again.
+    """
+    nominal_ids = [_member_nodes(_two_level(factor, "nominal")) for factor in factors]
+    composed: dict[str, Any] = {}
+    for label in labels:
+        running: Any = None
+        for index, factor in enumerate(factors):
+            applied = _two_level(factor, label)
+            if running is None:  # the first entry seeds the running value, overlay or not
+                running = project(applied, label)
+            elif id(factor) in overlays:
+                if _member_nodes(applied) != nominal_ids[index]:
+                    running = project(applied, label)
+            else:
+                running = mul(running, project(applied, label), label)
+        composed[label] = running
     return composed
 
 
@@ -1020,7 +1100,9 @@ def _outside(
 
 
 # ---- the same walk, over forms: the record-time refusal -------------------------------------
-def _check_forms(session: Any, factors: Sequence[Any], labels: Sequence[str]) -> None:
+def _check_forms(
+    session: Any, factors: Sequence[Any], labels: Sequence[str], overlays: frozenset[int]
+) -> None:
     """Type-check the composition by RUNNING it over forms, node-free (§5).
 
     A cross-factor clash is the one thing the composition itself can raise, and `check_members`
@@ -1033,6 +1115,7 @@ def _check_forms(session: Any, factors: Sequence[Any], labels: Sequence[str]) ->
         labels,
         lambda member, label: _member_form(session, member, label),
         lambda left, right, label: _mul_form(session, left, right, label),
+        overlays,
     )
 
 
