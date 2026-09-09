@@ -51,4 +51,8 @@ B there (distinct table nominals, so the two families stay two factors), this te
 restored as written and no change is needed here — the two disputes should be decided together.
 
 ## Resolution
-Pending the owner's decision.
+Owner affirmed correction B on the sibling dispute 2026-09-09 ("Affirm correction B."), which
+restores this test's premise as written: with `HF_SF["nominal"] = 1.1` the two families' centrals are
+two nodes, they stay two factors, and `_two_level(jer_factor, "jes_up")` falls to its nominal again.
+No change to this test. `tests/frozen/awkward/m56` is 18/18 on the prototype AND 18/18 on a copy of
+main carrying the same one-line edit.

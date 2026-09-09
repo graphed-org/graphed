@@ -64,4 +64,8 @@ keeps the two-factor joint under test and moves the fixture off the coincidence 
 as a deliberate re-use.
 
 ## Resolution
-Pending the owner's decision.
+Owner affirmed correction B 2026-09-09 ("Affirm correction B."); applied as `HF_SF["nominal"] = 1.1`
+in `m56_fanout_fixtures.py`, in its own commit on `dedupe/prototype`. The test's product oracle is
+unchanged. `tests/frozen/awkward/m56` is 18/18 on the prototype AND 18/18 on a copy of main carrying
+the same one-line edit, which is what says the edit moved the node-sharing premise and not the
+property under test.
