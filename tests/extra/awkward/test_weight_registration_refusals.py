@@ -179,8 +179,10 @@ def test_a_factor_whose_form_only_LOOKS_like_a_memoised_one_is_still_refused() -
 
     # seed the memo with the deep pair, so a `str` key would answer for the wide one
     registered = shifted
-    for name in ("A", "B"):
-        factor = _factor(registered, registered["deep"], 1.0)
+    # a distinct scale per registration: two centrals that are one node are ONE factor, and the
+    # memo the wide pair must miss is seeded by a product of two
+    for name, scale in (("A", 1.0), ("B", 1.5)):
+        factor = _factor(registered, registered["deep"], scale)
         registered = graphed.vary(registered, name, factor, is_weight=True, up=factor * 1.1)
     seeded = len(session._mul_forms)
     assert seeded, "no product form was memoised; the collision cannot be exercised"
@@ -305,8 +307,10 @@ def _mul(session: Session, *forms: Any) -> Any:
 
 
 def _register_all(ctx: Any, fields: tuple[str, ...]) -> Any:
-    for name, field in zip("ABCD", fields, strict=False):  # the names are just labels
-        central = ctx[field] * 1.0
+    # a distinct scale per registration, so a repeated field is still a SEPARATE factor: what the
+    # walk forms over several factors is the whole subject here
+    for index, (name, field) in enumerate(zip("ABCD", fields, strict=False)):  # names are labels
+        central = ctx[field] * (1.0 + index)
         ctx = graphed.vary(ctx, name, central, is_weight=True, up=central * 1.1)
     return ctx
 
@@ -373,8 +377,9 @@ def _clash_at_an_unwalked_label() -> tuple[Session, Any]:
     ctx = ga.gnano.events(from_awkward(session, "ev", EVENTS))
     ctx._collections = {**ctx._collections, "hand": rebuild({"nominal": ctx["w"], JOINT: ctx["w"] * 2.0})}
     flat = ctx["w"] * 1.0
-    for name, field in (("A", "r3"), ("B", "r5")):
-        factor: Any = rebuild({"nominal": flat, "q_up": ctx[field] * 1.0}, context=ctx)
+    # distinct nominals, so the two remain two factors and their `q_up` members meet
+    for name, field, scale in (("A", "r3", 1.0), ("B", "r5", 2.0)):
+        factor: Any = rebuild({"nominal": flat * scale, "q_up": ctx[field] * 1.0}, context=ctx)
         ctx = graphed.vary(ctx, name, factor, is_weight=True, up=factor * 1.1)
     return session, ctx
 

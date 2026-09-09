@@ -447,9 +447,9 @@ def test_an_unsettled_ambient_leaves_the_record_time_check_walking_the_original_
     walked: list[list[Any]] = []
     checked = context._check_forms
 
-    def spy(session: Any, factors: Any, labels: Any) -> None:
+    def spy(session: Any, factors: Any, labels: Any, overlays: Any) -> None:
         walked.append(list(factors))
-        checked(session, factors, labels)
+        checked(session, factors, labels, overlays)
 
     monkeypatch.setattr(context, "_check_forms", spy)
     graphed.vary(left, "b", shifted["pt"] * 1.0, is_weight=True, up=shifted["pt"] * 1.2)
