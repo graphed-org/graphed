@@ -26,7 +26,7 @@ from vary_ctx_fixtures import (
 import graphed
 from graphed import GraphedError, Session
 from graphed.awkward import gak
-from graphed.varied import member_of, rebuild
+from graphed.varied import member_of, point_registry, rebuild
 
 
 def _corpus_shaped_selection() -> tuple[graphed.Session, object, object, object]:
@@ -118,8 +118,12 @@ def test_a_factor_read_at_the_parent_is_accepted_and_re_indexed_to_the_derived_r
     sel3 = graphed.vary(sel, "sf", pu_weight(events, 1.05), is_weight=True, up=pu_weight(events, 1.1))
     weight = graphed.weight(sel3)
     mask_labels = set(graphed.labels(mask))
+    registry = point_registry(weight)
     for label in graphed.labels(weight):
-        chosen = label if label in mask_labels else "nominal"
+        # a label lives in the row space of the coordinate the mask carries — its own label for a
+        # one-at-a-time universe, the mask's label for that coordinate in a joint, nominal otherwise
+        carried = [f"{n}_{t}" for n, t in registry.get(label, ()) if f"{n}_{t}" in mask_labels]
+        chosen = carried[0] if carried else "nominal"
         rows = int(ak.sum(session.materialize(graphed.universe(mask, chosen))))
         assert len(as_list(session.materialize(graphed.universe(weight, label)))) == rows
 

@@ -10,13 +10,14 @@ variation history is object lineage (§2.6b).
 from __future__ import annotations
 
 import weakref
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from typing import Any, NamedTuple
 
 from . import accessors
 from ._points import Point, coordinate, default, render
 from ._tags import canonical_tag, numeric_value
 from .array import Array
+from .by_label import cone
 from .errors import GraphedError, GraphedTypeError, PointError
 from .provenance import capture
 from .varied import Varied, member_of, rebuild, registered_points, session_of
@@ -304,7 +305,11 @@ def _bind_points(session: Any, minted: Mapping[str, Point]) -> None:
 
 
 def _foreign(
-    name: str, member: Any, carrier_nuisances: frozenset[str], composed: frozenset[str]
+    name: str,
+    member: Any,
+    carrier_nuisances: frozenset[str],
+    composed: frozenset[str],
+    ambient: AmbientCarrier | None,
 ) -> dict[str, Point]:
     """§1: the foreign universes `member` genuinely depends on — `{foreign label: point}` over the
     member's own registered points, dropping the three cases that are NOT a dependency to fan out.
@@ -313,9 +318,12 @@ def _foreign(
     is INDEPENDENT (the union path, byte-identical to pre-m53). Beyond that, a foreign nuisance is
     dropped when it is:
 
-    * **stacked** (`composed`): carried by the ambient weight AS A WEIGHT, so the weight form's
-      label-aligned composition already resolves it into the union — fanning it out would
-      double-count it through `_two_level(old, ...)`; or
+    * **composition** (`composed`): the member's node at that label READS a registered factor's
+      member at the same label, so the weight form's label-aligned composition already resolves it
+      into the union — fanning it out would double-count it through `_two_level(old, ...)`. A
+      nuisance the ambient registers as a weight that the member reaches through the SHIFTED
+      objects instead (a nuisance that is both a shift and a weight, m56) is a dependency like any
+      other; or
     * a **spectator**: the carrier the family registers on is itself varied but NOT by this nuisance,
       so the member's foreign coordinate is incidental and collapses to nominal (the §2.1 stacking
       case). A nuisance the carrier DOES carry, or any nuisance when the carrier is unvaried, is the
@@ -328,12 +336,33 @@ def _foreign(
         if label == "nominal":
             continue
         nuisances = frozenset(nuisance for nuisance, _ in point)
-        if name in nuisances or nuisances & composed:
+        if name in nuisances:
             continue
+        if nuisances & composed:
+            assert ambient is not None  # the weight form always carries the ambient (context._carriers)
+            if _reads_ambient(ambient, member._members[label], label):
+                continue
         if carrier_nuisances and not nuisances <= carrier_nuisances:
             continue
         out[label] = point
     return out
+
+
+def _reads_ambient(ambient: AmbientCarrier, member: Any, label: str) -> bool:
+    """Whether `member` (a container's member at `label`) is computed FROM a registered factor's
+    member at that label — the §2 composition case, decided on nodes rather than on family kind.
+    The factor's member at `label` is the one the composition itself multiplies there (the
+    two-level, point-restricted read) over every factor of the context's lineage, so a joint label
+    and a mask-derived context resolve exactly as the ambient does."""
+    targets = ambient.resolve(label)
+    return bool(targets) and any(targets & cone(ambient.session, nid) for nid in _member_nodes(member))
+
+
+def _member_nodes(value: Any) -> tuple[int, ...]:
+    """A member's node ids, resolving §2.2's one legal level of nesting."""
+    if not isinstance(value, Varied):
+        return (value.node_id,)
+    return tuple(nid for inner in value._members.values() for nid in _member_nodes(inner))
 
 
 class AmbientCarrier(NamedTuple):
@@ -348,6 +377,9 @@ class AmbientCarrier(NamedTuple):
 
     session: Any
     labels: tuple[str, ...]
+    #: label -> the node ids of each lineage factor's member at that label, less its nominal's, read as the
+    #: composition reads it (m56: a member computed from one of them is composed, not fanned)
+    resolve: Callable[[str], frozenset[int]]
 
 
 def _carrier_points(carrier: Any) -> Mapping[str, Point]:
@@ -393,8 +425,9 @@ def _fanout(
     `additive` overrides. The un-selected default grid is bounded by the §4 guard.
     """
     carrier_nuisances = _carrier_nuisances(carriers)
+    ambient = next((c for c in carriers if isinstance(c, AmbientCarrier)), None)
     foreign_by_tag = {
-        tag: _foreign(name, member, carrier_nuisances, composed) for tag, member in canonical.items()
+        tag: _foreign(name, member, carrier_nuisances, composed, ambient) for tag, member in canonical.items()
     }
     joints: dict[str, Any] = {}
     joint_points: dict[str, Point] = {}
