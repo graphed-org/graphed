@@ -7,6 +7,7 @@ the user's source line with them; a backend (``graphed.awkward`` for ragged data
 
 from __future__ import annotations
 
+from ._kinds import Kind
 from .accessors import (
     broadcast_like,
     context_of,
@@ -76,6 +77,7 @@ __all__ = [
     "Form",
     "GraphedError",
     "GraphedTypeError",
+    "Kind",
     "OnFail",
     "ParamValue",
     "PointError",

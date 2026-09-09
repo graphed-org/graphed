@@ -21,7 +21,7 @@ import pytest
 
 import graphed
 import graphed.accessors
-from graphed import Session, compile_ir, context
+from graphed import Kind, Session, compile_ir, context
 from graphed.context import EventContext
 from graphed.errors import GraphedTypeError
 from graphed.numpy import NumpyBackend, from_record
@@ -282,7 +282,7 @@ def test_variations_answers_an_empty_registry_on_a_projected_context() -> None:
     _session, ctx, record = _context()
     weight = record["w"]
     registered = graphed.vary(ctx, "pu", weight, is_weight=True, up=weight * 1.1)
-    assert graphed.variations(registered) == {"pu": {"up": ("weight", None)}}
+    assert graphed.variations(registered) == {"pu": {"up": (Kind.WEIGHT, None)}}
     assert graphed.variations(graphed.universe(registered, "pu_up")) == {}
     assert graphed.variations(graphed.nominal(registered)) == {}
 

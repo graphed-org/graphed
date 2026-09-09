@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 
 import graphed
-from graphed import Session
+from graphed import Kind, Session
 from graphed._tags import canonical_tag, numeric_value
 from graphed.context import EventContext
 from graphed.errors import GraphedError
@@ -59,8 +59,8 @@ def test_sigma_keys_mint_ordered_numeric_labels() -> None:
     varied = graphed.vary(ctx, "jes", collections={"pt": {+2.5: pt * 1.1, -2.5: pt * 0.9}})
     assert graphed.labels(varied) == ("nominal", "jes_25em1", "jes_m25em1")
     assert graphed.variations(varied)["jes"] == {
-        "25em1": ("shift", Fraction(5, 2)),
-        "m25em1": ("shift", Fraction(-5, 2)),
+        "25em1": (Kind.SHIFT, Fraction(5, 2)),
+        "m25em1": (Kind.SHIFT, Fraction(-5, 2)),
     }
     # a float coordinate reaches the float-declared family
     corr = varied["pt"] * 0.5
