@@ -59,7 +59,7 @@ class EventContext:
     """
 
     __slots__ = (
-        "_collections", "_derived", "_factors", "_is_data", "_link", "_memo",
+        "_adopted", "_collections", "_derived", "_factors", "_is_data", "_link", "_memo",
         "_origin", "_parent", "_projected", "_provenance", "_record", "_recorded", "_serial",
         "_session", "_weight_tags",
     )  # fmt: skip
@@ -87,6 +87,9 @@ class EventContext:
         # families registered whatever the association, because each one rewrites every label the
         # ambient already carries.
         self._factors: list[Any] = [] if weight is None else [weight]
+        #: whether `_factors[0]` is the composed container a row-space change ADOPTED, and so
+        #: stands for the parent's own factors (`_live_factors` walks back through it)
+        self._adopted = False
         #: the weight families REGISTERED on this lineage, `{name: tags}` — the record `variations`
         #: and a same-name registration read, as opposed to the ambient container's tag map, which
         #: a row-space change widens with every shift the mask carries
@@ -333,6 +336,7 @@ class EventContext:
         whole quadratic it removes.
         """
         self._factors = [composed]
+        self._adopted = True
         self._memo = (self._session._mint_epoch, 1, composed, True)
         self._recorded = _union(("nominal",), labels_of(composed))
         self._origin = self
@@ -409,6 +413,31 @@ def _lineage_factors(ctx: EventContext) -> tuple[Any, ...]:
     return tuple(seen.values())
 
 
+def _live_factors(ctx: EventContext) -> list[Any]:
+    """The factors whose product IS `ctx`'s ambient weight, in registration order.
+
+    A row-space change adopts the ONE composed container, so the factors it stands for are the
+    adopting parent's own live list; walking back through the adoption is what lets a weight
+    registered on a mask-derived child name a factor of its parent (§2.1). Not `_lineage_factors`,
+    which answers with every factor ever registered on the ancestry: one that an extension has
+    since replaced is no longer multiplied in, and naming it would double it.
+    """
+    chain: list[EventContext] = []
+    node: EventContext | None = ctx
+    while node is not None:
+        chain.append(node)
+        if not node._adopted:
+            break
+        node = node._parent
+    # by id, root-first: a `vary` child copies its parent's list, so the same factor is met again
+    # at every context below the one that registered it
+    seen: dict[int, Any] = {}
+    for context in reversed(chain):
+        for factor in context._factors[1:] if context._adopted else context._factors:
+            seen.setdefault(id(factor), factor)
+    return list(seen.values())
+
+
 def _child_of(ctx: EventContext) -> EventContext:
     """A `vary` link: the row space is unchanged, only registrations differ (§6.1d kind (2)).
 
@@ -424,11 +453,101 @@ def _child_of(ctx: EventContext) -> EventContext:
         collections=ctx._collections,
     )
     child._factors = list(ctx._factors)
+    child._adopted = ctx._adopted
     child._recorded = ctx._recorded
     child._memo = ctx._memo
     child._origin = ctx._origin
     child._record = child._stamp(child._record)
     return child
+
+
+def _extension(ctx: EventContext, central: Any) -> tuple[str, Any] | None:
+    """§2.1: what a weight registration's central NAMES — an already-registered factor
+    (`("factor", it)`), the whole ambient (`("ambient", None)`), or nothing new.
+
+    By NODE, never by value: a re-computed expression with equal values is a new factor. The live
+    factors are searched before the ambient, and with one factor the two answers coincide.
+    """
+    node = _two_level(central, "nominal")
+    if isinstance(node, Varied):  # nested past §2.2's one level; `_check_forms` names it properly
+        return None
+    for factor in _live_factors(ctx):
+        if _same_node(_two_level(factor, "nominal"), node):
+            return ("factor", factor)
+    # the ambient's nominal WITHOUT composing: passing the ambient means having read it, and a read
+    # leaves the composed container in the memo covering every factor. A stale epoch is no obstacle
+    # — a mint can move a member's resolution, never the nominal, which is off the point registry.
+    memo = ctx._memo
+    if memo is not None and memo[1] == len(ctx._factors) and _same_node(_two_level(memo[2], "nominal"), node):
+        return ("ambient", None)
+    return None
+
+
+def _same_node(left: Any, right: Any) -> bool:
+    """Whether two values are the same IR node, read anywhere along ONE lineage.
+
+    The ids answer for almost every pair, so they are compared first; the handles then have to be
+    at most `vary`-link separated, since those preserve node identity while a mask or a projection
+    does not — one id under two row spaces is two different values.
+    """
+    if left.node_id != right.node_id:
+        return False
+    here, there = accessors.context_of(left), accessors.context_of(right)
+    if here is None or there is None or here is there:
+        return True
+    deep, shallow = (here, there) if there._is_ancestor_of(here) else (there, here)
+    if not shallow._is_ancestor_of(deep):
+        return False
+    return not any(kind in ("mask", "project") for kind, _payload in deep._links_below(shallow))
+
+
+def _extend(
+    ctx: EventContext,
+    match: tuple[str, Any],
+    members: Mapping[str, Any],
+    name: str,
+    family: tuple[str, ...],
+    ambient_tags: Mapping[str, tuple[str, ...]],
+) -> tuple[Varied, list[Any]]:
+    """§2.1's two extending outcomes as `(the container the family joined, the new factor list)`,
+    written so the named container is multiplied in exactly ONCE.
+
+    Extending the ambient collapses the product into one factor, which is what makes the family's
+    members the whole ambient in their universes. Extending a factor of an ANCESTOR replaces the
+    composed container this context adopted by the factors it stands for, re-indexed here — the
+    one place that pays §2.1(b)'s factors x labels, and only for the context that asked.
+    """
+    added = {label: member for label, member in members.items() if label != "nominal"}
+    if match[0] == "ambient":
+        extended = _joined(ctx._ambient_weight(), added, name, family, ctx)
+        return extended, [extended]
+    target = match[1]
+    if any(factor is target for factor in ctx._factors):
+        extended = _joined(target, added, name, family, ctx)
+        return extended, [extended if factor is target else factor for factor in ctx._factors]
+    moved = [(factor, accessors.reindex_to(factor, ctx)) for factor in _live_factors(ctx)]
+    # the dropped container carried the shift tags a row-space change leaks into it, and m56's
+    # composition test reads them off the ambient tag map, so they ride on the extended factor
+    extended = _joined(
+        next(here for factor, here in moved if factor is target), added, name, family, ctx, ambient_tags
+    )
+    return extended, [extended if factor is target else here for factor, here in moved]
+
+
+def _joined(
+    container: Any,
+    added: Mapping[str, Any],
+    name: str,
+    family: tuple[str, ...],
+    ctx: EventContext,
+    extra: Mapping[str, tuple[str, ...]] | None = None,
+) -> Varied:
+    """`container` with the family's universes among its own members: its NOMINAL is untouched, so
+    the composition multiplies the shared central in once and reads the family's member at its own
+    label (§2.1). A projection's adopted member is a bare array and becomes the nominal."""
+    existing = container._members if isinstance(container, Varied) else {"nominal": container}
+    tags = {**(extra or {}), **(getattr(container, "_tags", None) or {}), name: family}
+    return rebuild({**existing, **added}, tags=tags, context=ctx)
 
 
 def _vary_weight(
@@ -460,6 +579,10 @@ def _vary_weight(
     # registration joins them.
     base = ctx._ambient_operands()
     folds = ctx._foldable() is not None
+    # §2.1: the central NAMES the factor it varies. Decided here, before anything is minted, and
+    # read only for its answer — nothing is composed or re-indexed to reach it, so a program that
+    # names nothing records exactly the nodes it records without this.
+    match = _extension(ctx, central)
     # The ambient's tag-map families are only CANDIDATES for composition (m56): a member's coordinate
     # on one of them is dropped iff the member's node at that label reads a lineage factor's varied
     # member there (`_reads_ambient` in `vary._foreign`), which the composition below would multiply
@@ -504,25 +627,37 @@ def _vary_weight(
     # §2.1(b)'s ROW-SPACE rule: an ancestor-handled factor is re-indexed across the intervening
     # links; a descendant or divergent one is a construction-time error naming the direction.
     factors = {label: accessors.reindex_to(factor, ctx) for label, factor in factors.items()}
-    factor = rebuild(factors, tags={name: inherited + _tags_of(name, one_at_a_time)}, context=ctx)
+    family = inherited + _tags_of(name, one_at_a_time)
+    if match is None:
+        factor = rebuild(factors, tags={name: family}, context=ctx)
+        updated = [*ctx._factors, factor]
+        operands = [*base, factor]
+    else:
+        # an extension REMAKES the composition from the new factor list: the fold memo is built on
+        # the premise that a registration only ever appends
+        factor, updated = _extend(ctx, match, factors, name, family, ambient_tags)
+        operands = updated
     # the §2.4 union is RECORDED here, never recomputed at the read: recomputing it from the
     # context would hand the ambient every shift registered after it, and recomputing it from the
     # factors would drop the shift labels a factor computed on shifted objects is read through.
     recorded = _union(ctx._context_labels(), tuple(factors))
     # the record-time type check, run BEFORE anything is recorded so a refused registration leaves
     # no trace at all
-    _check_forms(ctx._session, [*base, factor], recorded)
+    _check_forms(ctx._session, operands, recorded)
     record_labels(factor)  # §2.5's vary-time half; the members are stamped when they compose
     # §2.5's shift-after-weight operand one: this factor's OWN member node ids, by value.
     ctx._session._weight_factors.append((name, _member_nodes(factor)))
 
     child = _child_of(ctx)
-    child._weight_tags[name] = inherited + _tags_of(name, one_at_a_time)
-    child._factors.append(factor)
+    child._weight_tags[name] = family
+    child._factors = updated
+    # the adoption marker outlives a registration only while the container the row-space change
+    # adopted is still the head of the list an extension may expand back into its own factors
+    child._adopted = ctx._adopted and updated[0] is ctx._factors[0]
     child._recorded = recorded
     child._origin = child
-    if folds:
-        folded, settled = child._materialise([*base, factor])
+    if match is None and folds:
+        folded, settled = child._materialise(operands)
         child._memo = (ctx._session._mint_epoch, len(child._factors), folded, settled)
     else:
         child._memo = None
