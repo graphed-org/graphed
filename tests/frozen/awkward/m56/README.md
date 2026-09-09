@@ -46,6 +46,7 @@ Fixtures — `m56_fanout_fixtures.py`:
 | item 1 precision: the member is judged at the label, not over all its universes | `test_label_precision.py::test_a_factor_read_in_the_nominal_universe_alone_fans_out_at_every_label` |
 | item 1 precision: a read of the factor's OTHER universe is not composition here | `test_label_precision.py::test_reading_the_factors_other_universe_is_not_composition_at_this_label` |
 | item 1 precision: the factor is resolved two-level and point-restricted at the label | `test_label_precision.py::test_a_member_that_is_a_factors_two_level_member_is_composed_at_that_label_alone` |
+| item 1 precision: the up member's OTHER universe is not a target at this label | `test_nested_projection.py::test_the_up_members_other_universe_is_not_a_target_at_this_label` |
 
 ## Non-vacuity — what each test does on a pre-m56 tree, and why
 
@@ -69,6 +70,9 @@ whatever the member's dataflow.
   joints. They separate the label set from the rule that produces it: a rule reading every universe
   of the member mints only the `__jes_down` pair in the first two, and a one-level `member_of`
   resolution of the factor adds four `probe__jes` joints to the third.
+* `test_nested_projection.py` — FAIL: minted the empty set instead of its four joints. A factor
+  resolved with a ONE-level read yields every universe of the up member at `jes_up`, so the probe's
+  read of that member's `jes_down` universe would compose and drop the `__jes_up` pair.
 * `test_a_pure_weight_coordinate_is_composed_while_the_carried_shift_still_fans_out` PASSES pre-m56
   — the declared positive control. A pure-weight family's coordinate is composition then and now,
   and the plain shift the member also carries fans out then and now (the m53 answer m56 preserves).
