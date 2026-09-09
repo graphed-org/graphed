@@ -71,8 +71,9 @@ class EventContext:
 
     __slots__ = (
         "_adopted", "_collections", "_derived", "_factors", "_gens", "_head", "_is_data",
-        "_link", "_memo", "_origin", "_overlays", "_parent", "_projected", "_provenance",
-        "_reads", "_record", "_recorded", "_serial", "_session", "_slots", "_weight_tags",
+        "_link", "_memo", "_origin", "_overlays", "_parent", "_prior", "_projected",
+        "_provenance", "_reads", "_record", "_recorded", "_serial", "_session", "_slots",
+        "_weight_tags",
     )  # fmt: skip
 
     def __init__(
@@ -128,6 +129,13 @@ class EventContext:
         #: the composition it names, and a re-index (which changes every node but no universe)
         #: must not look like one — which is why this counts unions and not nodes.
         self._gens: dict[int, int] = {}
+        #: §2.3's identity across an EXPANSION: `slot -> the nominal node that entry had in each
+        #: row space it came through`, oldest first. Expanding the adopted head re-indexes the
+        #: ancestor's entries, which moves every node id, so the factor arm would stop matching a
+        #: central built where that entry came from and the second family naming it would append
+        #: instead of joining — the squaring m57 exists to remove. One entry per row space crossed,
+        #: because a chain of masks can be named from any of them.
+        self._prior: dict[int, tuple[Any, ...]] = {}
         #: the weight families REGISTERED on this lineage, `{name: tags}` — the record `variations`
         #: and a same-name registration read, as opposed to the ambient container's tag map, which
         #: a row-space change widens with every shift the mask carries
@@ -513,6 +521,35 @@ def _live_factors(ctx: EventContext) -> tuple[list[Any], list[int], frozenset[in
     return live, slots, overlays & frozenset(slots)
 
 
+def _prior_nominals(ctx: EventContext) -> dict[int, tuple[Any, ...]]:
+    """The identity half of `_live_factors`'s walk: each live slot's nominal node in every row
+    space its entry came through (§2.3), oldest first, empty for an entry never re-indexed.
+
+    Deepest first, so the context that expanded a slot last answers with the whole chain it built.
+    """
+    priors: dict[int, tuple[Any, ...]] = {}
+    node: EventContext | None = ctx
+    while node is not None:
+        for slot, kept in node._prior.items():
+            priors.setdefault(slot, kept)
+        if not node._adopted:
+            break
+        node = node._parent
+    return priors
+
+
+def _expansion_identity(
+    ctx: EventContext, live: Sequence[Any], slots: Sequence[int]
+) -> dict[int, tuple[Any, ...]]:
+    """What each slot's entry is about to STOP being: its nominal node before the re-index, added
+    to whatever the earlier row spaces already kept for it (§2.3)."""
+    priors = _prior_nominals(ctx)
+    return {
+        slot: (*priors.get(slot, ()), _two_level(entry, "nominal"))
+        for entry, slot in zip(live, slots, strict=True)
+    }
+
+
 def _live_slots(ctx: EventContext) -> tuple[int, ...]:
     """The slots of the live PRODUCT factors, in registration order — what a read records and what
     an overlay's prefix is measured against. Overlays are left out: one inserted among the factors
@@ -544,6 +581,7 @@ def _child_of(ctx: EventContext) -> EventContext:
     # values, and a handle read from the parent after the child was built still decides here
     child._reads = ctx._reads
     child._gens = dict(ctx._gens)
+    child._prior = dict(ctx._prior)
     child._recorded = ctx._recorded
     child._memo = ctx._memo
     child._origin = ctx._origin
@@ -620,8 +658,16 @@ def _extension(ctx: EventContext, central: Any) -> tuple[str, Any] | None:
         return ("stale", ", ".join(sorted(widened)))
     # an OVERLAY's nominal is the ambient's own nominal, so it would answer this test in the
     # factor's place; only a product factor names a factor
+    priors = _prior_nominals(ctx)
     for factor, slot in zip(live, slots, strict=True):
-        if slot not in overlays and _same_node(_two_level(factor, "nominal"), node):
+        if slot in overlays:
+            continue
+        # the entry as it stands here, then what it was in each row space it came through: an
+        # expansion re-indexed it, and the central names the node of the space it was built in
+        if any(
+            _same_node(candidate, node)
+            for candidate in (_two_level(factor, "nominal"), *priors.get(slot, ()))
+        ):
             return ("factor", slot)
     return None
 
@@ -675,7 +721,7 @@ def _extend(
     members: Mapping[str, Any],
     name: str,
     family: tuple[str, ...],
-) -> tuple[Varied, list[Any], list[int], frozenset[int], bool]:
+) -> tuple[Varied, list[Any], list[int], frozenset[int], bool, dict[int, tuple[Any, ...]]]:
     """§2.1's joins-a-factor outcome as `(the container the family joined, the new entry list, its
     slots, the overlay slots in it, whether the union WIDENED the joined nominal member)`, written
     so the named container is multiplied in exactly ONCE.
@@ -692,15 +738,17 @@ def _extend(
         joined, widened = _joined(ctx._factors[at], members, name, family, ctx, covering)
         entries = list(ctx._factors)
         entries[at] = joined
-        return joined, entries, list(ctx._slots), ctx._overlays, widened
+        # a join keeps the nominal node, so the entry stands for what it always did
+        return joined, entries, list(ctx._slots), ctx._overlays, widened, ctx._prior
     live, slots, overlays = _live_factors(ctx)
+    kept = _expansion_identity(ctx, live, slots)
     # every re-indexed entry re-acquires the tags the mask leaked in (`reindex_to` expands through
     # the same link the adoption did), so the adopted container's map needs no separate merge
     entries = [accessors.reindex_to(factor, ctx) for factor in live]
     at = slots.index(slot)
     joined, widened = _joined(entries[at], members, name, family, ctx, covering)
     entries[at] = joined
-    return joined, entries, slots, overlays, widened
+    return joined, entries, slots, overlays, widened, kept
 
 
 def _covering_overlay(ctx: EventContext, slot: int) -> str | None:
@@ -893,13 +941,13 @@ def _vary_weight(
     if match is not None and match[0] == "factor":
         # joining an existing factor REMAKES the composition from the new entry list: the fold memo
         # is built on the premise that a registration only ever appends
-        factor, updated, slots, overlays, widened = _extend(ctx, match[1], factors, name, family)
+        factor, updated, slots, overlays, widened, kept = _extend(ctx, match[1], factors, name, family)
         joined_slot: int | None = match[1] if widened else None
         operands = updated
     else:
         joined_slot = None
         slot = next(_SLOT)
-        entries, entry_slots = ctx._factors, ctx._slots
+        entries, entry_slots, kept = ctx._factors, ctx._slots, ctx._prior
         if match is None:
             factor = rebuild(factors, tags={name: family}, context=ctx)
             at, overlays = len(ctx._factors), ctx._overlays
@@ -912,6 +960,7 @@ def _vary_weight(
                 # operations it stands for, re-indexed here exactly as a join of an ancestor's
                 # factor expands it, and the overlay anchors among them
                 live, entry_slots, overlays = _live_factors(ctx)
+                kept = _expansion_identity(ctx, live, entry_slots)
                 entries = [accessors.reindex_to(entry, ctx) for entry in live]
                 at = entry_slots.index(match[1]) + 1
                 while at < len(entry_slots) and entry_slots[at] in overlays:
@@ -942,6 +991,7 @@ def _vary_weight(
     child._factors = updated
     child._slots = slots
     child._overlays = overlays
+    child._prior = kept
     if joined_slot is not None:
         # §2.1's staleness stamp: every handle read over this factor before now composed universes
         # this join has just added to, and naming one of them is refused from here on
