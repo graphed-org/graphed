@@ -460,11 +460,12 @@ def _vary_weight(
     # registration joins them.
     base = ctx._ambient_operands()
     folds = ctx._foldable() is not None
-    # a nuisance the ambient weight registers AS A WEIGHT (`old._tags`) is stacked: the composition
-    # below resolves it label-aligned into the union via `_two_level(old, ...)`, so fanning it out
-    # would double-count it. It is excluded from the discriminator (§2 stacked-weight case). A
-    # nuisance the ambient merely CARRIES as labels — a shift leaked in, its `_tags` empty (§8-g) —
-    # is a genuine dependency the member reads, and still fans out.
+    # The ambient's tag-map families are only CANDIDATES for composition (m56): a member's coordinate
+    # on one of them is dropped iff the member's node at that label reads a lineage factor's varied
+    # member there (`_reads_ambient` in `vary._foreign`), which the composition below would multiply
+    # in again via `_two_level`; reached through shifted objects instead, it fans out. The map is
+    # over-inclusive — a mask-derived child's adopted container carries leaked shifts — and that is
+    # harmless because the node test decides.
     composed = frozenset(ambient_tags)
     one_at_a_time, joints = gather_members(
         name,
