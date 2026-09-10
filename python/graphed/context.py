@@ -744,9 +744,15 @@ class Family:
     entered: str
     #: ``(label, point)`` for each universe this family PLACED at a point of other coordinates
     placements: tuple[tuple[str, tuple[tuple[str, str], ...]], ...]
-    #: the families whose coordinates appear in none of this one's minted labels — the ones it
-    #: COMPOSES with rather than fanning out over, which is why their joint is not a universe
+    #: the WEIGHT families whose coordinates appear in none of this one's minted labels — the ones
+    #: it COMPOSES with rather than fanning out over, which is why their joint is not a universe
     composes_with: tuple[str, ...]
+    #: the SHIFT families a minted label of this one carries a coordinate of: the shifted objects
+    #: this family read, so its members fan out over them
+    fans_out_over: tuple[str, ...]
+    #: the SHIFT families no minted label of this one names — it does not read those objects. A
+    #: shift is never COMPOSED with: reading it or not reading it are the only two cases.
+    independent_of: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -797,18 +803,28 @@ class Explanation:
             placed = "".join(
                 f", placing {label} at {_render_point(point)}" for label, point in family.placements
             )
-            composes = f"; composes with {', '.join(family.composes_with)}" if family.composes_with else ""
+            relations = "".join(
+                f"; {phrase} {', '.join(names)}"
+                for phrase, names in (
+                    ("fans out over", family.fans_out_over),
+                    ("independent of", family.independent_of),
+                    ("composes with", family.composes_with),
+                )
+                if names
+            )
             lines.append(
                 f"  {family.name} ({family.kind.name}) {list(family.tags)} at {where}: "
-                f"{family.entered}{placed}{composes}"
+                f"{family.entered}{placed}{relations}"
             )
         lines.append("ambient operations (oldest first)")
         # POSITION, not the slot: slots come from a process-global counter, so a second Session's
         # would differ while the composition is the same one. The record keeps the slot.
         for position, operation in enumerate(self.operations):
             carries = ", ".join(f"{name}{list(tags)}" for name, tags in operation.families)
-            links = ", ".join(operation.links) or "-"
-            lines.append(f"  #{position} {operation.kind}: {carries} via {links}")
+            # An entry the registering context still holds has crossed no row space, which is a
+            # fact about it, not a missing field — so it is said rather than left as a placeholder.
+            through = f"via {', '.join(operation.links)}" if operation.links else "registered here"
+            lines.append(f"  #{position} {operation.kind}: {carries} {through}")
         lines.append("universes here")
         for variation in self.variations:
             lines.append(f"  {variation.label}: {variation.origin}")
@@ -884,7 +900,13 @@ def explain(ctx: EventContext) -> Explanation:
     for variation in variations:
         for name in variation.families:
             minted.setdefault(name, set()).add(variation.label)
-    names = tuple(dict.fromkeys(registration.name for registration in registrations))
+    kinds: dict[str, Kind] = {}
+    for registration in registrations:
+        kinds.setdefault(registration.name, registration.kind)
+    relations = {
+        registration.name: _relations(registration, kinds, minted, variations)
+        for registration in registrations
+    }
     families = tuple(
         Family(
             registration.name,
@@ -897,7 +919,7 @@ def explain(ctx: EventContext) -> Explanation:
                 for variation in variations
                 if variation.origin.startswith(f"{registration.name} placed")
             ),
-            _composes_with(registration.name, names, minted, variations),
+            *relations[registration.name],
         )
         for registration in registrations
     )
@@ -943,21 +965,37 @@ def _origin_of(
     return Variation(label, f"a point over {', '.join(families) or 'no registered family'}", families, point)
 
 
-def _composes_with(
-    name: str,
-    names: Sequence[str],
+def _relations(
+    registration: _Registration,
+    kinds: Mapping[str, Kind],
     minted: Mapping[str, set[str]],
     variations: Sequence[Variation],
-) -> tuple[str, ...]:
-    """§2.7: the families whose coordinates appear in NONE of `name`'s minted labels — the ones
-    this family composes with, which is why no joint universe of the two exists."""
+) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+    """§2.7: what one WEIGHT family does with every other family, read off the labels it minted.
+
+    Two weight families whose coordinates never share a label COMPOSE: their joint is a product,
+    not a universe, which is why `hf_up__mu_up` is not in the list. A shift is never composed
+    with — a weight family either read the shifted objects, so a minted label carries that
+    shift's coordinate and its members FAN OUT over it, or it did not and is INDEPENDENT of it.
+    A shift family's own line reports none of the three: the relation is a weight family's.
+    """
+    if registration.kind != Kind.WEIGHT:
+        return (), (), ()
     reached = {
         other
         for variation in variations
-        if variation.label in minted.get(name, ())
+        if variation.label in minted.get(registration.name, ())
         for other in variation.families
     }
-    return tuple(other for other in names if other != name and other not in reached)
+    return (
+        tuple(
+            name
+            for name, kind in kinds.items()
+            if kind == Kind.WEIGHT and name != registration.name and name not in reached
+        ),
+        tuple(name for name, kind in kinds.items() if kind == Kind.SHIFT and name in reached),
+        tuple(name for name, kind in kinds.items() if kind == Kind.SHIFT and name not in reached),
+    )
 
 
 def _child_of(ctx: EventContext) -> EventContext:
