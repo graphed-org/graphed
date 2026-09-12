@@ -1,0 +1,276 @@
+"""§9.1's introspection surface: the module verbs that read universes, handles and lineage.
+
+Extraction is functional, never a method or a subscript (§2.2/§2.6a): branch names are
+analysis-controlled and open-ended, so any reserved attribute on a `Varied` or an event context
+would be a latent collision with real tree content. `graphed.labels`/`universe`/`nominal` take the
+same four input shapes — a `Varied`, an event context, a `{label: hist}` result mapping, and a
+duck-typed histogram — so introspection reads uniformly wherever a variation can end up.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any, TypeGuard
+
+from ..array import Array
+from ..errors import GraphedError
+from .kinds import Kind
+from .points import Point, render
+from .tags import numeric_value
+from .varied import Varied, member_of, point_registry, rebuild
+
+if TYPE_CHECKING:
+    from fractions import Fraction
+
+    from ..context import EventContext
+
+#: §2.2's input shapes. Deliberately NOT `Array`: a plain array carries no universes, and the
+#: §2.3d gate reads parameter annotations, so naming `Array` here would ask for a disposition class
+#: that does not exist for an accessor.
+Introspectable = Any
+
+
+def _is_context(value: object) -> TypeGuard[EventContext]:
+    from ..context import EventContext  # noqa: PLC0415  (import cycle: context reads these verbs)
+
+    return isinstance(value, EventContext)
+
+
+def _variation_axis_index(hist: Any) -> int | None:
+    """§6.2(i-bis): the position of the axis-mode variation axis, `None` when there is none.
+
+    Recognised by the name carried on the axis' `__dict__` — `bh.axis.StrCategory(..., name=)` is a
+    `TypeError`, so the frontend (and the fixtures) stamp the name that way. `hist.axes.name` is NOT
+    the oracle: bh maps that attribute over every axis and raises when one lacks it.
+    """
+    return next((i for i, a in enumerate(hist.axes) if a.__dict__.get("name") == "variation"), None)
+
+
+def labels(x: Introspectable) -> tuple[str, ...]:
+    """The variation labels `x` carries, `"nominal"` first then insertion order (§2.2)."""
+    if isinstance(x, Varied):
+        return tuple(x._members)
+    if _is_context(x):
+        return x._context_labels()
+    if isinstance(x, Array):
+        raise GraphedError(
+            "a plain Array carries no variations; graphed.labels takes a Varied, an event context, a result mapping or a histogram"
+        )
+    if isinstance(x, Mapping):
+        seat = ("nominal",) if "nominal" in x else ()
+        return (*seat, *(label for label in x if label != "nominal"))
+    if hasattr(x, "axes"):  # a bare histogram: an axis-mode variation axis, else "nominal"-only
+        index = _variation_axis_index(x)
+        if index is not None:  # §6.2: reorder "nominal"-first over the lexicographic stored order
+            stored = tuple(x.axes[index])
+            seat = ("nominal",) if "nominal" in stored else ()
+            return (*seat, *(bin_ for bin_ in stored if bin_ != "nominal"))
+        return ("nominal",)
+    raise GraphedError(f"graphed.labels does not know how to read {type(x).__name__}")
+
+
+def universe(x: Introspectable, label: str) -> Any:
+    """`x`'s universe for `label` — a KeyError listing the valid labels when it has none (§2.5)."""
+    if isinstance(x, Varied):
+        return x._universe(label)
+    if _is_context(x):
+        return x._project(label)
+    if isinstance(x, Array):
+        raise GraphedError("a plain Array carries no variations; read one from a Varied instead")
+    if isinstance(x, Mapping):
+        if label not in x:
+            raise KeyError(f"unknown variation label {label!r}; this result carries {list(x)}")
+        return x[label]
+    if hasattr(x, "axes"):
+        index = _variation_axis_index(x)
+        if index is not None:
+            # resolve the bin to an integer position ourselves (§A.4: no boost_histogram import in
+            # the frontend). StrCategory.index raises KeyError for an unknown label, exactly as
+            # bh.loc did, so the unknown-label path still needs no guard of our own.
+            return x[{index: x.axes[index].index(label)}]
+        if label != "nominal":
+            raise KeyError(f"unknown variation label {label!r}; this histogram carries ['nominal']")
+        return x
+    raise GraphedError(f"graphed.universe does not know how to read {type(x).__name__}")
+
+
+def nominal(x: Introspectable) -> Any:
+    """The central universe — `graphed.universe(x, "nominal")` for every shape (§2.2)."""
+    return universe(x, "nominal")
+
+
+def points(x: Introspectable) -> dict[str, dict[str, str]]:
+    """`{label: {nuisance: coordinate}}` — the authoritative coordinate view (§4.10).
+
+    Label-sorted, each coordinate map nuisance-sorted, `"nominal"` mapping to `{}`. Coordinates
+    render BY VALUE, so the view predicts resolution and deliberately does not round-trip the tag
+    spelling the label keeps.
+
+    Defined on the RECORD-TIME shapes alone — a `Varied` and an event context. Points are not
+    carried on disk (§5.3) and a label cannot be parsed back into a point (§4.3), so answering
+    `{label: {}}` for an executed result would assert that every executed universe is the origin.
+    """
+    if isinstance(x, Varied):
+        registry: Mapping[str, Point] = point_registry(x)
+        carried = labels(x)
+    elif _is_context(x):
+        registry, carried = x._session._points, x._context_labels()
+    else:
+        raise GraphedError(
+            f"graphed.points reads a record-time shape — a Varied or an event context — not "
+            f"{type(x).__name__}: points are not carried on an executed result, and a label cannot "
+            "be parsed back into a point"
+        )
+    return {label: render(registry.get(label, Point({}))) for label in sorted(carried)}
+
+
+def context_of(value: Array | Varied) -> Any:
+    """The §2.3e context handle this value was read through, `None` when it is context-free.
+
+    On a `Varied` it answers with the CONTAINER's handle — the most-derived member handle §2.1
+    binds — which may belong to a non-nominal member.
+    """
+    return getattr(value, "_context", None)
+
+
+def selection(ctx: Any) -> Any:
+    """§9.1's bridge: the `Varied`/Array mask that derived a context from its parent (§6.4a).
+
+    `None` for a root context. On a universe/nominal-derived context it returns that label's member
+    of the argument's own selection — an unvaried `Array` in the grandparent's row space; on a
+    `vary`-derived one it skips the identity links and answers with the mask below. The verb that
+    makes the m51 skim sink reachable from the §2.6 context idiom.
+    """
+    if not _is_context(ctx):
+        raise GraphedError("graphed.selection reads an event context's derivation mask")
+    return ctx._selection_bridge()
+
+
+def weight(ctx: Any) -> Varied | Array | None:
+    """A context's ambient event weight as a `Varied`, `None` when nothing is registered (§9.1);
+    a projected context's (`graphed.universe(ctx, label)`) is that one universe's member.
+
+    Read-only: it returns the registry's current container, it never mutates.
+    """
+    if not _is_context(ctx):
+        raise GraphedError("graphed.weight reads an event context's ambient weight registry")
+    return ctx._ambient_weight()
+
+
+def variations(ctx: Any) -> dict[str, dict[str, tuple[Kind, Fraction | None]]]:
+    """A context's registered variations as `{name: {tag: (kind, value | None)}}` (§9.1).
+
+    The kind is a `graphed.Kind` PER (name, tag): `Kind.WEIGHT` for a §2.1 overload-(b)
+    registration, `Kind.SHIFT` for an overload-(c) one, and their union when the tag was registered
+    both ways — §4.8's mechanism for "these two registrations are the same fit parameter". The
+    weight side is read from the lineage's registration record, never from the ambient container's
+    tag map, which a row-space change widens with the shifts the mask carries. The value is the
+    tag's parsed numeric magnitude — the ordering handle §6.2's lexicographic axis cannot give —
+    and `None` for a non-numeric tag.
+    """
+    if not _is_context(ctx):
+        raise GraphedError("graphed.variations reads an event context's registered variations")
+    kinds: dict[str, dict[str, Kind]] = {}
+    for name, tags in ctx._weight_tags.items():
+        for tag in tags:
+            kinds.setdefault(name, {})[tag] = kinds.get(name, {}).get(tag, Kind(0)) | Kind.WEIGHT
+    for collection in ctx._collections.values():
+        for name, tags in getattr(collection, "_tags", {}).items():
+            for tag in tags:
+                kinds.setdefault(name, {})[tag] = kinds.get(name, {}).get(tag, Kind(0)) | Kind.SHIFT
+    return {
+        name: {tag: (kind, numeric_value(tag)) for tag, kind in tags.items()} for name, tags in kinds.items()
+    }
+
+
+def unify_contexts(*handles: Any) -> Any:
+    """§6.1d(A): the most-derived handle when the non-`None` arguments lie on ONE ancestry chain.
+
+    `None` when every argument is context-free; context-free arguments beside contexted ones are
+    ignored (the adopt rule); divergent branches raise the §2.3e error naming both contexts.
+    """
+    present = [handle for handle in handles if handle is not None]
+    if not present:
+        return None
+    best = present[0]
+    for handle in present[1:]:
+        if handle is best:
+            continue
+        if best._is_ancestor_of(handle):
+            best = handle
+        elif not handle._is_ancestor_of(best):
+            raise GraphedError(
+                f"variation contexts {best!r} and {handle!r} are on divergent branches; one "
+                "operation cannot combine values selected differently — derive both from one context"
+            )
+    return best
+
+
+def reindex_to(value: Array | Varied, ctx: Any) -> Any:
+    """§6.1d(B): `value` re-expressed in `ctx`'s row space, label-aligned per §2.4.
+
+    Identity when `value` already carries `ctx`'s handle or carries none; a `GraphedError` when
+    `value`'s handle is a DESCENDANT of `ctx` (a mask has no inverse) or divergent from it.
+    """
+    handle = context_of(value)
+    if handle is None or handle is ctx:
+        return value
+    if ctx is None:
+        raise GraphedError(f"cannot re-index a value read through {handle!r} to a context-free target")
+    if not handle._is_ancestor_of(ctx):
+        if ctx._is_ancestor_of(handle):
+            raise GraphedError(
+                f"{handle!r} is a descendant of {ctx!r}: a selection-scoped value has no way back "
+                "to its parent's row space (a mask has no inverse) — read the value at "
+                f"{ctx!r} instead"
+            )
+        raise GraphedError(
+            f"variation contexts {handle!r} and {ctx!r} are on divergent branches; no lineage path "
+            "re-indexes one to the other"
+        )
+    for kind, payload in ctx._links_below(handle):
+        value = _follow(value, kind, payload)
+    return with_context(value, ctx)
+
+
+def _follow(value: Any, kind: str, payload: Any) -> Any:
+    from .varied import expand  # noqa: PLC0415  (import cycle)
+
+    if kind == "mask":  # link kind (1): each label's member by THAT label's mask
+        return expand(lambda item, mask: item[mask], (value, payload), {})
+    if kind == "project":  # link kind (3): project, and RESET the accumulated label set
+        return member_of(value, payload)
+    return value  # link kind (2): a `vary` link is the identity — only registrations differ
+
+
+def with_context(value: Any, ctx: Any) -> Any:
+    """Stamp `ctx`'s handle on a value (§2.3e's ORIGINATION rule), leaving node identity alone."""
+    if isinstance(value, Varied):
+        return rebuild(
+            {label: with_context(member, ctx) for label, member in value._members.items()},
+            tags=value._tags,
+            context=ctx,
+        )
+    if isinstance(value, Array):
+        stamped = type(value)(value._session, value._node_id)
+        stamped._context = ctx
+        stamped._labels = value._labels
+        return stamped
+    return value
+
+
+def broadcast_like(value: Array | Varied, factor: Any) -> Any:
+    """§6.1d's neutral broadcast seam: `factor` broadcast to `value`'s structure.
+
+    Dispatched to the backend idiom — the awkward backend records `ak.broadcast_arrays`, while a
+    rectilinear idiom (numpy) needs nothing, so a backend that supplies no implementation gets the
+    bound NO-OP and a genuine shape mismatch surfaces as its own execution-time error.
+    """
+    from .varied import expand  # noqa: PLC0415  (import cycle)
+
+    def one(item: Any, other: Any) -> Any:
+        session = getattr(item, "session", None)
+        seam = getattr(session.backend, "broadcast_like", None) if session is not None else None
+        return other if seam is None else seam(item, other)
+
+    return expand(one, (value, factor), {})
