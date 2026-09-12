@@ -173,6 +173,8 @@ Where to go from here
   and how ``gnano.events`` gives you the NanoEvents-flavoured entry point used above.
 * :doc:`frontend/index` — the recording surface: sessions, forms, provenance, and the full
   ``vary`` grammar including weight variations and per-collection shifts.
+* :doc:`notebooks/systematics-tour` — that grammar one declaration at a time, executed, from a
+  single up/down pair to a full jet-energy-and-b-tag stack.
 * :doc:`debug/index` — when the run fails on a worker and you want the arrow at your line.
 * :doc:`checkpoint/index` — when the run is long enough that you want to survive losing it.
 * :doc:`architecture` — the mental model of everything above.
