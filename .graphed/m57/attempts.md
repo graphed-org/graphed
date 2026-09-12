@@ -143,3 +143,24 @@ crossed handle and the `vary`-sibling `reindex_to`.
 The nine are filed under `.graphed/m57/disputes/`, each with the measurement and a verified
 correction. Every earlier frozen suite is green (m48-m56: 177 passed; the whole tree via
 `scripts/run-tests.sh`).
+
+## Iteration 12 — the implementation review's three blockers and five LOWs (68 passing, unchanged)
+
+The review found every mechanical gate green and rejected on judgment. One shipped §2.1 defect:
+`_check_widening` differenced the RAW central against the entry's nominal MEMBER, so after a nominal
+projection re-indexed the head the two operands stood one level apart and a join whose union adds
+nothing was refused in one of its two spellings. Both are now read at the level this context reads
+them, peeling only the projections between a value's row space and here — a mask carries a label set
+unchanged, and following one would mint inside a refusal that must leave no node behind.
+
+The rest were frozen properties that cannot fail in the direction they guard: §2.3's covered-READ
+refusal had no witness at all, and the two-mask identity chain's own leg spells its central
+`reindex_to`, which matches with no prior, so it passed a build that squares the SF. Seven legs in
+`tests/extra/awkward/m57/` close those and the three order/listing survivors; each kills a one-hunk
+mutant the whole frozen tree survives, and the frozen suite kills the control mutant neither of them
+would otherwise reach. The mask identity `_crossed` appends, measured dead over the frozen legs, has
+an admitted member after all: a context-free central is never recorded as an ancestor's node
+re-indexed, so peeling the mask off the op record cannot reach it and only that append answers.
+
+What remained: nothing from the review. `docs/frontend/design.rst`'s weight-form example now imports
+`explain` and runs verbatim.
