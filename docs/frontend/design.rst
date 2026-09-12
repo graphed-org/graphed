@@ -464,31 +464,31 @@ Prints::
     ('nominal', 'jes_up', 'hf_up', 'lf_up', 'lf_up__jes_up')
     jes_up  [0.6825, 0.5775, 1.155]
     oracle  [0.6825, 0.5775, 1.155]
-    graphed.explain: 4 registrations, 3 ambient operations, 4 universes
+    graphed.explain: 4 registrations, 2 ambient operations, 5 universes
     families (registration order)
-      pu (WEIGHT) ['up'] at the root: a new factor; composes with hf, mu, lf
-      hf (WEIGHT) ['up'] at vary: a new factor; shares the factor with lf; composes with pu, mu
-      mu (WEIGHT) ['up'] at vary: an overlay over hf, pu; composes with pu, hf, lf
-      lf (WEIGHT) ['up'] at vary: joins the factor carrying hf; shares the factor with hf; composes with pu, mu
+      pu (WEIGHT) ['up'] at the root: a new factor; composes with hf, lf, mu
+      hf (WEIGHT) ['up'] at the root: a new factor; shares the factor with lf; composes with mu, pu
+      mu (WEIGHT) ['up'] at the root: an overlay over hf, pu; composes with hf, lf, pu
+      lf (WEIGHT) ['up'] at the root: joins the factor carrying hf; shares the factor with hf; composes with mu, pu
     ambient operations (in composition order)
-      #0 factor: pu['up'] via cut
-      #1 factor: hf['up'], lf['up'] via cut
-      #2 overlay: mu['up'] via cut
+      #0 factor: pu['up'], hf['up'], lf['up'] via cut
+      #1 overlay: mu['up'] via cut
     universes here
+      nominal: a point over no registered family
       pu_up: pu, one at a time
       hf_up: hf, one at a time
       mu_up: mu's own universe, a relative-delta family
       lf_up: lf, one at a time
-    graphed.explain: 4 registrations, 2 ambient operations, 0 universes
+    graphed.explain: 4 registrations, 1 ambient operations, 1 universes
     families (registration order)
-      pu (WEIGHT) ['up'] at the root: a new factor; composes with hf, mu, lf
-      hf (WEIGHT) ['up'] at vary: a new factor; shares the factor with lf; composes with pu, mu
-      mu (WEIGHT) ['up'] at vary: an overlay over hf, pu; composes with pu, hf, lf
-      lf (WEIGHT) ['up'] at vary: joins the factor carrying hf; shares the factor with hf; composes with pu, mu
+      pu (WEIGHT) ['up'] at the root: a new factor; composes with hf, lf, mu
+      hf (WEIGHT) ['up'] at the root: a new factor; shares the factor with lf; composes with mu, pu
+      mu (WEIGHT) ['up'] at the root: an overlay over hf, pu; composes with hf, lf, pu
+      lf (WEIGHT) ['up'] at the root: joins the factor carrying hf; shares the factor with hf; composes with mu, pu
     ambient operations (in composition order)
-      #0 factor: pu['up'] via universe:hf_up
-      #1 factor: hf['up'], lf['up'] via universe:hf_up
+      #0 factor: pu['up'], hf['up'], lf['up'] via universe:hf_up
     universes here
+      nominal: a point over no registered family
 
 ``pu`` and ``hf`` are new factors; ``mu`` is the relative delta, so ``mu_up`` is 1.05 times the
 nominal rather than 1.05 times a squared product; ``lf`` names ``hf``'s central, so the scale
@@ -498,10 +498,12 @@ puts that universe on the shared nominal member and ``jes_up`` reads the weight 
 The two ``explain`` blocks are the same four registrations read from a cut and from inside
 ``hf_up``: the joined family names the factor it joined and shares it with ``hf`` rather than
 composing with it, the overlay names the two families its handle was read over, and every operation
-says which link carried it here. The operations are what the ambient *here* is made of, so inside
-``hf_up`` the overlay is gone — that universe carries none of its coordinate, so the weight there
-is ``pu * SF(up_hf)`` with no 1.05 in it — and "universes here" is empty because that context is one
-universe of the ambient, not a container of them.
+says which link carried it here. The operations are what the ambient *here* is made of: after the cut
+the three factors the child adopted are the ONE product its composed member is, with the overlay
+behind it keeping its own line, and inside ``hf_up`` the overlay is gone — that universe carries none
+of its coordinate, so the weight there is ``pu * SF(up_hf)`` with no 1.05 in it — while "universes
+here" is the single ``nominal``, because that context IS one universe of the ambient rather than a
+container of them.
 
 Three ways two things can be correlated
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

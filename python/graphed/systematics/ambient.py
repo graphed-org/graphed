@@ -806,7 +806,12 @@ def _same_node(left: Any, right: Any) -> bool:
 def _one_value(left: Any, right: Any) -> bool:
     """Whether two values are the same IR node read as the same VALUE, along ONE lineage.
 
-    Contexts off one lineage never match: a branch that diverged carries its own rows.
+    Contexts off one lineage never match: a branch that diverged carries its own rows. Nothing more
+    is asked of the link chain between them, because crossing a CUT mints: every member is a
+    `getitem` of its own, so one node id never stands in two row spaces separated by a mask (measured
+    — `reindex_to` across a cut answers with the re-indexed node, a re-derivation with a new one, and
+    a value the user simply carries down keeps the row space it was built in). A central that IS the
+    recorded node carried down is matched by `_reindexed_onto` instead, off the op record.
     """
     if left.node_id != right.node_id:
         return False
@@ -814,9 +819,7 @@ def _one_value(left: Any, right: Any) -> bool:
     if here is None or there is None or here is there:
         return True
     deep, shallow = (here, there) if there._is_ancestor_of(here) else (there, here)
-    if not shallow._is_ancestor_of(deep):
-        return False
-    return not any(kind == "mask" for kind, _payload in deep._links_below(shallow))
+    return bool(shallow._is_ancestor_of(deep))
 
 
 def _reindexed_onto(recorded: Any, node: Any) -> bool:
