@@ -49,7 +49,7 @@ dev = [
   "boost-histogram>=1.4", "hist>=2.7",
   "perspective-python==4.5.1", "tornado>=6.2", "websocket-client>=1.6",
 ]
-docs = ["sphinx", "furo", "myst-parser", "graphviz"]
+docs = ["sphinx", "furo", "myst-nb", "graphviz"]
 
 [project.urls]
 Homepage = "https://github.com/graphed-org/graphed"

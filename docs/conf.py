@@ -18,7 +18,7 @@ extensions = [
     "sphinx.ext.autosummary",
     "sphinx.ext.napoleon",
     "sphinx.ext.viewcode",
-    "myst_parser",
+    "myst_nb",
 ]
 
 # inheritance_diagram shells out to the `dot` binary; only enable it when Graphviz is on PATH.
@@ -31,9 +31,14 @@ exclude_patterns = ["_build"]
 html_theme = "furo"
 html_title = "graphed"
 
+# Notebook outputs are committed; the docs build has no executors or ROOT I/O to re-run them with.
+nb_execution_mode = "off"
+
+# myst-nb parses both Markdown pages and notebooks; its filetype is "myst-nb", not "markdown".
 source_suffix = {
     ".rst": "restructuredtext",
-    ".md": "markdown",
+    ".md": "myst-nb",
+    ".ipynb": "myst-nb",
 }
 
 autodoc_typehints = "description"
