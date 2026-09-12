@@ -211,6 +211,10 @@ def reindex_to(value: Array | Varied, ctx: Any) -> Any:
 
     Identity when `value` already carries `ctx`'s handle or carries none; a `GraphedError` when
     `value`'s handle is a DESCENDANT of `ctx` (a mask has no inverse) or divergent from it.
+
+    A `vary` link changes only registrations, so a handle standing below a RUN of them stands in the
+    row space above that run: the walk starts from there, which is what re-indexes a value read on a
+    branch that differs from `ctx` in registrations alone.
     """
     handle = context_of(value)
     if handle is None or handle is ctx:
@@ -218,19 +222,36 @@ def reindex_to(value: Array | Varied, ctx: Any) -> Any:
     if ctx is None:
         raise GraphedError(f"cannot re-index a value read through {handle!r} to a context-free target")
     if not handle._is_ancestor_of(ctx):
-        if ctx._is_ancestor_of(handle):
+        above = _row_space_above(handle, ctx)
+        if above is not None:
+            handle = above
+        elif ctx._is_ancestor_of(handle):
             raise GraphedError(
                 f"{handle!r} is a descendant of {ctx!r}: a selection-scoped value has no way back "
                 "to its parent's row space (a mask has no inverse) — read the value at "
                 f"{ctx!r} instead"
             )
-        raise GraphedError(
-            f"variation contexts {handle!r} and {ctx!r} are on divergent branches; no lineage path "
-            "re-indexes one to the other"
-        )
+        else:
+            raise GraphedError(
+                f"variation contexts {handle!r} and {ctx!r} are on divergent branches; no lineage "
+                "path re-indexes one to the other"
+            )
     for kind, payload in ctx._links_below(handle):
         value = _follow(value, kind, payload)
     return with_context(value, ctx)
+
+
+def _row_space_above(handle: Any, ctx: Any) -> Any | None:
+    """The context `handle`'s row space belongs to as seen from `ctx` — `handle` itself is not one of
+    `ctx`'s ancestors, but a run of `vary` links above it may end at one (or at `ctx`), and such a run
+    changes no rows. `None` when the two are on genuinely different row spaces.
+    """
+    node = handle
+    while node._link is not None and node._link[0] == "vary":
+        node = node._parent
+        if node is ctx or node._is_ancestor_of(ctx):
+            return node
+    return None
 
 
 def _follow(value: Any, kind: str, payload: Any) -> Any:

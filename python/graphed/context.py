@@ -92,7 +92,7 @@ class EventContext:
     """
 
     __slots__ = (
-        "_adopted", "_collections", "_derived", "_factors", "_gens", "_head", "_is_data",
+        "_adopted", "_collections", "_derived", "_factors", "_gens", "_head", "_head_ops", "_is_data",
         "_link", "_memo", "_origin", "_overlays", "_parent", "_projected",
         "_provenance", "_reads", "_record", "_recorded", "_registration", "_riders", "_serial",
         "_session", "_slots", "_weight_tags",
@@ -133,6 +133,10 @@ class EventContext:
         #: change names the head when it equals this, and names nothing the child can anchor
         #: otherwise (a prefix of the parent's list, or a read from after that list grew).
         self._head: tuple[tuple[int, ...], tuple[int, ...]] | None = None
+        #: §2.3: the operations that head STANDS FOR, re-indexed here with every join of one of
+        #: them applied — `None` while nothing has joined one, where the ancestor's own live list
+        #: answers. A join keeps the head's node, so the entries it stands for live beside it.
+        self._head_ops: tuple[list[Any], list[int], frozenset[int]] | None = None
         #: §2.1's ORDERED operations: a SLOT named here holds an OVERLAY — a relative-delta
         #: family whose members are the whole ambient, so the composition REPLACES the running
         #: value at its labels instead of multiplying.
@@ -163,7 +167,7 @@ class EventContext:
                     dict(getattr(weight, "_tags", None) or {}),
                     priors=(_two_level(weight, "nominal"),),
                     home=self,
-                )
+                )  # a seeded context is a root: it came through no row-space link
             }
         )
         #: the weight families REGISTERED on this lineage, `{name: tags}` — the record `variations`
@@ -450,6 +454,7 @@ class EventContext:
         self._factors = [composed]
         self._slots = [next(_SLOT)]
         self._adopted = True
+        self._head_ops = None
         self._overlays = frozenset()
         # the child's OWN reads start empty; the ancestors' stay reachable through the adoption
         # (`_lineage_reads`), because the head is exactly the composition they recorded (§2.3)
@@ -522,6 +527,7 @@ def _child_of(ctx: EventContext) -> EventContext:
     child._slots = list(ctx._slots)
     child._adopted = ctx._adopted
     child._head = ctx._head
+    child._head_ops = ctx._head_ops
     child._overlays = ctx._overlays
     # the same list object, not a copy: one row space, so a read at either end names the same
     # values, and a handle read from the parent after the child was built still decides here
