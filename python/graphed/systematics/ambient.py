@@ -496,45 +496,62 @@ def _extension(ctx: EventContext, central: Any) -> tuple[str, Any] | None:
     # an OVERLAY's nominal is the ambient's own nominal, so it would answer this test in the
     # factor's place; only a product factor names a factor. The ENTRIES are not read at all here:
     # every candidate comes from the rider beside the slot (§3's provenance principle).
-    for slot in slots:
-        if slot in overlays:
-            continue
-        match = _names(ctx, riders[slot], node, slot)
-        if match is None:
-            continue
-        if match[0] == "factor":
-            covered = _fixed_cover(ctx, slot, slots, riders)
-            if covered is not None:
-                return ("covered", covered)
-        return match
+    # §2.3: the NOMINAL arm answers FIRST over every live slot, then the projected member — one node
+    # can be both a live factor's nominal in the central's own row space and another entry's recorded
+    # member, and there the join keeps the universe projected into where the refusal would not. The
+    # arms are the outer loop, so registration order cannot pick the answer.
+    for arm in (_names_nominal, _names_member):
+        for slot in slots:
+            if slot in overlays:
+                continue
+            match = arm(ctx, riders[slot], node, slot)
+            if match is None:
+                continue
+            if match[0] == "factor":
+                covered = _fixed_cover(ctx, slot, slots, riders)
+                if covered is not None:
+                    return ("covered", covered)
+            return match
     return None
 
 
-def _names(ctx: EventContext, rider: Rider, node: Any, slot: int) -> tuple[str, Any] | None:
-    """§2.3: what one entry's RIDER says a central NAMES — the entry itself (`("factor", slot)`),
-    the universe this context is projected into (`("owned", L)`, which `_vary_weight` refuses), or
-    nothing.
+def _names_nominal(ctx: EventContext, rider: Rider, node: Any, slot: int) -> tuple[str, Any] | None:
+    """§2.3: whether a central names this entry's NOMINAL identity in the central's own row space —
+    the entry itself (`("factor", slot)`), or the universe this context is projected into that the
+    entry OWNS (`("owned", L)`, which `_vary_weight` refuses).
 
     The candidates are the rider's nodes only, never the entry as it currently stands: at a
     projection that object's nominal is its MEMBER at the label, which for the factor the universe
     is OF is the universe itself — so reading it would join the owner, and only once something
     unrelated had re-indexed the entry, deciding one program two ways.
-
-    A recorded member is matched HOWEVER the central was built — at the projection, at the parent,
-    or after an unrelated expansion (`_same_member`) — and the answer is the refusal when the entry
-    owns the label and a join when it does not: inside `jes_up` the SF re-derived over this
-    context's shifted jets IS the jes-dependent factor's member there, and a new factor would
-    square it.
     """
-    recorded = _member_here(rider)
-    if recorded is not None and _same_member(recorded[1], node):
-        label = recorded[0]
-        return ("owned", label) if _owns(ctx, rider, label) else ("factor", slot)
     for candidate in rider.priors:
         if _same_node(candidate, node):
             owned = _owned_projection(ctx, candidate, rider)
             return ("owned", owned) if owned is not None else ("factor", slot)
     return None
+
+
+def _names_member(ctx: EventContext, rider: Rider, node: Any, slot: int) -> tuple[str, Any] | None:
+    """§2.3: whether a central names the member this entry BECAME at a projected label — the entry
+    itself (`("factor", slot)`) when it owns no universe the context is still inside, the refusal
+    (`("owned", L)`) when it owns one.
+
+    The member matched is the INNERMOST record (`_member_here`), while ownership is tested against
+    EVERY universe the context is still inside: below stacked projections the owner of an outer
+    universe named by its recorded member is refused exactly as it is when named by its nominal, and
+    a join there would erase the outer universe.
+
+    A recorded member is matched HOWEVER the central was built — at the projection, at the parent,
+    or after an unrelated expansion (`_same_member`) — and a join is the answer when the entry owns
+    nothing: inside `jes_up` the SF re-derived over this context's shifted jets IS the jes-dependent
+    factor's member there, and a new factor would square it.
+    """
+    recorded = _member_here(rider)
+    if recorded is None or not _same_member(recorded[1], node):
+        return None
+    owned = _owned_inside(ctx, rider)
+    return ("owned", owned) if owned is not None else ("factor", slot)
 
 
 def _member_here(rider: Rider) -> tuple[str, Any] | None:
@@ -573,6 +590,24 @@ def _owned_projection(ctx: EventContext, candidate: Any, rider: Rider) -> str | 
         (
             payload
             for kind, payload in ctx._links_below(home)
+            if kind == "project" and payload != "nominal" and _owns(ctx, rider, payload)
+        ),
+        None,
+    )
+
+
+def _owned_inside(ctx: EventContext, rider: Rider) -> str | None:
+    """§2.3: the first universe this entry OWNS among ALL the ones the context is still inside — the
+    non-nominal universes its history was projected into, outermost first — or `None`.
+
+    Below stacked projections the context is inside every one of them, so an entry named by its
+    recorded member at the innermost label is still the owner of an outer universe and refused there,
+    as it is when named by its nominal identity.
+    """
+    return next(
+        (
+            payload
+            for kind, payload in rider.links
             if kind == "project" and payload != "nominal" and _owns(ctx, rider, payload)
         ),
         None,
@@ -865,8 +900,8 @@ def _vary_weight(
             f"graphed.vary({name!r}): its central names the weight factor that the universe "
             f"{match[1]!r} this context is projected into is OF, whose member there is that "
             "universe rather than the central; register this family on the factor at the parent, "
-            "before the projection, or re-derive the central from this context's collections, "
-            "which names nothing and starts a new factor"
+            "before the projection, or read a graphed.weight() handle AT this context "
+            "(`w = graphed.weight(ctx)`) and register this family on that"
         )
     if match is not None and match[0] == "covered":
         # §2.3: inside the overlay's own universe its member is the whole ambient rescaled — the

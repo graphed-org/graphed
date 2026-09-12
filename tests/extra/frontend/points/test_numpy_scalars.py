@@ -17,6 +17,8 @@ import numpy as np
 import pytest
 
 import graphed
+import graphed._points  # the m57 shims: a private submodule is an attribute only once imported
+import graphed._tags
 from graphed import Session
 from graphed.context import EventContext
 from graphed.errors import GraphedError
