@@ -505,8 +505,8 @@ of its coordinate, so the weight there is ``pu * SF(up_hf)`` with no 1.05 in it 
 here" is the single ``nominal``, because that context IS one universe of the ambient rather than a
 container of them.
 
-Every declaration shape in this section, and the ``explain`` block each one prints, is built up one
-step at a time in :doc:`../notebooks/systematics-tour`.
+The tour builds every declaration shape in this section — and the ``explain`` block each one
+prints — one step at a time: :doc:`../notebooks/systematics-tour`.
 
 Three ways two things can be correlated
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

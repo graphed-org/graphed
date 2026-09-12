@@ -68,8 +68,8 @@ covers the recording surface itself: sessions, arrays, forms, provenance, ``vary
 
 **See it done.** :doc:`notebooks/systematics-tour` walks every way to declare a systematic, from
 one up/down pair to the CMS jet-energy → MET → b-tag stack on a single context, printing the
-universes each declaration actually produces. It is an executed notebook: the label sets, the
-points and the yields under each cell are the ones the code printed.
+universes each declaration actually produces. Every label set, point and yield under a cell is
+what the code printed.
 
 **Understand what the recording does.** :doc:`architecture` is the mental model of a run — who
 does what, what crosses a process boundary, which pieces you install. :doc:`core/index` goes
