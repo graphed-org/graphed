@@ -64,6 +64,11 @@ class Operation:
     #: the entry's member node ids. The RECORD carries them; the text never prints them, which is
     #: what makes the rendering byte-identical across two Sessions of one program.
     nodes: tuple[int, ...]
+    #: §2.3/§2.7(b): whether a projection into this OVERLAY's own universe FIXED it — there every
+    #: value is that universe, so the composition replaces with it at every label
+    fixed: bool = False
+    #: the universe that fixed it, which its line names (`None` for every other operation)
+    fixed_at: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,7 +87,8 @@ class Explanation:
     """§2.7: how a user's sources of uncertainty became this context's variations.
 
     ``str()`` renders one line per item under three headings: the families in registration order,
-    the ambient's operations oldest first, and the universes carried here with their origins.
+    the ambient's operations in the order the composition applies them, and the universes carried
+    here with their origins.
     """
 
     families: tuple[Family, ...]
@@ -115,7 +121,7 @@ class Explanation:
                 f"  {family.name} ({family.kind.name}) {list(family.tags)} at {where}: "
                 f"{family.entered}{placed}{relations}"
             )
-        lines.append("ambient operations (oldest first)")
+        lines.append("ambient operations (in composition order)")
         # POSITION, not the slot: slots come from a process-global counter, so a second Session's
         # would differ while the composition is the same one. The record keeps the slot.
         for position, operation in enumerate(self.operations):
@@ -123,7 +129,10 @@ class Explanation:
             # An entry the registering context still holds has crossed no row space, which is a
             # fact about it, not a missing field — so it is said rather than left as a placeholder.
             through = f"via {', '.join(operation.links)}" if operation.links else "registered here"
-            lines.append(f"  #{position} {operation.kind}: {carries} {through}")
+            # §2.7(b): a fixed overlay is MARKED, and the mark names the universe that fixed it —
+            # which a later link does not, and the rider is where that universe is recorded
+            mark = f", fixed at {operation.fixed_at}" if operation.fixed else ""
+            lines.append(f"  #{position} {operation.kind}: {carries} {through}{mark}")
         lines.append("universes here")
         for variation in self.variations:
             lines.append(f"  {variation.label}: {variation.origin}")
@@ -261,6 +270,8 @@ def explain(ctx: EventContext) -> Explanation:
             tuple((name, tags) for name, tags in rider.families.items()),
             tuple(_link_name(link) for link in rider.links),
             _member_nodes(entry),
+            rider.fixed,
+            rider.fixed_at,
         )
         for slot, rider, entry in ambient_entries(ctx)
     )

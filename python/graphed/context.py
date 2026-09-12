@@ -295,9 +295,10 @@ class EventContext:
         if len(self._factors) == 1 and not isinstance(self._factors[0], Varied):
             # §2.2: a projection adopted ONE resolved member and nothing registered after it, so
             # there is no universe left to resolve — composing would only wrap it in a one-label
-            # container, and the read's type would then depend on what minted since the projection
+            # container, and the read's type would then depend on what minted since the projection.
+            # The adoption recorded this member as the child's read (§2.3), so handing it out again
+            # records nothing new.
             adopted: Array = self._factors[0]
-            self._record_read(adopted)
             return adopted
         epoch = self._session._mint_epoch
         memo = self._memo
@@ -434,7 +435,7 @@ class EventContext:
         if self._factors:
             child._adopt_ambient(child._stamp(member_of(self._ambient_weight(), label)))
             if label != "nominal":
-                child._riders = _project_riders(self, child, label)
+                child._riders = _project_riders(self, label)
         child._weight_tags = {}  # a projection drops the registry (§2.2)
         child._record = child._stamp(child._record)
         self._projected[label] = child

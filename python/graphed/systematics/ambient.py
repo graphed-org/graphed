@@ -82,6 +82,9 @@ class Rider:
     #: an overlay re-indexed INTO its own universe: there every value is that universe, so the
     #: composition replaces with it at every label rather than at the ones its family spans
     fixed: bool = False
+    #: the universe that FIXED it, which every later row space reports and the refusals name — a
+    #: further projection adds links, and the last one taken is not the one that fixed anything
+    fixed_at: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,34 +140,41 @@ def _lineage_factors(ctx: EventContext) -> tuple[Any, ...]:
 
 
 def _live_factors(ctx: EventContext) -> tuple[list[Any], list[int], frozenset[int]]:
-    """The entries `ctx`'s ambient weight is composed FROM, in registration order, with their
-    slots and the slots of the overlays among them.
+    """The entries `ctx`'s ambient weight is composed FROM, in the order `_compose` applies them,
+    with their slots and the slots of the overlays among them.
 
-    A row-space change adopts the ONE composed container, so the entries it stands for are the
-    adopting parent's own live list; walking back through the adoption is what lets a weight
-    registered on a mask-derived child name a factor of its parent (§2.1). Not `_lineage_factors`,
-    which answers with every factor ever registered on the ancestry: one that an extension has
-    since replaced is no longer multiplied in, and naming it would double it.
+    The order is the LIST's: `ctx._slots` holds every operation of this row space in the position
+    the composition walks, and a row-space change adopts the ONE composed container, so the head
+    stands for the adopting parent's own live list and expands in place. Walking back through the
+    adoption is what lets a weight registered on a mask-derived child name a factor of its parent
+    (§2.1). Not `_lineage_factors`, which answers with every factor ever registered on the
+    ancestry: one that an extension has since replaced is no longer multiplied in, and naming it
+    would double it.
+
+    Never the order a lineage WALK meets the entries: an overlay is inserted after the factors it
+    was read over, so a child registering a factor and then an overlay anchored before it is met in
+    the opposite order from the one it composes in, and an expansion built that way would move the
+    overlay past the factor and replace its product (§2.3).
     """
-    chain: list[EventContext] = []
+    entries = list(ctx._factors)
+    slots = list(ctx._slots)
+    overlays = ctx._overlays
+    ancestor = _adopted_from(ctx) if ctx._adopted and entries else None
+    if ancestor is not None:
+        above, above_slots, above_overlays = _live_factors(ancestor)
+        entries = [*above, *entries[1:]]
+        slots = [*above_slots, *slots[1:]]
+        overlays = overlays | above_overlays
+    return entries, slots, overlays & frozenset(slots)
+
+
+def _adopted_from(ctx: EventContext) -> EventContext | None:
+    """The context whose live list the adopted head at `ctx` stands for — the one the row-space
+    link was taken from. A `vary` link shares the list, so the walk goes through it."""
     node: EventContext | None = ctx
-    while node is not None:
-        chain.append(node)
-        if not node._adopted:
-            break
+    while node is not None and (node._link is None or node._link[0] == "vary"):
         node = node._parent
-    # by id, root-first: a `vary` child copies its parent's list, so the same entry is met again
-    # at every context below the one that registered it
-    seen: dict[int, tuple[Any, int]] = {}
-    overlays: frozenset[int] = frozenset()
-    for context in reversed(chain):
-        overlays |= context._overlays
-        start = 1 if context._adopted else 0
-        for factor, slot in zip(context._factors[start:], context._slots[start:], strict=True):
-            seen.setdefault(id(factor), (factor, slot))
-    live = [factor for factor, _slot in seen.values()]
-    slots = [slot for _factor, slot in seen.values()]
-    return live, slots, overlays & frozenset(slots)
+    return None if node is None else node._parent
 
 
 def _raw_riders(ctx: EventContext) -> dict[int, Rider]:
@@ -191,35 +201,33 @@ def _live_riders(ctx: EventContext) -> dict[int, Rider]:
     return {slot: _pending(rider, ctx) for slot, rider in _raw_riders(ctx).items()}
 
 
-def _project_riders(ctx: EventContext, child: EventContext, label: str) -> dict[int, Rider]:
+def _project_riders(ctx: EventContext, label: str) -> dict[int, Rider]:
     """§2.3's provenance for a projection: every live entry's MEMBER at `label`, recorded on the
     child the moment that universe comes to exist — before anything reads or expands there, so no
     later decision about it can depend on either.
 
-    Nothing is minted: a member is a lookup on a container already built. An entry a MASK separates
-    from `ctx` has no member here that could be reached without re-indexing it, and records none.
+    Nothing is minted, and nothing is re-indexed: a member is a lookup on a container already built,
+    and the member is recorded as it stands in the entry's OWN row space — a mask between the entry
+    and `ctx` is not walked, because walking one mints (§2.3), and the record is a NODE the central
+    is compared against rather than a value anything composes.
     """
     live, slots, _overlays = _live_factors(ctx)
     riders = _raw_riders(ctx)
     recorded: dict[int, Rider] = {}
     for entry, slot in zip(live, slots, strict=True):
-        value = _through_projections(ctx, entry)
-        if value is None:
-            continue
         rider = riders[slot]
-        member = accessors.with_context(_two_level(value, label), child)
+        member = _two_level(_through_projections(ctx, entry), label)
         recorded[slot] = replace(rider, projected={**rider.projected, label: member})
     return recorded
 
 
 def _through_projections(ctx: EventContext, entry: Any) -> Any:
-    """`entry` as the ambient at `ctx` reads it when only PROJECTIONS separate the two, `None` when
-    a mask does — its re-index would mint, and a decision mints nothing (§2.3)."""
+    """`entry` as the ambient at `ctx` reads it through the PROJECTIONS between the two — each one
+    a member lookup, which mints nothing. A mask is left unwalked: its re-index would mint, and a
+    decision mints nothing (§2.3), so the value stays in the row space above it."""
     home = accessors.context_of(entry)
     value = entry
     for kind, payload in () if home is None else ctx._links_below(home):
-        if kind == "mask":
-            return None
         if kind == "project" and payload != "nominal":
             value = _two_level(value, payload)
     return value
@@ -261,49 +269,34 @@ def _named_by(label: str, coordinates: Iterable[tuple[str, tuple[str, ...]]]) ->
     )
 
 
-def _entry_state(ctx: EventContext, rider: Rider) -> tuple[bool, bool]:
-    """§2.3, from PROVENANCE alone: whether the ambient at `ctx` still composes this entry, and
-    whether a projection FIXED it into its own universe, where every value is that universe.
+def _entry_state(ctx: EventContext, rider: Rider) -> tuple[bool, str | None]:
+    """§2.3, from PROVENANCE alone: whether the ambient at `ctx` still composes this entry, and the
+    universe a projection FIXED it into — its own, where every value is that universe.
 
     An overlay a projection fixed stays fixed through every further row-space link and is never
-    re-tested against its re-indexed member; one not yet fixed whose families have no coordinate on
-    the label contributes nothing there and is left out.
+    re-tested against its re-indexed member, so the universe is the one its RIDER recorded rather
+    than any later link; one not yet fixed whose families have no coordinate on the label
+    contributes nothing there and is left out.
     """
     if rider.kind != "overlay":
-        return True, False
-    fixed = rider.fixed
+        return True, None
+    fixed = rider.fixed_at
     home = rider.home
     for kind, payload in () if home is None else ctx._links_below(home):
-        if fixed or kind != "project" or payload == "nominal":
+        if fixed is not None or kind != "project" or payload == "nominal":
             continue
         if not _covers(ctx, rider, payload):
-            return False, False
-        fixed = True
+            return False, None
+        fixed = payload
     return True, fixed
 
 
-def _fixes(ctx: EventContext, rider: Rider) -> str | None:
-    """The universe between the entry's row space and `ctx` that FIXES this overlay — its own,
-    where every value is that universe — or `None` (a factor, or an overlay `ctx` is not inside).
-    """
-    if rider.kind != "overlay":
-        return None
-    if rider.fixed:
-        return next((payload for kind, payload in reversed(rider.links) if kind == "project"), "")
-    home = rider.home
-    if home is None:
-        return None
-    return next(
-        (
-            payload
-            for kind, payload in ctx._links_below(home)
-            if kind == "project" and payload != "nominal" and _covers(ctx, rider, payload)
-        ),
-        None,
-    )
+def _marked(rider: Rider, fixed_at: str | None) -> Rider:
+    """`rider` carrying `_entry_state`'s verdict: the mark and the universe that made it."""
+    return replace(rider, fixed=fixed_at is not None, fixed_at=fixed_at)
 
 
-def _reindex_entry(ctx: EventContext, entry: Any, rider: Rider) -> tuple[Any, bool]:
+def _reindex_entry(ctx: EventContext, entry: Any, rider: Rider) -> tuple[Any, str | None]:
     """§2.3's re-index of one ENTRY (never of a user value): what the ambient at each universe on
     the way down READS of it, decided from the rider.
 
@@ -313,19 +306,19 @@ def _reindex_entry(ctx: EventContext, entry: Any, rider: Rider) -> tuple[Any, bo
     its dependence on a shift label one level down, so the one-level read that is right for the
     composed head would silently drop it. A left-out overlay is `None`.
     """
-    kept, fixed = _entry_state(ctx, rider)
+    kept, fixed_at = _entry_state(ctx, rider)
     if not kept:
-        return None, False
+        return None, None
     home = accessors.context_of(entry)
     if home is None or home is ctx:
-        return entry, fixed
+        return entry, fixed_at
     value = entry
     for kind, payload in ctx._links_below(home):
         if kind == "project" and payload != "nominal":
             value = _two_level(value, payload)
         else:
             value = accessors._follow(value, kind, payload)
-    return accessors.with_context(value, ctx), fixed
+    return accessors.with_context(value, ctx), fixed_at
 
 
 def _expanded(ctx: EventContext) -> tuple[list[Any], list[int], frozenset[int], dict[int, Rider]]:
@@ -342,16 +335,16 @@ def _expanded(ctx: EventContext) -> tuple[list[Any], list[int], frozenset[int], 
     carried: dict[int, Rider] = {}
     for entry, slot in zip(live, slots, strict=True):
         rider = riders[slot]
-        value, fixed = _reindex_entry(ctx, entry, rider)
+        value, fixed_at = _reindex_entry(ctx, entry, rider)
         if value is None:
             continue
         entries.append(value)
         kept.append(slot)
-        carried[slot] = _crossed(ctx, rider, value, fixed)
+        carried[slot] = _crossed(ctx, rider, value, fixed_at)
     return entries, kept, overlays & frozenset(kept), carried
 
 
-def _crossed(ctx: EventContext, rider: Rider, value: Any, fixed: bool) -> Rider:
+def _crossed(ctx: EventContext, rider: Rider, value: Any, fixed_at: str | None) -> Rider:
     """The rider of an entry an expansion has just re-indexed to `ctx` (§2.3).
 
     A MASK makes one node two values, so the entry's nominal in the new row space is an identity of
@@ -363,7 +356,7 @@ def _crossed(ctx: EventContext, rider: Rider, value: Any, fixed: bool) -> Rider:
     priors = rider.priors
     if any(kind == "mask" for kind, _payload in crossed):
         priors = (*priors, _two_level(value, "nominal"))
-    return replace(rider, priors=priors, home=ctx, fixed=fixed)
+    return _marked(replace(rider, priors=priors, home=ctx), fixed_at)
 
 
 def _live_slots(ctx: EventContext) -> tuple[int, ...]:
@@ -389,16 +382,19 @@ def _prefix_slots(
 
 
 def ambient_entries(ctx: EventContext) -> tuple[tuple[int, Rider, Any], ...]:
-    """The live ambient weight as `(slot, rider, entry)` records, oldest first (§2.3).
+    """The live ambient weight as `(slot, rider, entry)` records (§2.3), in the order `_compose`
+    applies them — each record's position its index in that order.
 
     The instrument for what the ambient is MADE of: each operation, its kind, the families it
     carries, the nominal it had in every row space it came through, and the links it was carried
     through to get here. Read from the RIDERS beside the slots, never off the entries, which a
     re-index leaves as bare members carrying neither tags nor role.
 
-    The operations as the ambient at `ctx` COMPOSES them: an overlay a projection leaves nothing of
-    is absent, one a projection fixed into its own universe is marked, and the listing is the same
-    before and after a registration that changes no value.
+    The operations as the ambient at `ctx` COMPOSES them — an overlay at its anchored position,
+    before a factor this context registered after it, never the order a lineage walk meets them; an
+    overlay a projection leaves nothing of is absent, one a projection fixed into its own universe is
+    marked. A registration that changes no value leaves the slots, the kinds and the order exactly as
+    they were, the joining family entering its slot's families.
 
     Deliberately not re-exported from `graphed`: it reads the mechanism, and the analysis idiom is
     `graphed.weight` / `graphed.variations`.
@@ -413,9 +409,9 @@ def ambient_entries(ctx: EventContext) -> tuple[tuple[int, Rider, Any], ...]:
     riders = _live_riders(ctx)
     composed: list[tuple[int, Rider, Any]] = []
     for entry, slot in zip(live, slots, strict=True):
-        kept, fixed = _entry_state(ctx, riders[slot])
+        kept, fixed_at = _entry_state(ctx, riders[slot])
         if kept:
-            composed.append((slot, replace(riders[slot], fixed=fixed), entry))
+            composed.append((slot, _marked(riders[slot], fixed_at), entry))
     return tuple(composed)
 
 
@@ -523,15 +519,39 @@ def _names(ctx: EventContext, rider: Rider, node: Any, slot: int) -> tuple[str, 
     projection that object's nominal is its MEMBER at the label, which for the factor the universe
     is OF is the universe itself — so reading it would join the owner, and only once something
     unrelated had re-indexed the entry, deciding one program two ways.
+
+    A recorded member is matched HOWEVER the central was built — at the projection, at the parent,
+    or after an unrelated expansion (`_same_member`) — and the answer is the refusal when the entry
+    owns the label and a join when it does not: inside `jes_up` the SF re-derived over this
+    context's shifted jets IS the jes-dependent factor's member there, and a new factor would
+    square it.
     """
-    for label, member in rider.projected.items():
-        if _same_node(member, node):
-            return ("owned", label) if _owns(ctx, rider, label) else ("factor", slot)
+    recorded = _member_here(rider)
+    if recorded is not None and _same_member(recorded[1], node):
+        label = recorded[0]
+        return ("owned", label) if _owns(ctx, rider, label) else ("factor", slot)
     for candidate in rider.priors:
         if _same_node(candidate, node):
             owned = _owned_projection(ctx, candidate, rider)
             return ("owned", owned) if owned is not None else ("factor", slot)
     return None
+
+
+def _member_here(rider: Rider) -> tuple[str, Any] | None:
+    """`(label, member)`: what this entry IS where it now stands — the member recorded at the
+    INNERMOST universe its history was projected into, read off the rider.
+
+    An OUTER projection's record describes a row space the context has since left: below a second
+    projection the entry is its member there, and naming the outer record would join a value that is
+    no longer the entry's. `None` for an entry no projection has carried.
+    """
+    label = next(
+        (payload for kind, payload in reversed(rider.links) if kind == "project" and payload != "nominal"),
+        None,
+    )
+    if label is None or label not in rider.projected:
+        return None
+    return label, rider.projected[label]
 
 
 def _owned_projection(ctx: EventContext, candidate: Any, rider: Rider) -> str | None:
@@ -579,14 +599,18 @@ def _fixed_cover(
     An operation landing inside the factors such an overlay covers has nothing to re-derive it
     over: the overlay's member is the user's node over the OLD product. `None` when no overlay
     covers the slot, or when the one that does still composes as an overlay.
+
+    The universe is the one the overlay's RIDER recorded, not the last link this context took: a
+    further projection below it adds links that fixed nothing, and naming one of those would tell
+    the user the wrong universe to read the handle at.
     """
     for entry_slot in slots:
         rider = riders.get(entry_slot)
         if rider is None or slot not in rider.prefix:
             continue
-        label = _fixes(ctx, rider)
-        if label is not None:
-            return next(iter(rider.families), rider.kind), label
+        kept, fixed_at = _entry_state(ctx, rider)
+        if kept and fixed_at is not None:
+            return next(iter(rider.families), rider.kind), fixed_at
     return None
 
 
@@ -610,14 +634,12 @@ def _overlay_index(ctx: EventContext, read: tuple[int, ...]) -> int | None:
     return at
 
 
-def _same_node(left: Any, right: Any) -> bool:
-    """Whether two values are the same IR node, read anywhere along ONE lineage.
+def _one_value(left: Any, right: Any, splits: Callable[[str, Any], bool]) -> bool:
+    """Whether two values are the same IR node read as the same VALUE, along ONE lineage.
 
-    The ids answer for almost every pair, so they are compared first; a MASK between the handles
-    then makes one id two different values, and so does a projection to any universe but `nominal`
-    — there each entry re-indexes to its member at that label, which is not the node the central
-    matched. A `vary` link and `graphed.nominal(ctx)` keep both the row space and the identity, so
-    a central re-derived at the nominal projection names the parent's factor.
+    The ids answer for almost every pair, so they are compared first; `splits` then names the links
+    between the two contexts that make one node id two different values. Contexts off one lineage
+    never match: a branch that diverged carries its own rows.
     """
     if left.node_id != right.node_id:
         return False
@@ -627,10 +649,32 @@ def _same_node(left: Any, right: Any) -> bool:
     deep, shallow = (here, there) if there._is_ancestor_of(here) else (there, here)
     if not shallow._is_ancestor_of(deep):
         return False
-    return not any(
-        kind == "mask" or (kind == "project" and payload != "nominal")
-        for kind, payload in deep._links_below(shallow)
+    return not any(splits(kind, payload) for kind, payload in deep._links_below(shallow))
+
+
+def _same_node(left: Any, right: Any) -> bool:
+    """Whether a central names an entry's NOMINAL identity: one node, one row space, one universe.
+
+    A MASK between the handles makes one id two different values, and so does a projection to any
+    universe but `nominal` — there each entry re-indexes to its member at that label, which is not
+    the node the central matched. A `vary` link and `graphed.nominal(ctx)` keep both the row space
+    and the identity, so a central re-derived at the nominal projection names the parent's factor.
+    """
+    return _one_value(
+        left, right, lambda kind, payload: kind == "mask" or (kind == "project" and payload != "nominal")
     )
+
+
+def _same_member(left: Any, right: Any) -> bool:
+    """Whether a central names the member an entry BECAME at a projected label (§2.3).
+
+    The record already stands below the project links of the entry's history — that is what it is a
+    record OF — so `_same_node`'s projection test would refuse every central built above the
+    projection, which is exactly the spelling §2.3 admits: the node the user handed `vary()` as the
+    owner's `up=`, or the SF over the parent's shifted jets. A MASK still makes one id two values,
+    so that half of the test stays.
+    """
+    return _one_value(left, right, lambda kind, _payload: kind == "mask")
 
 
 def _extend(
