@@ -7,7 +7,7 @@ build-backend = "maturin"
 
 [project]
 name = "graphed"
-version = "0.0.1"
+version = "0.0.2"
 description = "A schedulable, serializable, debuggable HEP task-graph system with an interned Rust IR and equality-saturation optimizer"
 readme = "README.md"
 requires-python = ">=3.11"

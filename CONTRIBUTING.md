@@ -55,7 +55,7 @@ from graphed.core import Partition, Plan, Task
 
 print(graphed.__version__)
 print(Plan.__name__, Task.__name__, Partition.__name__)
-# 0.0.1
+# 0.0.2
 # Plan Task Partition
 ```
 

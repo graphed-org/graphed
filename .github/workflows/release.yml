@@ -18,7 +18,7 @@ name: release
 # workflow=release.yml, environment=pypi), then drop `password:` and set the publish `attestations: true`.
 #
 # NOTE: bump the version (Cargo.toml + pyproject) before tagging — re-uploading a version already on
-# PyPI (0.0.1 is published) is rejected.
+# PyPI (0.0.1 and 0.0.2 are published) is rejected.
 
 on:
   push:
