@@ -12,30 +12,63 @@ label-aligned when that mask is `Varied`.
 
 The neutral mechanism lives here; the nanoevents-flavored constructor is awkward-idiom and lives
 in `graphed.awkward.gnano` (the §2.1 factorization rule).
+
+The context KEEPS the ambient weight's state — the operation list, its slots, their riders, the
+reads and the memo — and every rule that decides over it is `graphed.systematics.ambient`;
+`graphed.explain` is `graphed.systematics.explain`. Both are re-exported here, which is where the
+probes and the extra suites read them from.
 """
 
 from __future__ import annotations
 
 import itertools
-import weakref
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
-from . import accessors
-from ._tags import canonical_tag
 from .array import Array
-from .by_label import cone
-from .errors import GraphedError, GraphedTypeError
+from .errors import GraphedError
 from .provenance import capture
-from .varied import Varied, expand, labels_of, member_of, point_registry, rebuild, session_of
-from .vary import (
-    AmbientCarrier,
-    _member_nodes,
-    check_members,
-    gather_members,
-    record_labels,
-    register,
-    stamp_labels,
+from .systematics import accessors
+
+# The ambient-weight machinery lives in `graphed.systematics` (m57); the context KEEPS its state and
+# calls into it. Every name is re-exported under its own name because `graphed.context` is where the
+# probes, the extra suites and the docs read the machinery from.
+from .systematics.ambient import (  # isort: skip
+    _SLOT as _SLOT,
+    Rider as Rider,
+    _all_settled as _all_settled,
+    _compose as _compose,
+    _covering_overlay as _covering_overlay,
+    _extension as _extension,
+    _lineage_factors as _lineage_factors,
+    _lineage_reads as _lineage_reads,
+    _live_factors as _live_factors,
+    _live_riders as _live_riders,
+    _live_slots as _live_slots,
+    _marks as _marks,
+    _owned_projection as _owned_projection,
+    _placed_elsewhere as _placed_elsewhere,
+    _project_riders as _project_riders,
+    _Read as _Read,
+    _Registration as _Registration,
+    _same_node as _same_node,
+    _two_level as _two_level,
+    _union as _union,
+    _union_nominal as _union_nominal,
+    _vary_shift as _vary_shift,
+    _vary_weight as _vary_weight,
+    ambient_entries as ambient_entries,
+)
+from .systematics.by_label import cone as cone  # isort: skip
+from .systematics.explain import Explanation as Explanation, explain as explain  # isort: skip
+from .systematics.registration import _member_nodes as _member_nodes, stamp_labels as stamp_labels  # isort: skip
+from .systematics.varied import (  # isort: skip
+    Varied as Varied,
+    expand as expand,
+    labels_of as labels_of,
+    member_of as member_of,
+    point_registry as point_registry,
+    rebuild as rebuild,
 )
 
 #: contexts are compared by IDENTITY (§2.6b), so a divergence error must name two distinguishable
@@ -59,9 +92,10 @@ class EventContext:
     """
 
     __slots__ = (
-        "_collections", "_derived", "_factors", "_is_data", "_link", "_memo",
-        "_origin", "_parent", "_projected", "_provenance", "_record", "_recorded", "_serial",
-        "_session", "_weight_tags",
+        "_adopted", "_collections", "_derived", "_factors", "_gens", "_head", "_head_ops", "_is_data",
+        "_link", "_memo", "_origin", "_overlays", "_parent", "_projected",
+        "_provenance", "_reads", "_record", "_recorded", "_registration", "_riders", "_serial",
+        "_session", "_slots", "_weight_tags",
     )  # fmt: skip
 
     def __init__(
@@ -87,6 +121,55 @@ class EventContext:
         # families registered whatever the association, because each one rewrites every label the
         # ambient already carries.
         self._factors: list[Any] = [] if weight is None else [weight]
+        #: the SLOT of each entry, minted at append and kept by a join, so a handle recorded over
+        #: `(pu, hf)` still names those operations after `lf` joined the `hf` container — which
+        #: `id()` could not, the join replacing the object the read was recorded over.
+        self._slots: list[int] = [] if weight is None else [next(_SLOT)]
+        #: whether `_factors[0]` is the composed container a row-space change ADOPTED, and so
+        #: stands for the parent's own factors (`_live_factors` walks back through it)
+        self._adopted = False
+        #: §2.3: what that adopted head STANDS FOR — the parent's live factor slots and their
+        #: generations at the adoption, the same tuple a read records. A record from across the
+        #: change names the head when it equals this, and names nothing the child can anchor
+        #: otherwise (a prefix of the parent's list, or a read from after that list grew).
+        self._head: tuple[tuple[int, ...], tuple[int, ...]] | None = None
+        #: §2.3: the operations that head STANDS FOR, re-indexed here with every join of one of
+        #: them applied — `None` while nothing has joined one, where the ancestor's own live list
+        #: answers. A join keeps the head's node, so the entries it stands for live beside it.
+        self._head_ops: tuple[list[Any], list[int], frozenset[int]] | None = None
+        #: §2.1's ORDERED operations: a SLOT named here holds an OVERLAY — a relative-delta
+        #: family whose members are the whole ambient, so the composition REPLACES the running
+        #: value at its labels instead of multiplying.
+        self._overlays: frozenset[int] = frozenset()
+        #: §2.1's record of what a `graphed.weight()` READ handed out: `(the container's member
+        #: nodes, the live FACTOR slots it composed, their generations)`. A central naming one of
+        #: these is that composition, and the overlay lands right after the factors it was read
+        #: over. The key is the WHOLE member map, not the nominal: a join leaves the nominal node
+        #: untouched, so two handles read either side of one are told apart by nothing else.
+        #: Overlays are not in the key: they never move the nominal, so inserting one among the
+        #: factors leaves every earlier handle naming the same composition. SHARED down a `vary`
+        #: link (one row space, so every id means the same value), replaced by a row-space change.
+        self._reads: list[_Read] = []
+        #: §2.1's staleness stamp: `slot -> generation`, bumped by a join whose union ADDS
+        #: universes to that slot's nominal member. A handle read before such a join is no longer
+        #: the composition it names, and a re-index (which changes every node but no universe)
+        #: must not look like one — which is why this counts unions and not nodes.
+        self._gens: dict[int, int] = {}
+        #: §2.3's RIDERS: `slot -> Rider`, the provenance of each operation this context's list
+        #: introduced, beside the slot and never on the entry. The ancestors' stay reachable
+        #: through the adoption, exactly as their entries do (`_live_riders`).
+        self._riders: dict[int, Rider] = (
+            {}
+            if weight is None
+            else {
+                self._slots[0]: Rider(
+                    "factor",
+                    dict(getattr(weight, "_tags", None) or {}),
+                    priors=(_two_level(weight, "nominal"),),
+                    home=self,
+                )  # a seeded context is a root: it came through no row-space link
+            }
+        )
         #: the weight families REGISTERED on this lineage, `{name: tags}` — the record `variations`
         #: and a same-name registration read, as opposed to the ambient container's tag map, which
         #: a row-space change widens with every shift the mask carries
@@ -102,6 +185,10 @@ class EventContext:
         # §2.3e's ORIGINATION handle for the ambient: the context that last CHANGED the factor
         # list, which is NOT the one that happens to read it first. Stamping the reader would make
         # a `graphed.weight(parent)` call observable in a later divergence check.
+        #: §2.7: the `graphed.vary` call that produced THIS context, `None` for every other one.
+        #: `explain` walks the lineage for them, which is what puts the families in registration
+        #: order and names the context each was registered on.
+        self._registration: _Registration | None = None
         self._origin: EventContext = self
         self._serial = next(_SERIAL)
         self._provenance = capture()
@@ -212,16 +299,44 @@ class EventContext:
         if len(self._factors) == 1 and not isinstance(self._factors[0], Varied):
             # §2.2: a projection adopted ONE resolved member and nothing registered after it, so
             # there is no universe left to resolve — composing would only wrap it in a one-label
-            # container, and the read's type would then depend on what minted since the projection
+            # container, and the read's type would then depend on what minted since the projection.
+            # The adoption recorded this member as the child's read (§2.3), so handing it out again
+            # records nothing new.
             adopted: Array = self._factors[0]
             return adopted
         epoch = self._session._mint_epoch
         memo = self._memo
         if memo is not None and memo[0] == epoch and memo[1] == len(self._factors):
+            self._record_read(memo[2])
             return memo[2]
         composed, settled = self._materialise(self._ambient_operands())
         self._memo = (epoch, len(self._factors), composed, settled)
+        self._record_read(composed)
         return composed
+
+    def _record_read(self, composed: Any) -> None:
+        """§2.1: the READ is what lets a later central name this composition. What is recorded is
+        what a later registration compares — the member nodes the handle carries, the live factor
+        slots it stands for and their generations — never the container, which a mint may remake.
+        """
+        slots = _live_slots(self)
+        entry = (_member_nodes(composed), slots, tuple(self._gens.get(slot, 0) for slot in slots))
+        if entry not in self._reads:
+            self._reads.append(entry)
+
+    def _overlay_ids(self) -> frozenset[int]:
+        """The overlay slots as the OBJECT ids `_compose` tests, so the composition walk keeps
+        working on the fold base, where the head is a composed container in no slot."""
+        return _marks(self._factors, self._slots, self._overlays)
+
+    def _fixed_ids(self) -> frozenset[int]:
+        """The same, for the overlays a projection into their own universe FIXED (§2.3): there
+        every value is that universe, so the composition replaces with them at every label."""
+        return _marks(
+            self._factors,
+            self._slots,
+            frozenset(slot for slot, rider in self._riders.items() if rider.fixed),
+        )
 
     def _foldable(self) -> tuple[int, int, Varied, bool] | None:
         """The memo the next composition may build ON, `None` when it must remake from the
@@ -248,7 +363,9 @@ class EventContext:
         """Compose `operands` over the recorded union, with the verdict on whether a later mint
         could still move any resolution it just made (`_settled` over every operand and label)."""
         composed = rebuild(
-            _compose(operands, self._recorded), tags=self._ambient_tags(), context=self._origin
+            _compose(operands, self._recorded, overlays=self._overlay_ids(), fixed=self._fixed_ids()),
+            tags=self._ambient_tags(),
+            context=self._origin,
         )
         stamped = accessors.with_context(stamp_labels(composed), self._origin)
         return stamped, _all_settled(self._session, operands, self._recorded)
@@ -321,6 +438,8 @@ class EventContext:
         }
         if self._factors:
             child._adopt_ambient(child._stamp(member_of(self._ambient_weight(), label)))
+            if label != "nominal":
+                child._riders = _project_riders(self, label)
         child._weight_tags = {}  # a projection drops the registry (§2.2)
         child._record = child._stamp(child._record)
         self._projected[label] = child
@@ -333,9 +452,26 @@ class EventContext:
         whole quadratic it removes.
         """
         self._factors = [composed]
+        self._slots = [next(_SLOT)]
+        self._adopted = True
+        self._head_ops = None
+        self._overlays = frozenset()
+        # the child's OWN reads start empty; the ancestors' stay reachable through the adoption
+        # (`_lineage_reads`), because the head is exactly the composition they recorded (§2.3)
+        self._reads = []
+        parent = self._parent
+        slots = _live_slots(parent) if parent is not None else ()
+        gens = parent._gens if parent is not None else {}
+        self._head = (slots, tuple(gens.get(slot, 0) for slot in slots))
+        # the live list is the adopting parent's, so its stamps come along
+        self._gens = dict(gens)
         self._memo = (self._session._mint_epoch, 1, composed, True)
         self._recorded = _union(("nominal",), labels_of(composed))
         self._origin = self
+        # §2.1/§2.3: the adoption HANDS OUT the composed member, exactly as a read does, so a family
+        # whose nominal is that node decides the same way whether or not anything read here first —
+        # which is what makes `graphed.weight()` and `graphed.explain()` observations, not inputs.
+        self._record_read(composed)
 
 
 def _mask_key(mask: Array | Varied) -> tuple[tuple[str, int], ...]:
@@ -373,42 +509,6 @@ def vary_context(
     )
 
 
-def _carriers(ctx: EventContext) -> tuple[Any, ...]:
-    """§4.11-4's carrier list for the context forms — the three `_context_labels` already reads.
-
-    The ambient contributes the `(session, labels)` pair, not a container: both readers want labels
-    and points only, so composing here would record nodes for a walk that never does arithmetic.
-    """
-    factors = _lineage_factors(ctx)
-
-    def resolve(label: str) -> frozenset[int]:
-        # A factor whose member at `label` is its nominal carries nothing of the label (the seed
-        # weight, a family with no coordinate there): reading it is not composition at `label`.
-        out: set[int] = set()
-        for factor in factors:
-            out.update(
-                set(_member_nodes(_two_level(factor, label)))
-                - set(_member_nodes(_two_level(factor, "nominal")))
-            )
-        return frozenset(out)
-
-    ambient = AmbientCarrier(ctx._session, ctx._recorded, resolve)
-    return (ambient, *ctx._collections.values(), ctx._selection())
-
-
-def _lineage_factors(ctx: EventContext) -> tuple[Any, ...]:
-    """Every registered factor along the context's ancestry, once each. A row-space change adopts
-    the ONE composed container as the child's factor, so a member computed from an ancestor's
-    ambient reads the ancestor's factors, never the adopted node (§2.1(b))."""
-    seen: dict[int, Any] = {}
-    node: EventContext | None = ctx
-    while node is not None:
-        for factor in node._factors:
-            seen.setdefault(id(factor), factor)
-        node = node._parent
-    return tuple(seen.values())
-
-
 def _child_of(ctx: EventContext) -> EventContext:
     """A `vary` link: the row space is unchanged, only registrations differ (§6.1d kind (2)).
 
@@ -424,531 +524,18 @@ def _child_of(ctx: EventContext) -> EventContext:
         collections=ctx._collections,
     )
     child._factors = list(ctx._factors)
+    child._slots = list(ctx._slots)
+    child._adopted = ctx._adopted
+    child._head = ctx._head
+    child._head_ops = ctx._head_ops
+    child._overlays = ctx._overlays
+    # the same list object, not a copy: one row space, so a read at either end names the same
+    # values, and a handle read from the parent after the child was built still decides here
+    child._reads = ctx._reads
+    child._gens = dict(ctx._gens)
+    child._riders = dict(ctx._riders)
     child._recorded = ctx._recorded
     child._memo = ctx._memo
     child._origin = ctx._origin
     child._record = child._stamp(child._record)
     return child
-
-
-def _vary_weight(
-    ctx: EventContext,
-    name: str,
-    central: object,
-    variations: Mapping[Any, Any] | None,
-    collections: Mapping[str, Mapping[Any, Any] | Varied] | None,
-    points: Iterable[Mapping[str, Any]] | None,
-    composes_as_union: bool,
-    max_universes: int,
-    tags: Mapping[str, Any],
-) -> EventContext:
-    """Overload (b): register a per-event weight factor into the returned context's ambient
-    weight, composed label-aligned per §2.4 with whatever is already registered."""
-    if collections is not None:
-        raise GraphedError("collections= belongs to the shift form; a weight form takes tags")
-    if central is None:
-        raise GraphedError(
-            f"the weight form of graphed.vary({name!r}) needs the central per-event factor as its "
-            "third positional argument"
-        )
-    ambient_tags = ctx._ambient_tags()
-    inherited = ctx._weight_tags.get(name, ())
-    # What the next composition will multiply, decided HERE, before this registration mints, and by
-    # the same predicate the read uses: onto a foldable memo the new factor folds (today's
-    # two-element chain step, so a program reading at every intermediate context pays today's node
-    # count and no more); otherwise the composition is remade from the original factors and this
-    # registration joins them.
-    base = ctx._ambient_operands()
-    folds = ctx._foldable() is not None
-    # The ambient's tag-map families are only CANDIDATES for composition (m56): a member's coordinate
-    # on one of them is dropped iff the member's node at that label reads a lineage factor's varied
-    # member there (`_reads_ambient` in `vary._foreign`), which the composition below would multiply
-    # in again via `_two_level`; reached through shifted objects instead, it fans out. The map is
-    # over-inclusive — a mask-derived child's adopted container carries leaked shifts — and that is
-    # harmless because the node test decides.
-    composed = frozenset(ambient_tags)
-    one_at_a_time, joints = gather_members(
-        name,
-        tags,
-        variations,
-        inherited,
-        points,
-        session=ctx._session,
-        carriers=_carriers(ctx),
-        composes_as_union=composes_as_union,
-        max_universes=max_universes,
-        composed=composed,
-    )
-    # §1.1's within-the-container clause, keyed by family NAME over the three carriers
-    # `_context_labels` reads. `_members` alone is the §2.4 union and cannot say which family a
-    # label came from; the same `name` is the correlated case (one knob, §2.1) and is admitted —
-    # `check_family` refuses a repeated tag within it — while any OTHER family already spelling
-    # this label would make one universe differ from nominal in two knobs.
-    registered = {
-        f"{n}_{t}"
-        for tag_map in (
-            ambient_tags,
-            *((getattr(source, "_tags", None) or {}) for source in _carriers(ctx)[1:]),
-        )
-        for n, ts in tag_map.items()
-        if n != name
-        for t in ts
-    }
-    for label in one_at_a_time:
-        if label in registered:
-            raise GraphedError(f"variation label {label!r} is already carried by this container")
-    # a machine-minted joint joins the factor container as a flat cross node so `_two_level` reads it
-    # by name, but it is a cross-coordinate, not a tag of this family, so it stays out of `_tags`.
-    factors = {"nominal": central, **one_at_a_time, **joints}
-    check_members(factors)
-    # §2.1(b)'s ROW-SPACE rule: an ancestor-handled factor is re-indexed across the intervening
-    # links; a descendant or divergent one is a construction-time error naming the direction.
-    factors = {label: accessors.reindex_to(factor, ctx) for label, factor in factors.items()}
-    factor = rebuild(factors, tags={name: inherited + _tags_of(name, one_at_a_time)}, context=ctx)
-    # the §2.4 union is RECORDED here, never recomputed at the read: recomputing it from the
-    # context would hand the ambient every shift registered after it, and recomputing it from the
-    # factors would drop the shift labels a factor computed on shifted objects is read through.
-    recorded = _union(ctx._context_labels(), tuple(factors))
-    # the record-time type check, run BEFORE anything is recorded so a refused registration leaves
-    # no trace at all
-    _check_forms(ctx._session, [*base, factor], recorded)
-    record_labels(factor)  # §2.5's vary-time half; the members are stamped when they compose
-    # §2.5's shift-after-weight operand one: this factor's OWN member node ids, by value.
-    ctx._session._weight_factors.append((name, _member_nodes(factor)))
-
-    child = _child_of(ctx)
-    child._weight_tags[name] = inherited + _tags_of(name, one_at_a_time)
-    child._factors.append(factor)
-    child._recorded = recorded
-    child._origin = child
-    if folds:
-        folded, settled = child._materialise([*base, factor])
-        child._memo = (ctx._session._mint_epoch, len(child._factors), folded, settled)
-    else:
-        child._memo = None
-    return child
-
-
-def _vary_shift(
-    ctx: EventContext,
-    name: str,
-    nominal: object,
-    variations: Mapping[Any, Any] | None,
-    collections: Mapping[str, Mapping[Any, Any] | Varied] | None,
-    points: Iterable[Mapping[str, Any]] | None,
-    composes_as_union: bool,
-    max_universes: int,
-    tags: Mapping[str, Any],
-) -> EventContext:
-    """Overload (c): replace each named collection with a `Varied` over one shared tag set."""
-    if nominal is not None:
-        raise GraphedError(
-            "nominal= has no meaning in the shift form — the collections' central members come "
-            "from the target context; name the collections with collections={Name: {tag: record}}"
-        )
-    if variations is not None:
-        raise GraphedError(
-            "points= is not accepted in the shift form; its tags are the INNER keys of the "
-            "collection mappings (or a Varied member's own tags), so pass "
-            "collections={Name: {tag: record}} or collections={Name: varied}"
-        )
-    mapping: dict[str, Any] = dict(tags)
-    for collection_name, inner in (collections or {}).items():
-        if collection_name in mapping:
-            raise GraphedError(f"collection {collection_name!r} was named twice")
-        mapping[collection_name] = inner
-    if not mapping:
-        raise GraphedError(f"the shift form of graphed.vary({name!r}) needs at least one collection")
-    for collection_name, inner in list(mapping.items()):
-        if isinstance(inner, Varied):  # m55: lockstep by propagation, unpacked to the hand form
-            mapping[collection_name] = _unpack_varied(ctx, name, collection_name, inner, points)
-    _check_lockstep(name, mapping)
-
-    child = _child_of(ctx)
-    replaced = dict(ctx._collections)
-    for collection_name, inner in mapping.items():
-        current = ctx._read(collection_name)
-        inherited = current._tags.get(name, ()) if isinstance(current, Varied) else ()
-        one_at_a_time, joints = gather_members(
-            name,
-            inner,
-            None,
-            inherited,
-            points,
-            session=ctx._session,
-            carriers=_carriers(ctx),
-            composes_as_union=composes_as_union,
-            max_universes=max_universes,
-        )
-        existing = dict(current._members) if isinstance(current, Varied) else {"nominal": current}
-        # §4.6: a supplied member is projected by the label's own point, not flattened to its
-        # central universe — which is what makes a shift (x) shift joint point expressible; a
-        # machine-minted joint is already the cross node, so `member_of` on it is the identity
-        resolved = {label: member_of(member, label) for label, member in {**one_at_a_time, **joints}.items()}
-        check_members({**existing, **resolved})
-        resolved = {label: accessors.reindex_to(member, ctx) for label, member in resolved.items()}
-        for label in resolved:
-            if label in existing:
-                raise GraphedError(f"variation label {label!r} already varies {collection_name!r}")
-        tag_map = dict(current._tags) if isinstance(current, Varied) else {}
-        # a joint is a cross-coordinate, not a tag of this single family, so it stays out of `_tags`
-        tag_map[name] = inherited + _tags_of(name, one_at_a_time)
-        replaced[collection_name] = child._stamp(
-            register(rebuild({**existing, **resolved}, tags=tag_map, context=ctx))
-        )
-        _report_shift_after_weight(ctx, collection_name, existing)
-    child._collections = replaced
-    return child
-
-
-def _report_shift_after_weight(ctx: EventContext, collection: str, pre_shift: Mapping[str, Any]) -> None:
-    """§2.5/§2.1: a weight factor registered BEFORE the collection it reads is varied fills every
-    shift universe with its PRE-shift value, and the registry is not re-derived, so it is
-    unfixable after the fact. Report each such family paired with the collection it reads.
-
-    Diagnostic, not an error: a weight that legitimately does not track the shift is a valid
-    program — which is why the walk is per (family, collection) rather than a membership test.
-    """
-    session = ctx._session
-    if not session._weight_factors:
-        return
-    targets = {member.node_id for member in pre_shift.values()}
-    registry = session._shift_after_weight
-    for family, nodes in session._weight_factors:
-        if any(targets & cone(session, nid) for nid in nodes):
-            key = (family, collection)
-            # by value, with the factor's own ids: the shipping site filters on them (§2.5's
-            # report is about one compiled program, the registry is about the whole Session)
-            registry[key] = registry.get(key, frozenset()) | frozenset(nodes)
-
-
-def _unpack_varied(
-    ctx: EventContext,
-    name: str,
-    collection_name: str,
-    varied: Varied,
-    points: Iterable[Mapping[str, Any]] | None,
-) -> dict[str, Any]:
-    """m55: a `Varied` collection member is accepted only when it carries EXACTLY the family being
-    registered and its nominal is this context's own collection; it unpacks to the `{tag: member}`
-    map the hand form passes, so nothing downstream changes. Everything else is refused here,
-    before any label is minted."""
-    hand = f"collections={{{collection_name!r}: {{tag: record}}}}"
-    if points:
-        raise GraphedError(
-            f"points= placements are not accepted beside a Varied collection member ({collection_name!r}): "
-            f"its members carry no fan-out to prune; pass {hand} for a placed registration"
-        )
-    tags = dict(varied._tags)
-    expected = {"nominal", *(f"{name}_{tag}" for tag in tags.get(name, ()))}
-    extra = sorted(set(labels_of(varied)) - expected)
-    if set(tags) != {name} or extra:
-        raise GraphedError(
-            f"collection {collection_name!r}: a Varied member must carry exactly the family {name!r} being "
-            f"registered, got families {sorted(tags)} with extra labels {extra}; build it as "
-            f"graphed.vary(graphed.nominal(ctx[{collection_name!r}]), {name!r}, ...) on the context's central "
-            f"collection with only the tags being added, or pass {hand}"
-        )
-    current = ctx._read(collection_name)
-    central = member_of(current, "nominal") if isinstance(current, Varied) else current
-    nominal = accessors.reindex_to(member_of(varied, "nominal"), ctx)
-    if nominal.node_id != central.node_id:
-        raise GraphedError(
-            f"collection {collection_name!r}: the Varied member's nominal is node {nominal.node_id}, not this "
-            f"context's {collection_name!r} (node {central.node_id}), so its members are not shifts of this "
-            f"collection; build it on the context's central collection or pass {hand}"
-        )
-    return {tag: member_of(varied, f"{name}_{tag}") for tag in tags[name]}
-
-
-def _check_lockstep(name: str, mapping: Mapping[str, Mapping[Any, Any]]) -> None:
-    """§2.6a: all collections in one call MUST share one tag set (the lockstep Jet+MET form)."""
-    sets = {}
-    for collection_name, inner in mapping.items():
-        if not isinstance(inner, Mapping):
-            raise GraphedError(
-                f"collection {collection_name!r} needs a {{tag: record}} mapping or a Varied, "
-                f"got {type(inner).__name__}"
-            )
-        sets[collection_name] = frozenset(canonical_tag(tag) for tag in inner)
-    if len({frozenset(tags) for tags in sets.values()}) > 1:
-        raise GraphedError(
-            f"variation {name!r} moves its collections out of lockstep: "
-            f"{ {key: sorted(value) for key, value in sets.items()} } — one call's collections must "
-            "share one tag set"
-        )
-
-
-def _two_level(container: Any, label: str) -> Any:
-    """§2.1's `factor[L]`: the container's member for L, then — when that member is ITSELF a
-    `Varied` (a registered factor computed on shifted objects) — its own member for L. The
-    composed ambient weight is therefore always FLAT.
-
-    Memoised on the Session, because the answer is asked again at every later registration: the
-    record-time check re-runs the composition over the whole factor list, and §4.6's resolution
-    (a point restriction and a scan of the container's registered points) is not a dict lookup.
-
-    What is stored is the resolved LABEL PATH, never the member: a member is an array carrying its
-    context, and a context holds its factors, so a stored member roots the whole analysis in the
-    live Session and the page's finalizer never fires. On a hit the member is rebuilt from the live
-    container by two dict lookups, which is what the memo was buying in the first place.
-    """
-    if not isinstance(container, Varied):
-        return container
-    session = session_of(container)
-    if session is None:
-        return member_of(member_of(container, label), label)
-    page = session._universes.get(id(container))
-    if page is None:
-        page = session._universes[id(container)] = {}
-        weakref.finalize(container, session._universes.pop, id(container), None)
-    path = page.get(label)
-    if path is not None:
-        member = container._members[path[0]]
-        return member if path[1] is None else member._members[path[1]]
-    outer_key = container._key_for(label)
-    member = container._members[outer_key]
-    inner_key = member._key_for(label) if isinstance(member, Varied) else None
-    if _settled(container, label):
-        page[label] = (outer_key, inner_key)
-    return member if inner_key is None else member._members[inner_key]
-
-
-def _settled(container: Any, label: str) -> bool:
-    """Whether a later mint could still move `_two_level(container, label)` — the one thing that
-    makes the memo above safe to keep across registrations.
-
-    §4.6 reads the point registry at each level, and every read that finds NOTHING is an answer
-    the next `vary` can change: an unregistered label falls to the central universe, and an
-    unregistered own label is off the container's axes, so a label minted later can start
-    resolving onto it. Those are recomputed rather than stored. A label the container carries
-    outright never reads the registry at all, and `"nominal"` is registered nowhere by construction.
-    """
-    return _fixed(container, label) and _fixed(member_of(container, label), label)
-
-
-def _all_settled(session: Any, operands: Sequence[Any], labels: Sequence[str]) -> bool:
-    """Whether every resolution the composition just made is one no later mint can move.
-
-    Read off `_two_level`'s memo rather than recomputed: that memo stores an answer exactly when
-    `_settled` holds, so a page missing a label is that label's unsettled resolution. It must be
-    read straight after the composition — a mint can settle a label the composition read before it.
-    A composition that is not settled must not be FOLDED onto, because a mint could move an operand
-    it already multiplied; it is remade from the original factors instead.
-    """
-    return all(
-        label in session._universes.get(id(operand), ())
-        for operand in operands
-        if isinstance(operand, Varied)
-        for label in labels
-    )
-
-
-def _fixed(value: Any, label: str) -> bool:
-    if not isinstance(value, Varied):
-        return True
-    if label in value._members:
-        return True
-    registry = point_registry(value)
-    return label in registry and all(own in registry for own in value._members if own != "nominal")
-
-
-# ---- §4's composition: linear in the registered factors ------------------------------------
-def _member(member: Any, label: str) -> Any:
-    """The composition's own operand at a label: the member itself."""
-    return member
-
-
-def _times(left: Any, right: Any, label: str) -> Any:
-    """The composition's multiply, naming the LABEL it failed at.
-
-    Almost every clash is refused at registration by the walk over forms below, which names the
-    label the same way. The one that reaches here is a clash a later mint created at a label no
-    registration could walk (§7), and without the label the message says only that some multiply in
-    some universe is ill-typed.
-    """
-    try:
-        return left * right
-    except GraphedError as exc:
-        raise GraphedTypeError(
-            "mul", capture(), f"the ambient weight at variation label {label!r}: {exc}"
-        ) from exc
-
-
-def _compose(
-    factors: Sequence[Any],
-    labels: Sequence[str],
-    project: Callable[[Any, str], Any] = _member,
-    mul: Callable[[Any, Any, str], Any] = _times,
-) -> dict[str, Any]:
-    """The ambient at every label: the product of each factor's member for that label, read two
-    levels deep so a factor computed on shifted objects contributes in the label's own universe.
-
-    The association is chosen so the work shared between labels is built once — a balanced product
-    tree over the nominal members, a complement pushdown handing each index the product of all the
-    others, and a tree walk for a label two or more factors vary at. `D`, the set of varying
-    indices, is decided by MEMBER IDENTITY: a factor's `_tags` never mentioning a label says
-    nothing about whether its member there is the nominal one.
-
-    `project` and `mul` make this one walk serve both times it is needed: over arrays when the
-    ambient materialises, and over FORMS at registration (`_check_forms`). The backend's multiply
-    inference is not associative for raise/no-raise, so a check that MODELLED this walk instead of
-    running it would admit clashes the composition then refuses at the read.
-    """
-    centrals = [_two_level(factor, "nominal") for factor in factors]
-    central_ids = [_member_nodes(central) for central in centrals]
-    count = len(centrals)
-    tree = _product_tree([project(central, "nominal") for central in centrals], mul)
-    complements = _complements(tree, count, mul)
-    composed: dict[str, Any] = {}
-    for label in labels:
-        applied = [_two_level(factor, label) for factor in factors]
-        varying = [i for i in range(count) if _member_nodes(applied[i]) != central_ids[i]]
-        if not varying:
-            rest = tree[(0, count)]
-        elif len(varying) == 1:
-            rest = complements[varying[0]]
-        else:
-            rest = _outside(tree, count, varying, mul)
-        parts = [project(applied[i], label) for i in varying]
-        composed[label] = _product(parts if rest is None else [rest, *parts], mul, label)
-    return composed
-
-
-def _product(parts: Sequence[Any], mul: Callable[[Any, Any, str], Any], label: str) -> Any:
-    product = parts[0]
-    for part in parts[1:]:
-        product = mul(product, part, label)
-    return product
-
-
-def _product_tree(centrals: Sequence[Any], mul: Callable[[Any, Any, str], Any]) -> dict[tuple[int, int], Any]:
-    """`(lo, hi)` -> the product of `centrals[lo:hi]`, split at the midpoint. `N-1` multiplies,
-    shared by every label, and a pure function of the registration order."""
-    tree: dict[tuple[int, int], Any] = {}
-
-    def build(lo: int, hi: int) -> Any:
-        if hi - lo > 1:
-            mid = (lo + hi) // 2
-            tree[(lo, hi)] = mul(build(lo, mid), build(mid, hi), "nominal")
-        else:
-            tree[(lo, hi)] = centrals[lo]
-        return tree[(lo, hi)]
-
-    if centrals:
-        build(0, len(centrals))
-    return tree
-
-
-def _complements(
-    tree: Mapping[tuple[int, int], Any], count: int, mul: Callable[[Any, Any, str], Any]
-) -> list[Any]:
-    """`out[i]` = the product of every nominal but the `i`-th, in O(N) multiplies shared down the
-    tree — so a label exactly one factor varies at costs one more. `None` at `count == 1`, where
-    the product of everything else is empty."""
-    out: list[Any] = [None] * count
-
-    def push(lo: int, hi: int, outside: Any) -> None:
-        if hi - lo == 1:
-            out[lo] = outside
-            return
-        mid = (lo + hi) // 2
-        left, right = tree[(lo, mid)], tree[(mid, hi)]
-        push(lo, mid, right if outside is None else mul(outside, right, "nominal"))
-        push(mid, hi, left if outside is None else mul(outside, left, "nominal"))
-
-    if count:
-        push(0, count, None)
-    return out
-
-
-def _outside(
-    tree: Mapping[tuple[int, int], Any],
-    count: int,
-    varying: Sequence[int],
-    mul: Callable[[Any, Any, str], Any],
-) -> Any:
-    """The maximal subtrees holding none of `varying`, folded left to right — `None` when the
-    varying indices cover every leaf."""
-    parts: list[Any] = []
-
-    def walk(lo: int, hi: int) -> None:
-        if not any(lo <= index < hi for index in varying):
-            parts.append(tree[(lo, hi)])
-        elif hi - lo > 1:
-            mid = (lo + hi) // 2
-            walk(lo, mid)
-            walk(mid, hi)
-
-    walk(0, count)
-    return _product(parts, mul, "nominal") if parts else None
-
-
-# ---- the same walk, over forms: the record-time refusal -------------------------------------
-def _check_forms(session: Any, factors: Sequence[Any], labels: Sequence[str]) -> None:
-    """Type-check the composition by RUNNING it over forms, node-free (§5).
-
-    A cross-factor clash is the one thing the composition itself can raise, and `check_members`
-    cannot see it — it compares a factor only against its own nominal. Running the walk here keeps
-    that refusal inside `vary`'s §4.5 transactional scope, where the minted labels still roll back;
-    deferred to the first read it would leave them bound for the Session's life.
-    """
-    _compose(
-        factors,
-        labels,
-        lambda member, label: _member_form(session, member, label),
-        lambda left, right, label: _mul_form(session, left, right, label),
-    )
-
-
-def _member_form(session: Any, member: Any, label: str) -> Any:
-    """The form of a member the composition multiplies.
-
-    `_two_level` resolves §2.2's one legal level of nesting, so an ordinary factor arrives here as
-    an array. One that varies past that level would compose into an ambient universe that is
-    itself a container — which no consumer can read, `graphed.universe(...).node_id` included — so
-    it is refused here, inside `vary`, rather than at the read that trips over it.
-    """
-    if isinstance(member, Varied):
-        raise GraphedTypeError(
-            "mul",
-            capture(),
-            f"the ambient weight at variation label {label!r}: this factor's member is itself a "
-            f"container over {list(member._members)}, one universe deeper than a weight factor nests",
-        )
-    return session.form(member)
-
-
-def _mul_form(session: Any, left: Any, right: Any, label: str) -> Any:
-    """The product form of two member forms, memoised on the Session (`_mul_forms`).
-
-    The walk multiplies one factor's handful of member forms at a time, so the distinct pairs stay
-    few whatever the union's size; without the memo it would pay a backend inference per multiply.
-    The key is the `Form` protocol's own `describe()` and NEVER `str(form)`: a repr may abbreviate
-    — awkward's elides the middle of a deep type — so two forms that multiply differently would
-    share a key and the memo would admit the very clash the walk exists to refuse.
-    """
-    key = (left.describe(), right.describe())
-    hit = session._mul_forms.get(key)
-    if hit is not None:
-        return hit
-    try:
-        form = session.backend.op_form("mul", [left, right], {})
-    except Exception as exc:  # the clash the composition would raise, named at its own label
-        raise GraphedTypeError(
-            "mul", capture(), f"the ambient weight at variation label {label!r}: {exc}"
-        ) from exc
-    session._mul_forms[key] = form
-    return form
-
-
-def _union(*groups: Sequence[str]) -> tuple[str, ...]:
-    out: dict[str, None] = {"nominal": None}
-    for group in groups:
-        for label in group:
-            out.setdefault(label, None)
-    return tuple(out)
-
-
-def _tags_of(name: str, members: Mapping[str, Any]) -> tuple[str, ...]:
-    return tuple(label[len(name) + 1 :] for label in members if label != "nominal")

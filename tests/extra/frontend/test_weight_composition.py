@@ -21,7 +21,8 @@ import pytest
 
 import graphed
 import graphed.accessors
-from graphed import Array, Kind, Session, compile_ir, context
+import graphed.systematics.ambient
+from graphed import Array, Kind, Session, compile_ir
 from graphed.context import EventContext
 from graphed.errors import GraphedTypeError
 from graphed.numpy import NumpyBackend, from_record
@@ -445,13 +446,13 @@ def test_an_unsettled_ambient_leaves_the_record_time_check_walking_the_original_
     del session
 
     walked: list[list[Any]] = []
-    checked = context._check_forms
+    checked = graphed.systematics.ambient._check_forms
 
-    def spy(session: Any, factors: Any, labels: Any) -> None:
+    def spy(session: Any, factors: Any, labels: Any, overlays: Any, fixed: Any) -> None:
         walked.append(list(factors))
-        checked(session, factors, labels)
+        checked(session, factors, labels, overlays, fixed)
 
-    monkeypatch.setattr(context, "_check_forms", spy)
+    monkeypatch.setattr(graphed.systematics.ambient, "_check_forms", spy)
     graphed.vary(left, "b", shifted["pt"] * 1.0, is_weight=True, up=shifted["pt"] * 1.2)
 
     assert [id(operand) for operand in walked[-1][:-1]] == [id(factor) for factor in left._factors]

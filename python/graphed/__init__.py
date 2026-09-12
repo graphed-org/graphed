@@ -25,6 +25,7 @@ from .aggregate import aggregate_plan, resolve_backend
 from .array import Array, BoundMethod, apply
 from .backend import Backend, Form, ParamValue
 from .by_label import impact_by_label, read_columns_by_label
+from .context import Explanation, explain
 from .errors import GraphedError, GraphedTypeError, PointError
 from .execute import CompiledGraph, compile_ir, evaluate_ir
 from .projection import (
@@ -74,6 +75,7 @@ __all__ = [
     "BufferNeed",
     "BufferProjection",
     "CompiledGraph",
+    "Explanation",
     "Form",
     "GraphedError",
     "GraphedTypeError",
@@ -95,6 +97,7 @@ __all__ = [
     "context_of",
     "evaluate_ir",
     "expanding",
+    "explain",
     "handle_opaque",
     "impact_by_label",
     "is_enabled",

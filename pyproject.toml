@@ -150,7 +150,7 @@ warn_return_any = false
 [[tool.mypy.overrides]]
 module = [
   "analyses", "backends", "m13_toy", "m52_point_fixtures", "m55_lockstep_fixtures",
-  "test_vary_stacking",
+  "m57_dedupe_fixtures", "test_vary_stacking",
 ]
 ignore_missing_imports = true
 
@@ -193,6 +193,8 @@ pythonpath = [
   # awkward/m40 imports golden_route from awkward/m39 (cross-dir); needed once awkward runs per-mXX.
   # numpy/m39 ships golden_route.py too, but resolves same-dir via prepend — only m39 here is on path.
   "tests/frozen/awkward/m39",
+  # awkward/m57's fixtures serve tests/extra/awkward/m57's review-closure legs (cross-dir).
+  "tests/frozen/awkward/m57",
   # awkward/m48's §4.1 anchor reads agc.correctionlib_json() out of preserve/m9 (cross-dir). This
   # also exposes preserve/m9's `conftest` as an importable top-level module name. Three corpus/m05
   # tests DO `from conftest import ...`; they stay correct because run-tests.sh runs corpus and

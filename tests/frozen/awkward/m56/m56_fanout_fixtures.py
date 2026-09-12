@@ -33,9 +33,11 @@ TAGS = ("up", "down")
 
 JES = {"up": 1.05, "down": 0.95}
 JER = {"up": 1.02, "down": 0.98}
-#: the SF table each `jes` WEIGHT member swaps to, and the second family's own table
+#: the SF table each `jes` WEIGHT member swaps to, and the second family's own table. Their
+#: NOMINALS differ, so the two families' centrals are two nodes and the two stay two factors: a
+#: shared nominal makes one central name the other's factor and the ambient composes one entry.
 JES_SF = {"nominal": 1.0, "up": 1.2, "down": 0.8}
-HF_SF = {"nominal": 1.0, "up": 1.3, "down": 0.7}
+HF_SF = {"nominal": 1.1, "up": 1.3, "down": 0.7}
 #: the probe families' table, distinct from both so no two universes coincide
 PROBE_SF = {"nominal": 1.0, "up": 1.4, "down": 0.6}
 
