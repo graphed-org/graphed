@@ -15,7 +15,7 @@ runners.
 
 Install::
 
-    pip install graphed[numpy]
+    pip install "graphed[numpy]"
 
 A first taste — the same numpy you already write, deferred:
 

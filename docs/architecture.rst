@@ -175,8 +175,8 @@ you swap:
   takes the same plan.
 * `graphed-histogram <https://github.com/graphed-org/graphed-histogram>`_ — deferred
   ``boost-histogram`` and ``hist`` fills, the dask-histogram analogue. A ``.fill()`` records;
-  ``plan()`` exports the task graph a runner aggregates. It also backs ``hist.graphed``, so the
-  ``Hist.new.Reg(...).Double()`` builder you already use works on deferred arrays.
+  ``plan()`` exports the task graph a runner aggregates. A ``hist.graphed`` accessor, reaching
+  the same code from ``hist``'s own ``Hist.new.Reg(...).Double()`` builder, is not released yet.
 
 ``graphed``'s numbers are checked against the same analyses written in plain awkward — exactly,
 with no tolerances. :doc:`corpus/index` describes those reference analyses and what they cover.

@@ -401,7 +401,7 @@ the families it *shares* an operation with, whose joint is absent for the opposi
 two values of one weight, not a product. All of
 it is read from what the registrations and the operations' riders already say; nothing is decided
 again, and the ambient is read exactly as ``graphed.weight`` reads it. The per-operation view alone
-is ``graphed.context.ambient_entries(ctx)``.
+is ``graphed.systematics.ambient_entries(ctx)``.
 
 Two orderings are refused rather than quietly composed, and each message names the order that
 works. A relative-delta family registered on a handle read *before* a later join widened one of the
