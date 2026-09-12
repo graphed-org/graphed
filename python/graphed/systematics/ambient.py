@@ -1032,13 +1032,16 @@ def _check_widening(ctx: EventContext, slot: int, central: Any, name: str) -> No
     over: the overlay's members ARE the composition as it stood when its handle was read, and
     widening a factor under it would change that composition beneath them.
 
-    Decided from LABEL SETS, which a row-space change carries unchanged, and before `gather_members`
-    mints this family's cross members — so the refusal leaves not one node behind (§2.5), wherever
-    the factor it names lives.
+    Decided from LABEL SETS, both operands read at the level THIS context reads them: a mask carries
+    a label set unchanged but a projection RESETS it, so a central built above one joins as its
+    member there and comparing it at its own depth would refuse a join whose union adds nothing —
+    §2.1's "a central built at an ancestor still names its factor after the expansion". Nothing that
+    mints is walked, and the answer lands before `gather_members` mints this family's cross members,
+    so the refusal leaves not one node behind (§2.5), wherever the factor it names lives.
     """
     live, slots, _overlays = _live_factors(ctx)
-    entry = live[slots.index(slot)]
-    added = _coordinates(central) - _coordinates(member_of(entry, "nominal"))
+    entry = _here(ctx, live[slots.index(slot)])
+    added = _coordinates(_here(ctx, central)) - _coordinates(member_of(entry, "nominal"))
     covering = _covering_overlay(ctx, slot) if added else None
     if covering is None:
         return
@@ -1049,6 +1052,20 @@ def _check_widening(ctx: EventContext, slot: int, central: Any, name: str) -> No
         "over that factor; register the absolute family first and the relative-delta family "
         "on a handle read after it"
     )
+
+
+def _here(ctx: EventContext, value: Any) -> Any:
+    """`value` at the level `ctx` reads it, peeled through the PROJECTIONS between its row space and
+    this one and nothing else — the label-set half of the re-index `_vary_weight` performs two
+    statements on (`accessors._follow`). A mask leaves the set alone and is not followed: following
+    one mints, and this decides a refusal that must leave no node behind (§2.5)."""
+    home = accessors.context_of(value)
+    if home is None or home is ctx:
+        return value
+    for kind, payload in ctx._links_below(home):
+        if kind == "project":
+            value = member_of(value, payload)
+    return value
 
 
 def _coordinates(value: Any) -> frozenset[str]:
