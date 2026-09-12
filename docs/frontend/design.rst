@@ -330,6 +330,179 @@ mints ``jes_25em1`` and ``jes_m25em1`` — an ``int`` exactly, a ``float`` throu
 round-tripping decimal, so ``2.5`` and ``"2.5"`` are one tag and ``{2.0: ..., "2": ...}`` is
 refused as one value naming two universes.
 
+The weight form's nominal names the factor
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A weight registration's third argument is not only a starting value: it says *which* factor of the
+ambient weight this family varies. graphed compares it by node against what is already registered
+— never by value, so a re-computed expression with equal values is a different factor — and decides
+one of three things before anything is minted.
+
+The compositions ``graphed.weight(ctx)`` handed out are compared first. A node that is one of them
+makes the family a **relative delta**: its members already are the whole ambient rescaled, so they
+replace the running product at their own labels instead of multiplying into it — everywhere except
+a universe another family *placed* at a point naming this family's coordinate, where the member
+that family declared is the value you asked for and stands. Such an overlay is
+anchored right after the factors its handle was read over, so a factor registered afterwards
+multiplies its result, and the handle you read decides nothing by itself — adding or dropping a
+``weight(ctx)`` read between registrations changes no value. A handle read over a single factor is
+an overlay too, and reads as one even though that factor's nominal is also the handle's: it is the
+composition you were given, and every value it produces equals the join's.
+
+Otherwise a node that is a registered factor's nominal makes the family **join that factor**: both
+families' universes live in one container, so the scale factor is in the product once and ``hf_up``
+is ``SF(up_hf)``, not ``SF(up_hf)`` times ``SF``. The joined container's nominal member is the union
+of the two centrals' coordinate universes, so a central computed over jes-shifted jets keeps that
+dependence whichever family registered first. A node that is neither becomes a **new factor**, and
+the ambient multiplies one more thing.
+
+Two families on one factor share one container, so a joint label of the two reads that container
+two levels deep: the cross member the fanned-out family minted for that point, not the product of
+the two families' one-at-a-time members. Both of those are absolute values of one weight, and
+multiplying them is exactly the double count this rule removes. A joint that really carries both
+variations is spelled by building the cross members from the other family's varied member, the
+ratio idiom the previous section uses.
+
+A cut or a projection to one universe changes the row space, and the child starts from the single
+composed weight it inherits. A handle read at the parent still names that composition at the child
+and is still a relative delta there: read over the whole composition the child adopted, it lands
+right after it; read over part of the parent's factors, it lands right after that part, and
+everything registered later multiplies its result. What is refused is a handle whose universes are
+no longer the composition it names — one read before a later join widened a factor it composed —
+and one read on a branch this context does not descend from; each message names the read to
+repeat. A weight central built before the cut names its factor at the child, and still does after
+any number of registrations there: joining one entry re-indexes the whole inherited composition,
+and each entry keeps the identity it had in every row space it came through.
+
+Inside ``graphed.universe(ctx, L)`` the join keeps the universe you projected into, because
+expanding the inherited composition re-indexes each operation to what the ambient at ``L`` reads of
+it: a factor to its member there, read through its own universes, so a weight computed on
+jes-shifted jets keeps that dependence when ``L`` is the shift's label; a relative-delta family to
+its member there when ``L`` is one of its own universes, which then stands as the whole value; and
+one that contributes nothing at ``L`` not at all. Two registrations are refused there rather than
+silently answered. Naming the factor ``L`` is a universe *of* is refused, because its member there
+is that universe rather than the central and joining would put the central back. And inside a
+relative-delta family's own universe, an operation that would land among the factors that family
+was read over is refused — a join of one of them, or a handle read over part of them — because that
+family's member is your node over the old product and nothing re-derives it over a new one. Each
+message names the spellings that work: register the family, or read the handle, at the parent
+before projecting; or read a fresh ``graphed.weight()`` handle at the projection, whose record is
+the projected composition's.
+
+``graphed.explain(ctx)`` is the view of all this. It answers, in one line per item: which families
+you registered, in order, where each was registered and how it entered the ambient — a new factor,
+a join naming the factor's other families, an overlay over the families its handle was read over,
+a shift over its collections, and any universe it placed at a point; what the ambient is made of
+here, one line per operation with the families it carries and the links it was carried through;
+and every universe this context carries with where it came from — one at a time, a fan-out joint
+over the dependency it read, a placement, or a relative-delta family's own universe — plus, per
+family, the families it *composes* with, which is why no joint universe of those two exists, and
+the families it *shares* an operation with, whose joint is absent for the opposite reason: they are
+two values of one weight, not a product. All of
+it is read from what the registrations and the operations' riders already say; nothing is decided
+again, and the ambient is read exactly as ``graphed.weight`` reads it. The per-operation view alone
+is ``graphed.context.ambient_entries(ctx)``.
+
+Two orderings are refused rather than quietly composed, and each message names the order that
+works. A relative-delta family registered on a handle read *before* a later join widened one of the
+factors that handle composed is refused — its universes are no longer the composition's, so read
+the handle again after the join. A join that would widen a factor an overlay was already read over
+is refused from the other side, for the same reason: register the absolute family first and the
+relative-delta family on a handle read after it.
+
+.. code-block:: python
+
+    s   = Session(AwkwardBackend())
+    ctx = ga.gnano.events(from_awkward(s, "events", events))
+
+    sf  = ctx.MET.pt / 10.0                 # one b-tag scale factor, [1.0, 2.0, 3.0]
+    pu  = ctx.MET.pt * 0.0 + 0.5            # a pile-up weight
+
+    ctx = vary(ctx, "pu", pu, is_weight=True, up=pu * 1.1)    # a new factor
+    ctx = vary(ctx, "hf", sf, is_weight=True, up=sf * 1.1)    # another new factor
+    w   = weight(ctx)                                         # the composition so far, pu * SF
+    ctx = vary(ctx, "mu", w, is_weight=True, up=w * 1.05)     # nominal IS w: an overlay
+    ctx = vary(ctx, "lf", sf, is_weight=True, up=sf * 1.2)    # nominal IS sf: joins the hf factor
+
+    def shown(session, value):
+        return [round(x, 4) for x in session.materialize(value).to_list()]
+
+    amb = weight(ctx)
+    print(labels(amb))
+    for lbl in ("nominal", "hf_up", "lf_up", "mu_up"):
+        print(lbl, shown(s, universe(amb, lbl)))
+    print("oracle ", shown(s, pu * sf))            # the SF is in the product once, not twice
+
+    # a second central over jes-shifted jets joins the first and carries its coordinate
+    s2   = Session(AwkwardBackend())
+    ctx2 = ga.gnano.events(from_awkward(s2, "events", events))
+    jets = ctx2.Jet
+    ctx2 = vary(ctx2, "jes", collections={"Jet": {
+        "up": gak.with_field(jets, jets.pt * 1.05, "pt")}})
+    flat    = gak.sum(jets.pt, axis=1) / 100.0        # the central on the nominal jets
+    central = gak.sum(ctx2.Jet.pt, axis=1) / 100.0    # the same node at nominal, varied by jes
+    ctx2 = vary(ctx2, "hf", flat, is_weight=True, up=flat * 1.1)
+    ctx2 = vary(ctx2, "lf", central, is_weight=True, up=central * 1.2)
+
+    amb2 = weight(ctx2)
+    print(labels(amb2))
+    print("jes_up ", shown(s2, universe(amb2, "jes_up")))
+    print("oracle ", shown(s2, universe(central, "jes_up")))   # the SF at the jes_up jets
+
+    # where these variations came from, after a cut and after a projection
+    print(explain(ctx[ctx.MET.pt > 15.0]))
+    print(explain(universe(ctx, "hf_up")))
+
+Prints::
+
+    ('nominal', 'pu_up', 'hf_up', 'mu_up', 'lf_up')
+    nominal [0.5, 1.0, 1.5]
+    hf_up [0.55, 1.1, 1.65]
+    lf_up [0.6, 1.2, 1.8]
+    mu_up [0.525, 1.05, 1.575]
+    oracle  [0.5, 1.0, 1.5]
+    ('nominal', 'jes_up', 'hf_up', 'lf_up', 'lf_up__jes_up')
+    jes_up  [0.6825, 0.5775, 1.155]
+    oracle  [0.6825, 0.5775, 1.155]
+    graphed.explain: 4 registrations, 3 ambient operations, 4 universes
+    families (registration order)
+      pu (WEIGHT) ['up'] at the root: a new factor; composes with hf, mu, lf
+      hf (WEIGHT) ['up'] at vary: a new factor; shares the factor with lf; composes with pu, mu
+      mu (WEIGHT) ['up'] at vary: an overlay over hf, pu; composes with pu, hf, lf
+      lf (WEIGHT) ['up'] at vary: joins the factor carrying hf; shares the factor with hf; composes with pu, mu
+    ambient operations (in composition order)
+      #0 factor: pu['up'] via cut
+      #1 factor: hf['up'], lf['up'] via cut
+      #2 overlay: mu['up'] via cut
+    universes here
+      pu_up: pu, one at a time
+      hf_up: hf, one at a time
+      mu_up: mu's own universe, a relative-delta family
+      lf_up: lf, one at a time
+    graphed.explain: 4 registrations, 2 ambient operations, 0 universes
+    families (registration order)
+      pu (WEIGHT) ['up'] at the root: a new factor; composes with hf, mu, lf
+      hf (WEIGHT) ['up'] at vary: a new factor; shares the factor with lf; composes with pu, mu
+      mu (WEIGHT) ['up'] at vary: an overlay over hf, pu; composes with pu, hf, lf
+      lf (WEIGHT) ['up'] at vary: joins the factor carrying hf; shares the factor with hf; composes with pu, mu
+    ambient operations (in composition order)
+      #0 factor: pu['up'] via universe:hf_up
+      #1 factor: hf['up'], lf['up'] via universe:hf_up
+    universes here
+
+``pu`` and ``hf`` are new factors; ``mu`` is the relative delta, so ``mu_up`` is 1.05 times the
+nominal rather than 1.05 times a squared product; ``lf`` names ``hf``'s central, so the scale
+factor stays in the product once and the oracle line is that product built by hand. In the second
+context the joining central is the same scale factor read on the jes-shifted jets, so the union
+puts that universe on the shared nominal member and ``jes_up`` reads the weight at its own jets.
+The two ``explain`` blocks are the same four registrations read from a cut and from inside
+``hf_up``: the joined family names the factor it joined and shares it with ``hf`` rather than
+composing with it, the overlay names the two families its handle was read over, and every operation
+says which link carried it here. The operations are what the ambient *here* is made of, so inside
+``hf_up`` the overlay is gone — that universe carries none of its coordinate, so the weight there
+is ``pu * SF(up_hf)`` with no 1.05 in it — and "universes here" is empty because that context is one
+universe of the ambient, not a container of them.
+
 Three ways two things can be correlated
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
