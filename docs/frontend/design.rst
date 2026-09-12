@@ -231,7 +231,7 @@ supplies the NanoEvents-flavoured constructor, ``gnano.events``.
 
     import awkward as ak
     import graphed.awkward as ga
-    from graphed import Session, labels, universe, variations, vary, weight
+    from graphed import Session, explain, labels, universe, variations, vary, weight
     from graphed.awkward import AwkwardBackend, from_awkward, gak
 
     events = ak.Array({
