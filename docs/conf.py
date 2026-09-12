@@ -11,7 +11,7 @@ import shutil
 
 project = "graphed"
 author = "graphed-org"
-release = "0.0.1"
+release = "0.0.2"
 
 extensions = [
     "sphinx.ext.autodoc",
@@ -26,7 +26,9 @@ if shutil.which("dot"):
     extensions.append("sphinx.ext.inheritance_diagram")
 
 templates_path = ["_templates"]
-exclude_patterns = ["_build"]
+# docs/corpus/requirements/ holds the internal operations catalog the reference-suite check
+# reads; it is not written for readers and is not part of the rendered documentation.
+exclude_patterns = ["_build", "corpus/requirements"]
 
 html_theme = "furo"
 html_title = "graphed"

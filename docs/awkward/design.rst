@@ -154,7 +154,8 @@ Four-vectors and other behaviors
 --------------------------------
 
 Register a behavior dict once on the backend and behavior *properties* work through plain
-attribute access everywhere downstream:
+attribute access everywhere downstream. This example and the next one need ``pip install
+vector``:
 
 .. code-block:: python
 

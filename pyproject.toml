@@ -7,7 +7,7 @@ build-backend = "maturin"
 
 [project]
 name = "graphed"
-version = "0.0.1"
+version = "0.0.2"
 description = "A schedulable, serializable, debuggable HEP task-graph system with an interned Rust IR and equality-saturation optimizer"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -65,6 +65,12 @@ module-name = "graphed.core.graphed_core"
 # version-specific build per interpreter that can't use it — notably free-threaded cp314t, which has
 # no GIL-disabled stable ABI yet (abi3t/PEP 803 lands in 3.15), so it ships a dedicated cp314t wheel.
 features = ["pyo3/extension-module", "pyo3/abi3-py311"]
+# The sdist is built from the git tree, so without this it also carries the development notes,
+# which are no use to someone installing from PyPI.
+exclude = [
+    { path = "CLAUDE.md", format = "sdist" },
+    { path = ".graphed/**/*", format = "sdist" },
+]
 
 [tool.cibuildwheel]
 # One driver (cibuildwheel invoking the maturin PEP 517 backend) builds the whole §A.5 matrix.

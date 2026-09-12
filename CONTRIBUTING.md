@@ -55,7 +55,7 @@ from graphed.core import Partition, Plan, Task
 
 print(graphed.__version__)
 print(Plan.__name__, Task.__name__, Partition.__name__)
-# 0.0.1
+# 0.0.2
 # Plan Task Partition
 ```
 
@@ -95,7 +95,7 @@ RUSTFLAGS="--cfg loom" cargo test --lib loom_model    # concurrency model checks
 pip install -e ".[docs]" && sphinx-build -W -b html docs docs/_build/html
 ```
 
-- `mypy --strict` covers `python/`; ruff and its formatter cover `python` and `tests`.
+- `mypy --strict`, ruff and its formatter all cover `python`, `tests` and the root `conftest.py`.
 - The Rust `cargo test` binary links libpython — export `DYLD_FALLBACK_LIBRARY_PATH` (macOS) or
   `LD_LIBRARY_PATH` (Linux) to `python -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))'`
   or the test binary fails to start.

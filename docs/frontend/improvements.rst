@@ -44,13 +44,18 @@ to infer the result form and keep it usable downstream. For anything else, recor
 yourself with ``Session.record_external(op, fn, inputs, descriptor=..., form=...)`` and declare
 the form you are producing. Typed transformations are better expressed as operations than as opaque callables.
 
-Behavior methods with arguments
--------------------------------
+A behavior method runs per partition
+------------------------------------
 
-Recorded since m54: ``a.deltaR(b)``, ``jets.scaled(2.0, offset=1.0)`` and any other callable
-attribute of the record's behavior class record one node per call, arguments and all. See
-:doc:`../awkward/design` ("Behavior *methods* record the same way") for the constant rules, the
-refusals and the per-partition limitation.
+``a.deltaR(b)``, ``jets.scaled(2.0, offset=1.0)`` and any other callable attribute of a record's
+behavior class record one node per call, arguments and all. The body runs on one chunk at a time,
+the same rule ``map_partitions`` has, so a body that consumes the event axis — ``self[:1]``, an
+``axis=0`` reduction — answers per partition rather than globally. It still records, because the
+tracer has forgotten the outer length; only a scalar result is refused.
+
+**Instead:** keep a method row-wise, and do anything that crosses events on the recorded array it
+returns. :doc:`../awkward/design` ("Behavior *methods* record the same way") has the rules for
+arguments, what a worker needs to resolve the behavior, and what is refused at the call.
 
 Cuts are not pushed into the reader
 -----------------------------------

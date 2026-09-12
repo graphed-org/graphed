@@ -115,6 +115,7 @@ the whole analysis to someone else.
 
    api
    core/index
+   changelog
 
 .. toctree::
    :maxdepth: 1

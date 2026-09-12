@@ -1,7 +1,7 @@
-# Migration: the `graphed-*-mvp` packages → the consolidated `graphed`
+# Migration: the separate `graphed-*` packages → the consolidated `graphed`
 
-The prototype was split across one repository per package. It is now a single distribution,
-`graphed`, with the former packages as subpackages. Import paths changed accordingly:
+These packages used to ship as separate distributions, one per package. They are now a single
+distribution, `graphed`, with the former packages as subpackages. Import paths changed accordingly:
 
 | Old package (dist / import)     | New import path        | Install extra |
 |---------------------------------|------------------------|---------------|
@@ -27,11 +27,11 @@ Notes:
 
 - **The compiled extension** keeps its leaf name: it lives at `graphed.core.graphed_core` and is
   re-exported by `graphed.core`. You should import from `graphed.core`, not the extension directly.
-- **`graphed_corpus`** (the M0.5 fixtures/reference data) is **not** a shipped subpackage. It is
-  vendored under `tests/_corpus/` for this repository's own test suite only; it is still published
-  separately as `graphed-corpus-mvp` for downstream repositories that consume the fixtures.
-- **Wire/format constants are unchanged**: backend ids (`graphed-awkward/0`, `graphed-numpy/0`),
-  the plan format version (`graphed-plan/2`), and content-hash schemes are byte-stable across the
-  rename — deserializing plans/bundles written by the prototypes still works.
-- The frozen acceptance suites were carried over with their history; their imports were rewritten
-  mechanically to the new paths (no assertion was weakened). See the consolidation commit.
+- **`graphed_corpus`** — the reference analyses `graphed`'s own numbers are checked against — is
+  **not** a shipped subpackage and is not published anywhere. It is vendored under `tests/_corpus/`
+  for this repository's test suite, which is where a source checkout finds it.
+- **Wire and format constants are unchanged**: backend ids (`graphed-awkward/0`,
+  `graphed-numpy/0`), the plan format version (`graphed-plan/2`), and the content-hash schemes are
+  byte-stable across the rename, so plans and bundles written before it still deserialize.
+- The test suites came over with their history; their imports were rewritten to the new paths and
+  no assertion changed.

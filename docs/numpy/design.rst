@@ -10,7 +10,7 @@ dispatch protocols, so the code below is the code you already write.
 The backend in one example
 --------------------------
 
-Install with ``pip install graphed[numpy]``.
+Install with ``pip install "graphed[numpy]"``.
 
 .. code-block:: python
 
@@ -155,7 +155,7 @@ Parquet in and out
 ------------------
 
 Reading and writing parquet needs the ``[parquet]`` extra:
-``pip install graphed[numpy,parquet]``.
+``pip install "graphed[numpy,parquet]"``.
 
 ``from_parquet`` records a deferred dataset source: the column types come from the file
 schema, so no data is read until the runner needs it. ``to_parquet`` writes one file per

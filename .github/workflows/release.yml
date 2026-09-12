@@ -17,8 +17,8 @@ name: release
 # https://pypi.org/manage/project/graphed/settings/publishing/ (owner=graphed-org, repo=graphed,
 # workflow=release.yml, environment=pypi), then drop `password:` and set the publish `attestations: true`.
 #
-# NOTE: bump the version (Cargo.toml + pyproject) before tagging — re-uploading a version already on
-# PyPI (0.0.1 is published) is rejected.
+# NOTE: bump the version (Cargo.toml + pyproject) before tagging — re-uploading a version that is
+# already on PyPI is rejected.
 
 on:
   push:
