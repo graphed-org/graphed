@@ -48,17 +48,18 @@ def _capstone(*, weight_first: bool) -> tuple[Any, Any]:
     """
     session, ctx = m57_base()
     jets = ctx["Jet"]
-    pu = m57_pu(jets)
-    after = m57_weight(ctx, "pu", pu, m57_scaled(pu, PU))
     if weight_first:
-        shifted = m57_shifted(after, "jes", JES)
+        shifted = m57_shifted(ctx, "jes", JES)
         sjets = shifted["Jet"]
         central = m57_sf(sjets)
         registered = m57_weight(shifted, "jes", central, m57_table_members(sjets, MF_TABLE))
-        return session, m57_weight(registered, "hf", central, m57_table_members(sjets, HF_TABLE))
-    flat = m57_sf(jets)
-    registered = m57_weight(after, "hf", flat, m57_table_members(jets, HF_TABLE))
-    return session, m57_shifted(registered, "jes", JES)
+        after = m57_weight(registered, "hf", central, m57_table_members(sjets, HF_TABLE))
+    else:
+        flat = m57_sf(jets)
+        registered = m57_weight(ctx, "hf", flat, m57_table_members(jets, HF_TABLE))
+        after = m57_shifted(registered, "jes", JES)
+    pu = m57_pu(graphed.nominal(after["Jet"]))
+    return session, m57_weight(after, "pu", pu, m57_scaled(pu, PU))
 
 
 def test_explain_reports_each_familys_entry_form_and_every_labels_origin() -> None:
@@ -110,7 +111,7 @@ def test_explain_reports_the_links_the_lineage_took() -> None:
         base = m57_two_factors()
         child = graphed.universe(base.ctx, "hf_up") if projected else base.ctx[base.met.pt > MET_CUT]
         lf = {tag: graphed.reindex_to(member, child) for tag, member in base.hf_members.items()}
-        registered = m57_weight(child, "lf", graphed.reindex_to(base.sf, child), lf)
+        registered = m57_weight(child, "lf", graphed.reindex_to(base.pu, child), lf)
         explanation = m57_explain(registered)
         expected = ("project", "hf_up") if projected else ("mask", None)
 

@@ -101,9 +101,12 @@ def test_a_placement_at_a_point_carrying_the_overlays_coordinate_keeps_its_membe
         assert m57_ambient_values(session, weight) == m57_oracle_values(
             session, ops, graphed.labels(weight)
         ), prefix_length
-        assert m57_values(session, graphed.member_of(weight, "mu_up")) == m57_values(
-            session, m57_at(m57_scaled(handle, MU)["up"], "mu_up")
-        ), prefix_length
+        own = m57_at(m57_scaled(handle, MU)["up"], "mu_up")
+        if prefix_length == 1:  # the `hf` factor was registered AFTER the overlay, so it multiplies
+            own = own * m57_at(sf, "mu_up")
+        assert m57_values(session, graphed.member_of(weight, "mu_up")) == m57_values(session, own), (
+            prefix_length
+        )
 
 
 def test_the_overlay_family_placing_its_own_universe_off_its_axis_keeps_that_member() -> None:

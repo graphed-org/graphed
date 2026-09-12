@@ -410,6 +410,8 @@ def test_a_parent_built_projected_nominal_is_an_overlay_after_the_head() -> None
 
     # the control: the same expression built ABOVE a mask that lies between is a new factor
     child = base.ctx[base.met.pt > MET_CUT]
+    extra = m57_pu(child["Jet"]) * 0.5  # a factor the child registers, so its ambient is NOT the parent's
+    child = m57_weight(child, "nf", extra, m57_scaled(extra, NF_TABLE))
     below = graphed.universe(child, "hf_up")
     crossed = _at(parent_member, below)
     ops = [
@@ -435,7 +437,7 @@ def test_at_the_nominal_projection_a_re_derived_central_joins_while_a_weight_lab
     joined = m57_weight(flat, "lf", re_derived, probe)
     ops = [
         m57_factor("pu", _at(base.pu, flat), {}),
-        m57_factor("hf", re_derived, probe),
+        m57_factor("lf", re_derived, probe),
     ]
     assert m57_ambient_values(base.session, graphed.weight(joined)) == m57_oracle_values(
         base.session, ops, graphed.labels(graphed.weight(joined))

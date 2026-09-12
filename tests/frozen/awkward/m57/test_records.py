@@ -30,6 +30,7 @@ from m57_dedupe_fixtures import (
     m57_table_members,
     m57_trig,
     m57_two_factors,
+    m57_values,
     m57_weight,
 )
 
@@ -106,7 +107,7 @@ def test_ambient_entries_carry_the_families_kind_and_links_of_the_parents() -> N
         base = m57_two_factors()
         lf = m57_table_members(base.jets, LF_TABLE)
         child = graphed.universe(base.ctx, "hf_up") if projected else base.ctx[base.met.pt > MET_CUT]
-        registered = m57_weight(child, "lf", _at(base.sf, child), _members_at(lf, child))
+        registered = m57_weight(child, "lf", _at(base.pu, child), _members_at(lf, child))
 
         entries = list(m57_entries(registered))
         riders = [rider for _slot, rider, _entry in entries]
@@ -148,7 +149,7 @@ def test_ambient_entries_keep_their_slots_kinds_and_order_across_a_value_free_jo
     base = m57_two_factors()
     projected = graphed.universe(base.ctx, "hf_up")
     before = [(slot, rider.kind, tuple(sorted(rider.families))) for slot, rider, _e in m57_entries(projected)]
-    values = m57_ambient_values(base.session, graphed.weight(projected))
+    values = m57_values(base.session, graphed.weight(projected))  # the projected ambient is one member
 
     joined = m57_weight(
         projected,
@@ -161,4 +162,4 @@ def test_ambient_entries_keep_their_slots_kinds_and_order_across_a_value_free_jo
     assert [slot for slot, _k, _f in after] == [slot for slot, _k, _f in before]
     assert [kind for _s, kind, _f in after] == [kind for _s, kind, _f in before]
     assert any("pu2" in families for _s, _k, families in after)
-    assert m57_ambient_values(base.session, graphed.weight(joined))["nominal"] == values["nominal"]
+    assert m57_ambient_values(base.session, graphed.weight(joined))["nominal"] == values

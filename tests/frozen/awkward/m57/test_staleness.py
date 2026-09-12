@@ -55,10 +55,11 @@ def test_a_union_that_widens_a_nominal_member_an_overlay_covers_is_refused() -> 
     order that works."""
     session, after, _flat, widening, sjets = _widening_base()
     with_overlay = m57_delta(after, "mu", graphed.weight(after))
-    before = m57_node_count(session)
+    members = m57_table_members(sjets, LF_TABLE)
+    before = m57_node_count(session)  # after the members are built: the call is what is measured
 
     with pytest.raises(GraphedError) as caught:
-        m57_weight(with_overlay, "lf", widening, m57_table_members(sjets, LF_TABLE))
+        m57_weight(with_overlay, "lf", widening, members)
     message = str(caught.value)
 
     assert "mu" in message and "lf" in message
