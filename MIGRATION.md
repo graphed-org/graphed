@@ -1,7 +1,7 @@
 # Migration: the separate `graphed-*` packages → the consolidated `graphed`
 
-`graphed` used to be one distribution per package. It is now a single distribution, `graphed`,
-with the former packages as subpackages. Import paths changed accordingly:
+These packages used to ship as separate distributions, one per package. They are now a single
+distribution, `graphed`, with the former packages as subpackages. Import paths changed accordingly:
 
 | Old package (dist / import)     | New import path        | Install extra |
 |---------------------------------|------------------------|---------------|

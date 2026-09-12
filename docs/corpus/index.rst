@@ -21,5 +21,4 @@ that motivates ``graphed``, in terms a dask-awkward user will recognise.
 
    design
    graph_bloat_note
-   requirements/ops_catalog
    improvements

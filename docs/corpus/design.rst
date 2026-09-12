@@ -74,9 +74,15 @@ or fill decision, so a last-ULP difference between platforms cannot flip a value
 bin edge. References then compare exactly — integer counts for unweighted fills,
 fixed-precision values for weighted ones — with no tolerances anywhere.
 
-The operations catalog
-----------------------
+What the analyses exercise
+--------------------------
 
-:doc:`requirements/ops_catalog` lists the awkward operations and analysis patterns the
-suite exercises — useful as a quick answer to "does the analysis surface cover the thing
-I do?".
+If you are wondering whether the checks touch the thing your own analysis does: between
+them the eight queries and the two systematics families use field access and jagged
+masking, the per-event reductions (``ak.num``, ``ak.sum``, ``ak.any``, ``ak.all``),
+combinatorics with ``ak.combinations`` and ``ak.cartesian``, a ``keepdims`` ``ak.argmin``
+gather, ``ak.argsort``/``ak.firsts`` leading-object picks, ``ak.with_field``/``ak.zip``
+record building, ``ak.concatenate`` collection merges,
+``ak.where``/``ak.fill_none``/``ak.drop_none`` option handling, and elementwise numpy
+kinematics — under both kinds of systematic, a weight that leaves the selection alone and
+a JES shift that re-runs it.
