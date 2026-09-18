@@ -76,6 +76,12 @@ class DeclaringSource(PlainSource):
         self.outputs: tuple[Any, ...] = ()
         self.max_calls = max_calls
 
+    def __getstate__(self) -> dict[str, Any]:
+        # a pickled copy is the reader a worker gets, not this witness: the answer and the call
+        # counter (the tripwire) travel with it, the observations of THIS process do not. The
+        # `outputs` are live session `Array`s, which never ship — §A.3.1 ships IR, not sessions.
+        return {**self.__dict__, "outputs": (), "seen": []}
+
     def projected_columns(self, outputs: Any) -> list[str]:
         self.calls += 1
         if self.max_calls is not None and self.calls > self.max_calls:

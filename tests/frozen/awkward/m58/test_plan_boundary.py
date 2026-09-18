@@ -10,12 +10,14 @@ from __future__ import annotations
 
 import pickle
 
+import pytest
 from m58_declaration_fixtures import (
     AGGREGATE_VALUE,
     DECLARED,
     VARIED_COLUMNS,
     DeclaringSource,
     PlainSource,
+    aggregate_outputs,
     aggregate_over,
     partitioned,
     varied_record,
@@ -23,6 +25,24 @@ from m58_declaration_fixtures import (
 
 import graphed
 from graphed.core.execution import SequentialRunner
+
+
+def test_a_pickled_declaring_source_keeps_its_counter_and_drops_its_witness_state() -> None:
+    """The fixture contract H3's shipped-plan legs stand on, exercised without any driver."""
+    source = DeclaringSource(max_calls=1)
+    _session, root = partitioned(source)
+    outputs = aggregate_outputs(root)
+    source.projected_columns(outputs)
+    source.seen.append(DECLARED)
+
+    copy = pickle.loads(pickle.dumps(source))
+    assert copy.calls == 1 and copy.answer == DECLARED
+    assert copy.outputs == () and copy.seen == []
+    assert source.outputs[0] is outputs[0] and source.seen == [DECLARED]  # intact on this side
+    with pytest.raises(AssertionError):
+        copy.projected_columns(outputs)  # the counter travelled at its limit: a worker call is loud
+    copy.read_partition(copy.partitions(1)[0], DECLARED, None)
+    assert copy.seen == [DECLARED]  # the shipped reader records its own reads, from empty
 
 
 def test_the_built_plan_carries_the_answer_and_no_worker_asks_again() -> None:
