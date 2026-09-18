@@ -695,7 +695,9 @@ def _write_varied(
     source_name = session.source_name(source_id)
     source_form = session.form_of(source_id)
     assert isinstance(source_form, AwkwardForm)
-    columns = _evaluation_columns_union(outputs, source_id, source_name, source_form)
+    columns = gw.declared_columns(data, outputs)
+    if columns is None:
+        columns = _evaluation_columns_union(outputs, source_id, source_name, source_form)
 
     common: dict[str, Any] = {
         "compiled": compiled,
@@ -797,7 +799,9 @@ def to_parquet(
     source_name = session.source_name(node_id)
     source_form = session.form_of(node_id)
     assert isinstance(source_form, AwkwardForm)  # this backend recorded the source
-    columns = _evaluation_columns(array, node_id, source_name, source_form)
+    columns = gw.declared_columns(data, (array,))
+    if columns is None:
+        columns = _evaluation_columns(array, node_id, source_name, source_form)
     compiled = compile_ir(session, array)
 
     if isinstance(data, PartitionedSource):

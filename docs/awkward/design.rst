@@ -481,7 +481,7 @@ This example needs ``pip install "graphed[awkward,parquet]"``. Printed output:
 ``data`` column; pass ``column=`` to name it something else, and write a record if you want
 named fields.
 
-Three details worth knowing before you point this at a real dataset:
+Four details worth knowing before you point this at a real dataset:
 
 *You can skip the metadata pass entirely.* ``steps_per_file`` sets how finely each file is split;
 ``open_files=False`` makes the split blind, so no file is opened to plan the work and the first
@@ -498,6 +498,17 @@ including the legs of a ``zip`` whose values the final result never used, so the
 list is the union of source fields the graph *mentions*, refined at the leaf level by the buffer
 view. The buffer projection answers "what does this result need", which is a smaller question
 than "what must exist to replay this graph".
+
+*A source may name the read list itself.* If your source object has a callable
+``projected_columns(outputs)``, every driver that builds a partitioned plan — ``to_parquet`` with
+and without ``select=``, and ``aggregate_plan`` — calls it once while building, on the machine
+that builds, with the output arrays it is about to compile, and ships whatever sequence you return
+verbatim (unsorted, undeduped, an empty answer honoured) as the ``columns`` of every
+``read_partition`` call. It *replaces* the driver's own column list rather than adding to it,
+which is the point: a source that maps the graph's field names onto something else — a flat tree
+whose branches are not the record fields your analysis sees — is the one that knows what to read.
+The attribute is deliberately not a member of the ``PartitionedSource`` protocol, so a source
+without it stays a ``PartitionedSource`` and keeps today's behaviour exactly.
 
 ``compute=False`` returns the plan instead of running it, so you can hand the identical write to
 a cluster runner rather than to the in-process one.
