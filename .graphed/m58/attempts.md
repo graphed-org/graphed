@@ -68,3 +68,36 @@ which the extra suite closes); `precommit --fast` green. `sphinx -W` cannot run 
 `docs/` with the notebook pages removed: rc=0, zero warnings from `awkward/design.rst`, and
 `declared_columns` present in the generated `graphed.write` page — with the deliberately broken
 notebook toctrees emitting warnings as the live control.
+
+## Iteration 4 — REJECT answered: the write drivers' own sentinel, translated where it is produced
+
+The reviewer's finding: a declared `()` reached `read_partition` as `None` at both write drivers,
+because `_WritePart._chunk`/`_VariedWritePart._chunk` read `self.columns or None` — the drivers'
+own `_evaluation_columns` family spells "everything" `()`, so the consumer was undoing the
+declaration. The two `_chunk` methods now pass `self.columns` through, the two dataclass fields are
+`tuple[str, ...] | None`, and each driver's OWN computation is translated at the point it is
+produced (`... or None`). `aggregate_plan` needed nothing: `read_columns` already returns `None`
+for "everything". Walked every consumer (`grep -n "columns" python/graphed/awkward/io.py`, plus
+every `read_partition` call site in `python/`): three readers, all now verbatim. No frozen test pins
+a write part's `columns == ()`. `python/graphed/numpy/io.py` keeps `self.columns or None` — that
+driver has no declaration hook and its own list is a projection frozenset, a different vocabulary.
+
+Also in this partition: `on_external` is the shorter equivalent `form.tt if isinstance(form,
+AwkwardForm) else inputs[0]` (the `_with_behavior` re-wrap was a no-op — `eval_stage` re-wraps every
+operand), dropping the `AwkwardBackend` import; `declared_columns`' docstring says the answer is a
+sequence of names.
+
+Five legs added to `tests/extra/awkward/m58`; every branch of the translation is now killed by a
+one-hunk mutant (script kept out of tree, run with `PYTHONDONTWRITEBYTECODE=1` — same-size mutants
+within one second otherwise hit a stale `__pycache__` and read as survivors):
+
+| mutant | leg that fails |
+|---|---|
+| `_WritePart` / `_VariedWritePart` `self.columns` → `or None` | the two `ships_an_empty_declaration` legs |
+| either driver `if columns is None:` → `if not columns:` | the same two |
+| either driver's own computation with `or None` dropped | the two hook-less `whole_record` legs |
+| `hook(tuple(outputs))` → `hook(outputs)` | `hands_the_hook_a_tuple` (varied driver, the only list) |
+| `on_external` guard dropped | `non_awkward_recorded_form` |
+
+Gates: frozen m58 12/12, extra 11/11; `./scripts/run-tests.sh` rc=0 over all 68 subtrees (Python
+only — no `cargo test` leg); `precommit --fast` ok. `tests/frozen` byte-identical to `freeze-m58-2`.

@@ -109,7 +109,10 @@ def declared_columns(source: object, outputs: Sequence[object]) -> tuple[str, ..
     — and does NOT run its own column computation: a source that maps the graph's field names onto
     something other than file columns (a form-mapped flat-tree reader, say) makes that computation
     meaningless and possibly raising. Asked driver-side, once per driver call, with the output
-    arrays that driver evaluates; the built plan carries the result, so no worker asks again."""
+    arrays that driver evaluates; the built plan carries the result, so no worker asks again.
+
+    The answer is a SEQUENCE of column names — a bare ``str`` would be taken apart into its
+    characters."""
     hook = getattr(source, "projected_columns", None)
     if not callable(hook):
         return None

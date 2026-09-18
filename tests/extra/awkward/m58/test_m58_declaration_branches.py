@@ -2,8 +2,9 @@
 
 Each leg kills a one-hunk mutant the whole frozen tree survives — the three drivers' short-circuit
 (the own column computation hoisted back out of its `is None` guard), an empty declaration read as
-"no answer", `callable()` dropped from the hook lookup, and the External stand-in's `AwkwardForm`
-guard dropped.
+"no answer" at each write driver (`self.columns` re-spelled `self.columns or None`, or the driver's
+guard re-spelled `if not columns:`), the hook's argument left un-tupled, `callable()` dropped from
+the hook lookup, and the External stand-in's `AwkwardForm` guard dropped.
 """
 
 from __future__ import annotations
@@ -90,6 +91,90 @@ def test_an_empty_declaration_ships_an_empty_read_list() -> None:
 
     assert source.calls == 1
     assert plan.process.columns == ()  # an answer of "nothing", not the absence of an answer
+
+
+def _reads_everything(source: Any) -> Any:
+    """Keeps recording the read list it is handed, then reads the whole chunk anyway, so a
+    declaration of "nothing" still lets the write finish. An instance attribute rather than a
+    subclass: the frozen fixture module is `Any` to mypy, which cannot be subclassed."""
+
+    def read_partition(partition: Any, columns: Any, _resources: Any) -> Any:
+        source.seen.append(columns)
+        part = partition.resolve(len(source.data))
+        return source.data[part.entry_start : part.entry_stop]
+
+    source.read_partition = read_partition
+    return source
+
+
+def test_the_parquet_write_driver_ships_an_empty_declaration_to_every_read(tmp_path: Path) -> None:
+    source = _reads_everything(DeclaringSource(answer=()))
+    _session, root = partitioned(source)
+
+    ga.to_parquet(root.x * 2.0, str(tmp_path / "empty"), steps_per_file=2)
+
+    assert source.seen == [(), ()]  # "read nothing", not the driver's "everything" sentinel
+
+
+def test_the_varied_write_driver_ships_an_empty_declaration_to_every_read(tmp_path: Path) -> None:
+    source = _reads_everything(DeclaringSource(answer=()))
+    _session, root = partitioned(source)
+    record, mask = varied_record(root)
+
+    ga.to_parquet(record, str(tmp_path / "empty"), select={0: mask}, steps_per_file=2)
+
+    assert source.seen == [(), ()]
+
+
+def test_a_hook_less_whole_record_write_still_reads_with_the_sources_own_selection(
+    tmp_path: Path,
+) -> None:
+    """The control for the sentinel translation: with no declaration, a write whose own column
+    computation answers "everything" must still reach `read_partition` as `None`."""
+    source = PlainSource()
+    _session, root = partitioned(source)
+
+    ga.to_parquet(root, str(tmp_path / "whole"), steps_per_file=2)
+
+    assert source.seen == [None, None]
+
+
+def test_a_hook_less_varied_whole_record_write_also_reads_with_the_sources_own_selection(
+    tmp_path: Path,
+) -> None:
+    """The varied end of that control: a getitem on the source is a non-field op, so the union
+    absorbs to its own "everything" — which must also reach `read_partition` as `None`."""
+    source = PlainSource()
+    _session, root = partitioned(source)
+    record, mask = varied_record(root[root.z > 8.0])
+
+    ga.to_parquet(record, str(tmp_path / "whole"), select={0: mask}, steps_per_file=2)
+
+    assert source.seen == [None, None]
+
+
+def _asserts_a_tuple(source: Any) -> Any:
+    """Refuses anything but a tuple of outputs; only the varied driver holds its own outputs in a
+    list, so that is where an un-tupled hand-off shows."""
+    hook = source.projected_columns
+
+    def projected_columns(outputs: Any) -> Any:
+        assert type(outputs) is tuple, f"the hook takes a tuple, got {type(outputs).__name__}"
+        return hook(outputs)
+
+    source.projected_columns = projected_columns
+    return source
+
+
+def test_the_varied_write_driver_hands_the_hook_a_tuple(tmp_path: Path) -> None:
+    source = _asserts_a_tuple(DeclaringSource())
+    _session, root = partitioned(source)
+    record, mask = varied_record(root)
+
+    ga.to_parquet(record, str(tmp_path / "tupled"), select={0: mask}, steps_per_file=2)
+
+    assert source.calls == 1
+    assert source.seen == [DECLARED, DECLARED]
 
 
 def test_a_non_callable_projected_columns_attribute_is_not_a_declaration() -> None:
