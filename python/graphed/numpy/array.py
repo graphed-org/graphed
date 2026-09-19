@@ -42,32 +42,6 @@ def _encode_dims(dims: Sequence[int]) -> str:
     return ",".join(str(d) for d in out)
 
 
-def _encode_subscript(key: tuple[object, ...]) -> str:
-    """Canonical injective spec for an inner (partition-local) tuple subscript.
-
-    The first element must be the FULL slice ``:`` — anything indexing the partitioned axis 0
-    inside a tuple is refused in the axis-0-partitioned MVP (Phase 2: N-D chunking)."""
-    if not key or key[0] != slice(None, None, None):
-        raise TypeError("tuple subscripts must keep the partitioned axis 0 whole: a[:, inner...]")
-    parts: list[str] = []
-    for elem in key:
-        if isinstance(elem, slice):
-            bits = []
-            for v in (elem.start, elem.stop, elem.step):
-                if v is None:
-                    bits.append("")
-                elif isinstance(v, bool) or not isinstance(v, int):
-                    raise TypeError(f"slice fields must be ints, got {v!r}")
-                else:
-                    bits.append(str(v))
-            parts.append(":".join(bits))
-        elif not isinstance(elem, bool) and isinstance(elem, int):
-            parts.append(str(elem))
-        else:
-            raise TypeError(f"unsupported tuple-subscript element {elem!r}")
-    return ",".join(parts)
-
-
 class NumpyArray(Array):
     """A deferred array with numpy's calling idiom (methods, properties, numpy API dispatch)."""
 
@@ -128,12 +102,8 @@ class NumpyArray(Array):
     def cumprod(self, axis: int | None = None) -> Array:
         return self._scan("cumprod", axis)
 
-    # ---- indexing (M13, dask.array parity P2.6) ----------------------------------
-    def __getitem__(self, key: object) -> Array:
-        if isinstance(key, tuple):
-            # the numpy tuple-subscript idiom: partition-local inner indexing, fusible
-            return self._session.record_op("subscript", [self], {"spec": _encode_subscript(key)})
-        return super().__getitem__(key)
+    # indexing (M13, dask.array parity P2.6) is entirely the base class's: the tuple subscript
+    # moved there in M59, since both array idioms spell the same key kinds.
 
     # ---- manipulation (M13, dask.array parity P2.6) ------------------------------
     def reshape(self, *shape: int | tuple[int, ...]) -> Array:

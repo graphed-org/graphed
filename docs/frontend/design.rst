@@ -53,7 +53,15 @@ page possible:
 What you hold is a :class:`~graphed.Array`: a proxy carrying a session and a node id, nothing
 else. It implements the surface every deferred array shares — arithmetic and comparison
 operators, ``__array_ufunc__`` (so ``np.sqrt(x)`` records instead of computing), boolean, slice,
-integer and field-list indexing. Anything idiomatic to *one* array library lives in that
+integer and field-list indexing, and the tuple key that indexes *inner* axes — ``x[:, :2]``,
+``x[:, 0]``, ``x[:, None, :]``, ``x[..., 0]`` — whose members are slices with integer fields,
+integers, ``None`` and at most one ``Ellipsis``. A tuple key must leave the partitioned axis
+whole (a leading ``:`` or ``...``), which is what keeps it partition-local and fusible, unlike
+the bare ``x[1:3]`` and ``x[3]`` that consume that axis and record boundaries; a key that would
+consume it, ``x[1:3, 0]``, is refused at record time and hands you the spelling that does work,
+``x[1:3][:, 0]``. The surface is shared but not universal: a backend declares whether it
+evaluates inner-axis keys, and one that does not refuses them. Anything idiomatic to *one* array
+library lives in that
 library's package: ``graphed.numpy`` hands you a richer proxy with ``.shape``, ``.sum()`` and
 ``__array_function__``; ``graphed.awkward`` keeps the plain proxy and exposes its idiom as free
 functions, exactly as ``ak.*`` does. One library's conventions never leak into the other's.
