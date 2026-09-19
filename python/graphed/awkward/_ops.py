@@ -127,12 +127,29 @@ _AK_TWO_INPUT: dict[str, Any] = {
 }
 
 
+def scalar_param(params: Mapping[str, Any]) -> Any:
+    """The scalar operand a binary op recorded — back in its own dtype when it had one (M59). The
+    frontend cannot build a numpy scalar, so it records the dtype name beside the value, and a
+    value wider than the store's i64 param as text."""
+    value = params["scalar"]
+    if "dtype" not in params:
+        return value
+    return np.dtype(str(params["dtype"])).type(int(value) if isinstance(value, str) else value)
+
+
 def _scalar_operands(operands: Sequence[Any], params: Mapping[str, Any]) -> list[Any]:
     """Reconstruct positional operands when one was a scalar (encoded in params)."""
     if "scalar" in params:
-        s = params["scalar"]
+        s = scalar_param(params)
         return [s, operands[0]] if params.get("side") == "l" else [operands[0], s]
     return list(operands)
+
+
+def _leaves(result: Any) -> list[Any]:
+    """A method result's arrays, depth-first — the order its `index` param numbers them in."""
+    if isinstance(result, tuple):
+        return [leaf for item in result for leaf in _leaves(item)]
+    return [result]
 
 
 def _fields(params: Mapping[str, Any]) -> list[str]:
@@ -222,7 +239,8 @@ def apply(
         result = target(
             *_decode_call(str(params["args"]), operands), **_decode_call(str(params["kwargs"]), operands)
         )
-        return result[int(params["index"])] if "index" in params else result
+        # M59: a tuple result may be NESTED; `index` numbers its leaves depth-first
+        return _leaves(result)[int(params["index"])] if "index" in params else result
     if op in ("getitem", "filter"):
         return operands[0][operands[1]]
     if op == "slice":  # the M13 common axis-0 slice (start/stop/step present-only)

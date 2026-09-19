@@ -96,14 +96,20 @@ class AwkwardBackend:
             return "property"
         return "method" if callable(static) or hasattr(static, "__get__") else "property"
 
-    def method_outputs(self, forms: Sequence[AwkwardForm], params: Mapping[str, object]) -> int | None:
+    def method_outputs(
+        self, forms: Sequence[AwkwardForm], params: Mapping[str, object]
+    ) -> tuple[object, ...] | None:
         """Run the call on the typetracers BEFORE anything is recorded: `None` for one awkward
-        array, the width for a tuple of them; anything else is not recordable and raises."""
+        array, and for a tuple of them the same NESTING with `None` at every leaf (M59 — the shape
+        `metric_table(return_combinations=True)` answers in). Anything else raises."""
         result = apply("method", [self._with_behavior(f.tt) for f in forms], params, behavior=self._behavior)
+        return self._output_shape(result, params)
+
+    def _output_shape(self, result: object, params: Mapping[str, object]) -> tuple[object, ...] | None:
         if isinstance(result, ak.Array):
             return None
-        if isinstance(result, tuple) and result and all(isinstance(item, ak.Array) for item in result):
-            return len(result)
+        if isinstance(result, tuple) and result:
+            return tuple(self._output_shape(item, params) for item in result)
         raise TypeError(
             f"{params['method']}() returned {type(result).__name__}, which is not an awkward array "
             "or a tuple of awkward arrays, so it cannot be recorded"

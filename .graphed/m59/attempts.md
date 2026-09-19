@@ -29,3 +29,25 @@ Gates: awkward/m59 keys + refusals 24/24, numpy/m59 11/11, whole tree green apar
 legs; diff line+branch coverage of the changed source 51/51 from the FROZEN suites.
 `tests/extra/numpy/m59/test_m59_empty_tuple_key.py` covers the one branch they do not reach
 (`a[()]`); dropping `not key or` turns the refusal into `IndexError` and the leg fails.
+
+## Iteration 2 — the scalar's dtype and the method's nesting (S1–S5, M1–M4)
+
+`array.py::_scalar_params` replaces the bare `_as_param` call in `_binary`: a value with a `dtype`
+and a `()` shape records `{"scalar": value.item(), "dtype": str(dtype)}`, and an integer outside
+i64 records its value as text. Measured, against the dispatch note that said the store REFUSES
+such an int: `add_op('mul', [n], {'scalar': 2**63})` is accepted and comes back from
+`serialize`/`deserialize` as `9.223372036854776e+18` — the store widens it to f64 silently, so the
+loss the text encoding avoids is exactness, not an exception. The
+dtype is read off the object, so the frontend still imports no backend. Each backend that reads
+`params["scalar"]` rebuilds the operand — the population is exactly two sites
+(`grep -rn '"scalar"' python` → `awkward/_ops.py`, `numpy/__init__.py`), both repaired, and the
+numpy one is why the whole numpy tier did not regress.
+
+M: `AwkwardBackend.method_outputs` answers the result's NESTING (a tuple with `None` at every
+array leaf) instead of a width; `_record_method` rebuilds that nesting, one node per leaf numbered
+depth-first, and `_ops.apply` picks leaf `index` out of the flattened result. A flat tuple is the
+one-level case of the same shape, so M2's byte-identical pin holds by construction.
+
+Extra legs, each killed by the mutation that removes its branch (`PYTHONDONTWRITEBYTECODE=1`):
+the ndarray-operand guard in `_scalar_params` (`ValueError` from `.item()` instead of the
+`TypeError`), and the numpy backend's own rebuild (`int64` instead of `uint64`).

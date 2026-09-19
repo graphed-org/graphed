@@ -66,6 +66,13 @@ library's package: ``graphed.numpy`` hands you a richer proxy with ``.shape``, `
 ``__array_function__``; ``graphed.awkward`` keeps the plain proxy and exposes its idiom as free
 functions, exactly as ``ak.*`` does. One library's conventions never leak into the other's.
 
+A scalar operand is not an input but a param, and it records everything it imposes on the result.
+A Python ``bool``, ``int`` or ``float`` records as itself; a numpy scalar records its dtype name
+beside its exact value, so ``mask * np.uint64(1 << 3)`` is ``uint64`` rather than the ``float64``
+a coerced operand would have forced, and ``np.uint64(2**64 - 1)`` arrives whole. The frontend
+reads the dtype off the object and still imports neither numpy nor awkward. Dtype and value
+together decide the node, which makes ``np.uint64(1)``, ``np.int32(1)`` and ``1`` three nodes.
+
 Two ways to get a value out. ``materialize`` walks the graph in this process and is right for
 small, local data and for poking at things interactively. ``compile_ir`` + ``evaluate_ir`` is the
 path everything else takes: reduce once, then evaluate the reduced node list wherever the data
