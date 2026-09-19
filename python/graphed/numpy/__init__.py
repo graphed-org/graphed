@@ -21,6 +21,7 @@ from typing import Any, cast
 import numpy as np
 
 from graphed import Array, Session
+from graphed.array import check_leading_ellipsis, decode_subscript
 from graphed.core import PayloadDescriptor
 
 from . import shuffle
@@ -194,19 +195,18 @@ _MANIP_OPS = frozenset(
 _CONCRETE_AGGS = frozenset({"histogram", "histogram2d", "histogramdd"})
 
 
+def _scalar_param(params: Mapping[str, object]) -> Any:
+    """The scalar operand a binary op recorded — back in its own dtype when it had one (M59). The
+    frontend cannot build a numpy scalar, so it records the dtype name beside the value, and a
+    value wider than the store's i64 param as text."""
+    value = params["scalar"]
+    if "dtype" not in params:
+        return value
+    return np.dtype(str(params["dtype"])).type(value)  # the dtype parses the wide int's text itself
+
+
 def _decode_dims(spec: object) -> tuple[int, ...]:
     return tuple(int(p) for p in str(spec).split(",")) if str(spec) else ()
-
-
-def _decode_subscript(spec: object) -> tuple[Any, ...]:
-    out: list[Any] = []
-    for part in str(spec).split(","):
-        if ":" in part:
-            bits = part.split(":")
-            out.append(slice(*(int(b) if b else None for b in bits)))
-        else:
-            out.append(int(part))
-    return tuple(out)
 
 
 def _manip_eval(op: str, xs: Sequence[Any], params: Mapping[str, object]) -> Any:
@@ -219,7 +219,10 @@ def _manip_eval(op: str, xs: Sequence[Any], params: Mapping[str, object]) -> Any
     if op == "getitem":
         return np.asarray(xs[0])[np.asarray(xs[1])]
     if op == "subscript":
-        return np.asarray(xs[0])[_decode_subscript(params["spec"])]
+        x0 = np.asarray(xs[0])
+        spec = decode_subscript(params["spec"])
+        check_leading_ellipsis(spec, x0.ndim)  # M59: `[..., 0]` on a 1-d array indexes axis 0
+        return x0[spec]
     if op == "reshape":
         return np.reshape(xs[0], _decode_dims(params["shape"]))
     if op == "ravel":
@@ -343,6 +346,9 @@ class NumpyBackend:
     #: the backend's versioned shuffle-format token (folded into the V2 task ids, §7.2)
     identity = "graphed-numpy/0"
 
+    #: M59: this backend evaluates the shared inner-axis tuple key (`subscript`)
+    subscript_keys = True
+
     def array_type(self) -> type[Array]:
         """The numpy-idiomatic proxy (M11 factorization): Sessions return ``NumpyArray``."""
         return NumpyArray
@@ -450,7 +456,7 @@ class NumpyBackend:
         if op in _BINARY:
             if "scalar" in params:
                 (x,) = operands
-                s = params["scalar"]
+                s = _scalar_param(params)
                 return _BINARY[op](s, x) if params.get("side") == "l" else _BINARY[op](x, s)
             a, b = operands
             return _BINARY[op](a, b)

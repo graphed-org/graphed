@@ -14,6 +14,8 @@ from typing import Any
 import awkward as ak
 import numpy as np
 
+from graphed.array import check_leading_ellipsis, decode_subscript
+
 from . import join
 
 # Elementwise ops: canonical name -> callable. Unary take 1 operand, binary take 2.
@@ -125,12 +127,29 @@ _AK_TWO_INPUT: dict[str, Any] = {
 }
 
 
+def scalar_param(params: Mapping[str, Any]) -> Any:
+    """The scalar operand a binary op recorded — back in its own dtype when it had one (M59). The
+    frontend cannot build a numpy scalar, so it records the dtype name beside the value, and a
+    value wider than the store's i64 param as text."""
+    value = params["scalar"]
+    if "dtype" not in params:
+        return value
+    return np.dtype(str(params["dtype"])).type(value)  # the dtype parses the wide int's text itself
+
+
 def _scalar_operands(operands: Sequence[Any], params: Mapping[str, Any]) -> list[Any]:
     """Reconstruct positional operands when one was a scalar (encoded in params)."""
     if "scalar" in params:
-        s = params["scalar"]
+        s = scalar_param(params)
         return [s, operands[0]] if params.get("side") == "l" else [operands[0], s]
     return list(operands)
+
+
+def _leaves(result: Any) -> list[Any]:
+    """A method result's arrays, depth-first — the order its `index` param numbers them in."""
+    if isinstance(result, tuple):
+        return [leaf for item in result for leaf in _leaves(item)]
+    return [result]
 
 
 def _fields(params: Mapping[str, Any]) -> list[str]:
@@ -220,11 +239,18 @@ def apply(
         result = target(
             *_decode_call(str(params["args"]), operands), **_decode_call(str(params["kwargs"]), operands)
         )
-        return result[int(params["index"])] if "index" in params else result
+        # M59: a tuple result may be NESTED; `index` numbers its leaves depth-first
+        return _leaves(result)[int(params["index"])] if "index" in params else result
     if op in ("getitem", "filter"):
         return operands[0][operands[1]]
     if op == "slice":  # the M13 common axis-0 slice (start/stop/step present-only)
         return operands[0][slice(params.get("start"), params.get("stop"), params.get("step"))]
+    if op == "subscript":  # M59: the shared inner-axis tuple key (axis 0 left whole)
+        key = decode_subscript(params["spec"])
+        # awkward's depth here is the MINIMUM list depth: `ndim` reads a record as depth 1 even
+        # when every field is a list, and `[..., 0]` does reach into those fields
+        check_leading_ellipsis(key, operands[0].layout.minmax_depth[0])
+        return operands[0][key]
     if op == "index":  # the M13 common integer index
         return operands[0][int(params["i"])]
     if op == "ak.num":

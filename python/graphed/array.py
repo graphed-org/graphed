@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from itertools import count
 from typing import TYPE_CHECKING, Any, SupportsFloat
 
 from .backend import ParamValue
@@ -117,12 +118,119 @@ _UFUNC_TO_OP: dict[str, str] = {
 }
 
 
+def _is_full_slice(value: object) -> bool:
+    """``:`` — the only axis-0 member a tuple key may carry (checked structurally: an operand's
+    ``__eq__`` would RECORD a comparison instead of answering one)."""
+    return isinstance(value, slice) and (value.start, value.stop, value.step) == (None, None, None)
+
+
+def _refuse_axis0(first: object) -> TypeError:
+    if isinstance(first, slice):  # the spelling that does work is two subscripts: a[1:3][:, 0]
+        bits = ["" if v is None else str(v) for v in (first.start, first.stop, first.step)]
+        # `start:stop` always, `:step` only when there is one — rstrip would turn `1::` into `1`,
+        # an integer index, which is a different op
+        spell = ":".join(bits if first.step is not None else bits[:2])
+        return TypeError(f"a tuple key must leave the partitioned axis whole; chain it: a[{spell}][:, ...]")
+    return TypeError("a tuple key must keep the partitioned axis 0 whole: a[:, inner...], a[..., inner]")
+
+
+def encode_subscript(key: tuple[object, ...]) -> str:
+    """Canonical injective spec for an inner (partition-local) tuple key — M13's numpy subscript,
+    widened in M59 to the kinds both array idioms share.
+
+    Members are ``slice``s with int fields, ints, ``None`` (newaxis) and at most one ``Ellipsis``;
+    axis 0 must be left whole (``:`` or a leading ``...``), since anything that consumes or
+    restructures the partitioned axis inside a tuple is a boundary the MVP does not model.
+
+    Whether a leading ``...`` actually leaves axis 0 whole depends on how deep the receiver is,
+    which only a backend knows — see :func:`check_leading_ellipsis`.
+    """
+    if not key or not (_is_full_slice(key[0]) or key[0] is Ellipsis):
+        raise _refuse_axis0(key[0] if key else None)
+    parts: list[str] = []
+    for elem in key:
+        if isinstance(elem, slice):
+            bits = []
+            for v in (elem.start, elem.stop, elem.step):
+                if v is None:
+                    bits.append("")
+                elif isinstance(v, bool) or not isinstance(v, int):
+                    raise TypeError(f"slice fields must be ints, got {v!r}")
+                else:
+                    bits.append(str(v))
+            parts.append(":".join(bits))
+        elif elem is None:
+            parts.append("N")
+        elif elem is Ellipsis:
+            if "..." in parts:  # two Ellipses do not name one key
+                raise TypeError(f"a tuple key takes at most one Ellipsis, got {key!r}")
+            parts.append("...")
+        elif not isinstance(elem, bool) and isinstance(elem, int):
+            parts.append(str(elem))
+        else:
+            raise TypeError(f"unsupported tuple-subscript element {elem!r}")
+    return ",".join(parts)
+
+
+def check_leading_ellipsis(key: tuple[object, ...], depth: int) -> None:
+    """A leading ``...`` must absorb at least the partitioned axis (M59).
+
+    ``[..., 0]`` leaves axis 0 whole only while the receiver is deeper than the members after the
+    Ellipsis: on a flat array the Ellipsis absorbs nothing and the key indexes axis 0. Only the
+    receiver knows how deep it is and a Form is opaque to the frontend, so this is a TYPING rule:
+    each backend's ``subscript`` rule calls this with its own depth (awkward: the form's minimum
+    list depth; numpy: ``ndim``) and a violation is ill-typed at record time. ``None`` members add
+    an axis and address none.
+    """
+    if not key or key[0] is not Ellipsis:
+        return
+    inner = sum(1 for member in key[1:] if member is not None)
+    if inner >= depth:
+        raise TypeError(
+            f"a leading ... must absorb the partitioned axis: the {inner} member(s) after it "
+            f"address all {depth} of the receiver's axes; leave axis 0 whole (a[:, ...]) or index "
+            "it on its own"
+        )
+
+
+def decode_subscript(spec: object) -> tuple[object, ...]:
+    """The inverse of :func:`encode_subscript`, for the backends that evaluate the key."""
+    out: list[object] = []
+    for part in str(spec).split(","):
+        if part == "N":
+            out.append(None)
+        elif part == "...":
+            out.append(Ellipsis)
+        elif ":" in part:
+            out.append(slice(*(int(b) if b else None for b in part.split(":"))))
+        else:
+            out.append(int(part))
+    return tuple(out)
+
+
 def _as_param(value: object) -> ParamValue:
     if isinstance(value, bool | int | str):
         return value
     if isinstance(value, SupportsFloat):  # coerces numpy scalars without importing numpy
         return float(value)
     raise TypeError(f"unsupported scalar operand {value!r}")
+
+
+def _scalar_params(value: object) -> dict[str, ParamValue]:
+    """The params a scalar operand records (M59).
+
+    A value carrying a ``dtype`` — a numpy scalar — keeps BOTH halves of what it imposes on the
+    result: the dtype, as a ``str`` param read off the object (the frontend never imports numpy),
+    and the exact value. An integer too wide for the store's i64 param travels as text, so
+    ``np.uint64(2**64 - 1)`` is neither collapsed to a float nor truncated.
+    """
+    dtype = getattr(value, "dtype", None)
+    if dtype is None or getattr(value, "shape", None) != () or not hasattr(value, "item"):
+        return {"scalar": _as_param(value)}
+    item = value.item()  # a 0-d array-like: guarded above
+    if isinstance(item, int) and not isinstance(item, bool) and not -(2**63) <= item < 2**63:
+        return {"scalar": str(item), "dtype": str(dtype)}
+    return {"scalar": _as_param(item), "dtype": str(dtype)}
 
 
 class Array:
@@ -158,7 +266,7 @@ class Array:
         if isinstance(other, Array):
             inputs = [other, self] if reflected else [self, other]
             return self._session.record_op(op, inputs)
-        params: dict[str, ParamValue] = {"scalar": _as_param(other), "side": "l" if reflected else "r"}
+        params: dict[str, ParamValue] = {**_scalar_params(other), "side": "l" if reflected else "r"}
         return self._session.record_op(op, [self], params)
 
     def _unary(self, op: str) -> Array:
@@ -377,6 +485,13 @@ class Array:
             if not key or not all(isinstance(f, str) for f in key):
                 raise TypeError("a field-list selection needs one or more field-name strings")
             return self._session.record_op("fields", [self], {"fields": ",".join(key)})
+        # M59: a TUPLE key indexes INNER axes — the key kinds (slice/int/None/Ellipsis) are common
+        # to both idioms, so the surface is shared, but only a backend that declares it evaluates
+        # the `subscript` op (M13 pins that one which does not still refuses the key). Axis 0 stays
+        # whole, so unlike the slice/index below the node is partition-local and fusible;
+        # `encode_subscript` refuses every other key before anything is recorded.
+        if isinstance(key, tuple) and getattr(self._session.backend, "subscript_keys", False):
+            return self._session.record_op("subscript", [self], {"spec": encode_subscript(key)})
         # M13: slices and integer indexing are common to both backend idioms. Both consume or
         # restructure the partitioned axis, so they record BOUNDARY reduction nodes (M12 rule);
         # only the fields the user gave are recorded, so equal slices intern.
@@ -541,9 +656,18 @@ def _record_method(receiver: Array, name: str, args: tuple[Any, ...], kwargs: di
     if outputs is None:
         raise GraphedTypeError("method", prov, f"{name}(): this backend records no behavior methods")
     try:
-        width = outputs([session.form(a) for a in inputs], params)
+        shape = outputs([session.form(a) for a in inputs], params)
     except Exception as exc:  # the typetracer refused the call -> located at the user's line
         raise GraphedTypeError("method", prov, f"{name}(): {exc}") from exc
-    if width is None:
+    if shape is None:
         return session.record_op("method", inputs, params)
-    return tuple(session.record_op("method", inputs, {**params, "index": i}) for i in range(width))
+    # M59: the backend answers the result's NESTING (`None` at every array leaf); the call comes
+    # back as that same nesting, one node per leaf, numbered depth-first as the backend flattens it
+    leaf = count()
+
+    def build(node: object) -> Any:
+        if isinstance(node, tuple):
+            return tuple(build(item) for item in node)
+        return session.record_op("method", inputs, {**params, "index": next(leaf)})
+
+    return build(shape)

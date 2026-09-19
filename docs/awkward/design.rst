@@ -132,7 +132,12 @@ name — so ``ak.mean(x, w)`` ports to ``gak.mean(x, weight=w)``, never to ``gak
 ``gak.softmax`` defaults to ``axis=1``, per event, where ``ak.softmax`` defaults to ``axis=-1``.
 
 **Free functions, not methods.** You hold graphed's plain deferred ``Array`` — field access,
-operators, ufuncs, ``getitem`` — and everything ragged-specific comes from the module:
+operators, ufuncs, ``getitem``, and the inner-axis tuple key (``jets.pt[:, :2]``, ``jets[:, 0]``,
+``jets.pt[..., 0]``), which records the form eager awkward infers for that key and stays fusible
+because the event axis is left whole. A leading ``...`` leaves it whole only while there is an
+axis for it to absorb: ``jets.pt[..., 0]`` is a key because ``jets.pt`` is jagged, and the same
+key on a flat per-event field is ill-typed at record time, since the ``0`` would land on the event
+axis. Everything ragged-specific comes from the module:
 ``gak.num``, ``gak.flatten``, ``gak.combinations``, ``gak.cartesian``, ``gak.zip``, ``gak.sort``,
 ``gak.with_name``, ``gak.where``, and the rest of the working set. ``gak.with_field`` wants the
 field name every time — ``gak.with_field(jets, jets.pt * 1.05, "pt")`` — where
@@ -229,7 +234,9 @@ the arguments becomes a graph input; every other argument must be a JSON-represe
 scalars are coerced), so the plan stays IR-canonical with no pickled closure. Constants compare as
 JSON: ``scaled(2)`` and ``scaled(2.0)`` are two nodes, a tuple and a list of the same values are
 one node, and the method body receives a tuple as a list. A method whose typetracer result is a
-tuple of arrays returns a tuple of graphed arrays; a Python-scalar result, an eager array, a
+tuple of arrays returns a tuple of graphed arrays, and a NESTED tuple comes back with the same
+nesting — ``metric, (a, b) = jets.metric_table(others, return_combinations=True)`` — one node per
+leaf, numbered depth-first. A Python-scalar result, an eager array, a
 callable, a NaN, a dict whose only key is ``"$"`` (the reference marker's shape) or an array from
 another ``Session`` among the arguments is refused with ``GraphedTypeError`` at the call, before
 any node is recorded. Column projection replays the method on the reporting typetracer, so it
