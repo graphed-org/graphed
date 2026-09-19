@@ -65,5 +65,5 @@ with the correction the file is `4 passed`.
 
 ## Status
 
-Filed. m60's own frozen suites (frontend 37/37, awkward 6/6) are green with X1 implemented; this is
-the only earlier frozen leg the guard reds across the whole tree (`./scripts/run-tests.sh`).
+RESOLVED — TEST WRONG, re-freeze affirmed by the owner (2026-09-19). The proposed correction is
+applied verbatim under `--allow-refreeze tests/frozen/preserve/m25`; tag `freeze-m25-fixup`.
