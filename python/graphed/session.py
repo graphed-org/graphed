@@ -120,10 +120,14 @@ class Session:
         `name=` is the caller's own identity declaration: returned untouched (equal names intern,
         which is the point) and entered in that space, so a later derivation cannot land on it.
 
-        The memo is keyed on the CALLABLE, not on `id(fn)`: `obj.method` builds a fresh object
-        with a fresh id on every access, but bound methods compare equal when `__self__` is the
-        same object and `__func__` the same function, so asking for the same callable again hits.
-        Functions and `functools.partial` compare by identity, which is the same answer.
+        A declared `name=` IS the identity: declaring a name another callable already wears —
+        declared or derived — means the same node, the caller having said so.
+
+        THE IDENTITY RULE: a callable carrying a non-None `__self__` is identified by that owner's
+        IDENTITY plus its function (`__func__`, or its `__name__` where there is none — builtin
+        methods and method-wrappers); every other callable by its OWN identity; never by
+        `==`/`hash`, which two behaviourally distinct callables may declare of themselves.
+        `obj.method` builds a fresh object per access, so its id alone would never hit.
 
         Ceiling: under a concurrent build the assignment of ordinals to colliding callables
         follows thread interleaving.
@@ -132,12 +136,14 @@ class Session:
             if name is not None:
                 self._fn_taken.add(name)
                 return name
-            try:
-                hash(fn)
-            except TypeError:  # a callable that cannot be a key stands in its own identity
+            owner = getattr(fn, "__self__", None)
+            if owner is None:
                 key: object = id(fn)
             else:
-                key = fn
+                func = getattr(fn, "__func__", None)
+                if func is None:  # a builtin method / method-wrapper: no function object to hold
+                    func = getattr(fn, "__name__", "lambda")
+                key = (id(owner), func)
             held = self._fn_names.get(key)
             if held is not None:
                 return held[1]
@@ -147,7 +153,7 @@ class Session:
                 ordinal += 1
                 unique = f"{derived}#{ordinal}"
             self._fn_taken.add(unique)
-            self._fn_names[key] = (fn, unique)  # holds `fn`, so an id key cannot be recycled
+            self._fn_names[key] = (fn, unique)  # holds `fn` (and so its owner): no id is recycled
             return unique
 
     def _step_reducer(self) -> None:
