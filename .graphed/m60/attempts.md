@@ -263,3 +263,10 @@ private `expand_tuple` is not advertised. Two docstring wordings tightened (`reg
 raises clause, `_fn_name`'s ceiling). The reviewer's proposed test is not added: it would pin the
 answer shape of a misuse, and the frozen `test_expand_stays_outside_the_array_consuming_verb_surface`
 already pins that `expand` is not the whole surface.
+
+## Iteration 7 — the m25 dispute, resolved by the owner
+
+The owner affirmed the re-freeze (2026-09-19). `test_histogram_terminal_bundle_reproduces_bit_for_bit`
+now takes `session` and `value` from ONE `_record()` call — the dispute's correction verbatim, three
+lines, nothing else under `tests/frozen/**` touched. Tag `freeze-m25-fixup`.
+
