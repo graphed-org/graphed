@@ -86,11 +86,11 @@ class Session:
         # remake it and resolve every factor against the registry AS OF THAT READ (§3 clause 1).
         # A counter and not a hash of the registry: exact, and O(1) to test.
         self._mint_epoch = 0
-        # m60 integ-m60-O: per-Session identity for an opaque callable recorded WITHOUT `name=`.
-        # `id(fn) -> (fn, unique name)` — the object is held so the id cannot be recycled onto a
-        # later callable — plus how many distinct objects have already derived each bare name.
-        self._fn_names: dict[int, tuple[object, str]] = {}
-        self._fn_taken: dict[str, int] = {}
+        # m60 integ-m60-O: per-Session identity for an opaque callable. `callable -> (fn, name)`
+        # (the object is held, so an id used as a stand-in key cannot be recycled onto a later
+        # callable) plus the ONE name space every name handed out lives in, declared or derived.
+        self._fn_names: dict[object, tuple[object, str]] = {}
+        self._fn_taken: set[str] = set()
         self._fn_lock = threading.Lock()
 
     def _mine(self, arrays: Sequence[Any], located: tuple[str, Provenance] | None = None) -> None:
@@ -112,27 +112,42 @@ class Session:
     def _fn_name(self, fn: object, name: str | None) -> str:
         """m60 integ-m60-O: the `fn` param an opaque callable is recorded under.
 
-        Every backend derives an External's payload hash from this param, so two DISTINCT objects
-        deriving one bare name would intern to one node and the second one's result would be the
-        first one's. Distinct objects therefore get a first-seen ordinal on the derived name (`q`,
-        then `q#1`); an explicit `name=` is the caller's own identity declaration and is returned
-        untouched. Ceiling: under a concurrent build the assignment of ordinals to colliding
-        callables follows thread interleaving.
+        Every backend derives an External's payload hash from this param, so two DISTINCT
+        callables wearing one name would intern to one node and the second one's result would be
+        the first one's. Every name handed out — declared through `name=` or derived from
+        `__name__` — therefore lives in ONE per-Session name space, and a derived candidate
+        advances (`q`, `q#1`, `q#2`, …) until it is one nothing else answers to. An explicit
+        `name=` is the caller's own identity declaration: returned untouched (equal names intern,
+        which is the point) and entered in that space, so a later derivation cannot land on it.
+
+        The memo is keyed on the CALLABLE, not on `id(fn)`: `obj.method` builds a fresh object
+        with a fresh id on every access, but bound methods compare equal when `__self__` is the
+        same object and `__func__` the same function, so asking for the same callable again hits.
+        Functions and `functools.partial` compare by identity, which is the same answer.
+
+        Ceiling: under a concurrent build the assignment of ordinals to colliding callables
+        follows thread interleaving.
         """
-        if name is not None:
-            return name
-        derived = str(getattr(fn, "__name__", "lambda"))
         with self._fn_lock:
-            held = self._fn_names.get(id(fn))
+            if name is not None:
+                self._fn_taken.add(name)
+                return name
+            try:
+                hash(fn)
+            except TypeError:  # a callable that cannot be a key stands in its own identity
+                key: object = id(fn)
+            else:
+                key = fn
+            held = self._fn_names.get(key)
             if held is not None:
                 return held[1]
-            taken = self._fn_taken.get(derived, 0)
-            if taken == 0:  # noqa: SIM108 - an `if` so coverage certifies BOTH arms; a ternary is one line
-                unique = derived
-            else:
-                unique = f"{derived}#{taken}"
-            self._fn_taken[derived] = taken + 1
-            self._fn_names[id(fn)] = (fn, unique)
+            derived = str(getattr(fn, "__name__", "lambda"))
+            unique, ordinal = derived, 0
+            while unique in self._fn_taken:
+                ordinal += 1
+                unique = f"{derived}#{ordinal}"
+            self._fn_taken.add(unique)
+            self._fn_names[key] = (fn, unique)  # holds `fn`, so an id key cannot be recycled
             return unique
 
     def _step_reducer(self) -> None:

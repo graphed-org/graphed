@@ -89,3 +89,58 @@ green today only because the two recordings coincide.
 
 Filed `.graphed/m60/disputes/m25-test_histogram_terminal_bundle_reproduces_bit_for_bit.md` with the
 probe and a proposed correction, and stopped without committing, per §A.7 / §B.6.
+
+## Iteration 4 — review repairs in `_fn_name` and `register_internal`
+
+Iterations 1–3 committed unchanged as `58cea95` (X + O) and `5c08b15` (V + P + E + D). This
+iteration repairs what the review found, each as a class rather than the coordinate it named.
+
+**"The same callable, asked for again."** `obj.method` builds a fresh object with a fresh id on
+every access, so an `id(fn)` memo could never hit it: `x.map(c.scale)` twice was two nodes, a
+six-iteration loop was seven, and `apply(c.scale, x)` stopped interning with `x.map(c.scale)`. The
+memo is now keyed on the CALLABLE — bound methods compare equal on `__self__` identity plus
+`__func__`, functions and `functools.partial` on identity, which is the same answer. A callable
+that cannot be hashed at all keys on its id instead, in a `try`/`except TypeError` statement with
+its own leg; the value still holds `fn`, so an id key cannot be recycled.
+
+**"A derived name equal to a name already handed to a different callable."** `name=` lived outside
+the derived name space, so `x.map(other, name="q")` then `x.map(q)` silently gave the second
+callable the first one's node and result. Every name handed out, declared or derived, now enters
+one per-Session set, and a derived candidate advances (`q`, `q#1`, `q#2`, …) until free — which
+also refuses the `name="q#1"` decoy and a third same-named callable. A declaration is still never
+ordinaled: equal declared names intern (O4), in either order.
+
+**`register_internal`.** `"mylib."` stored `"mylib.."` and matched nothing — a silent no-op in the
+call that exists to fix silent wrong provenance. Trailing dots are stripped, and a prefix naming no
+module (`""`, `"."`) raises `ValueError` rather than registering a rule that can match nothing.
+
+`docs/awkward/design.rst` states the form's cost: one zero-row parquet round trip per source,
+measured at ~1.1 ms median over seven runs.
+
+Closing tests in `tests/extra/frontend/m60/` (toy-backed, awkward-free), with `m60x_lib` /
+`m60x_libx` as the stand-in wrapping library and its sibling — a prefix no frozen leg registers.
+Both bare names join the existing mypy unresolvable-helper override.
+
+### Branch evidence
+
+Every new/changed branch, one mutant each, in a scratch copy of `python/graphed`
+(`<scratchpad>/m60/mutate2.py`, `PYTHONDONTWRITEBYTECODE=1`, the working tree's `python/` replaced
+in pytest's `pythonpath`). `CONTROL(unmutated)` runs green first and a `node_count` mutant is the
+live-instrument control.
+
+| mutant | killed by |
+|---|---|
+| CONTROL-instrument-live | `test_one_bound_method_asked_for_again_is_one_node…` |
+| O-memo-keyed-on-id | `test_one_bound_method_asked_for_again_is_one_node…` |
+| O-unhashable-unhandled | `test_an_unhashable_callable_is_memoed_on_its_identity` |
+| O-memo-ignored | `test_one_bound_method_asked_for_again_is_one_node…` |
+| O-declared-name-not-taken | `test_a_derived_name_never_takes_a_declared_ones_node` |
+| O-advance-once | `test_a_third_callable_of_a_declared_name_advances_to_the_next_free_ordinal` |
+| O-never-advance | `test_a_third_callable_of_a_declared_name_advances_to_the_next_free_ordinal` |
+| O-name-default-changed | `test_a_callable_without_a_name_records_the_lambda_literal` |
+| V-no-rstrip | `test_a_trailing_dot_spelling_is_the_same_declaration` |
+| V-no-empty-refusal | `test_a_prefix_naming_no_module_is_refused[]` |
+| O-name-ignored (frozen) | `test_an_explicit_name_is_the_callers_identity_declaration` |
+
+The two advance mutants were re-run under `-k` restricted to the ordinal legs, so the kill is
+theirs and not an earlier test's.

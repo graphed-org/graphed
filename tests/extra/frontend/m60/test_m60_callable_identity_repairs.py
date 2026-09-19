@@ -1,0 +1,202 @@
+"""m60 integ-m60-O — the two ways one node could still be handed to two callables.
+
+"The same callable, asked for again": `obj.method` is a fresh object with a fresh id per access,
+so identity must be the CALLABLE and not its id, or a bound method recorded twice is two nodes.
+"A derived name equal to one already handed to a DIFFERENT callable": declared and derived names
+share one space, or the next un-named callable deriving a declared name takes its node and result.
+
+Toy-backed and numpy-idiom (the free-threaded frontend job installs no awkward); `m13_toy`'s
+backend is reached by bare name through the pytest `pythonpath`, and its sources carry data here,
+so each node's IDENTITY and its evaluated VALUE are both observable.
+"""
+
+from __future__ import annotations
+
+import functools
+from typing import Any
+
+import pytest
+from m13_toy import ToyBackend, ToyForm
+
+import graphed.core
+from graphed import Array, Session, apply
+
+#: the toy source value; every answer below is exact on it
+DATUM = 2
+
+
+class Corr:
+    """A corrections object whose BOUND METHOD is the callable an analyst hands to `map`."""
+
+    def __init__(self, k: float) -> None:
+        self.k = k
+
+    def scale(self, value: Any) -> Any:
+        return value * self.k
+
+
+class Unhashable:
+    """A callable that cannot be a dict key at all — the memo must key it on identity instead."""
+
+    __name__ = "unhashable"
+    __hash__ = None  # type: ignore[assignment]
+
+    def __init__(self, k: float) -> None:
+        self.k = k
+
+    def __call__(self, value: Any) -> Any:
+        return value * self.k
+
+
+def scale(value: Any) -> Any:
+    """A free function spelled like `Corr.scale`, with no `self` in sight."""
+    return value * 1000
+
+
+def q(value: Any) -> Any:
+    return value + 1000
+
+
+def q_closure(factor: float) -> Any:
+    """A second distinct callable named `q`: one factory's code, its own object."""
+
+    def q(value: Any) -> Any:
+        return value * factor
+
+    return q
+
+
+def zero(value: Any) -> Any:
+    return value * 0.0
+
+
+def toy_session() -> tuple[Session, Array]:
+    session = Session(ToyBackend())
+    return session, session.source("x", form=ToyForm("source"), data=DATUM)
+
+
+def fn_params(session: Session, *outputs: Array) -> list[str]:
+    """The `fn` param of every External node reaching `outputs`, in record order."""
+    graph = graphed.core.GraphStore.deserialize(session.serialized_ir(*outputs, optimize=False))
+    return [str(node["params"]["fn"]) for node in graph.nodes() if node["kind"] == "external"]
+
+
+# ---- (1) the same callable, asked for again ---------------------------------------------------
+def test_one_bound_method_asked_for_again_is_one_node_and_applies_intern_with_it() -> None:
+    session, x = toy_session()
+    c = Corr(2)
+    assert c.scale is not c.scale  # a fresh object per access: an id memo could never hit
+
+    mapped, again, applied = x.map(c.scale), x.map(c.scale), apply(c.scale, x)
+
+    assert mapped.node_id == again.node_id == applied.node_id
+    assert session.node_count() == 2
+    assert fn_params(session, mapped) == ["scale"]
+    assert session.materialize(mapped) == c.scale(DATUM)
+
+
+def test_a_loop_recording_one_bound_method_stays_two_nodes() -> None:
+    session, x = toy_session()
+    c = Corr(2)
+
+    for _ in range(6):
+        x.map(c.scale)
+
+    assert session.node_count() == 2
+
+
+def test_distinct_bound_methods_and_a_self_free_scale_stay_three_nodes() -> None:
+    """The admitted-member control: three callables the class must NOT merge, all named `scale`."""
+    session, x = toy_session()
+    c, d = Corr(2), Corr(100)
+    free_of_self: object = Corr.scale
+    assert c.scale != d.scale  # bound-method equality is `__self__` IDENTITY + `__func__`
+    assert c.scale != free_of_self and scale.__name__ == Corr.scale.__name__
+
+    mine, theirs, free = x.map(c.scale), x.map(d.scale), x.map(scale)
+
+    assert len({mine.node_id, theirs.node_id, free.node_id}) == 3
+    assert fn_params(session, mine, theirs, free) == ["scale", "scale#1", "scale#2"]
+    assert session.materialize(mine) == c.scale(DATUM)
+    assert session.materialize(theirs) == d.scale(DATUM)
+
+
+def test_an_unhashable_callable_is_memoed_on_its_identity() -> None:
+    session, x = toy_session()
+    u, other = Unhashable(3), Unhashable(7)
+    with pytest.raises(TypeError):
+        hash(u)  # cannot be the memo key itself
+
+    first, again, third = x.map(u), x.map(u), x.map(other)
+
+    assert first.node_id == again.node_id != third.node_id
+    assert session.node_count() == 3
+    assert fn_params(session, first, third) == ["unhashable", "unhashable#1"]
+    assert (session.materialize(first), session.materialize(third)) == (u(DATUM), other(DATUM))
+
+
+# ---- (3) the `lambda` literal a nameless callable derives -------------------------------------
+def test_a_callable_without_a_name_records_the_lambda_literal() -> None:
+    session, x = toy_session()
+    first, second = functools.partial(scale), functools.partial(q)
+    assert not hasattr(first, "__name__")
+
+    left, right = x.map(first), x.map(second)
+
+    assert fn_params(session, left, right) == ["lambda", "lambda#1"]
+    assert left.node_id != right.node_id
+
+
+# ---- (2) a declared name is inside the one name space -----------------------------------------
+def test_a_derived_name_never_takes_a_declared_ones_node() -> None:
+    session, x = toy_session()
+
+    declared = x.map(zero, name="q")
+    derived = x.map(q)
+
+    assert declared.node_id != derived.node_id
+    assert fn_params(session, declared, derived) == ["q", "q#1"]
+    assert (session.materialize(declared), session.materialize(derived)) == (zero(DATUM), q(DATUM))
+
+
+def test_a_third_callable_of_a_declared_name_advances_to_the_next_free_ordinal() -> None:
+    session, x = toy_session()
+
+    declared = x.map(zero, name="q")
+    first, second = x.map(q), x.map(q_closure(3))
+
+    assert len({declared.node_id, first.node_id, second.node_id}) == 3
+    assert fn_params(session, declared, first, second) == ["q", "q#1", "q#2"]
+
+
+def test_a_declared_ordinal_spelling_is_taken_like_any_other_name() -> None:
+    """The adversarial member: the declaration pre-empts the ordinal a derivation would reach for."""
+    session, x = toy_session()
+
+    decoy = x.map(zero, name="q#1")
+    first, second = x.map(q), x.map(q_closure(3))
+
+    assert len({decoy.node_id, first.node_id, second.node_id}) == 3
+    assert fn_params(session, decoy, first, second) == ["q#1", "q", "q#2"]
+
+
+def test_a_declaration_stays_the_callers_identity_after_a_derivation_of_that_name() -> None:
+    """Reverse order: `name="q"` is a declaration, not a request — it interns with the `q` there."""
+    session, x = toy_session()
+
+    derived = x.map(q)
+    declared = x.map(zero, name="q")
+
+    assert derived.node_id == declared.node_id
+    assert fn_params(session, derived) == ["q"]
+
+
+def test_two_callables_under_one_declared_name_are_still_one_node() -> None:
+    """O4's control, unchanged by the name space: equal declared names intern."""
+    session, x = toy_session()
+
+    shared = x.map(zero, name="shared")
+    also_shared = x.map(scale, name="shared")
+
+    assert shared.node_id == also_shared.node_id
+    assert session.node_count() == 2
