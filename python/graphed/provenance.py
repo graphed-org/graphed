@@ -59,10 +59,17 @@ def register_internal(prefix: str) -> None:
 
     A library that records graphed ops on a user's behalf is not the user: without this every node
     it records maps to library source instead of the analysis line. ``prefix`` matches whole dotted
-    components — ``"lib"`` covers ``lib`` and ``lib.sub``, never ``libx``. Idempotent, thread-safe
-    and process-global, with no inverse: a library registers itself once, at import.
+    components — ``"lib"`` covers ``lib`` and ``lib.sub``, never ``libx``; ``"lib."`` is the same
+    declaration, spelled with the separator. Idempotent, thread-safe and process-global, with no
+    inverse: a library registers itself once, at import.
+
+    :raises ValueError: if ``prefix`` names no module (``""``, ``"."``). Registering a rule that
+        can match nothing would leave in place exactly the wrong provenance this call fixes.
     """
     global _SKIP
+    prefix = prefix.rstrip(".")
+    if not prefix:
+        raise ValueError("graphed: register_internal needs a module prefix")
     with _lock:  # through a set, so a repeat registration cannot grow the per-frame test
         _SKIP = tuple(sorted({*_SKIP, f"{prefix}."}))
 
