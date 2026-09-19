@@ -4,6 +4,62 @@ What changed
 Newest release first. Numbers in parentheses are the pull requests on
 `graphed-org/graphed <https://github.com/graphed-org/graphed>`_.
 
+0.0.3
+-----
+
+A library can record into graphed
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The headline of this release: the seams a package needs to hand its users deferred arrays the way
+it hands them dask ones — what wrapping graphed in coffea's NanoEvents, fastjet's
+``ClusterSequence`` and uproot's form mappings turned up. :doc:`frontend/design` has a section on
+wrapping graphed in a library of your own.
+
+* ``graphed.provenance.register_internal("mylib")`` takes a library's frames out of the search for
+  the analyst's line, so a recorded op — and the error a worker raises for it — points at the code
+  that called the library rather than into it (#34).
+* ``graphed.expand`` is public: the mapping that runs a verb answering one array once per
+  universe of a varied operand, and passes an unvaried call straight through (#34).
+* A source may declare its own read list with ``projected_columns(outputs)``. A form-mapped source
+  — a NanoAOD schema over a flat tree — has field names that are not file columns; its answer
+  ships to the workers verbatim, and a source without the hook reads exactly what it read before
+  (#32).
+* A node recorded with ``record_external(descriptor=, form=)`` types what follows it in column
+  projection by the form it declared, not by its first input — jets out of particles (#32).
+
+Awkward idioms the frontend used to refuse
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``array[:, :2]``, ``a[:, 0]``, ``a[..., 0]`` and ``a[:, None, :]``: a tuple key that leaves the
+  partitioned axis whole records, fuses like any per-row op and gives a partitioned run the same
+  answer as an unpartitioned one. A key that would cut that axis is refused where you wrote it,
+  naming the chained spelling (``a[1:3][:, 0]``) (#33).
+* A numpy scalar operand keeps its dtype and its exact value: ``mask * np.uint64(1 << bit)``
+  records ``uint64``, as awkward computes it, where it recorded ``float64`` (#33).
+* A behavior method may return a nested tuple of arrays —
+  ``metric_table(..., return_combinations=True)`` — and you get the same nesting back (#33).
+* ``from_parquet`` keeps the record names and parameters awkward wrote into the file, so a
+  behavior keyed on a record name resolves on the deferred array (#34).
+
+Two silent wrong answers, now refused or fixed
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* **A Session refuses an array it did not record.** Asking one Session to read, materialize or
+  compile an array recorded in another used to answer with that Session's *own* node of the same
+  id — another analysis's result, without a word. Every entry now raises, recording nothing (#34).
+* **Two different un-named callables no longer share a node.** ``x.map(lambda v: v * 2)`` and
+  ``x.map(lambda v: v * 100)`` were both named ``<lambda>`` and interned to one node, so the second
+  returned the first's result. A second distinct callable of a name now records as ``name#1``; the
+  same bound method asked for twice is still one node, and a program whose callables have distinct
+  names records the same bytes as before. ``name=`` stays your own declaration of identity (#34).
+
+Packaging and documentation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* The MIT ``LICENSE`` file ships in the repository and in the sdist (#31).
+* :doc:`architecture` says what is true of an opaque callable: it travels by value in the durable
+  plan only — on a process pool it must be importable, so define it at module level (#34).
+
 0.0.2
 -----
 
