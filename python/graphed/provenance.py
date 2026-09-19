@@ -63,13 +63,14 @@ def register_internal(prefix: str) -> None:
     declaration, spelled with the separator. Idempotent, thread-safe and process-global, with no
     inverse: a library registers itself once, at import.
 
-    :raises ValueError: if ``prefix`` names no module (``""``, ``"."``). Registering a rule that
-        can match nothing would leave in place exactly the wrong provenance this call fixes.
+    :raises ValueError: if any dotted component of ``prefix`` is not an identifier — ``""``,
+        ``"."``, ``"a..b"``, ``" lib"``, ``"my lib"``, ``"123"``. No module name can equal such a
+        prefix, so registering it would leave in place exactly the wrong provenance this call fixes.
     """
     global _SKIP
     prefix = prefix.rstrip(".")
-    if not prefix:
-        raise ValueError("graphed: register_internal needs a module prefix")
+    if not all(part.isidentifier() for part in prefix.split(".")):
+        raise ValueError(f"graphed: register_internal needs a module prefix, got {prefix!r}")
     with _lock:  # through a set, so a repeat registration cannot grow the per-frame test
         _SKIP = tuple(sorted({*_SKIP, f"{prefix}."}))
 

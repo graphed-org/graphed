@@ -1,7 +1,8 @@
 """m60 integ-m60-O — the two ways one node could still be handed to two callables.
 
 "The same callable, asked for again": `obj.method` is a fresh object with a fresh id per access,
-so identity must be the CALLABLE and not its id, or a bound method recorded twice is two nodes.
+so a callable with an owner is identified by that owner's IDENTITY plus its function — never by
+`==`/`hash`, which a class is free to declare of two behaviourally distinct callables.
 "A derived name equal to one already handed to a DIFFERENT callable": declared and derived names
 share one space, or the next un-named callable deriving a declared name takes its node and result.
 
@@ -12,7 +13,9 @@ so each node's IDENTITY and its evaluated VALUE are both observable.
 
 from __future__ import annotations
 
+import dataclasses
 import functools
+from collections.abc import Callable
 from typing import Any
 
 import pytest
@@ -46,6 +49,37 @@ class Unhashable:
 
     def __call__(self, value: Any) -> Any:
         return value * self.k
+
+
+@dataclasses.dataclass(frozen=True)
+class Weight:
+    """A callable whose class calls two of these EQUAL: the behaviour field is `compare=False`."""
+
+    label: str
+    factor: float = dataclasses.field(compare=False)
+
+    __name__ = "weight"
+
+    def __call__(self, value: Any) -> Any:
+        return value * self.factor
+
+
+class Trigger:
+    """The same trap hand-written: `__eq__`/`__hash__` on a key field, behaviour on another."""
+
+    __name__ = "trigger"
+
+    def __init__(self, label: str, factor: float) -> None:
+        self.label, self.factor = label, factor
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, Trigger) and self.label == other.label
+
+    def __hash__(self) -> int:
+        return hash(self.label)
+
+    def __call__(self, value: Any) -> Any:
+        return value * self.factor
 
 
 def scale(value: Any) -> Any:
@@ -133,6 +167,46 @@ def test_an_unhashable_callable_is_memoed_on_its_identity() -> None:
     assert session.node_count() == 3
     assert fn_params(session, first, third) == ["unhashable", "unhashable#1"]
     assert (session.materialize(first), session.materialize(third)) == (u(DATUM), other(DATUM))
+
+
+@pytest.mark.parametrize(
+    "make",
+    [
+        pytest.param(lambda k: Weight("nominal", k), id="frozen-dataclass-compare-false"),
+        pytest.param(lambda k: Trigger("nominal", k), id="hand-written-eq-and-hash"),
+    ],
+)
+def test_two_callables_their_class_calls_equal_are_still_two_nodes(
+    make: Callable[[float], Any],
+) -> None:
+    """An `==`/`hash` memo would hand the second one the first's node AND the first's result."""
+    session, x = toy_session()
+    a, b = make(2.0), make(100.0)
+    assert a is not b and a == b and hash(a) == hash(b)  # the collapse is available to take
+
+    first, second = x.map(a), x.map(b)
+
+    assert first.node_id != second.node_id
+    assert session.node_count() == 3
+    assert fn_params(session, first, second) == [a.__name__, f"{a.__name__}#1"]
+    assert (session.materialize(first), session.materialize(second)) == (a(DATUM), b(DATUM))
+
+
+def test_a_method_wrappers_owner_and_its_name_are_both_the_identity() -> None:
+    """The admitted end: no `__func__` to key on, so it is the owner's id plus `__name__`."""
+    session, x = toy_session()
+    k: Any = 3.0
+    other: Any = 100.0
+    assert k.__mul__ is not k.__mul__  # a fresh method-wrapper per access
+
+    first, again = x.map(k.__mul__), x.map(k.__mul__)
+    sibling, theirs = x.map(k.__add__), x.map(other.__mul__)
+
+    assert first.node_id == again.node_id
+    assert len({first.node_id, sibling.node_id, theirs.node_id}) == 3
+    assert fn_params(session, first, sibling, theirs) == ["__mul__", "__add__", "__mul__#1"]
+    assert session.materialize(first) == k * DATUM
+    assert (session.materialize(sibling), session.materialize(theirs)) == (k + DATUM, other * DATUM)
 
 
 # ---- (3) the `lambda` literal a nameless callable derives -------------------------------------

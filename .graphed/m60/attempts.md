@@ -144,3 +144,44 @@ live-instrument control.
 
 The two advance mutants were re-run under `-k` restricted to the ordinal legs, so the kill is
 theirs and not an earlier test's.
+
+## Iteration 3 — the two rejected lines of 8418070
+
+**The identity rule.** `_fn_name`'s memo was keyed on the callable itself, so lookup ran `==`/`hash`
+and two DIFFERENT callables whose class declares them equal collapsed to one node — the second got
+the first's result (`got=(4.0, 4.0)`, truth `(4.0, 200.0)`). Stated once at the point of the
+operation: a callable carrying a non-None `__self__` is identified by that owner's IDENTITY plus its
+function (`__func__`, or `__name__` where there is none — builtin methods and method-wrappers);
+every other callable by its OWN identity; never by `==`/`hash`. The memo entry still holds `fn`
+(which holds its owner), so no id in a key is recycled. The `hash(fn)` try/except is gone — nothing
+is hashed but ints, functions and strs, and an unhashable callable is now just "its own identity".
+Written as `if` statements, not an `or`, so coverage certifies each arm.
+
+**`register_internal`.** The `if not prefix` guard still registered prefixes no module name can
+equal (`" "`, `" mylib"`, `"mylib "`, `"my lib"`, `"-"`, `"123"`). The class is "every dotted
+component is an identifier": after `rstrip(".")`, refuse unless
+`all(part.isidentifier() for part in prefix.split("."))`. This REPLACES the emptiness test —
+`"".isidentifier()` is False, so `""`, `"."` and `"a..b"` fall out of the same check.
+
+Exit-round items done: the `~1.1 ms` figure is out of `docs/awkward/design.rst` (the structural
+claim — one zero-row round trip per source, never per partition — stays); `Array.map`, `apply`,
+`apply_gufunc` and `_fn_name` now say a declared `name=` IS the identity, so declaring a name
+another callable already wears means the same node, in either order.
+
+### Branch evidence
+
+Same harness as iteration 2: scratch copy of the tree, `PYTHONDONTWRITEBYTECODE=1`, pytest run with
+its rootdir in the copy so the copy's `python/` is what `pythonpath` seats. Live-instrument control:
+a test asserting `graphed.session.__file__` is under the copy passes there (it names the path it
+found), and the unmutated control leg is green before each mutant.
+
+| mutant | killed by |
+|---|---|
+| O-self-arm-flipped (`owner is None` → `is not None`) | `test_a_method_wrappers_owner_and_its_name_are_both_the_identity`, both `test_two_callables_their_class_calls_equal_are_still_two_nodes` params, `test_one_bound_method_asked_for_again…`, `test_an_unhashable_callable…` (+5 more) |
+| O-func-fallback-removed (`__func__`→`__name__` leg deleted) | `test_a_method_wrappers_owner_and_its_name_are_both_the_identity` |
+| V-identifier-test-reverted (`if not prefix`) | `test_a_prefix_naming_no_module_is_refused[ ]`, `[ m60x_lib]`, `[m60x_lib ]`, `[my lib]`, `[123]`, `[a..b]` |
+
+Admitted ends kept green in the same files: a bound method / method-wrapper re-accessed is ONE node
+(`c.scale`, `k.__mul__`), `x.map(k.__add__)` is a second on the same owner, `other.__mul__` a third;
+`"m60x_lib."` still registers, and `"m60x_lib.sub"` / `"m60x_under_score_lib"` register without
+error (the test restores `_SKIP`, registration being process-global with no inverse).

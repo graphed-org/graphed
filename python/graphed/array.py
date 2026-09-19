@@ -523,9 +523,10 @@ class Array:
         preservation risk, plan A.3.1).
 
         Without ``name=`` two distinct callables that derive one ``__name__`` are told apart by a
-        per-Session ordinal. Pass ``name=`` to declare the identity yourself — equal names intern
-        to one node, so the name must encode everything that changes the callable's behaviour
-        (a captured cut value, a model version, a configuration dict)."""
+        per-Session ordinal. Pass ``name=`` to declare the identity yourself: a declared name IS
+        the identity, so declaring a name another callable already wears — declared or derived —
+        means that same node, and the name must encode everything that changes the callable's
+        behaviour (a captured cut value, a model version, a configuration dict)."""
         return self._session.record_external("map", fn, [self], {"fn": self._session._fn_name(fn, name)})
 
     def reduce(self, kind: str = "sum") -> Array:
@@ -553,8 +554,9 @@ def apply(fn: Callable[..., object], *arrays: Array, name: str | None = None) ->
     preservation risk (plan A.3.1). With one array this IS ``Array.map`` (interns with it).
 
     Without ``name=`` two distinct callables that derive one ``__name__`` are told apart by a
-    per-Session ordinal. Pass ``name=`` to declare the identity yourself — equal names intern to
-    one node, so the name must encode everything that changes the callable's behaviour."""
+    per-Session ordinal. Pass ``name=`` to declare the identity yourself: a declared name IS the
+    identity, so declaring a name another callable already wears — declared or derived — means
+    that same node, and the name must encode everything that changes the callable's behaviour."""
     from .varied import containers_in, expand  # noqa: PLC0415  (`varied` imports `Array`)
 
     if containers_in(*arrays):  # §2.3d *expanding*: one External per universe

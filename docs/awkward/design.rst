@@ -448,7 +448,7 @@ file's metadata, so a file awkward wrote types deferred exactly as ``ak.from_par
 eagerly and a behavior keyed on a record name resolves on the deferred array. A file written
 without awkward's metadata gets what the arrow types alone say. No event data is read either way:
 the type comes from awkward's own reader on a zero-row file of the dataset's schema, so recording
-a source costs one such round trip — around a millisecond — once per source, never per partition.
+a source costs one such round trip, once per source, never per partition.
 ``to_parquet`` writes one part per partition, running the same plan a cluster would run.
 
 .. code-block:: python
