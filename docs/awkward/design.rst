@@ -443,8 +443,11 @@ Reading and writing parquet
 ---------------------------
 
 ``from_parquet`` records a deferred source over a file, directory, glob or list. Its type comes
-from the parquet schema; ``to_parquet`` writes one part per partition, running the same plan a
-cluster would run.
+from the parquet schema — including the record names and node parameters awkward stored in the
+file's metadata, so a file awkward wrote types deferred exactly as ``ak.from_parquet`` types it
+eagerly and a behavior keyed on a record name resolves on the deferred array. A file written
+without awkward's metadata gets what the arrow types alone say. No event data is read either way.
+``to_parquet`` writes one part per partition, running the same plan a cluster would run.
 
 .. code-block:: python
 

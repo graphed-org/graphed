@@ -22,6 +22,12 @@ except Exception:  # pragma: no cover - executing is a declared dependency
 _enabled = True
 _lock = threading.Lock()
 
+#: Module-name prefixes `capture` skips, each already dot-terminated except the built-in
+#: `graphed*` rule, which is a bare STRING prefix (`graphed_foo` counts as internal, as it always
+#: has). A tuple so the per-frame test in `capture` — on the hot path of every recorded op — stays
+#: ONE `str.startswith` call however many libraries have registered.
+_SKIP: tuple[str, ...] = ("graphed",)
+
 
 @dataclass(frozen=True)
 class Provenance:
@@ -46,6 +52,19 @@ def set_enabled(value: bool) -> None:
 
 def is_enabled() -> bool:
     return _enabled
+
+
+def register_internal(prefix: str) -> None:
+    """Declare ``prefix`` a wrapping library, so the ops it records point at ITS caller's line.
+
+    A library that records graphed ops on a user's behalf is not the user: without this every node
+    it records maps to library source instead of the analysis line. ``prefix`` matches whole dotted
+    components — ``"lib"`` covers ``lib`` and ``lib.sub``, never ``libx``. Idempotent, thread-safe
+    and process-global, with no inverse: a library registers itself once, at import.
+    """
+    global _SKIP
+    with _lock:  # through a set, so a repeat registration cannot grow the per-frame test
+        _SKIP = tuple(sorted({*_SKIP, f"{prefix}."}))
 
 
 def _source_text(frame: FrameType) -> str:
@@ -75,8 +94,11 @@ def capture() -> Provenance:
     if not _enabled:
         return _DISABLED
     frame: FrameType | None = sys._getframe(1)  # capture()'s caller; its own frame is graphed*
+    skip = _SKIP  # one read of the rebound global, so a concurrent registration cannot split a walk
     while frame is not None:
-        if not frame.f_globals.get("__name__", "").startswith("graphed"):
+        # the trailing dot is what makes a registered prefix match whole dotted COMPONENTS; it
+        # cannot change the built-in `graphed` answer, which is a prefix of the name either way
+        if not (frame.f_globals.get("__name__", "") + ".").startswith(skip):
             return Provenance(
                 filename=frame.f_code.co_filename,
                 lineno=frame.f_lineno,

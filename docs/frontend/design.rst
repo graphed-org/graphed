@@ -1113,6 +1113,51 @@ all. That is how ``graphed-histogram`` exists without teaching either backend wh
 and it is the path to follow for your own deferred operation.
 
 
+Wrapping graphed in a library of your own
+-----------------------------------------
+
+A library that records graphed operations on an analyst's behalf — a jet-clustering wrapper, a
+file reader, a corrections layer — meets four seams.
+
+**Your frames are not the user's line.** Every node remembers the source line that created it, and
+that line is the first frame outside ``graphed`` itself. From inside your library that frame is
+*yours*, so every error and every sourcemap entry points at your source instead of the analysis.
+Declare yourself internal once, at import::
+
+    import graphed.provenance
+
+    graphed.provenance.register_internal("mylib")
+
+Matching is by whole dotted component: ``"mylib"`` covers ``mylib`` and ``mylib.jets``, never
+``mylibx``. It is idempotent, thread-safe and process-global, and there is no inverse.
+
+**Be aware of variations.** A verb of yours that records its own call-out takes plain arrays; when
+an analyst hands it a varied collection it has to run once per universe. ``graphed.expand`` is that
+mapping — the one every built-in verb uses::
+
+    def cluster(events, r=0.4):
+        ...                                     # records one External node
+
+    def clustered(events, r=0.4):
+        return graphed.expand(cluster, (events,), {"r": r})
+
+An unvaried call passes straight through, recording exactly what the bare call records; a varied
+one comes back as a ``Varied`` over the union of labels.
+
+**Name your opaque callables.** Two distinct callables that derive the same ``__name__`` — two
+lambdas, two closures of one factory, two same-named functions of different modules — would
+otherwise hash to one node and hand the second one the first one's result. They are told apart
+automatically: the second object to derive ``q`` records as ``q#1``. Passing ``name=`` to ``map``,
+``apply`` or ``apply_gufunc`` overrides that and declares the identity yourself, so the name must
+encode *everything* that changes what the callable does — a captured cut value, a model version, a
+configuration dict. Two calls under one name are one node.
+
+**One session per program.** A node id only means something in the store that minted it, so every
+``Session`` method that takes an array refuses one recorded elsewhere: the ``record_*`` family with
+a located :class:`~graphed.GraphedTypeError`, the readers and ``compile_ir`` with a ``TypeError``.
+Record into the session you were handed (``array.session``), never one of your own making.
+
+
 Not supported yet
 -----------------
 

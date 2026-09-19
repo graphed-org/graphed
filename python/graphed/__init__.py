@@ -41,7 +41,7 @@ from .projection import (
 from .provenance import Provenance, capture, is_enabled, set_enabled
 from .session import Session
 from .shuffle import join, join_plan, pack_key, repartition, shuffle_plan
-from .varied import SURFACE_DISPOSITIONS, Varied, broadcasting, expanding, member_of
+from .varied import SURFACE_DISPOSITIONS, Varied, broadcasting, expand, expanding, member_of
 from .vary import vary
 
 #: How each public `Array`-consuming module verb treats a `Varied` container: expand it per label,
@@ -96,6 +96,7 @@ __all__ = [
     "compile_ir",
     "context_of",
     "evaluate_ir",
+    "expand",
     "expanding",
     "explain",
     "handle_opaque",
