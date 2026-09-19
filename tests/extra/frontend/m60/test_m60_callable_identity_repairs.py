@@ -80,6 +80,31 @@ class Riders:
     hundredfold = functools.partialmethod(_scale, factor=100.0)
 
 
+class Proxy:
+    """A transparent proxy over a real method: `__class__`, `__self__` and `__func__` forward.
+
+    `isinstance` consults `__class__`, so this CLAIMS to be a method; its call is its own.
+    """
+
+    def __init__(self, method: Any, factor: float) -> None:
+        self._method, self.factor = method, factor
+
+    @property  # type: ignore[misc]  # the false claim under test
+    def __class__(self) -> Any:
+        return self._method.__class__
+
+    @property
+    def __self__(self) -> Any:
+        return self._method.__self__
+
+    @property
+    def __func__(self) -> Any:
+        return self._method.__func__
+
+    def __call__(self, value: Any) -> Any:
+        return value * self.factor
+
+
 class Unhashable:
     """A callable that cannot be a dict key at all — the memo must key it on identity instead."""
 
@@ -253,6 +278,20 @@ def test_two_partialmethods_on_one_owner_are_two_nodes() -> None:
     assert doubled.__self__ is hundredfold.__self__ is r
     assert not isinstance(doubled, types.MethodType)
     assert not hasattr(doubled, "__func__") and not hasattr(doubled, "__name__")
+
+    first, second = x.map(doubled), x.map(hundredfold)
+
+    assert first.node_id != second.node_id
+    assert (session.materialize(first), session.materialize(second)) == (4.0, 200.0)
+
+
+def test_a_callable_that_only_claims_to_be_a_method_is_its_own_identity() -> None:
+    """Two proxies over ONE held method carry one `(__self__, __func__)` pair and two calls."""
+    session, x = toy_session()
+    held = types.MethodType(Corr.scale, Corr(2))
+    doubled, hundredfold = Proxy(held, 2.0), Proxy(held, 100.0)
+    assert isinstance(doubled, types.MethodType) and type(doubled) is not types.MethodType
+    assert doubled.__self__ is hundredfold.__self__ and doubled.__func__ is hundredfold.__func__
 
     first, second = x.map(doubled), x.map(hundredfold)
 

@@ -206,7 +206,9 @@ equal; `(id(owner), __func__ or __name__)` for ANY `__self__` carrier merged eve
 Accepted ceiling: an exotic re-accessed callable that is not a `MethodType` — builtin methods,
 method-wrappers, partials/partialmethods — mints a node per access. Losing CSE is never a WRONG
 answer; merging two distinct calls is. The HEP case is unaffected: `correctionlib`'s pybind11
-`evaluate` IS a `types.MethodType` (lead-measured), so it keeps its CSE.
+`evaluate` IS a `types.MethodType` (lead-measured), so it keeps its CSE when the correction object
+is held (`cset["sf"]` mints a fresh owner per access: `cset["sf"].evaluate` twice is two nodes,
+both correct).
 
 `test_a_method_wrappers_owner_and_its_name_are_both_the_identity` pinned the abolished owner+name
 rule and is replaced by that ceiling stated as behaviour: `k.__mul__` recorded twice, no count
@@ -235,3 +237,15 @@ interning with `map`, + the 6-iteration loop), a bound method of a `__hash__ = N
 value: `c.scale`/`d.scale`, `c.scale`/`c.offset` (one owner, two `__func__`), two `==`-equal
 equal-hash OWNERS (`Calib`, behaviour field `compare=False`), the two partialmethods (`4.0`/`200.0`),
 the two `==`-equal callable INSTANCES (`Weight`/`Trigger`), and `c.scale` vs the plain `scale`.
+
+## Iteration 5 — the predicate is the rule's, not the callable's
+
+Reviewer (unit round on f5ad10b): `isinstance(fn, types.MethodType)` consults `fn.__class__`, which
+a transparent proxy forwards; two proxies over one held method reached the method arm with one
+`(id(__self__), id(__func__))` key and two different calls — node ids `1 1`, materialized
+`4.0 4.0`, truth `4.0 200.0`. The rule was already "Python's own definition"; the predicate was
+wider than it. Now `type(fn) is types.MethodType` (`types.MethodType` is not an acceptable base
+type, so the narrowing excludes nothing genuine). Closing test
+`test_a_callable_that_only_claims_to_be_a_method_is_its_own_identity`: fails on the `isinstance`
+predicate with `assert 1 != 1`, passes on `type(fn) is`; the merged end stays
+`test_two_method_objects_fabricated_from_one_pair_are_one_node`.
