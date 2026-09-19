@@ -9,6 +9,7 @@ backend.
 from __future__ import annotations
 
 import threading
+import types
 import weakref
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
@@ -123,11 +124,17 @@ class Session:
         A declared `name=` IS the identity: declaring a name another callable already wears —
         declared or derived — means the same node, the caller having said so.
 
-        THE IDENTITY RULE: a callable carrying a non-None `__self__` is identified by that owner's
-        IDENTITY plus its function (`__func__`, or its `__name__` where there is none — builtin
-        methods and method-wrappers); every other callable by its OWN identity; never by
-        `==`/`hash`, which two behaviourally distinct callables may declare of themselves.
-        `obj.method` builds a fresh object per access, so its id alone would never hit.
+        THE IDENTITY RULE: two callable objects share a memo entry only where PYTHON ITSELF
+        defines them as the same call — a genuine `types.MethodType`, whose call IS
+        `__func__(__self__, ...)`, keyed `(id(fn.__self__), id(fn.__func__))`; every other callable
+        is its own identity, `id(fn)`. Never `==`/`hash`, which two behaviourally distinct
+        callables may declare of themselves; the memo entry holds `fn`, and through it the owner
+        and the function, so no id in a key is ever recycled onto a later object.
+
+        Ceiling: any other re-accessed callable — a builtin method, a method-wrapper, a
+        `functools.partial`/`partialmethod` carrying a copied `__self__` — mints a node per access.
+        Losing CSE for those is never a wrong answer; merging two distinct calls is, and every
+        widening past Python's own definition of sameness admitted a neighbour.
 
         Ceiling: under a concurrent build the assignment of ordinals to colliding callables
         follows thread interleaving.
@@ -136,14 +143,10 @@ class Session:
             if name is not None:
                 self._fn_taken.add(name)
                 return name
-            owner = getattr(fn, "__self__", None)
-            if owner is None:
-                key: object = id(fn)
+            if isinstance(fn, types.MethodType):
+                key: object = (id(fn.__self__), id(fn.__func__))
             else:
-                func = getattr(fn, "__func__", None)
-                if func is None:  # a builtin method / method-wrapper: no function object to hold
-                    func = getattr(fn, "__name__", "lambda")
-                key = (id(owner), func)
+                key = id(fn)
             held = self._fn_names.get(key)
             if held is not None:
                 return held[1]

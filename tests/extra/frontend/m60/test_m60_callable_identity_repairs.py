@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import dataclasses
 import functools
+import types
 from collections.abc import Callable
 from typing import Any
 
@@ -36,6 +37,47 @@ class Corr:
 
     def scale(self, value: Any) -> Any:
         return value * self.k
+
+    def offset(self, value: Any) -> Any:
+        """A second method on the same owner: same `__self__`, a different `__func__`."""
+        return value + self.k
+
+
+class UnhashableOwner:
+    """An OWNER that cannot be a dict key at all — its bound method keys on the owner's id."""
+
+    __hash__ = None  # type: ignore[assignment]
+
+    def __init__(self, k: float) -> None:
+        self.k = k
+
+    def scale(self, value: Any) -> Any:
+        return value * self.k
+
+
+@dataclasses.dataclass(frozen=True)
+class Calib:
+    """An OWNER whose class calls two of these EQUAL: the behaviour field is `compare=False`."""
+
+    label: str
+    factor: float = dataclasses.field(compare=False)
+
+    def scale(self, value: Any) -> Any:
+        return value * self.factor
+
+
+class Riders:
+    """Two `functools.partialmethod`s on ONE owner.
+
+    Each access builds a `functools.partial` with a COPIED `__self__` and no `__func__` and no
+    `__name__`, so the owner alone cannot tell the two apart.
+    """
+
+    def _scale(self, value: Any, factor: float) -> Any:
+        return value * factor
+
+    doubled = functools.partialmethod(_scale, factor=2.0)
+    hundredfold = functools.partialmethod(_scale, factor=100.0)
 
 
 class Unhashable:
@@ -139,6 +181,85 @@ def test_a_loop_recording_one_bound_method_stays_two_nodes() -> None:
     assert session.node_count() == 2
 
 
+def test_a_bound_method_of_an_unhashable_owner_is_one_node() -> None:
+    """The merged end where the owner cannot be hashed: only its ID enters the key."""
+    session, x = toy_session()
+    u = UnhashableOwner(3)
+    with pytest.raises(TypeError):
+        hash(u)  # the owner cannot be half of a key either
+
+    first, again = x.map(u.scale), x.map(u.scale)
+
+    assert first.node_id == again.node_id
+    assert session.node_count() == 2
+    assert session.materialize(first) == u.scale(DATUM)
+
+
+def test_two_method_objects_fabricated_from_one_pair_are_one_node() -> None:
+    """`types.MethodType(func, obj)` twice: two objects Python defines as the same call."""
+    session, x = toy_session()
+    c = Corr(2)
+    call, same_call = types.MethodType(Corr.scale, c), types.MethodType(Corr.scale, c)
+    assert call is not same_call
+
+    first, again = x.map(call), x.map(same_call)
+
+    assert first.node_id == again.node_id
+    assert session.node_count() == 2
+    assert session.materialize(first) == c.scale(DATUM)
+
+
+def test_two_methods_of_one_owner_are_two_nodes() -> None:
+    """One `__self__`, two `__func__`s — the owner alone is not the identity."""
+    session, x = toy_session()
+    c = Corr(2)
+    scale_call: Any = c.scale
+    offset_call: Any = c.offset
+    assert scale_call.__self__ is offset_call.__self__ is c
+
+    scaled, offset = x.map(scale_call), x.map(offset_call)
+
+    assert scaled.node_id != offset.node_id
+    assert (session.materialize(scaled), session.materialize(offset)) == (
+        c.scale(DATUM),
+        c.offset(DATUM),
+    )
+
+
+def test_bound_methods_of_two_equal_owners_are_two_nodes() -> None:
+    """The owners are `==` and hash alike, so an owner-as-key memo hands the second the first's
+    result — the same collapse `==`-equal CALLABLES offered, one level up."""
+    session, x = toy_session()
+    c, e = Calib("nominal", 2.0), Calib("nominal", 100.0)
+    mine: Any = c.scale
+    theirs: Any = e.scale
+    assert c == e and hash(c) == hash(e) and mine.__func__ is theirs.__func__
+
+    first, second = x.map(mine), x.map(theirs)
+
+    assert first.node_id != second.node_id
+    assert (session.materialize(first), session.materialize(second)) == (
+        c.scale(DATUM),
+        e.scale(DATUM),
+    )
+
+
+def test_two_partialmethods_on_one_owner_are_two_nodes() -> None:
+    """Not `types.MethodType`: a copied `__self__` with no function object behind it."""
+    session, x = toy_session()
+    r = Riders()
+    doubled: Any = r.doubled
+    hundredfold: Any = r.hundredfold
+    assert doubled.__self__ is hundredfold.__self__ is r
+    assert not isinstance(doubled, types.MethodType)
+    assert not hasattr(doubled, "__func__") and not hasattr(doubled, "__name__")
+
+    first, second = x.map(doubled), x.map(hundredfold)
+
+    assert first.node_id != second.node_id
+    assert (session.materialize(first), session.materialize(second)) == (4.0, 200.0)
+
+
 def test_distinct_bound_methods_and_a_self_free_scale_stay_three_nodes() -> None:
     """The admitted-member control: three callables the class must NOT merge, all named `scale`."""
     session, x = toy_session()
@@ -192,21 +313,17 @@ def test_two_callables_their_class_calls_equal_are_still_two_nodes(
     assert (session.materialize(first), session.materialize(second)) == (a(DATUM), b(DATUM))
 
 
-def test_a_method_wrappers_owner_and_its_name_are_both_the_identity() -> None:
-    """The admitted end: no `__func__` to key on, so it is the owner's id plus `__name__`."""
+def test_a_method_wrapper_recorded_twice_is_never_a_WRONG_answer() -> None:
+    """The accepted ceiling: a method-wrapper is not a `types.MethodType`, so a re-access may mint
+    a second node. However many it mints, every one of them materializes to `k * DATUM`."""
     session, x = toy_session()
     k: Any = 3.0
-    other: Any = 100.0
-    assert k.__mul__ is not k.__mul__  # a fresh method-wrapper per access
+    wrapper, wrapper_again = k.__mul__, k.__mul__  # both held: no id can recycle under us
+    assert wrapper is not wrapper_again and not isinstance(wrapper, types.MethodType)
 
-    first, again = x.map(k.__mul__), x.map(k.__mul__)
-    sibling, theirs = x.map(k.__add__), x.map(other.__mul__)
+    first, again = x.map(wrapper), x.map(wrapper_again)
 
-    assert first.node_id == again.node_id
-    assert len({first.node_id, sibling.node_id, theirs.node_id}) == 3
-    assert fn_params(session, first, sibling, theirs) == ["__mul__", "__add__", "__mul__#1"]
-    assert session.materialize(first) == k * DATUM
-    assert (session.materialize(sibling), session.materialize(theirs)) == (k + DATUM, other * DATUM)
+    assert {session.materialize(first), session.materialize(again)} == {k * DATUM}
 
 
 # ---- (3) the `lambda` literal a nameless callable derives -------------------------------------
