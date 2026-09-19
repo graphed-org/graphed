@@ -29,6 +29,8 @@ from graphed import (
     handle_opaque,
 )
 
+from .backend import AwkwardForm
+
 _STRUCTURAL = ("is_list", "is_regular", "is_option", "is_indexed")
 
 
@@ -79,7 +81,7 @@ def _replay(array: Array, on_fail: str) -> tuple[dict[int, tuple[object, object,
 
     conservative = False
 
-    def on_external(_nid: int, _fn: object, inputs: list[object]) -> object:
+    def on_external(nid: int, _fn: object, inputs: list[object]) -> object:
         nonlocal conservative
         if handle_opaque("map", on_fail) is CONSERVATIVE:
             conservative = True
@@ -88,7 +90,14 @@ def _replay(array: Array, on_fail: str) -> tuple[dict[int, tuple[object, object,
         for t in inputs:
             if isinstance(t, ak.Array):
                 t.layout._touch_data(recursive=True)
-        return inputs[0]
+        # The stand-in is a typetracer of the node's RECORDED form (M23 `record_external(form=)`):
+        # a package recording its own External family may declare a type its first input does not
+        # have, and a downstream op is well-typed against that declaration alone. A recorded form
+        # from another backend (graphed-histogram's HistogramForm) has no typetracer -> first input.
+        # `eval_stage` re-wraps every operand with the backend's behavior, so the bare typetracer
+        # is enough — a behavior property on the External's output still resolves.
+        form = session.form_of(nid)
+        return form.tt if isinstance(form, AwkwardForm) else inputs[0]
 
     result = session.walk(
         array,

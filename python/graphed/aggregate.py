@@ -26,7 +26,7 @@ from .execute import CompiledGraph, Key, OnFailure, compile_ir, evaluate_ir, ext
 from .projection import read_columns
 from .session import Session
 from .varied import refuse_container
-from .write import PartitionedSource
+from .write import PartitionedSource, declared_columns
 
 V = TypeVar("V")
 
@@ -170,12 +170,13 @@ def aggregate_plan(
     wired = _external_evaluators(session, compiled)
     if externals:
         wired.update(externals)
+    declared = declared_columns(data, outputs)
     process = _PartitionReduce(
         ir=bytes(compiled.ir),
         source_name=session.source_name(nid),
         backend_factory=backend if backend is not None else type(session.backend),
         reader=data,
-        columns=read_columns(list(outputs), nid),
+        columns=read_columns(list(outputs), nid) if declared is None else declared,
         externals=tuple(wired.items()),
         reduce=reduce,
         variation_labels=None if on_compiled is None else on_compiled(compiled),

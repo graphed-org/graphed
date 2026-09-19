@@ -104,7 +104,10 @@ class _WritePart:
 
     compiled: CompiledGraph
     source_name: str
-    columns: tuple[str, ...]
+    #: shipped to `read_partition` verbatim; `None` = the source's own selection. The driver's own
+    #: "everything" sentinel `()` is translated to `None` where it is computed, so a source that
+    #: DECLARES `()` gets `()`.
+    columns: tuple[str, ...] | None
     destination: str
     prefix: str
     steps_per_file: int
@@ -117,7 +120,7 @@ class _WritePart:
 
     def __call__(self, partition: Partition, resources: WorkerResources) -> list[str]:
         if self.reader is not None:
-            chunk = self.reader.read_partition(partition, self.columns or None, resources)
+            chunk = self.reader.read_partition(partition, self.columns, resources)
             index = gw.blind_part_index(partition, dict(self.bases))
         elif self.memory_data is not None:
             chunk = self.memory_data[partition.entry_start : partition.entry_stop]
@@ -473,7 +476,8 @@ class _VariedWritePart:
 
     compiled: CompiledGraph
     source_name: str
-    columns: tuple[str, ...]
+    #: as `_WritePart.columns`: verbatim to `read_partition`, `None` = the source's own selection.
+    columns: tuple[str, ...] | None
     destination: str
     prefix: str
     steps_per_file: int
@@ -494,9 +498,9 @@ class _VariedWritePart:
 
     def _chunk(self, partition: Partition, resources: WorkerResources) -> tuple[Any, int]:
         if self.reader is not None:
-            return self.reader.read_partition(
-                partition, self.columns or None, resources
-            ), gw.blind_part_index(partition, dict(self.bases))
+            return self.reader.read_partition(partition, self.columns, resources), gw.blind_part_index(
+                partition, dict(self.bases)
+            )
         if self.memory_data is not None:
             return self.memory_data[partition.entry_start : partition.entry_stop], _memory_step(
                 partition, self.memory_rows, self.steps_per_file
@@ -695,7 +699,10 @@ def _write_varied(
     source_name = session.source_name(source_id)
     source_form = session.form_of(source_id)
     assert isinstance(source_form, AwkwardForm)
-    columns = _evaluation_columns_union(outputs, source_id, source_name, source_form)
+    columns = gw.declared_columns(data, outputs)
+    if columns is None:
+        # `()` is this computation's OWN "read everything"; `read_partition` spells that `None`.
+        columns = _evaluation_columns_union(outputs, source_id, source_name, source_form) or None
 
     common: dict[str, Any] = {
         "compiled": compiled,
@@ -797,7 +804,10 @@ def to_parquet(
     source_name = session.source_name(node_id)
     source_form = session.form_of(node_id)
     assert isinstance(source_form, AwkwardForm)  # this backend recorded the source
-    columns = _evaluation_columns(array, node_id, source_name, source_form)
+    columns = gw.declared_columns(data, (array,))
+    if columns is None:
+        # `()` is this computation's OWN "read everything"; `read_partition` spells that `None`.
+        columns = _evaluation_columns(array, node_id, source_name, source_form) or None
     compiled = compile_ir(session, array)
 
     if isinstance(data, PartitionedSource):

@@ -88,10 +88,32 @@ class PartitionedSource(Protocol):
     dataset's partitioning (BLIND preferred — R7.9: no file opened at planning time) and
     ``read_partition`` reads exactly one partition, restricted to ``columns`` (``None`` = the
     source's own selection), with ``resources.open_once`` available for the file-locality
-    directive. Implemented by the parquet dataset loader and the ROOT reader integration's source."""
+    directive. Implemented by the parquet dataset loader and the ROOT reader integration's source.
+
+    A source MAY additionally declare its own read list with an optional
+    ``projected_columns(outputs) -> Sequence[str]`` — deliberately NOT a member of this Protocol,
+    since adding one would make ``isinstance`` false for every source that lacks it. See
+    :func:`declared_columns`."""
 
     def partitions(self, steps_per_file: int) -> tuple[Partition, ...]: ...
 
     def read_partition(
         self, partition: Partition, columns: Sequence[str] | None, resources: WorkerResources
     ) -> object: ...
+
+
+def declared_columns(source: object, outputs: Sequence[object]) -> tuple[str, ...] | None:
+    """The read list a source DECLARES for ``outputs``, or ``None`` when it declares none.
+
+    A driver that gets an answer ships it verbatim — unsorted, undeduped, an empty answer honoured
+    — and does NOT run its own column computation: a source that maps the graph's field names onto
+    something other than file columns (a form-mapped flat-tree reader, say) makes that computation
+    meaningless and possibly raising. Asked driver-side, once per driver call, with the output
+    arrays that driver evaluates; the built plan carries the result, so no worker asks again.
+
+    The answer is a SEQUENCE of column names — a bare ``str`` would be taken apart into its
+    characters."""
+    hook = getattr(source, "projected_columns", None)
+    if not callable(hook):
+        return None
+    return tuple(hook(tuple(outputs)))
