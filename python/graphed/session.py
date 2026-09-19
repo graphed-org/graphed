@@ -8,6 +8,7 @@ backend.
 
 from __future__ import annotations
 
+import threading
 import weakref
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
@@ -85,6 +86,54 @@ class Session:
         # remake it and resolve every factor against the registry AS OF THAT READ (§3 clause 1).
         # A counter and not a hash of the registry: exact, and O(1) to test.
         self._mint_epoch = 0
+        # m60 integ-m60-O: per-Session identity for an opaque callable recorded WITHOUT `name=`.
+        # `id(fn) -> (fn, unique name)` — the object is held so the id cannot be recycled onto a
+        # later callable — plus how many distinct objects have already derived each bare name.
+        self._fn_names: dict[int, tuple[object, str]] = {}
+        self._fn_taken: dict[str, int] = {}
+        self._fn_lock = threading.Lock()
+
+    def _mine(self, arrays: Sequence[Any], located: tuple[str, Provenance] | None = None) -> None:
+        """m60 integ-m60-X: refuse an `Array` this Session did not record.
+
+        A node id only means something in its own store, so a foreign `Array` whose id exists here
+        would be spliced in as whatever node wears that id — a wrong answer, not an error. The
+        `record_*` family passes its `(op, provenance)`, and gets a user-located
+        `GraphedTypeError`; the readers pass nothing and get a plain `TypeError`
+        (`GraphedTypeError` is not one, which is what separates the two halves).
+        """
+        if all(a._session is self for a in arrays):
+            return
+        message = "an input was recorded in a different Session"
+        if located is None:
+            raise TypeError(f"graphed: {message}")
+        raise GraphedTypeError(located[0], located[1], message)
+
+    def _fn_name(self, fn: object, name: str | None) -> str:
+        """m60 integ-m60-O: the `fn` param an opaque callable is recorded under.
+
+        Every backend derives an External's payload hash from this param, so two DISTINCT objects
+        deriving one bare name would intern to one node and the second one's result would be the
+        first one's. Distinct objects therefore get a first-seen ordinal on the derived name (`q`,
+        then `q#1`); an explicit `name=` is the caller's own identity declaration and is returned
+        untouched. Ceiling: under a concurrent build the assignment of ordinals to colliding
+        callables follows thread interleaving.
+        """
+        if name is not None:
+            return name
+        derived = str(getattr(fn, "__name__", "lambda"))
+        with self._fn_lock:
+            held = self._fn_names.get(id(fn))
+            if held is not None:
+                return held[1]
+            taken = self._fn_taken.get(derived, 0)
+            if taken == 0:  # noqa: SIM108 - an `if` so coverage certifies BOTH arms; a ternary is one line
+                unique = derived
+            else:
+                unique = f"{derived}#{taken}"
+            self._fn_taken[derived] = taken + 1
+            self._fn_names[id(fn)] = (fn, unique)
+            return unique
 
     def _step_reducer(self) -> None:
         if self._reducer is not None:
@@ -132,6 +181,7 @@ class Session:
         record an analysis once, serialize it once, then re-target it at many datasets with
         ``DurablePlan.with_partitions`` / ``for_datasets``.
         """
+        self._mine(outputs)
         if optimize and not outputs:
             raise ValueError("serialized_ir(optimize=True) needs at least one output Array")
         ids = [arr.node_id for arr in outputs]
@@ -144,9 +194,11 @@ class Session:
         return bytes(self._store.reduce(outputs=ids)[0].serialize())
 
     def form(self, array: Array) -> Form:
+        self._mine([array])
         return self._forms[array.node_id]
 
     def provenance(self, array: Array) -> Provenance:
+        self._mine([array])
         return self._provenance[array.node_id]
 
     def source_ids(self) -> list[int]:
@@ -215,10 +267,7 @@ class Session:
     ) -> Array:
         params_d: dict[str, ParamValue] = dict(params or {})
         prov = capture()
-        # a node id only means something in its own store: an input recorded by another
-        # Session would be spliced in as whatever node happens to share its id here
-        if any(a._session is not self for a in inputs):
-            raise GraphedTypeError(op, prov, "an input was recorded in a different Session")
+        self._mine(inputs, (op, prov))
         in_forms = [self._forms[a.node_id] for a in inputs]
         try:
             form = self._backend.op_form(op, in_forms, params_d)
@@ -243,6 +292,7 @@ class Session:
         identity; its output form is the input form (identity on the payload, §3.3a)."""
         params_d: dict[str, ParamValue] = dict(params)
         prov = capture()
+        self._mine([input_array], ("exchange", prov))
         in_form = self._forms[input_array.node_id]
         form = self._backend.op_form("exchange", [in_form], params_d)
         node_id = self._store.add_exchange([input_array.node_id], params_d)
@@ -258,6 +308,7 @@ class Session:
         its output form is the backend's ``op_form("join", …)`` (flat record-merge; §3.3)."""
         params_d: dict[str, ParamValue] = dict(params)
         prov = capture()
+        self._mine([left, right], ("join", prov))
         in_forms = [self._forms[left.node_id], self._forms[right.node_id]]
         try:
             form = self._backend.op_form("join", in_forms, params_d)
@@ -289,6 +340,7 @@ class Session:
         the backend is not consulted at all, so backends stay free of domain content (§A.4)."""
         params_d: dict[str, ParamValue] = dict(params or {})
         prov = capture()
+        self._mine(inputs, (op, prov))
         if (descriptor is None) != (form is None):
             raise GraphedTypeError(op, prov, "descriptor= and form= must be given together")
         if descriptor is None:
@@ -321,7 +373,10 @@ class Session:
         external: Callable[[int, Callable[..., object], list[object]], object],
     ) -> object:
         """Evaluate the graph from ``array`` with caller-supplied handlers for sources, ops, and
-        externals. `materialize` evaluates real data; projection evaluates reporting tracers."""
+        externals. `materialize` evaluates real data; projection evaluates reporting tracers.
+
+        `materialize` reaches the m60 own-session guard through this one call."""
+        self._mine([array])
         cache: dict[int, object] = {}
 
         def inputs_of(node_id: int) -> tuple[int, ...]:

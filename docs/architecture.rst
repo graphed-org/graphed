@@ -78,9 +78,13 @@ debug a cluster job:
 
 * A worker needs to be able to import whatever your analysis imports. If a helper module is on
   your laptop but not on the cluster, the failure is at import time on the worker.
-* Genuinely opaque callables — a lambda you passed to ``apply``, say — are the one exception:
-  they are serialized by value, and the recording marks them as a reproducibility risk. Refer to
-  a function by import path instead and it stays readable, and its cached results survive.
+* Genuinely opaque callables — a lambda you passed to ``apply``, say — do not travel in the
+  recording at all. It carries only a payload descriptor naming them, and marks them a
+  reproducibility risk; the function itself rides along in the task, by ordinary pickle. So on a
+  process-pool runner an opaque callable must be **importable** — defined at module level, not a
+  lambda or a closure, or the run fails when the task is pickled. Refer to a function by import
+  path and it stays readable too, and its cached results survive. ("Serialized by value" is a
+  property of a durable plan you save and re-run, never of what crosses to a worker.)
 * Partial results come back and are combined in an order fixed by the plan, not by which worker
   finished first — so your totals do not wobble between runs or between worker counts.
 

@@ -79,13 +79,17 @@ def apply_gufunc(
     output_dtype: object,
     name: str | None = None,
 ) -> Array:
-    """Record ``fn`` over ``arrays`` with gufunc-signature form inference (one External node)."""
+    """Record ``fn`` over ``arrays`` with gufunc-signature form inference (one External node).
+
+    Without ``name=`` two distinct callables that derive one ``__name__`` are told apart by a
+    per-Session ordinal. Pass ``name=`` to declare the identity yourself — equal names intern to
+    one node, so the name must encode everything that changes the callable's behaviour."""
     parse_signature(signature)  # malformed signatures fail HERE, before any recording
     if not arrays or not all(isinstance(a, NumpyArray) for a in arrays):
         raise TypeError("apply_gufunc needs at least one deferred array operand")
     session = arrays[0].session
     if any(a.session is not session for a in arrays):
         raise TypeError("apply_gufunc operands must come from one Session")
-    fn_name: str = name or str(getattr(fn, "__name__", "lambda"))
+    fn_name: str = session._fn_name(fn, name)
     params = {"fn": fn_name, "signature": signature, "dtype": np.dtype(output_dtype).str}
     return session.record_external("gufunc", fn, list(arrays), params)
