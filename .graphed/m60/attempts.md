@@ -153,8 +153,10 @@ the first's result (`got=(4.0, 4.0)`, truth `(4.0, 200.0)`). Stated once at the 
 operation: a callable carrying a non-None `__self__` is identified by that owner's IDENTITY plus its
 function (`__func__`, or `__name__` where there is none — builtin methods and method-wrappers);
 every other callable by its OWN identity; never by `==`/`hash`. The memo entry still holds `fn`
-(which holds its owner), so no id in a key is recycled. The `hash(fn)` try/except is gone — nothing
-is hashed but ints, functions and strs, and an unhashable callable is now just "its own identity".
+(which holds its owner), so no id in a key is recycled. The `hash(fn)` try/except is gone and an
+unhashable CALLABLE is now just "its own identity" — but an unhashable OWNER still reached a hash,
+and the `__name__` fallback still merged; iteration 4 narrows the key and only then is it true that
+nothing in a key is hashed but ints.
 Written as `if` statements, not an `or`, so coverage certifies each arm.
 
 **`register_internal`.** The `if not prefix` guard still registered prefixes no module name can
@@ -185,3 +187,51 @@ Admitted ends kept green in the same files: a bound method / method-wrapper re-a
 (`c.scale`, `k.__mul__`), `x.map(k.__add__)` is a second on the same owner, `other.__mul__` a third;
 `"m60x_lib."` still registers, and `"m60x_lib.sub"` / `"m60x_under_score_lib"` register without
 error (the test restores `_SKIP`, registration being process-global with no inverse).
+
+## Iteration 4 — the identity key, narrowed to Python's own definition
+
+**THE KEY.** Two callable objects share a memo entry only where PYTHON ITSELF defines them as the
+same call — a genuine `types.MethodType`, whose call IS `__func__(__self__, …)`, keyed
+`(id(fn.__self__), id(fn.__func__))`; every other callable is its own identity, `id(fn)`. No
+`__name__`, no `==`, no `hash` of anything but ints; the entry still holds `fn`, and through it the
+owner and the function, so no id recycles. Written as `if isinstance(...)` / `else` statements.
+
+Why this narrow — each widening past Python's definition admitted a neighbour: `id(fn)` alone minted
+a node per bound-method access; `fn` itself (`==`/`hash`) merged two callables their class calls
+equal; `(id(owner), __func__ or __name__)` for ANY `__self__` carrier merged every
+`functools.partialmethod` on one owner (each access is a `partial` with a copied `__self__`, no
+`__func__` and no `__name__`, so both fell into one `(id(owner), "lambda")` bucket: node ids
+`1 1 SHARED`, materialized `4.0 4.0`, truth `4.0 200.0`).
+
+Accepted ceiling: an exotic re-accessed callable that is not a `MethodType` — builtin methods,
+method-wrappers, partials/partialmethods — mints a node per access. Losing CSE is never a WRONG
+answer; merging two distinct calls is. The HEP case is unaffected: `correctionlib`'s pybind11
+`evaluate` IS a `types.MethodType` (lead-measured), so it keeps its CSE.
+
+`test_a_method_wrappers_owner_and_its_name_are_both_the_identity` pinned the abolished owner+name
+rule and is replaced by that ceiling stated as behaviour: `k.__mul__` recorded twice, no count
+pinned, every recorded node materializing to `k * DATUM` (both wrapper objects held in variables so
+no id can recycle mid-test).
+
+### Branch evidence
+
+Same harness: `rsync` copy of the tree into the scratchpad, `PYTHONDONTWRITEBYTECODE=1`, pytest run
+from the copy with `-o pythonpath=<copy>/python …` so the copy's `python/` is what imports.
+Live-instrument control: a test printing and asserting `graphed.session.__file__` under the copy
+(`SEATED: …/scratchpad/copy/python/graphed/session.py`). Legs run
+`tests/extra/frontend/m60/test_m60_callable_identity_repairs.py` + `tests/frozen/frontend/m60`;
+`CONTROL-unmutated` is green (rc=0) first.
+
+| mutant | killed by |
+|---|---|
+| K-no-methodtype-arm (`key = id(fn)` always) | `test_one_bound_method_asked_for_again_is_one_node_and_applies_intern_with_it`, `test_a_loop_recording_one_bound_method_stays_two_nodes`, `test_a_bound_method_of_an_unhashable_owner_is_one_node`, `test_two_method_objects_fabricated_from_one_pair_are_one_node` |
+| K-owner-object-and-func (`key = (owner, func)`) | `test_a_bound_method_of_an_unhashable_owner_is_one_node` (`TypeError: unhashable type: 'UnhashableOwner'`), `test_bound_methods_of_two_equal_owners_are_two_nodes`, `test_two_partialmethods_on_one_owner_are_two_nodes` |
+| K-owner-id-and-func-or-name (iteration 3's key) | `test_two_partialmethods_on_one_owner_are_two_nodes` (`assert 1 != 1`) |
+| K-func-dropped (`key = id(fn.__self__)`) | `test_two_methods_of_one_owner_are_two_nodes` |
+
+Members at each end, both ends green unmutated. MERGED: a bound method re-accessed (+ `apply`
+interning with `map`, + the 6-iteration loop), a bound method of a `__hash__ = None` owner,
+`types.MethodType(func, obj)` built twice from one pair. DISTINCT, each with its OWN materialized
+value: `c.scale`/`d.scale`, `c.scale`/`c.offset` (one owner, two `__func__`), two `==`-equal
+equal-hash OWNERS (`Calib`, behaviour field `compare=False`), the two partialmethods (`4.0`/`200.0`),
+the two `==`-equal callable INSTANCES (`Weight`/`Trigger`), and `c.scale` vs the plain `scale`.
