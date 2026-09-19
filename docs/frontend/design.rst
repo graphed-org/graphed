@@ -1133,7 +1133,8 @@ Matching is by whole dotted component: ``"mylib"`` covers ``mylib`` and ``mylib.
 
 **Be aware of variations.** A verb of yours that records its own call-out takes plain arrays; when
 an analyst hands it a varied collection it has to run once per universe. ``graphed.expand`` is that
-mapping — the one every built-in verb uses::
+mapping for a verb that answers one array — the one ``graphed.apply`` itself uses. It hands back a
+single ``Varied``, so a verb that answers a tuple of arrays is outside it::
 
     def cluster(events, r=0.4):
         ...                                     # records one External node

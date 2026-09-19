@@ -132,8 +132,7 @@ class Session:
         and the function, so no id in a key is ever recycled onto a later object.
 
         Ceiling: any other re-accessed callable — a builtin method, a method-wrapper, a
-        `functools.partial`, a `partialmethod` access (a partial with a copied `__self__`) — mints a
-        node per access.
+        `partialmethod` access (a partial with a copied `__self__`) — mints a node per access.
         Losing CSE for those is never a wrong answer; merging two distinct calls is, and every
         widening past Python's own definition of sameness admitted a neighbour.
 

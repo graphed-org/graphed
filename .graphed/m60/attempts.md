@@ -249,3 +249,17 @@ type, so the narrowing excludes nothing genuine). Closing test
 `test_a_callable_that_only_claims_to_be_a_method_is_its_own_identity`: fails on the `isinstance`
 predicate with `assert 1 != 1`, passes on `type(fn) is`; the merged end stays
 `test_two_method_objects_fabricated_from_one_pair_are_one_node`.
+
+## Iteration 6 — whole-artifact pass: one false universal in the docs
+
+Reviewer (delta on 1e4354a + whole artifact over `freeze-m60..HEAD`): the identity key is closed —
+no member whose type IS `types.MethodType` could be built that merges wrongly (`__self__`/`__func__`
+are read-only, the type is not subclassable, `__class__` is not assignable); 23 mutants, 22 killed,
+1 equivalent. One design finding: the frontend design page called `graphed.expand` "the one every
+built-in verb uses" — tuple-returning and metadata verbs map differently, and `expand` over a
+tuple-returning verb answers ONE `Varied` of tuples. The sentence now scopes `expand` to a verb
+answering one array (what `graphed.apply` itself calls) and names the tuple case as outside it; the
+private `expand_tuple` is not advertised. Two docstring wordings tightened (`register_internal`'s
+raises clause, `_fn_name`'s ceiling). The reviewer's proposed test is not added: it would pin the
+answer shape of a misuse, and the frozen `test_expand_stays_outside_the_array_consuming_verb_surface`
+already pins that `expand` is not the whole surface.
