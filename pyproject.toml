@@ -148,15 +148,17 @@ module = [
 ]
 warn_return_any = false
 
-# Frozen helper modules that NON-frozen suites import by bare name: pytest reaches them through
-# `[tool.pytest.ini_options] pythonpath` or an explicit `sys.path.insert` inside the importing test,
-# and mypy resolves neither. Making their directories `mypy_path` roots would rename that whole
-# frozen milestone out from under the `tests.frozen.*` override below, so treat the bare names as
-# unresolvable instead.
+# Helper modules that suites import by bare name: pytest reaches them through
+# `[tool.pytest.ini_options] pythonpath`, an explicit `sys.path.insert` inside the importing test,
+# or same-dir prepend import, and mypy resolves none of the three. Making their directories
+# `mypy_path` roots would rename a whole frozen milestone out from under the `tests.frozen.*`
+# override below, so treat the bare names as unresolvable instead. (`m60x_lib`/`m60x_libx` are
+# stand-in wrapping libraries beside their own test in tests/extra/frontend/m60.)
 [[tool.mypy.overrides]]
 module = [
   "analyses", "backends", "m13_toy", "m52_point_fixtures", "m55_lockstep_fixtures",
-  "m57_dedupe_fixtures", "m58_declaration_fixtures", "m59_idiom_fixtures", "test_vary_stacking",
+  "m57_dedupe_fixtures", "m58_declaration_fixtures", "m59_idiom_fixtures", "m60x_lib",
+  "m60x_libx", "test_vary_stacking",
 ]
 ignore_missing_imports = true
 

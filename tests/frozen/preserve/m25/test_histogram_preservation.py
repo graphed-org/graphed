@@ -71,10 +71,11 @@ def test_histogram_terminal_bundle_reproduces_bit_for_bit(tmp_path) -> None:  # 
     assert "histogram" in rendered and "histogram: None" in rendered
     assert "PRESERVATION RISK" not in rendered  # the fill is durable, not opaque
 
+    s2, fill2, _ = _record()
     again = build_bundle(
         tmp_path / "bundle2",
-        session=_record()[0],
-        value=_record()[1],
+        session=s2,
+        value=fill2,
         datasets={"events": EVENTS},
         payloads={},
     )

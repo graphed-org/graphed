@@ -8,6 +8,8 @@ backend.
 
 from __future__ import annotations
 
+import threading
+import types
 import weakref
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
@@ -85,6 +87,77 @@ class Session:
         # remake it and resolve every factor against the registry AS OF THAT READ (§3 clause 1).
         # A counter and not a hash of the registry: exact, and O(1) to test.
         self._mint_epoch = 0
+        # m60 integ-m60-O: per-Session identity for an opaque callable. `callable -> (fn, name)`
+        # (the object is held, so an id used as a stand-in key cannot be recycled onto a later
+        # callable) plus the ONE name space every name handed out lives in, declared or derived.
+        self._fn_names: dict[object, tuple[object, str]] = {}
+        self._fn_taken: set[str] = set()
+        self._fn_lock = threading.Lock()
+
+    def _mine(self, arrays: Sequence[Any], located: tuple[str, Provenance] | None = None) -> None:
+        """m60 integ-m60-X: refuse an `Array` this Session did not record.
+
+        A node id only means something in its own store, so a foreign `Array` whose id exists here
+        would be spliced in as whatever node wears that id — a wrong answer, not an error. The
+        `record_*` family passes its `(op, provenance)`, and gets a user-located
+        `GraphedTypeError`; the readers pass nothing and get a plain `TypeError`
+        (`GraphedTypeError` is not one, which is what separates the two halves).
+        """
+        if all(a._session is self for a in arrays):
+            return
+        message = "an input was recorded in a different Session"
+        if located is None:
+            raise TypeError(f"graphed: {message}")
+        raise GraphedTypeError(located[0], located[1], message)
+
+    def _fn_name(self, fn: object, name: str | None) -> str:
+        """m60 integ-m60-O: the `fn` param an opaque callable is recorded under.
+
+        Every backend derives an External's payload hash from this param, so two DISTINCT
+        callables wearing one name would intern to one node and the second one's result would be
+        the first one's. Every name handed out — declared through `name=` or derived from
+        `__name__` — therefore lives in ONE per-Session name space, and a derived candidate
+        advances (`q`, `q#1`, `q#2`, …) until it is one nothing else answers to. An explicit
+        `name=` is the caller's own identity declaration: returned untouched (equal names intern,
+        which is the point) and entered in that space, so a later derivation cannot land on it.
+
+        A declared `name=` IS the identity: declaring a name another callable already wears —
+        declared or derived — means the same node, the caller having said so.
+
+        THE IDENTITY RULE: two callable objects share a memo entry only where PYTHON ITSELF
+        defines them as the same call — an object whose TYPE is `types.MethodType`, whose call IS
+        `__func__(__self__, ...)`, keyed `(id(fn.__self__), id(fn.__func__))`; every other callable
+        is its own identity, `id(fn)`. Never `==`/`hash`, which two behaviourally distinct
+        callables may declare of themselves; the memo entry holds `fn`, and through it the owner
+        and the function, so no id in a key is ever recycled onto a later object.
+
+        Ceiling: any other re-accessed callable — a builtin method, a method-wrapper, a
+        `partialmethod` access (a partial with a copied `__self__`) — mints a node per access.
+        Losing CSE for those is never a wrong answer; merging two distinct calls is, and every
+        widening past Python's own definition of sameness admitted a neighbour.
+
+        Ceiling: under a concurrent build the assignment of ordinals to colliding callables
+        follows thread interleaving.
+        """
+        with self._fn_lock:
+            if name is not None:
+                self._fn_taken.add(name)
+                return name
+            if type(fn) is types.MethodType:  # not isinstance: `__class__` is the callable's to claim
+                key: object = (id(fn.__self__), id(fn.__func__))
+            else:
+                key = id(fn)
+            held = self._fn_names.get(key)
+            if held is not None:
+                return held[1]
+            derived = str(getattr(fn, "__name__", "lambda"))
+            unique, ordinal = derived, 0
+            while unique in self._fn_taken:
+                ordinal += 1
+                unique = f"{derived}#{ordinal}"
+            self._fn_taken.add(unique)
+            self._fn_names[key] = (fn, unique)  # holds `fn` (and so its owner): no id is recycled
+            return unique
 
     def _step_reducer(self) -> None:
         if self._reducer is not None:
@@ -132,6 +205,7 @@ class Session:
         record an analysis once, serialize it once, then re-target it at many datasets with
         ``DurablePlan.with_partitions`` / ``for_datasets``.
         """
+        self._mine(outputs)
         if optimize and not outputs:
             raise ValueError("serialized_ir(optimize=True) needs at least one output Array")
         ids = [arr.node_id for arr in outputs]
@@ -144,9 +218,11 @@ class Session:
         return bytes(self._store.reduce(outputs=ids)[0].serialize())
 
     def form(self, array: Array) -> Form:
+        self._mine([array])
         return self._forms[array.node_id]
 
     def provenance(self, array: Array) -> Provenance:
+        self._mine([array])
         return self._provenance[array.node_id]
 
     def source_ids(self) -> list[int]:
@@ -215,10 +291,7 @@ class Session:
     ) -> Array:
         params_d: dict[str, ParamValue] = dict(params or {})
         prov = capture()
-        # a node id only means something in its own store: an input recorded by another
-        # Session would be spliced in as whatever node happens to share its id here
-        if any(a._session is not self for a in inputs):
-            raise GraphedTypeError(op, prov, "an input was recorded in a different Session")
+        self._mine(inputs, (op, prov))
         in_forms = [self._forms[a.node_id] for a in inputs]
         try:
             form = self._backend.op_form(op, in_forms, params_d)
@@ -243,6 +316,7 @@ class Session:
         identity; its output form is the input form (identity on the payload, §3.3a)."""
         params_d: dict[str, ParamValue] = dict(params)
         prov = capture()
+        self._mine([input_array], ("exchange", prov))
         in_form = self._forms[input_array.node_id]
         form = self._backend.op_form("exchange", [in_form], params_d)
         node_id = self._store.add_exchange([input_array.node_id], params_d)
@@ -258,6 +332,7 @@ class Session:
         its output form is the backend's ``op_form("join", …)`` (flat record-merge; §3.3)."""
         params_d: dict[str, ParamValue] = dict(params)
         prov = capture()
+        self._mine([left, right], ("join", prov))
         in_forms = [self._forms[left.node_id], self._forms[right.node_id]]
         try:
             form = self._backend.op_form("join", in_forms, params_d)
@@ -289,6 +364,7 @@ class Session:
         the backend is not consulted at all, so backends stay free of domain content (§A.4)."""
         params_d: dict[str, ParamValue] = dict(params or {})
         prov = capture()
+        self._mine(inputs, (op, prov))
         if (descriptor is None) != (form is None):
             raise GraphedTypeError(op, prov, "descriptor= and form= must be given together")
         if descriptor is None:
@@ -321,7 +397,10 @@ class Session:
         external: Callable[[int, Callable[..., object], list[object]], object],
     ) -> object:
         """Evaluate the graph from ``array`` with caller-supplied handlers for sources, ops, and
-        externals. `materialize` evaluates real data; projection evaluates reporting tracers."""
+        externals. `materialize` evaluates real data; projection evaluates reporting tracers.
+
+        `materialize` reaches the m60 own-session guard through this one call."""
+        self._mine([array])
         cache: dict[int, object] = {}
 
         def inputs_of(node_id: int) -> tuple[int, ...]:

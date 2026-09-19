@@ -519,8 +519,15 @@ class Array:
         return self._session.record_op("filter", [self, mask])
 
     def map(self, fn: Callable[[object], object], *, name: str | None = None) -> Array:
-        fn_name: str = name or str(getattr(fn, "__name__", "lambda"))
-        return self._session.record_external("map", fn, [self], {"fn": fn_name})
+        """Record ``fn`` over this array as one opaque External node (the callable is a flagged
+        preservation risk, plan A.3.1).
+
+        Without ``name=`` two distinct callables that derive one ``__name__`` are told apart by a
+        per-Session ordinal. Pass ``name=`` to declare the identity yourself: a declared name IS
+        the identity, so declaring a name another callable already wears — declared or derived —
+        means that same node, and the name must encode everything that changes the callable's
+        behaviour (a captured cut value, a model version, a configuration dict)."""
+        return self._session.record_external("map", fn, [self], {"fn": self._session._fn_name(fn, name)})
 
     def reduce(self, kind: str = "sum") -> Array:
         return self._session.record_op(kind, [self], reduction=True)
@@ -544,7 +551,12 @@ def apply(fn: Callable[..., object], *arrays: Array, name: str | None = None) ->
     (awkward style); the numpy-specific signature-aware form is ``graphed.numpy.apply_gufunc``.
 
     The node carries the backend's ``PayloadDescriptor``: the opaque callable stays a flagged
-    preservation risk (plan A.3.1). With one array this IS ``Array.map`` (interns with it)."""
+    preservation risk (plan A.3.1). With one array this IS ``Array.map`` (interns with it).
+
+    Without ``name=`` two distinct callables that derive one ``__name__`` are told apart by a
+    per-Session ordinal. Pass ``name=`` to declare the identity yourself: a declared name IS the
+    identity, so declaring a name another callable already wears — declared or derived — means
+    that same node, and the name must encode everything that changes the callable's behaviour."""
     from .varied import containers_in, expand  # noqa: PLC0415  (`varied` imports `Array`)
 
     if containers_in(*arrays):  # §2.3d *expanding*: one External per universe
@@ -554,8 +566,7 @@ def apply(fn: Callable[..., object], *arrays: Array, name: str | None = None) ->
     session = arrays[0].session
     if any(a.session is not session for a in arrays):
         raise TypeError("apply operands must come from one Session")
-    fn_name: str = name or str(getattr(fn, "__name__", "lambda"))
-    return session.record_external("map", fn, list(arrays), {"fn": fn_name})
+    return session.record_external("map", fn, list(arrays), {"fn": session._fn_name(fn, name)})
 
 
 # ---- M54: behavior methods with arguments ----------------------------------------------------

@@ -1,8 +1,9 @@
 """Partitioned parquet I/O for the awkward backend (M15.2, dask-awkward parity plan).
 
 Specializes the backend-agnostic `graphed.parquet` base: the awkward pieces are exactly two —
-the FORM comes from the arrow schema alone (`ak.from_arrow_schema`; no event data is read at
-construction) and the per-partition codec is `ak.from_parquet`/`ak.to_parquet`.
+the FORM comes from the arrow schema alone (awkward's own reader on a zero-row file of that
+schema; no event data is read at construction) and the per-partition codec is
+`ak.from_parquet`/`ak.to_parquet`.
 
 `to_parquet` follows the R15.4/R15.5 contract proven by the uproot integration: compute-disabled
 returns a task graph of write tasks; each task evaluates the array's graph through the COMPILED
@@ -17,6 +18,7 @@ import functools
 import json
 import operator
 import os
+import tempfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, cast
@@ -39,8 +41,18 @@ from .projection import project_buffers
 
 
 def _schema_form(paths: Sequence[str], columns: Sequence[str] | None) -> AwkwardForm:
-    """The dataset's form from the arrow SCHEMA alone (first file authoritative; nothing decoded)."""
-    form = ak.from_arrow_schema(gpq.schema_of(paths))
+    """The dataset's form from the arrow SCHEMA alone (first file authoritative; nothing decoded).
+
+    The form is what awkward's OWN reader gives a ZERO-ROW parquet file of that schema, not what
+    `ak.from_arrow_schema` gives the schema: the latter sees arrow types only and drops the record
+    names and node parameters awkward stored beside them, so a deferred read of a file awkward
+    wrote would not type like an eager read of it and a behavior keyed on a record name would
+    never resolve. The zero-row file is written OUTSIDE the dataset, and no event data is read.
+    """
+    with tempfile.TemporaryDirectory() as scratch:
+        empty = os.path.join(scratch, "schema.parquet")
+        gpq._pq().write_table(gpq.schema_of(paths).empty_table(), empty)
+        form = ak.from_parquet(empty).layout.form
     if columns:
         form = form.select_columns(list(columns))
     tt = ak.Array(form.length_zero_array(highlevel=False).to_typetracer(forget_length=True))

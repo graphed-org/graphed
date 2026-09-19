@@ -111,6 +111,7 @@ def compile_ir(
     The artifact carries EXACTLY the requested outputs (M22), so compiling different
     expressions sequentially from one session never cross-talks."""
     refuse_container("graphed.compile_ir", *outputs)
+    session._mine(outputs)  # m60: a node id only means something in its own store
     if maximal_fusion and not optimize:
         raise ValueError("maximal_fusion requires optimize=True")
     if optimize and not outputs:
