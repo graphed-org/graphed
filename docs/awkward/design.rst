@@ -231,7 +231,9 @@ the arguments becomes a graph input; every other argument must be a JSON-represe
 scalars are coerced), so the plan stays IR-canonical with no pickled closure. Constants compare as
 JSON: ``scaled(2)`` and ``scaled(2.0)`` are two nodes, a tuple and a list of the same values are
 one node, and the method body receives a tuple as a list. A method whose typetracer result is a
-tuple of arrays returns a tuple of graphed arrays; a Python-scalar result, an eager array, a
+tuple of arrays returns a tuple of graphed arrays, and a NESTED tuple comes back with the same
+nesting — ``metric, (a, b) = jets.metric_table(others, return_combinations=True)`` — one node per
+leaf, numbered depth-first. A Python-scalar result, an eager array, a
 callable, a NaN, a dict whose only key is ``"$"`` (the reference marker's shape) or an array from
 another ``Session`` among the arguments is refused with ``GraphedTypeError`` at the call, before
 any node is recorded. Column projection replays the method on the reporting typetracer, so it

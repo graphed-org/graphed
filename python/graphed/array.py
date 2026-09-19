@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from itertools import count
 from typing import TYPE_CHECKING, Any, SupportsFloat
 
 from .backend import ParamValue
@@ -190,6 +191,23 @@ def _as_param(value: object) -> ParamValue:
     raise TypeError(f"unsupported scalar operand {value!r}")
 
 
+def _scalar_params(value: object) -> dict[str, ParamValue]:
+    """The params a scalar operand records (M59).
+
+    A value carrying a ``dtype`` — a numpy scalar — keeps BOTH halves of what it imposes on the
+    result: the dtype, as a ``str`` param read off the object (the frontend never imports numpy),
+    and the exact value. An integer too wide for the store's i64 param travels as text, so
+    ``np.uint64(2**64 - 1)`` is neither collapsed to a float nor truncated.
+    """
+    dtype = getattr(value, "dtype", None)
+    if dtype is None or getattr(value, "shape", None) != () or not hasattr(value, "item"):
+        return {"scalar": _as_param(value)}
+    item = value.item()  # a 0-d array-like: guarded above
+    if isinstance(item, int) and not isinstance(item, bool) and not -(2**63) <= item < 2**63:
+        return {"scalar": str(item), "dtype": str(dtype)}
+    return {"scalar": _as_param(item), "dtype": str(dtype)}
+
+
 class Array:
     # M48 adds two frontend-only slots (§2.3e): `_context` is the event-context handle a read was
     # performed through, `_labels` the variation labels flowing into this expression. Both are
@@ -223,7 +241,7 @@ class Array:
         if isinstance(other, Array):
             inputs = [other, self] if reflected else [self, other]
             return self._session.record_op(op, inputs)
-        params: dict[str, ParamValue] = {"scalar": _as_param(other), "side": "l" if reflected else "r"}
+        params: dict[str, ParamValue] = {**_scalar_params(other), "side": "l" if reflected else "r"}
         return self._session.record_op(op, [self], params)
 
     def _unary(self, op: str) -> Array:
@@ -613,9 +631,18 @@ def _record_method(receiver: Array, name: str, args: tuple[Any, ...], kwargs: di
     if outputs is None:
         raise GraphedTypeError("method", prov, f"{name}(): this backend records no behavior methods")
     try:
-        width = outputs([session.form(a) for a in inputs], params)
+        shape = outputs([session.form(a) for a in inputs], params)
     except Exception as exc:  # the typetracer refused the call -> located at the user's line
         raise GraphedTypeError("method", prov, f"{name}(): {exc}") from exc
-    if width is None:
+    if shape is None:
         return session.record_op("method", inputs, params)
-    return tuple(session.record_op("method", inputs, {**params, "index": i}) for i in range(width))
+    # M59: the backend answers the result's NESTING (`None` at every array leaf); the call comes
+    # back as that same nesting, one node per leaf, numbered depth-first as the backend flattens it
+    leaf = count()
+
+    def build(node: object) -> Any:
+        if isinstance(node, tuple):
+            return tuple(build(item) for item in node)
+        return session.record_op("method", inputs, {**params, "index": next(leaf)})
+
+    return build(shape)

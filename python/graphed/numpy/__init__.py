@@ -195,6 +195,16 @@ _MANIP_OPS = frozenset(
 _CONCRETE_AGGS = frozenset({"histogram", "histogram2d", "histogramdd"})
 
 
+def _scalar_param(params: Mapping[str, object]) -> Any:
+    """The scalar operand a binary op recorded — back in its own dtype when it had one (M59). The
+    frontend cannot build a numpy scalar, so it records the dtype name beside the value, and a
+    value wider than the store's i64 param as text."""
+    value = params["scalar"]
+    if "dtype" not in params:
+        return value
+    return np.dtype(str(params["dtype"])).type(int(value) if isinstance(value, str) else value)
+
+
 def _decode_dims(spec: object) -> tuple[int, ...]:
     return tuple(int(p) for p in str(spec).split(",")) if str(spec) else ()
 
@@ -443,7 +453,7 @@ class NumpyBackend:
         if op in _BINARY:
             if "scalar" in params:
                 (x,) = operands
-                s = params["scalar"]
+                s = _scalar_param(params)
                 return _BINARY[op](s, x) if params.get("side") == "l" else _BINARY[op](x, s)
             a, b = operands
             return _BINARY[op](a, b)
