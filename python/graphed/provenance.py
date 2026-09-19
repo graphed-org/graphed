@@ -63,9 +63,10 @@ def register_internal(prefix: str) -> None:
     declaration, spelled with the separator. Idempotent, thread-safe and process-global, with no
     inverse: a library registers itself once, at import.
 
-    :raises ValueError: if any dotted component of ``prefix`` is not an identifier (``"a..b"`` and
-        ``"my lib"`` are two such). No module name can equal such a prefix, so registering it would
-        leave in place exactly the wrong provenance this call fixes.
+    :raises ValueError: if any dotted component of ``prefix`` — a trailing separator aside — is
+        not an identifier (``"a..b"`` and ``"my lib"`` are two such). No module name can equal such
+        a prefix, so registering it would leave in place exactly the wrong provenance this call
+        fixes.
     """
     global _SKIP
     prefix = prefix.rstrip(".")

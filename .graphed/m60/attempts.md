@@ -259,7 +259,7 @@ are read-only, the type is not subclassable, `__class__` is not assignable); 23 
 built-in verb uses" — tuple-returning and metadata verbs map differently, and `expand` over a
 tuple-returning verb answers ONE `Varied` of tuples. The sentence now scopes `expand` to a verb
 answering one array (what `graphed.apply` itself calls) and names the tuple case as outside it; the
-private `expand_tuple` is not advertised. Two docstring wordings tightened (`register_internal`'s
+private `expand_tuple` is not advertised on the design page. Two docstring wordings tightened (`register_internal`'s
 raises clause, `_fn_name`'s ceiling). The reviewer's proposed test is not added: it would pin the
 answer shape of a misuse, and the frozen `test_expand_stays_outside_the_array_consuming_verb_surface`
 already pins that `expand` is not the whole surface.
@@ -269,4 +269,14 @@ already pins that `expand` is not the whole surface.
 The owner affirmed the re-freeze (2026-09-19). `test_histogram_terminal_bundle_reproduces_bit_for_bit`
 now takes `session` and `value` from ONE `_record()` call — the dispute's correction verbatim, three
 lines, nothing else under `tests/frozen/**` touched. Tag `freeze-m25-fixup`.
+
+## Review — APPROVE (final round, 2026-09-19)
+
+Delta `1e4354a..4911bc5` (the prose repair and the m25 re-freeze): zero design findings, every gate
+green — m60 frozen 37 + 6, extra 30, m25 4, `./scripts/run-tests.sh` rc=0 with no FAILED/ERROR line,
+precommit ok, graphed-histogram 214 passed. The re-frozen leg still guards its direction: a second
+recording that differs (fill weight, bin count) reds `again.fingerprint() == bundle.fingerprint()`,
+and `_record()` runs twice. An AST scan of `tests/frozen` for two Session-minting calls inside one
+call expression finds the m25 leg at `freeze-m60` and nothing at HEAD. `sphinx -W` and the A.5
+matrix are CI's to decide.
 
