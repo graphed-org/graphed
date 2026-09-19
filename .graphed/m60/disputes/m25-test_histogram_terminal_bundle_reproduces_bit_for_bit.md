@@ -59,6 +59,10 @@ take both halves from ONE recording:
 Nothing else in the file changes; `_record()` is still called a second time, so the build is still
 independent of the first. Re-freeze requires the owner's affirmation.
 
+Measured on a scratch copy of `tests/frozen/preserve/m25/` (the frozen tree untouched): unchanged,
+the leg is red with `TypeError: graphed: an input was recorded in a different Session` (the control);
+with the correction the file is `4 passed`.
+
 ## Status
 
 Filed. m60's own frozen suites (frontend 37/37, awkward 6/6) are green with X1 implemented; this is
