@@ -48,6 +48,9 @@ class AwkwardBackend:
     #: the backend's versioned shuffle-format token (folded into the V2 task ids, §7.2)
     identity = "graphed-awkward/0"
 
+    #: M59: this backend evaluates the shared inner-axis tuple key (`subscript`)
+    subscript_keys = True
+
     def __init__(self, behavior: Mapping[str, object] | None = None) -> None:
         # M18: a registered behavior dict (e.g. vector's) makes behavior PROPERTIES work through
         # plain attribute access — on the typetracer at record time and on real arrays in eval.

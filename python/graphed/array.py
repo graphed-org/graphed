@@ -117,6 +117,71 @@ _UFUNC_TO_OP: dict[str, str] = {
 }
 
 
+def _is_full_slice(value: object) -> bool:
+    """``:`` — the only axis-0 member a tuple key may carry (checked structurally: an operand's
+    ``__eq__`` would RECORD a comparison instead of answering one)."""
+    return isinstance(value, slice) and (value.start, value.stop, value.step) == (None, None, None)
+
+
+def _refuse_axis0(first: object) -> TypeError:
+    if isinstance(first, slice):  # the spelling that does work is two subscripts: a[1:3][:, 0]
+        spell = ":".join("" if v is None else str(v) for v in (first.start, first.stop, first.step))
+        return TypeError(
+            f"a tuple key must leave the partitioned axis whole; chain it: a[{spell.rstrip(':')}][:, ...]"
+        )
+    return TypeError("a tuple key must keep the partitioned axis 0 whole: a[:, inner...], a[..., inner]")
+
+
+def encode_subscript(key: tuple[object, ...]) -> str:
+    """Canonical injective spec for an inner (partition-local) tuple key — M13's numpy subscript,
+    widened in M59 to the kinds both array idioms share.
+
+    Members are ``slice``s with int fields, ints, ``None`` (newaxis) and at most one ``Ellipsis``;
+    axis 0 must be left whole (``:`` or a leading ``...``), since anything that consumes or
+    restructures the partitioned axis inside a tuple is a boundary the MVP does not model.
+    """
+    if not key or not (_is_full_slice(key[0]) or key[0] is Ellipsis):
+        raise _refuse_axis0(key[0] if key else None)
+    parts: list[str] = []
+    for elem in key:
+        if isinstance(elem, slice):
+            bits = []
+            for v in (elem.start, elem.stop, elem.step):
+                if v is None:
+                    bits.append("")
+                elif isinstance(v, bool) or not isinstance(v, int):
+                    raise TypeError(f"slice fields must be ints, got {v!r}")
+                else:
+                    bits.append(str(v))
+            parts.append(":".join(bits))
+        elif elem is None:
+            parts.append("N")
+        elif elem is Ellipsis:
+            if "..." in parts:  # two Ellipses do not name one key
+                raise TypeError(f"a tuple key takes at most one Ellipsis, got {key!r}")
+            parts.append("...")
+        elif not isinstance(elem, bool) and isinstance(elem, int):
+            parts.append(str(elem))
+        else:
+            raise TypeError(f"unsupported tuple-subscript element {elem!r}")
+    return ",".join(parts)
+
+
+def decode_subscript(spec: object) -> tuple[object, ...]:
+    """The inverse of :func:`encode_subscript`, for the backends that evaluate the key."""
+    out: list[object] = []
+    for part in str(spec).split(","):
+        if part == "N":
+            out.append(None)
+        elif part == "...":
+            out.append(Ellipsis)
+        elif ":" in part:
+            out.append(slice(*(int(b) if b else None for b in part.split(":"))))
+        else:
+            out.append(int(part))
+    return tuple(out)
+
+
 def _as_param(value: object) -> ParamValue:
     if isinstance(value, bool | int | str):
         return value
@@ -377,6 +442,13 @@ class Array:
             if not key or not all(isinstance(f, str) for f in key):
                 raise TypeError("a field-list selection needs one or more field-name strings")
             return self._session.record_op("fields", [self], {"fields": ",".join(key)})
+        # M59: a TUPLE key indexes INNER axes — the key kinds (slice/int/None/Ellipsis) are common
+        # to both idioms, so the surface is shared, but only a backend that declares it evaluates
+        # the `subscript` op (M13 pins that one which does not still refuses the key). Axis 0 stays
+        # whole, so unlike the slice/index below the node is partition-local and fusible;
+        # `encode_subscript` refuses every other key before anything is recorded.
+        if isinstance(key, tuple) and getattr(self._session.backend, "subscript_keys", False):
+            return self._session.record_op("subscript", [self], {"spec": encode_subscript(key)})
         # M13: slices and integer indexing are common to both backend idioms. Both consume or
         # restructure the partitioned axis, so they record BOUNDARY reduction nodes (M12 rule);
         # only the fields the user gave are recorded, so equal slices intern.

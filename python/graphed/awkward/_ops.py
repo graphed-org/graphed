@@ -14,6 +14,8 @@ from typing import Any
 import awkward as ak
 import numpy as np
 
+from graphed.array import decode_subscript
+
 from . import join
 
 # Elementwise ops: canonical name -> callable. Unary take 1 operand, binary take 2.
@@ -225,6 +227,8 @@ def apply(
         return operands[0][operands[1]]
     if op == "slice":  # the M13 common axis-0 slice (start/stop/step present-only)
         return operands[0][slice(params.get("start"), params.get("stop"), params.get("step"))]
+    if op == "subscript":  # M59: the shared inner-axis tuple key (axis 0 left whole)
+        return operands[0][decode_subscript(params["spec"])]
     if op == "index":  # the M13 common integer index
         return operands[0][int(params["i"])]
     if op == "ak.num":

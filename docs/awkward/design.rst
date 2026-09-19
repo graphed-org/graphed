@@ -132,7 +132,9 @@ name — so ``ak.mean(x, w)`` ports to ``gak.mean(x, weight=w)``, never to ``gak
 ``gak.softmax`` defaults to ``axis=1``, per event, where ``ak.softmax`` defaults to ``axis=-1``.
 
 **Free functions, not methods.** You hold graphed's plain deferred ``Array`` — field access,
-operators, ufuncs, ``getitem`` — and everything ragged-specific comes from the module:
+operators, ufuncs, ``getitem``, and the inner-axis tuple key (``jets.pt[:, :2]``, ``jets[:, 0]``,
+``jets.pt[..., 0]``), which records the form eager awkward infers for that key and stays fusible
+because the event axis is left whole — and everything ragged-specific comes from the module:
 ``gak.num``, ``gak.flatten``, ``gak.combinations``, ``gak.cartesian``, ``gak.zip``, ``gak.sort``,
 ``gak.with_name``, ``gak.where``, and the rest of the working set. ``gak.with_field`` wants the
 field name every time — ``gak.with_field(jets, jets.pt * 1.05, "pt")`` — where

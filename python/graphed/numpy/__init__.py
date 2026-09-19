@@ -21,6 +21,7 @@ from typing import Any, cast
 import numpy as np
 
 from graphed import Array, Session
+from graphed.array import decode_subscript
 from graphed.core import PayloadDescriptor
 
 from . import shuffle
@@ -198,17 +199,6 @@ def _decode_dims(spec: object) -> tuple[int, ...]:
     return tuple(int(p) for p in str(spec).split(",")) if str(spec) else ()
 
 
-def _decode_subscript(spec: object) -> tuple[Any, ...]:
-    out: list[Any] = []
-    for part in str(spec).split(","):
-        if ":" in part:
-            bits = part.split(":")
-            out.append(slice(*(int(b) if b else None for b in bits)))
-        else:
-            out.append(int(part))
-    return tuple(out)
-
-
 def _manip_eval(op: str, xs: Sequence[Any], params: Mapping[str, object]) -> Any:
     """Evaluate one M13 op — shared by record-time inference (on metas) and eval_stage."""
     if op == "slice":
@@ -219,7 +209,7 @@ def _manip_eval(op: str, xs: Sequence[Any], params: Mapping[str, object]) -> Any
     if op == "getitem":
         return np.asarray(xs[0])[np.asarray(xs[1])]
     if op == "subscript":
-        return np.asarray(xs[0])[_decode_subscript(params["spec"])]
+        return np.asarray(xs[0])[decode_subscript(params["spec"])]
     if op == "reshape":
         return np.reshape(xs[0], _decode_dims(params["shape"]))
     if op == "ravel":
@@ -342,6 +332,9 @@ class NumpyBackend:
 
     #: the backend's versioned shuffle-format token (folded into the V2 task ids, §7.2)
     identity = "graphed-numpy/0"
+
+    #: M59: this backend evaluates the shared inner-axis tuple key (`subscript`)
+    subscript_keys = True
 
     def array_type(self) -> type[Array]:
         """The numpy-idiomatic proxy (M11 factorization): Sessions return ``NumpyArray``."""
