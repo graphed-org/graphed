@@ -21,7 +21,7 @@ from typing import Any, cast
 import numpy as np
 
 from graphed import Array, Session
-from graphed.array import decode_subscript
+from graphed.array import check_leading_ellipsis, decode_subscript
 from graphed.core import PayloadDescriptor
 
 from . import shuffle
@@ -202,7 +202,7 @@ def _scalar_param(params: Mapping[str, object]) -> Any:
     value = params["scalar"]
     if "dtype" not in params:
         return value
-    return np.dtype(str(params["dtype"])).type(int(value) if isinstance(value, str) else value)
+    return np.dtype(str(params["dtype"])).type(value)  # the dtype parses the wide int's text itself
 
 
 def _decode_dims(spec: object) -> tuple[int, ...]:
@@ -219,7 +219,10 @@ def _manip_eval(op: str, xs: Sequence[Any], params: Mapping[str, object]) -> Any
     if op == "getitem":
         return np.asarray(xs[0])[np.asarray(xs[1])]
     if op == "subscript":
-        return np.asarray(xs[0])[decode_subscript(params["spec"])]
+        x0 = np.asarray(xs[0])
+        spec = decode_subscript(params["spec"])
+        check_leading_ellipsis(spec, x0.ndim)  # M59: `[..., 0]` on a 1-d array indexes axis 0
+        return x0[spec]
     if op == "reshape":
         return np.reshape(xs[0], _decode_dims(params["shape"]))
     if op == "ravel":

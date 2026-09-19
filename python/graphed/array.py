@@ -126,10 +126,11 @@ def _is_full_slice(value: object) -> bool:
 
 def _refuse_axis0(first: object) -> TypeError:
     if isinstance(first, slice):  # the spelling that does work is two subscripts: a[1:3][:, 0]
-        spell = ":".join("" if v is None else str(v) for v in (first.start, first.stop, first.step))
-        return TypeError(
-            f"a tuple key must leave the partitioned axis whole; chain it: a[{spell.rstrip(':')}][:, ...]"
-        )
+        bits = ["" if v is None else str(v) for v in (first.start, first.stop, first.step)]
+        # `start:stop` always, `:step` only when there is one — rstrip would turn `1::` into `1`,
+        # an integer index, which is a different op
+        spell = ":".join(bits if first.step is not None else bits[:2])
+        return TypeError(f"a tuple key must leave the partitioned axis whole; chain it: a[{spell}][:, ...]")
     return TypeError("a tuple key must keep the partitioned axis 0 whole: a[:, inner...], a[..., inner]")
 
 
@@ -140,6 +141,9 @@ def encode_subscript(key: tuple[object, ...]) -> str:
     Members are ``slice``s with int fields, ints, ``None`` (newaxis) and at most one ``Ellipsis``;
     axis 0 must be left whole (``:`` or a leading ``...``), since anything that consumes or
     restructures the partitioned axis inside a tuple is a boundary the MVP does not model.
+
+    Whether a leading ``...`` actually leaves axis 0 whole depends on how deep the receiver is,
+    which only a backend knows — see :func:`check_leading_ellipsis`.
     """
     if not key or not (_is_full_slice(key[0]) or key[0] is Ellipsis):
         raise _refuse_axis0(key[0] if key else None)
@@ -166,6 +170,27 @@ def encode_subscript(key: tuple[object, ...]) -> str:
         else:
             raise TypeError(f"unsupported tuple-subscript element {elem!r}")
     return ",".join(parts)
+
+
+def check_leading_ellipsis(key: tuple[object, ...], depth: int) -> None:
+    """A leading ``...`` must absorb at least the partitioned axis (M59).
+
+    ``[..., 0]`` leaves axis 0 whole only while the receiver is deeper than the members after the
+    Ellipsis: on a flat array the Ellipsis absorbs nothing and the key indexes axis 0. Only the
+    receiver knows how deep it is and a Form is opaque to the frontend, so this is a TYPING rule:
+    each backend's ``subscript`` rule calls this with its own depth (awkward: the form's minimum
+    list depth; numpy: ``ndim``) and a violation is ill-typed at record time. ``None`` members add
+    an axis and address none.
+    """
+    if not key or key[0] is not Ellipsis:
+        return
+    inner = sum(1 for member in key[1:] if member is not None)
+    if inner >= depth:
+        raise TypeError(
+            f"a leading ... must absorb the partitioned axis: the {inner} member(s) after it "
+            f"address all {depth} of the receiver's axes; leave axis 0 whole (a[:, ...]) or index "
+            "it on its own"
+        )
 
 
 def decode_subscript(spec: object) -> tuple[object, ...]:

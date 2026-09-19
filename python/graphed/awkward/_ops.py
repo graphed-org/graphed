@@ -14,7 +14,7 @@ from typing import Any
 import awkward as ak
 import numpy as np
 
-from graphed.array import decode_subscript
+from graphed.array import check_leading_ellipsis, decode_subscript
 
 from . import join
 
@@ -134,7 +134,7 @@ def scalar_param(params: Mapping[str, Any]) -> Any:
     value = params["scalar"]
     if "dtype" not in params:
         return value
-    return np.dtype(str(params["dtype"])).type(int(value) if isinstance(value, str) else value)
+    return np.dtype(str(params["dtype"])).type(value)  # the dtype parses the wide int's text itself
 
 
 def _scalar_operands(operands: Sequence[Any], params: Mapping[str, Any]) -> list[Any]:
@@ -246,7 +246,11 @@ def apply(
     if op == "slice":  # the M13 common axis-0 slice (start/stop/step present-only)
         return operands[0][slice(params.get("start"), params.get("stop"), params.get("step"))]
     if op == "subscript":  # M59: the shared inner-axis tuple key (axis 0 left whole)
-        return operands[0][decode_subscript(params["spec"])]
+        key = decode_subscript(params["spec"])
+        # awkward's depth here is the MINIMUM list depth: `ndim` reads a record as depth 1 even
+        # when every field is a list, and `[..., 0]` does reach into those fields
+        check_leading_ellipsis(key, operands[0].layout.minmax_depth[0])
+        return operands[0][key]
     if op == "index":  # the M13 common integer index
         return operands[0][int(params["i"])]
     if op == "ak.num":

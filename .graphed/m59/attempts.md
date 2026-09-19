@@ -51,3 +51,37 @@ one-level case of the same shape, so M2's byte-identical pin holds by constructi
 Extra legs, each killed by the mutation that removes its branch (`PYTHONDONTWRITEBYTECODE=1`):
 the ndarray-operand guard in `_scalar_params` (`ValueError` from `.item()` instead of the
 `TypeError`), and the numpy backend's own rebuild (`int64` instead of `uint64`).
+
+## Iteration 3 — the reviewer's REJECT (four findings)
+
+**1. A leading `...` that absorbs nothing.** `encode_subscript` cannot tell: how deep the receiver
+is lives in the Form, which is opaque to the frontend. So the rule is a TYPING rule, checked by
+each backend's `subscript` rule through one shared predicate,
+`graphed.array.check_leading_ellipsis(key, depth)` — the members after the Ellipsis (ints and
+slices; `None` adds an axis and addresses none) must address FEWER axes than the receiver has.
+Depth comes from the backend: awkward passes `layout.minmax_depth[0]`, NOT `ndim` — measured,
+`ak.Array.ndim` reads the m59 fixture's record of two list fields as 1, while `[..., 0]` does
+descend into those fields, so `ndim` would refuse a key eager awkward accepts (and one the frozen
+`ACCEPTED` table pins). numpy passes `ndim`, which makes explicit what was an `IndexError` off its
+zero-length meta. The refusal travels the existing ill-typed channel (`op_form` runs before
+`add_op`), so it is a `GraphedTypeError` at the user's line with nothing recorded.
+
+**2. The chained spelling.** `rstrip(':')` turned `a[1:, 0]` into the advice `a[1][:, ...]` — an
+integer index, a different op. The spelling is now built from the slice's fields: `start:stop`
+always, `:step` only when there is one.
+
+**3. S2's exactness had no killing test.** `form`/`materialize` read the params still in this
+process; only compile + pickle + `evaluate_ir` reads the value back out of the serialized IR. The
+new leg does that. Under the `if False:` mutant the whole m59 frozen suite still passes (59) while
+the new leg fails both parametrizations — the gap the reviewer measured, now closed.
+
+**4. The scalar decoder's str arm.** Probed: `np.dtype(d).type(...)` parses the decimal text
+itself, and every dtype the m59 suites feed a binary op (uint64 incl. 2**63+1 / 2**64-1, int32
+incl. negative, float32, bool) decodes identically without the arm. Deleted in both readers; the
+two backends stay independent, nothing hoisted.
+
+Closing tests (`tests/extra/{awkward,numpy}/m59`), each run against its mutant with
+`PYTHONDONTWRITEBYTECODE=1`: guard removed → 7 failed / 6 passed; `rstrip` restored → 2 failed
+(exactly the start-only slices) / 4 passed; wide-int branch `if False:` → 2 failed. Whole
+`./scripts/run-tests.sh` green; `precommit --fast` ok. `tests/frozen/awkward/m59` is now on the
+pytest `pythonpath` so the extra legs reuse `m59_idiom_fixtures`, as m57/m58 already do.
