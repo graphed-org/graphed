@@ -125,14 +125,15 @@ class Session:
         declared or derived — means the same node, the caller having said so.
 
         THE IDENTITY RULE: two callable objects share a memo entry only where PYTHON ITSELF
-        defines them as the same call — a genuine `types.MethodType`, whose call IS
+        defines them as the same call — an object whose TYPE is `types.MethodType`, whose call IS
         `__func__(__self__, ...)`, keyed `(id(fn.__self__), id(fn.__func__))`; every other callable
         is its own identity, `id(fn)`. Never `==`/`hash`, which two behaviourally distinct
         callables may declare of themselves; the memo entry holds `fn`, and through it the owner
         and the function, so no id in a key is ever recycled onto a later object.
 
         Ceiling: any other re-accessed callable — a builtin method, a method-wrapper, a
-        `functools.partial`/`partialmethod` carrying a copied `__self__` — mints a node per access.
+        `functools.partial`, a `partialmethod` access (a partial with a copied `__self__`) — mints a
+        node per access.
         Losing CSE for those is never a wrong answer; merging two distinct calls is, and every
         widening past Python's own definition of sameness admitted a neighbour.
 
@@ -143,7 +144,7 @@ class Session:
             if name is not None:
                 self._fn_taken.add(name)
                 return name
-            if isinstance(fn, types.MethodType):
+            if type(fn) is types.MethodType:  # not isinstance: `__class__` is the callable's to claim
                 key: object = (id(fn.__self__), id(fn.__func__))
             else:
                 key = id(fn)
