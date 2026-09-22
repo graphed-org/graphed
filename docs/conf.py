@@ -11,7 +11,7 @@ import shutil
 
 project = "graphed"
 author = "graphed-org"
-release = "0.0.3"
+release = "0.0.4"
 
 extensions = [
     "sphinx.ext.autodoc",
