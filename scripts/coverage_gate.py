@@ -7,6 +7,7 @@ already blends line+branch). Rust: `cargo llvm-cov --json`'s `summary.lines.perc
 Always prints the full per-file table and the checked count -- a gate whose confirming
 outcome is silent output is not acceptable.
 """
+
 import argparse
 import json
 import sys

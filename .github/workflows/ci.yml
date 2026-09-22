@@ -55,10 +55,15 @@ jobs:
         with:
           python-version: "3.12"
       - uses: dtolnay/rust-toolchain@stable
-      - name: Install (builds the extension)
+      - name: Install this package + CPU-only ML frameworks
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
+          # Same CPU-only recipe as the triton job below: without these, the 4 ML-plugin files
+          # (pytorch/tensorflow/jax/xgboost_external.py) skip their framework tier via
+          # importorskip and can never clear the per-file gate.
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install tensorflow-cpu jax xgboost
       - name: Coverage + per-file gate
         shell: bash
         run: |
