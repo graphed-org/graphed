@@ -22,7 +22,15 @@ from graphed.core.execution import Plan, Task, WorkerResources
 
 from .array import Array
 from .errors import GraphedError
-from .execute import CompiledGraph, Key, OnFailure, compile_ir, evaluate_ir, external_key
+from .execute import (
+    CompiledGraph,
+    Key,
+    OnFailure,
+    compile_ir,
+    evaluate_ir,
+    external_key,
+    refuse_chunk_partials,
+)
 from .projection import read_columns
 from .session import Session
 from .varied import refuse_container
@@ -106,7 +114,7 @@ class _PartitionReduce(Generic[V]):
         return attribute
 
 
-def _external_evaluators(session: Session, compiled: CompiledGraph) -> dict[str, Callable[..., object]]:
+def external_evaluators(session: Session, compiled: CompiledGraph) -> dict[str, Callable[..., object]]:
     """Every External surviving in the compiled IR, keyed by :func:`external_key`, resolved to the
     evaluator the recording session holds for it.
 
@@ -165,9 +173,10 @@ def aggregate_plan(
         )
     ((nid, data),) = partitioned.items()
     compiled = compile_ir(session, *outputs)
+    refuse_chunk_partials(compiled, as_outputs=False)
     # Wire EVERY External surviving in the compiled IR from the session (fills + upstream corrections
     # alike); an explicit `externals=` (keyed by `external_key`) overrides the auto-wired evaluator.
-    wired = _external_evaluators(session, compiled)
+    wired = external_evaluators(session, compiled)
     if externals:
         wired.update(externals)
     declared = declared_columns(data, outputs)

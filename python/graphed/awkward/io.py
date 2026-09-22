@@ -19,7 +19,7 @@ import json
 import operator
 import os
 import tempfile
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -27,9 +27,19 @@ import awkward as ak
 import numpy as np
 
 import graphed.core
-from graphed import Array, Backend, CompiledGraph, Session, compile_ir, context_of, evaluate_ir
+from graphed import (
+    Array,
+    Backend,
+    CompiledGraph,
+    Session,
+    compile_ir,
+    context_of,
+    evaluate_ir,
+    refuse_chunk_partials,
+)
 from graphed import parquet as gpq
 from graphed import write as gw
+from graphed.aggregate import external_evaluators
 from graphed.core import Partition
 from graphed.core.execution import Plan, SequentialRunner, WorkerResources
 from graphed.errors import GraphedError
@@ -129,6 +139,7 @@ class _WritePart:
     behavior: Any = None  # a behavior dict or an importable "module:attr" reference
     memory_data: ak.Array | None = None  # in-memory source payload (bounded by the dataset)
     memory_rows: int = 0
+    externals: tuple[tuple[str, Callable[..., object]], ...] = ()
 
     def __call__(self, partition: Partition, resources: WorkerResources) -> list[str]:
         if self.reader is not None:
@@ -140,7 +151,9 @@ class _WritePart:
         else:  # pragma: no cover - every source is a protocol reader or in-memory
             raise TypeError("write task has neither a partition reader nor in-memory data")
         backend = AwkwardBackend(behavior=_resolve_behavior(self.behavior))
-        (out,) = evaluate_ir(self.compiled, cast("Backend", backend), {self.source_name: chunk})
+        (out,) = evaluate_ir(
+            self.compiled, cast("Backend", backend), {self.source_name: chunk}, externals=dict(self.externals)
+        )
         result = ak.Array(out)
         payload = result if result.fields else ak.Array({self.column: result})
         os.makedirs(self.destination, exist_ok=True)
@@ -201,7 +214,7 @@ def _evaluation_columns(
     if accessed is None:
         return ()
     leaves = source_form.tt.layout.form.columns()
-    needs = project_buffers(array).buffers_for(source_name)
+    needs = project_buffers(array, on_fail="pass").buffers_for(source_name)
     out: set[str] = set()
     for f in sorted(accessed):
         data_paths = [
@@ -507,6 +520,7 @@ class _VariedWritePart:
     memory_data: ak.Array | None = None
     memory_rows: int = 0
     manifest: Mapping[str, Any] | None = None  # C4 fills the KV manifest; None writes plain parquet
+    externals: tuple[tuple[str, Callable[..., object]], ...] = ()
 
     def _chunk(self, partition: Partition, resources: WorkerResources) -> tuple[Any, int]:
         if self.reader is not None:
@@ -522,7 +536,9 @@ class _VariedWritePart:
     def __call__(self, partition: Partition, resources: WorkerResources) -> list[str]:
         chunk, index = self._chunk(partition, resources)
         backend = AwkwardBackend(behavior=_resolve_behavior(self.behavior))
-        values = evaluate_ir(self.compiled, cast("Backend", backend), {self.source_name: chunk})
+        values = evaluate_ir(
+            self.compiled, cast("Backend", backend), {self.source_name: chunk}, externals=dict(self.externals)
+        )
         rank = dict(self.rank)
 
         def resolved(node_id: int) -> ak.Array:
@@ -701,6 +717,7 @@ def _write_varied(
         )
 
     compiled = compile_ir(session, *outputs)
+    refuse_chunk_partials(compiled, as_outputs=True)
     _refuse_optimizer_merge(session, outputs, compiled)
 
     manifest = _build_manifest(labels, value_specs, mask_specs)
@@ -731,10 +748,11 @@ def _write_varied(
         "wrapped": wrapped,
         "behavior": behavior,
         "manifest": manifest,
+        "externals": tuple(external_evaluators(session, compiled).items()),
     }
     if isinstance(data, PartitionedSource):
         partitions = data.partitions(steps_per_file)
-        keys = list(dict.fromkeys((p.uri, p.tree) if p.tree else p.uri for p in partitions))
+        keys = [(p.uri, p.tree) if p.tree else p.uri for p in partitions if p.blind_step == 0]
         writer = _VariedWritePart(
             bases=tuple(gw.file_bases(keys, steps_per_file).items()), reader=data, **common
         )
@@ -821,13 +839,15 @@ def to_parquet(
         # `()` is this computation's OWN "read everything"; `read_partition` spells that `None`.
         columns = _evaluation_columns(array, node_id, source_name, source_form) or None
     compiled = compile_ir(session, array)
+    refuse_chunk_partials(compiled, as_outputs=True)
+    externals = tuple(external_evaluators(session, compiled).items())
 
     if isinstance(data, PartitionedSource):
         # the generic path: ANY source describing its own partitioning (parquet datasets, the
         # ROOT reader integration, ...) is written partition by partition — its whole-dataset
         # loader is never invoked
         partitions = data.partitions(steps_per_file)
-        keys = list(dict.fromkeys((p.uri, p.tree) if p.tree else p.uri for p in partitions))
+        keys = [(p.uri, p.tree) if p.tree else p.uri for p in partitions if p.blind_step == 0]
         writer = _WritePart(
             compiled=compiled,
             source_name=source_name,
@@ -839,6 +859,7 @@ def to_parquet(
             column=column,
             reader=data,
             behavior=behavior,
+            externals=externals,
         )
     else:
         whole = ak.Array(data() if callable(data) else data)
@@ -861,6 +882,7 @@ def to_parquet(
             behavior=behavior,
             memory_data=whole,
             memory_rows=n,
+            externals=externals,
         )
 
     plan = gw.write_plan(partitions, writer)
