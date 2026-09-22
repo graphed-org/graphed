@@ -81,8 +81,12 @@ subdirectories* too (two `test_projection.py`, two `shuffle_backends.py`), so ev
 those one subdirectory per pytest process; `./scripts/run-tests.sh` already does.
 
 Because the suite runs per-subtree, coverage accumulates with `--cov-append` across
-subtrees and is gated once at the end (`coverage report --fail-under=90`);
-`COV=1 ./scripts/run-tests.sh` is the enforcing command, and CI runs it directly.
+subtrees; `COV=1 ./scripts/run-tests.sh` runs it. CI gates on two rules instead of one
+blanket total: every source file must be >=90% covered (line+branch; `scripts/coverage_gate.py`
+on `coverage json`'s per-file `percent_covered`, or `cargo llvm-cov --json`'s per-file
+`summary.lines.percent` for Rust), and every pull request must be >=98% diff-covered on its
+added/changed lines against `main` (`diff-cover`, checked on the `merge_group` run). Neither
+threshold is ever lowered.
 
 ## Lint, types, Rust tests, docs
 

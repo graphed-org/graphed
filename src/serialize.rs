@@ -471,4 +471,187 @@ mod tests {
         bytes.truncate(bytes.len() - 1);
         assert_eq!(deserialize(&bytes).err(), Some(DecodeError::Truncated));
     }
+
+    /// Exercises what `sample()` never needs: a `Bool` param, an `External` with no
+    /// `preprocessing_ref`, `Exchange`/`Join` boundaries, and a `Stage` with a real
+    /// `StageRef::Member` back-reference — every writer/reader arm `sample()` leaves cold.
+    fn sample_with_boundaries() -> GraphStore {
+        use crate::param::ParamValue::Bool;
+        let s = GraphStore::new();
+        let src = s.add_source("events".into(), pm(vec![("flag", Bool(true))]));
+        let d = PayloadDescriptor {
+            kind: "onnx".into(),
+            content_hash: "abc".into(),
+            framework: "ort".into(),
+            version: "1.17".into(),
+            io_schema: "f32->f32".into(),
+            preprocessing_ref: None,
+        };
+        let ext = s.add_external(d, vec![src], pm(vec![])).unwrap();
+        let exch = s
+            .add_exchange(vec![ext], pm(vec![("parts", Int(4))]))
+            .unwrap();
+        let exch2 = s
+            .add_exchange(
+                vec![ext],
+                pm(vec![("parts", Int(4)), ("side", Str("r".into()))]),
+            )
+            .unwrap();
+        let join = s
+            .add_join(
+                vec![exch, exch2],
+                pm(vec![("how", Str("inner".into())), ("on", Str("id".into()))]),
+            )
+            .unwrap();
+        // a hand-built Stage whose second member refers back to its first via StageRef::Member —
+        // `reduce()`'s own stages don't reliably exercise that reader/writer arm.
+        let stage = s
+            .add_key(NodeKey::Stage {
+                inputs: vec![join],
+                members: vec![
+                    StageOp {
+                        token: "op|a".into(),
+                        inputs: vec![StageRef::Input(0)],
+                    },
+                    StageOp {
+                        token: "op|b".into(),
+                        inputs: vec![StageRef::Member(0)],
+                    },
+                ],
+            })
+            .unwrap();
+        s.mark_output(stage).unwrap();
+        s
+    }
+
+    #[test]
+    fn boundary_and_stage_member_ref_nodes_roundtrip() {
+        let g = sample_with_boundaries();
+        let bytes = serialize(&g);
+        let back = deserialize(&bytes).unwrap();
+        assert_eq!(g.to_dot(), back.to_dot());
+        assert_eq!(
+            bytes,
+            serialize(&back),
+            "re-serialize must be byte-identical"
+        );
+    }
+
+    #[test]
+    fn decode_error_display_messages() {
+        assert_eq!(
+            DecodeError::BadMagic.to_string(),
+            "not a graphed IR blob (bad magic/version)"
+        );
+        assert_eq!(
+            DecodeError::Truncated.to_string(),
+            "truncated graphed IR blob"
+        );
+        assert_eq!(
+            DecodeError::BadTag("node", 99).to_string(),
+            "invalid node tag 99"
+        );
+        assert_eq!(
+            DecodeError::BadUtf8.to_string(),
+            "invalid utf-8 in graphed IR blob"
+        );
+        assert_eq!(
+            DecodeError::BadNodeRef(7).to_string(),
+            "node reference 7 out of range"
+        );
+    }
+
+    #[test]
+    fn rejects_an_unknown_top_level_node_tag() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(MAGIC);
+        put_u32(&mut bytes, 1); // one node
+        bytes.push(99); // not any known T_* tag
+        assert_eq!(
+            deserialize(&bytes).err(),
+            Some(DecodeError::BadTag("node", 99))
+        );
+    }
+
+    #[test]
+    fn rejects_an_unknown_param_tag() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(MAGIC);
+        put_u32(&mut bytes, 1);
+        bytes.push(T_SOURCE);
+        put_str(&mut bytes, "src");
+        put_u32(&mut bytes, 1); // one param
+        put_str(&mut bytes, "k");
+        bytes.push(99); // not any known P_* tag
+        assert_eq!(
+            deserialize(&bytes).err(),
+            Some(DecodeError::BadTag("param", 99))
+        );
+    }
+
+    #[test]
+    fn rejects_an_out_of_range_input_reference() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(MAGIC);
+        put_u32(&mut bytes, 1); // one node: an Op referencing input 0, but it's node index 0
+        bytes.push(T_OP);
+        put_str(&mut bytes, "f");
+        put_u32(&mut bytes, 0); // no params
+        put_inputs(&mut bytes, &[0]);
+        assert_eq!(deserialize(&bytes).err(), Some(DecodeError::BadNodeRef(0)));
+    }
+
+    #[test]
+    fn rejects_an_unknown_stage_ref_tag() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(MAGIC);
+        put_u32(&mut bytes, 1);
+        bytes.push(T_STAGE);
+        put_inputs(&mut bytes, &[]);
+        put_u32(&mut bytes, 1); // one member
+        put_str(&mut bytes, "op|a");
+        put_u32(&mut bytes, 1); // one ref
+        bytes.push(99); // not R_INPUT/R_MEMBER
+        put_u32(&mut bytes, 0);
+        assert_eq!(
+            deserialize(&bytes).err(),
+            Some(DecodeError::BadTag("stage-ref", 99))
+        );
+    }
+
+    #[test]
+    fn rejects_a_self_referencing_stage_member() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(MAGIC);
+        put_u32(&mut bytes, 1);
+        bytes.push(T_STAGE);
+        put_inputs(&mut bytes, &[]);
+        put_u32(&mut bytes, 1); // one member, referring to itself
+        put_str(&mut bytes, "op|a");
+        put_u32(&mut bytes, 1);
+        bytes.push(R_MEMBER);
+        put_u32(&mut bytes, 0);
+        assert_eq!(deserialize(&bytes).err(), Some(DecodeError::BadNodeRef(0)));
+    }
+
+    #[test]
+    fn rejects_an_out_of_range_output_mark() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(MAGIC);
+        put_u32(&mut bytes, 0); // no nodes
+        put_u32(&mut bytes, 1); // one output, referencing a node that doesn't exist
+        put_u64(&mut bytes, 5);
+        assert_eq!(deserialize(&bytes).err(), Some(DecodeError::BadNodeRef(5)));
+    }
+
+    #[test]
+    fn rejects_invalid_utf8_in_a_string_field() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(MAGIC);
+        put_u32(&mut bytes, 1);
+        bytes.push(T_SOURCE);
+        put_u32(&mut bytes, 1); // a 1-byte "name" that is not valid UTF-8
+        bytes.push(0xFF);
+        assert_eq!(deserialize(&bytes).err(), Some(DecodeError::BadUtf8));
+    }
 }

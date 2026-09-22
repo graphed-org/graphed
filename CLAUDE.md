@@ -37,6 +37,9 @@ maturin mixed layout: Rust at `src/*.rs` + `Cargo.toml` (root), Python at `pytho
 `module-name = "graphed.core.graphed_core"`. Tests run **per-subtree** (`./scripts/run-tests.sh`) —
 see `CONTRIBUTING.md` for why a single `pytest tests/` cannot collect this tree.
 
+Coverage gate: every source file >=90% (line+branch), every PR >=98% diff-covered against
+`main` — see `CONTRIBUTING.md`. Neither threshold is ever lowered.
+
 ## Separate repos (not consolidated)
 
 `graphed-histogram`, `graphed-exec-local` (executor), and `graphed-orchestrator` stay their own
