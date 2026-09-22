@@ -11,15 +11,16 @@ outcome is silent output is not acceptable.
 import argparse
 import json
 import sys
+from typing import Any
 
 THRESHOLD = 90.0
 
 
-def python_files(data: dict) -> dict[str, float]:
+def python_files(data: dict[str, Any]) -> dict[str, float]:
     return {path: info["summary"]["percent_covered"] for path, info in data["files"].items()}
 
 
-def rust_files(data: dict, exclude: str | None) -> dict[str, float]:
+def rust_files(data: dict[str, Any], exclude: str | None) -> dict[str, float]:
     files = data["data"][0]["files"]
     return {
         f["filename"]: f["summary"]["lines"]["percent"]
@@ -43,8 +44,13 @@ def main() -> int:
         print(f"{files[path]:6.2f}%  {path}")
     under = {p: pct for p, pct in files.items() if pct < THRESHOLD}
     print(f"{len(files)} files checked, {len(under)} under {THRESHOLD:.0f}%")
+    if not files:
+        print("FAIL: report contains no files -- the gate is mis-scoped or the data is missing")
+        return 1
     if under:
-        print(f"FAIL: {len(under)} file(s) below the {THRESHOLD:.0f}% per-file gate")
+        print(f"FAIL: {len(under)} file(s) below the {THRESHOLD:.0f}% per-file gate:")
+        for path in sorted(under):
+            print(f"  {under[path]:6.2f}%  {path}")
         return 1
     return 0
 

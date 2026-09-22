@@ -117,7 +117,7 @@ exclude = ["tests/frozen/**"]
 # 3.12 pin: numpy 2.5.0 (py>=3.12) ships PEP695 stubs that require mypy on 3.12+.
 python_version = "3.12"
 strict = true
-files = ["python", "tests", "conftest.py"]
+files = ["python", "tests", "scripts", "conftest.py"]
 # The test tree has no `__init__.py` (pytest prepend-import isolation depends on that), so bare
 # basenames collide across packages — m5/m40 `test_projection.py`, m39/m40 `shuffle_backends.py`.
 # `explicit_package_bases` + these roots give every test file a unique dotted name derived from the
