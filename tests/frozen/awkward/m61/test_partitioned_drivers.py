@@ -60,7 +60,7 @@ def test_refusal_reads_the_compiled_ir(parquet_path: str) -> None:
     refuse_chunk_partials(partial_output, as_outputs=False)  # a plan may fold an output partial
     with pytest.raises(GraphedError, match="'slice' reduces the partitioned axis"):
         refuse_chunk_partials(partial_output, as_outputs=True)
-    with pytest.raises(GraphedError, match="'slice' .* feeds another node"):
+    with pytest.raises(GraphedError, match=r"'slice' .* feeds another node"):
         refuse_chunk_partials(compile_ir(ev.session, gak.sum(ev.x[2:8])), as_outputs=False)
     refuse_chunk_partials(compile_ir(ev.session, ev.x * 2), as_outputs=True)  # row-local: fine
 
@@ -108,7 +108,11 @@ def test_numpy_writer_wires_externals(parquet_path: str, tmp_path: Path) -> None
 # ---- a duplicated input is refused, not silently overwritten ---------------------------------
 @pytest.mark.parametrize("backend", ["awkward", "numpy"])
 def test_writers_refuse_a_duplicated_input(parquet_path: str, tmp_path: Path, backend: str) -> None:
-    ev = _ak_source([parquet_path, parquet_path]) if backend == "awkward" else _np_source([parquet_path, parquet_path])
+    ev = (
+        _ak_source([parquet_path, parquet_path])
+        if backend == "awkward"
+        else _np_source([parquet_path, parquet_path])
+    )
     write = to_parquet if backend == "awkward" else npio.to_parquet
     with pytest.raises(ValueError, match="duplicate input"):
         write(ev, str(tmp_path / "out"), steps_per_file=2)
