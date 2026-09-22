@@ -136,6 +136,11 @@ What changes when you port
   an array. A method that returns a tuple returns a tuple of arrays; one that returns a Python
   scalar, or is handed an eager array, a callable or a NaN, raises ``GraphedTypeError`` at the
   call before anything is recorded.
+- **Array metadata answers now, or refuses.** ``a.fields``, ``a.ndim``, ``a.type``, ``a.typestr``,
+  ``a.is_tuple`` and ``a.positional_axis`` answer at once from the recorded type (the length reads
+  ``##``) and record nothing. ``a.nbytes``, ``a.layout``, ``a.mask``, ``a.attrs``, ``a.behavior`` and
+  ``a.named_axis`` raise ``AttributeError``: materialize first, or use ``gak.mask``. A record field
+  of the same name still wins.
 - **Reductions carry their axis into the plan.** ``axis=1`` is per-event work that rides along
   with everything else in the same pass; ``axis=None`` or ``axis=0`` combines across events and
   becomes a step of its own. Nothing to configure; it just changes what a run costs.
