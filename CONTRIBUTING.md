@@ -82,11 +82,33 @@ those one subdirectory per pytest process; `./scripts/run-tests.sh` already does
 
 Because the suite runs per-subtree, coverage accumulates with `--cov-append` across
 subtrees; `COV=1 ./scripts/run-tests.sh` runs it. CI gates on two rules instead of one
-blanket total: every source file must be >=90% covered (line+branch; `scripts/coverage_gate.py`
-on `coverage json`'s per-file `percent_covered`, or `cargo llvm-cov --json`'s per-file
-`summary.lines.percent` for Rust), and every pull request must be >=98% diff-covered on its
-added/changed lines against `main` (`diff-cover`, checked on the `merge_group` run). Neither
-threshold is ever lowered.
+blanket total: every source file must be >=90% covered (line+branch), and every pull
+request must be >=98% diff-covered on its added/changed lines against `main`. Neither
+threshold is ever lowered. Reproduce both locally exactly as CI runs them:
+
+```bash
+# Python per-file gate (`coverage json`'s per-file `percent_covered`)
+COV=1 ./scripts/run-tests.sh
+coverage json -o coverage.json
+python scripts/coverage_gate.py coverage.json
+
+# Python PR delta gate (>=98% of added/changed lines vs. main)
+git fetch origin main
+coverage xml -o coverage.xml
+diff-cover coverage.xml --compare-branch=origin/main --fail-under=98
+
+# Rust per-file gate (`cargo llvm-cov --json`'s per-file `summary.lines.percent`)
+cargo llvm-cov --no-report
+cargo llvm-cov report --json --output-path llvm-cov.json --ignore-filename-regex 'lib\.rs'
+python3 scripts/coverage_gate.py llvm-cov.json --rust --exclude lib.rs
+
+# Rust PR delta gate
+cargo llvm-cov report --lcov --output-path lcov.info --ignore-filename-regex 'lib\.rs'
+diff-cover lcov.info --compare-branch=origin/main --fail-under=98
+```
+
+The delta gate only fails a PR once `origin/main` itself carries `scripts/coverage_gate.py`;
+before that it runs informationally (no `--fail-under`).
 
 ## Lint, types, Rust tests, docs
 
