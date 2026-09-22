@@ -15,6 +15,9 @@ venv/
 .coverage.*
 htmlcov/
 coverage.xml
+coverage.json
+lcov.info
+llvm-cov.json
 dist/
 build/
 _build/

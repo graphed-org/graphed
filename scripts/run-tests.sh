@@ -14,14 +14,14 @@ COV=${COV:-0}
 
 # name : space-separated pytest paths (frozen + any extra) for that package
 SUITES=(
-  "core:tests/frozen/core"
+  "core:tests/frozen/core tests/extra/core"
   "frontend:tests/frozen/frontend tests/extra/frontend"
   "numpy:tests/frozen/numpy tests/extra/numpy"
   "awkward:tests/frozen/awkward"
-  "debug:tests/frozen/debug"
+  "debug:tests/frozen/debug tests/extra/debug"
   "checkpoint:tests/frozen/checkpoint tests/extra/checkpoint"
-  "preserve:tests/frozen/preserve"
-  "corpus:tests/frozen/corpus"
+  "preserve:tests/frozen/preserve tests/extra/preserve"
+  "corpus:tests/frozen/corpus tests/extra/corpus"
 )
 
 # Packages that must run one process PER MILESTONE subdir (not one per package): they aggregate

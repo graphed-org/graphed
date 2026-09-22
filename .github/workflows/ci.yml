@@ -41,13 +41,16 @@ jobs:
         shell: bash
         run: ./scripts/run-tests.sh
 
-  # Combined branch-coverage gate (>=90%). Accumulated with --cov-append across subtrees, gated
-  # once on the union. The Rust core is measured separately (coverage-rust).
+  # Every source file >=90% (line+branch, accumulated with --cov-append across subtrees), plus
+  # (on a PR/merge-queue run) >=98% diff coverage of the PR's added/changed lines against main.
+  # The Rust core is measured separately (coverage-rust).
   coverage:
-    name: coverage (>=90% combined)
+    name: coverage (per-file >=90%, PR delta >=98%)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # diff-cover needs origin/main history to diff against
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -56,9 +59,19 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
-      - name: Combined coverage
+      - name: Coverage + per-file gate
         shell: bash
-        run: COV=1 ./scripts/run-tests.sh
+        run: |
+          COV=1 ./scripts/run-tests.sh
+          coverage json -o coverage.json
+          python scripts/coverage_gate.py coverage.json
+      - name: PR diff coverage (>=98% of added/changed lines)
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        shell: bash
+        run: |
+          git fetch origin main
+          coverage xml -o coverage.xml
+          diff-cover coverage.xml --compare-branch=origin/main --fail-under=98
 
   # Pure-Rust IR: formatting, clippy (deny warnings), unit tests, and the loom model.
   rust:
@@ -82,10 +95,12 @@ jobs:
         run: RUSTFLAGS="--cfg loom" cargo test --lib loom_model
 
   coverage-rust:
-    name: rust coverage (cargo llvm-cov)
+    name: rust coverage (per-file >=90%, PR delta >=98%)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # diff-cover needs origin/main history to diff against
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -95,8 +110,21 @@ jobs:
       - uses: taiki-e/install-action@cargo-llvm-cov
       - name: Link libpython for the test binary
         run: echo "LD_LIBRARY_PATH=$(python -c 'import sysconfig; print(sysconfig.get_config_var(\"LIBDIR\"))')" >> "$GITHUB_ENV"
-      - name: cargo llvm-cov (fail under 90% lines, bindings excluded)
-        run: cargo llvm-cov --ignore-filename-regex 'lib\.rs' --fail-under-lines 90
+      - name: Run tests, collect profile data once
+        run: cargo llvm-cov --no-report
+      - name: Combined coverage (fail under 90% lines, bindings excluded)
+        run: cargo llvm-cov report --ignore-filename-regex 'lib\.rs' --fail-under-lines 90
+      - name: Per-file coverage gate
+        run: |
+          cargo llvm-cov report --json --output-path llvm-cov.json --ignore-filename-regex 'lib\.rs'
+          python3 scripts/coverage_gate.py llvm-cov.json --rust --exclude lib.rs
+      - name: PR diff coverage (>=98% of added/changed lines)
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        run: |
+          python3 -m pip install diff_cover
+          git fetch origin main
+          cargo llvm-cov report --lcov --output-path lcov.info --ignore-filename-regex 'lib\.rs'
+          diff-cover lcov.info --compare-branch=origin/main --fail-under=98
 
   # Free-threaded Python (plan A.5), REQUIRED for the core + frontend + numpy suites: these need
   # only numpy (which ships free-threaded wheels), so the no-GIL thread-safety of the Rust core is
