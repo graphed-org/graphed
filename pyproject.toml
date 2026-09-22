@@ -1,8 +1,8 @@
 [build-system]
-# >=1.9.4: emits the version-specific cp314t wheel when abi3 is enabled but the interpreter is
-# free-threaded (older maturin errored instead). cibuildwheel isolates the build and pulls the
-# newest maturin<2, so CI uses this floor or later.
-requires = ["maturin>=1.9.4,<2"]
+# >=1.14: builds against PyO3 0.29 on CPython 3.15 (free-threaded cp315t included); 1.9.4 already
+# emitted the version-specific cp314t wheel when abi3 is enabled but the interpreter is free-threaded.
+# cibuildwheel isolates the build and pulls the newest maturin<2, so CI uses this floor or later.
+requires = ["maturin>=1.14,<2"]
 build-backend = "maturin"
 
 [project]
@@ -19,6 +19,7 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3.15",
   "Programming Language :: Rust",
 ]
 # Base install stays light: the frontend + the Rust core (shipped in the wheel) + executing +
@@ -75,10 +76,11 @@ exclude = [
 [tool.cibuildwheel]
 # One driver (cibuildwheel invoking the maturin PEP 517 backend) builds the whole §A.5 matrix.
 # The abi3-py311 wheel (cp311-abi3) is built ONCE and reused: cibuildwheel detects the abi3 wheel and
-# skips rebuilding on cp312/cp313/cp314, still running the smoke test on each. cp314t is free-threaded
-# (no GIL-disabled stable ABI yet) so maturin emits a dedicated version-specific cp314t wheel.
+# skips rebuilding on cp312-cp315, still running the smoke test on each. cp314t and cp315t are
+# free-threaded (no GIL-disabled stable ABI used yet) so maturin emits a dedicated version-specific
+# wheel for each; cp315t needs PyO3 >= 0.29 and maturin >= 1.14.
 # Linux gets manylinux AND musllinux (glibc + musl) for x86_64 and aarch64 — fully standalone wheels.
-build = ["cp311-*", "cp312-*", "cp313-*", "cp314-*", "cp314t-*"]
+build = ["cp311-*", "cp312-*", "cp313-*", "cp314-*", "cp314t-*", "cp315-*", "cp315t-*"]
 # 32-bit is dropped everywhere (Rust ships no Cargo for musllinux 32-bit; the project targets 64-bit).
 skip = ["*_i686", "*-win32", "*-musllinux_i686"]
 # Base install is light (executing + cloudpickle), so the compiled core imports with no extra deps.

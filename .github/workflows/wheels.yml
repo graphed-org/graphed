@@ -5,8 +5,9 @@ name: wheels
 #   Linux   x86_64 + aarch64 — BOTH manylinux (glibc) AND musllinux (musl/Alpine): fully standalone
 #   macOS   x86_64 + arm64 (native per-arch runners)
 #   Windows x86_64
-# Each target ships one abi3 wheel (cp311-abi3, serves CPython 3.11-3.14) plus a dedicated
-# free-threaded cp314t wheel (no GIL-disabled stable ABI yet, so maturin builds it version-specific).
+# Each target ships one abi3 wheel (cp311-abi3, serves CPython 3.11-3.15) plus dedicated
+# free-threaded cp314t and cp315t wheels (no GIL-disabled stable ABI used yet, so maturin builds them
+# version-specific).
 # The Rust toolchain is pinned (1.98.1): Linux containers install it via the cibuildwheel before-all;
 # macOS/Windows use the pinned host toolchain below. No PyPI upload here — see release.yml.
 

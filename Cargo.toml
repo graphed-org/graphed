@@ -15,7 +15,7 @@ crate-type = ["cdylib", "rlib"]
 # (see [tool.maturin] in pyproject.toml). Leaving it off lets `cargo test` link libpython so the
 # pure-Rust IR tests run.
 [dependencies]
-pyo3 = { version = "0.28" }
+pyo3 = { version = "0.29" }
 # Equality-saturation engine for the M4 optimizer (kept entirely behind the RewriteEngine trait).
 egg = "0.9"
 

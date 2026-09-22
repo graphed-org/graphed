@@ -24,6 +24,8 @@ Two findings from reviewing coffea's graphed mode against the upstream mains.
   whole mapped form each time (about 27 ms per output on NanoAOD). The answer applies the module's
   covering rule across outputs: ``DATA`` on a path absorbs ``OFFSETS`` on it. ``project_buffers``
   is unchanged (graphed-org/graphed#43).
+* Wheels for CPython 3.15: the ``cp311-abi3`` wheel is smoke-tested on 3.15 and a dedicated
+  free-threaded ``cp315t`` wheel is built, on PyO3 0.29 and maturin 1.14+.
 
 
 0.0.4
