@@ -53,6 +53,11 @@ means the list structure alone; ``DATA`` means the leaf values. A reader that un
 serves ``{'Jet': OFFSETS}`` from a counter branch in a ROOT file or an index column in an
 RNTuple, and never touches the payload.
 
+A reader serving several outputs at once asks ``project_buffers_many([out1, out2, ...])``: one
+answer for all of them, from one replay per source instead of one per source per output. A
+``DATA`` need under a path absorbs an ``OFFSETS`` need on it, so ``{'Jet': OFFSETS}`` from one
+output and ``{'Jet.pt': DATA}`` from another merge to ``{'Jet.pt': DATA}``.
+
 The same machinery is what keeps ordinary analyses cheap. In the selection example on
 :doc:`index`, the result reports ``Jet.eta`` and ``MET`` and *not* ``Jet.pt``, even though the
 code sliced whole ``Jet`` records — record-shaped syntax does not force a record-shaped read.

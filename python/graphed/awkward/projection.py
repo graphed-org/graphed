@@ -17,6 +17,8 @@ been reduced (it replays the ops, which a fused stage contains unchanged).
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import awkward as ak
 
 from graphed import (
@@ -65,10 +67,13 @@ def _structural_paths(form: object, path: tuple[str, ...] = ()) -> dict[str, str
     return out
 
 
-def _replay(array: Array, on_fail: str) -> tuple[dict[int, tuple[object, object, str]], bool]:
-    """Run the recorded graph on reporting typetracers. Returns per-source (report, form, name)
-    keyed by source node id, plus whether an opaque op forced conservative projection."""
-    session = array.session
+def _replay(arrays: Sequence[Array], on_fail: str) -> tuple[dict[int, tuple[object, object, str]], bool]:
+    """Run the recorded graph of every output on ONE set of reporting typetracers, so each report is
+    the union of the outputs' touches. Returns per-source (report, form, name) keyed by source node
+    id, plus whether an opaque op forced conservative projection."""
+    if not arrays:
+        raise ValueError("projection needs at least one output array")
+    session = arrays[0].session
     backend = session.backend
 
     reports: dict[int, tuple[object, object, str]] = {}
@@ -99,23 +104,24 @@ def _replay(array: Array, on_fail: str) -> tuple[dict[int, tuple[object, object,
         form = session.form_of(nid)
         return form.tt if isinstance(form, AwkwardForm) else inputs[0]
 
-    result = session.walk(
-        array,
-        source=lambda nid: tracers[nid],
-        op=lambda _nid, name, ins, params: backend.eval_stage(name, ins, params),
-        external=on_external,
-    )
-    # the output is materialized, so its own columns are read — touch them (covers a bare
-    # field-access output that otherwise only touches shape, not leaf data).
-    if isinstance(result, ak.Array):
-        result.layout._touch_data(recursive=True)
+    for array in arrays:  # `walk` refuses an array from another Session
+        result = session.walk(
+            array,
+            source=lambda nid: tracers[nid],
+            op=lambda _nid, name, ins, params: backend.eval_stage(name, ins, params),
+            external=on_external,
+        )
+        # the output is materialized, so its own columns are read — touch them (covers a bare
+        # field-access output that otherwise only touches shape, not leaf data).
+        if isinstance(result, ak.Array):
+            result.layout._touch_data(recursive=True)
     return reports, conservative
 
 
 @expanding
 def project(array: Array, *, on_fail: str = "raise") -> Projection:
     """Compute the columns each source must read for ``array`` (metadata-only)."""
-    reports, conservative = _replay(array, on_fail)
+    reports, conservative = _replay([array], on_fail)
     read_columns: dict[str, frozenset[str]] = {}
     for report, form, name in reports.values():
         key_map = _leaf_columns(form)
@@ -136,7 +142,17 @@ def project_buffers(array: Array, *, on_fail: str = "raise") -> BufferProjection
     index STRUCTURE alone is needed (a multiplicity, a mask) with no leaf data beneath them — the
     truthful, non-empty answer for a count-only analysis, which the column-level `project`
     necessarily reports as the empty set."""
-    reports, conservative = _replay(array, on_fail)
+    return _buffers(*_replay([array], on_fail))
+
+
+@expanding
+def project_buffers_many(arrays: Sequence[Array], *, on_fail: str = "raise") -> BufferProjection:
+    """:func:`project_buffers` for several outputs of one Session at once: the union of their
+    needs, from one reporting typetracer per source rather than one per source per output."""
+    return _buffers(*_replay(arrays, on_fail))
+
+
+def _buffers(reports: dict[int, tuple[object, object, str]], conservative: bool) -> BufferProjection:
     read_buffers: dict[str, dict[str, BufferNeed]] = {}
     for report, form, name in reports.values():
         leaf_map = _leaf_columns(form)
