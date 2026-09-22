@@ -12,7 +12,7 @@ Partition-wise drivers are sound
 
 A plan and a writer evaluate the compiled IR once per chunk. What per-chunk replay cannot compute
 is now refused where the plan is built, and what it needs is shipped with the task
-(graphed-org/graphed#36).
+(graphed-org/graphed#38).
 
 * A reduction on the partitioned axis — ``x[2:8]``, ``x[0]``, ``gak.sum(x)`` — inside a
   partitioned plan is a per-chunk partial. ``aggregate_plan`` refuses one that feeds another node
