@@ -4,8 +4,8 @@ What changed
 Newest release first. Numbers in parentheses are the pull requests on
 `graphed-org/graphed <https://github.com/graphed-org/graphed>`_.
 
-0.0.4 (unreleased)
-------------------
+0.0.4
+-----
 
 Partition-wise drivers are sound
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -27,6 +27,9 @@ is now refused where the plan is built, and what it needs is shipped with the ta
 * ``graphed.write.file_bases`` refuses an input listed twice: a worker derives its part index from
   the partition alone, so two partitions of one file and step wrote the same part path twice.
 
+
+0.0.3
+-----
 
 A library can record into graphed
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
