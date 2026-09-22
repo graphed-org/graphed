@@ -27,7 +27,7 @@ from .backend import Backend, Form, ParamValue
 from .by_label import impact_by_label, read_columns_by_label
 from .context import Explanation, explain
 from .errors import GraphedError, GraphedTypeError, PointError
-from .execute import CompiledGraph, compile_ir, evaluate_ir
+from .execute import CompiledGraph, compile_ir, evaluate_ir, refuse_chunk_partials
 from .projection import (
     CONSERVATIVE,
     BufferNeed,
@@ -111,6 +111,7 @@ __all__ = [
     "points",
     "read_columns",
     "read_columns_by_label",
+    "refuse_chunk_partials",
     "reindex_to",
     "repartition",
     "resolve_backend",

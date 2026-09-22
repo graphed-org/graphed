@@ -45,7 +45,14 @@ def write_plan(
 # ---- writer-side part naming and indexing (R15.9) ------------------------------------------------
 def file_bases(keys: Sequence[Hashable], steps_per_file: int) -> dict[Hashable, int]:
     """key -> first output-part index of that file. Keys are GENERIC: a plain uri for flat-file
-    formats, a (uri, tree) pair for container formats holding several objects per file."""
+    formats, a (uri, tree) pair for container formats holding several objects per file. A key
+    listed twice is refused: a worker derives its part index from the partition alone, so two
+    partitions of one file and step would overwrite each other's part."""
+    seen: set[Hashable] = set()
+    for k in keys:
+        if k in seen:
+            raise ValueError(f"duplicate input {k!r}: list each file (or file, tree) once")
+        seen.add(k)
     return {k: i * steps_per_file for i, k in enumerate(keys)}
 
 

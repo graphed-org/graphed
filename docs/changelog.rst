@@ -4,8 +4,29 @@ What changed
 Newest release first. Numbers in parentheses are the pull requests on
 `graphed-org/graphed <https://github.com/graphed-org/graphed>`_.
 
-0.0.3
------
+0.0.4 (unreleased)
+------------------
+
+Partition-wise drivers are sound
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A plan and a writer evaluate the compiled IR once per chunk. What per-chunk replay cannot compute
+is now refused where the plan is built, and what it needs is shipped with the task
+(graphed-org/graphed#36).
+
+* A reduction on the partitioned axis — ``x[2:8]``, ``x[0]``, ``gak.sum(x)`` — inside a
+  partitioned plan is a per-chunk partial. ``aggregate_plan`` refuses one that feeds another node
+  (``gak.sum(x[2:8])`` summed a partial per chunk), and both ``to_parquet`` writers refuse one as
+  their output (each part held its own chunk's slice). An output reduction that the plan's
+  ``combine`` folds is unchanged. ``graphed.refuse_chunk_partials(compiled, as_outputs=...)`` is
+  the check, for a writer of your own.
+* ``to_parquet`` wires the session's External evaluators into its write tasks, as
+  ``aggregate_plan`` always did, and projects through an opaque node conservatively instead of
+  refusing it — ``graphed.apply(f, x)`` writes. ``graphed.aggregate.external_evaluators(session,
+  compiled)`` is that wiring, public for other writers.
+* ``graphed.write.file_bases`` refuses an input listed twice: a worker derives its part index from
+  the partition alone, so two partitions of one file and step wrote the same part path twice.
+
 
 A library can record into graphed
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

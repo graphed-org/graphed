@@ -15,14 +15,22 @@ here), evaluates the compiled IR, and writes one single-column parquet part.
 from __future__ import annotations
 
 import os
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, cast
 
 import numpy as np
 
-from graphed import Backend, CompiledGraph, Session, compile_ir, evaluate_ir
+from graphed import (
+    Backend,
+    CompiledGraph,
+    Session,
+    compile_ir,
+    evaluate_ir,
+    refuse_chunk_partials,
+)
 from graphed import parquet as gpq
+from graphed.aggregate import external_evaluators
 from graphed.core import Partition
 from graphed.core.execution import Plan, SequentialRunner, WorkerResources
 from graphed.errors import GraphedError
@@ -148,6 +156,7 @@ class _WritePart:
     bases: tuple[tuple[str, int], ...]
     memory_data: tuple[tuple[str, np.ndarray], ...] | None = None
     memory_rows: int = 0
+    externals: tuple[tuple[str, Callable[..., object]], ...] = ()
 
     def __call__(self, partition: Partition, resources: WorkerResources) -> list[str]:
         chunk: object
@@ -161,7 +170,12 @@ class _WritePart:
             index = gpq.derive_part_index(
                 partition, steps_per_file=self.steps_per_file, bases=dict(self.bases)
             )
-        (out,) = evaluate_ir(self.compiled, cast("Backend", NumpyBackend()), {self.source_name: chunk})
+        (out,) = evaluate_ir(
+            self.compiled,
+            cast("Backend", NumpyBackend()),
+            {self.source_name: chunk},
+            externals=dict(self.externals),
+        )
         result = np.asarray(out)
         if result.ndim != 1:
             raise TypeError(f"to_parquet writes 1-D rectilinear columns; the result has shape {result.shape}")
@@ -210,11 +224,13 @@ def to_parquet(
         raise TypeError(f"to_parquet needs an array recorded over exactly one source, got {len(sources)}")
     ((node_id, data),) = sources.items()
     source_name = session.source_name(node_id)
-    columns = tuple(sorted(project(array).columns_for(source_name)))
+    columns = tuple(sorted(project(array, on_fail="pass").columns_for(source_name)))
     compiled = compile_ir(session, array)
+    refuse_chunk_partials(compiled, as_outputs=True)
 
     common = {
         "compiled": compiled,
+        "externals": tuple(external_evaluators(session, compiled).items()),
         "source_name": source_name,
         "columns": columns,
         "destination": destination,
