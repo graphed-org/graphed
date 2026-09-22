@@ -4,6 +4,28 @@ What changed
 Newest release first. Numbers in parentheses are the pull requests on
 `graphed-org/graphed <https://github.com/graphed-org/graphed>`_.
 
+0.0.5
+-----
+
+Deferred arrays answer their own metadata, and a plan projects all its outputs in one replay
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Two findings from reviewing coffea's graphed mode against the upstream mains.
+
+* ``arr.fields``, ``arr.ndim``, ``arr.type``, ``arr.typestr``, ``arr.is_tuple`` and
+  ``arr.positional_axis`` on an awkward-backed deferred array are answered at once from the
+  record-time typetracer instead of being recorded as a ``field`` op — ``"pt" in arr.fields`` is a
+  bool and ``arr.ndim == 2`` compares, with nothing added to the graph. The metadata a typetracer
+  cannot answer (``nbytes``, ``layout``, ``mask``, ``attrs``, ``behavior``, ``named_axis``) raises
+  ``AttributeError`` naming what to do instead. A record field or a behavior that defines the same
+  name still wins (graphed-org/graphed#42).
+* ``graphed.awkward.project_buffers_many(arrays)`` projects several outputs of one session with a
+  single reporting typetracer per source, where calling ``project_buffers`` per output replayed the
+  whole mapped form each time (about 27 ms per output on NanoAOD). The answer applies the module's
+  covering rule across outputs: ``DATA`` on a path absorbs ``OFFSETS`` on it. ``project_buffers``
+  is unchanged (graphed-org/graphed#43).
+
+
 0.0.4
 -----
 
