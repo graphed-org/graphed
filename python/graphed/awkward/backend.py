@@ -39,6 +39,9 @@ class AwkwardForm:
 _BOUNDARY = frozenset(
     {"source", "external", "correction", "onnx", "map", "ak.sum", "ak.any", "ak.all", "ak.count"}
 )
+# ak.Array descriptors the record-time typetracer answers as the data would; it does not carry the
+# source's attrs/behavior/named axes, nor a known length, so those are refused
+_INTROSPECT_EAGER = frozenset({"fields", "type", "typestr", "ndim", "is_tuple", "positional_axis"})
 
 
 _EXTERNAL = frozenset({"map", "correction", "onnx", "external"})
@@ -82,7 +85,8 @@ class AwkwardBackend:
     # ---- M54: behavior methods with arguments ------------------------------------------------
     def attribute_kind(self, form: AwkwardForm, name: str) -> str:
         """Classify `arr.<name>`: a record FIELD shadows the behavior (as `apply`'s `field` branch
-        resolves it), a behavior function is a "method" the frontend hands back as a callable, and
+        resolves it), a behavior function is a "method" the frontend hands back as a callable, ak.Array's
+        own descriptors (`fields`, `ndim`, ...) are "introspection" answered by `introspect`, and
         anything else that resolves is a "property" recorded as a `field` op. An unresolved name
         raises `AttributeError` and the frontend keeps today's path."""
         tt = self._with_behavior(form.tt)
@@ -93,8 +97,21 @@ class AwkwardBackend:
         # like a field); anything else that is callable or a descriptor is a method, so a method
         # descriptor the stdlib adds later (partialmethod, singledispatchmethod, ...) still counts
         if hasattr(type(static), "__set__") or isinstance(static, functools.cached_property):
-            return "property"
+            # ak.Array's own descriptors describe the array, they are not per-element data
+            return "introspection" if static is inspect.getattr_static(ak.Array, name, None) else "property"
         return "method" if callable(static) or hasattr(static, "__get__") else "property"
+
+    def introspect(self, form: AwkwardForm, name: str) -> object:
+        """Answer an `introspection` attribute from the record-time typetracer, or raise
+        `AttributeError` when the typetracer cannot answer it as the data would."""
+        if name not in _INTROSPECT_EAGER:
+            hint = (
+                "use gak.mask(array, condition)"
+                if name == "mask"
+                else "materialize the array and read it there"
+            )
+            raise AttributeError(f"a deferred graphed array cannot answer {name!r}; {hint}")
+        return getattr(form.tt, name)
 
     def method_outputs(
         self, forms: Sequence[AwkwardForm], params: Mapping[str, object]

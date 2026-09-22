@@ -461,6 +461,9 @@ class Array:
                 kind = None
             if kind == "method":
                 return BoundMethod(self, name)
+            if kind == "introspection":  # answered at record time; nothing is recorded
+                backend: Any = self._session.backend  # the optional hook that goes with this kind
+                return backend.introspect(self._session.form(self), name)
         return self._session.record_op("field", [self], {"field": name})
 
     def __iter__(self) -> Any:
