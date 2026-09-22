@@ -35,4 +35,4 @@ __all__ = [
     "run_resumable",
     "run_shuffle_resumable",
 ]
-__version__ = "0.0.4"
+__version__ = "0.0.5"
