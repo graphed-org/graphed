@@ -2,7 +2,7 @@ name: release
 
 # Publish to PyPI on a version tag (vX.Y.Z). Wheels are built by cibuildwheel driving maturin — the
 # same standalone §A.5 matrix as wheels.yml (Linux manylinux+musllinux x86_64/aarch64, macOS x86_64+
-# arm64, Windows x86_64; one abi3 wheel per target + dedicated free-threaded cp314t/cp315t wheels).
+# arm64, Windows x86_64+arm64; one abi3 wheel per target + dedicated free-threaded cp314t/cp315t wheels).
 #
 # Auth:  a PyPI API token stored as the repo secret PYPI_TOKEN (uploaded as user __token__).
 # Verify: every wheel + the sdist gets an OIDC-signed GitHub build-provenance attestation
@@ -38,6 +38,7 @@ jobs:
           - { name: macos-x86_64, os: macos-15-intel, archs: x86_64 }
           - { name: macos-arm64, os: macos-14, archs: arm64 }
           - { name: windows-x86_64, os: windows-latest, archs: AMD64 }
+          - { name: windows-arm64, os: windows-11-arm, archs: ARM64 }
     steps:
       - uses: actions/checkout@v4
       - if: runner.os != 'Linux'

@@ -4,7 +4,7 @@ name: wheels
 # (PyO3/Rust) backend. One driver, one config ([tool.cibuildwheel] in pyproject.toml):
 #   Linux   x86_64 + aarch64 — BOTH manylinux (glibc) AND musllinux (musl/Alpine): fully standalone
 #   macOS   x86_64 + arm64 (native per-arch runners)
-#   Windows x86_64
+#   Windows x86_64 + arm64 (native per-arch runners)
 # Each target ships one abi3 wheel (cp311-abi3, serves CPython 3.11-3.15) plus dedicated
 # free-threaded cp314t and cp315t wheels (no GIL-disabled stable ABI used yet, so maturin builds them
 # version-specific).
@@ -36,6 +36,7 @@ jobs:
           - { name: macos-x86_64, os: macos-15-intel, archs: x86_64 }
           - { name: macos-arm64, os: macos-14, archs: arm64 }
           - { name: windows-x86_64, os: windows-latest, archs: AMD64 }
+          - { name: windows-arm64, os: windows-11-arm, archs: ARM64 }
     steps:
       - uses: actions/checkout@v4
       # Pinned host toolchain for the native macOS/Windows builds. Linux builds in a container that
