@@ -46,7 +46,7 @@ dev = [
   "pytest", "pytest-cov", "pytest-xdist", "coverage[toml]", "diff_cover", "hypothesis", "mypy", "ruff",
   "numpy>=1.24", "awkward>=2.6", "pyarrow>=15", "cloudpickle", "pandas", "vector",
   "correctionlib>=2.6", "onnx>=1.15", "onnxruntime>=1.17",
-  "boost-histogram>=1.4", "hist>=2.7",
+  "boost-histogram>=1.4", "hist>=2.7", "graphed-histogram>=0.0.3",
   "perspective-python==4.5.1", "tornado>=6.2", "websocket-client>=1.6",
 ]
 docs = ["sphinx", "furo", "myst-nb", "graphviz"]
