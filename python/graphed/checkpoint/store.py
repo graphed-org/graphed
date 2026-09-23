@@ -23,10 +23,10 @@ import hashlib
 import json
 import os
 import uuid
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 
 @dataclass(frozen=True)
@@ -41,6 +41,49 @@ class JournalEntry:
     blob: str  # content hash of the stored output
     stage: str = ""
     deps: tuple[str, ...] = ()
+
+
+def _record_line(record: Mapping[str, object]) -> str:
+    """The one serialization of a journal or dead-letter record, shared by every store."""
+    return json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n"
+
+
+def _parse_record(raw: str | bytes) -> Any:
+    """A parsed record, or ``None`` for a torn one (an interrupted append, or bad UTF-8)."""
+    try:
+        return json.loads(raw)
+    except ValueError:
+        return None
+
+
+def _done_record(
+    task_id: str, partition: str, blob: str, stage: str, deps: tuple[str, ...]
+) -> dict[str, object]:
+    # ``stage``/``deps`` only when set, so a plain single-stage record stays byte-identical to the
+    # V1 journal line (the M8 determinism gate)
+    rec: dict[str, object] = {"task_id": task_id, "partition": partition, "blob": blob}
+    if stage:
+        rec["stage"] = stage
+    if deps:
+        rec["deps"] = list(deps)
+    return rec
+
+
+def _replay(records: Iterable[Any], present: Callable[[str], bool]) -> dict[str, JournalEntry]:
+    """``task_id -> JournalEntry`` from records in write order (the later record wins), honouring
+    only a record whose blob is present (a journal line can outrace its object write across a
+    crash)."""
+    done: dict[str, JournalEntry] = {}
+    for rec in records:
+        blob = rec.get("blob")
+        if isinstance(blob, str) and present(blob):
+            tid = str(rec.get("task_id", ""))
+            raw_deps = rec.get("deps", [])
+            deps = tuple(str(d) for d in raw_deps) if isinstance(raw_deps, list) else ()
+            done[tid] = JournalEntry(
+                tid, str(rec.get("partition", "")), blob, str(rec.get("stage", "")), deps
+            )
+    return done
 
 
 @runtime_checkable
@@ -125,33 +168,14 @@ class Store:
         stage: str = "",
         deps: tuple[str, ...] = (),
     ) -> None:
-        # write ``stage``/``deps`` only when set, so a plain single-stage record stays byte-identical
-        # to the V1 journal line (the M8 determinism gate is untouched).
-        rec: dict[str, object] = {"task_id": task_id, "partition": partition, "blob": blob}
-        if stage:
-            rec["stage"] = stage
-        if deps:
-            rec["deps"] = list(deps)
-        self._append(self.journal_path, rec)
+        self._append(self.journal_path, _done_record(task_id, partition, blob, stage, deps))
 
     def completed(self) -> dict[str, JournalEntry]:
         """Replay the UNION of every writer's journal (``journal.log`` + ``journal.<node>.log``) into
         ``task_id -> JournalEntry`` (last write wins, deterministic file order). A torn trailing line
         (interrupted append) is skipped, never fatal."""
-        done: dict[str, JournalEntry] = {}
-        for path in sorted(self.root.glob("journal*.log")):
-            for rec in self._read_lines(path):
-                blob = rec.get("blob")
-                # only honor an entry whose blob is actually present (guards a journal line that
-                # outraced its object write across a crash)
-                if isinstance(blob, str) and self.has_blob(blob):
-                    tid = str(rec.get("task_id", ""))
-                    raw_deps = rec.get("deps", [])
-                    deps = tuple(str(d) for d in raw_deps) if isinstance(raw_deps, list) else ()
-                    done[tid] = JournalEntry(
-                        tid, str(rec.get("partition", "")), blob, str(rec.get("stage", "")), deps
-                    )
-        return done
+        journals = sorted(self.root.glob("journal*.log"))
+        return _replay((rec for path in journals for rec in self._read_lines(path)), self.has_blob)
 
     # ---- dead-letter set ------------------------------------------------------------------------
     def record_dead(self, descriptor: Mapping[str, object]) -> None:
@@ -183,9 +207,8 @@ class Store:
 
     @staticmethod
     def _append(path: Path, record: Mapping[str, object]) -> None:
-        line = json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n"
         with open(path, "a", encoding="utf-8") as f:
-            f.write(line)
+            f.write(_record_line(record))
             f.flush()
             os.fsync(f.fileno())
 
@@ -195,11 +218,6 @@ class Store:
             return
         with open(path, encoding="utf-8") as f:
             for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    yield json.loads(line)
-                except json.JSONDecodeError:
-                    # a torn final line from an interrupted append: ignore (recovery, not corruption)
-                    continue
+                rec = _parse_record(line)
+                if rec is not None:
+                    yield rec
