@@ -89,8 +89,19 @@ Result: `tests/frozen/checkpoint tests/extra/checkpoint` 129 passed, 0 skipped, 
 - N1: design.rst names the six `CheckpointStore` calls; the writer-name sentence says the id is
   re-minted in a forked child.
 - Checkpoint trees (frozen + extra, junit): 130 tests, 0 failures, 0 errors, 0 skipped.
-- Frozen-only diff-cover vs origin/main: 128 lines, 1 missing (the re-mint call, covered by the
-  extra test only), 99 %.
+- Frozen-only diff-cover vs origin/main: 128 lines, 1 missing (the re-mint call, which runs only
+  in forked children that pytest-cov does not measure), 99 %.
 - Full suite `COV=1 ./scripts/run-tests.sh`: rc 0, 2309 passed, 31 skipped (+1 = the fork test).
-  `coverage_gate.py`: every `graphed/checkpoint/` file as in iteration 4 (`fsspec_store.py`
-  100 %); the gate fails only on the four ML-plugin externals the lane venv cannot import.
+  `coverage_gate.py`: `fsspec_store.py` 97.44 % (missing line 113, branch 112->113); the gate
+  fails only on the four ML-plugin externals the lane venv cannot import.
+
+## Iteration 6 — review r2 residuals (L1, L2, N1)
+
+- L1: the fork test's children are daemons joined against a 30 s deadline, then killed; the test
+  asserts the exit codes. Mutant `_child` blocking on `threading.Event().wait()`: the test fails
+  in 30.5 s and pytest exits.
+- L2: design.rst states replay order per writer, as the `fsspec_store.py` docstring does.
+- N1: iteration 5's `fsspec_store.py` figure replaced by the measured 97.44 %.
+- r1 N1 ("six calls above") was already closed by 99e5173.
+- Full suite `COV=1 ./scripts/run-tests.sh`: rc 0, no FAILED; `coverage_gate.py` fails only on
+  the four ML-plugin externals; `fsspec_store.py` 97.44 % (line 113, branch 112->113).
