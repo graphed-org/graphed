@@ -17,6 +17,7 @@ stays a stable, minimal seam. A `Plan` is reduced to a single result by an `Exec
 from __future__ import annotations
 
 import contextlib
+import threading
 import time
 from collections import OrderedDict
 from collections.abc import Callable, Iterable, Sequence
@@ -172,6 +173,7 @@ class StopReason(StrEnum):
     PRECISION = "precision"
     WALL_CLOCK = "wall_clock"
     ERROR_BUDGET = "error_budget"
+    CANCELLED = "cancelled"  # a RunControl cancel stopped the run with work left to start
 
 
 @dataclass
@@ -339,7 +341,8 @@ class TaskEvent:
     Carries no un-picklable objects — it crosses a process boundary from a ``ProcessExecutor`` worker
     back to the driver. ``error`` is a pre-rendered summary string, never an exception object;
     ``partition`` is a human label. Per task the contract is exactly one ``SUBMITTED``, then one
-    ``STARTED``, then exactly one of ``FINISHED`` | ``ERRORED``."""
+    ``STARTED``, then exactly one of ``FINISHED`` | ``ERRORED`` — except that a task a
+    :class:`RunControl` cancel kept from starting ends at its ``SUBMITTED``."""
 
     phase: TaskPhase
     key: int
@@ -367,12 +370,67 @@ class Monitor(Protocol):
     """A passive observer of a run (M37). An executor *emits* through it; it MUST NOT influence task
     order, the reduction tree, or results — the determinism gate is green attached-or-not. A monitor
     that raises is swallowed by the emitting executor (see :func:`emit_task`). ``worker_profiler_factory``
-    returns a *picklable* zero-arg factory shipped to workers (``None`` ⇒ no sampling)."""
+    returns a *picklable* zero-arg factory shipped to workers (``None`` ⇒ no sampling).
+    :class:`RunControl` is its non-passive counterpart: the object a runner reads to pause or cancel."""
 
     def on_task(self, event: TaskEvent) -> None: ...
     def on_profile(self, worker: str, payload: bytes) -> None: ...
     def on_combine(self, leaves_done: int) -> None: ...
     def worker_profiler_factory(self) -> Callable[[], WorkerProfiler] | None: ...
+
+
+class RunState(StrEnum):
+    RUNNING = "running"
+    PAUSED = "paused"
+    CANCELLED = "cancelled"
+
+
+_COMMANDS = ("pause", "resume", "cancel")
+
+
+class RunControl:
+    """A thread-safe pause/resume/cancel switch a runner reads before starting each task.
+
+    ``pause`` holds a RUNNING run, ``resume`` releases a PAUSED one, and ``cancel`` is sticky: once
+    CANCELLED only ``reset`` (which a runner calls when a run ends) returns it to RUNNING."""
+
+    def __init__(self) -> None:
+        self._cond = threading.Condition()
+        self._state = RunState.RUNNING
+
+    @property
+    def state(self) -> RunState:
+        return self._state
+
+    def _move(self, to: RunState, *, only_from: RunState | None = None) -> None:
+        with self._cond:
+            if only_from is None or self._state is only_from:
+                self._state = to
+            self._cond.notify_all()
+
+    def pause(self) -> None:
+        self._move(RunState.PAUSED, only_from=RunState.RUNNING)
+
+    def resume(self) -> None:
+        self._move(RunState.RUNNING, only_from=RunState.PAUSED)
+
+    def cancel(self) -> None:
+        self._move(RunState.CANCELLED)
+
+    def reset(self) -> None:
+        self._move(RunState.RUNNING)
+
+    def apply(self, cmd: str) -> None:
+        """Run the named command (the dashboard's wire form)."""
+        if cmd not in _COMMANDS:
+            raise ValueError(f"unknown run-control command {cmd!r} (expected pause, resume or cancel)")
+        getattr(self, cmd)()
+
+    def wait(self, timeout: float | None = None) -> RunState:
+        """Block while PAUSED; return the state woken in (PAUSED only when ``timeout`` elapsed)."""
+        with self._cond:
+            self._cond.wait_for(lambda: self._state is not RunState.PAUSED, timeout)
+            return self._state
 
 
 def emit_task(monitor: Monitor | None, event: TaskEvent) -> None:
@@ -437,21 +495,31 @@ class SequentialRunner:
     (graphed-exec-local's thread/process pools) must match bit-for-bit.
 
     An optional :class:`Monitor` observes the run (M37). It is purely passive: emission is
-    best-effort and a misbehaving monitor cannot change the result."""
+    best-effort and a misbehaving monitor cannot change the result. An optional :class:`RunControl`
+    steers it: checked on entry and before each task, a pause holds the next task and a cancel
+    returns the fold of the tasks that completed with ``stopped=StopReason.CANCELLED``."""
 
-    def __init__(self, monitor: Monitor | None = None) -> None:
-        self._monitor = monitor
+    def __init__(self, monitor: Monitor | None = None, control: RunControl | None = None) -> None:
+        self.monitor = monitor
+        self.control = control
 
     def run(self, plan: Plan[R]) -> ExecResult[R]:
         resources = LocalResources()
-        monitor = self._monitor
+        monitor = self.monitor
+        control = self.control
         try:
             value = plan.empty()
             n = 0
+            stopped: StopReason | None = None
+            if control is not None and control.state is RunState.CANCELLED:
+                return ExecResult(value=value, n_partitions=0, n_combines=0, stopped=StopReason.CANCELLED)
             ordered = sorted(plan.tasks, key=lambda t: t.key)
             for task in ordered:
                 emit_task(monitor, self._event(TaskPhase.SUBMITTED, task))
             for task in ordered:
+                if control is not None and control.wait() is RunState.CANCELLED:
+                    stopped = StopReason.CANCELLED
+                    break
                 emit_task(monitor, self._event(TaskPhase.STARTED, task))
                 try:
                     partial = plan.process(task.partition, resources)
@@ -463,9 +531,11 @@ class SequentialRunner:
                 value = plan.combine(value, partial)
                 emit_task(monitor, self._event(TaskPhase.FINISHED, task))
                 n += 1
-            return ExecResult(value=value, n_partitions=n, n_combines=max(0, n - 1))
+            return ExecResult(value=value, n_partitions=n, n_combines=max(0, n - 1), stopped=stopped)
         finally:
             resources.close()  # release file handles deterministically at end of run
+            if control is not None and control.state is RunState.CANCELLED:
+                control.reset()  # a cancel ends this run only, whether or not a check saw it
 
     @staticmethod
     def _event(phase: TaskPhase, task: Task, *, error: str | None = None) -> TaskEvent:
