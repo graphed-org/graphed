@@ -35,6 +35,14 @@ halfway through appending a line, that line is unparseable and is skipped — a 
 degrades to slightly less recovery, never to a corrupt one. And a journal line whose result file
 is missing (the line won the race, the file lost it) is not honoured either.
 
+Every read checks the name, too. A result whose bytes no longer hash to its file name (a disk
+error, a hand edit) is treated as missing: that one partition is recomputed and the file
+rewritten, rather than handing corrupted bytes to the decoder. Several threads that write the
+same result at once each use their own temp file, so they cannot trip over one another, and a
+writer that loses the final rename to an identical copy counts that copy as its own. None of this
+is specific to ``Store``: the runners take any
+:class:`~graphed.checkpoint.CheckpointStore`, the six calls above with these same promises.
+
 Values become bytes through a ``Codec``: ``NumpyCodec`` for array results — ``numpy.save``\ 's
 fixed layout, so the same array always hashes the same — and ``PickleCodec``, protocol pinned, for
 everything else.

@@ -4,6 +4,20 @@ What changed
 Newest release first. Numbers in parentheses are the pull requests on
 `graphed-org/graphed <https://github.com/graphed-org/graphed>`_.
 
+0.0.6 (unreleased)
+------------------
+
+A checkpoint store contract
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``graphed.checkpoint.CheckpointStore`` is the runtime-checkable protocol that
+  ``run_resumable`` and ``run_shuffle_resumable`` take: ``put``, ``get``, ``record_done``,
+  ``completed``, ``record_dead`` and ``dead_letters``. ``Store`` meets it unchanged on disk.
+* ``Store.get`` returns ``None`` for a blob whose bytes do not hash to its name, and the next
+  ``put`` rewrites it, so resume recomputes a corrupted partial instead of failing to decode it.
+* Concurrent ``Store.put`` of the same bytes from threads of one process no longer fails with
+  ``FileNotFoundError`` on a shared temp file.
+
 0.0.5
 -----
 
