@@ -25,3 +25,12 @@ daemon reader; the sender drops a connection whose `connected` is false and, wit
 it on every tick. Error paths reachable only by race (recv non-timeout exception, write to a closed
 handler, a failed idle reconnect) are `contextlib.suppress` blocks with no line of their own (plan r2
 L1). Dashboard: `control=`, `.control`, attach refuses a missing attribute with `TypeError`.
+
+### Iteration 3 — review r1 repair (M1, L1, L2, N1)
+
+M1: only a `hello` with `control: true` makes a listener (`_server._ingest`); iteration 2's "any
+hello" widening would have counted plan-B's lean-only hellos. No first-message clause (no sender
+sends a late hello). N1: `_connect` closes the connection when the control hello fails to send. L1:
+the m37 `FakeConn` models `connected`. L2: the docs' "every runner" is scoped to runners that take a
+`control`. New `tests/extra/debug/m65/test_m65a1_control_hello.py` fails 2/3 hello cases with the old
+predicate and the failed-hello case with the old `_connect`.
