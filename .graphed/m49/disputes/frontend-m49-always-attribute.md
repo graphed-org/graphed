@@ -11,7 +11,7 @@ re-raises the original untouched. The class, enumerated by one full `scripts/run
 |---|---|---|
 | `debug/m49/test_variation_attribution.py::test_a_worker_failure_with_no_label_channel_reraises_the_original` | no label channel → raw `PoisonError` | renamed `..._is_attributed_with_no_variation`: `StageError`, `variation == ""`, cause type/message, the user's line |
 | `debug/m49/test_variation_attribution.py::test_a_failure_whose_key_has_no_entry_reraises_the_original` | entry-less key → raw `PoisonError` | renamed `..._is_attributed_with_no_variation`: same assertions; a NEW test pins the surviving raw arm at a key with no frame (`dataclasses.replace(process, frames=())`) |
-| `checkpoint/m49/test_varied_dead_letter.py::test_the_descriptor_keeps_its_fixed_key_list_and_gains_no_variation_key` | dead-letter `error_type == "ValueError"` | `error_type == "StageError"` and the poison's `ValueError` named in `error_message`; the key list stays fixed |
+| `checkpoint/m49/test_varied_dead_letter.py::test_the_descriptor_keeps_its_fixed_key_list_and_gains_no_variation_key` | dead-letter key set == `DESCRIPTOR_KEYS` and `error_type == "ValueError"` | the poison is now a `StageError`, so M8's `stage_error` sub-descriptor joins the fixed key set (`DESCRIPTOR_KEYS | {"stage_error"}`, no `variation` key), `error_type == "StageError"`, `stage_error.cause_type == "ValueError"` |
 
 ## The tests
 
