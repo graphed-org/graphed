@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from .codec import Codec, NumpyCodec, PickleCodec
 from .errors import dead_letter_descriptor
+from .fsspec_store import FsspecStore
 from .retry import Quarantine, RetryElsewhere, RetryN, RetrySmallerChunk
 from .runner import (
     ResumeReport,
@@ -21,6 +22,7 @@ from .store import CheckpointStore, JournalEntry, Store
 __all__ = [
     "CheckpointStore",
     "Codec",
+    "FsspecStore",
     "JournalEntry",
     "NumpyCodec",
     "PickleCodec",
