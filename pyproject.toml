@@ -52,6 +52,12 @@ dev = [
   # neither ships a win_arm64 wheel, so the Windows ARM64 CI job installs the dev extra without them
   "pyarrow>=15; sys_platform != 'win32' or platform_machine != 'ARM64'",
   "perspective-python==4.5.1; sys_platform != 'win32' or platform_machine != 'ARM64'",
+  # FsspecStore's s3 tests run against a local moto server; moto has no win_arm64 resolution
+  # (pyyaml on 3.11), and flask/flask-cors are there only to run moto's server
+  "s3fs",
+  "moto[s3]; sys_platform != 'win32' or platform_machine != 'ARM64'",
+  "flask; sys_platform != 'win32' or platform_machine != 'ARM64'",
+  "flask-cors; sys_platform != 'win32' or platform_machine != 'ARM64'",
 ]
 docs = ["sphinx", "furo", "myst-nb", "graphviz"]
 
