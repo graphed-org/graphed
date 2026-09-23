@@ -356,7 +356,7 @@ Pausing and cancelling from the browser
 the control. A pause lets the tasks already running finish and starts no more until you resume.
 A cancel starts no more tasks, lets the running ones finish, and makes ``run`` return the reduction
 of exactly the tasks that completed, with ``stopped`` set to ``StopReason.CANCELLED`` — the rules
-are in :doc:`../core/design`, and every runner follows them. The buttons post to
+are in :doc:`../core/design`, and every runner that takes a ``control`` follows them. The buttons post to
 ``/api/control``; this does the same from Python:
 
 .. code-block:: python

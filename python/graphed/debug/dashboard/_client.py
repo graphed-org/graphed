@@ -95,7 +95,11 @@ class NetworkMonitor:
 
         conn = websocket.create_connection(self._url, timeout=5)
         if self._control is not None:
-            conn.send(json.dumps(_wire.hello_message()))
+            try:
+                conn.send(json.dumps(_wire.hello_message()))
+            except Exception:
+                conn.close()
+                raise
             threading.Thread(
                 target=self._reader, args=(conn,), name="graphed-dash-control", daemon=True
             ).start()

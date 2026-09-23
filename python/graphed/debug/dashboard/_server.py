@@ -8,8 +8,8 @@ IOLoop in a daemon thread, so it is decoupled from the executor — the same ser
 a remote run.
 
 With ``control=True`` it also relays run control: ``POST /api/control`` with JSON ``{"cmd": ...}``
-writes the command down every ``/ingest`` connection whose monitor said ``hello`` (a
-:class:`NetworkMonitor` built with a ``RunControl``), which applies it to the run.
+writes the command down every ``/ingest`` connection whose monitor said ``hello`` with
+``control: true`` (a :class:`NetworkMonitor` built with a ``RunControl``), which applies it to the run.
 
 perspective/tornado are imported lazily (the ``dashboard`` extra), so ``import graphed.debug`` works
 without them; :meth:`DashboardServer.start` raises a clear error if they are missing.
@@ -45,7 +45,7 @@ class DashboardServer:
         self._control = control
         self._control_state: str | None = RunState.RUNNING.value if control else None
         self._live: set[Any] = set()  # open /ingest handlers (IOLoop thread only)
-        self._listeners: set[Any] = set()  # those whose monitor said hello; mirrored under _lock
+        self._listeners: set[Any] = set()  # those whose monitor sent a control hello; mirrored under _lock
         self._thread: threading.Thread | None = None
         self._loop: Any = None
         self._http: Any = None
@@ -206,7 +206,7 @@ class DashboardServer:
         except Exception:
             return
         kind = msg.get("type")
-        if kind == "hello":
+        if kind == "hello" and msg.get("control") is True:
             with self._lock:
                 self._listeners.add(conn)
         elif kind == "task":
