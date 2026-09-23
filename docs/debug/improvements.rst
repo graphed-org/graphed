@@ -17,8 +17,8 @@ intermediate array, split the analysis and materialize it.
 per-operation dtype and shape assertions at ``opt_level=0``. The recorded type and shape of every
 node are still there for you to check yourself: ``lower(...)`` gives you ``.form`` on each member.
 
-**The dashboard is observe-only.** There is no pause, cancel, or resubmit from the browser; stop
-a run the way you would stop any Python job. The live view is in memory only — it is not written
+**The dashboard cannot resubmit.** It can pause, resume and cancel a run (``control=True``), but
+it cannot retry a failed task or resubmit a run. The live view is in memory only — it is not written
 into a preservation bundle or replayable after the process exits, so take a screenshot or keep
 ``dash.snapshot()`` if you want the numbers afterwards.
 

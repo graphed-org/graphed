@@ -59,6 +59,7 @@ def test_sender_reconnects_after_a_send_failure(monkeypatch: pytest.MonkeyPatch)
         def __init__(self, n: int) -> None:
             self.n = n
             self.closed = False
+            self.connected = True
 
         def send(self, msg: str) -> None:
             if self.n == 1:
@@ -67,6 +68,7 @@ def test_sender_reconnects_after_a_send_failure(monkeypatch: pytest.MonkeyPatch)
 
         def close(self) -> None:
             self.closed = True
+            self.connected = False
 
     conns: list[FakeConn] = []
 

@@ -4,7 +4,9 @@ run's events to a :class:`DashboardServer` over a websocket — loopback for a l
 
 Passivity: events are enqueued and a background sender thread ships them; a full queue or a down
 connection **drops** events and never blocks or raises into the executor, so the determinism gate is
-green attached-or-not. ``websocket-client`` is imported lazily (the ``dashboard`` extra).
+green attached-or-not. Given a ``control=RunControl``, the monitor also carries commands the other
+way, and a pause or cancel from the dashboard does change the run it steers. ``websocket-client``
+is imported lazily (the ``dashboard`` extra).
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from graphed.core.execution import TaskEvent, WorkerProfiler
+from graphed.core.execution import RunControl, TaskEvent, WorkerProfiler
 
 from .. import _sampler
 from . import _wire
@@ -26,10 +28,21 @@ from . import _wire
 
 class NetworkMonitor:
     """A ``graphed.core.execution.Monitor`` that streams events to a dashboard server over a
-    websocket. Construct with the server's ingest URL (``DashboardServer.ingest_url``)."""
+    websocket. Construct with the server's ingest URL (``DashboardServer.ingest_url``).
 
-    def __init__(self, ingest_url: str, *, profile: bool = False, queue_size: int = 10000) -> None:
+    With ``control``, it connects at :meth:`start`, says ``hello`` on every connection, keeps a
+    connection open while idle, and applies each command the server relays to ``control``."""
+
+    def __init__(
+        self,
+        ingest_url: str,
+        *,
+        profile: bool = False,
+        queue_size: int = 10000,
+        control: RunControl | None = None,
+    ) -> None:
         self._url = ingest_url
+        self._control = control
         self._profile = bool(profile) and _sampler.sampler_available()
         self._queue: queue.Queue[dict[str, Any] | None] = queue.Queue(maxsize=queue_size)
         self._stop = threading.Event()
@@ -77,11 +90,46 @@ class NetworkMonitor:
         with contextlib.suppress(queue.Full):
             self._queue.put_nowait(message)  # drop on full -> never back-pressure the run
 
-    def _sender(self) -> None:
+    def _connect(self) -> Any:
         import websocket  # noqa: PLC0415 (optional dep, imported lazily)
 
+        conn = websocket.create_connection(self._url, timeout=5)
+        if self._control is not None:
+            try:
+                conn.send(json.dumps(_wire.hello_message()))
+            except Exception:
+                conn.close()
+                raise
+            threading.Thread(
+                target=self._reader, args=(conn,), name="graphed-dash-control", daemon=True
+            ).start()
+        return conn
+
+    def _reader(self, conn: Any) -> None:
+        import websocket  # noqa: PLC0415 (optional dep, imported lazily)
+
+        assert self._control is not None
+        # any recv() failure but a timeout ends this connection
+        with contextlib.suppress(Exception):
+            while True:
+                try:
+                    text = conn.recv()
+                except websocket.WebSocketTimeoutException:
+                    continue
+                if not conn.connected:  # the server's close frame: recv() returned without raising
+                    break
+                with contextlib.suppress(ValueError, LookupError, TypeError):
+                    self._control.apply(json.loads(text)["cmd"])
+        conn.shutdown()  # close() is a no-op once connected is false
+
+    def _sender(self) -> None:
         conn: Any = None
         while not self._stop.is_set():
+            if conn is not None and not conn.connected:
+                conn = None
+            if conn is None and self._control is not None:
+                with contextlib.suppress(Exception):  # the server is down: retry on the next tick
+                    conn = self._connect()
             try:
                 item = self._queue.get(timeout=0.2)
             except queue.Empty:
@@ -90,7 +138,7 @@ class NetworkMonitor:
                 break
             if conn is None:
                 try:
-                    conn = websocket.create_connection(self._url, timeout=5)
+                    conn = self._connect()
                 except Exception:
                     conn = None
                     continue  # drop this item; retry the connection on the next one

@@ -206,7 +206,7 @@ jobs:
           python -m pip install -e ".[dev,dashboard]"
           python -m pip install playwright
           python -m playwright install --with-deps chromium
-          pytest tests/frozen/debug/m37/test_dashboard_browser.py -q -p no:cacheprovider
+          pytest tests/frozen/debug/m37/test_dashboard_browser.py tests/frozen/debug/m65/test_m65a1_control_browser.py -q -p no:cacheprovider
 
   docs:
     name: docs (sphinx -W)

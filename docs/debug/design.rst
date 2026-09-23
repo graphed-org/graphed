@@ -324,7 +324,8 @@ the number of combines, and the serialized plan are byte-identical to the same r
 It cannot slow your run down either: events go onto a bounded queue drained by a background
 sender, and if that queue fills or the connection drops, events are **dropped** rather than
 blocking the executor, and a monitor that raises is swallowed rather than killing your job. A
-dashboard is never a reason a job fails.
+dashboard is never a reason a job fails. The one exception is a dashboard you build with
+``control=True`` and then press pause or cancel on: that changes the run, as the next section says.
 
 What the browser shows you
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -346,6 +347,72 @@ its own task thread's stack from a *separate* thread every 10 ms and folds the s
 call tree. The data path is never hooked — and array kernels release the GIL while they work, so
 the sampler mostly runs in time that would otherwise be idle. The worker trees ride the same
 connection as the task events and the server merges them into one tree for the browser.
+
+Pausing and cancelling from the browser
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``Dashboard(control=True)`` adds **pause**, **resume** and **cancel** buttons to the page and a
+``RunControl`` at ``dash.control``; ``dash.attach(runner)`` hands the runner both the monitor and
+the control. A pause lets the tasks already running finish and starts no more until you resume.
+A cancel starts no more tasks, lets the running ones finish, and makes ``run`` return the reduction
+of exactly the tasks that completed, with ``stopped`` set to ``StopReason.CANCELLED`` — the rules
+are in :doc:`../core/design`, and every runner that takes a ``control`` follows them. The buttons post to
+``/api/control``; this does the same from Python:
+
+.. code-block:: python
+
+   import json
+   import time
+   import urllib.request
+
+   from graphed.core import Partition, Plan, RunState, SequentialRunner, Task
+   from graphed.debug import Dashboard
+
+
+   def press(dash, cmd):  # what the page's buttons send
+       req = urllib.request.Request(
+           dash.url + "api/control",
+           data=json.dumps({"cmd": cmd}).encode(),
+           headers={"Content-Type": "application/json"},
+       )
+       return json.loads(urllib.request.urlopen(req).read())
+
+
+   with Dashboard(control=True) as dash:
+       while dash.snapshot()["control_listeners"] == 0:  # the monitor connects in the background
+           time.sleep(0.01)
+
+       def process(partition, resources):
+           if partition.entry_start == 2:
+               print(press(dash, "cancel"))
+               while dash.control.state is not RunState.CANCELLED:
+                   time.sleep(0.01)
+           return 1
+
+       tasks = [Task(k, Partition(f"f{k}.root", "Events", k, k + 1)) for k in range(6)]
+       plan = Plan(process=process, combine=lambda a, b: a + b, empty=lambda: 0, tasks=tasks)
+       result = dash.attach(SequentialRunner()).run(plan)
+       print(result.value, result.stopped, dash.control.state)
+
+which prints::
+
+   {'cmd': 'cancel', 'delivered': 1}
+   3 cancelled running
+
+``delivered`` counts the monitors that took the command, so 0 means no run is listening. The page
+shows the state last *requested*, not an acknowledgement from the run. A control is reset to
+running when a cancelled run ends, so a cancel stops one run. ``attach`` refuses, with a
+``TypeError``, an executor that has no ``monitor`` attribute, or no ``control`` attribute on a
+``control=True`` dashboard, since setting a new attribute would wire up something nothing reads.
+
+The commands travel down the same websocket the events come up. A ``NetworkMonitor`` built with
+``control=ctl`` connects as soon as it starts, keeps that connection open while the run is quiet —
+a paused run emits nothing — and reconnects on its own if the server restarts. For a remote run,
+start ``DashboardServer(control=True)``, and give the job ``NetworkMonitor(ingest_url,
+control=ctl)`` and a runner built with ``control=ctl``. Anyone who can reach the server's port can
+pause or cancel what it steers. The route answers 404 on a server without ``control=True``, 415
+unless the body is sent as ``application/json`` (which a form on another site cannot do), and 400
+for anything but ``pause``, ``resume`` or ``cancel``.
 
 Watching a job on another machine
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -377,7 +444,7 @@ Sending the events somewhere else
 The dashboard is one consumer of a stream any executor emits. Anything with the four methods
 below is a monitor: your own progress bar, a log line per task, a metrics push. Per task you get
 exactly one ``SUBMITTED``, then one ``STARTED``, then exactly one of ``FINISHED`` or
-``ERRORED``.
+``ERRORED`` — except that a task a cancel kept from starting stops at ``SUBMITTED``.
 
 .. code-block:: python
 

@@ -555,7 +555,7 @@ immutable, picklable, display-only record of one task transition, carrying the t
 a timestamp, a partition label, and a pre-rendered error summary rather than an exception object
 — plus the ``Monitor`` and ``WorkerProfiler`` protocols an observer implements. Per task the
 contract is exactly one ``SUBMITTED``, then one ``STARTED``, then exactly one ``FINISHED`` or
-``ERRORED``.
+``ERRORED`` — except that a task a cancel kept from starting ends at its ``SUBMITTED``.
 
 Two properties make it safe to attach one to a production run:
 
@@ -568,6 +568,62 @@ Two properties make it safe to attach one to a production run:
 
 The concrete monitors and the browser side live in ``graphed.debug``; the runners that emit
 through this contract live in ``graphed-executors``.
+
+
+Pausing and cancelling a run
+----------------------------
+
+A monitor must not steer a run, so steering is a separate object. ``RunControl`` is a thread-safe
+switch with three states — ``RUNNING``, ``PAUSED``, ``CANCELLED`` — and three commands, ``pause``,
+``resume`` and ``cancel`` (``apply("pause")`` takes one by name, as the dashboard sends it). Give
+one to a runner, keep a reference, and call it from any thread. ``cancel`` is sticky: ``resume``
+and ``pause`` do not undo it.
+
+Every runner that takes a ``control`` honours it the same way:
+
+* It checks the control when the run starts, before starting each task and, on an adaptive plan,
+  before each ``next_tasks`` call — nowhere else. A combine is not a task: one whose inputs have
+  completed runs whatever the state, so a cancel leaves the combine tree whole.
+* **Paused**: no new task starts. Tasks already started, or already queued on a worker, finish.
+* **Cancelled**: no new task starts, nothing already submitted is cancelled, and the runner waits
+  for all of it. ``run`` returns an ``ExecResult`` whose ``value`` is the fold of exactly the tasks
+  that completed, with ``n_partitions`` their count and ``stopped=StopReason.CANCELLED``. A task
+  that fails while the run drains raises out of ``run`` exactly as it would without a control.
+  Tasks the cancel kept from starting emit only their ``SUBMITTED`` event.
+* ``stopped`` is ``CANCELLED`` when the entry check saw the cancel, or a later check saw it with
+  work left to start. A cancel that lands after the last task started stops nothing, and the
+  result is the ordinary one.
+* A run entered already cancelled does no work and emits no events: ``value`` is
+  ``plan.empty()``, ``n_partitions`` is 0 and ``stopped`` is ``CANCELLED``, even for a plan with
+  no tasks.
+* When a run ends, returning or raising, a ``CANCELLED`` control is reset to ``RUNNING``, so a
+  cancel ends one run only. A ``PAUSED`` control is left paused: a pause that lands at the end of
+  one run holds the next.
+* A run that is never cancelled reduces bit for bit as it would without a control.
+
+.. code-block:: python
+
+    from graphed.core import Partition, Plan, RunControl, SequentialRunner, Task
+
+    ctl = RunControl()
+
+    def process(part, resources):
+        if part.entry_start == 2:
+            ctl.cancel()                          # stands in for the dashboard's cancel button
+        return 1
+
+    tasks = [Task(k, Partition(f"f{k}.root", "Events", k, k + 1)) for k in range(6)]
+    plan = Plan(process=process, combine=lambda a, b: a + b, empty=lambda: 0, tasks=tasks)
+    res = SequentialRunner(control=ctl).run(plan)
+    print(res.value, res.n_partitions, res.stopped, ctl.state)
+
+which prints::
+
+    3 3 cancelled running
+
+The write helpers (``to_parquet`` in ``graphed.awkward`` and ``graphed.numpy``) return only the
+paths written, so a cancelled write returns the paths written so far with no sign of the cancel;
+pass ``compute=False`` and run the returned plan yourself to read ``stopped``.
 
 
 How workers exchange data
