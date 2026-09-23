@@ -75,3 +75,22 @@ Result: `tests/frozen/checkpoint tests/extra/checkpoint` 129 passed, 0 skipped, 
 - Open on the PR's CI: `Store.put`'s `os.replace` fallback (plan-A D8(c)) is unmeasured on Windows;
   read TA4 on windows-latest and windows-11-arm first. A `PermissionError` from opening `dest`
   would be repaired once in `put` (plan-A A.4).
+
+## Iteration 5 — review r1 repair (M1 forked writers, N1)
+
+- M1: `FsspecStore` minted its writer once per instance, so a forked copy reused `_writer`/`_seq`
+  and replaced the parent's record objects on `file://`. `_append` now re-mints the writer and
+  resets the count under the lock when `os.getpid()` differs from the minting pid. Class search
+  (`grep -rn -e uuid4 -e 'time_ns()' python/graphed`): the only per-instance id; `Store`'s
+  temp-name uuid is per call.
+- Closing test `tests/extra/checkpoint/m62/test_fsspec_store_forked_writers.py` (fork guard via
+  parametrize over the available `fork` start method): passes on the repair; with
+  `fsspec_store.py` reverted to 6c9b0bd it fails on the dead-letter assertion.
+- N1: design.rst names the six `CheckpointStore` calls; the writer-name sentence says the id is
+  re-minted in a forked child.
+- Checkpoint trees (frozen + extra, junit): 130 tests, 0 failures, 0 errors, 0 skipped.
+- Frozen-only diff-cover vs origin/main: 128 lines, 1 missing (the re-mint call, covered by the
+  extra test only), 99 %.
+- Full suite `COV=1 ./scripts/run-tests.sh`: rc 0, 2309 passed, 31 skipped (+1 = the fork test).
+  `coverage_gate.py`: every `graphed/checkpoint/` file as in iteration 4 (`fsspec_store.py`
+  100 %); the gate fails only on the four ML-plugin externals the lane venv cannot import.
