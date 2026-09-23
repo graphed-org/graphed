@@ -500,9 +500,8 @@ A result is written as one whole object, and a read checks the bytes against the
 ``Store``. Where a backend can leave a partly written object (a ``file://`` write is not atomic),
 the torn object is never served, and the next write of that result replaces it. Writers of the
 same result write the same bytes to the same name, so they need no locking. Records replay in
-name order. Within one ``FsspecStore`` that is the order they were written; across instances it
-follows the instances' creation times, and two created within one clock tick replay in either
-order. The order only matters when one task has two records with different results, which a
+name order. Within one writer that is the order they were written; across writers it follows
+the writers' creation times, and two created within one clock tick replay in either order. The order only matters when one task has two records with different results, which a
 deterministic task never writes.
 
 A root belongs to one kind of store. ``Store`` and ``FsspecStore("file://...")`` cannot share a
