@@ -6,9 +6,9 @@ which cannot append in place: each log file becomes a prefix of one-record objec
 - ``<root>/objects/<sha256>`` holds the blobs, with the same names and bytes as the local store.
 - ``<root>/journal.log/``, ``<root>/journal.<node>.log/`` and ``<root>/dead_letter.log/`` hold one
   object per record, each the exact line ``Store`` would append for the same call. The object name
-  is ``<writer>-<seq>``: ``writer`` is fixed per instance (creation time plus a random id) and
-  ``seq`` counts that instance's records. Records replay in name order, so order is exact within
-  an instance and follows creation time across instances.
+  is ``<writer>-<seq>``: ``writer`` is fixed per instance and process (creation time plus a random
+  id) and ``seq`` counts that writer's records. Records replay in name order, so order is exact
+  within a writer and follows creation time across writers.
 
 A blob write is one whole-object write, and ``get`` verifies the bytes against the name. A torn or
 tampered object is therefore never served; the next ``put`` of the true bytes rewrites it.
@@ -18,6 +18,7 @@ Identical-content writers need no exclusion, because they write the same bytes t
 from __future__ import annotations
 
 import glob
+import os
 import threading
 import time
 import uuid
@@ -54,9 +55,8 @@ class FsspecStore:
         # file:// does not create parent directories on write
         for prefix in (self.objects, self.journal_path, self.dead_letter_path):
             self.fs.makedirs(prefix, exist_ok=True)
-        self._writer = f"{time.time_ns():020d}-{uuid.uuid4().hex}"
-        self._seq = 0
         self._lock = threading.Lock()
+        self._new_writer()
 
     # ---- content-addressed blobs ----------------------------------------------------------------
     def put(self, data: bytes) -> str:
@@ -100,9 +100,17 @@ class FsspecStore:
         return self._records(f"{glob.escape(self.dead_letter_path)}/*")
 
     # ---- internals ------------------------------------------------------------------------------
+    def _new_writer(self) -> None:
+        self._pid = os.getpid()
+        self._writer = f"{time.time_ns():020d}-{uuid.uuid4().hex}"
+        self._seq = 0
+
     def _append(self, prefix: str, record: Mapping[str, object]) -> None:
         # a lock, not itertools.count: free-threaded builds make no promise for the latter
         with self._lock:
+            # a forked copy inherits the parent's writer and count, so it would reuse its names
+            if self._pid != os.getpid():
+                self._new_writer()
             seq = self._seq
             self._seq += 1
         self.fs.pipe_file(f"{prefix}/{self._writer}-{seq:012d}", _record_line(record).encode())

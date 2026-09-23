@@ -41,7 +41,8 @@ rewritten, rather than handing corrupted bytes to the decoder. Several threads t
 same result at once each use their own temp file, so they cannot trip over one another, and a
 writer that loses the final rename to an identical copy counts that copy as its own. None of this
 is specific to ``Store``: the runners take any
-:class:`~graphed.checkpoint.CheckpointStore`, the six calls above with these same promises.
+:class:`~graphed.checkpoint.CheckpointStore`: ``put``, ``get``, ``record_done``, ``completed``,
+``record_dead`` and ``dead_letters``, with these same promises.
 
 Values become bytes through a ``Codec``: ``NumpyCodec`` for array results — ``numpy.save``\ 's
 fixed layout, so the same array always hashes the same — and ``PickleCodec``, protocol pinned, for
@@ -491,8 +492,9 @@ each log file becomes a prefix that holds one object per record:
 - ``objects/<sha256>`` holds the results, with the same names and bytes as ``Store``.
 - ``journal.log/``, ``journal.<node>.log/`` and ``dead_letter.log/`` each hold one object per
   record. Each object holds the exact line ``Store`` would have appended. It is named after the
-  store instance that wrote it (its creation time and a random id) and that instance's running
-  count, so two writers never pick the same name.
+  writer (the store instance and process that wrote it: a creation time and a random id, minted
+  again in a forked child) and that writer's running count, so two writers never pick the same
+  name.
 
 A result is written as one whole object, and a read checks the bytes against the name, as for
 ``Store``. Where a backend can leave a partly written object (a ``file://`` write is not atomic),
