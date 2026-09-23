@@ -12,7 +12,9 @@
        d3 + d3-flame-graph are vendored UMD scripts (globals `d3` / `flamegraph`). Two panels poll
        derived JSON (NOT Perspective tables): the profile flamegraph (/api/flamegraph.json, the
        off-thread sampler's merged {name,value,children} count tree) and the progress bars
-       (/api/progress.json, overall + per-worker counts — the dask-distributed "Progress" idiom). -->
+       (/api/progress.json, overall + per-worker counts — the dask-distributed "Progress" idiom).
+       The #ctl bar shows only when that poll carries a non-null "control" (a control=True server);
+       its buttons POST /api/control, and #ctl-state shows the state last requested, not an ack. -->
   <link rel="stylesheet" href="/static/vendor/themes.css" />
   <link rel="stylesheet" href="/static/vendor/d3-flamegraph.css" />
   <script src="/static/vendor/d3.min.js"></script>
@@ -95,6 +97,10 @@
       );
     }
     function renderProgress(p) {
+      if (p.control != null) {
+        document.getElementById("ctl").hidden = false;
+        document.getElementById("ctl-state").textContent = p.control;
+      }
       const total = Math.max(p.total, 1);
       const o = p.overall;
       const pending = Math.max(0, o.submitted - o.finished - o.errored - o.inflight);
@@ -134,7 +140,22 @@
       } catch (e) { /* dashboard telemetry is best-effort; never surface to the run */ }
     }
 
+    async function sendControl(cmd) {
+      try {
+        await fetch("/api/control", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cmd }),
+        });
+        await pollProgress();
+      } catch (e) { /* the run keeps going; the next poll shows the state */ }
+    }
+
     window.addEventListener("load", () => {
+      for (const cmd of ["pause", "resume", "cancel"]) {
+        document.getElementById(`ctl-${cmd}`).addEventListener("click", () => sendControl(cmd));
+      }
+
       // progress tooltips (delegated, so they survive each innerHTML re-render): a per-task cell
       // wins over the row, so each worker's individual tasks are inspectable; the overall bar's row
       // carries the aggregate tip.
@@ -169,6 +190,11 @@
       font:13px ui-monospace, SFMono-Regular, Menlo, monospace; }
     header { padding:10px 16px; border-bottom:1px solid var(--line); font-weight:600; letter-spacing:.04em; }
     header span { color:#5b9dff; }
+    #ctl { float:right; margin-top:-3px; }
+    #ctl button { font:inherit; color:#d7dbe3; background:#1a1e27; border:1px solid var(--line);
+      border-radius:4px; padding:2px 10px; margin-left:6px; cursor:pointer; }
+    #ctl button:hover { border-color:#5b9dff; }
+    #ctl-state { display:inline-block; min-width:9ch; margin-left:10px; color:#9aa3b5; }
     .grid { display:grid; grid-template-rows:auto 1fr 1fr; gap:10px; padding:10px;
       height:calc(100% - 42px); box-sizing:border-box; }
     perspective-viewer, #profile, #progress { border:1px solid var(--line); border-radius:8px; }
@@ -207,7 +233,9 @@
   </style>
 </head>
 <body data-loading>
-  <header>graphed <span>· live execution</span></header>
+  <header>graphed <span>· live execution</span>
+    <div id="ctl" hidden><button id="ctl-pause">pause</button><button id="ctl-resume">resume</button><button id="ctl-cancel">cancel</button><b id="ctl-state"></b></div>
+  </header>
   <div class="grid">
     <perspective-viewer id="stats"></perspective-viewer>
     <div style="display:grid; grid-template-rows:auto 1fr; min-height:0;"><div class="label">progress (overall · per worker · hover any task)</div>

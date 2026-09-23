@@ -7,6 +7,10 @@ websocket (see :class:`graphed.debug.dashboard.NetworkMonitor`). It runs its own
 IOLoop in a daemon thread, so it is decoupled from the executor — the same server serves a local *or*
 a remote run.
 
+With ``control=True`` it also relays run control: ``POST /api/control`` with JSON ``{"cmd": ...}``
+writes the command down every ``/ingest`` connection whose monitor said ``hello`` (a
+:class:`NetworkMonitor` built with a ``RunControl``), which applies it to the run.
+
 perspective/tornado are imported lazily (the ``dashboard`` extra), so ``import graphed.debug`` works
 without them; :meth:`DashboardServer.start` raises a clear error if they are missing.
 """
@@ -14,10 +18,13 @@ without them; :meth:`DashboardServer.start` raises a clear error if they are mis
 from __future__ import annotations
 
 import base64
+import contextlib
 import json
 import threading
 from pathlib import Path
 from typing import Any
+
+from graphed.core.execution import RunState
 
 from .. import _sampler
 from . import _wire
@@ -28,12 +35,17 @@ _STATIC = Path(__file__).parent / "static"
 class DashboardServer:
     """Hosts the live Perspective tables and the ingest/viewer websockets. Start it, point one or
     more executors' :class:`NetworkMonitor` at :attr:`ingest_url`, and open :attr:`url` in a browser.
-    Thread-safe: all Perspective table writes happen on the IOLoop thread (the ingest handler);
-    :meth:`snapshot` reads a plain-Python mirror under a lock."""
+    Thread-safe: all Perspective table writes and websocket writes happen on the IOLoop thread;
+    :meth:`snapshot` reads a plain-Python mirror under a lock, and :meth:`stop` closes the ingest
+    connections through the loop."""
 
-    def __init__(self, host: str = "127.0.0.1", port: int = 0) -> None:
+    def __init__(self, host: str = "127.0.0.1", port: int = 0, *, control: bool = False) -> None:
         self._host = host
         self._port = port
+        self._control = control
+        self._control_state: str | None = RunState.RUNNING.value if control else None
+        self._live: set[Any] = set()  # open /ingest handlers (IOLoop thread only)
+        self._listeners: set[Any] = set()  # those whose monitor said hello; mirrored under _lock
         self._thread: threading.Thread | None = None
         self._loop: Any = None
         self._http: Any = None
@@ -65,10 +77,19 @@ class DashboardServer:
     def stop(self) -> None:
         loop = self._loop
         if loop is not None:
+            # the close frames leave inside this callback, so a monitor sees them and reconnects
+            loop.add_callback(self._close_ingest)
             loop.add_callback(loop.stop)
         if self._thread is not None:
             self._thread.join(timeout=10)
+        self._live.clear()
+        with self._lock:
+            self._listeners.clear()
         self._started = False
+
+    def _close_ingest(self) -> None:
+        for conn in list(self._live):
+            conn.close()
 
     @property
     def url(self) -> str:
@@ -110,8 +131,16 @@ class DashboardServer:
                 def check_origin(self, origin: str) -> bool:
                     return True
 
+                def open(self, *args: str, **kwargs: str) -> None:
+                    owner._live.add(self)
+
+                def on_close(self) -> None:
+                    owner._live.discard(self)
+                    with owner._lock:
+                        owner._listeners.discard(self)
+
                 def on_message(self, message: str | bytes) -> None:
-                    owner._ingest(message if isinstance(message, str) else message.decode("utf-8"))
+                    owner._ingest(message if isinstance(message, str) else message.decode("utf-8"), self)
 
             class _Index(RequestHandler):  # type: ignore[misc]  # tornado base is untyped (Any)
                 def get(self) -> None:
@@ -130,16 +159,34 @@ class DashboardServer:
                     self.set_header("Cache-Control", "no-store")
                     self.finish(owner.progress_json())
 
-            app = Application(
-                [
-                    (r"/websocket", PerspectiveTornadoHandler, {"perspective_server": server}),
-                    (r"/ingest", _Ingest),
-                    (r"/api/flamegraph.json", _Flame),
-                    (r"/api/progress.json", _Progress),
-                    (r"/static/(.*)", StaticFileHandler, {"path": str(_STATIC)}),
-                    (r"/", _Index),
-                ]
-            )
+            class _Control(RequestHandler):  # type: ignore[misc]  # POST {"cmd": ...} -> the listening monitors
+                def post(self) -> None:
+                    # a cross-site form cannot send this type without a preflight nobody answers
+                    if (
+                        self.request.headers.get("Content-Type", "").partition(";")[0].strip()
+                        != "application/json"
+                    ):
+                        self.send_error(415)
+                        return
+                    try:
+                        cmd = json.loads(self.request.body)["cmd"]
+                        state = _wire.CONTROL_STATES[cmd]
+                    except (ValueError, LookupError, TypeError):
+                        self.send_error(400)
+                        return
+                    self.finish({"cmd": cmd, "delivered": owner._send_control(cmd, state)})
+
+            routes: list[Any] = [
+                (r"/websocket", PerspectiveTornadoHandler, {"perspective_server": server}),
+                (r"/ingest", _Ingest),
+                (r"/api/flamegraph.json", _Flame),
+                (r"/api/progress.json", _Progress),
+                (r"/static/(.*)", StaticFileHandler, {"path": str(_STATIC)}),
+                (r"/", _Index),
+            ]
+            if self._control:
+                routes.append((r"/api/control", _Control))
+            app = Application(routes)
             socks = bind_sockets(self._port, address=self._host)
             self._port = socks[0].getsockname()[1]
             self._http = HTTPServer(app)
@@ -153,13 +200,16 @@ class DashboardServer:
 
     # ---- ingest (runs on the IOLoop thread) -----------------------------
 
-    def _ingest(self, message: str) -> None:
+    def _ingest(self, message: str, conn: Any = None) -> None:
         try:
             msg = json.loads(message)
         except Exception:
             return
         kind = msg.get("type")
-        if kind == "task":
+        if kind == "hello":
+            with self._lock:
+                self._listeners.add(conn)
+        elif kind == "task":
             self._ingest_task(msg)
         elif kind == "combine":
             with self._lock:
@@ -232,6 +282,21 @@ class DashboardServer:
             _sampler.merge_into(self._profile_tree, tree)
             self._profile_samples += int(tree.get("count", 0))
 
+    def _send_control(self, cmd: str, state: str) -> int:
+        """Write ``cmd`` to every listening monitor (IOLoop thread); return how many took it."""
+        from tornado.websocket import WebSocketClosedError  # noqa: PLC0415
+
+        text = json.dumps(_wire.control_message(cmd))
+        with self._lock:
+            self._control_state = state
+            listeners = list(self._listeners)
+        delivered = 0
+        for conn in listeners:
+            with contextlib.suppress(WebSocketClosedError):  # closed between hello and now
+                conn.write_message(text)
+                delivered += 1
+        return delivered
+
     def _push_stats_table(self) -> None:
         with self._lock:
             row = {"metric": "run", **self._stats}
@@ -266,7 +331,8 @@ class DashboardServer:
                     {k: wd[k] for k in ("worker", "started", "finished", "errored", "inflight")}
                     | {"tasks": tasks}
                 )
-        return {"total": overall["submitted"], "overall": overall, "workers": workers}
+            control = self._control_state
+        return {"total": overall["submitted"], "overall": overall, "workers": workers, "control": control}
 
     def progress_json(self) -> bytes:
         return json.dumps(self.progress()).encode("utf-8")
@@ -278,4 +344,6 @@ class DashboardServer:
                 "last_error": self._last_error,
                 "profile_samples": self._profile_samples,
                 "url": self.url,
+                "control": self._control_state,
+                "control_listeners": len(self._listeners),
             }

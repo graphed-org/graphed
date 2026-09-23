@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from graphed.core.execution import TaskEvent
+from graphed.core.execution import RunState, TaskEvent
 
 # Perspective table schemas (column -> perspective type). ``tasks`` is indexed by ``key`` so a task's
 # row advances SUBMITTED -> STARTED -> FINISHED/ERRORED in place; ``stats`` is a single indexed row
@@ -35,6 +35,13 @@ STATS_SCHEMA: dict[str, str] = {
 
 STATS_KEYS = ("submitted", "started", "finished", "errored", "inflight", "combines")
 
+# Run-control commands and the state each requests (the dashboard's ``control`` field words).
+CONTROL_STATES: dict[str, str] = {
+    "pause": RunState.PAUSED.value,
+    "resume": RunState.RUNNING.value,
+    "cancel": RunState.CANCELLED.value,
+}
+
 
 def task_message(event: TaskEvent) -> dict[str, Any]:
     return {
@@ -55,6 +62,15 @@ def combine_message(leaves_done: int) -> dict[str, Any]:
 
 def profile_message(worker: str, tree_b64: str) -> dict[str, Any]:
     return {"type": "profile", "worker": worker, "tree_b64": tree_b64}
+
+
+def hello_message() -> dict[str, Any]:
+    """A control monitor's first message on every connection: it asks to be sent commands."""
+    return {"type": "hello", "control": True}
+
+
+def control_message(cmd: str) -> dict[str, Any]:
+    return {"type": "control", "cmd": cmd}
 
 
 def task_row(message: dict[str, Any]) -> dict[str, Any]:
