@@ -208,7 +208,7 @@ class Store:
 
     @staticmethod
     def _append(path: Path, record: Mapping[str, object]) -> None:
-        with open(path, "a", encoding="utf-8") as f:
+        with open(path, "a", encoding="utf-8", newline="\n") as f:
             f.write(_record_line(record))
             f.flush()
             os.fsync(f.fileno())
