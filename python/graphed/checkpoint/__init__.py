@@ -16,9 +16,10 @@ from .runner import (
     run_resumable,
     run_shuffle_resumable,
 )
-from .store import JournalEntry, Store
+from .store import CheckpointStore, JournalEntry, Store
 
 __all__ = [
+    "CheckpointStore",
     "Codec",
     "JournalEntry",
     "NumpyCodec",

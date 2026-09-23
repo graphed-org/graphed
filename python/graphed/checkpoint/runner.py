@@ -28,6 +28,7 @@ from graphed.core import DurablePlan, DurablePlanV2, Partition
 from .codec import Codec, PickleCodec
 from .errors import dead_letter_descriptor
 from .retry import RetryPolicy
+from .store import CheckpointStore
 
 
 @dataclass
@@ -57,7 +58,7 @@ class _SimulatedInterrupt(BaseException):
 
 def run_resumable(
     plan: DurablePlan,
-    store: Any,
+    store: CheckpointStore,
     *,
     resources: Any = None,
     retry: RetryPolicy | None = None,
@@ -109,8 +110,8 @@ def run_resumable(
                 break
             continue
 
-        blob = store.put(codec.encode(value))
-        store.record_done(tid, _partition_tag(part), blob)
+        digest = store.put(codec.encode(value))
+        store.record_done(tid, _partition_tag(part), digest)
         partials.append((idx, value))
         report.executed += 1
         committed += 1
@@ -174,7 +175,7 @@ class ShuffleResumeResult:
 
 def run_shuffle_resumable(
     plan: DurablePlanV2,
-    store: Any,
+    store: CheckpointStore,
     *,
     resources: Any = None,
     _kill_after: int | None = None,

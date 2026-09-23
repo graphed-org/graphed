@@ -22,9 +22,11 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import uuid
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol, runtime_checkable
 
 
 @dataclass(frozen=True)
@@ -39,6 +41,36 @@ class JournalEntry:
     blob: str  # content hash of the stored output
     stage: str = ""
     deps: tuple[str, ...] = ()
+
+
+@runtime_checkable
+class CheckpointStore(Protocol):
+    """The store the resumable runners take: content-addressed blobs, a replayable journal of
+    completed tasks, and a dead-letter set.
+
+    Contract beyond the signatures: ``get`` returns ``None`` for bytes that do not hash to their
+    name (a corrupted result is recomputed, never served), and concurrent ``put`` of identical bytes
+    never fails."""
+
+    def put(self, data: bytes) -> str: ...
+
+    def get(self, digest: str) -> bytes | None: ...
+
+    def record_done(
+        self,
+        task_id: str,
+        partition: str,
+        blob: str,
+        *,
+        stage: str = "",
+        deps: tuple[str, ...] = (),
+    ) -> None: ...
+
+    def completed(self) -> dict[str, JournalEntry]: ...
+
+    def record_dead(self, descriptor: Mapping[str, object]) -> None: ...
+
+    def dead_letters(self) -> list[dict[str, object]]: ...
 
 
 class Store:
@@ -64,20 +96,24 @@ class Store:
         return hashlib.sha256(data).hexdigest()
 
     def put(self, data: bytes) -> str:
-        """Store ``data`` under its content hash, atomically and idempotently. Returns the hash."""
+        """Store ``data`` under its content hash, atomically and idempotently. Returns the hash.
+
+        A present object whose bytes do not verify is rewritten, so a put heals a corrupted blob."""
         digest = self.content_hash(data)
-        dest = self.objects / digest
-        if dest.exists():  # idempotent: identical content is already committed
-            return digest
-        self._atomic_write(dest, data)
+        if self.get(digest) is None:
+            self._atomic_write(digest, data)
         return digest
 
     def has_blob(self, digest: str) -> bool:
         return (self.objects / digest).exists()
 
     def get(self, digest: str) -> bytes | None:
-        path = self.objects / digest
-        return path.read_bytes() if path.exists() else None
+        """The blob named ``digest``, or ``None`` when it is absent or its bytes do not hash to it."""
+        try:
+            data = (self.objects / digest).read_bytes()
+        except FileNotFoundError:
+            return None
+        return data if self.content_hash(data) == digest else None
 
     # ---- append-only manifest / journal ---------------------------------------------------------
     def record_done(
@@ -125,15 +161,25 @@ class Store:
         return list(self._read_lines(self.dead_letter_path))
 
     # ---- internals ------------------------------------------------------------------------------
-    @staticmethod
-    def _atomic_write(dest: Path, data: bytes) -> None:
-        # temp file in the SAME directory so rename is atomic on the same filesystem
-        tmp = dest.with_name(f".{dest.name}.{os.getpid()}.tmp")
-        with open(tmp, "wb") as f:
-            f.write(data)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, dest)  # atomic on POSIX and Windows
+    def _atomic_write(self, digest: str, data: bytes) -> None:
+        # a per-call temp in the SAME directory (rename stays atomic); builtin open keeps the
+        # default file mode, where mkstemp would make every blob 0600
+        dest = self.objects / digest
+        tmp = dest.with_name(f".{digest}.{uuid.uuid4().hex}.tmp")
+        try:
+            with open(tmp, "xb") as f:
+                f.write(data)
+                f.flush()
+                os.fsync(f.fileno())
+            try:
+                os.replace(tmp, dest)
+            except OSError:
+                # Windows refuses to replace a file another writer holds open; that writer's copy
+                # is as good as ours once it verifies
+                if self.get(digest) is None:
+                    raise
+        finally:
+            tmp.unlink(missing_ok=True)
 
     @staticmethod
     def _append(path: Path, record: Mapping[str, object]) -> None:
