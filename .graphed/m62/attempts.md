@@ -61,3 +61,17 @@ instance that listed before the child ran misses the child's records (s3fs listi
 is the plan's listing-cache mutant. The `ls`-presence mutant fails TB9 on s3 (iteration 2 table).
 C2 builds the filesystem with `use_listings_cache=False` over the caller's options.
 Result: `tests/frozen/checkpoint tests/extra/checkpoint` 129 passed, 0 skipped, 0 failed.
+
+## Iteration 4 — gates at the lane tip
+
+- Full suite, `COV=1 ./scripts/run-tests.sh`: rc 0, 2308 passed, 31 skipped (main's baseline
+  2236 / 31; the +72 are m62). Per-file gate rows for `graphed/checkpoint/`: `fsspec_store.py`,
+  `store.py`, `__init__.py`, `codec.py`, `errors.py` 100 %, `runner.py` 98.00 %, `retry.py`
+  93.83 %. The gate's only failures are the four ML-plugin externals the lane venv cannot import
+  (torch/tensorflow/jax/xgboost).
+- Diff coverage from the frozen suite alone (`pytest tests/frozen/checkpoint --cov=graphed
+  --cov-branch`, then `diff-cover --compare-branch=origin/main`): 122 changed lines, 0 missing,
+  100 %. No `tests/extra/**/m62/` was needed.
+- Open on the PR's CI: `Store.put`'s `os.replace` fallback (plan-A D8(c)) is unmeasured on Windows;
+  read TA4 on windows-latest and windows-11-arm first. A `PermissionError` from opening `dest`
+  would be repaired once in `put` (plan-A A.4).
