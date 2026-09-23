@@ -52,3 +52,12 @@ Runner: `scratchpad/mut/run_mutants.py mutants_b.json` (lane `impl/b3-mutants.lo
 | parse error raised | TB12 `[memory]`, `[file]` |
 | `json.dumps` with default separators | TB13 `[memory]`, `[file]` |
 | presence by `ls` | TB9 on s3 (`test_fsspec_store_on_s3.py::test_fresh_store_is_empty`) |
+
+## Iteration 3 — unit C (C2): listings read fresh
+
+C's frozen suite on B's tip (C0's install present, no D7): of the 18 s3 re-runs only TB20
+(`test_fsspec_store_on_s3.py::test_other_process_resumes_from_the_url_alone`) fails — the parent
+instance that listed before the child ran misses the child's records (s3fs listing cache). That
+is the plan's listing-cache mutant. The `ls`-presence mutant fails TB9 on s3 (iteration 2 table).
+C2 builds the filesystem with `use_listings_cache=False` over the caller's options.
+Result: `tests/frozen/checkpoint tests/extra/checkpoint` 129 passed, 0 skipped, 0 failed.

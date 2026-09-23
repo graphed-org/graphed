@@ -45,7 +45,8 @@ class FsspecStore:
             ) from exc
         self.url = url
         self.node = node
-        self.fs, self.root = url_to_fs(url, **storage_options)
+        # a caching backend (s3) would serve a listing taken before another process wrote
+        self.fs, self.root = url_to_fs(url, **{**storage_options, "use_listings_cache": False})
         self.objects = f"{self.root}/objects"
         journal_name = "journal.log" if node is None else f"journal.{node}.log"
         self.journal_path = f"{self.root}/{journal_name}"
