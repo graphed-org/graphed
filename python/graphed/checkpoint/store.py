@@ -23,6 +23,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import time
 import uuid
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
@@ -42,6 +43,9 @@ class JournalEntry:
     blob: str  # content hash of the stored output
     stage: str = ""
     deps: tuple[str, ...] = ()
+
+
+_READ_BACKOFF = (0.01, 0.05, 0.25, 1.0)
 
 
 def _record_line(record: Mapping[str, object]) -> str:
@@ -153,11 +157,21 @@ class Store:
 
     def get(self, digest: str) -> bytes | None:
         """The blob named ``digest``, or ``None`` when it is absent or its bytes do not hash to it."""
-        try:
-            data = (self.objects / digest).read_bytes()
-        except FileNotFoundError:
-            return None
-        return data if self.content_hash(data) == digest else None
+        path = self.objects / digest
+        backoff = iter(_READ_BACKOFF)
+        while True:
+            try:
+                data = path.read_bytes()
+            except FileNotFoundError:
+                return None
+            except PermissionError:
+                # Windows: a blob a concurrent put is replacing cannot be opened until the rename lands
+                delay = next(backoff, None)
+                if delay is None:
+                    raise
+                time.sleep(delay)
+            else:
+                return data if self.content_hash(data) == digest else None
 
     # ---- append-only manifest / journal ---------------------------------------------------------
     def record_done(

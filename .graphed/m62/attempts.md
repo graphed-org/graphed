@@ -105,3 +105,23 @@ Result: `tests/frozen/checkpoint tests/extra/checkpoint` 129 passed, 0 skipped, 
 - r1 N1 ("six calls above") was already closed by 99e5173.
 - Full suite `COV=1 ./scripts/run-tests.sh`: rc 0, no FAILED; `coverage_gate.py` fails only on
   the four ML-plugin externals; `fsspec_store.py` 97.44 % (line 113, branch 112->113).
+
+## Iteration 7 — Windows CI legs after the PR opened (team-lead, 2026-09-23)
+
+- mypy --strict on the win32 typeshed: `get_context("fork")` has no `Process` there → the
+  tests/extra fork test sits under `if sys.platform != "win32":` (96840de).
+- m62 url suites red on every Windows leg: `Store._append` wrote records in text mode, so the
+  local journal carried `\r\n` while the frozen tests pin the local bytes to the remote's `\n`
+  records → the writer opens with `newline="\n"` (da10f01); the reader keeps universal newlines.
+- `test_concurrent_identical_puts_never_fail` red on the windows-11-arm legs only (run
+  35844884311, py3.11/3.12/3.13): a put that loses `os.replace` verifies through `get`, and on
+  Windows the blob a concurrent replace is landing is briefly unopenable (`PermissionError`
+  errno 13, delete pending). `Store.get` now retries a `PermissionError` over `_READ_BACKOFF`
+  (0.01, 0.05, 0.25, 1.0 s) and re-raises after the schedule; `FileNotFoundError` still returns
+  `None` at once. Witnesses: the frozen concurrent-puts test on the Windows legs (the branch is
+  reached only there), plus `tests/extra/checkpoint/m62/test_local_store_transient_reads.py`
+  for the ubuntu coverage job (transient error recovers after 3 reads; persistent error
+  re-raises after len(_READ_BACKOFF)+1 reads; a missing blob never sleeps).
+- Gates: precommit ok; checkpoint frozen+extra with coverage → store.py 100 %, diff-cover vs
+  main 132 lines, 1 missing (fsspec_store.py:113), 99 %; frozen-only diff-cover on this
+  machine 126/132 (the five retry lines have frozen hits on Windows only).
