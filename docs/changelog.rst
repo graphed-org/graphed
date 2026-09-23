@@ -4,6 +4,28 @@ What changed
 Newest release first. Numbers in parentheses are the pull requests on
 `graphed-org/graphed <https://github.com/graphed-org/graphed>`_.
 
+0.0.6 (unreleased)
+------------------
+
+A checkpoint store contract
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``graphed.checkpoint.CheckpointStore`` is the runtime-checkable protocol that
+  ``run_resumable`` and ``run_shuffle_resumable`` take: ``put``, ``get``, ``record_done``,
+  ``completed``, ``record_dead`` and ``dead_letters``. ``Store`` meets it unchanged on disk.
+* ``Store.get`` returns ``None`` for a blob whose bytes do not hash to its name, and the next
+  ``put`` rewrites it, so resume recomputes a corrupted partial instead of failing to decode it.
+* Concurrent ``Store.put`` of the same bytes from threads of one process no longer fails with
+  ``FileNotFoundError`` on a shared temp file.
+* ``graphed.checkpoint.FsspecStore(url, node=None, **storage_options)`` is a checkpoint store at
+  an fsspec URL, so workers on different machines can share one store and a run resumes anywhere
+  given the URL. Results keep ``Store``'s names and bytes, and each journal or dead-letter record
+  is its own object holding ``Store``'s line. It needs the ``[checkpoint]`` extra, which now
+  installs ``fsspec``; ``import graphed.checkpoint`` still does not load it.
+* ``FsspecStore`` reads listings fresh (``use_listings_cache`` is always off) so that on S3 an
+  instance sees records another process wrote after it first listed the store. Its tests run on
+  ``s3://`` against a moto server as well as on ``memory://`` and ``file://``.
+
 0.0.5
 -----
 

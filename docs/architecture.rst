@@ -148,7 +148,7 @@ Everything heavier is an extra.
    * - ``graphed.checkpoint``
      - results filed by what they compute, so a restart redoes only what was in flight; plus
        retry policies and a dead-letter queue
-     - (base)
+     - (base); ``[checkpoint]`` for a store at a URL
    * - ``graphed.preserve``
      - a self-contained bundle that reproduces or is inspected elsewhere, plus plugins for
        torch, TensorFlow, XGBoost, JAX, ONNX, correctionlib and Triton payloads
@@ -158,8 +158,8 @@ A missing extra behaves in one of two ways. The array backends import their arra
 eagerly, so ``import graphed.awkward`` without ``[awkward]`` fails immediately with a clear
 message. ``graphed.debug``, ``graphed.checkpoint`` and ``graphed.preserve`` import fine on the
 base install and pull their heavy dependencies only when a feature reaches for one — the
-dashboard, or a correctionlib/ONNX payload. ``graphed.checkpoint`` needs nothing extra at all;
-its ``[checkpoint]`` marker exists so an old install line keeps working.
+dashboard, a correctionlib/ONNX payload, or a checkpoint store at a URL (fsspec, from
+``[checkpoint]``). The local checkpoint ``Store`` needs nothing extra at all.
 
 ``pip install "graphed[all]"`` pulls every extra including ``[parquet]``, but not the heavy ML
 frameworks — those are ``[ml]``. Import paths from before the packages were combined are mapped

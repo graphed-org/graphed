@@ -34,14 +34,14 @@ dependencies = ["executing>=2.0", "cloudpickle"]
 numpy = ["numpy>=1.24"]
 awkward = ["awkward>=2.6", "numpy>=1.24"]
 parquet = ["pyarrow>=15"]
-checkpoint = []  # cloudpickle is a base dep now; kept as a marker extra for intent/back-compat
+checkpoint = ["fsspec>=2022.11.0"]  # FsspecStore; the local Store needs nothing extra
 dashboard = ["perspective-python==4.5.1", "tornado>=6.2", "websocket-client>=1.6"]
 preserve = ["awkward>=2.6", "numpy>=1.24", "correctionlib>=2.6", "onnx>=1.15", "onnxruntime>=1.17", "cloudpickle"]
 ml = ["torch", "xgboost", "tritonclient[http]", "tensorflow", "jax"]
 all = [
   "numpy>=1.24", "awkward>=2.6", "pyarrow>=15", "cloudpickle",
   "correctionlib>=2.6", "onnx>=1.15", "onnxruntime>=1.17",
-  "perspective-python==4.5.1", "tornado>=6.2", "websocket-client>=1.6",
+  "perspective-python==4.5.1", "tornado>=6.2", "websocket-client>=1.6", "fsspec>=2022.11.0",
 ]
 dev = [
   "pytest", "pytest-cov", "pytest-xdist", "coverage[toml]", "diff_cover", "hypothesis", "mypy", "ruff",
@@ -52,6 +52,12 @@ dev = [
   # neither ships a win_arm64 wheel, so the Windows ARM64 CI job installs the dev extra without them
   "pyarrow>=15; sys_platform != 'win32' or platform_machine != 'ARM64'",
   "perspective-python==4.5.1; sys_platform != 'win32' or platform_machine != 'ARM64'",
+  # FsspecStore's s3 tests run against a local moto server; moto has no win_arm64 resolution
+  # (pyyaml on 3.11), and flask/flask-cors are there only to run moto's server
+  "s3fs",
+  "moto[s3]; sys_platform != 'win32' or platform_machine != 'ARM64'",
+  "flask; sys_platform != 'win32' or platform_machine != 'ARM64'",
+  "flask-cors; sys_platform != 'win32' or platform_machine != 'ARM64'",
 ]
 docs = ["sphinx", "furo", "myst-nb", "graphviz"]
 
@@ -141,7 +147,7 @@ module = [
   "awkward.*", "numpy.*", "onnx.*", "onnxruntime.*", "correctionlib.*", "cloudpickle.*",
   "pyarrow.*", "perspective.*", "tornado.*", "websocket.*", "boost_histogram.*", "hist.*",
   "vector.*", "pandas.*", "keras.*", "tensorflow.*", "torch.*", "xgboost.*", "jax.*",
-  "tritonclient.*", "graphed_histogram.*", "triton_python_backend_utils",
+  "tritonclient.*", "graphed_histogram.*", "triton_python_backend_utils", "fsspec.*",
 ]
 ignore_missing_imports = true
 follow_imports = "skip"

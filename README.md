@@ -111,7 +111,7 @@ Everything under one import path, and what each part does for you:
 | `graphed.awkward` | ragged backend: `gak` functions, corrections/ONNX calls | `[awkward]` (+ `[parquet]` for I/O) |
 | `graphed.numpy` | deferred numpy for rectilinear data | `[numpy]` |
 | `graphed.debug` | errors mapped back to your source line; the live dashboard | (base); `[dashboard]` for the live view |
-| `graphed.checkpoint` | cache results by content; restart a crashed run where it left off | (base) |
+| `graphed.checkpoint` | cache results by content; restart a crashed run where it left off | (base); `[checkpoint]` for a store at a URL |
 | `graphed.preserve` | a self-contained bundle that reproduces your histograms elsewhere | (base); `[preserve]` for correctionlib/ONNX payloads |
 
 ## Next
