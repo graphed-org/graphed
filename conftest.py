@@ -22,3 +22,18 @@ def pytest_configure(config: pytest.Config) -> None:
     roots = [str(config.rootpath / entry) for entry in config.getini("pythonpath")]
     existing = os.environ.get("PYTHONPATH")
     os.environ["PYTHONPATH"] = os.pathsep.join([*roots, *([existing] if existing else [])])
+
+
+_skipped_collections: list[str] = []
+
+
+def pytest_collectreport(report: pytest.CollectReport) -> None:
+    if report.skipped:
+        _skipped_collections.append(report.nodeid)
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int | pytest.ExitCode) -> None:
+    # A subtree whose every module importorskip'd (pyarrow has no win_arm64 wheel) is not "no tests
+    # collected"; an empty or mistyped path, which skips nothing, still exits 5.
+    if exitstatus == pytest.ExitCode.NO_TESTS_COLLECTED and _skipped_collections and not session.testsfailed:
+        session.exitstatus = pytest.ExitCode.OK

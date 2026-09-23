@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import awkward as ak
+import pytest
 from analyses import ADL, record
 from graphed_corpus import make_events
 
@@ -28,6 +29,7 @@ def test_op_form_does_not_touch_data() -> None:
 
 
 def test_from_parquet_reads_only_metadata(tmp_path: Path) -> None:
+    pytest.importorskip("pyarrow")
     path = tmp_path / "events.parquet"
     ak.to_parquet(make_events(n_events=500), str(path))
     s = Session(AwkwardBackend())

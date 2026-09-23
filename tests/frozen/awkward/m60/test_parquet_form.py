@@ -13,8 +13,11 @@ from pathlib import Path
 from typing import Any
 
 import awkward as ak
-import pyarrow.parquet as pq
 import pytest
+
+pytest.importorskip("pyarrow")
+
+import pyarrow.parquet as pq
 from m60_parquet_fixtures import (
     BEHAVIOR,
     FOREIGN_FORM,
