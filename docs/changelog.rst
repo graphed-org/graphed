@@ -22,6 +22,9 @@ A checkpoint store contract
   given the URL. Results keep ``Store``'s names and bytes, and each journal or dead-letter record
   is its own object holding ``Store``'s line. It needs the ``[checkpoint]`` extra, which now
   installs ``fsspec``; ``import graphed.checkpoint`` still does not load it.
+* ``FsspecStore`` reads listings fresh (``use_listings_cache`` is always off) so that on S3 an
+  instance sees records another process wrote after it first listed the store. Its tests run on
+  ``s3://`` against a moto server as well as on ``memory://`` and ``file://``.
 
 0.0.5
 -----

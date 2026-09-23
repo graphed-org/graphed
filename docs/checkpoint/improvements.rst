@@ -12,8 +12,9 @@ Current limitations
   Records written by different store instances replay in the order of the instances' creation
   times, to the resolution of the clock.
 
-- **Only ``memory://`` and ``file://`` URLs are tested.** Any other fsspec scheme is a URL plus
-  storage options, and should work, but no test runs it.
+- **Only ``memory://``, ``file://`` and ``s3://`` URLs are tested**, S3 against a local moto
+  server. Any other fsspec scheme (``root://``, ``https://``, ...) is a URL plus storage options,
+  and should work, but no test runs it.
 
 - **Recompute is sequential.** ``run_resumable`` processes missing partitions one at a time, in
   order. That is what makes the combine order fixed and the resumed answer bit-for-bit, but it

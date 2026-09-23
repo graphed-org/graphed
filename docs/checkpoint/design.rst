@@ -506,6 +506,30 @@ deterministic task never writes.
 A root belongs to one kind of store. ``Store`` and ``FsspecStore("file://...")`` cannot share a
 directory, because a log is a file for one and a prefix for the other.
 
+On S3, install ``s3fs`` and give the store an ``s3://`` URL. The credentials and the endpoint can
+come from the usual AWS environment variables, or from storage options:
+
+.. code-block:: python
+
+    from graphed.checkpoint import FsspecStore
+
+    # AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and, for a non-AWS server, AWS_ENDPOINT_URL
+    # are taken from the environment
+    store = FsspecStore("s3://my-bucket/checkpoints/run-7")
+
+    # or passed explicitly
+    store = FsspecStore(
+        "s3://my-bucket/checkpoints/run-7",
+        key="...",
+        secret="...",
+        client_kwargs={"endpoint_url": "https://s3.example.org"},
+    )
+
+Two things differ from a local directory. Listings are always read fresh, so ``use_listings_cache``
+in the storage options is overridden: a cached listing would hide records that another process
+wrote after it was taken. And the constructor creates the bucket if it does not exist, so a
+mistyped bucket name gives you a new, empty store, and the run recomputes everything.
+
 The M8 plan kept the checkpoint store on the local filesystem and left a distributed store for
 later. That item has been pulled forward: this backend is it.
 
