@@ -125,3 +125,13 @@ dispute is CLOSED, the external arm routes through _dispatch, the carve-out guar
 aggregate._attribute, and the blame-parity anchors are green with the arm dispatched. The
 cycle-1 paragraph's "external arm keeps a comment pointing at the dispute" no longer describes
 the tree — that comment was replaced by the shipped repair.
+
+## always-attribute (owner ruling 2026-09-22)
+`_PartitionReduce` gains `frames` (§8.2(i)'s per-key frames, filled by `aggregate_plan` from
+`compiled.correspondence.frames`); `_attribute` attributes every raw failure at a framed key, with
+the label when the channel has an entry and `variation=""` otherwise; a frameless key still
+re-raises raw. Frozen class amended under the dispute
+`.graphed/m49/disputes/frontend-m49-always-attribute.md` (three members, enumerated by one full
+`scripts/run-tests.sh` run): `debug/m49/test_variation_attribution.py` (two arms re-pinned + a
+frameless-arm witness) and `checkpoint/m49/test_varied_dead_letter.py` (`error_type` is now
+`StageError`). Extra coverage: `tests/extra/frontend/m49/test_external_attribution.py` (+4 tests).

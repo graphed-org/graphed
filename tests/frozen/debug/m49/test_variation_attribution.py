@@ -1,9 +1,10 @@
 """§8.1 and §8.2(ii)/(iii): the worker-side wrap around ``evaluate_ir`` and what it attributes to.
 
-The wrap has TWO arms and both are law: with an entry for the failing key a worker failure becomes a
-``StageError`` carrying that key's label and the user's line; with NO entry it re-raises the original
-exception untouched — not a ``StageError``, and not the ``IndexError`` an unconditional wrap would
-produce out of empty frames.
+The wrap has TWO arms and both are law: at a failing key with a §8.2(i) frame a worker failure
+becomes a ``StageError`` at the user's line — carrying the key's label when the label channel has an
+entry, an empty variation otherwise (owner ruling 2026-09-22: an unvaried program attributes too);
+at a key with NO frame it re-raises the original exception untouched — not a ``StageError``, and not
+the ``IndexError`` an unconditional wrap would produce out of empty frames.
 
 These tests supply their own (β) hook. §5.2a's self-derivation ban is worded over the LABEL
 association (whose only bound producer lives in ``graphed-histogram``); what is asserted here is the
@@ -12,6 +13,8 @@ off the ``CompiledGraph`` ``compile_ir`` built.
 """
 
 from __future__ import annotations
+
+import dataclasses
 
 import m49_analyses as m49
 import pytest
@@ -51,19 +54,34 @@ def test_the_empty_string_is_the_default_and_a_label_reaches_the_summary() -> No
     assert "jes_up" in _error(variation="jes_up").summary()
 
 
-def test_a_worker_failure_with_no_label_channel_reraises_the_original() -> None:
-    _session, _out, _poisoned, plan = m49.plan_for(None)
+def test_a_worker_failure_with_no_label_channel_is_attributed_with_no_variation() -> None:
+    session, _out, poisoned, plan = m49.plan_for(None)
     assert plan.process.variation_labels is None
-    with pytest.raises(m49.PoisonError) as excinfo:
+    with pytest.raises(gd.StageError) as excinfo:
         plan.process(plan.tasks[0].partition, m49.Resources())
-    assert str(excinfo.value) == m49.POISON_MESSAGE
+    err = excinfo.value
+    assert err.variation == ""
+    assert err.cause_type == "PoisonError"
+    assert err.cause_message == m49.POISON_MESSAGE
+    assert err.user_frame.lineno == session.sourcemap()[poisoned.node_id]["lineno"]
 
 
-def test_a_failure_whose_key_has_no_entry_reraises_the_original() -> None:
-    _session, _out, _poisoned, plan = m49.plan_for(m49.hook_skipping_the_failing_key)
+def test_a_failure_whose_key_has_no_entry_is_attributed_with_no_variation() -> None:
+    session, _out, poisoned, plan = m49.plan_for(m49.hook_skipping_the_failing_key)
     assert plan.process.variation_labels, "the payload must still cover the non-failing keys"
-    with pytest.raises(m49.PoisonError) as excinfo:
+    with pytest.raises(gd.StageError) as excinfo:
         plan.process(plan.tasks[0].partition, m49.Resources())
+    err = excinfo.value
+    assert err.variation == ""
+    assert err.cause_message == m49.POISON_MESSAGE
+    assert err.user_frame.lineno == session.sourcemap()[poisoned.node_id]["lineno"]
+
+
+def test_a_failure_at_a_key_with_no_frame_reraises_the_original() -> None:
+    _session, _out, _poisoned, plan = m49.plan_for(None)
+    frameless = dataclasses.replace(plan.process, frames=())
+    with pytest.raises(m49.PoisonError) as excinfo:
+        frameless(plan.tasks[0].partition, m49.Resources())
     assert str(excinfo.value) == m49.POISON_MESSAGE
 
 

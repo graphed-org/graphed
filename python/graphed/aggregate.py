@@ -24,6 +24,7 @@ from .array import Array
 from .errors import GraphedError
 from .execute import (
     CompiledGraph,
+    Frame,
     Key,
     OnFailure,
     compile_ir,
@@ -67,6 +68,9 @@ class _PartitionReduce(Generic[V]):
     #: §8.2(i): the shipped closure's variation-label channel — declared here at m48 and fed by
     #: `aggregate_plan(on_compiled=...)`'s return value; m49's lowering populates it.
     variation_labels: tuple[Any, ...] | None = None
+    #: §8.2(i)'s frames re-keyed onto the shipped IR, one per key: what lets EVERY raw worker
+    #: failure point at the user's line, labelled or not.
+    frames: tuple[tuple[Key, Frame], ...] = ()
 
     def __call__(self, partition: Partition, resources: WorkerResources) -> V:
         chunk = self.reader.read_partition(partition, self.columns, resources)
@@ -80,12 +84,13 @@ class _PartitionReduce(Generic[V]):
         return self.reduce(values)
 
     def _attribute(self, partition: str) -> OnFailure | None:
-        """§8.2(ii): the worker-side wrap. A RAW failure at a key the label channel has an ENTRY for
-        becomes a `StageError` carrying that key's label and the user's line; a key with no entry —
-        and a closure with no channel at all — re-raises the original untouched, since `StageError`
-        needs frames at construction and there are none to build one from."""
+        """§8.2(ii): the worker-side wrap. A RAW failure at any key with a frame becomes a
+        `StageError` pointing at the user's line, carrying the key's variation label when the label
+        channel has an entry; a key with no frame re-raises the original untouched, since
+        `StageError` needs frames at construction."""
         entries = dict(self.variation_labels or ())
-        if not entries:
+        frames = dict(self.frames)
+        if not entries and not frames:
             return None
         from .debug.errors import SourceFrame, StageError  # noqa: PLC0415  (import cycle)
 
@@ -96,9 +101,13 @@ class _PartitionReduce(Generic[V]):
             if isinstance(exc, GraphedError):
                 return None
             entry = entries.get(key)
-            if entry is None:
-                return None
-            labels, frame = entry
+            if entry is not None:
+                labels, frame = entry
+            else:
+                frame = frames.get(key)
+                if frame is None:
+                    return None
+                labels = ()
             return StageError(
                 op=op,
                 frames=(SourceFrame(*frame),),
@@ -189,6 +198,7 @@ def aggregate_plan(
         externals=tuple(wired.items()),
         reduce=reduce,
         variation_labels=None if on_compiled is None else on_compiled(compiled),
+        frames=compiled.correspondence.frames,
     )
     if partitions is None:
         partitions = data.partitions(steps_per_file)
