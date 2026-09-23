@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import multiprocessing
+import time
 from pathlib import Path
 
 import pytest
@@ -25,12 +26,17 @@ def test_forked_children_do_not_overwrite_records(tmp_path: Path, method: str) -
     store = FsspecStore(url)
     store.record_dead({"task_id": "parent-0", "error_type": "E"})
     ctx = multiprocessing.get_context("fork")
-    procs = [ctx.Process(target=_child, args=(store, w)) for w in range(4)]
+    # a child deadlocked by forking a threaded parent must fail the test, not hang it
+    procs = [ctx.Process(target=_child, args=(store, w), daemon=True) for w in range(4)]
     for p in procs:
         p.start()
+    deadline = time.monotonic() + 30
     for p in procs:
-        p.join()
-    assert [p.exitcode for p in procs] == [0, 0, 0, 0]
+        p.join(max(0.0, deadline - time.monotonic()))
+    codes = [p.exitcode for p in procs]
+    for p in procs:
+        p.kill()
+    assert codes == [0, 0, 0, 0]
     store.record_dead({"task_id": "parent-1", "error_type": "E"})
 
     fresh = FsspecStore(url)
