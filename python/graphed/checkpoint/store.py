@@ -1,6 +1,7 @@
 """The content-addressed checkpoint Store (plan M8).
 
-A local-filesystem store (the MVP guardrail: **no distributed store**) with three durable parts:
+A local-filesystem store with three durable parts (:mod:`graphed.checkpoint.fsspec_store` keeps the
+same parts at a URL):
 
 - **objects/** — content-addressed blobs. ``put`` writes a blob named by its SHA-256, *atomically*
   (write to a temp file in the same directory, ``fsync``, then ``rename``), so an interrupted write

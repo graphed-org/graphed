@@ -17,6 +17,11 @@ A checkpoint store contract
   ``put`` rewrites it, so resume recomputes a corrupted partial instead of failing to decode it.
 * Concurrent ``Store.put`` of the same bytes from threads of one process no longer fails with
   ``FileNotFoundError`` on a shared temp file.
+* ``graphed.checkpoint.FsspecStore(url, node=None, **storage_options)`` is a checkpoint store at
+  an fsspec URL, so workers on different machines can share one store and a run resumes anywhere
+  given the URL. Results keep ``Store``'s names and bytes, and each journal or dead-letter record
+  is its own object holding ``Store``'s line. It needs the ``[checkpoint]`` extra, which now
+  installs ``fsspec``; ``import graphed.checkpoint`` still does not load it.
 
 0.0.5
 -----

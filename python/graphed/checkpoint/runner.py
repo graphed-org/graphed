@@ -13,7 +13,8 @@ Correctness model (why resume is safe):
 - A failed partition is recovered by the ``retry`` policy or harvested into the Store's dead-letter
   set with a reproducible descriptor; an **error budget** is a stopping condition.
 
-This is single-machine and local-filesystem only (the M8 guardrail).
+The runner itself is single-machine; the store it takes may be local (``Store``) or at a URL
+(``FsspecStore``).
 """
 
 from __future__ import annotations

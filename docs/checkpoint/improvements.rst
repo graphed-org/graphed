@@ -7,9 +7,13 @@ version of each, with the reasoning.
 Current limitations
 -------------------
 
-- **The store is a local directory.** ``Store`` writes to a filesystem path; there is no
-  object-store or xrootd backend. Use a shared filesystem every worker can see, or give each node
-  its own journal under one root with ``Store(root, node="A")`` — reading replays them all.
+- **A store at a URL keeps one object per record.** ``FsspecStore`` never compacts its journal,
+  so a store that has recorded many tasks takes one listing plus one read per record to resume.
+  Records written by different store instances replay in the order of the instances' creation
+  times, to the resolution of the clock.
+
+- **Only ``memory://`` and ``file://`` URLs are tested.** Any other fsspec scheme is a URL plus
+  storage options, and should work, but no test runs it.
 
 - **Recompute is sequential.** ``run_resumable`` processes missing partitions one at a time, in
   order. That is what makes the combine order fixed and the resumed answer bit-for-bit, but it
@@ -21,8 +25,8 @@ Current limitations
   once the last one is in. For a very wide fan-in that is a lot of memory; partial accumulators
   with backpressure would fix it.
 
-- **Nothing prunes the store.** Results accumulate under the store root. Delete the directory when
-  a set of results is stale.
+- **Nothing prunes the store.** Results and records accumulate under the store root. Delete the
+  directory (or the URL's prefix) when a set of results is stale.
 
 - **Results are stored by convention, not self-description.** A result becomes bytes through a
   ``Codec`` — ``numpy.save`` for arrays, pinned-protocol pickle otherwise — and the store does not
