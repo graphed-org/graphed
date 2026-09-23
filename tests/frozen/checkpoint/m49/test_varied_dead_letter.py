@@ -81,5 +81,9 @@ def test_retry_reruns_the_whole_composite_not_the_failing_universe(tmp_path) -> 
 def test_the_descriptor_keeps_its_fixed_key_list_and_gains_no_variation_key(tmp_path) -> None:
     _dp, _tags, res = _run(Store(tmp_path), poison=True)
     (descriptor,) = res.report.dead_letters
-    assert set(descriptor) == DESCRIPTOR_KEYS
-    assert descriptor["error_type"] == "ValueError"
+    # §8.2(ii): the poison is attributed, so M8's `stage_error` sub-descriptor rides along; the
+    # variation is never a key of its own
+    assert set(descriptor) == DESCRIPTOR_KEYS | {"stage_error"}
+    assert "variation" not in descriptor
+    assert descriptor["error_type"] == "StageError"
+    assert descriptor["stage_error"]["cause_type"] == "ValueError"
