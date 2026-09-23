@@ -11,6 +11,7 @@ dropping it silently corrupts left/outer on recombine/spill (ADV-r6.3).
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from graphed.numpy import NumpyBackend
 
@@ -70,6 +71,7 @@ def test_outer_join_missing_field_reads_null_on_each_side() -> None:
 def test_validity_survives_wire_roundtrip() -> None:
     # E4: to_wire/from_wire carry the option block via Arrow native validity. The .npy path (M39) would
     # silently drop the mask on save — so a lost bit here is the discriminating failure.
+    pytest.importorskip("pyarrow")
     be = NumpyBackend()
     block = _rec([10, 20, 30], v=[0, 1, 2])
     opt = be.take(block, np.array([1, -1, 2]))  # row 1 is null

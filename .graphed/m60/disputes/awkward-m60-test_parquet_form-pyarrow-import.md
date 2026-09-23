@@ -1,7 +1,18 @@
-# Test Dispute — `awkward/m60/test_parquet_form.py` + `m60_parquet_fixtures.py` import pyarrow unconditionally (uncollectable on Windows ARM64)
+# Test Dispute — frozen tests that need pyarrow have no guard (uncollectable / unrunnable on Windows ARM64)
 
 **Filed by:** team-lead, 2026-09-22, while adding the `windows-11-arm` row to the §A.5 test matrix.
-**Status:** OPEN — awaiting the owner's ruling.
+**Status:** RESOLVED — owner ruled (2026-09-22): "The windows arm64 tests don't need additional testing for things
+that require wheel builds … we can just skip them on ARM64" (graphed's own wheels excepted). Correction applied by
+team-lead under that authorization. The class, enumerated by the first `windows-11-arm` CI run of graphed#46
+(every subtree ran; three members):
+
+| member | failure on win_arm64 | correction |
+|---|---|---|
+| `awkward/m60/test_parquet_form.py` (module) | collection error, `import pyarrow.parquet` | module-level `pytest.importorskip("pyarrow")` ahead of the pyarrow + fixtures imports (the fixtures module is only imported from there) |
+| `awkward/m3/test_metadata_only.py::test_from_parquet_reads_only_metadata` | `ak.to_parquet` → ImportError | `pytest.importorskip("pyarrow")` as the test's first line (its siblings need no pyarrow) |
+| `numpy/m40/test_validity_nulls.py::test_validity_survives_wire_roundtrip` | serialize over Arrow → ImportError | `pytest.importorskip("pyarrow")` as the test's first line (its siblings need no pyarrow) |
+
+Every assertion is unchanged; wherever pyarrow installs the tests run exactly as before.
 **Severity:** portability defect (the tests are correct everywhere pyarrow installs; they cannot be *collected* where it does not).
 
 ## The tests
