@@ -23,7 +23,7 @@ from collections import OrderedDict
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Generic, Protocol, TypeVar, runtime_checkable
+from typing import Generic, Protocol, TypeVar, cast, runtime_checkable
 
 R = TypeVar("R")  # a partial result (e.g. a histogram array)
 Block = TypeVar("Block")  # a backend-native partition of rows (opaque to the engine)
@@ -342,7 +342,9 @@ class TaskEvent:
     back to the driver. ``error`` is a pre-rendered summary string, never an exception object;
     ``partition`` is a human label. Per task the contract is exactly one ``SUBMITTED``, then one
     ``STARTED``, then exactly one of ``FINISHED`` | ``ERRORED`` — except that a task a
-    :class:`RunControl` cancel kept from starting ends at its ``SUBMITTED``."""
+    :class:`RunControl` cancel kept from starting ends at its ``SUBMITTED``. For a monitor that opts
+    into lean events (:func:`lean_events`) the sequence is ``SUBMITTED``, then ``FINISHED`` |
+    ``ERRORED`` with an empty ``partition``: only the driver's ``SUBMITTED`` carries the label."""
 
     phase: TaskPhase
     key: int
@@ -442,8 +444,22 @@ def emit_task(monitor: Monitor | None, event: TaskEvent) -> None:
         monitor.on_task(event)
 
 
+def lean_events(monitor: Monitor | None) -> bool:
+    """True when ``monitor`` opts into lean events by carrying ``lean_events = True`` (exactly)."""
+    return getattr(monitor, "lean_events", False) is True
+
+
+def worker_monitor_factory(monitor: Monitor | None) -> Callable[[], Monitor] | None:
+    """The picklable zero-arg factory a monitor offers for per-worker push, or ``None`` when the
+    monitor defines no ``worker_monitor_factory`` (the ``Monitor`` protocol stays four methods)."""
+    method = getattr(monitor, "worker_monitor_factory", None)
+    return cast("Callable[[], Monitor] | None", method()) if method is not None else None
+
+
 def partition_label(partition: Partition) -> str:
-    """A short human label for a partition (dashboard display only)."""
+    """A short human label for a partition (dashboard display only); a blind one names its step."""
+    if partition.blind_step is not None:
+        return f"{partition.uri}:{partition.tree}:{partition.blind_step}/{partition.blind_n_steps}"
     return f"{partition.uri}:{partition.tree}:{partition.entry_start}-{partition.entry_stop}"
 
 
@@ -507,6 +523,7 @@ class SequentialRunner:
         resources = LocalResources()
         monitor = self.monitor
         control = self.control
+        lean = lean_events(monitor)
         try:
             value = plan.empty()
             n = 0
@@ -514,22 +531,25 @@ class SequentialRunner:
             if control is not None and control.state is RunState.CANCELLED:
                 return ExecResult(value=value, n_partitions=0, n_combines=0, stopped=StopReason.CANCELLED)
             ordered = sorted(plan.tasks, key=lambda t: t.key)
-            for task in ordered:
-                emit_task(monitor, self._event(TaskPhase.SUBMITTED, task))
+            if monitor is not None:
+                for task in ordered:
+                    emit_task(monitor, self._event(TaskPhase.SUBMITTED, task))
             for task in ordered:
                 if control is not None and control.wait() is RunState.CANCELLED:
                     stopped = StopReason.CANCELLED
                     break
-                emit_task(monitor, self._event(TaskPhase.STARTED, task))
+                if monitor is not None and not lean:
+                    emit_task(monitor, self._event(TaskPhase.STARTED, task))
                 try:
                     partial = plan.process(task.partition, resources)
                 except Exception as exc:
-                    emit_task(
-                        monitor, self._event(TaskPhase.ERRORED, task, error=f"{type(exc).__name__}: {exc}")
-                    )
+                    if monitor is not None:
+                        error = f"{type(exc).__name__}: {exc}"
+                        emit_task(monitor, self._event(TaskPhase.ERRORED, task, error=error, lean=lean))
                     raise
                 value = plan.combine(value, partial)
-                emit_task(monitor, self._event(TaskPhase.FINISHED, task))
+                if monitor is not None:
+                    emit_task(monitor, self._event(TaskPhase.FINISHED, task, lean=lean))
                 n += 1
             return ExecResult(value=value, n_partitions=n, n_combines=max(0, n - 1), stopped=stopped)
         finally:
@@ -538,13 +558,13 @@ class SequentialRunner:
                 control.reset()  # a cancel ends this run only, whether or not a check saw it
 
     @staticmethod
-    def _event(phase: TaskPhase, task: Task, *, error: str | None = None) -> TaskEvent:
+    def _event(phase: TaskPhase, task: Task, *, error: str | None = None, lean: bool = False) -> TaskEvent:
         return TaskEvent(
             phase=phase,
             key=task.key,
             worker="seq",
             t=time.perf_counter(),
-            partition=partition_label(task.partition),
+            partition="" if lean else partition_label(task.partition),
             n_entries=task.partition.n_entries,
             error=error,
         )

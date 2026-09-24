@@ -22,10 +22,12 @@ it cannot retry a failed task or resubmit a run. The live view is in memory only
 into a preservation bundle or replayable after the process exits, so take a screenshot or keep
 ``dash.snapshot()`` if you want the numbers afterwards.
 
-**Worker events reach a remote dashboard through the driver.** In a process pool, workers forward
-their events to the driver process, which relays them to the server; a worker does not open its
-own connection. For a run whose driver is behind a firewall from your browser, put the
-``DashboardServer`` where the browser is and point the driver's ``NetworkMonitor`` at it.
+**Lean dashboard figures are estimates.** With ``NetworkMonitor(lean=True)`` the server derives
+start times and in-flight counts from terminal events: durations are upper bounds only for worker
+names that run one task at a time, in-flight can read low during the first wave or high on a reused
+dashboard, and a rerun can leave a task that a cancelled or failed run left at ``SUBMITTED`` with a
+``submitted`` row. Leave ``lean`` off when
+you need the exact figures.
 
 **Graph pictures need your own renderer.** ``visualize`` emits Mermaid or Graphviz source text;
 turning it into a PNG or an SVG is your toolchain's job (``mmdc``, the Mermaid live editor,

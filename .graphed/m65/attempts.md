@@ -34,3 +34,39 @@ sends a late hello). N1: `_connect` closes the connection when the control hello
 the m37 `FakeConn` models `connected`. L2: the docs' "every runner" is scoped to runners that take a
 `control`. New `tests/extra/debug/m65/test_m65a1_control_hello.py` fails 2/3 hello cases with the old
 predicate and the failed-hello case with the old `_connect`.
+
+## B (plan-B.md, frozen `freeze-m65b` = `b5a2a71`)
+
+### Iteration 1 — B1 core hooks, B2 dashboard (graphed B frozen 14/14 first run)
+
+B1: `lean_events`/`worker_monitor_factory` helpers; `SequentialRunner` builds no event without a
+monitor and in lean mode emits SUBMITTED plus an unlabelled terminal; a blind partition's label is
+`uri:tree:step/n_steps`. B2: `NetworkMonitor.on_task`/`on_combine`/`on_profile` append to one bounded
+deque (drop-oldest); the sender builds the wire messages every 50 ms and ships one `batch` frame per
+drain, dropping a batch on a failed connect or send; the hello goes out with a control or `lean`.
+`per_worker=True` returns `partial(_worker_monitor, url, lean)`: one monitor per process and
+`(url, lean)` under a module lock, exit flush bounded by `_WORKER_EXIT_S` through `atexit.register`.
+The server ingests batch and single frames, counts ingest connections, and keeps per-key state: the
+lifecycle (phase classes seen; a repeated class starts a new one), the key-scoped label and open set;
+in lean mode it derives starts and `min(workers seen, open keys)` in-flight, and a late event writes
+only the label. The m37 client extras were rewritten for the deque and batch frames. Test 9's fork
+control under py3.12 fails as the plan says (`impl/b-test9-fork-control.out`).
+
+### Iteration 2 — review r1 repair (H1, N1)
+
+H1: the server wrote one Perspective `update` per ingested item, so a burst of driver SUBMITTED held
+the IOLoop past a fresh worker's bounded exit flush and per-worker push delivered nothing. `_ingest`
+now merges a frame's task rows per key and writes one `update` per column set (an indexed update keeps
+omitted columns, so sets are never padded together); the lock (now an `RLock`) spans the frame so a
+reader waiting on a count sees the rows. New `tests/extra/debug/m65/test_m65b_frame_rows.py` asserts
+three 100-row updates for two frames of 100 and 200 items; it fails on iteration 1's server (one update
+per row) and on a single padded update (labels lost). N1: the core docs' per-worker bullet names peer
+actors and submit backends, a `ThreadBackend`'s included.
+
+### Iteration 3 — review r2 fold (L1, N2)
+
+L1: iteration 2's column-set grouping was unneeded — on perspective-python 4.5.1 a mixed indexed
+update keeps every column a row omits, and "labels lost" was wrong. `_write_rows` now makes one
+`update` per frame; the frame-rows test asserts `[N, 2 * N]` and still fails on iteration 1's server
+(`[1, 1, 1, …]`). N2: the core per-worker bullet no longer claims `ThreadExecutor` peer actors build
+their own monitor.

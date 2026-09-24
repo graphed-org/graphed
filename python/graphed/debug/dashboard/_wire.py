@@ -64,9 +64,15 @@ def profile_message(worker: str, tree_b64: str) -> dict[str, Any]:
     return {"type": "profile", "worker": worker, "tree_b64": tree_b64}
 
 
-def hello_message() -> dict[str, Any]:
-    """A control monitor's first message on every connection: it asks to be sent commands."""
-    return {"type": "hello", "control": True}
+def hello_message(*, control: bool = True, lean: bool = False) -> dict[str, Any]:
+    """A control or lean monitor's first message on every connection: ``control`` asks to be sent
+    commands, ``lean`` says its task stream is lean (the server derives what it leaves out)."""
+    return {"type": "hello", "control": control, "lean": lean}
+
+
+def batch_message(items: list[dict[str, Any]]) -> dict[str, Any]:
+    """One frame carrying several messages, in order."""
+    return {"type": "batch", "items": items}
 
 
 def control_message(cmd: str) -> dict[str, Any]:
