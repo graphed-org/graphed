@@ -15,6 +15,7 @@ import json
 import os
 import pickle
 import platform
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -94,6 +95,57 @@ class Bundle:
         root = Path(root)
         manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
         return cls(root=root, manifest=manifest)
+
+    def run_reports(self) -> list[dict[str, Any]]:
+        """The run reports attached with :func:`attach_run_report`, in attach order."""
+        return [report for _digest, report in _run_report_entries(self.store)]
+
+
+_RUN_REPORT = "run-report"
+
+
+def attach_run_report(bundle: Bundle, report: Mapping[str, Any]) -> str:
+    """Keep a run report (``RunReport.to_json()``) in the bundle's store, outside the manifest and so
+    outside the fingerprint; returns its digest. Attaching the same report twice keeps one."""
+    digest = bundle.store.put(canonical_bytes(report))
+    bundle.store.record_done(f"{_RUN_REPORT}:{digest}", "", digest, stage=_RUN_REPORT)
+    return digest
+
+
+def _run_report_entries(store: Store) -> list[tuple[str, dict[str, Any]]]:
+    return [
+        (e.blob, json.loads(_resolve(store, e.blob, what="run report")))
+        for e in store.completed().values()
+        if e.stage == _RUN_REPORT
+    ]
+
+
+def _render_run_reports(bundle: Bundle) -> list[str]:
+    entries = _run_report_entries(bundle.store)
+    if not entries:
+        return []
+    env_digest = fingerprint(bundle.manifest["environment"])
+    lines = ["  run reports:"]
+    for digest, r in entries:
+        tasks = r["tasks"]
+        states = [t["state"] for t in tasks]
+        env = "same" if r["environment_digest"] == env_digest else "differs"
+        lines.append(
+            f"    {digest[:12]} outcome={r['outcome']} tasks={len(tasks)} "
+            f"finished={states.count('finished')} errored={states.count('errored')} "
+            f"wall={r['wall_s']:.6f}s env={env}"
+        )
+        lines.append(f"      environment_digest={r['environment_digest']}")
+        if r["error"] is not None:
+            # one line whatever the message holds, so no line can read as a graph node ("    n")
+            lines.append("      failed: " + " ".join(r["error"].split()))
+        for t in tasks:
+            duration = "-" if t["duration_s"] is None else f"{t['duration_s']:.6f}"
+            lines.append(
+                f"      task {t['key']} partition={t['partition']} worker={t['worker']} "
+                f"state={t['state']} duration={duration}s"
+            )
+    return lines
 
 
 def _resolve(store: Store, content_hash: str, *, what: str) -> bytes:
@@ -340,4 +392,5 @@ def inspect(bundle: Bundle) -> str:
         lines.append(f"  ⚠ PRESERVATION RISK — opaque (cloudpickled) nodes: {m['opaque_nodes']}")
     else:
         lines.append("  no opaque nodes (every node is durable IR or a content-addressed payload)")
+    lines += _render_run_reports(bundle)
     return "\n".join(lines)
