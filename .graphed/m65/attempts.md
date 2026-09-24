@@ -51,3 +51,14 @@ lifecycle (phase classes seen; a repeated class starts a new one), the key-scope
 in lean mode it derives starts and `min(workers seen, open keys)` in-flight, and a late event writes
 only the label. The m37 client extras were rewritten for the deque and batch frames. Test 9's fork
 control under py3.12 fails as the plan says (`impl/b-test9-fork-control.out`).
+
+### Iteration 2 — review r1 repair (H1, N1)
+
+H1: the server wrote one Perspective `update` per ingested item, so a burst of driver SUBMITTED held
+the IOLoop past a fresh worker's bounded exit flush and per-worker push delivered nothing. `_ingest`
+now merges a frame's task rows per key and writes one `update` per column set (an indexed update keeps
+omitted columns, so sets are never padded together); the lock (now an `RLock`) spans the frame so a
+reader waiting on a count sees the rows. New `tests/extra/debug/m65/test_m65b_frame_rows.py` asserts
+three 100-row updates for two frames of 100 and 200 items; it fails on iteration 1's server (one update
+per row) and on a single padded update (labels lost). N1: the core docs' per-worker bullet names peer
+actors and submit backends, a `ThreadBackend`'s included.
