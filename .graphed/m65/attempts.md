@@ -126,3 +126,16 @@ base 1512.1–1585.0 ns. N1 dropped: the integrity scan refuses removing the `as
 defect needs both `python -O` and a corrupt blob. Gates at `af76e14`: D frozen 11/11; `COV=1
 ./scripts/run-tests.sh` rc 0; per-file gate fails only the 4 ML externals; diff-cover vs `lane/debug-c` 100 %
 (138 lines) full run, 98 % frozen-only (missing: the two new raises, covered by the extra test).
+
+### Iteration 3 — owner rulings on PR #52 (N1 fold, refreeze `freeze-m65d-fixup2`)
+
+Owner (2026-09-24): the `execute.py` raise-site helpers from iteration 2 stand; N1 is fixed by folding the
+explicit raise into the commit that introduced `_decode`. `replaying._decode` now raises
+`FileNotFoundError` naming the blob when `store.get` returns `None`; the fold rebuilt `74ce4ee` on its
+parent (`cherry-pick -n`, edit, gate, `commit -C`) so no commit removes an `assert`, and the later commits
+were rebased on. The raise line has no frozen hit in the suite of record (only D's frozen tests reach
+replay), which put the frozen-only diff-cover at 136/139; the owner resolved it by refreeze: dispute
+`.graphed/m65/disputes/test_m65d_corrupt_capture_blob.md`, `test_m65d_replay_capture_blob.py` (2 tests,
+corrupt input / corrupt output blob), tag `freeze-m65d-fixup2` (`1d86db0`). D frozen 13/13; the two new
+tests fail on the `assert` tree (`ac62f52`, `AssertionError`); D-frozen diff-cover leaves `replaying.py`
+missing only the two `StageError` raises (110, 117), so the frozen-only PR figure is 137/139.
