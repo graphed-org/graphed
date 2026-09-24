@@ -11,7 +11,7 @@ ops and contains no ``stage`` nodes — the auditable form (plan M6/M9).
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from typing import Any
 
 from .errors import PreserveError
@@ -24,7 +24,18 @@ def run_ir(
     external: Callable[[dict[str, Any], list[Any]], Any],
     eval_op: Callable[[str, list[Any], dict[str, Any]], Any],
 ) -> dict[int, Any]:
-    """Evaluate every node in id order; return ``node_id -> value``.
+    """Evaluate every node in id order; return ``node_id -> value``."""
+    return dict(iter_ir(nodes, source=source, external=external, eval_op=eval_op))
+
+
+def iter_ir(
+    nodes: list[dict[str, Any]],
+    *,
+    source: Callable[[dict[str, Any]], Any],
+    external: Callable[[dict[str, Any], list[Any]], Any],
+    eval_op: Callable[[str, list[Any], dict[str, Any]], Any],
+) -> Iterator[tuple[int, Any]]:
+    """Evaluate the nodes in id order, yielding ``(node_id, value)`` after each one.
 
     ``source(node)`` resolves a source node's data; ``eval_op(name, inputs, params)`` runs an
     op/reduction (the backend); ``external(node, inputs)`` runs a payload-backed External node.
@@ -45,4 +56,4 @@ def run_ir(
             raise PreserveError(
                 f"cannot interpret a {kind!r} node; preservation captures the unfused IR (opt_level=0)"
             )
-    return values
+        yield nid, values[nid]

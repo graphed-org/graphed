@@ -65,9 +65,10 @@ in the line. ``graphed.debug`` re-raises a failure that happened inside a fused 
 worker as an exception on your machine that points at your analysis line, and shows task events
 live as they cross back. ``graphed.checkpoint`` remembers partial results as they arrive, so a
 killed run resumes without changing the answer. ``graphed.preserve`` exports a directory someone
-else can reproduce or inspect. They are three things you attach separately. One coupling runs
+else can reproduce or inspect. They are three things you attach separately. Two couplings run
 between them: a run report from ``graphed.debug`` can be kept in a bundle, outside its
-fingerprint.
+fingerprint, and ``graphed.debug.replay`` reads the task inputs and partials an
+``aggregate_plan(store=)`` run wrote into a checkpoint store.
 
 What crosses a process boundary
 -------------------------------

@@ -60,6 +60,8 @@ Debugging a run
 your source frame, and it survives the trip back from a worker process. ``format_traceback``
 renders it with an arrow at your line. ``lower`` gives you the unfused, one-operation-at-a-time
 view of a recording. ``Dashboard`` streams a live run; ``RunRecorder`` keeps a report of one.
+``replay`` re-runs one task of a finished or failed run on your machine, step by step, and diffs it
+against what the run recorded.
 
 .. autosummary::
    :toctree: generated

@@ -10,6 +10,7 @@ from __future__ import annotations
 from .dashboard import Dashboard, DashboardServer, NetworkMonitor
 from .errors import SourceFrame, StageError
 from .lowering import LoweredGraph, LoweredOp, LoweredStage, lower
+from .replaying import Replay, ReplayDiff, Step, replay
 from .report import RunRecorder, RunReport, TaskRecord
 from .runner import run
 from .tracebacks import format_traceback
@@ -22,13 +23,17 @@ __all__ = [
     "LoweredOp",
     "LoweredStage",
     "NetworkMonitor",
+    "Replay",
+    "ReplayDiff",
     "RunRecorder",
     "RunReport",
     "SourceFrame",
     "StageError",
+    "Step",
     "TaskRecord",
     "format_traceback",
     "lower",
+    "replay",
     "run",
     "visualize",
 ]

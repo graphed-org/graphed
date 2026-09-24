@@ -3,15 +3,18 @@ Current limits
 
 What debugging does not do yet, and what to do instead.
 
-**No stepping or time travel.** You cannot pause a run at an operation, inspect it, and step
-forward, and you cannot replay a finished run against captured data. Debugging is static: lower
-the graph, read it, run it, read the error. To narrow down where a value first goes wrong, run
-with ``opt_level=0`` (one operation at a time) and bisect by materializing intermediate results
-yourself.
+**No live breakpoints.** You cannot pause a running task at an operation and inspect it on the
+worker. ``replay`` steps through one task afterwards on your machine, from the input the run
+captured (``aggregate_plan(store=)``) or by re-reading its partition, and only for
+``aggregate_plan`` plans.
 
-**No value capture.** The extra checks at ``opt_level=0`` are structural — they catch an
-operation that produced nothing, not one that produced the wrong number. If you need to see an
-intermediate array, split the analysis and materialize it.
+**Replay needs the recording session.** The unfused graph and your source lines come from the
+``Session`` the analysis was recorded in, so a replay in a fresh interpreter, or from a
+preservation bundle, is not possible; ``reproduce`` re-runs a bundle whole.
+
+**No intermediate values from the run itself.** A capture keeps each task's input and partial,
+not the values in between; ``replay`` recomputes those. The extra checks at ``opt_level=0`` are
+structural: they catch an operation that produced nothing, not one that produced the wrong number.
 
 **Per-operation contracts are coarse.** Beyond "this operation produced something", there are no
 per-operation dtype and shape assertions at ``opt_level=0``. The recorded type and shape of every

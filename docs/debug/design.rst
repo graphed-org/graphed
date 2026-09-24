@@ -558,6 +558,90 @@ raising task reports that task ``errored``; a crashed worker ships nothing. On a
 ``submitted``.
 
 
+Replaying a task
+----------------
+
+After a run, finished or failed, ``replay(plan, key, *outputs)`` re-executes one task of an
+``aggregate_plan`` plan on your machine, one operation at a time at ``opt_level=0``, with the
+exact input that task read. Build the plan with ``store=`` (a directory every worker shares, or
+an fsspec URL) and each task keeps its input chunk and its partial there as it runs; without it,
+replay re-reads the task's partition. ``outputs`` are the Arrays you gave ``aggregate_plan``, in
+the same order: the session they were recorded in supplies the unfused graph and your source
+lines, so replay works while that session is alive.
+
+.. code-block:: python
+
+   import tempfile
+
+   import awkward as ak
+   import numpy as np
+   import graphed.debug as gd
+   from graphed import Session, aggregate_plan
+   from graphed.awkward import AwkwardBackend, from_parquet, gak
+   from graphed.core import SequentialRunner
+
+   root = tempfile.mkdtemp()
+   ak.to_parquet(ak.Array({"x": np.arange(1000.0)}), f"{root}/d.parquet")
+
+
+   def calibrate(x):
+       if float(x[0]) == 500.0:
+           raise ValueError("no calibration for this block")
+       return x * 1.01
+
+
+   s = Session(AwkwardBackend())
+   ev = from_parquet(s, "events", f"{root}/d.parquet")
+   total = gak.sum(ev.x.map(calibrate, name="calibrate"), axis=None)
+
+   plan = aggregate_plan(
+       total,
+       reduce=lambda outs: float(outs[0]),
+       combine=lambda a, b: a + b,
+       empty=lambda: 0.0,
+       steps_per_file=4,
+       store=f"{root}/capture",  # keep each task's input and partial
+   )
+   try:
+       SequentialRunner().run(plan)
+   except gd.StageError as exc:
+       print("run failed:", exc.cause_message)
+
+   r = gd.replay(plan, 2, total)
+   print("input from:", r.input_source)
+   try:
+       for step in r.steps():
+           print(f"  {step.node.op:<8} line {step.node.provenance.lineno}")
+   except gd.StageError as err:
+       print(f"  failed at {err.op} on line {err.user_frame.lineno}: {err.cause_message}")
+
+   d = gd.replay(plan, 1, total).diff()
+   print(d.reference, d.equal, d.replayed)
+
+::
+
+   run failed: no calibration for this block
+   input from: store
+     events   line 21
+     field    line 22
+     failed at external on line 22: no calibration for this block
+   recorded True 94561.25
+
+``steps()`` is lazy: each ``Step`` carries the lowered operation (its op, kind, form and your
+source frame), its value, and the seconds it took, and nothing runs until you ask for the next
+one. A step that fails raises the same ``StageError`` ``gd.run`` would, pointing at your line.
+``value`` is the task's partial, the plan's ``reduce`` over the replayed outputs. ``diff()``
+compares it with what the run recorded (``reference == "recorded"``), or, when the run kept no
+output for that task, with the plan's fused graph run again on the same input
+(``"re-evaluated"``), so a difference between the fused and the one-at-a-time evaluation shows up
+too. The comparison is by value: dicts by key, tuples and lists by position, arrays with
+``numpy.array_equal``, which counts NaN as unequal to itself.
+
+External evaluators, including ``aggregate_plan(externals=)`` overrides, are the plan's own, so
+the replay calls what the run called. A capture root holds one run: see "Keeping each task's
+input for replay" in the checkpoint guide.
+
+
 Sending the events somewhere else
 ---------------------------------
 
