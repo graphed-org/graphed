@@ -70,3 +70,20 @@ update keeps every column a row omits, and "labels lost" was wrong. `_write_rows
 `update` per frame; the frame-rows test asserts `[N, 2 * N]` and still fails on iteration 1's server
 (`[1, 1, 1, …]`). N2: the core per-worker bullet no longer claims `ThreadExecutor` peer actors build
 their own monitor.
+
+## C (plan-C.md, frozen `freeze-m65c` = `56aa79a`)
+
+### Iteration 1 — C1 RunRecorder/RunReport, C2 bundle reports (graphed C frozen 13/13 first run)
+
+C1: `graphed.debug.report` — `RunRecorder(inner=None)` appends `(event, perf_counter())` and then forwards
+(a raising inner monitor cannot cost the record); `report(*, result=, error=, container_digest=)` takes
+the calls since the previous report and folds each key with the phase-class lifecycle rule (latest
+lifecycle's state/worker/duration/error; latest taken `SUBMITTED` label, `""` without one).
+`RunReport.to_json` emits lists only; `from_json` rebuilds `SourceFrame`s and tuples so `StageError.__eq__`
+holds. `error` is `"<Type>: <str(error)>"`, so a `StageError` reads `"StageError: " + summary`, which
+`inspect` renders (C r7 N1 (1)). `complete_events()` in core (+ `.pyi`, docs: three capabilities);
+`capture_environment` public. C2: `attach_run_report` = `Store.put(canonical_bytes(report))` +
+`record_done("run-report:<digest>", "", digest, stage="run-report")`; `Bundle.run_reports()` and the
+`inspect` section read `completed()` entries whose stage is `run-report` (journal replay keeps first
+insertion order, so a re-attach neither duplicates nor reorders). Doc examples in debug and preserve
+`design.rst` executed and their printed output compared; sphinx -W ok.
