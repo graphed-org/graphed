@@ -321,8 +321,8 @@ Attaching it does not change your answer
 
 The monitor only observes. With a dashboard attached — profiling included — the reduced result,
 the number of combines, and the serialized plan are byte-identical to the same run without one.
-It cannot slow your run down either: events go onto a bounded queue drained by a background
-sender, and if that queue fills or the connection drops, events are **dropped** rather than
+It cannot slow your run down either: events go onto a bounded buffer drained by a background
+sender, and if that buffer fills (the oldest go first) or the connection drops, events are **dropped** rather than
 blocking the executor, and a monitor that raises is swallowed rather than killing your job. A
 dashboard is never a reason a job fails. The one exception is a dashboard you build with
 ``control=True`` and then press pause or cancel on: that changes the run, as the next section says.
@@ -436,6 +436,67 @@ its ingest address. This is a recipe — the address and the executor are yours 
    monitor = NetworkMonitor("ws://your-laptop:8888/ingest", profile=True).start()
    result = ProcessPoolExecutor(monitor=monitor).run(plan)
    monitor.close()
+
+Lean events and a connection per worker
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Two opt-in switches on ``NetworkMonitor`` trim what a run pays for being watched.
+
+``lean=True`` asks every worker for one event per task, the ``FINISHED`` or ``ERRORED``, with no
+partition label: the worker never formats one. The driver's ``SUBMITTED`` still carries the label,
+and the server fills in the rest. It counts a start for each terminal event whose task sent no
+``STARTED``, joins each task's label from its ``SUBMITTED`` whichever arrives first, and takes a
+task's start time from the end of the same worker's previous task on the same connection. For a
+worker name that runs one task at a time (every local executor's workers) that start is early, so
+a derived duration is an upper bound: it includes queue, idle and paused time since that worker's
+previous task, which on a reused dashboard can be an earlier run's, and a worker's first task on a
+connection shows zero length. For a name that several task threads share (a multi-threaded dask
+worker's address, a parsl thread pool's ``host:pid``) a derived duration has no bound either way.
+In-flight is the number of submitted tasks with no terminal event yet, capped at the number of
+worker names seen so far. So it counts a name running several tasks at once as one, reads low
+until every running worker has finished a task, and, because the names seen and the lean switch
+last for the server's life, can read high on a reused dashboard whose worker names change from run
+to run. A task that a cancel kept from starting, or that a failure stopped, stays submitted, so
+after such a run in-flight stays above zero. Lean mode derives no per-worker in-flight count.
+
+``per_worker=True`` makes ``monitor.worker_monitor_factory()`` return a picklable factory. An
+executor whose workers are separate processes builds one monitor per worker process from it, so
+each worker sends its task events and profile trees over its own connection instead of through
+the driver; the driver keeps the ``SUBMITTED`` events and the combine counts. Thread workers share
+the driver's monitor. A worker's connection opens on its first event, and at exit a worker waits
+at most half a second for it to drain. That exit flush runs through ``atexit``, which a ``fork``
+child skips before Python 3.13; the executors start their workers with ``spawn``.
+
+.. code-block:: python
+
+   import time
+
+   from graphed.core import Partition, Plan, SequentialRunner, Task
+   from graphed.debug import DashboardServer, NetworkMonitor
+
+   server = DashboardServer().start()
+   monitor = NetworkMonitor(server.ingest_url, lean=True)
+   tasks = [Task(k, Partition(f"f{k}.root", "Events", 0, 10)) for k in range(4)]
+   plan = Plan(process=lambda p, r: p.n_entries, combine=lambda a, b: a + b, empty=lambda: 0, tasks=tasks)
+   print(SequentialRunner(monitor=monitor).run(plan).value)
+   monitor.close()
+   while server.snapshot()["stats"]["finished"] < 4:
+       time.sleep(0.01)
+   stats = server.snapshot()["stats"]
+   print(stats["submitted"], stats["started"], stats["finished"], stats["inflight"])
+   print(NetworkMonitor(server.ingest_url, per_worker=True).worker_monitor_factory() is not None)
+   server.stop()
+
+which prints::
+
+   40
+   4 4 4 0
+   True
+
+A rerun on the same dashboard can show a stale state for a task that a cancelled or failed run
+left at ``SUBMITTED``: if the rerun's terminal event for it lands before the rerun's ``SUBMITTED``
+(worker and driver are separate connections), its row stays at ``submitted``. The server sees no
+run boundary, so it cannot tell this from a late ``SUBMITTED`` of the same run.
 
 
 Sending the events somewhere else

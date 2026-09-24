@@ -30,6 +30,19 @@ from .. import _sampler
 from . import _wire
 
 _STATIC = Path(__file__).parent / "static"
+_SUBMITTED, _STARTED, _TERMINAL = 0, 1, 2  # phase classes, in lifecycle order
+_PHASE_CLASS = {"submitted": _SUBMITTED, "started": _STARTED, "finished": _TERMINAL, "errored": _TERMINAL}
+
+
+class _KeyState:
+    """One task key's ingest state: ``life`` is the set of phase classes its current lifecycle has
+    seen; ``label`` is the ``(partition, n_entries)`` of its latest SUBMITTED, whatever lifecycle."""
+
+    __slots__ = ("label", "life")
+
+    def __init__(self) -> None:
+        self.life: set[int] = set()
+        self.label: tuple[str, int] | None = None
 
 
 class DashboardServer:
@@ -55,6 +68,14 @@ class DashboardServer:
         self._lock = threading.Lock()
         self._stats: dict[str, int] = dict.fromkeys(_wire.STATS_KEYS, 0)
         self._workers: dict[str, dict[str, Any]] = {}  # worker -> per-worker progress (for the bars)
+        # ingest-only state (IOLoop thread): lean derivation and per-key lifecycles
+        self._lean = False  # set once any ingest connection says hello with lean: true
+        self._keys: dict[Any, _KeyState] = {}
+        self._open: set[Any] = set()  # keys from SUBMITTED to their lifecycle's first terminal
+        self._workers_seen: set[str] = set()  # names on STARTED and terminal events
+        self._last_end: dict[tuple[int, str], float] = {}  # (connection, worker) -> previous t_end
+        self._unlabelled: dict[Any, list[dict[str, Any]]] = {}  # key -> records awaiting a label
+        self._n_connections = 0
         self._last_error: dict[str, Any] | None = None
         self._profile_tree: dict[str, Any] = _sampler._new_node()  # merged sampled stacks -> flamegraph
         self._profile_samples = 0
@@ -133,6 +154,9 @@ class DashboardServer:
 
                 def open(self, *args: str, **kwargs: str) -> None:
                     owner._live.add(self)
+                    with owner._lock:
+                        owner._n_connections += 1
+                        self.cid = owner._n_connections
 
                 def on_close(self) -> None:
                     owner._live.discard(self)
@@ -205,73 +229,135 @@ class DashboardServer:
             msg = json.loads(message)
         except Exception:
             return
+        cid = getattr(conn, "cid", 0)
+        for item in msg.get("items", ()) if msg.get("type") == "batch" else (msg,):
+            self._ingest_one(item, conn, cid)
+        self._push_stats_table()
+
+    def _ingest_one(self, msg: dict[str, Any], conn: Any, cid: int) -> None:
         kind = msg.get("type")
-        if kind == "hello" and msg.get("control") is True:
-            with self._lock:
-                self._listeners.add(conn)
+        if kind == "hello":
+            if msg.get("control") is True:
+                with self._lock:
+                    self._listeners.add(conn)
+            if msg.get("lean") is True:
+                self._lean = True
         elif kind == "task":
-            self._ingest_task(msg)
+            self._ingest_task(msg, cid)
         elif kind == "combine":
             with self._lock:
                 self._stats["combines"] += 1
-            self._push_stats_table()
         elif kind == "profile":
             self._ingest_profile(msg)
 
-    def _ingest_task(self, msg: dict[str, Any]) -> None:
-        self._tasks.update([_wire.task_row(msg)])
+    def _ingest_task(self, msg: dict[str, Any], cid: int = 0) -> None:
         phase = msg.get("phase", "")
+        cls = _PHASE_CLASS.get(phase)
+        if cls is None:
+            return
+        key = msg.get("key")
         worker = msg.get("worker") or ""
+        t = msg.get("t", 0.0)
+        ks = self._keys.get(key)
+        if ks is None:
+            ks = self._keys[key] = _KeyState()
+        if cls in ks.life:  # a repeated class is the only sign of a new run or a retry
+            ks.life = set()
+        late = bool(ks.life) and max(ks.life) > cls  # arrived after a later phase of its lifecycle
+        derived = self._lean and cls == _TERMINAL and _STARTED not in ks.life
+        opens = cls == _SUBMITTED and _TERMINAL not in ks.life
+        ks.life.add(cls)
+        if cls == _SUBMITTED:
+            ks.label = (msg.get("partition", ""), msg.get("n_entries", 0))
+
+        # the row is written before any count moves, so a reader waiting on a count sees it
+        # an indexed update keeps the columns it omits: a late event writes only the label, and an
+        # event with an empty label (a lean terminal) writes none
+        row = _wire.task_row(msg)
+        if late:
+            row = {"key": key, "partition": row["partition"], "n_entries": row["n_entries"]}
+        if not row["partition"]:
+            del row["partition"], row["n_entries"]
+        if len(row) > 1:
+            self._tasks.update([row])
+
         with self._lock:
-            if phase in self._stats:
-                self._stats[phase] += 1
-            if phase == "started":
+            self._stats[phase] += 1
+            if derived:
+                self._stats["started"] += 1
+            if opens:
+                self._open.add(key)
+            elif cls == _TERMINAL:
+                self._open.discard(key)
+            if cls != _SUBMITTED and worker:
+                self._workers_seen.add(worker)
+            if self._lean:
+                self._stats["inflight"] = min(len(self._workers_seen), len(self._open))
+            elif cls == _STARTED:
                 self._stats["inflight"] += 1
-            elif phase in ("finished", "errored"):
+            elif cls == _TERMINAL:
                 self._stats["inflight"] = max(0, self._stats["inflight"] - 1)
             if phase == "errored":
                 self._last_error = {
-                    "key": msg.get("key"),
+                    "key": key,
                     "worker": worker,
                     "message": msg.get("error", ""),
                 }
-            # per-worker progress for the bars. SUBMITTED is driver-side (worker=""), so only the
-            # worker-side phases (started/finished/errored) populate a worker row. We keep a per-task
-            # record (keyed by task key) so the UI can render one hoverable cell PER TASK, not just an
-            # aggregate bar — a started task's record is completed in place when it finishes/errors.
-            if worker and phase in ("started", "finished", "errored"):
-                w = self._workers.setdefault(
-                    worker,
-                    {"worker": worker, "started": 0, "finished": 0, "errored": 0, "inflight": 0, "tasks": {}},
-                )
-                w[phase] += 1
-                if phase == "started":
-                    w["inflight"] += 1
-                else:
-                    w["inflight"] = max(0, w["inflight"] - 1)
-                key = msg.get("key")
-                rec = w["tasks"].get(key)
-                if rec is None:  # STARTED normally creates it; tolerate an out-of-order finish/error
-                    rec = {
-                        "key": key,
-                        "partition": "",
-                        "n_entries": 0,
-                        "state": "started",
-                        "t_start": 0.0,
-                        "t_end": None,
-                        "error": "",
-                    }
-                    w["tasks"][key] = rec
-                if phase == "started":
-                    rec["partition"] = msg.get("partition", "")
-                    rec["n_entries"] = msg.get("n_entries", 0)
-                    rec["t_start"] = msg.get("t", 0.0)
-                else:
-                    rec["state"] = phase
-                    rec["t_end"] = msg.get("t", 0.0)
-                    if phase == "errored":
-                        rec["error"] = msg.get("error", "")
-        self._push_stats_table()
+            if cls == _SUBMITTED:
+                for rec in self._unlabelled.pop(key, ()):
+                    rec["partition"], rec["n_entries"] = msg.get("partition", ""), msg.get("n_entries", 0)
+            # per-worker progress for the bars. SUBMITTED is driver-side, so only the worker-side
+            # phases populate a worker row. We keep a per-task record (keyed by task key) so the UI
+            # can render one hoverable cell PER TASK, not just an aggregate bar — a started task's
+            # record is completed in place when it finishes/errors.
+            elif worker:
+                self._ingest_worker(msg, ks, cls, worker, t, cid, derived)
+
+    def _ingest_worker(
+        self, msg: dict[str, Any], ks: _KeyState, cls: int, worker: str, t: float, cid: int, derived: bool
+    ) -> None:
+        w = self._workers.setdefault(
+            worker,
+            {"worker": worker, "started": 0, "finished": 0, "errored": 0, "inflight": 0, "tasks": {}},
+        )
+        phase = msg["phase"]
+        w[phase] += 1
+        if derived:
+            w["started"] += 1
+        if cls == _STARTED:
+            w["inflight"] += 1
+        else:
+            w["inflight"] = max(0, w["inflight"] - 1)
+        key = msg.get("key")
+        rec = w["tasks"].get(key)
+        if rec is None:  # STARTED normally creates it; tolerate an out-of-order or lean finish/error
+            rec = {
+                "key": key,
+                "partition": "",
+                "n_entries": 0,
+                "state": "started",
+                "t_start": 0.0,
+                "t_end": None,
+                "error": "",
+            }
+            w["tasks"][key] = rec
+        if cls == _STARTED and msg.get("partition"):
+            rec["partition"], rec["n_entries"] = msg["partition"], msg.get("n_entries", 0)
+        elif not rec["partition"]:
+            if ks.label is not None:
+                rec["partition"], rec["n_entries"] = ks.label
+            else:
+                self._unlabelled.setdefault(key, []).append(rec)
+        if cls == _STARTED:
+            rec["t_start"] = t
+        else:
+            if derived:  # a lean start: this worker's previous end on this connection, else its own t
+                rec["t_start"] = self._last_end.get((cid, worker), t)
+            rec["state"] = phase
+            rec["t_end"] = t
+            self._last_end[(cid, worker)] = t
+            if phase == "errored":
+                rec["error"] = msg.get("error", "")
 
     def _ingest_profile(self, msg: dict[str, Any]) -> None:
         try:
@@ -346,4 +432,5 @@ class DashboardServer:
                 "url": self.url,
                 "control": self._control_state,
                 "control_listeners": len(self._listeners),
+                "ingest_connections": self._n_connections,
             }
