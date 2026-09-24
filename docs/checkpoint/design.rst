@@ -35,6 +35,15 @@ halfway through appending a line, that line is unparseable and is skipped — a 
 degrades to slightly less recovery, never to a corrupt one. And a journal line whose result file
 is missing (the line won the race, the file lost it) is not honoured either.
 
+Every read checks the name, too. A result whose bytes no longer hash to its file name (a disk
+error, a hand edit) is treated as missing: that one partition is recomputed and the file
+rewritten, rather than handing corrupted bytes to the decoder. Several threads that write the
+same result at once each use their own temp file, so they cannot trip over one another, and a
+writer that loses the final rename to an identical copy counts that copy as its own. None of this
+is specific to ``Store``: the runners take any
+:class:`~graphed.checkpoint.CheckpointStore`: ``put``, ``get``, ``record_done``, ``completed``,
+``record_dead`` and ``dead_letters``, with these same promises.
+
 Values become bytes through a ``Codec``: ``NumpyCodec`` for array results — ``numpy.save``\ 's
 fixed layout, so the same array always hashes the same — and ``PickleCodec``, protocol pinned, for
 everything else.
@@ -414,13 +423,120 @@ It returns a ``ShuffleResumeResult``: the gather blocks' content hashes in desti
 the same ``ResumeReport`` you get from ``run_resumable``.
 
 
+A store at a URL
+----------------
+
+``Store`` needs a directory every process can see. When the workers are on different machines,
+put the store at a URL instead: ``FsspecStore(url, **storage_options)`` runs the same resume and
+dead-letter machinery against any `fsspec <https://filesystem-spec.readthedocs.io>`_ filesystem.
+It needs ``pip install "graphed[checkpoint]"``, and the URL's own fsspec driver (``s3fs`` for
+``s3://``, ``fsspec-xrootd`` for ``root://``). The storage options go straight to fsspec:
+credentials, an endpoint, and so on. The plan and its task ids do not depend on the store, so the
+same plan resumes against any of them.
+
+Here is the kill from `A run that actually dies`_ again, with the store at a ``file://`` URL. The
+process that resumes is given nothing but the plan and the URL:
+
+.. code-block:: python
+
+    import multiprocessing as mp
+    import os
+    from pathlib import Path
+
+    import numpy as np
+
+    from graphed import Session
+    from graphed.checkpoint import FsspecStore, run_resumable
+    from graphed.core import DurablePlan, OpSpec, Partition
+    from graphed.numpy import NumpyBackend, from_record
+
+    s = Session(NumpyBackend())
+    ev = from_record(s, "events", x=np.zeros(1))
+    counts, _edges = np.histogram(ev["x"], bins=4, range=(0, 1))
+
+    plan = DurablePlan(
+        ir=s.serialized_ir(counts),
+        process=OpSpec.from_ref("killdemo:hist_chunk"),
+        combine=OpSpec.from_ref("killdemo:hist_add"),
+        empty=OpSpec.from_ref("killdemo:hist_empty"),
+        partitions=tuple(Partition("toy", "Events", i * 1000, (i + 1) * 1000) for i in range(6)),
+    )
+
+    URL = "file://" + Path("url-checkpoints").resolve().as_posix()
+
+
+    def doomed_run():
+        os.environ["DEMO_KILL"] = "toy"          # kill the worker on the 4th partition
+        run_resumable(plan, FsspecStore(URL))
+
+
+    if __name__ == "__main__":
+        p = mp.get_context("spawn").Process(target=doomed_run)
+        p.start()
+        p.join()
+        print("the run died with exit code", p.exitcode)
+
+        resumed = run_resumable(plan, FsspecStore(URL))
+        print("executed:", resumed.report.executed, " skipped:", resumed.report.skipped)
+        print("result:", resumed.value)
+
+::
+
+    the run died with exit code 137
+    executed: 3  skipped: 3
+    result: [1499 1493 1518 1490]
+
+The layout follows ``Store``'s, with one change. An object store cannot append to an object, so
+each log file becomes a prefix that holds one object per record:
+
+- ``objects/<sha256>`` holds the results, with the same names and bytes as ``Store``.
+- ``journal.log/``, ``journal.<node>.log/`` and ``dead_letter.log/`` each hold one object per
+  record. Each object holds the exact line ``Store`` would have appended. It is named after the
+  writer (the store instance and process that wrote it: a creation time and a random id, minted
+  again in a forked child) and that writer's running count, so two writers never pick the same
+  name.
+
+A result is written as one whole object, and a read checks the bytes against the name, as for
+``Store``. Where a backend can leave a partly written object (a ``file://`` write is not atomic),
+the torn object is never served, and the next write of that result replaces it. Writers of the
+same result write the same bytes to the same name, so they need no locking. Records replay in
+name order. Within one writer that is the order they were written; across writers it follows
+the writers' creation times, and two created within one clock tick replay in either order. The order only matters when one task has two records with different results, which a
+deterministic task never writes.
+
+A root belongs to one kind of store. ``Store`` and ``FsspecStore("file://...")`` cannot share a
+directory, because a log is a file for one and a prefix for the other.
+
+On S3, install ``s3fs`` and give the store an ``s3://`` URL. The credentials and the endpoint can
+come from the usual AWS environment variables, or from storage options:
+
+.. code-block:: python
+
+    from graphed.checkpoint import FsspecStore
+
+    # AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and, for a non-AWS server, AWS_ENDPOINT_URL
+    # are taken from the environment
+    store = FsspecStore("s3://my-bucket/checkpoints/run-7")
+
+    # or passed explicitly
+    store = FsspecStore(
+        "s3://my-bucket/checkpoints/run-7",
+        key="...",
+        secret="...",
+        client_kwargs={"endpoint_url": "https://s3.example.org"},
+    )
+
+Two things differ from a local directory. Listings are always read fresh, so ``use_listings_cache``
+in the storage options is overridden: a cached listing would hide records that another process
+wrote after it was taken. And the constructor creates the bucket if it does not exist, so a
+mistyped bucket name gives you a new, empty store, and the run recomputes everything.
+
+The M8 plan kept the checkpoint store on the local filesystem and left a distributed store for
+later. That item has been pulled forward: this backend is it.
+
+
 Not supported yet
 -----------------
-
-**The store is a local directory.** Results go to a local filesystem path; there is no S3 or xrootd
-backend. Point the store at a shared filesystem your workers can all see, or checkpoint per node —
-a ``Store(root, node="A")`` writes its own journal so several writers under one root never contend
-on the same append, and reading replays all of them.
 
 **Recompute is sequential.** Missing partitions are processed one at a time, in order. Resume
 correctness does not depend on that, but a big recompute takes as long as the work does; for

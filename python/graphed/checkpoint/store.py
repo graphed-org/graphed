@@ -1,6 +1,7 @@
 """The content-addressed checkpoint Store (plan M8).
 
-A local-filesystem store (the MVP guardrail: **no distributed store**) with three durable parts:
+A local-filesystem store with three durable parts (:mod:`graphed.checkpoint.fsspec_store` keeps the
+same parts at a URL):
 
 - **objects/** — content-addressed blobs. ``put`` writes a blob named by its SHA-256, *atomically*
   (write to a temp file in the same directory, ``fsync``, then ``rename``), so an interrupted write
@@ -22,9 +23,12 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from collections.abc import Iterator, Mapping
+import time
+import uuid
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Protocol, runtime_checkable
 
 
 @dataclass(frozen=True)
@@ -39,6 +43,82 @@ class JournalEntry:
     blob: str  # content hash of the stored output
     stage: str = ""
     deps: tuple[str, ...] = ()
+
+
+_READ_BACKOFF = (0.01, 0.05, 0.25, 1.0)
+
+
+def _record_line(record: Mapping[str, object]) -> str:
+    """The one serialization of a journal or dead-letter record, shared by every store."""
+    return json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n"
+
+
+def _parse_record(raw: str | bytes) -> Any:
+    """A parsed record, or ``None`` for a torn one (an interrupted append, or bad UTF-8)."""
+    try:
+        return json.loads(raw)
+    except ValueError:
+        return None
+
+
+def _done_record(
+    task_id: str, partition: str, blob: str, stage: str, deps: tuple[str, ...]
+) -> dict[str, object]:
+    # ``stage``/``deps`` only when set, so a plain single-stage record stays byte-identical to the
+    # V1 journal line (the M8 determinism gate)
+    rec: dict[str, object] = {"task_id": task_id, "partition": partition, "blob": blob}
+    if stage:
+        rec["stage"] = stage
+    if deps:
+        rec["deps"] = list(deps)
+    return rec
+
+
+def _replay(records: Iterable[Any], present: Callable[[str], bool]) -> dict[str, JournalEntry]:
+    """``task_id -> JournalEntry`` from records in write order (the later record wins), honouring
+    only a record whose blob is present (a journal line can outrace its object write across a
+    crash)."""
+    done: dict[str, JournalEntry] = {}
+    for rec in records:
+        blob = rec.get("blob")
+        if isinstance(blob, str) and present(blob):
+            tid = str(rec.get("task_id", ""))
+            raw_deps = rec.get("deps", [])
+            deps = tuple(str(d) for d in raw_deps) if isinstance(raw_deps, list) else ()
+            done[tid] = JournalEntry(
+                tid, str(rec.get("partition", "")), blob, str(rec.get("stage", "")), deps
+            )
+    return done
+
+
+@runtime_checkable
+class CheckpointStore(Protocol):
+    """The store the resumable runners take: content-addressed blobs, a replayable journal of
+    completed tasks, and a dead-letter set.
+
+    Contract beyond the signatures: ``get`` returns ``None`` for bytes that do not hash to their
+    name (a corrupted result is recomputed, never served), and concurrent ``put`` of identical bytes
+    never fails."""
+
+    def put(self, data: bytes) -> str: ...
+
+    def get(self, digest: str) -> bytes | None: ...
+
+    def record_done(
+        self,
+        task_id: str,
+        partition: str,
+        blob: str,
+        *,
+        stage: str = "",
+        deps: tuple[str, ...] = (),
+    ) -> None: ...
+
+    def completed(self) -> dict[str, JournalEntry]: ...
+
+    def record_dead(self, descriptor: Mapping[str, object]) -> None: ...
+
+    def dead_letters(self) -> list[dict[str, object]]: ...
 
 
 class Store:
@@ -64,20 +144,34 @@ class Store:
         return hashlib.sha256(data).hexdigest()
 
     def put(self, data: bytes) -> str:
-        """Store ``data`` under its content hash, atomically and idempotently. Returns the hash."""
+        """Store ``data`` under its content hash, atomically and idempotently. Returns the hash.
+
+        A present object whose bytes do not verify is rewritten, so a put heals a corrupted blob."""
         digest = self.content_hash(data)
-        dest = self.objects / digest
-        if dest.exists():  # idempotent: identical content is already committed
-            return digest
-        self._atomic_write(dest, data)
+        if self.get(digest) is None:
+            self._atomic_write(digest, data)
         return digest
 
     def has_blob(self, digest: str) -> bool:
         return (self.objects / digest).exists()
 
     def get(self, digest: str) -> bytes | None:
+        """The blob named ``digest``, or ``None`` when it is absent or its bytes do not hash to it."""
         path = self.objects / digest
-        return path.read_bytes() if path.exists() else None
+        backoff = iter(_READ_BACKOFF)
+        while True:
+            try:
+                data = path.read_bytes()
+            except FileNotFoundError:
+                return None
+            except PermissionError:
+                # Windows: a blob a concurrent put is replacing cannot be opened until the rename lands
+                delay = next(backoff, None)
+                if delay is None:
+                    raise
+                time.sleep(delay)
+            else:
+                return data if self.content_hash(data) == digest else None
 
     # ---- append-only manifest / journal ---------------------------------------------------------
     def record_done(
@@ -89,33 +183,14 @@ class Store:
         stage: str = "",
         deps: tuple[str, ...] = (),
     ) -> None:
-        # write ``stage``/``deps`` only when set, so a plain single-stage record stays byte-identical
-        # to the V1 journal line (the M8 determinism gate is untouched).
-        rec: dict[str, object] = {"task_id": task_id, "partition": partition, "blob": blob}
-        if stage:
-            rec["stage"] = stage
-        if deps:
-            rec["deps"] = list(deps)
-        self._append(self.journal_path, rec)
+        self._append(self.journal_path, _done_record(task_id, partition, blob, stage, deps))
 
     def completed(self) -> dict[str, JournalEntry]:
         """Replay the UNION of every writer's journal (``journal.log`` + ``journal.<node>.log``) into
         ``task_id -> JournalEntry`` (last write wins, deterministic file order). A torn trailing line
         (interrupted append) is skipped, never fatal."""
-        done: dict[str, JournalEntry] = {}
-        for path in sorted(self.root.glob("journal*.log")):
-            for rec in self._read_lines(path):
-                blob = rec.get("blob")
-                # only honor an entry whose blob is actually present (guards a journal line that
-                # outraced its object write across a crash)
-                if isinstance(blob, str) and self.has_blob(blob):
-                    tid = str(rec.get("task_id", ""))
-                    raw_deps = rec.get("deps", [])
-                    deps = tuple(str(d) for d in raw_deps) if isinstance(raw_deps, list) else ()
-                    done[tid] = JournalEntry(
-                        tid, str(rec.get("partition", "")), blob, str(rec.get("stage", "")), deps
-                    )
-        return done
+        journals = sorted(self.root.glob("journal*.log"))
+        return _replay((rec for path in journals for rec in self._read_lines(path)), self.has_blob)
 
     # ---- dead-letter set ------------------------------------------------------------------------
     def record_dead(self, descriptor: Mapping[str, object]) -> None:
@@ -125,21 +200,30 @@ class Store:
         return list(self._read_lines(self.dead_letter_path))
 
     # ---- internals ------------------------------------------------------------------------------
-    @staticmethod
-    def _atomic_write(dest: Path, data: bytes) -> None:
-        # temp file in the SAME directory so rename is atomic on the same filesystem
-        tmp = dest.with_name(f".{dest.name}.{os.getpid()}.tmp")
-        with open(tmp, "wb") as f:
-            f.write(data)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, dest)  # atomic on POSIX and Windows
+    def _atomic_write(self, digest: str, data: bytes) -> None:
+        # a per-call temp in the SAME directory (rename stays atomic); builtin open keeps the
+        # default file mode, where mkstemp would make every blob 0600
+        dest = self.objects / digest
+        tmp = dest.with_name(f".{digest}.{uuid.uuid4().hex}.tmp")
+        try:
+            with open(tmp, "xb") as f:
+                f.write(data)
+                f.flush()
+                os.fsync(f.fileno())
+            try:
+                os.replace(tmp, dest)
+            except OSError:
+                # Windows refuses to replace a file another writer holds open; that writer's copy
+                # is as good as ours once it verifies
+                if self.get(digest) is None:
+                    raise
+        finally:
+            tmp.unlink(missing_ok=True)
 
     @staticmethod
     def _append(path: Path, record: Mapping[str, object]) -> None:
-        line = json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n"
-        with open(path, "a", encoding="utf-8") as f:
-            f.write(line)
+        with open(path, "a", encoding="utf-8", newline="\n") as f:
+            f.write(_record_line(record))
             f.flush()
             os.fsync(f.fileno())
 
@@ -149,11 +233,6 @@ class Store:
             return
         with open(path, encoding="utf-8") as f:
             for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    yield json.loads(line)
-                except json.JSONDecodeError:
-                    # a torn final line from an interrupted append: ignore (recovery, not corruption)
-                    continue
+                rec = _parse_record(line)
+                if rec is not None:
+                    yield rec

@@ -13,7 +13,8 @@ result can never be handed back for a computation you didn't ask for.
 Three things come out of this package:
 
 - a ``Store`` — a directory of results on your local filesystem, written atomically, so a crash
-  mid-write leaves nothing half-finished behind;
+  mid-write leaves nothing half-finished behind — or an ``FsspecStore`` at a URL, which workers on
+  different machines can share;
 - ``run_resumable`` — a runner that skips whatever the store already holds and combines the rest in
   a fixed order, so no partition is counted twice and none is lost;
 - retry policies for the failures worth retrying, and a list of the ones that aren't — each entry
