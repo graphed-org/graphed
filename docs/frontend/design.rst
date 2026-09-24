@@ -1015,6 +1015,8 @@ once per output — and of the three columns in each file, only ``Jet_pt`` is re
 you hand to a process pool, a dask cluster or a parsl pool from ``graphed-executors`` (``pip
 install graphed-executors``). ``backend=`` names the workers' evaluation backend, ``partitions=``
 overrides the partitioning, and ``steps_per_file=`` splits each file into more tasks.
+``store=`` (a directory or an fsspec URL) keeps each task's input and partial in a checkpoint
+store, so a task can be replayed later with :func:`graphed.debug.replay`.
 ``graphed-histogram``'s ``gh.plan(...)`` is the same entry point specialised to histograms.
 
 

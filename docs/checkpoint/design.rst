@@ -535,6 +535,29 @@ The M8 plan kept the checkpoint store on the local filesystem and left a distrib
 later. That item has been pulled forward: this backend is it.
 
 
+Keeping each task's input for replay
+------------------------------------
+
+``aggregate_plan(..., store=root)`` turns on a second use of a store: every task of that plan
+puts the chunk it read and the partial its ``reduce`` returned into ``root``, journaled as
+``replay-input`` and ``replay-output`` records. The input goes in before the task evaluates, so a
+failing task's input is kept too. :func:`graphed.debug.replay` reads them back to re-run one task
+on the driver (see the debugging guide, "Replaying a task"). This is what "checkpointing on" means
+for replay; it is independent of ``run_resumable``'s store, though the two may share a root.
+
+``root`` is a string or a path, never a ``Store`` object, because the root is what travels inside
+the plan to every worker. A root containing ``://`` opens as an ``FsspecStore`` (its credentials
+and endpoint come from fsspec's own configuration, ``FSSPEC_<PROTOCOL>_<OPTION>`` variables or its
+config files, read in each process); anything else opens as a ``Store`` directory, which every
+worker must see at the same path, so use a shared filesystem or a URL. Give one root in one form
+throughout, since the two layouts cannot share a directory.
+
+A capture is named by the plan's graph and the task's partition, nothing else, so **a capture root
+holds one run**: two plans that differ only in ``reduce`` or ``externals=``, or two runs of one
+plan, written into one root overwrite each other's records. Give each run a fresh root. Captures
+are pickled; a ``reduce`` whose partial does not pickle fails its task when ``store=`` is set.
+
+
 Not supported yet
 -----------------
 
