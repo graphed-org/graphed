@@ -566,6 +566,21 @@ Two properties make it safe to attach one to a production run:
   swallows any exception a monitor raises. ``SequentialRunner`` reduces to an identical value
   whether or not one is attached, and so must every other runner.
 
+A monitor may also opt into two capabilities that are not part of the ``Monitor`` protocol, and
+runners read each through a helper here:
+
+* **Lean events** — a monitor carrying ``lean_events = True`` (exactly ``True``;
+  ``lean_events(monitor)`` reads it) gets no ``STARTED`` and a terminal event whose ``partition``
+  is empty, so a worker never formats a label. The driver's ``SUBMITTED`` still carries it, and a
+  consumer derives start times and in-flight counts itself.
+* **Per-worker push** — a monitor defining ``worker_monitor_factory()`` returns a picklable
+  zero-arg factory, or ``None`` (``worker_monitor_factory(monitor)`` reads it). A runner whose
+  workers live in other processes builds one monitor per worker process from it and sends that
+  worker's task events and profile trees there instead of through the driver.
+
+With no monitor attached, ``SequentialRunner`` builds no event and formats no label. A blind
+partition's label names its step, ``uri:tree:step/n_steps``.
+
 The concrete monitors and the browser side live in ``graphed.debug``; the runners that emit
 through this contract live in ``graphed-executors``.
 

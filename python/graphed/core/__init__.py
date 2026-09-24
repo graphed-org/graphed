@@ -29,7 +29,9 @@ from .execution import (
     WorkerProfiler,
     WorkerResources,
     emit_task,
+    lean_events,
     partition_label,
+    worker_monitor_factory,
 )
 from .graphed_core import GraphStore, IncrementalReducer, PayloadDescriptor, version
 from .plan import (
@@ -73,8 +75,10 @@ __all__ = [
     "WorkerProfiler",
     "WorkerResources",
     "emit_task",
+    "lean_events",
     "partition_dataset",
     "partition_datasets",
     "partition_label",
     "version",
+    "worker_monitor_factory",
 ]

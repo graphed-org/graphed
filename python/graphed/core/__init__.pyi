@@ -61,7 +61,13 @@ from .execution import (
     emit_task as emit_task,
 )
 from .execution import (
+    lean_events as lean_events,
+)
+from .execution import (
     partition_label as partition_label,
+)
+from .execution import (
+    worker_monitor_factory as worker_monitor_factory,
 )
 
 # the compiled extension surface
