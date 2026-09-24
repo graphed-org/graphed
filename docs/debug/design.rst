@@ -498,7 +498,6 @@ left at ``SUBMITTED``: if the rerun's terminal event for it lands before the rer
 (worker and driver are separate connections), its row stays at ``submitted``. The server sees no
 run boundary, so it cannot tell this from a late ``SUBMITTED`` of the same run.
 
-
 Keeping a record of a run
 -------------------------
 
