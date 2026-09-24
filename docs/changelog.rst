@@ -25,6 +25,49 @@ A checkpoint store contract
 * ``FsspecStore`` reads listings fresh (``use_listings_cache`` is always off) so that on S3 an
   instance sees records another process wrote after it first listed the store. Its tests run on
   ``s3://`` against a moto server as well as on ``memory://`` and ``file://``.
+* ``Store`` writes its journal with ``\n`` line endings on Windows too, so a local store and one
+  at a URL hold the same records; journals already written with ``\r\n`` still replay (#48).
+
+Pause, resume and cancel a run
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``graphed.core.RunControl`` pauses, resumes or cancels a run from any thread, and
+  ``SequentialRunner(control=...)`` honours it. A cancel lets running tasks finish and returns the
+  fold of the tasks that completed, with ``stopped=StopReason.CANCELLED``; a run never cancelled
+  is unchanged (#49).
+* ``Dashboard(control=True)`` puts pause, resume and cancel buttons on the page, and
+  ``dash.attach(runner)`` wires them to the runner. For a remote run,
+  ``NetworkMonitor(url, control=ctl)`` receives the commands over the connection it sends events
+  on (#49).
+
+Cheaper to watch
+~~~~~~~~~~~~~~~~
+
+* ``NetworkMonitor(lean=True)`` asks workers for one event per task with no partition label, and
+  ``per_worker=True`` lets each worker process send its events straight to the dashboard instead
+  of through the driver. The sender now batches events into one message per batch (#50).
+* With no monitor attached, ``SequentialRunner`` builds no task events at all (#50).
+
+A record of each run
+~~~~~~~~~~~~~~~~~~~~
+
+* ``graphed.debug.RunRecorder`` records a run's task events, and ``report()`` folds them into a
+  ``RunReport``: the outcome, each task's partition, worker, state, duration and error, the
+  ``StageError`` the run raised, and the environment digest. It round-trips through JSON (#51).
+* ``graphed.preserve.attach_run_report`` keeps a report in a preservation bundle without changing
+  the bundle's fingerprint; ``Bundle.run_reports()`` reads them back and ``inspect()`` lists them
+  (#51).
+
+Replay one task
+~~~~~~~~~~~~~~~
+
+* ``aggregate_plan(store=...)`` keeps each task's input chunk and partial result in a checkpoint
+  store (a directory or an fsspec URL), and ``graphed.debug.replay(plan, key, *outputs)`` re-runs
+  that task on your machine one operation at a time: ``.steps()`` walks it, ``.value`` is the
+  replayed partial, ``.diff()`` compares it with what the run recorded, and a failing step raises
+  the run's own ``StageError`` at your line (#52).
+* ``graphed.debug.lower`` and ``run`` handle a whole-array reduction such as
+  ``gak.sum(x, axis=None)`` (#52).
 
 0.0.5
 -----
@@ -80,7 +123,7 @@ is now refused where the plan is built, and what it needs is shipped with the ta
 A library can record into graphed
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The headline of this release: the seams a package needs to hand its users deferred arrays the way
+The headline of this release: the hooks a package needs to hand its users deferred arrays the way
 it hands them dask ones — what wrapping graphed in coffea's NanoEvents, fastjet's
 ``ClusterSequence`` and uproot's form mappings turned up. :doc:`frontend/design` has a section on
 wrapping graphed in a library of your own.

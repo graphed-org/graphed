@@ -73,8 +73,10 @@ Resuming and preserving
 -----------------------
 
 ``Store`` and ``run_resumable`` (``run_shuffle_resumable`` for a run containing an exchange)
-restart a killed job without redoing finished work; ``RetryN`` and friends decide what to do
-with a partition that keeps failing, and a dead-letter queue holds what is left.
+restart a killed job without redoing finished work; ``FsspecStore`` is the same store at a URL
+(``s3://``, ``file://`` or another fsspec filesystem) that several machines can share;
+``RetryN`` and friends decide what to do with a partition that keeps failing, and a
+dead-letter queue holds what is left.
 ``build_bundle``, ``inspect`` and ``reproduce`` are the export side: a directory someone else
 can run, or read without running; ``attach_run_report`` keeps a run's report beside it.
 ``register_plugin`` adds your own payload kind.
@@ -90,7 +92,8 @@ Plans, partitions and contracts
 -------------------------------
 
 The types you touch when you drive a runner yourself or save a compiled analysis: ``Plan``,
-``Task``, ``Partition``, ``SequentialRunner``, the ``Executor`` and ``Monitor`` protocols, and
+``Task``, ``Partition``, ``SequentialRunner``, the ``Executor`` and ``Monitor`` protocols,
+``RunControl`` for pausing and cancelling a run, and
 ``DurablePlan`` with ``with_partitions`` / ``for_dataset`` / ``for_datasets`` for re-aiming one
 compiled analysis at many datasets. The rest of this module is the compiled optimizer.
 

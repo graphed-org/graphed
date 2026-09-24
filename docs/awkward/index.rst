@@ -18,7 +18,8 @@ Install
    pip install "graphed[awkward,parquet]"   # ... plus parquet datasets
 
 Running across a cluster additionally needs ``graphed-executors``; filling histograms needs
-``graphed-histogram``. Neither is required for anything on this page.
+``graphed-histogram``. Neither is required for anything on this page. ROOT files are read through
+uproot; :doc:`design` shows how, under *Reading ROOT files*.
 
 Your first deferred analysis
 ----------------------------

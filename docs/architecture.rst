@@ -62,8 +62,8 @@ pooled and cluster runners — thread and process pools, dask, parsl — for the
 
 **Debug, restart, preserve** attach to the boundary between the two columns rather than sitting
 in the line. ``graphed.debug`` re-raises a failure that happened inside a fused stage on a remote
-worker as an exception on your machine that points at your analysis line, and shows task events
-live as they cross back. ``graphed.checkpoint`` remembers partial results as they arrive, so a
+worker as an exception on your machine that points at your analysis line, shows task events
+live as they cross back, and lets you pause, resume or cancel the run from the browser. ``graphed.checkpoint`` remembers partial results as they arrive, so a
 killed run resumes without changing the answer. ``graphed.preserve`` exports a directory someone
 else can reproduce or inspect. They are three things you attach separately. Two couplings run
 between them: a run report from ``graphed.debug`` can be kept in a bundle, outside its
@@ -145,11 +145,12 @@ Everything heavier is an extra.
      - deferred numpy for flat arrays: ufuncs, array functions, reductions
      - ``[numpy]``
    * - ``graphed.debug``
-     - the unfused 1:1 view, source-mapped tracebacks, and the live run dashboard
+     - the unfused 1:1 view, source-mapped tracebacks, the live run dashboard (with pause,
+       resume and cancel), run reports, and replaying one task step by step
      - (base); ``[dashboard]`` for the live view
    * - ``graphed.checkpoint``
-     - results filed by what they compute, so a restart redoes only what was in flight; plus
-       retry policies and a dead-letter queue
+     - results filed by what they compute, so a restart redoes only what was in flight, in a
+       local directory or at a URL; plus retry policies and a dead-letter queue
      - (base); ``[checkpoint]`` for a store at a URL
    * - ``graphed.preserve``
      - a self-contained bundle that reproduces or is inspected elsewhere, plus plugins for
@@ -181,8 +182,9 @@ you swap:
   takes the same plan.
 * `graphed-histogram <https://github.com/graphed-org/graphed-histogram>`_ — deferred
   ``boost-histogram`` and ``hist`` fills, the dask-histogram analogue. A ``.fill()`` records;
-  ``plan()`` exports the task graph a runner aggregates. A ``hist.graphed`` accessor, reaching
-  the same code from ``hist``'s own ``Hist.new.Reg(...).Double()`` builder, is not released yet.
+  ``plan()`` exports the task graph a runner aggregates. ``hist`` 2.12 and later ship
+  ``hist.graphed``, which reaches the same code from ``hist``'s own ``Hist.new.Reg(...).Double()``
+  builder.
 
 ``graphed``'s numbers are checked against the same analyses written in plain awkward — exactly,
 with no tolerances. :doc:`corpus/index` describes those reference analyses and what they cover.

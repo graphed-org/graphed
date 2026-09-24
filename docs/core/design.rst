@@ -600,7 +600,8 @@ switch with three states — ``RUNNING``, ``PAUSED``, ``CANCELLED`` — and thre
 one to a runner, keep a reference, and call it from any thread. ``cancel`` is sticky: ``resume``
 and ``pause`` do not undo it.
 
-Every runner that takes a ``control`` honours it the same way:
+``SequentialRunner`` takes one, and so do the thread and process pools and the dask and parsl
+runners in ``graphed-executors``. Every runner that takes a ``control`` honours it the same way:
 
 * It checks the control when the run starts, before starting each task and, on an adaptive plan,
   before each ``next_tasks`` call — nowhere else. A combine is not a task: one whose inputs have
