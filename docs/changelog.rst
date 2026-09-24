@@ -123,7 +123,7 @@ is now refused where the plan is built, and what it needs is shipped with the ta
 A library can record into graphed
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The headline of this release: the seams a package needs to hand its users deferred arrays the way
+The headline of this release: the hooks a package needs to hand its users deferred arrays the way
 it hands them dask ones — what wrapping graphed in coffea's NanoEvents, fastjet's
 ``ClusterSequence`` and uproot's form mappings turned up. :doc:`frontend/design` has a section on
 wrapping graphed in a library of your own.
