@@ -574,9 +574,10 @@ runners read each through a helper here:
   is empty, so a worker never formats a label. The driver's ``SUBMITTED`` still carries it, and a
   consumer derives start times and in-flight counts itself.
 * **Per-worker push** — a monitor defining ``worker_monitor_factory()`` returns a picklable
-  zero-arg factory, or ``None`` (``worker_monitor_factory(monitor)`` reads it). A runner whose
-  workers live in other processes builds one monitor per worker process from it and sends that
-  worker's task events and profile trees there instead of through the driver.
+  zero-arg factory, or ``None`` (``worker_monitor_factory(monitor)`` reads it). Worker
+  processes, peer actors and a submit backend's workers (a ``ThreadBackend``'s too, in the
+  driver's process) build their own monitor from it and send their task events and profile trees
+  there instead of through the driver's monitor.
 
 With no monitor attached, ``SequentialRunner`` builds no event and formats no label. A blind
 partition's label names its step, ``uri:tree:step/n_steps``.
