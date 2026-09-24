@@ -240,7 +240,7 @@ def evaluate_ir(
         if kind == "source":
             name = nd["name"]
             if name not in sources:
-                raise GraphedError(f"evaluate_ir: no data bound for source {name!r}")
+                raise _unbound_source(name)
             # deliberately not routed through _dispatch: a source key carries the union of
             # every label (each cone reaches it), so attributing a load failure would
             # misattribute it to all variations at once
@@ -265,11 +265,7 @@ def evaluate_ir(
             chash = nd["descriptor"]["content_hash"]
             fn = None if externals is None else (externals.get(external_key(nd)) or externals.get(chash))
             if fn is None:
-                raise GraphedError(
-                    f"evaluate_ir: External payload {chash!r} needs an evaluator. `aggregate_plan`"
-                    " wires these from the recording session; a bare `evaluate_ir` call must pass"
-                    " externals keyed by `graphed.execute.external_key(node)` or by `content_hash`."
-                )
+                raise _unbound_external(chash)
             # An External node carries no `name` — its identity is the descriptor — so an
             # attributed External failure names the payload kind.
             op = f"external:{nd['descriptor']['kind']}"
@@ -277,6 +273,18 @@ def evaluate_ir(
         else:  # pragma: no cover - the codec only emits the kinds above
             raise GraphedError(f"evaluate_ir: unknown node kind {kind!r}")
     return [vals[o] for o in store.outputs()]
+
+
+def _unbound_source(name: str) -> GraphedError:
+    return GraphedError(f"evaluate_ir: no data bound for source {name!r}")
+
+
+def _unbound_external(chash: str) -> GraphedError:
+    return GraphedError(
+        f"evaluate_ir: External payload {chash!r} needs an evaluator. `aggregate_plan`"
+        " wires these from the recording session; a bare `evaluate_ir` call must pass"
+        " externals keyed by `graphed.execute.external_key(node)` or by `content_hash`."
+    )
 
 
 def refuse_chunk_partials(compiled: CompiledGraph | bytes, *, as_outputs: bool) -> None:

@@ -29,7 +29,9 @@ class AwkwardForm:
     tt: ak.Array
 
     def describe(self) -> str:
-        return str(self.tt.type)
+        # a whole-array reduction's form is a scalar typetracer, which has a dtype but no `.type`
+        tt_type = getattr(self.tt, "type", None)
+        return str(self.tt.dtype if tt_type is None else tt_type)
 
     @property
     def is_typetracer(self) -> bool:

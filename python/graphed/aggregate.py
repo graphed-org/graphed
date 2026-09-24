@@ -13,12 +13,15 @@ specializes this for boost histograms; any other partition-wise reduction reuses
 
 from __future__ import annotations
 
+import os
+import threading
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Generic, TypeVar
 
 from graphed.core import GraphStore, Partition
 from graphed.core.execution import Plan, Task, WorkerResources
+from graphed.core.plan import _partition_bytes, _sha256_hex
 
 from .array import Array
 from .errors import GraphedError
@@ -71,17 +74,54 @@ class _PartitionReduce(Generic[V]):
     #: §8.2(i)'s frames re-keyed onto the shipped IR, one per key: what lets EVERY raw worker
     #: failure point at the user's line, labelled or not.
     frames: tuple[tuple[Key, Frame], ...] = ()
+    #: `aggregate_plan(store=)`: the checkpoint root each task captures its input and partial into,
+    #: for `graphed.debug.replay`.
+    store: str | None = None
 
     def __call__(self, partition: Partition, resources: WorkerResources) -> V:
         chunk = self.reader.read_partition(partition, self.columns, resources)
-        values = evaluate_ir(
+        if self.store is None:
+            # _evaluate inlined: the default path keeps its pre-capture frame count
+            return self.reduce(
+                evaluate_ir(
+                    self.ir,
+                    resolve_backend(self.backend_factory),
+                    {self.source_name: chunk},
+                    externals=dict(self.externals),
+                    on_failure=self._attribute(str(partition)),
+                )
+            )
+        from graphed.checkpoint import PickleCodec  # noqa: PLC0415  (only a capturing plan needs it)
+
+        store = self._open_store(f"{os.getpid()}-{threading.get_ident()}")
+        cid, label, codec = self._capture_id(partition), str(partition), PickleCodec()
+        # the input is kept before evaluating, so a failing task's input survives it
+        store.record_done(f"{cid}:input", label, store.put(codec.encode(chunk)), stage="replay-input")
+        result = self.reduce(self._evaluate(chunk, partition))
+        store.record_done(f"{cid}:output", label, store.put(codec.encode(result)), stage="replay-output")
+        return result
+
+    def _evaluate(self, chunk: object, partition: Partition) -> list[object]:
+        return evaluate_ir(
             self.ir,
             resolve_backend(self.backend_factory),
             {self.source_name: chunk},
             externals=dict(self.externals),
             on_failure=self._attribute(str(partition)),
         )
-        return self.reduce(values)
+
+    def _capture_id(self, partition: Partition) -> str:
+        """The id a task's captures are journaled under: the IR and the partition, nothing about the
+        run, so one capture root holds one run."""
+        return _sha256_hex(b"graphed-replay-capture-v1", self.ir, _partition_bytes(partition))
+
+    def _open_store(self, node: str | None = None) -> Any:
+        """The capture root as a checkpoint store: an fsspec URL when it contains ``://``, else a
+        directory. Task and replay both open it here, so one root string always means one layout."""
+        from graphed.checkpoint import FsspecStore, Store  # noqa: PLC0415  (only a capturing plan needs it)
+
+        assert self.store is not None
+        return FsspecStore(self.store, node) if "://" in self.store else Store(self.store, node)
 
     def _attribute(self, partition: str) -> OnFailure | None:
         """§8.2(ii): the worker-side wrap. A RAW failure at any key with a frame becomes a
@@ -158,6 +198,7 @@ def aggregate_plan(
     steps_per_file: int = 1,
     partitions: Sequence[Partition] | None = None,
     on_compiled: Callable[[CompiledGraph], Any] | None = None,
+    store: str | os.PathLike[str] | None = None,
 ) -> Plan[V]:
     """Build a one-pass partition-wise reduction :class:`~graphed.core.execution.Plan` over the
     session's single partitioned source (see module docstring). ``outputs`` are the output Arrays
@@ -168,7 +209,11 @@ def aggregate_plan(
 
     ``on_compiled`` is §7.2's seam onto the internally compiled :class:`CompiledGraph` — the
     artifact is otherwise unreachable from the caller. It fires ONCE, and whatever it returns is
-    carried onto the shipped closure's ``variation_labels``."""
+    carried onto the shipped closure's ``variation_labels``.
+
+    ``store`` (a directory, or an fsspec URL) makes each task capture its input chunk and its
+    ``reduce`` partial into that checkpoint root, so :func:`graphed.debug.replay` can re-run a task
+    of this plan later from exactly what it read. A directory must be one every worker shares."""
     refuse_container("graphed.aggregate_plan", *outputs)
     if not outputs:
         raise ValueError("aggregate_plan needs at least one output Array")
@@ -199,6 +244,7 @@ def aggregate_plan(
         reduce=reduce,
         variation_labels=None if on_compiled is None else on_compiled(compiled),
         frames=compiled.correspondence.frames,
+        store=None if store is None else os.fspath(store),
     )
     if partitions is None:
         partitions = data.partitions(steps_per_file)

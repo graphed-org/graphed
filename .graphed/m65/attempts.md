@@ -87,3 +87,55 @@ holds. `error` is `"<Type>: <str(error)>"`, so a `StageError` reads `"StageError
 `inspect` section read `completed()` entries whose stage is `run-report` (journal replay keeps first
 insertion order, so a re-attach neither duplicates nor reorders). Doc examples in debug and preserve
 `design.rst` executed and their printed output compared; sphinx -W ok.
+
+## D (plan-D.md, frozen `freeze-m65d-fixup` = `440e43c`)
+
+### Iteration 1 — D1 capture, D2 describe fallback, D3 replay (graphed D frozen 11/11 first run)
+
+D1: `aggregate_plan(store=)` → `_PartitionReduce.store` (appended, default `None`); a capturing task puts
+its chunk before evaluating and its partial after `reduce` through `_open_store(f"{pid}-{tid}")`
+(`FsspecStore` for `://`, else `Store`) under `_capture_id` (`_sha256_hex` over a domain tag, the IR and
+`_partition_bytes`), which replay reuses. The store-off path is one `is None` test and a `_evaluate`
+call. D2: `AwkwardForm.describe` falls back to the scalar typetracer's dtype. D3: `iter_ir` in place
+(`run_ir` = `dict(iter_ir(...))`); `graphed.debug.replaying` (`replay`, `Replay`, `Step`, `ReplayDiff`)
+reads the input before the first step (a failed re-read raises raw), steps the union of the outputs'
+opt_level=0 `lower` cones over the unfused IR's matching nodes, binds `process.externals`, raises
+`_stage_error` at the failing cone node, and diffs by value. preserve/checkpoint/numpy import lazily
+(worker attribution import check passes). Docs: checkpoint capture section (one run per root),
+frontend `store=`, debug "Replaying a task" (example executed, output compared), improvements,
+architecture's second coupling, api.rst.
+
+Gates at `74ce4ee` (lane `impl/d-*-2.log`): D frozen 11/11; `COV=1 ./scripts/run-tests.sh` rc 0; per-file gate
+fails only the 4 ML externals (jax/pytorch/tensorflow/xgboost, frameworks absent from the lane venv, as A1–C);
+diff-cover vs `freeze-m65d-fixup` 100 % (124 lines) on the full run and on a frozen-only (debug + preserve)
+run. `git diff freeze-m65d..HEAD -- python/graphed/checkpoint/` empty. Store-off cost: interleaved A/B
+(`probes/d_default_ab.out`, base = `freeze-m65d-fixup` tree) puts head within base on every row;
+`probes/D.before.out` / `D.after.out` are single runs under varying load.
+
+### Iteration 2 — review r1 repair (M1, L1)
+
+M1: replay bound the task's chunk to every source node and called a missing External evaluator as
+`None`. `Replay.steps()` now binds only `process.source_name` and raises the run's own errors, built by
+`execute._unbound_source` / `_unbound_external` (factored out of `evaluate_ir`'s raise branches, so run and
+replay share one message); a step failure still surfaces as `StageError` with that `GraphedError` as
+`__cause__`. `tests/extra/debug/m65/test_m65d_replay_binding.py` (second in-memory source; External with no
+evaluator) asserts replay's cause equals the run's error; both fail at `e086bbc` (DID NOT RAISE; cause
+`TypeError`) and pass after. L1: the store-off branch of `_PartitionReduce.__call__` calls `evaluate_ir`
+inline; the reviewer's `di1/call_overhead.py`, 3 interleaved base/head pairs: head min 1518.8–1524.2 ns vs
+base 1512.1–1585.0 ns. N1 dropped: the integrity scan refuses removing the `assert` in `_decode`, and the
+defect needs both `python -O` and a corrupt blob. Gates at `af76e14`: D frozen 11/11; `COV=1
+./scripts/run-tests.sh` rc 0; per-file gate fails only the 4 ML externals; diff-cover vs `lane/debug-c` 100 %
+(138 lines) full run, 98 % frozen-only (missing: the two new raises, covered by the extra test).
+
+### Iteration 3 — owner rulings on PR #52 (N1 fold, refreeze `freeze-m65d-fixup2`)
+
+Owner (2026-09-24): the `execute.py` raise-site helpers from iteration 2 stand; N1 is fixed by folding the
+explicit raise into the commit that introduced `_decode`. `replaying._decode` now raises
+`FileNotFoundError` naming the blob when `store.get` returns `None`; the fold rebuilt `74ce4ee` on its
+parent (`cherry-pick -n`, edit, gate, `commit -C`) so no commit removes an `assert`, and the later commits
+were rebased on. The raise line has no frozen hit in the suite of record (only D's frozen tests reach
+replay), which put the frozen-only diff-cover at 136/139; the owner resolved it by refreeze: dispute
+`.graphed/m65/disputes/test_m65d_corrupt_capture_blob.md`, `test_m65d_replay_capture_blob.py` (2 tests,
+corrupt input / corrupt output blob), tag `freeze-m65d-fixup2` (`1d86db0`). D frozen 13/13; the two new
+tests fail on the `assert` tree (`ac62f52`, `AssertionError`); D-frozen diff-cover leaves `replaying.py`
+missing only the two `StageError` raises (110, 117), so the frozen-only PR figure is 137/139.
