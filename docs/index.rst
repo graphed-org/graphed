@@ -77,8 +77,11 @@ under it: how duplicate work collapses, how operations get fused into runs that 
 pass, and why the reduced form is byte-identical every time.
 
 **Run it, debug it, keep it.** :doc:`debug/index` is what to do when an analysis fails on a
-worker. :doc:`checkpoint/index` is restarting a killed run. :doc:`preserve/index` is handing
-the whole analysis to someone else.
+worker — read the error, re-run the one task that failed on your laptop one operation at a time,
+or watch a live run in your browser and pause or cancel it there. :doc:`checkpoint/index` is
+restarting a killed run, with the checkpoints on local disk or at a URL (S3, for example) that
+every machine can reach. :doc:`preserve/index` is handing the whole analysis to someone else,
+together with a report of how a run of it went.
 
 .. toctree::
    :maxdepth: 1

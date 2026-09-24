@@ -99,7 +99,9 @@ saved, resumed, and reproduced.
 | Read/write Parquet, skims | add `graphed[parquet]` → `graphed.awkward.from_parquet`, `to_parquet` |
 | Run on a pool or cluster | [`graphed-executors`](https://github.com/graphed-org/graphed-executors) |
 | Deferred `hist`-style histograms | [`graphed-histogram`](https://github.com/graphed-org/graphed-histogram) |
-| Watch a run live | add `graphed[dashboard]` → `graphed.debug` |
+| Watch a run live, pause or cancel it from the browser | add `graphed[dashboard]` → `graphed.debug` |
+| Re-run one failed task on your own machine, one operation at a time | `graphed.debug.replay` |
+| Resume a killed run; keep the checkpoints on S3 or another URL | `graphed.checkpoint`; add `graphed[checkpoint]` for a URL |
 | Hand your analysis to a colleague, exactly | add `graphed[preserve]` → `graphed.preserve` |
 
 Everything under one import path, and what each part does for you:
@@ -110,7 +112,7 @@ Everything under one import path, and what each part does for you:
 | `graphed.core` | the compiled optimizer, the plan types runners consume, and `SequentialRunner` | (base) |
 | `graphed.awkward` | ragged backend: `gak` functions, corrections/ONNX calls | `[awkward]` (+ `[parquet]` for I/O) |
 | `graphed.numpy` | deferred numpy for rectilinear data | `[numpy]` |
-| `graphed.debug` | errors mapped back to your source line; the live dashboard | (base); `[dashboard]` for the live view |
+| `graphed.debug` | errors mapped back to your source line; the live dashboard with pause/resume/cancel; run reports; task replay | (base); `[dashboard]` for the live view |
 | `graphed.checkpoint` | cache results by content; restart a crashed run where it left off | (base); `[checkpoint]` for a store at a URL |
 | `graphed.preserve` | a self-contained bundle that reproduces your histograms elsewhere | (base); `[preserve]` for correctionlib/ONNX payloads |
 
