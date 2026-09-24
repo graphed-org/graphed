@@ -75,7 +75,8 @@ class _PartitionReduce(Generic[V]):
     #: failure point at the user's line, labelled or not.
     frames: tuple[tuple[Key, Frame], ...] = ()
     #: `aggregate_plan(store=)`: the checkpoint root each task captures its input and partial into,
-    #: for `graphed.debug.replay`.
+    #: for `graphed.debug.replay`. The input is the chunk as read: buffers a projected read skipped
+    #: stay unread placeholders.
     store: str | None = None
 
     def __call__(self, partition: Partition, resources: WorkerResources) -> V:
@@ -91,12 +92,16 @@ class _PartitionReduce(Generic[V]):
                     on_failure=self._attribute(str(partition)),
                 )
             )
-        from graphed.checkpoint import PickleCodec  # noqa: PLC0415  (only a capturing plan needs it)
+        import cloudpickle  # noqa: PLC0415  (only a capturing plan needs it)
+
+        from graphed.checkpoint import PickleCodec  # noqa: PLC0415
 
         store = self._open_store(f"{os.getpid()}-{threading.get_ident()}")
         cid, label, codec = self._capture_id(partition), str(partition), PickleCodec()
+        capturable = getattr(resolve_backend(self.backend_factory), "capturable", lambda chunk: chunk)
         # the input is kept before evaluating, so a failing task's input survives it
-        store.record_done(f"{cid}:input", label, store.put(codec.encode(chunk)), stage="replay-input")
+        blob = store.put(cloudpickle.dumps(capturable(chunk), protocol=codec.PROTOCOL))
+        store.record_done(f"{cid}:input", label, blob, stage="replay-input")
         result = self.reduce(self._evaluate(chunk, partition))
         store.record_done(f"{cid}:output", label, store.put(codec.encode(result)), stage="replay-output")
         return result

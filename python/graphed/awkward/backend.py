@@ -22,6 +22,21 @@ from . import join, payloads, shuffle
 from ._ops import apply
 
 
+@dataclass(frozen=True)
+class _AsRead:
+    """Pickles as its array's buffers, so the buffers a projected read skipped reload as the same
+    placeholders; ``ak.Array``'s own pickling packs the array, which reads them and raises."""
+
+    array: ak.Array
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        form, length, buffers = ak.to_buffers(self.array)
+        # "@"-prefixed attrs are transient, which ak.Array's own pickling drops too
+        attrs = {k: v for k, v in self.array.attrs.items() if not k.startswith("@")}
+        rebuild = functools.partial(ak.from_buffers, behavior=self.array.behavior, attrs=attrs)
+        return rebuild, (form, length, buffers)
+
+
 @dataclass(eq=False)
 class AwkwardForm:
     """Opaque form backed by a metadata-only typetracer array (implements graphed.Form)."""
@@ -133,6 +148,11 @@ class AwkwardBackend:
             f"{params['method']}() returned {type(result).__name__}, which is not an awkward array "
             "or a tuple of awkward arrays, so it cannot be recorded"
         )
+
+    def capturable(self, chunk: ak.Array) -> _AsRead:
+        """``chunk`` in a form that pickles (with cloudpickle, as behaviors hold lambdas) back to
+        the chunk as read."""
+        return _AsRead(chunk)
 
     def _with_behavior(self, tt: ak.Array) -> ak.Array:
         return ak.Array(tt.layout, behavior=self._behavior, attrs=tt.attrs) if self._behavior else tt
