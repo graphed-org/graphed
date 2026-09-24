@@ -44,7 +44,10 @@ BEHAVIOR = {("__typestr__", "Event"): "Event", "unpicklable": lambda: None}
 
 def _chunk(projected: bool) -> ak.Array:
     jets = (
-        {"j-offsets": PlaceholderArray(np, (N + 1,), np.int64), "jc-data": PlaceholderArray(np, (N,), np.float64)}
+        {
+            "j-offsets": PlaceholderArray(np, (N + 1,), np.int64),
+            "jc-data": PlaceholderArray(np, (N,), np.float64),
+        }
         if projected
         else {"j-offsets": np.arange(N + 1, dtype=np.int64), "jc-data": np.ones(N)}
     )
