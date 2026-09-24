@@ -18,7 +18,7 @@ from graphed import Array
 from graphed.aggregate import _PartitionReduce, resolve_backend
 from graphed.core import GraphStore, LocalResources
 from graphed.core.execution import Plan, Task
-from graphed.execute import compile_ir, external_key
+from graphed.execute import _unbound_external, _unbound_source, compile_ir, external_key
 
 from .lowering import LoweredOp, lower
 from .runner import _stage_error
@@ -101,15 +101,25 @@ class Replay:
         from graphed.preserve.interpreter import iter_ir  # noqa: PLC0415  (workers import graphed.debug)
 
         chunk = self._chunk
+        source_name = self._process.source_name
         externals = dict(self._process.externals)
 
+        # bound as evaluate_ir binds them for the run, so an unbound name fails replay as it failed the task
+        def source(node: dict[str, Any]) -> Any:
+            if node["name"] != source_name:
+                raise _unbound_source(node["name"])
+            return chunk
+
         def external(node: dict[str, Any], ins: list[Any]) -> Any:
-            fn = externals.get(external_key(node)) or externals.get(node["descriptor"]["content_hash"])
-            return fn(*ins)  # type: ignore[misc]  # a missing evaluator fails here, at its node
+            chash = node["descriptor"]["content_hash"]
+            fn = externals.get(external_key(node)) or externals.get(chash)
+            if fn is None:
+                raise _unbound_external(chash)
+            return fn(*ins)
 
         values = iter_ir(
             self._nodes,
-            source=lambda _node: chunk,
+            source=source,
             external=external,
             eval_op=resolve_backend(self._process.backend_factory).eval_stage,
         )
