@@ -34,3 +34,20 @@ sends a late hello). N1: `_connect` closes the connection when the control hello
 the m37 `FakeConn` models `connected`. L2: the docs' "every runner" is scoped to runners that take a
 `control`. New `tests/extra/debug/m65/test_m65a1_control_hello.py` fails 2/3 hello cases with the old
 predicate and the failed-hello case with the old `_connect`.
+
+## B (plan-B.md, frozen `freeze-m65b` = `b5a2a71`)
+
+### Iteration 1 — B1 core hooks, B2 dashboard (graphed B frozen 14/14 first run)
+
+B1: `lean_events`/`worker_monitor_factory` helpers; `SequentialRunner` builds no event without a
+monitor and in lean mode emits SUBMITTED plus an unlabelled terminal; a blind partition's label is
+`uri:tree:step/n_steps`. B2: `NetworkMonitor.on_task`/`on_combine`/`on_profile` append to one bounded
+deque (drop-oldest); the sender builds the wire messages every 50 ms and ships one `batch` frame per
+drain, dropping a batch on a failed connect or send; the hello goes out with a control or `lean`.
+`per_worker=True` returns `partial(_worker_monitor, url, lean)`: one monitor per process and
+`(url, lean)` under a module lock, exit flush bounded by `_WORKER_EXIT_S` through `atexit.register`.
+The server ingests batch and single frames, counts ingest connections, and keeps per-key state: the
+lifecycle (phase classes seen; a repeated class starts a new one), the key-scoped label and open set;
+in lean mode it derives starts and `min(workers seen, open keys)` in-flight, and a late event writes
+only the label. The m37 client extras were rewritten for the deque and batch frames. Test 9's fork
+control under py3.12 fails as the plan says (`impl/b-test9-fork-control.out`).
