@@ -111,3 +111,18 @@ diff-cover vs `freeze-m65d-fixup` 100 % (124 lines) on the full run and on a fro
 run. `git diff freeze-m65d..HEAD -- python/graphed/checkpoint/` empty. Store-off cost: interleaved A/B
 (`probes/d_default_ab.out`, base = `freeze-m65d-fixup` tree) puts head within base on every row;
 `probes/D.before.out` / `D.after.out` are single runs under varying load.
+
+### Iteration 2 — review r1 repair (M1, L1)
+
+M1: replay bound the task's chunk to every source node and called a missing External evaluator as
+`None`. `Replay.steps()` now binds only `process.source_name` and raises the run's own errors, built by
+`execute._unbound_source` / `_unbound_external` (factored out of `evaluate_ir`'s raise branches, so run and
+replay share one message); a step failure still surfaces as `StageError` with that `GraphedError` as
+`__cause__`. `tests/extra/debug/m65/test_m65d_replay_binding.py` (second in-memory source; External with no
+evaluator) asserts replay's cause equals the run's error; both fail at `e086bbc` (DID NOT RAISE; cause
+`TypeError`) and pass after. L1: the store-off branch of `_PartitionReduce.__call__` calls `evaluate_ir`
+inline; the reviewer's `di1/call_overhead.py`, 3 interleaved base/head pairs: head min 1518.8–1524.2 ns vs
+base 1512.1–1585.0 ns. N1 dropped: the integrity scan refuses removing the `assert` in `_decode`, and the
+defect needs both `python -O` and a corrupt blob. Gates at `af76e14`: D frozen 11/11; `COV=1
+./scripts/run-tests.sh` rc 0; per-file gate fails only the 4 ML externals; diff-cover vs `lane/debug-c` 100 %
+(138 lines) full run, 98 % frozen-only (missing: the two new raises, covered by the extra test).
