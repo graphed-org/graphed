@@ -81,7 +81,16 @@ class _PartitionReduce(Generic[V]):
     def __call__(self, partition: Partition, resources: WorkerResources) -> V:
         chunk = self.reader.read_partition(partition, self.columns, resources)
         if self.store is None:
-            return self.reduce(self._evaluate(chunk, partition))
+            # _evaluate inlined: the default path keeps its pre-capture frame count
+            return self.reduce(
+                evaluate_ir(
+                    self.ir,
+                    resolve_backend(self.backend_factory),
+                    {self.source_name: chunk},
+                    externals=dict(self.externals),
+                    on_failure=self._attribute(str(partition)),
+                )
+            )
         from graphed.checkpoint import PickleCodec  # noqa: PLC0415  (only a capturing plan needs it)
 
         store = self._open_store(f"{os.getpid()}-{threading.get_ident()}")
