@@ -87,3 +87,27 @@ holds. `error` is `"<Type>: <str(error)>"`, so a `StageError` reads `"StageError
 `inspect` section read `completed()` entries whose stage is `run-report` (journal replay keeps first
 insertion order, so a re-attach neither duplicates nor reorders). Doc examples in debug and preserve
 `design.rst` executed and their printed output compared; sphinx -W ok.
+
+## D (plan-D.md, frozen `freeze-m65d-fixup` = `440e43c`)
+
+### Iteration 1 — D1 capture, D2 describe fallback, D3 replay (graphed D frozen 11/11 first run)
+
+D1: `aggregate_plan(store=)` → `_PartitionReduce.store` (appended, default `None`); a capturing task puts
+its chunk before evaluating and its partial after `reduce` through `_open_store(f"{pid}-{tid}")`
+(`FsspecStore` for `://`, else `Store`) under `_capture_id` (`_sha256_hex` over a domain tag, the IR and
+`_partition_bytes`), which replay reuses. The store-off path is one `is None` test and a `_evaluate`
+call. D2: `AwkwardForm.describe` falls back to the scalar typetracer's dtype. D3: `iter_ir` in place
+(`run_ir` = `dict(iter_ir(...))`); `graphed.debug.replaying` (`replay`, `Replay`, `Step`, `ReplayDiff`)
+reads the input before the first step (a failed re-read raises raw), steps the union of the outputs'
+opt_level=0 `lower` cones over the unfused IR's matching nodes, binds `process.externals`, raises
+`_stage_error` at the failing cone node, and diffs by value. preserve/checkpoint/numpy import lazily
+(worker attribution import check passes). Docs: checkpoint capture section (one run per root),
+frontend `store=`, debug "Replaying a task" (example executed, output compared), improvements,
+architecture's second coupling, api.rst.
+
+Gates at `74ce4ee` (lane `impl/d-*-2.log`): D frozen 11/11; `COV=1 ./scripts/run-tests.sh` rc 0; per-file gate
+fails only the 4 ML externals (jax/pytorch/tensorflow/xgboost, frameworks absent from the lane venv, as A1–C);
+diff-cover vs `freeze-m65d-fixup` 100 % (124 lines) on the full run and on a frozen-only (debug + preserve)
+run. `git diff freeze-m65d..HEAD -- python/graphed/checkpoint/` empty. Store-off cost: interleaved A/B
+(`probes/d_default_ab.out`, base = `freeze-m65d-fixup` tree) puts head within base on every row;
+`probes/D.before.out` / `D.after.out` are single runs under varying load.
