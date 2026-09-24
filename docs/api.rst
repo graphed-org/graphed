@@ -59,7 +59,7 @@ Debugging a run
 ``StageError`` is what you catch: it carries the operation, the input shapes, the partition and
 your source frame, and it survives the trip back from a worker process. ``format_traceback``
 renders it with an arrow at your line. ``lower`` gives you the unfused, one-operation-at-a-time
-view of a recording. ``Dashboard`` streams a live run.
+view of a recording. ``Dashboard`` streams a live run; ``RunRecorder`` keeps a report of one.
 
 .. autosummary::
    :toctree: generated

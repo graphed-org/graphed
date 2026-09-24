@@ -499,6 +499,66 @@ left at ``SUBMITTED``: if the rerun's terminal event for it lands before the rer
 run boundary, so it cannot tell this from a late ``SUBMITTED`` of the same run.
 
 
+Keeping a record of a run
+-------------------------
+
+The dashboard shows a run while it happens and keeps nothing. ``RunRecorder`` is a monitor that
+records every task event of a run at the driver; ``report()`` folds them into a ``RunReport``:
+the outcome, per task its partition, worker, state, duration and error, the ``StageError`` the
+run raised, and the environment digest a preservation bundle would record for this interpreter.
+A report is plain data, and ``to_json()`` / ``RunReport.from_json()`` round-trip it.
+
+.. code-block:: python
+
+   from graphed.core import Partition, Plan, SequentialRunner, Task
+   from graphed.debug import RunRecorder
+
+
+   def entries(partition, resources):
+       if partition.entry_start == 1000:
+           raise ValueError("bad counts in this chunk")
+       return partition.entry_stop - partition.entry_start
+
+
+   tasks = [Task(i, Partition("skim.root", "Events", i * 1000, (i + 1) * 1000)) for i in range(3)]
+   plan = Plan(process=entries, combine=lambda a, b: a + b, empty=lambda: 0, tasks=tasks)
+
+   rec = RunRecorder()
+   try:
+       SequentialRunner(monitor=rec).run(plan)
+   except ValueError as exc:
+       report = rec.report(error=exc)
+
+   print(report.outcome, report.error, report.failed_keys)
+   for t in report.tasks:
+       print(t.key, t.partition, t.state, t.duration_s is not None)
+
+::
+
+   failed ValueError: bad counts in this chunk (1,)
+   0 skim.root:Events:0-1000 finished True
+   1 skim.root:Events:1000-2000 errored True
+   2 skim.root:Events:2000-3000 submitted False
+
+Pass ``result=`` the ``ExecResult`` of a run that returned, or ``error=`` the exception it raised —
+exactly one. A duration is the task's terminal time minus its start time, both stamped by the
+worker that ran it; a task that never started has none. A retried task reports its last attempt.
+
+``RunRecorder(inner=dash_monitor)`` forwards every call to another monitor, so a dashboard can
+watch the run it records. The recorder takes the full event stream even when that monitor is lean
+or pushes from its workers: the report needs every ``STARTED``.
+
+**One run at a time.** Each ``report()`` takes the events that arrived since the previous one, so
+call it after each run. A recorder shared by concurrent runs, or by plans queued with
+``executor.submit()`` whose results you have not awaited in turn, mixes their events.
+
+**Completeness is opt-in.** ``RunRecorder`` carries ``complete_events = True``, so a runner that
+honours it delivers a run's events by the time ``run()`` returns or raises. A run failed by a
+raising task reports that task ``errored``; a crashed worker ships nothing. On a peer route or a
+``SubmitRunner`` adaptive run, other tasks in flight when the run failed can read ``started`` or
+``submitted``.
+
+
 Sending the events somewhere else
 ---------------------------------
 

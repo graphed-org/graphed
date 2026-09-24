@@ -60,7 +60,9 @@ def _unpack_array(blob: bytes) -> Any:
     return ak.from_buffers(ak.forms.from_json(form_json), length, container)
 
 
-def _capture_environment(container_digest: str | None) -> dict[str, Any]:
+def capture_environment(container_digest: str | None = None) -> dict[str, Any]:
+    """The environment a bundle records: the Python version, the installed versions of the packages
+    it pins, and ``container_digest`` when given."""
     packages: dict[str, str] = {}
     for name in _ENV_PACKAGES:
         try:
@@ -219,7 +221,7 @@ def build_bundle(
         "externals": externals_manifest,
         "opaque_nodes": opaque_nodes,
         "provenance": prov_hash,
-        "environment": environment or _capture_environment(container_digest),
+        "environment": environment or capture_environment(container_digest),
         "config": dict(config or {}),
         "seed": int(seed),
     }

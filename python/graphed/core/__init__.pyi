@@ -58,6 +58,9 @@ from .execution import (
     WorkerResources as WorkerResources,
 )
 from .execution import (
+    complete_events as complete_events,
+)
+from .execution import (
     emit_task as emit_task,
 )
 from .execution import (
