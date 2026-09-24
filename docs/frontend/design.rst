@@ -554,8 +554,8 @@ Propagation is a recording detail worth spelling out: record a correction with
 ``graphed.awkward.gak.apply_correction``, not with ``Session.record_external`` directly.
 ``apply_correction`` goes through the ``gak`` dispatch layer, so a ``Varied`` input fans out and the
 correction is *re-evaluated* in each universe — a scale factor whose jet crosses a binning edge
-under the shift gets the other bin's value. ``Session.record_external`` is the raw seam underneath;
-it takes plain ``Array`` inputs and knows nothing about labels.
+under the shift gets the other bin's value. ``Session.record_external`` is the lower-level call
+underneath; it takes plain ``Array`` inputs and knows nothing about labels.
 
 .. code-block:: python
 
@@ -1119,7 +1119,7 @@ Wrapping graphed in a library of your own
 -----------------------------------------
 
 A library that records graphed operations on an analyst's behalf — a jet-clustering wrapper, a
-file reader, a corrections layer — meets four seams.
+file reader, a corrections layer — has four things to get right.
 
 **Your frames are not the user's line.** Every node remembers the source line that created it, and
 that line is the first frame outside ``graphed`` itself. From inside your library that frame is

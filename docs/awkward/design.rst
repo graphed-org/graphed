@@ -524,11 +524,78 @@ verbatim (unsorted, undeduped, an empty answer honoured) as the ``columns`` of e
 ``read_partition`` call. It *replaces* the driver's own column list rather than adding to it,
 which is the point: a source that maps the graph's field names onto something else — a flat tree
 whose branches are not the record fields your analysis sees — is the one that knows what to read.
-The attribute is deliberately not a member of the ``PartitionedSource`` protocol, so a source
-without it stays a ``PartitionedSource`` and keeps today's behaviour exactly.
+The attribute is not a member of the ``PartitionedSource`` protocol, so a source without it
+stays a ``PartitionedSource`` and behaves as before.
 
 ``compute=False`` returns the plan instead of running it, so you can hand the identical write to
 a cluster runner rather than to the in-process one.
+
+Reading ROOT files
+------------------
+
+ROOT files come in through uproot. ``uproot.graphed("skim.root:Events")`` records a deferred
+source over a ``TTree`` the way ``from_parquet`` does over parquet: recording reads metadata
+only, and at run time each task reads just the branches your analysis touches. It is on uproot's
+``main`` branch and not yet in an uproot release, so install uproot from GitHub to use it.
+How finely each file is split is decided where the plan is built — ``steps_per_file=`` on
+``aggregate_plan`` or ``gh.plan`` — not when you open the file.
+
+ROOT stores each branch in compressed chunks (``TBaskets``). Cut a file into equal entry ranges
+and a boundary usually lands inside a basket, so both tasks on either side decompress that whole
+basket. ``align_baskets=True`` moves each boundary to the nearest entry where all the branches a
+task reads start a new basket, so no basket is decompressed twice:
+
+.. code-block:: python
+
+    import os
+    import tempfile
+
+    import numpy as np
+    import uproot
+    from uproot._graphed import graphed_partitions
+
+    from graphed import aggregate_plan
+    from graphed.awkward import gak
+    from graphed.core import SequentialRunner
+
+    path = os.path.join(tempfile.mkdtemp(), "skim.root")
+    with uproot.recreate(path) as f:
+        tree = f.mktree("Events", {"MET_pt": np.float64})
+        tree.extend({"MET_pt": np.arange(0.0, 300.0)})       # one TBasket: entries 0-299
+        tree.extend({"MET_pt": np.arange(300.0, 1000.0)})    # another: entries 300-999
+
+    even = graphed_partitions(f"{path}:Events", steps_per_file=4)
+    aligned = graphed_partitions(f"{path}:Events", steps_per_file=4, align_baskets=True)
+    print([(p.entry_start, p.entry_stop) for p in even])
+    print([(p.entry_start, p.entry_stop) for p in aligned])
+
+    events = uproot.graphed(f"{path}:Events", align_baskets=True)
+    total = gak.sum(events.MET_pt, axis=None)
+    plan = aggregate_plan(total, reduce=lambda outs: float(outs[0]),
+                          combine=lambda a, b: a + b, empty=lambda: 0.0, steps_per_file=4)
+    print(SequentialRunner().run(plan).value)
+
+Printed output:
+
+.. code-block:: text
+
+    [(0, 250), (250, 500), (500, 750), (750, 1000)]
+    [(0, 300), (300, 1000)]
+    499500.0
+
+Four equal steps cut the second basket three times. Aligned, the only boundary left is the basket
+edge at entry 300. There are two ways to ask for it, and they differ in when the boundaries
+move:
+
+* ``uproot.graphed(..., align_baskets=True)`` moves them when each task reads its file. The plan
+  still has ``steps_per_file`` tasks per file, and the ones whose range collapses read nothing.
+* ``graphed_partitions(..., align_baskets=True)``, handed to the plan as ``partitions=``, opens
+  every file while you build the plan and drops the empty chunks, so a file with few baskets
+  becomes few tasks. That is the listing printed above.
+
+Either way the answer is the same events summed in a different grouping: counts are unchanged,
+and a float total can move in its last bits, as it does whenever the partitioning changes.
+Alignment is off by default for that reason.
 
 One skim file that holds every systematic universe
 --------------------------------------------------
