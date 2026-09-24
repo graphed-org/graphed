@@ -239,14 +239,10 @@ class DashboardServer:
         self._push_stats_table()
 
     def _write_rows(self) -> None:
-        """One Perspective update per column set, never per row: an indexed update keeps the
-        columns a row omits, so rows with different sets must not share one."""
-        groups: dict[frozenset[str], list[dict[str, Any]]] = {}
-        for r in self._rows.values():
-            groups.setdefault(frozenset(r), []).append(r)
-        self._rows = {}
-        for rows in groups.values():
-            self._tasks.update(rows)
+        """One Perspective update per frame, never per row."""
+        if self._rows:
+            self._tasks.update(list(self._rows.values()))
+            self._rows = {}
 
     def _ingest_one(self, msg: dict[str, Any], conn: Any, cid: int) -> None:
         kind = msg.get("type")

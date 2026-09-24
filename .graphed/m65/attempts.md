@@ -62,3 +62,11 @@ reader waiting on a count sees the rows. New `tests/extra/debug/m65/test_m65b_fr
 three 100-row updates for two frames of 100 and 200 items; it fails on iteration 1's server (one update
 per row) and on a single padded update (labels lost). N1: the core docs' per-worker bullet names peer
 actors and submit backends, a `ThreadBackend`'s included.
+
+### Iteration 3 — review r2 fold (L1, N2)
+
+L1: iteration 2's column-set grouping was unneeded — on perspective-python 4.5.1 a mixed indexed
+update keeps every column a row omits, and "labels lost" was wrong. `_write_rows` now makes one
+`update` per frame; the frame-rows test asserts `[N, 2 * N]` and still fails on iteration 1's server
+(`[1, 1, 1, …]`). N2: the core per-worker bullet no longer claims `ThreadExecutor` peer actors build
+their own monitor.
