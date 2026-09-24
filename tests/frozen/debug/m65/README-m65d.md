@@ -17,21 +17,19 @@ tests: capture is pinned here through `graphed.checkpoint.Store` / `FsspecStore`
 | `test_diff_reports_a_difference` (8) | D-6 by-value diff against the recorded output | a diff against a fresh evaluation (both 249 rows); an elementwise `==` compare (`ValueError`) |
 | `test_replay_refusals` (9) | API refusals | a replay that accepts a non-`aggregate_plan` plan, an unknown key or other outputs |
 | `test_replay_binds_the_runs_external_evaluators` (10) | D-4 Externals from `process.externals` | a replay that binds the session's evaluators |
-| `test_capture_keeps_plans_apart` (11) | D-2 capture id identifies the plan (review D r2/r3 L1) | a capture id of IR + partition only (plans differing in `reduce` or an `externals=` override collide in one root) |
+| `test_replay_reads_its_own_plans_capture_root` (11) | API: `replay` reads the plan's own capture root (path and URL); one run per root (review D r3 L1) | a replay that reads another plan's root for the same capture id |
 
 Constraints folded from review D r1–r3:
 - Test 4's map sleeps 0.06 s against a 0.05 s floor; its counter baseline is taken after the run; the map
   step is the one whose `node.kind == "external"`.
-- Test 6 accepts a raw `FileNotFoundError` or a `StageError` whose `__cause__` is one: plan-D D-4/D-5 leave
-  open where the re-read happens (review D r3), so the test pins that the missing file surfaces, not where.
+- Test 6 accepts a raw `FileNotFoundError` (review D r3 L4's resolution) or a `StageError` whose `__cause__`
+  is one; it pins that the missing file surfaces.
 - Test 1 reads a path capture through `graphed.checkpoint.Store` (review D r2/r3 L2).
-- Test 11 pins plans differing in `reduce` and in `externals=`; a re-run of one plan from another process
-  (review D r3 L1's second clause) is not pinned, because plan-D has not decided which run's output a
-  replay compares against.
+- Test 11 keeps one run per root, as review D r3 L1 closes it; two plans sharing a root are not pinned.
 - Reduce/combine/map functions are module-level so spawned children unpickle them.
 
 Mutation check against a scratch prototype of plan-D (not committed): the prototype passes all 11; each
-mutant fails at least its row's test — capture id without the plan identity (11), every root as
-`FsspecStore` (1), diff against a fresh evaluation (2, 5, 8, 11), session externals (10, 11), eager
+mutant fails at least its row's test — a replay reading the most recently captured root (11), every root
+as `FsspecStore` (1), diff against a fresh evaluation (2, 5, 8, 11), session externals (10), eager
 steps (4, 7), zero timings (4), placeholder step values (3), input put after evaluating (1, 7), and
 an elementwise compare (8).

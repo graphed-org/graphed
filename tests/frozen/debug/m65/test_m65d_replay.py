@@ -361,14 +361,13 @@ def test_replay_binds_the_runs_external_evaluators(tmp_path: Path) -> None:
     assert gd.replay(plan, 0, h).value == run
 
 
-def test_capture_keeps_plans_apart(tmp_path: Path) -> None:
-    """Two plans over the same outputs and partitions sharing one capture root each diff against
-    their own recorded output (plans differing in ``reduce``, then in an ``externals=`` override)."""
+def test_replay_reads_its_own_plans_capture_root(tmp_path: Path) -> None:
+    """Plans over the same outputs and partitions (so the same capture ids), each captured into its
+    own root as plan-D prescribes (one run per root), each diff against their own recorded output."""
     s, ev = _events(tmp_path)
     y = gak.sum(ev.x * 2.0, axis=None)
-    root = tmp_path / "cap"
-    a = _plan(y, store=root)
-    b = _plan(y, reduce=_first_plus_one, store=root)
+    a = _plan(y, store=tmp_path / "cap_a")
+    b = _plan(y, reduce=_first_plus_one, store=tmp_path / "cap_b")
     SequentialRunner().run(a)
     SequentialRunner().run(b)
     for plan, want in ((a, 2.0 * sum(range(ROWS))), (b, 2.0 * sum(range(ROWS)) + 1.0)):
@@ -376,9 +375,8 @@ def test_capture_keeps_plans_apart(tmp_path: Path) -> None:
         assert (d.reference, d.equal, d.recorded, d.replayed) == ("recorded", True, want, want)
 
     h, key = _external(s, ev.x)
-    root2 = tmp_path / "cap2"
-    one = _plan(h, externals={key: _ext_sum_plus_one}, store=root2)
-    two = _plan(h, externals={key: _ext_sum_plus_two}, store=root2)
+    one = _plan(h, externals={key: _ext_sum_plus_one}, store=tmp_path / "cap_one")
+    two = _plan(h, externals={key: _ext_sum_plus_two}, store=(tmp_path / "cap_two").as_uri())
     SequentialRunner().run(one)
     SequentialRunner().run(two)
     for plan, want in ((one, float(sum(range(ROWS))) + 1.0), (two, float(sum(range(ROWS))) + 2.0)):
