@@ -64,8 +64,9 @@ class DashboardServer:
         self._http: Any = None
         self._client: Any = None
         self._tasks: Any = None
+        self._rows: dict[Any, dict[str, Any]] = {}  # this frame's tasks-table rows, merged per key
         self._stats_table: Any = None
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._stats: dict[str, int] = dict.fromkeys(_wire.STATS_KEYS, 0)
         self._workers: dict[str, dict[str, Any]] = {}  # worker -> per-worker progress (for the bars)
         # ingest-only state (IOLoop thread): lean derivation and per-key lifecycles
@@ -230,9 +231,22 @@ class DashboardServer:
         except Exception:
             return
         cid = getattr(conn, "cid", 0)
-        for item in msg.get("items", ()) if msg.get("type") == "batch" else (msg,):
-            self._ingest_one(item, conn, cid)
+        # held across the frame so a reader waiting on a count also sees the rows written below
+        with self._lock:
+            for item in msg.get("items", ()) if msg.get("type") == "batch" else (msg,):
+                self._ingest_one(item, conn, cid)
+            self._write_rows()
         self._push_stats_table()
+
+    def _write_rows(self) -> None:
+        """One Perspective update per column set, never per row: an indexed update keeps the
+        columns a row omits, so rows with different sets must not share one."""
+        groups: dict[frozenset[str], list[dict[str, Any]]] = {}
+        for r in self._rows.values():
+            groups.setdefault(frozenset(r), []).append(r)
+        self._rows = {}
+        for rows in groups.values():
+            self._tasks.update(rows)
 
     def _ingest_one(self, msg: dict[str, Any], conn: Any, cid: int) -> None:
         kind = msg.get("type")
@@ -270,7 +284,6 @@ class DashboardServer:
         if cls == _SUBMITTED:
             ks.label = (msg.get("partition", ""), msg.get("n_entries", 0))
 
-        # the row is written before any count moves, so a reader waiting on a count sees it
         # an indexed update keeps the columns it omits: a late event writes only the label, and an
         # event with an empty label (a lean terminal) writes none
         row = _wire.task_row(msg)
@@ -279,7 +292,7 @@ class DashboardServer:
         if not row["partition"]:
             del row["partition"], row["n_entries"]
         if len(row) > 1:
-            self._tasks.update([row])
+            self._rows.setdefault(key, {}).update(row)
 
         with self._lock:
             self._stats[phase] += 1
