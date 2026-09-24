@@ -297,7 +297,7 @@ run, the executors package (``pip install graphed-executors``):
        tasks = [Task(i, Partition("skim.root", "Events", i * 1000, (i + 1) * 1000)) for i in range(8)]
        plan = Plan(process=count_entries, combine=add, empty=zero, tasks=tasks)
 
-       with Dashboard(port=8888, profile=True) as dash:
+       with Dashboard(profile=True) as dash:
            print("dashboard at", dash.url)
            result = ProcessPoolExecutor(max_workers=2, monitor=dash.monitor).run(plan)
            snap = dash.wait_for(finished=len(tasks))
@@ -307,11 +307,12 @@ run, the executors package (``pip install graphed-executors``):
 
 ::
 
-   dashboard at http://127.0.0.1:8888/
+   dashboard at http://127.0.0.1:52993/
    result: 8000
    tasks finished: 8 errored: 0
 
-Open ``dash.url`` while that runs and the page updates live. ``dash.attach(executor)`` is the
+Your port will differ: without ``port=`` the dashboard takes a free one, which keeps it clear of a
+Jupyter server already on 8888. Open ``dash.url`` while that runs and the page updates live. ``dash.attach(executor)`` is the
 same wiring for an executor you built elsewhere; ``dash.snapshot()`` gives you the current
 counters from Python, and ``dash.wait_for(finished=n)`` blocks until ``n`` tasks have landed —
 events cross a websocket, so a run can finish microseconds before its last event arrives.
@@ -426,46 +427,55 @@ its ingest address. This is a recipe — the address and the executor are yours 
    # on your laptop
    from graphed.debug import DashboardServer
 
-   server = DashboardServer(host="0.0.0.0", port=8888).start()
+   server = DashboardServer(host="0.0.0.0", port=8899).start()
    print(server.url, server.ingest_url)
 
    # on the submit node, in the job that runs the plan
    from graphed.debug import NetworkMonitor
    from graphed_executors.local import ProcessPoolExecutor
 
-   monitor = NetworkMonitor("ws://your-laptop:8888/ingest", profile=True).start()
+   monitor = NetworkMonitor("ws://your-laptop:8899/ingest", profile=True).start()
    result = ProcessPoolExecutor(monitor=monitor).run(plan)
    monitor.close()
 
 Lean events and a connection per worker
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Two opt-in switches on ``NetworkMonitor`` trim what a run pays for being watched.
+A run of thousands of short tasks sends three events per task through your driver, and every
+worker formats a partition label for each one. Two opt-in switches on ``NetworkMonitor`` cut that
+cost; each trades away some precision in what the page shows.
 
-``lean=True`` asks every worker for one event per task, the ``FINISHED`` or ``ERRORED``, with no
-partition label: the worker never formats one. The driver's ``SUBMITTED`` still carries the label,
-and the server fills in the rest. It counts a start for each terminal event whose task sent no
-``STARTED``, joins each task's label from its ``SUBMITTED`` whichever arrives first, and takes a
-task's start time from the end of the same worker's previous task on the same connection. For a
-worker name that runs one task at a time (every local executor's workers) that start is early, so
-a derived duration is an upper bound: it includes queue, idle and paused time since that worker's
-previous task, which on a reused dashboard can be an earlier run's, and a worker's first task on a
-connection shows zero length. For a name that several task threads share (a multi-threaded dask
-worker's address, a parsl thread pool's ``host:pid``) a derived duration has no bound either way.
-In-flight is the number of submitted tasks with no terminal event yet, capped at the number of
-worker names seen so far. So it counts a name running several tasks at once as one, reads low
-until every running worker has finished a task, and, because the names seen and the lean switch
-last for the server's life, can read high on a reused dashboard whose worker names change from run
-to run. A task that a cancel kept from starting, or that a failure stopped, stays submitted, so
-after such a run in-flight stays above zero. Lean mode derives no per-worker in-flight count.
+``lean=True`` asks each worker for one event per task — the ``FINISHED`` or ``ERRORED`` — with no
+partition label, so no worker ever formats one. The driver's ``SUBMITTED`` still carries the label,
+and the dashboard server works out the rest: a task started when the same worker's previous task on
+the same connection ended, and it is in flight from its ``SUBMITTED`` until its terminal event.
+What that costs you:
 
-``per_worker=True`` makes ``monitor.worker_monitor_factory()`` return a picklable factory. An
-executor whose workers are separate processes builds one monitor per worker process from it, so
-each worker sends its task events and profile trees over its own connection instead of through
-the driver; the driver keeps the ``SUBMITTED`` events and the combine counts. Thread workers share
-the driver's monitor. A worker's connection opens on its first event, and at exit a worker waits
-at most half a second for it to drain. That exit flush runs through ``atexit``, which a ``fork``
-child skips before Python 3.13; the executors start their workers with ``spawn``.
+* **Durations are estimates.** For a worker that runs one task at a time (every local executor's
+  workers) a derived duration is an upper bound: it includes any queue, idle and paused time since
+  that worker's previous task, which on a reused dashboard can be an earlier run's, and a worker's
+  first task on a connection shows zero length. Where several task threads share one worker name
+  (a multi-threaded dask worker's address, a parsl thread pool's ``host:pid``) a duration has no
+  bound either way.
+* **In-flight is approximate.** It is the number of submitted tasks with no terminal event yet,
+  capped at the number of worker names seen so far. So it counts a name running several tasks at
+  once as one, reads low until every running worker has finished a task, and can read high on a
+  reused dashboard whose worker names change from run to run. There is no per-worker in-flight
+  count.
+* **An interrupted run leaves rows behind.** A task that a cancel kept from starting, or that a
+  failure stopped, stays submitted, so after such a run in-flight stays above zero. On a rerun on
+  the same dashboard, a task's row can stay at ``submitted`` if the rerun's terminal event for it
+  arrives before the rerun's ``SUBMITTED``: worker and driver use separate connections, and the
+  server sees no run boundary.
+
+``per_worker=True`` takes the driver out of the event path. ``monitor.worker_monitor_factory()``
+then returns a picklable factory, and an executor whose workers are separate processes builds one
+monitor per worker process from it, so each worker sends its task events and profile trees over
+its own connection — the workers have to be able to reach the dashboard's address. The driver
+keeps the ``SUBMITTED`` events and the combine counts, and thread workers share the driver's
+monitor. A worker's connection opens on its first event, and at exit a worker waits at most half a
+second for it to drain. That exit flush runs through ``atexit``, which a ``fork`` child skips
+before Python 3.13; the executors start their workers with ``spawn``.
 
 .. code-block:: python
 
@@ -492,11 +502,6 @@ which prints::
    40
    4 4 4 0
    True
-
-A rerun on the same dashboard can show a stale state for a task that a cancelled or failed run
-left at ``SUBMITTED``: if the rerun's terminal event for it lands before the rerun's ``SUBMITTED``
-(worker and driver are separate connections), its row stays at ``submitted``. The server sees no
-run boundary, so it cannot tell this from a late ``SUBMITTED`` of the same run.
 
 Keeping a record of a run
 -------------------------
@@ -561,7 +566,9 @@ raising task reports that task ``errored``; a crashed worker ships nothing. On a
 Replaying a task
 ----------------
 
-After a run, finished or failed, ``replay(plan, key, *outputs)`` re-executes one task of an
+One task failed, or returned a partial you do not believe, and you want to watch it happen on
+your own machine rather than read about it in a log. After a run, finished or failed,
+``replay(plan, key, *outputs)`` re-executes one task of an
 ``aggregate_plan`` plan on your machine, one operation at a time at ``opt_level=0``, with the
 exact input that task read. Build the plan with ``store=`` (a directory every worker shares, or
 an fsspec URL) and each task keeps its input chunk and its partial there as it runs; without it,
