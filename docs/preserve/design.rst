@@ -170,6 +170,60 @@ silently dropped and never silently run: you find out at build time, in the list
 the numbers come out different.
 
 
+Keeping a record of how it ran
+------------------------------
+
+A bundle says what the analysis is; a run report (``graphed.debug.RunRecorder``, see
+:doc:`../debug/design`) says what one run of it did — the outcome, per-task timings, the
+``StageError`` if it failed, and the environment it ran in. ``attach_run_report`` keeps the
+report's JSON in the bundle's store and journal, not in the manifest: timings differ on every
+run, and the fingerprint must not. Attaching the same report twice keeps one copy, and
+``Bundle.run_reports()`` reads them back in the order they were attached.
+
+.. code-block:: python
+
+   import tempfile
+
+   import awkward as ak
+
+   from graphed import Session
+   from graphed.awkward import AwkwardBackend, from_awkward
+   from graphed.core import Partition, Plan, SequentialRunner, Task
+   from graphed.debug import RunRecorder
+   from graphed.preserve import Bundle, attach_run_report, build_bundle, inspect
+
+   data = ak.Array({"x": [1.0, 2.0, 3.0]})
+   s = Session(AwkwardBackend())
+   root = tempfile.mkdtemp()
+   events = from_awkward(s, "events", data)
+   bundle = build_bundle(root, session=s, value=events.x * 2, datasets={"events": data})
+   before = bundle.fingerprint()
+
+   tasks = [Task(i, Partition("skim.root", "Events", i * 1000, (i + 1) * 1000)) for i in range(2)]
+   plan = Plan(process=lambda p, r: 1, combine=lambda a, b: a + b, empty=lambda: 0, tasks=tasks)
+   rec = RunRecorder()
+   report = rec.report(result=SequentialRunner(monitor=rec).run(plan))
+   attach_run_report(bundle, report.to_json())
+
+   reopened = Bundle.open(root)
+   print(reopened.fingerprint() == before, [r["outcome"] for r in reopened.run_reports()])
+   for line in inspect(reopened).splitlines():
+       if line.startswith("      task "):
+           print(line.rsplit(" duration=", 1)[0])
+
+::
+
+   True ['completed']
+         task 0 partition=skim.root:Events:0-1000 worker=seq state=finished
+         task 1 partition=skim.root:Events:1000-2000 worker=seq state=finished
+
+``inspect`` adds a ``run reports:`` section after the risk line, only when the bundle holds
+reports: per report a header line (digest, outcome, task counts, wall time, and ``env=same`` or
+``env=differs`` against the environment the bundle recorded), its environment digest, the error
+of a failed run on one line, and one line per task. It reads nothing but the report blobs, so it
+still works with the datasets and payloads removed.
+
+
 Content identity is not byte identity
 -------------------------------------
 

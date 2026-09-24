@@ -449,6 +449,12 @@ def lean_events(monitor: Monitor | None) -> bool:
     return getattr(monitor, "lean_events", False) is True
 
 
+def complete_events(monitor: Monitor | None) -> bool:
+    """True when ``monitor`` asks for every event of a run by the time ``run()`` returns or raises,
+    by carrying ``complete_events = True`` (exactly)."""
+    return getattr(monitor, "complete_events", False) is True
+
+
 def worker_monitor_factory(monitor: Monitor | None) -> Callable[[], Monitor] | None:
     """The picklable zero-arg factory a monitor offers for per-worker push, or ``None`` when the
     monitor defines no ``worker_monitor_factory`` (the ``Monitor`` protocol stays four methods)."""

@@ -566,7 +566,7 @@ Two properties make it safe to attach one to a production run:
   swallows any exception a monitor raises. ``SequentialRunner`` reduces to an identical value
   whether or not one is attached, and so must every other runner.
 
-A monitor may also opt into two capabilities that are not part of the ``Monitor`` protocol, and
+A monitor may also opt into three capabilities that are not part of the ``Monitor`` protocol, and
 runners read each through a helper here:
 
 * **Lean events** — a monitor carrying ``lean_events = True`` (exactly ``True``;
@@ -579,6 +579,10 @@ runners read each through a helper here:
   ``ThreadBackend``'s too, in the driver's process) build their own monitor from it and send their
   task events and profile trees there instead of through the driver's monitor. ``ThreadExecutor``
   workers and peer actors share the driver's process and keep the driver's monitor.
+* **Complete events** — a monitor carrying ``complete_events = True`` (exactly;
+  ``complete_events(monitor)`` reads it) asks for every event of a run by the time ``run()``
+  returns or raises, so a record taken then is that run's alone. Without it delivery stays
+  best-effort, and a pooled runner may deliver a run's last events after ``run()`` returns.
 
 With no monitor attached, ``SequentialRunner`` builds no event and formats no label. A blind
 partition's label names its step, ``uri:tree:step/n_steps``.

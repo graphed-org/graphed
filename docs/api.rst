@@ -59,7 +59,7 @@ Debugging a run
 ``StageError`` is what you catch: it carries the operation, the input shapes, the partition and
 your source frame, and it survives the trip back from a worker process. ``format_traceback``
 renders it with an arrow at your line. ``lower`` gives you the unfused, one-operation-at-a-time
-view of a recording. ``Dashboard`` streams a live run.
+view of a recording. ``Dashboard`` streams a live run; ``RunRecorder`` keeps a report of one.
 
 .. autosummary::
    :toctree: generated
@@ -74,7 +74,8 @@ Resuming and preserving
 restart a killed job without redoing finished work; ``RetryN`` and friends decide what to do
 with a partition that keeps failing, and a dead-letter queue holds what is left.
 ``build_bundle``, ``inspect`` and ``reproduce`` are the export side: a directory someone else
-can run, or read without running. ``register_plugin`` adds your own payload kind.
+can run, or read without running; ``attach_run_report`` keeps a run's report beside it.
+``register_plugin`` adds your own payload kind.
 
 .. autosummary::
    :toctree: generated

@@ -18,9 +18,10 @@ per-operation dtype and shape assertions at ``opt_level=0``. The recorded type a
 node are still there for you to check yourself: ``lower(...)`` gives you ``.form`` on each member.
 
 **The dashboard cannot resubmit.** It can pause, resume and cancel a run (``control=True``), but
-it cannot retry a failed task or resubmit a run. The live view is in memory only — it is not written
-into a preservation bundle or replayable after the process exits, so take a screenshot or keep
-``dash.snapshot()`` if you want the numbers afterwards.
+it cannot retry a failed task or resubmit a run. The live view is in memory only and is not
+replayable after the process exits; to keep a run's per-task record, attach a ``RunRecorder``
+and keep its report in a preservation bundle (``attach_run_report``), or keep
+``dash.snapshot()``.
 
 **Lean dashboard figures are estimates.** With ``NetworkMonitor(lean=True)`` the server derives
 start times and in-flight counts from terminal events: durations are upper bounds only for worker

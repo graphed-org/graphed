@@ -13,7 +13,7 @@ correctionlib ship as plugins and double as templates for users' own Externals.
 
 from __future__ import annotations
 
-from .bundle import Bundle, build_bundle, inspect, reproduce
+from .bundle import Bundle, attach_run_report, build_bundle, capture_environment, inspect, reproduce
 from .errors import PreserveError, UnresolvedPayload
 from .externals import (
     CORRECTIONLIB_PLUGIN,
@@ -50,8 +50,10 @@ __all__ = [
     "PreserveError",
     "ResourceCache",
     "UnresolvedPayload",
+    "attach_run_report",
     "build_bundle",
     "canonical_bytes",
+    "capture_environment",
     "evaluate_external",
     "fingerprint",
     "get_plugin",
