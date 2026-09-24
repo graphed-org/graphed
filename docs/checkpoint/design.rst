@@ -426,9 +426,12 @@ the same ``ResumeReport`` you get from ``run_resumable``.
 A store at a URL
 ----------------
 
-``Store`` needs a directory every process can see. When the workers are on different machines,
-put the store at a URL instead: ``FsspecStore(url, **storage_options)`` runs the same resume and
-dead-letter machinery against any `fsspec <https://filesystem-spec.readthedocs.io>`_ filesystem.
+``Store`` is a directory, so a run can only be resumed where that directory is visible. Your
+job died on a batch node whose scratch disk is gone; you want to finish it from your submit node
+or from a different site. Put the store at a URL instead: ``FsspecStore(url, **storage_options)``
+runs the same resume and dead-letter machinery against an
+`fsspec <https://filesystem-spec.readthedocs.io>`_ filesystem — an ``s3://`` bucket, or a
+``file://`` path on a shared mount — so any machine that can reach the URL can pick the run up.
 It needs ``pip install "graphed[checkpoint]"``, and the URL's own fsspec driver (``s3fs`` for
 ``s3://``, ``fsspec-xrootd`` for ``root://``). The storage options go straight to fsspec:
 credentials, an endpoint, and so on. The plan and its task ids do not depend on the store, so the
@@ -501,8 +504,9 @@ A result is written as one whole object, and a read checks the bytes against the
 the torn object is never served, and the next write of that result replaces it. Writers of the
 same result write the same bytes to the same name, so they need no locking. Records replay in
 name order. Within one writer that is the order they were written; across writers it follows
-the writers' creation times, and two created within one clock tick replay in either order. The order only matters when one task has two records with different results, which a
-deterministic task never writes.
+the writers' creation times, and two created within one clock tick replay in either order. The
+order only matters when one task has two records with different results, which a deterministic
+task never writes.
 
 A root belongs to one kind of store. ``Store`` and ``FsspecStore("file://...")`` cannot share a
 directory, because a log is a file for one and a prefix for the other.
@@ -531,9 +535,6 @@ in the storage options is overridden: a cached listing would hide records that a
 wrote after it was taken. And the constructor creates the bucket if it does not exist, so a
 mistyped bucket name gives you a new, empty store, and the run recomputes everything.
 
-The M8 plan kept the checkpoint store on the local filesystem and left a distributed store for
-later. That item has been pulled forward: this backend is it.
-
 
 Keeping each task's input for replay
 ------------------------------------
@@ -561,10 +562,9 @@ are pickled; a ``reduce`` whose partial does not pickle fails its task when ``st
 Not supported yet
 -----------------
 
-**Recompute is sequential.** Missing partitions are processed one at a time, in order. Resume
-correctness does not depend on that, but a big recompute takes as long as the work does; for
-parallel execution drive the same analysis through ``graphed-executors`` and use the store for the
-resume boundary.
+**Recompute is sequential.** Missing partitions are processed one at a time, in order, so a big
+recompute takes as long as the work does. The runners in ``graphed-executors`` run a plan in
+parallel, but they do not skip work a store already holds.
 
 **No garbage collection.** Results accumulate under the store root and nothing prunes them. Delete
 the directory when a set of results is stale; there is no reachability sweep.
