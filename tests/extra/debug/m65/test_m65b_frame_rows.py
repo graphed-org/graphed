@@ -62,6 +62,8 @@ def test_a_frame_is_one_update_per_column_set() -> None:
         assert counting.sizes == [N, N, N]
         rows = {r["key"]: r for r in counting.view().to_records()}
         assert all((rows[k]["phase"], rows[k]["partition"]) == ("finished", f"L{k}") for k in range(N))
-        assert all((rows[k]["phase"], rows[k]["partition"]) == ("submitted", f"L{k}") for k in range(N, 2 * N))
+        assert all(
+            (rows[k]["phase"], rows[k]["partition"]) == ("submitted", f"L{k}") for k in range(N, 2 * N)
+        )
     finally:
         server.stop()
