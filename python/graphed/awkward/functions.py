@@ -508,7 +508,7 @@ class _TemplateExternal:
                     f"external payload kind {self.kind!r} has no registered plugin, so it "
                     "cannot be rebuilt from the payload bytes"
                 )
-            # _PluginEvaluator keys the per-process resource cache on (kind, content_hash), so the
+            # _PluginEvaluator caches the loaded resource per process by payload and params, so the
             # correction set / inference session is built once per worker, not once per partition.
             self.call = _PluginEvaluator(plugin, self.payload, self.params)
         return self.call(*values)

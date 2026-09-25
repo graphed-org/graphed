@@ -12,7 +12,7 @@ import threading
 import types
 import weakref
 from collections.abc import Callable, Mapping, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import graphed.core
 
@@ -21,6 +21,9 @@ from .array import Array
 from .backend import Backend, Form, ParamValue
 from .errors import GraphedTypeError
 from .provenance import Provenance, capture
+
+if TYPE_CHECKING:
+    from .services import ServiceSpec
 
 
 class Session:
@@ -32,6 +35,7 @@ class Session:
         self._source_names: dict[int, str] = {}
         self._ops: dict[int, tuple[str, dict[str, ParamValue], list[int]]] = {}
         self._externals: dict[int, tuple[Callable[[object], object], list[int]]] = {}
+        self._services: dict[str, ServiceSpec] = {}
         self._provenance: dict[int, Provenance] = {}
         # M10 (plan A.1): with incremental=True the session maintains the reduced view AS THE
         # GRAPH IS BUILT — every record steps an IncrementalReducer whose per-step work is the
@@ -233,6 +237,25 @@ class Session:
         """The source nodes' concrete data objects, keyed by node id (a public, read-only view —
         host-reader integrations inspect this instead of reaching into session internals)."""
         return dict(self._sources)
+
+    def declare_service(self, spec: ServiceSpec) -> None:
+        """Declare a service nodes may name by ``params["service"]``; declaring a name again must
+        repeat the same spec."""
+        held = self._services.setdefault(spec.name, spec)
+        if held != spec:
+            raise ValueError(f"service {spec.name!r} is already declared as {held}, not {spec}")
+
+    def services(self) -> dict[str, ServiceSpec]:
+        """The declared services by name (a copy)."""
+        return dict(self._services)
+
+    def service_for(self, name: str) -> ServiceSpec:
+        """The declared spec called ``name``; an undeclared name is refused naming the declared ones."""
+        spec = self._services.get(name)
+        if spec is None:
+            declared = ", ".join(sorted(self._services)) or "none"
+            raise ValueError(f"service {name!r} is not declared on this Session (declared: {declared})")
+        return spec
 
     def reduction_state(self) -> dict[str, int] | None:
         """Incremental-reduction introspection (M10): how many nodes the maintained reduced view

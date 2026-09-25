@@ -29,9 +29,10 @@ import os
 import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
+from ...services import UnboundService
 from ..errors import PreserveError
 
 ContentHash = Callable[[bytes], str]
@@ -75,6 +76,10 @@ class ExternalPlugin:
     # M25: a plugin whose payload is DERIVABLE from the node's own params (e.g. a histogram
     # fill's canonical spec) may synthesize it at build time, so callers supply no bytes.
     synthesize: SynthesizePayload | None = None
+    #: refuses a node's params at record time (e.g. Triton's ``url``/``service`` exclusivity)
+    check_params: Callable[[Mapping[str, Any]], None] | None = None
+    #: the params ``load`` reads; they key the per-process resource cache with the endpoint
+    load_params: tuple[str, ...] = ()
 
 
 class ResourceCache:
@@ -229,6 +234,10 @@ def record_external(
     preserved, not opaque). The build-time eval and the M9 reproduce-time eval both go through
     ``plugin.evaluate`` on the same payload bytes, so a bundle reproduces bit-for-bit. This is the
     entry point users follow to add their own External kinds."""
+    if plugin.check_params is not None:
+        plugin.check_params(params or {})
+    if params and "service" in params:
+        session.service_for(str(params["service"]))  # refuses an undeclared name
     content_hash = plugin.content_hash(payload)
     node_params: dict[str, Any] = {
         "kind": plugin.kind,
@@ -246,11 +255,12 @@ def record_external(
     )
 
 
-# Per-process cache of loaded External resources, keyed by (kind, content_hash). A loaded resource
-# (e.g. a correctionlib CorrectionSet — a C++ binding that does not pickle) is materialized ONCE per
-# worker process and reused across every call and every systematic universe off the same payload; it
-# never rides the pickle, which is what keeps `_PluginEvaluator` picklable for process pools.
-_RESOURCE_CACHE: dict[tuple[str, str], Any] = {}
+# Per-process cache of loaded External resources, keyed by (kind, content_hash, endpoint, the params
+# `load` reads): nodes differing only in evaluate-time params (e.g. a systematic) share one. A
+# loaded resource (e.g. a correctionlib CorrectionSet — a C++ binding that does not pickle) is
+# materialized ONCE per worker process and reused across every call; it never rides the pickle,
+# which is what keeps `_PluginEvaluator` picklable for process pools.
+_RESOURCE_CACHE: dict[tuple[str, str, str | None, str], Any] = {}
 
 
 @dataclass
@@ -263,13 +273,35 @@ class _PluginEvaluator:
     plugin: ExternalPlugin
     payload: bytes
     node_params: Mapping[str, Any]
+    #: where the node's ``params["service"]`` answers this run; a plain default keeps old pickles loading
+    endpoint: str | None = None
+
+    def bind_services(self, endpoints: Mapping[str, str]) -> _PluginEvaluator:
+        name = self.node_params.get("service")
+        if name is None:
+            return self
+        if name not in endpoints:
+            raise UnboundService(str(name))
+        return replace(self, endpoint=endpoints[name])
 
     def __call__(self, *values: Any) -> Any:
-        key = (self.plugin.kind, str(self.node_params.get("content_hash", "")))
+        params = self.node_params
+        if "service" in params:
+            if self.endpoint is None:
+                raise UnboundService(str(params["service"]))
+            params = {**params, "url": self.endpoint}
+        key = (
+            self.plugin.kind,
+            str(params.get("content_hash", "")),
+            self.endpoint,
+            json.dumps(
+                {p: params[p] for p in self.plugin.load_params if p in params}, sort_keys=True, default=str
+            ),
+        )
         resource = _RESOURCE_CACHE.get(key)
         if resource is None:
             try:
-                resource = self.plugin.load(self.payload, self.node_params)
+                resource = self.plugin.load(self.payload, params)
             except ImportError as err:
                 # a bare "No module named 'correctionlib'" from inside a worker names neither the
                 # payload that needs it nor the extra that ships it
@@ -278,7 +310,7 @@ class _PluginEvaluator:
                     f"{self.plugin.framework} is not importable here ({err})"
                 ) from err
             _RESOURCE_CACHE[key] = resource
-        return self.plugin.evaluate(resource, self.node_params, list(values))
+        return self.plugin.evaluate(resource, params, list(values))
 
 
 # ---- a trivial template: hash == sha256 of the raw payload bytes --------------------------------

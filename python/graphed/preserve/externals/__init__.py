@@ -28,7 +28,7 @@ from .jax_external import JAX_PLUGIN
 from .onnx_external import ONNX_PLUGIN
 from .pytorch_external import PYTORCH_PLUGIN
 from .tensorflow_external import TENSORFLOW_PLUGIN
-from .triton_external import TRITON_PLUGIN, triton_http_transport
+from .triton_external import TRITON_PLUGIN, triton_http_transport, triton_transport
 from .xgboost_external import XGBOOST_PLUGIN
 
 register_plugin(CORRECTIONLIB_PLUGIN, validate=False)
@@ -63,5 +63,6 @@ __all__ = [
     "registered_kinds",
     "sha256_bytes",
     "triton_http_transport",
+    "triton_transport",
     "validate_plugin",
 ]
