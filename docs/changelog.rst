@@ -42,6 +42,12 @@ Declared output types for external calls
   param, so it is identity; an undeclared call records the same bytes as 0.0.6 (#57).
 * ``graphed.preserve.externals.record_external`` takes ``output_type=`` too, so a plugin
   External such as a golden-JSON lumi mask records ``bool`` and indexes as a mask (#57).
+* ``ExternalPlugin.output_dtype`` declares a plugin's static leaf dtype. The seven float64
+  built-in plugins (correctionlib, ONNX, TensorFlow, PyTorch, XGBoost, JAX, Triton) and
+  ``gak.apply_correction(..., args=)`` now record float64 leaves instead of their first input's
+  dtype. Their plan bytes are unchanged.
+* ``gak.apply_correction`` and ``gak.onnx_inference`` with ``args=`` refuse an input from another
+  ``Session`` with a ``GraphedTypeError`` at the call, not a plain ``TypeError``.
 * A numpy ``gufunc`` External refuses ``output_type=``: its signature and ``output_dtype=`` type it.
 
 0.0.6

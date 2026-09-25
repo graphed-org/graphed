@@ -32,3 +32,11 @@ forms, primitive dtypes only, scalar stays scalar) and the `output_dtype` branch
 gak templates call `session._mine(inputs, (op, capture()))` before `session.form`; the correction
 template's form is `astype_form(..., "float64")` (literal; `import graphed.awkward` still loads no
 `graphed.preserve`/`graphed.checkpoint` module). All 99 frozen m71 tests green.
+
+## Iteration 4 — docs (plan-C C3) and gates
+
+awkward improvements ("approximate" → undeclared records the first input's type; float64 built-ins;
+string first slot stays `string`), frontend design `form_params=`, preserve design
+`ExternalPlugin.output_dtype`, changelog. `COV=1 ./scripts/run-tests.sh` rc=0; diff-cover vs
+origin/main 100% (111 lines); per-file gate: 4 ML plugin modules below 90% in the lane venv (frameworks
+not installed), pre-existing, each touched by one covered module-level line.

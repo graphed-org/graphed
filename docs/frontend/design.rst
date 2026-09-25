@@ -1121,6 +1121,9 @@ every platform. The numpy backend takes numpy dtypes, including strings, flat st
 subarrays. awkward takes the dtypes it can represent, and also its own type strings and type
 objects. An undeclared
 call adds no param, so its bytes are unchanged. ``output_type=`` and ``form=`` are exclusive.
+``form_params=`` passes values to ``op_form`` alone. They sit under the stored params and never
+reach the node, so they cannot change its identity or bytes. The preserve layer uses it for a
+plugin's ``output_dtype`` default.
 
 A package that records its *own* call-outs — histogram fills are the example — passes
 ``descriptor=`` and ``form=`` to ``Session.record_external`` and the backend is not consulted at
