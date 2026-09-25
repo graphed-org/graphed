@@ -36,7 +36,7 @@ from .execute import (
     refuse_chunk_partials,
 )
 from .projection import read_columns
-from .services import Bindable, referenced_services
+from .services import Bindable, ServiceSpec, bind_externals, referenced_services
 from .session import Session
 from .varied import refuse_container
 from .write import PartitionedSource, declared_columns
@@ -109,13 +109,8 @@ class _PartitionReduce(Generic[V]):
 
     def bind_services(self, endpoints: Mapping[str, str]) -> _PartitionReduce[V]:
         """A copy whose External evaluators and ``reduce`` carry ``endpoints`` where they take them."""
-
-        def bind(fn: Any) -> Any:
-            return fn.bind_services(endpoints) if isinstance(fn, Bindable) else fn
-
-        return replace(
-            self, externals=tuple((key, bind(fn)) for key, fn in self.externals), reduce=bind(self.reduce)
-        )
+        reduce = self.reduce.bind_services(endpoints) if isinstance(self.reduce, Bindable) else self.reduce
+        return replace(self, externals=bind_externals(self.externals, endpoints), reduce=reduce)
 
     def _evaluate(self, chunk: object, partition: Partition) -> list[object]:
         return evaluate_ir(
@@ -204,6 +199,14 @@ def external_evaluators(session: Session, compiled: CompiledGraph) -> dict[str, 
     return wired
 
 
+def plan_services(
+    session: Session, compiled: CompiledGraph, names: Sequence[str] | None = None
+) -> tuple[ServiceSpec, ...]:
+    """The ``Plan.services`` of a plan over ``compiled``: the session's specs its External nodes name,
+    plus ``names``."""
+    return referenced_services(session, GraphStore.deserialize(bytes(compiled.ir)).nodes(), names)
+
+
 def aggregate_plan(
     *outputs: Array,
     reduce: Callable[[list[Any]], V],
@@ -215,7 +218,7 @@ def aggregate_plan(
     partitions: Sequence[Partition] | None = None,
     on_compiled: Callable[[CompiledGraph], Any] | None = None,
     store: str | os.PathLike[str] | None = None,
-    services: Sequence[str] = (),
+    services: Sequence[str] | None = None,
 ) -> Plan[V]:
     """Build a one-pass partition-wise reduction :class:`~graphed.core.execution.Plan` over the
     session's single partitioned source (see module docstring). ``outputs`` are the output Arrays
@@ -270,5 +273,10 @@ def aggregate_plan(
     if partitions is None:
         partitions = data.partitions(steps_per_file)
     tasks = tuple(Task(i, p) for i, p in enumerate(partitions))
-    specs = referenced_services(session, GraphStore.deserialize(bytes(compiled.ir)).nodes(), services)
-    return Plan(process=process, combine=combine, empty=empty, tasks=tasks, services=specs)
+    return Plan(
+        process=process,
+        combine=combine,
+        empty=empty,
+        tasks=tasks,
+        services=plan_services(session, compiled, services),
+    )

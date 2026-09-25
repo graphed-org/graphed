@@ -14,8 +14,9 @@ Services an analysis calls
   analysis calls: ``Session.declare_service``, ``Session.services()``, ``Session.service_for``. An
   External names one through ``params["service"]``; an undeclared name is refused at record time.
 * ``Plan.services`` and ``DurablePlan.services`` carry the specs the recording names
-  (``aggregate_plan(services=...)`` adds names no node carries). ``DurablePlan.to_bytes`` writes
-  the key only when non-empty, so a plan without services keeps its bytes.
+  (``aggregate_plan(services=...)`` adds names no node carries), and so does the awkward
+  ``to_parquet`` write plan. ``DurablePlan.to_bytes`` writes the key only when non-empty, so a plan
+  without services keeps its bytes.
 * ``graphed.services.bind_services(plan, {name: "scheme://host:port"})`` binds run endpoints into a
   plan's process without changing the recording; ``split_endpoint`` checks the form (``tcp``,
   ``http``, ``https``, ``grpc``, ``grpcs``). An unbound service raises ``UnboundService``.

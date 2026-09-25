@@ -1,6 +1,7 @@
 """Service-surface edges the frozen m68 suite leaves untaken: pickling (specs ride a stdlib-pickled
 ``Plan`` to a driver job; ``UnboundService`` crosses back from a worker), two more refused endpoint
-forms, and a literal Triton url whose scheme no client speaks."""
+forms, a literal Triton url whose scheme no client speaks, a hashable spec with a recipe, and a
+``RunReport`` pickled before it had ``endpoints``."""
 
 from __future__ import annotations
 
@@ -90,3 +91,35 @@ def test_reproduce_refuses_a_node_that_calls_a_service(tmp_path: Any) -> None:
     )
     with pytest.raises(PreserveError, match="calls service 'tagger'"):
         reproduce(bundle)
+
+
+def test_a_spec_with_a_recipe_hashes() -> None:
+    def spec(env: str) -> ServiceSpec:
+        return ServiceSpec(
+            "svc", "http", launch=Launch(argv=("serve",), env={"A": env}, resources={"gpus": 1.0})
+        )
+
+    assert hash(spec("1")) == hash(spec("1"))
+    assert len({spec("1"), spec("1"), spec("2")}) == 2
+
+
+class _Pickled:
+    """Pickles to a stream that builds ``cls`` from ``state`` without ``__init__``, as 0.0.6 wrote it."""
+
+    def __init__(self, cls: type, state: dict[str, Any]) -> None:
+        self.cls, self.state = cls, state
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        return (object.__new__, (self.cls,), self.state)
+
+
+def test_a_run_report_pickled_without_endpoints_loads() -> None:
+    from graphed.core import ExecResult  # noqa: PLC0415
+    from graphed.debug import RunRecorder, RunReport  # noqa: PLC0415
+
+    report = RunRecorder().report(result=ExecResult(value=0, n_partitions=0, n_combines=0))
+    state = {k: v for k, v in vars(report).items() if k != "endpoints"}
+    old = pickle.loads(pickle.dumps(_Pickled(RunReport, state)))
+    assert type(old) is RunReport and dict(old.endpoints) == {}
+    assert old.to_json() == report.to_json()
+    assert pickle.loads(pickle.dumps(old)) == report

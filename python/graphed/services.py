@@ -55,6 +55,17 @@ class Launch:
         # a mappingproxy does not pickle; the constructor re-wraps the plain dicts
         return (Launch, (self.argv, self.image, self.inputs, dict(self.env), dict(self.resources)))
 
+    def __hash__(self) -> int:  # a mappingproxy does not hash
+        return hash(
+            (
+                self.argv,
+                self.image,
+                self.inputs,
+                frozenset(self.env.items()),
+                frozenset(self.resources.items()),
+            )
+        )
+
     def to_json(self) -> dict[str, Any]:
         return {
             "argv": list(self.argv),
@@ -145,14 +156,23 @@ class Bindable(Protocol):
 
 
 def referenced_services(
-    session: Session, nodes: Iterable[Mapping[str, Any]], names: Iterable[str] = ()
+    session: Session, nodes: Iterable[Mapping[str, Any]], names: Iterable[str] | None = None
 ) -> tuple[ServiceSpec, ...]:
     """The ``session``'s specs named by the External ``nodes``' ``params["service"]`` and by
     ``names``, in name order; an undeclared name is refused."""
     named = {
         str(n["params"]["service"]) for n in nodes if n["kind"] == "external" and "service" in n["params"]
     }
-    return tuple(session.service_for(name) for name in sorted(named.union(names)))
+    return tuple(session.service_for(name) for name in sorted(named.union(names or ())))
+
+
+def bind_externals(
+    externals: Iterable[tuple[str, Any]], endpoints: Mapping[str, str]
+) -> tuple[tuple[str, Any], ...]:
+    """A plan process's ``(key, evaluator)`` pairs with each :class:`Bindable` evaluator bound."""
+    return tuple(
+        (key, fn.bind_services(endpoints) if isinstance(fn, Bindable) else fn) for key, fn in externals
+    )
 
 
 def bind_services(plan: Plan[R], endpoints: Mapping[str, str]) -> Plan[R]:
@@ -171,6 +191,7 @@ __all__ = [
     "Launch",
     "ServiceSpec",
     "UnboundService",
+    "bind_externals",
     "bind_services",
     "referenced_services",
     "split_endpoint",

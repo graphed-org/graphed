@@ -71,6 +71,9 @@ class RunReport:
         values = {f.name: getattr(self, f.name) for f in fields(self)}
         return (_report, (values | {"endpoints": dict(self.endpoints)},))
 
+    def __setstate__(self, state: dict[str, Any]) -> None:  # a 0.0.6 pickle carries no endpoints
+        self.__dict__.update({"endpoints": MappingProxyType({})} | state)
+
     @property
     def failed_keys(self) -> tuple[int, ...]:
         return tuple(t.key for t in self.tasks if t.state == "errored")
