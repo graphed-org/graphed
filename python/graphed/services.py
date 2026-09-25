@@ -11,7 +11,7 @@ records it as run provenance.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar, runtime_checkable
@@ -21,6 +21,7 @@ from .errors import GraphedError
 
 if TYPE_CHECKING:
     from .core.execution import Plan
+    from .session import Session
 
 R = TypeVar("R")
 
@@ -143,6 +144,17 @@ class Bindable(Protocol):
     def bind_services(self, endpoints: Mapping[str, str]) -> Any: ...
 
 
+def referenced_services(
+    session: Session, nodes: Iterable[Mapping[str, Any]], names: Iterable[str] = ()
+) -> tuple[ServiceSpec, ...]:
+    """The ``session``'s specs named by the External ``nodes``' ``params["service"]`` and by
+    ``names``, in name order; an undeclared name is refused."""
+    named = {
+        str(n["params"]["service"]) for n in nodes if n["kind"] == "external" and "service" in n["params"]
+    }
+    return tuple(session.service_for(name) for name in sorted(named.union(names)))
+
+
 def bind_services(plan: Plan[R], endpoints: Mapping[str, str]) -> Plan[R]:
     """``plan`` with ``endpoints`` (service name -> ``scheme://host:port``) bound into its process; the
     same plan when the process has no ``bind_services`` hook. Every endpoint is checked first."""
@@ -160,5 +172,6 @@ __all__ = [
     "ServiceSpec",
     "UnboundService",
     "bind_services",
+    "referenced_services",
     "split_endpoint",
 ]

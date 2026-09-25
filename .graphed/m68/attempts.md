@@ -25,3 +25,11 @@ endpoint, {p: params[p] for p in load_params})`. `uv lock`: the 3c46e01 lock was
 (`uv lock --check` fails on a `git archive 3c46e01`; 54 packages missing); this change adds only grpcio.
 Runner: 4 F, all commit-2 scope (bundle manifest, inspect, RunReport.endpoints); m48 R-A test green.
 diff-cover vs 3c46e01: 100% (152 lines); changed files 97–100%. Precommit --fast ok.
+
+## Iteration 3 — commit 2 (bundle manifest, inspect, RunReport.endpoints)
+`graphed.services.referenced_services` is the one "specs the IR names" rule, used by aggregate_plan and
+build_bundle. RunReport.endpoints: read-only mapping, written to JSON only when non-empty, `__reduce__`
+so a report still pickles (extra test fails without it: "cannot pickle 'mappingproxy'").
+`reproduce` refuses a node naming a service (PreserveError) instead of the tritonclient KeyError on the
+missing url (extra test fails without it). Runner: 0 F (rc=0); diff-cover vs 3c46e01 100% (183 lines);
+changed files 97–100%. Precommit --fast ok.

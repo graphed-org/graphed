@@ -36,7 +36,7 @@ from .execute import (
     refuse_chunk_partials,
 )
 from .projection import read_columns
-from .services import Bindable
+from .services import Bindable, referenced_services
 from .session import Session
 from .varied import refuse_container
 from .write import PartitionedSource, declared_columns
@@ -270,10 +270,5 @@ def aggregate_plan(
     if partitions is None:
         partitions = data.partitions(steps_per_file)
     tasks = tuple(Task(i, p) for i, p in enumerate(partitions))
-    named = {
-        str(node["params"]["service"])
-        for node in GraphStore.deserialize(bytes(compiled.ir)).nodes()
-        if node["kind"] == "external" and "service" in node["params"]
-    }
-    specs = tuple(session.service_for(name) for name in sorted(named.union(services)))
+    specs = referenced_services(session, GraphStore.deserialize(bytes(compiled.ir)).nodes(), services)
     return Plan(process=process, combine=combine, empty=empty, tasks=tasks, services=specs)
