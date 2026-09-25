@@ -157,6 +157,8 @@ def replay(plan: Plan[Any], key: int, *outputs: Array) -> Replay:
     process = plan.process
     if not isinstance(process, _PartitionReduce):
         raise TypeError(f"replay needs a plan built by aggregate_plan, not one whose process is {process!r}")
+    if process.writes:
+        raise TypeError("replay does not re-run a plan's writes; replay a plan built without writes=")
     task = next((t for t in plan.tasks if t.key == key), None)
     if task is None:
         raise ValueError(f"the plan has no task with key {key!r}")

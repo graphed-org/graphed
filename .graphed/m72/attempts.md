@@ -38,3 +38,18 @@ groups" bullet replaced by the durable-collate limit), `improvements.rst` (blind
 `docs/awkward/design.rst`, `architecture.rst`, `api.rst`, `changelog.rst` (0.0.7 unreleased). Both
 new examples executed with `run_rst_blocks.py` (the 3 frontend and 1 awkward FAILs are the
 pre-existing fragment blocks, same on the base); `sphinx-build -W` clean.
+
+## R1 repair — part collisions across `collate`, replay of a writes plan (review impl-r1 F1, F2)
+
+Class: a process writes parts at paths derived from its partition, and a plan combining processes
+could not see them. Cut: an optional `part_paths(partition)` hook on every part-writing process
+(`_PartitionReduce`, whose `_write` now takes its paths from it; `_Collated`, routing to its
+sub-process; `to_parquet`'s `_WritePart`/`_VariedWritePart` via one `_part_paths`), and
+`_refuse_shared_parts` walks `(process, partition)` pairs through it — in `aggregate_plan` and over
+the collated process in `collate`, so nested collates are covered. Out of reach: writers in other
+repos (uproot's ROOT writer) until they grow the hook. F2: `replay` refuses a plan with writes; the
+`store=` refusal's comment and design.rst give the real reason (the capture path never writes).
+Tests `tests/extra/frontend/m72` (collision + nested refused, no read, no file; distinct parts
+run; replay refused) and `tests/extra/awkward/m72` (two `to_parquet` plans into one destination
+refused; distinct destinations run). The 3 refusal tests fail on 4a3ae76 and the 2 controls pass
+there; dropping `_Collated.part_paths` fails the nested leg.

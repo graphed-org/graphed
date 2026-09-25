@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import os
 import threading
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Any, Generic, TypeVar
 
@@ -126,14 +126,16 @@ class _PartitionReduce(Generic[V]):
         reduce = self.reduce.bind_services(endpoints) if isinstance(self.reduce, Bindable) else self.reduce
         return replace(self, externals=bind_externals(self.externals, endpoints), reduce=reduce)
 
+    def part_paths(self, partition: Partition) -> list[str]:
+        """Where this partition's parts land, without reading: the hook `_written_parts` calls."""
+        return [os.path.join(destination, name(partition)) for _, destination, name, _, _ in self.writes]
+
     def _write(self, values: list[object], partition: Partition) -> list[object]:
-        paths: list[object] = []
-        for codec, destination, name, slot, kv in self.writes:
-            path = os.path.join(destination, name(partition))
+        paths = self.part_paths(partition)
+        for (codec, _, _, slot, kv), path in zip(self.writes, paths, strict=True):
             os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
             meta = None if kv is None else {k: v if isinstance(v, str) else str(values[v]) for k, v in kv}
             codec(values[slot], path, meta)
-            paths.append(path)
         return [*values[: self.n_values], *paths]
 
     def _evaluate(self, chunk: object, partition: Partition) -> list[object]:
@@ -273,7 +275,7 @@ def aggregate_plan(
     if not outputs and not writes:
         raise ValueError("aggregate_plan needs at least one output Array or write")
     if writes and store is not None:
-        # replay recompiles `outputs` only, and a replay must never rewrite a part
+        # the capturing path evaluates and reduces only; it would skip every write
         raise TypeError("aggregate_plan(store=) does not capture writes")
     arrays = [*outputs, *(w.array for w in writes), *(v for v in metadata if isinstance(v, Array))]
     session = arrays[0].session
@@ -329,7 +331,7 @@ def aggregate_plan(
     if partitions is None:
         partitions = data.partitions(steps_per_file)
     tasks = tuple(Task(i, p) for i, p in enumerate(partitions))
-    _refuse_shared_parts(writes, tasks)
+    _refuse_shared_parts((process, t.partition) for t in tasks)
     return Plan(
         process=process,
         combine=combine,
@@ -339,16 +341,23 @@ def aggregate_plan(
     )
 
 
-def _refuse_shared_parts(writes: Sequence[PartWrite], tasks: Sequence[Task]) -> None:
-    """Driver-side, O(writes x tasks): a part two tasks share would be silently overwritten."""
+def _written_parts(process: object, partition: Partition) -> Sequence[str]:
+    """The parts a plan's ``process`` writes for ``partition``, from its optional
+    ``part_paths(partition)`` hook (no I/O); a process without the hook writes none."""
+    hook = getattr(process, "part_paths", None)
+    return () if hook is None else hook(partition)
+
+
+def _refuse_shared_parts(runs: Iterable[tuple[object, Partition]]) -> None:
+    """Driver-side, one hook call per task: a part two writes share would be silently overwritten."""
     seen: set[str] = set()
-    for w in writes:
-        for task in tasks:
-            path = os.path.normpath(os.path.join(w.destination, w.name(task.partition)))
+    for process, partition in runs:
+        for path in map(os.path.normpath, _written_parts(process, partition)):
             if path in seen:
                 raise ValueError(
-                    f"two tasks of this plan write the same part {path!r}: `name` must tell every"
-                    " partition apart (a blind partition's entry range is 0-0 until it is read)"
+                    f"two writes of this plan write the same part {path!r}: `name` must tell every"
+                    " partition apart (a blind partition's entry range is 0-0 until it is read), and"
+                    " plans collated together need distinct parts"
                 )
             seen.add(path)
 
@@ -364,6 +373,9 @@ class _Collated:
     def __call__(self, partition: Partition, resources: WorkerResources) -> dict[str, Any]:
         name = self.route[(partition.uri, partition.tree)]
         return {name: self.processes[name](partition, resources)}
+
+    def part_paths(self, partition: Partition) -> Sequence[str]:
+        return _written_parts(self.processes[self.route[(partition.uri, partition.tree)]], partition)
 
 
 @dataclass(frozen=True)
@@ -384,7 +396,9 @@ def collate(plans: Mapping[str, Plan[Any]]) -> Plan[dict[str, Any]]:
     Tasks are each plan's in key order, concatenated in mapping order and re-keyed ``0..N-1``, so
     the reduction tree stays the runner's. A task runs the process of the plan that holds its
     ``(uri, tree)``; a ``(uri, tree)`` held by two plans is refused (record both over one source so
-    they share the read). A name is in the value exactly when its plan has at least one task.
+    they share the read), and so is a part two tasks would both write, across plans too (each
+    process's optional ``part_paths(partition)`` hook names its parts). A name is in the value
+    exactly when its plan has at least one task.
     Running each plan on its own and collecting ``{name: value}`` gives the same product when each
     ``combine`` is exact."""
     if not plans:
@@ -403,8 +417,10 @@ def collate(plans: Mapping[str, Plan[Any]]) -> Plan[dict[str, Any]]:
                     " one read serves both graphs"
                 )
             tasks.append(Task(len(tasks), task.partition))
+    process = _Collated({n: p.process for n, p in plans.items()}, route)
+    _refuse_shared_parts((process, t.partition) for t in tasks)
     return Plan(
-        process=_Collated({n: p.process for n, p in plans.items()}, route),
+        process=process,
         combine=_CollatedCombine({n: p.combine for n, p in plans.items()}),
         empty=dict,
         tasks=tuple(tasks),

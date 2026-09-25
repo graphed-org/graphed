@@ -62,7 +62,9 @@ One plan for every output
   are refused when the plan is built.
 * ``graphed.collate({name: plan})`` joins plans over different graphs and sources, data and MC
   say, into one plan whose value is ``{name: value}``. Each task runs its own plan's graph, and
-  the runner tree-reduces all the tasks together.
+  the runner tree-reduces all the tasks together. A part two of its plans would both write, from
+  ``writes=`` or ``to_parquet``, is refused when it is built; ``graphed.debug.replay`` refuses a
+  plan with writes.
 * ``graphed.awkward.parquet_write`` writes parquet parts through ``ak.to_arrow_table`` and
   ``pyarrow.parquet.write_table`` with options for each, and per-part key-value metadata that
   replaces the schema's.

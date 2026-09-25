@@ -145,13 +145,14 @@ class _WritePart:
     def bind_services(self, endpoints: Mapping[str, str]) -> _WritePart:
         return replace(self, externals=bind_externals(self.externals, endpoints))
 
+    def part_paths(self, partition: Partition) -> list[str]:
+        return _part_paths(self, partition)
+
     def __call__(self, partition: Partition, resources: WorkerResources) -> list[str]:
         if self.reader is not None:
             chunk = self.reader.read_partition(partition, self.columns, resources)
-            index = gw.blind_part_index(partition, dict(self.bases))
         elif self.memory_data is not None:
             chunk = self.memory_data[partition.entry_start : partition.entry_stop]
-            index = _memory_step(partition, self.memory_rows, self.steps_per_file)
         else:  # pragma: no cover - every source is a protocol reader or in-memory
             raise TypeError("write task has neither a partition reader nor in-memory data")
         backend = AwkwardBackend(behavior=_resolve_behavior(self.behavior))
@@ -160,9 +161,18 @@ class _WritePart:
         )
         payload = _payload(out, self.column)
         os.makedirs(self.destination, exist_ok=True)
-        path = gpq.part_path(self.destination, index, prefix=self.prefix)
+        (path,) = self.part_paths(partition)
         ak.to_parquet(payload, path)
         return [path]
+
+
+def _part_paths(writer: _WritePart | _VariedWritePart, partition: Partition) -> list[str]:
+    """A deferred writer's one part for ``partition``: its ``part_paths`` hook, which `collate` checks."""
+    if writer.reader is not None:
+        index = gw.blind_part_index(partition, dict(writer.bases))
+    else:
+        index = _memory_step(partition, writer.memory_rows, writer.steps_per_file)
+    return [gpq.part_path(writer.destination, index, prefix=writer.prefix)]
 
 
 def _payload(value: object, column: str) -> ak.Array:
@@ -576,19 +586,18 @@ class _VariedWritePart:
     def bind_services(self, endpoints: Mapping[str, str]) -> _VariedWritePart:
         return replace(self, externals=bind_externals(self.externals, endpoints))
 
-    def _chunk(self, partition: Partition, resources: WorkerResources) -> tuple[Any, int]:
+    def _chunk(self, partition: Partition, resources: WorkerResources) -> Any:
         if self.reader is not None:
-            return self.reader.read_partition(partition, self.columns, resources), gw.blind_part_index(
-                partition, dict(self.bases)
-            )
+            return self.reader.read_partition(partition, self.columns, resources)
         if self.memory_data is not None:
-            return self.memory_data[partition.entry_start : partition.entry_stop], _memory_step(
-                partition, self.memory_rows, self.steps_per_file
-            )
+            return self.memory_data[partition.entry_start : partition.entry_stop]
         raise TypeError("write task has neither a partition reader nor in-memory data")
 
+    def part_paths(self, partition: Partition) -> list[str]:
+        return _part_paths(self, partition)
+
     def __call__(self, partition: Partition, resources: WorkerResources) -> list[str]:
-        chunk, index = self._chunk(partition, resources)
+        chunk = self._chunk(partition, resources)
         backend = AwkwardBackend(behavior=_resolve_behavior(self.behavior))
         values = evaluate_ir(
             self.compiled, cast("Backend", backend), {self.source_name: chunk}, externals=dict(self.externals)
@@ -645,7 +654,7 @@ class _VariedWritePart:
             fields = {name: base[name] for name in base.fields}
         payload = ak.zip({**fields, **cols}, depth_limit=1)
         os.makedirs(self.destination, exist_ok=True)
-        path = gpq.part_path(self.destination, index, prefix=self.prefix)
+        (path,) = self.part_paths(partition)
         _write_augmented(payload, path, self.manifest)
         return [path]
 

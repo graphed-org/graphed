@@ -169,7 +169,7 @@ warn_return_any = false
 module = [
   "analyses", "backends", "m13_toy", "m52_point_fixtures", "m55_lockstep_fixtures",
   "m57_dedupe_fixtures", "m58_declaration_fixtures", "m59_idiom_fixtures", "m60x_lib",
-  "m60x_libx", "test_vary_stacking",
+  "m60x_libx", "m72_multiout_fixtures", "test_vary_stacking",
 ]
 ignore_missing_imports = true
 
@@ -208,6 +208,8 @@ pythonpath = [
   "tests/frozen/frontend/m10",
   "tests/frozen/frontend/m13",
   "tests/frozen/frontend/m15",
+  # frontend/m72's fixtures serve tests/extra/frontend/m72 (cross-dir).
+  "tests/frozen/frontend/m72",
   "tests/frozen/awkward/m16",
   # awkward/m40 imports golden_route from awkward/m39 (cross-dir); needed once awkward runs per-mXX.
   # numpy/m39 ships golden_route.py too, but resolves same-dir via prepend — only m39 here is on path.
