@@ -1073,18 +1073,17 @@ Prints::
     [55.0, 30.0] {b'sum_w': b'3.5'}
 
 ``name`` turns the task's partition into the part's file name. It sees the partition as the plan
-holds it, so a blind partition has no entry range yet (``entry_start == entry_stop == 0``); name
-it by ``blind_step``, or pass explicit ``partitions=``. Two tasks whose names collide are refused
-when the plan is built, across ``collate``'s plans too. A reduction in ``metadata`` is the
-reduction over this part's chunk, which
-is what a per-part normalization needs; a value that is not an array is converted with ``str()``
-once, at build. ``parquet_write`` forwards ``arrow_options`` to ``ak.to_arrow_table`` and
-``parquet_options`` to ``pyarrow.parquet.write_table``, and the metadata replaces the schema's
-key-value metadata, so a part can match another tool's files exactly; column order is the
-record's, so sort a record in the graph (``rec[sorted(rec.fields)]``) to write sorted columns. A
-write's array must be row-aligned: a reduction there is refused, since a part would hold a
-per-chunk partial. A plan with writes does not take ``store=``, since a capturing task
-evaluates and reduces but does not write, and ``graphed.debug.replay`` refuses it.
+holds it, so a blind partition has no entry range yet (``entry_start == entry_stop == 0``); name it
+by ``blind_step``, or pass explicit ``partitions=``. Two tasks whose names collide are refused when
+the plan is built, across ``collate``'s plans too. A reduction in ``metadata`` is the reduction over
+this part's chunk, which is what a per-part normalization needs; a value that is not an array is
+converted with ``str()`` once, at build. ``parquet_write`` forwards ``arrow_options`` to
+``ak.to_arrow_table`` and ``parquet_options`` to ``pyarrow.parquet.write_table``, and the metadata
+replaces the schema's key-value metadata, so a part can match another tool's files exactly; column
+order is the record's, so sort a record in the graph (``rec[sorted(rec.fields)]``) to write sorted
+columns. A write's array must be row-aligned: a reduction there is refused, since a part would hold
+a per-chunk partial. A plan with writes does not take ``store=``, since a capturing task evaluates
+and reduces but does not write, and ``graphed.debug.replay`` refuses it.
 
 
 Several graphs in one plan
