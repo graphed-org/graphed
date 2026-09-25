@@ -318,13 +318,84 @@ whatever day.
 ``triton_model`` is the exception worth understanding. A Triton-served model lives on someone
 else's machine, so what the bundle preserves is the served model's *identity* — name, version,
 input and output names, weight digests — while the connection to the server is environment,
-built per worker from an importable factory named in the operation's parameters
-(``params["transport"] = "module:attr"``; the default builds a ``tritonclient`` HTTP client).
-The bundle records what was called. It cannot bottle the server, and if the server is gone,
+built per worker. The operation names either a declared service (``params["service"]``, bound to
+an endpoint per run, see below) or a literal ``params["url"]``. The endpoint's scheme picks the
+client — ``http(s)://`` ``tritonclient.http``, ``grpc(s)://`` ``tritonclient.grpc``, TLS on the
+``s`` — and a url without a scheme keeps the HTTP client; an importable factory named in
+``params["transport"] = "module:attr"`` overrides both. The bundle records what was called. It cannot bottle the server, and if the server is gone,
 ``reproduce`` says so rather than returning something else.
 
 ``sha256_bytes`` is there for the easy case: when the payload bytes already *are* the canonical
 content, with no formatting or metadata to normalize away, use it directly.
+
+
+Services in a bundle
+--------------------
+
+An analysis that calls a service declares it on the session (see :doc:`../architecture`), and
+the bundle keeps that declaration beside the payloads: ``manifest["services"]`` lists, in name
+order, each declared spec an operation in the graph names — the requirement and the recipe for
+starting one, never an endpoint. A declared service no operation names is not written, and a
+bundle whose graph names none has no ``services`` key at all, so its manifest and fingerprint are
+what they were before services existed.
+
+.. code-block:: python
+
+   import json
+   import tempfile
+
+   import awkward as ak
+
+   from graphed import Session
+   from graphed.awkward import AwkwardBackend, from_awkward
+   from graphed.preserve import TRITON_PLUGIN, build_bundle, inspect, record_external
+   from graphed.services import Launch, ServiceSpec
+
+   s = Session(AwkwardBackend())
+   s.declare_service(
+       ServiceSpec(
+           "tagger",
+           "triton",
+           check="grpc:inference.GRPCInferenceService",
+           launch=Launch(
+               argv=("tritonserver", "--grpc-port={port}", "--model-repository=models"),
+               image="/cvmfs/unpacked.cern.ch/registry.hub.docker.com/nvcr.io/tritonserver:25.11",
+               resources={"gpus": 1},
+           ),
+       )
+   )
+   data = ak.Array({"x": [0.5, 1.5, 2.5]})
+   events = from_awkward(s, "events", data)
+   model = json.dumps({"model": "tagger", "version": "1"}).encode()
+   score = record_external(
+       s, TRITON_PLUGIN, model, [events.x],
+       params={"service": "tagger", "model": "tagger", "input_name": "x", "output_name": "y"},
+   )
+   bundle = build_bundle(
+       tempfile.mkdtemp(),
+       session=s,
+       value=events.x,
+       weight=score,
+       datasets={"events": data},
+       payloads={TRITON_PLUGIN.content_hash(model): model},
+       histogram={"name": "x", "bins": 3, "lo": 0.0, "hi": 3.0},
+   )
+   print([spec["name"] for spec in bundle.manifest["services"]])
+   lines = inspect(bundle).splitlines()
+   print("\n".join(lines[lines.index("  services:") : lines.index("  services:") + 2]))
+
+::
+
+   ['tagger']
+     services:
+       tagger kind=triton check=grpc:inference.GRPCInferenceService image=/cvmfs/unpacked.cern.ch/registry.hub.docker.com/nvcr.io/tritonserver:25.11 argv=tritonserver --grpc-port={port} --model-repository=models resources=gpus=1
+
+``inspect`` prints the ``services:`` block after the external payloads: per service its kind,
+check, and image and argv with resources, or ``external only`` when there is no recipe. Where a
+run reached each service is recorded by the run, not the analysis: a report built with
+``RunRecorder.report(..., endpoints={name: endpoint})`` carries them, and ``inspect`` prints an
+``endpoints: name → endpoint`` line under that report. Like every run report it lives outside the
+manifest, so the fingerprint does not change.
 
 
 Adding a format the bundle does not know
@@ -480,8 +551,9 @@ Not supported yet
 * **Opaque Python callables are flagged, not preserved.** A ``.map(...)`` over your own
   function is listed as a preservation risk. Record it as a plugin-backed operation instead if
   it needs to survive.
-* **Remote models need their server.** A Triton-backed operation reproduces where the endpoint
-  exists; there is no way to embed and re-launch the service from the bundle.
+* **Remote models need their server.** A Triton-backed operation reproduces where an endpoint
+  for its service exists. The bundle carries the service's recipe, but ``reproduce`` does not
+  start it; bind an endpoint, or run through a ``graphed-executors`` runner that starts it.
 * **No export to REANA, CAP, Zenodo or RECAST.** The bundle is the substrate those packagings
   would be built from; nothing writes them today.
 * **Behavior classes are not carried.** The reproducing interpreter evaluates through a plain
