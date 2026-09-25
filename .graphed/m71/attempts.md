@@ -14,3 +14,10 @@ Run: `python -m pytest tests/frozen/{frontend,awkward,preserve}/m71a tests/froze
 `Array.map`/`graphed.apply(output_type=)`, the Varied lambda forwards it. Decision on plan r11 L1: numpy
 `op_form("gufunc")` refuses a declared key (`tests/extra/numpy/m71`). frontend/awkward/preserve m71a
 all green.
+
+## Iteration 2 — m71b the ask (plan-B B2)
+
+`graphed.preserve.externals.record_external(..., params=None, output_type=None)` forwards
+`output_type=` to `Session.record_external` (keyword-only, after `params`, for the m68 `service=`
+rebase). preserve m71b 12/12 and m71a pins green. Per r11 X16 nothing relies on the in-process
+`_PluginEvaluator` params carrying the key; only the bundle's `evaluate_external` sees it.

@@ -227,13 +227,18 @@ def record_external(
     inputs: Sequence[Any],
     *,
     params: Mapping[str, Any] | None = None,
+    output_type: object = None,
 ) -> Any:
     """Record a preservable External in a graphed ``session`` using ``plugin``.
 
     The node's descriptor carries the plugin's **deterministic content hash** of ``payload`` (so it is
     preserved, not opaque). The build-time eval and the M9 reproduce-time eval both go through
     ``plugin.evaluate`` on the same payload bytes, so a bundle reproduces bit-for-bit. This is the
-    entry point users follow to add their own External kinds."""
+    entry point users follow to add their own External kinds.
+
+    ``output_type=`` declares the type of each element of the plugin's value (any spelling the
+    session's backend accepts, see ``Session.record_external``); it is recorded as the node's form
+    and its canonical string joins the node's params."""
     if plugin.check_params is not None:
         plugin.check_params(params or {})
     if params and "service" in params:
@@ -251,7 +256,11 @@ def record_external(
         },
     }
     return session.record_external(
-        "external", _PluginEvaluator(plugin, payload, node_params), list(inputs), node_params
+        "external",
+        _PluginEvaluator(plugin, payload, node_params),
+        list(inputs),
+        node_params,
+        output_type=output_type,
     )
 
 
