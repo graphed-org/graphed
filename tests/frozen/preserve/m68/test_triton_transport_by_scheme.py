@@ -136,3 +136,13 @@ def test_node_params_are_part_of_the_connection_key(seen: dict[str, list[Any]]) 
     for row in SequentialRunner().run(plan).value:
         assert np.allclose(row, expected(0.45, -0.1), rtol=1e-6)
     assert [e for e in seen["http"] if isinstance(e, tuple)] == [("tr-key:8000", False)] * 2
+
+
+def test_equal_node_params_in_any_key_order_share_one_connection(seen: dict[str, list[Any]]) -> None:
+    params = {**PARAMS, "service": "scorer-svc"}
+    for order in (params, dict(reversed(params.items()))):  # two sessions, so two evaluators
+        ev = new_events()
+        ev.session.declare_service(ServiceSpec("scorer-svc", "triton"))
+        node = record_external(ev.session, TRITON_PLUGIN, descriptor("key-order"), [ev.x], params=order)
+        SequentialRunner().run(bind_services(values_plan(node), {"scorer-svc": "http://tr-order:8000"}))
+    assert [e for e in seen["http"] if isinstance(e, tuple)] == [("tr-order:8000", False)]
