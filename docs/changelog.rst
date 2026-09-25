@@ -40,6 +40,8 @@ Declared output types for external calls
   objects, forms, numpy dtypes and Python types; numpy takes dtypes of every kind and Python
   types; every numerical dtype, ``float16`` included, works on both. The declaration is a node
   param, so it is identity; an undeclared call records the same bytes as 0.0.6 (#57).
+* ``graphed.preserve.externals.record_external`` takes ``output_type=`` too, so a plugin
+  External such as a golden-JSON lumi mask records ``bool`` and indexes as a mask (#57).
 * A numpy ``gufunc`` External refuses ``output_type=``: its signature and ``output_dtype=`` type it.
 
 0.0.6
