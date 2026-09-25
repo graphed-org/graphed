@@ -38,7 +38,8 @@ Declared output types for external calls
   or ``vector[object]`` (numpy). A boolean mask declared ``"bool"`` indexes as a mask at build
   time, and a declared named record resolves its behavior. awkward takes type strings, type
   objects, forms, numpy dtypes and Python types; numpy takes dtypes of every kind and Python
-  types; every numerical dtype, ``float16`` included, works on both. The declaration is a node
+  types; every numerical dtype works on both, except that awkward 2.14's type grammar refuses
+  ``float16`` inside a list or record or with parameters. The declaration is a node
   param, so it is identity; an undeclared call records the same bytes as 0.0.6 (#57).
 * ``graphed.preserve.externals.record_external`` takes ``output_type=`` too, so a plugin
   External such as a golden-JSON lumi mask records ``bool`` and indexes as a mask (#57).

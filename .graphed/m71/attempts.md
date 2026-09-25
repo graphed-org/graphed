@@ -40,3 +40,15 @@ string first slot stays `string`), frontend design `form_params=`, preserve desi
 `ExternalPlugin.output_dtype`, changelog. `COV=1 ./scripts/run-tests.sh` rc=0; diff-cover vs
 origin/main 100% (111 lines); per-file gate: 4 ML plugin modules below 90% in the lane venv (frameworks
 not installed), pre-existing, each touched by one covered module-level line.
+
+## Iteration 5 — impl review r1 repair
+
+M1: `canonical_output_type` refuses a canonical string that `_type` does not rebuild as itself
+(awkward 2.14 parses `float16[parameters=...]` as an empty named tuple without a LarkError); the
+refusal names the rebuilt string. Every rebuild routes through that function, so this is the one
+cut. `tests/extra/awkward/m71/test_m71_float16_parameters.py`: bare and `var *` parameterised
+float16 are refused (or, on a parser that reads them, record the eager type); both legs fail at
+5860757 (DID NOT RAISE) and pass after. L2: changelog and awkward design name the nested /
+parameterised float16 exception. L1 (stored `output_type`/`output_dtype` user plugin params) not
+changed: the param namespace cannot tell a user key from a declaration, a representation decision
+left to the orchestrator.

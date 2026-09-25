@@ -509,8 +509,8 @@ Every spelling of one type is one node, recorded under awkward's own type string
 declared types are two nodes. A declaration is a claim, not a conversion: the callable must
 return what it declares. A type awkward cannot build — ``"nope"``, ``object``, a non-native byte
 order — is refused at your line. ``float16`` is accepted on its own; awkward 2.14's type grammar
-cannot read it inside a list or record, so ``"var * float16"`` is refused until an awkward
-release reads it, with no graphed change needed then. Over a scalar input the declared type must
+cannot read it inside a list or record or with parameters, so ``"var * float16"`` is refused
+until an awkward release reads it, with no graphed change needed then. Over a scalar input the declared type must
 be a primitive, such as ``"bool"``.
 
 

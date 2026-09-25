@@ -93,7 +93,10 @@ def canonical_output_type(spec: object) -> str:
         if canonical is None:
             # length one: a zero-length `U` array raises on the awkward 2.6 floor
             canonical = str(ak.from_numpy(np.zeros(1, dtype=np.dtype(cast("Any", s)))).type.content)
-        ak.forms.from_type(_type(canonical)).length_one_array(highlevel=False)
+        rebuilt = _type(canonical)
+        if str(rebuilt) != canonical:  # the installed grammar misreads it (2.14: `float16[parameters=`)
+            raise TypeError(f"rebuilds as {str(rebuilt)!r}")
+        ak.forms.from_type(rebuilt).length_one_array(highlevel=False)
     except (LarkError, TypeError, ValueError) as exc:
         raise TypeError(
             f"output_type {spec!r} is neither a type string the installed awkward can parse and "
