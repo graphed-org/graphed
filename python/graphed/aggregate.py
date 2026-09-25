@@ -351,3 +351,62 @@ def _refuse_shared_parts(writes: Sequence[PartWrite], tasks: Sequence[Task]) -> 
                     " partition apart (a blind partition's entry range is 0-0 until it is read)"
                 )
             seen.add(path)
+
+
+@dataclass(frozen=True)
+class _Collated:
+    """A collated plan's process: the task's ``(uri, tree)`` picks the sub-plan whose graph reads it."""
+
+    processes: Mapping[str, Callable[[Partition, WorkerResources], Any]]
+    #: O(files), never O(tasks): it ships once per worker, not in any task
+    route: Mapping[tuple[str, str], str]
+
+    def __call__(self, partition: Partition, resources: WorkerResources) -> dict[str, Any]:
+        name = self.route[(partition.uri, partition.tree)]
+        return {name: self.processes[name](partition, resources)}
+
+
+@dataclass(frozen=True)
+class _CollatedCombine:
+    """Per name with that sub-plan's combine; a name on one side only passes through."""
+
+    combines: Mapping[str, Callable[[Any, Any], Any]]
+
+    def __call__(self, a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
+        merged = {**a, **{n: self.combines[n](a[n], v) if n in a else v for n, v in b.items()}}
+        return {n: merged[n] for n in self.combines if n in merged}  # mapping order, whatever the tree
+
+
+def collate(plans: Mapping[str, Plan[Any]]) -> Plan[dict[str, Any]]:
+    """ONE executable plan over several plans' tasks — plans over different sources or graphs (data
+    and MC, say) — whose value is ``{name: that plan's value}``.
+
+    Tasks are each plan's in key order, concatenated in mapping order and re-keyed ``0..N-1``, so
+    the reduction tree stays the runner's. A task runs the process of the plan that holds its
+    ``(uri, tree)``; a ``(uri, tree)`` held by two plans is refused (record both over one source so
+    they share the read). A name is in the value exactly when its plan has at least one task.
+    Running each plan on its own and collecting ``{name: value}`` gives the same product when each
+    ``combine`` is exact."""
+    if not plans:
+        raise ValueError("collate needs at least one plan")
+    route: dict[tuple[str, str], str] = {}
+    tasks: list[Task] = []
+    for name, plan in plans.items():
+        if plan.next_tasks is not None or plan.stop is not None:
+            raise TypeError(f"collate needs plans with fixed tasks; {name!r} is adaptive or stoppable")
+        for task in sorted(plan.tasks, key=lambda t: t.key):
+            key = (task.partition.uri, task.partition.tree)
+            owner = route.setdefault(key, name)
+            if owner != name:
+                raise ValueError(
+                    f"{key!r} appears in plans {owner!r} and {name!r}; record both over one source so"
+                    " one read serves both graphs"
+                )
+            tasks.append(Task(len(tasks), task.partition))
+    return Plan(
+        process=_Collated({n: p.process for n, p in plans.items()}, route),
+        combine=_CollatedCombine({n: p.combine for n, p in plans.items()}),
+        empty=dict,
+        tasks=tuple(tasks),
+        open_once=any(p.open_once for p in plans.values()),
+    )

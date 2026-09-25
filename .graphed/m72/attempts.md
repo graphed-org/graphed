@@ -24,3 +24,9 @@ Registered `"refusing"` in `VERB_DISPOSITIONS`.
 
 `record_op(..., reduction=axis == 0)`. No other use in `tests python docs` (the grep's only hit is
 the m72 test itself).
+
+## G4 — `graphed.collate` (frontend/m72 tests 8–12, awkward/m72 test 3; all 18 m72 green)
+
+`_Collated(processes, route)` routes by `(uri, tree)` (the route is O(files), in the broadcast
+process); `_CollatedCombine` folds per name and returns names in mapping order whatever the tree;
+`empty=dict`. Tasks re-keyed `0..N-1` over each plan's key order in mapping order.
