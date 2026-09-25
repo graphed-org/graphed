@@ -4,8 +4,8 @@ What changed
 Newest release first. Numbers in parentheses are the pull requests on
 `graphed-org/graphed <https://github.com/graphed-org/graphed>`_.
 
-0.0.6 (unreleased)
-------------------
+0.0.6
+-----
 
 A checkpoint store contract
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -68,6 +68,22 @@ Replay one task
   the run's own ``StageError`` at your line (#52).
 * ``graphed.debug.lower`` and ``run`` handle a whole-array reduction such as
   ``gak.sum(x, axis=None)`` (#52).
+* A capture made from a projected ROOT read keeps the chunk as read: the buffers the read skipped
+  reload as unread placeholders and a behavior holding lambdas survives, so ``aggregate_plan(store=...)``
+  over uproot or coffea input no longer fails while recording (#55).
+
+Failures at your line
+~~~~~~~~~~~~~~~~~~~~~
+
+* A worker failure at any framed key, labelled or not, is raised as a ``StageError`` pointing at
+  your analysis line; an unvaried program reports ``variation == ""`` (#47).
+
+Wheels
+~~~~~~
+
+* Wheels for Windows on ARM64 (``win_arm64``) ship with each release, and CI runs the suite on
+  ``windows-11-arm`` (#46).
+
 
 0.0.5
 -----
