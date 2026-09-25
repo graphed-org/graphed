@@ -393,7 +393,7 @@ class Session:
         ``output_type`` param (so it is node identity) and honoured by the backend's ``op_form``;
         it is exclusive with ``form=``. The frontend never interprets it.
 
-        ``form_params=`` reach ``op_form`` only, under the stored params: a default that is a
+        ``form_params=`` reach ``op_form`` only, over the stored params: a default that is a
         function of the descriptor (a preserve plugin's ``output_dtype``) types the form without
         changing the node's identity or bytes."""
         params_d: dict[str, ParamValue] = dict(params or {})
@@ -401,15 +401,19 @@ class Session:
         self._mine(inputs, (op, prov))
         if (descriptor is None) != (form is None):
             raise GraphedTypeError(op, prov, "descriptor= and form= must be given together")
-        spec = output_type if output_type is not None else params_d.get("output_type")
+        # user params may carry any key, so op_form sees `output_type` only as declared here
+        form_view = {k: v for k, v in params_d.items() if k != "output_type"}
+        spec = output_type
         if spec is not None:
+            if "output_type" in params_d:
+                raise GraphedTypeError(op, prov, "output_type= collides with an 'output_type' param")
             if form is not None:
                 raise GraphedTypeError(op, prov, "output_type= and form= are exclusive")
             canonical = getattr(self._backend, "canonical_output_type", None)
             try:
                 if canonical is None:
                     raise TypeError(f"{type(self._backend).__name__} cannot declare output_type")
-                params_d["output_type"] = str(canonical(spec))
+                params_d["output_type"] = form_view["output_type"] = str(canonical(spec))
             except Exception as exc:  # an unrepresentable declaration -> user-located error
                 raise GraphedTypeError(op, prov, str(exc)) from exc
         if descriptor is None:
@@ -419,7 +423,7 @@ class Session:
         if form is None:
             in_forms = [self._forms[a.node_id] for a in inputs]
             try:
-                form = self._backend.op_form(op, in_forms, {**(form_params or {}), **params_d})
+                form = self._backend.op_form(op, in_forms, {**form_view, **(form_params or {})})
             except GraphedTypeError:
                 raise
             except Exception as exc:  # backend type/shape error -> user-located error (as record_op)

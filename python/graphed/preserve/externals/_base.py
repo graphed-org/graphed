@@ -264,7 +264,7 @@ def record_external(
         list(inputs),
         node_params,
         output_type=output_type,
-        form_params=None if plugin.output_dtype is None else {"output_dtype": plugin.output_dtype},
+        form_params={"output_dtype": plugin.output_dtype},  # shadows a user param of that name
     )
 
 
