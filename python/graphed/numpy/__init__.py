@@ -26,7 +26,15 @@ from graphed.core import PayloadDescriptor
 
 from . import shuffle
 from .array import NumpyArray, _f, _i
-from .forms import NumpyForm, form_from_meta, is_numeric, meta, unit_meta
+from .forms import (
+    NumpyForm,
+    canonical_output_type,
+    declared_form,
+    form_from_meta,
+    is_numeric,
+    meta,
+    unit_meta,
+)
 from .gufunc import apply_gufunc, gufunc_form
 from .projection import project
 from .varied import SURFACE_DISPOSITIONS, NumpyVaried
@@ -353,6 +361,8 @@ class NumpyBackend:
         """The numpy-idiomatic proxy (M11 factorization): Sessions return ``NumpyArray``."""
         return NumpyArray
 
+    canonical_output_type = staticmethod(canonical_output_type)
+
     def op_form(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> NumpyForm:
         forms = [f for f in inputs if isinstance(f, NumpyForm)]
         if op == "exchange":
@@ -411,8 +421,13 @@ class NumpyBackend:
                 raise TypeError(f"filter mask must be boolean, got {mask.describe()}")
             return NumpyForm(data.dtype, shape=data.shape)
         if op == "map":
+            declared = params.get("output_type")
+            if declared is not None:
+                return declared_form(forms[0], str(declared))
             return NumpyForm(np.dtype(object))  # opaque callable: result form unknown
         if op == "gufunc":
+            if "output_type" in params:  # the signature types a gufunc: `apply_gufunc(output_dtype=)`
+                raise TypeError("output_type is declared only on map; a gufunc takes output_dtype=")
             return gufunc_form(forms, params)  # M14: the signature makes the opaque callable typable
         if op in _REDUCERS or op in _SCANS:
             (a,) = forms

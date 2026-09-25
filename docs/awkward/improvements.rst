@@ -6,22 +6,27 @@ are about what the recorded graph *claims*, not about whether it computes the ri
 
 Missing API surface is listed separately, under "Not supported yet" on :doc:`design`.
 
-The recorded type of a correction or model call is approximate
---------------------------------------------------------------
+An undeclared external call records its first input's type
+----------------------------------------------------------
 
 Everything else on this backend is typed by running the real awkward operation on tracing types
 instead of on data (:doc:`design` shows how), so the recorded type is exact. An external call is
-the exception: graphed does not
-look inside a correctionlib correction or an ONNX model, so it cannot derive their output type.
-It uses the **first input's** type instead.
+the exception: graphed does not look inside a ``map`` callable, a plugin's ``evaluate``, a
+correctionlib correction or an ONNX model, so it cannot derive their output type.
 
-For a scale factor that is what you want — a correction is shape-preserving, and one value comes
-back per input value. For a model that reshapes its input, ``s.form(...)`` on the result will
-describe the input rather than the output until the model actually runs.
+Where the value type is known without looking, graphed records it. The shipped correctionlib,
+ONNX, TensorFlow, PyTorch, XGBoost, JAX and Triton plugins, and ``gak.apply_correction`` with
+``args=``, return float64 values, so they record the first input's structure with float64
+leaves. Any other undeclared call records the **first input's** type, which is wrong whenever the
+value's type differs: a mask over a run number records the run number's integer type, and a
+model that reshapes its input records the input's shape.
 
-**What to do.** If something downstream of a model depends on the exact output type — an axis on
-a reduction, a projection you are reading off — materialize a small slice once and check the
-type against what you expected, rather than trusting the recorded form.
+**What to do.** Declare the type with ``output_type=`` on ``map``, ``graphed.apply`` or
+``graphed.preserve.externals.record_external`` (:doc:`design`, "Declaring what an external call
+returns"). The declared type is the recorded type, so a mask indexes as a mask and a record's
+fields and behaviors resolve at build time. A declared type also overrides a plugin's float64
+leaves. A correctionlib call whose first argument is a string column still records ``string``,
+because only numeric leaves are cast; declare ``output_type="float64"`` there.
 
 A join key that is null on both sides matches
 ---------------------------------------------

@@ -10,11 +10,13 @@ import functools
 import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, SupportsFloat
+from typing import Any, SupportsFloat, cast
 
 from graphed import Array, ParamValue
+from graphed.provenance import capture
 
 from . import payloads
+from .backend import AwkwardForm, astype_form
 
 
 def join(left: Array, right: Array, *, on: Sequence[str], how: str = "inner", grouped: bool = False) -> Array:
@@ -542,6 +544,7 @@ def apply_correction(
     entries = _parse_template(args, len(inputs), constants=True, groups=False)
     first_slot = next(int(i) for kind, i in entries if kind == "slot")
     session = inputs[0].session
+    session._mine(list(inputs), ("correction", capture()))  # before `session.form` reads an input
     descriptor = payloads.correctionlib_contents_descriptor(blob, name)
     params = {"name": name, "args": json.dumps(args, sort_keys=False)}
     return session.record_external(
@@ -551,7 +554,8 @@ def apply_correction(
         list(inputs),
         params,
         descriptor=descriptor,
-        form=session.form(inputs[first_slot]),
+        # the correctionlib plugin's value is float64 (its outputs are `real`)
+        form=astype_form(cast("AwkwardForm", session.form(inputs[first_slot])), "float64"),
     )
 
 
@@ -590,6 +594,7 @@ def onnx_inference(
         return runner(*call, **kw)
 
     session = inputs[0].session
+    session._mine(list(inputs), ("onnx", capture()))  # before `session.form` reads an input
     params: dict[str, str] = {}
     if args is not None:
         params["args"] = json.dumps(args, sort_keys=False)

@@ -72,4 +72,5 @@ JAX_PLUGIN = ExternalPlugin(
     samples=_jax_samples,
     load=load_jax,
     framework="jax",
+    output_dtype="float64",
 )

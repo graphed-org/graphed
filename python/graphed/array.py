@@ -521,7 +521,9 @@ class Array:
             return expand(lambda arr, m: arr.filter(m), (self, mask), {})  # type: ignore[no-any-return]  # a Varied in, a Varied out
         return self._session.record_op("filter", [self, mask])
 
-    def map(self, fn: Callable[[object], object], *, name: str | None = None) -> Array:
+    def map(
+        self, fn: Callable[[object], object], *, name: str | None = None, output_type: object = None
+    ) -> Array:
         """Record ``fn`` over this array as one opaque External node (the callable is a flagged
         preservation risk, plan A.3.1).
 
@@ -529,8 +531,14 @@ class Array:
         per-Session ordinal. Pass ``name=`` to declare the identity yourself: a declared name IS
         the identity, so declaring a name another callable already wears — declared or derived —
         means that same node, and the name must encode everything that changes the callable's
-        behaviour (a captured cut value, a model version, a configuration dict)."""
-        return self._session.record_external("map", fn, [self], {"fn": self._session._fn_name(fn, name)})
+        behaviour (a captured cut value, a model version, a configuration dict).
+
+        ``output_type=`` declares the type of each element of ``fn``'s result (a type string, a
+        dtype or a Python type, as the backend accepts); it becomes the recorded form and is part
+        of the node's identity. It is a claim, never a cast."""
+        return self._session.record_external(
+            "map", fn, [self], {"fn": self._session._fn_name(fn, name)}, output_type=output_type
+        )
 
     def reduce(self, kind: str = "sum") -> Array:
         return self._session.record_op(kind, [self], reduction=True)
@@ -548,7 +556,9 @@ class Array:
         return f"Array(node_id={self._node_id})"
 
 
-def apply(fn: Callable[..., object], *arrays: Array, name: str | None = None) -> Array:
+def apply(
+    fn: Callable[..., object], *arrays: Array, name: str | None = None, output_type: object = None
+) -> Array:
     """Record ``fn`` over several deferred arrays as ONE multi-input External node (M14, parity
     P3.8 — the blockwise/map_blocks analogue). A function over arrays, so it is idiom-neutral
     (awkward style); the numpy-specific signature-aware form is ``graphed.numpy.apply_gufunc``.
@@ -559,17 +569,21 @@ def apply(fn: Callable[..., object], *arrays: Array, name: str | None = None) ->
     Without ``name=`` two distinct callables that derive one ``__name__`` are told apart by a
     per-Session ordinal. Pass ``name=`` to declare the identity yourself: a declared name IS the
     identity, so declaring a name another callable already wears — declared or derived — means
-    that same node, and the name must encode everything that changes the callable's behaviour."""
+    that same node, and the name must encode everything that changes the callable's behaviour.
+
+    ``output_type=`` declares the result's element type, as for ``Array.map``."""
     from .varied import containers_in, expand  # noqa: PLC0415  (`varied` imports `Array`)
 
     if containers_in(*arrays):  # §2.3d *expanding*: one External per universe
-        return expand(lambda *members: apply(fn, *members, name=name), arrays, {})  # type: ignore[no-any-return]  # a Varied in, a Varied out
+        return expand(lambda *members: apply(fn, *members, name=name, output_type=output_type), arrays, {})  # type: ignore[no-any-return]  # a Varied in, a Varied out
     if not arrays or not all(isinstance(a, Array) for a in arrays):
         raise TypeError("apply needs at least one deferred Array operand")
     session = arrays[0].session
     if any(a.session is not session for a in arrays):
         raise TypeError("apply operands must come from one Session")
-    return session.record_external("map", fn, list(arrays), {"fn": session._fn_name(fn, name)})
+    return session.record_external(
+        "map", fn, list(arrays), {"fn": session._fn_name(fn, name)}, output_type=output_type
+    )
 
 
 # ---- M54: behavior methods with arguments ----------------------------------------------------

@@ -38,11 +38,42 @@ The same opacity blocks projection: graphed cannot tell which columns the callab
 projection entry point takes ``on_fail``, which defaults to ``"raise"`` — ``"warn"`` falls back to
 reading every column and says so, ``"pass"`` assumes the callable adds nothing.
 
-**Instead:** give the callable a type. On flat data, ``graphed.numpy.apply_gufunc(fn, signature,
-*arrays, output_dtype=...)`` takes a gufunc signature such as ``"(i),(i)->()"``, which is enough
-to infer the result form and keep it usable downstream. For anything else, record the call
-yourself with ``Session.record_external(op, fn, inputs, descriptor=..., form=...)`` and declare
-the form you are producing. Typed transformations are better expressed as operations than as opaque callables.
+**Instead:** give the callable a type. ``output_type=`` on ``map`` and ``graphed.apply`` declares
+the type of each element of the result, and the recorded form is that type:
+
+.. code-block:: python
+
+    import numpy as np
+    from graphed import Session
+    from graphed.numpy import NumpyBackend, from_array
+
+    s = Session(NumpyBackend())
+    x = from_array(s, "x", np.arange(6.0))
+    doubled = x.map(lambda a: a * 2, name="double", output_type="float64")
+    print(s.form(doubled).describe())
+    print(s.materialize(doubled.reduce("sum")))
+
+
+    def pair(a):
+        out = np.zeros(len(a), dtype=[("pt", "f8"), ("eta", "f8")])
+        out["pt"], out["eta"] = a, -a
+        return out
+
+
+    rec = x.map(pair, name="pair", output_type=[("pt", "f8"), ("eta", "f8")])
+    print(s.form(rec).describe(), s.form(rec["eta"]).describe())
+
+Prints::
+
+    vector[float64]
+    30.0
+    record[pt,eta] vector[float64]
+
+The declaration is part of the node's identity and is never a cast: the callable must return
+what it declares. On flat data, ``graphed.numpy.apply_gufunc(fn, signature, *arrays,
+output_dtype=...)`` also takes a gufunc signature such as ``"(i),(i)->()"``, which types the
+core dimensions too. Typed transformations are better expressed as operations than as opaque
+callables.
 
 A behavior method runs per partition
 ------------------------------------

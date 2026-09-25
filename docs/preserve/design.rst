@@ -420,6 +420,57 @@ node carries your plugin's content hash, so it is preservable rather than opaque
 and reproduce time both go through ``plugin.evaluate`` on the same bytes, which is why the
 bundle comes back bit for bit.
 
+graphed cannot see what your ``evaluate`` returns, so the recorded type is the first input's. When
+the value has another type, such as a mask over a run number or a record built from a jet column,
+declare it with ``output_type=``. It takes the same spellings as ``map``: a type string, a type
+object, a numpy dtype or a Python type. The declared type becomes the recorded type, so fields,
+masks and behaviors work at build time:
+
+.. code-block:: python
+
+    import awkward as ak
+    from graphed import Session
+    from graphed.awkward import AwkwardBackend, from_awkward
+    from graphed.preserve.externals import ExternalPlugin, record_external, sha256_bytes
+
+
+    def evaluate(resource, params, inputs):
+        pt = ak.values_astype(inputs[0], "float32")
+        return ak.zip({"pt": pt, "eta": pt * 0.01}, with_name="Photon")
+
+
+    PHOTONS = ExternalPlugin(kind="my_photons", content_hash=sha256_bytes, evaluate=evaluate,
+                             samples=lambda: [b"v1", b"v2"])
+
+    s = Session(AwkwardBackend())
+    ev = from_awkward(s, "events", ak.zip({"Jet": ak.zip({"pt": [[30.0, 20.0], [], [40.0]]})},
+                                          depth_limit=1))
+    undeclared = record_external(s, PHOTONS, b"v1", [ev.Jet.pt])
+    pho = record_external(s, PHOTONS, b"v1", [ev.Jet.pt],
+                          output_type="var * Photon[pt: float32, eta: float32]")
+    print(s.form(undeclared).describe())
+    print(s.form(pho.eta).describe())
+    print(ak.to_list(s.materialize(pho.pt)))
+
+Prints::
+
+    ## * var * float64
+    ## * var * float32
+    [[30.0, 20.0], [], [40.0]]
+
+The declaration is part of the node's identity, and it travels in the bundle. It is a claim, not
+a conversion: ``evaluate`` must return what it declares.
+
+A plugin whose value always has one leaf dtype can say so once, with
+``ExternalPlugin(..., output_dtype="float64")``. The recorded type is then the first input's
+structure with float64 leaves. The value is a numpy dtype, a dtype name or a Python type, and
+every numerical dtype works, ``float16`` included. The shipped correctionlib, ONNX, TensorFlow,
+PyTorch, XGBoost, JAX and Triton plugins set ``"float64"``. A call's ``output_type=`` takes
+precedence over the default. Unlike ``output_type=``, the default is not a node param, because
+the plugin kind is already part of the node's identity, so it leaves the plan bytes unchanged. A
+default that is not a single dtype, such as ``"var * float32"``, is refused where the call is
+recorded.
+
 The shipped correctionlib and ONNX plugins are the templates to copy, and
 ``registered_kinds()`` lists every kind the registry knows, yours included. The frameworks
 themselves are imported only when a payload of that kind is actually hashed or evaluated, so a

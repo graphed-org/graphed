@@ -85,4 +85,5 @@ PYTORCH_PLUGIN = ExternalPlugin(
     samples=_pytorch_samples,
     load=load_pytorch,
     framework="torch",
+    output_dtype="float64",
 )

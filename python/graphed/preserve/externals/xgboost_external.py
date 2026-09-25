@@ -61,4 +61,5 @@ XGBOOST_PLUGIN = ExternalPlugin(
     samples=_xgboost_samples,
     load=load_xgboost,
     framework="xgboost",
+    output_dtype="float64",
 )

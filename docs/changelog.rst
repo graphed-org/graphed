@@ -30,6 +30,27 @@ Services an analysis calls
   none) and ``inspect()`` prints them. ``RunReport.endpoints`` records where a run reached each
   service, outside the fingerprint; ``reproduce`` refuses an External that calls a service.
 
+Declared output types for external calls
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``Array.map``, ``graphed.apply`` and ``Session.record_external`` take ``output_type=``, the type
+  of each element of the call's value, and record that type instead of the first input's (awkward)
+  or ``vector[object]`` (numpy). A boolean mask declared ``"bool"`` indexes as a mask at build
+  time, and a declared named record resolves its behavior. awkward takes type strings, type
+  objects, forms, numpy dtypes and Python types; numpy takes dtypes of every kind and Python
+  types; every numerical dtype works on both, except that awkward 2.14's type grammar refuses
+  ``float16`` inside a list or record or with parameters. The declaration is a node
+  param, so it is identity; an undeclared call records the same bytes as 0.0.6 (#57).
+* ``graphed.preserve.externals.record_external`` takes ``output_type=`` too, so a plugin
+  External such as a golden-JSON lumi mask records ``bool`` and indexes as a mask (#57).
+* ``ExternalPlugin.output_dtype`` declares a plugin's static leaf dtype. The seven float64
+  built-in plugins (correctionlib, ONNX, TensorFlow, PyTorch, XGBoost, JAX, Triton) and
+  ``gak.apply_correction(..., args=)`` now record float64 leaves instead of their first input's
+  dtype. Their plan bytes are unchanged.
+* ``gak.apply_correction`` and ``gak.onnx_inference`` with ``args=`` refuse an input from another
+  ``Session`` with a ``GraphedTypeError`` at the call, not a plain ``TypeError``.
+* A numpy ``gufunc`` External refuses ``output_type=``: its signature and ``output_dtype=`` type it.
+
 0.0.6
 -----
 

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import ast
 from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
+
+from graphed.backend import PYTHON_TYPES
 
 
 @dataclass(frozen=True)
@@ -54,3 +57,45 @@ def form_from_meta(result: object, leading_none: bool) -> NumpyForm:
         return NumpyForm(arr.dtype, kind="scalar", shape=())
     shape: tuple[int | None, ...] = ((None,) if leading_none else (arr.shape[0],)) + arr.shape[1:]
     return NumpyForm(arr.dtype, shape=shape)
+
+
+def _dtype(spec: Any) -> np.dtype:
+    """`np.dtype`, also of its own `str` for structured/subarray dtypes (a Python literal)."""
+    try:
+        d: np.dtype = np.dtype(spec)
+    except (TypeError, ValueError):
+        if not isinstance(spec, str):
+            raise
+        d = np.dtype(ast.literal_eval(spec))
+    return d
+
+
+def canonical_output_type(spec: object) -> str:
+    """Reduce an ``output_type`` spelling (numpy dtype-like, Python type, or an awkward type object
+    that is a dtype) to ``str`` of its numpy dtype, a fixpoint under `_dtype`."""
+    s: Any = spec
+    if isinstance(s, type) and s in PYTHON_TYPES:
+        return PYTHON_TYPES[s]
+    if type(s).__module__.startswith("awkward."):  # the object exists, so awkward is loaded
+        from graphed.awkward.backend import canonical_output_type as awkward_canonical  # noqa: PLC0415
+
+        s = awkward_canonical(s)
+    try:
+        return str(_dtype(s))
+    except (TypeError, ValueError, SyntaxError) as exc:
+        raise TypeError(
+            f"NumpyBackend cannot represent output_type {s!r}; it takes a numpy dtype or Python scalar type"
+        ) from exc
+
+
+def declared_form(first: NumpyForm, canonical: str) -> NumpyForm:
+    """The form of a `map` declared ``canonical``: that element over ``first``'s leading axis."""
+    d = _dtype(canonical)
+    if first.kind == "scalar" and (d.names is not None or d.subdtype is not None):
+        raise TypeError(f"output_type {canonical!r} over a scalar input must be a primitive dtype")
+    if d.names is not None:
+        if any(d[n].names is not None or d[n].subdtype is not None for n in d.names):
+            raise TypeError(f"output_type {canonical!r}: numpy record columns are plain dtypes")
+        return NumpyForm(np.dtype(object), kind="record", fields=tuple((n, d[n].str) for n in d.names))
+    kind = "scalar" if first.kind == "scalar" else "vector"  # a record input's kind does not carry over
+    return NumpyForm(d.base, kind=kind, shape=first.shape[:1] + d.shape)

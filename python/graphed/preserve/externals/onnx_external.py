@@ -81,4 +81,5 @@ ONNX_PLUGIN = ExternalPlugin(
     samples=_onnx_samples,
     load=load_onnx,  # build the inference session once per worker
     framework="onnxruntime",
+    output_dtype="float64",
 )

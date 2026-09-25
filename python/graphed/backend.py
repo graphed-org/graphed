@@ -16,6 +16,10 @@ from graphed.core import PayloadDescriptor
 # Param values are scalars the graphed-core store can intern (must match graphed.core's ParamValue).
 ParamValue = int | float | bool | str
 
+# numpy's name for each Python scalar type an External's ``output_type`` may be; not `np.dtype(int)`,
+# which is int32 on Windows under numpy 1.x
+PYTHON_TYPES: dict[type, str] = {bool: "bool", int: "int64", float: "float64", complex: "complex128"}
+
 
 @runtime_checkable
 class Form(Protocol):

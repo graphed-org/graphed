@@ -1109,6 +1109,22 @@ A backend never sees the graph and the frontend never sees an array. ``Form`` is
 — anything with ``describe() -> str``; the frontend stores and forwards forms, it does not
 interpret them.
 
+A backend may also provide ``canonical_output_type(spec) -> str``, which lets a caller declare an
+External's element type with ``output_type=`` (on ``Array.map``, ``graphed.apply`` and
+``Session.record_external``). The session calls it at the recording line, so a refusal is an error
+at that line, and stores the returned string as the node's ``output_type`` param. That makes it
+identity: every spelling of one type is one node, and two types are two nodes. ``op_form`` then
+reads that param and returns the declared form. The frontend never interprets the string. A backend
+without the method refuses every declaration. Both built-in backends map Python's ``bool``, ``int``,
+``float`` and ``complex`` through ``graphed.backend.PYTHON_TYPES``, so ``int`` is ``int64`` on
+every platform. The numpy backend takes numpy dtypes, including strings, flat structured records and
+subarrays. awkward takes the dtypes it can represent, and also its own type strings and type
+objects. An undeclared
+call adds no param, so its bytes are unchanged. ``output_type=`` and ``form=`` are exclusive.
+``form_params=`` passes values to ``op_form`` alone. They sit under the stored params and never
+reach the node, so they cannot change its identity or bytes. The preserve layer uses it for a
+plugin's ``output_dtype`` default.
+
 A package that records its *own* call-outs — histogram fills are the example — passes
 ``descriptor=`` and ``form=`` to ``Session.record_external`` and the backend is not consulted at
 all. That is how ``graphed-histogram`` exists without teaching either backend what a histogram is,

@@ -444,6 +444,76 @@ worker — so a wrapper around ``evaluate`` cannot make one backend disagree wit
 in-process call gets the plugin's flat-buffer evaluation rather than correctionlib's per-call
 ``ak.transform``. Without ``args=`` (the older recording) your callable is still the evaluation.
 
+Declaring what an external call returns
+---------------------------------------
+
+graphed cannot look inside a callable, so an undeclared ``map``, ``graphed.apply`` or external
+call records its first input's type. When the value has another type, say so with
+``output_type=``, and the recorded type is that one: a boolean mask indexes as a mask, and a
+named record resolves its behavior at build time.
+
+.. code-block:: python
+
+    import awkward as ak
+    import numpy as np
+    from graphed import Session
+    from graphed.awkward import AwkwardBackend, from_awkward
+
+
+    class PhotonArray(ak.Array):
+        @property
+        def pt2(self):
+            return self.pt * 2
+
+
+    def photons(pt):
+        pt = ak.values_astype(pt, "float32")
+        return ak.zip({"pt": pt, "eta": pt * 0.01}, with_name="Photon")
+
+
+    s = Session(AwkwardBackend(behavior={("*", "Photon"): PhotonArray}))
+    events = ak.zip({"run": np.array([1, 2, 1], np.uint32),
+                     "Jet": ak.zip({"pt": [[30.0, 20.0], [], [40.0]]})}, depth_limit=1)
+    ev = from_awkward(s, "events", events)
+
+    golden = ev.run.map(lambda run: run == 1, name="golden", output_type="bool")
+    print(s.form(golden).describe())
+    print(ak.to_list(s.materialize(ev.Jet.pt[golden])))
+
+    pho = ev.Jet.pt.map(photons, name="photons",
+                        output_type="var * Photon[pt: float32, eta: float32]")
+    print(s.form(pho.pt2).describe())
+    f32 = ak.types.NumpyType("float32")
+    as_object = ak.types.ListType(
+        ak.types.RecordType([f32, f32], ["pt", "eta"], parameters={"__record__": "Photon"})
+    )
+    print(ev.Jet.pt.map(photons, name="photons", output_type=as_object).node_id == pho.node_id)
+    half = ev.run.map(lambda r: ak.values_astype(r, "float16"), name="half", output_type=np.float16)
+    print(s.form(half).describe())
+
+Printed output:
+
+.. code-block:: text
+
+    ## * bool
+    [[30.0, 20.0], [40.0]]
+    ## * var * float32
+    True
+    ## * float16
+
+The type is per element; the outer length is the input's. It may be spelled as an awkward type
+string, an ``ak.types.Type``, an ``ak.forms.Form`` or an array's ``.type``, a numpy dtype of any
+kind (``"U5"`` is ``string``, a structured dtype is a record, ``("f4", (3,))`` is ``3 *
+float32``), or ``bool``, ``int``, ``float`` or ``complex`` (``int`` is ``int64`` everywhere).
+Every spelling of one type is one node, recorded under awkward's own type string, and two
+declared types are two nodes. A declaration is a claim, not a conversion: the callable must
+return what it declares. A type awkward cannot build — ``"nope"``, ``object``, a non-native byte
+order — is refused at your line. ``float16`` is accepted on its own; awkward 2.14's type grammar
+cannot read it inside a list or record or with parameters, so ``"var * float16"`` is refused
+until an awkward release reads it, with no graphed change needed then. Over a scalar input the declared type must
+be a primitive, such as ``"bool"``.
+
+
 Reading and writing parquet
 ---------------------------
 

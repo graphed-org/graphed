@@ -89,4 +89,5 @@ TENSORFLOW_PLUGIN = ExternalPlugin(
     samples=_tensorflow_samples,
     load=load_tensorflow,
     framework="tensorflow",
+    output_dtype="float64",
 )
