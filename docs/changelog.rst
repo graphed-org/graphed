@@ -30,6 +30,18 @@ Services an analysis calls
   none) and ``inspect()`` prints them. ``RunReport.endpoints`` records where a run reached each
   service, outside the fingerprint; ``reproduce`` refuses an External that calls a service.
 
+Declared output types for external calls
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``Array.map``, ``graphed.apply`` and ``Session.record_external`` take ``output_type=``, the type
+  of each element of the call's value, and record that type instead of the first input's (awkward)
+  or ``vector[object]`` (numpy). A boolean mask declared ``"bool"`` indexes as a mask at build
+  time, and a declared named record resolves its behavior. awkward takes type strings, type
+  objects, forms, numpy dtypes and Python types; numpy takes dtypes of every kind and Python
+  types; every numerical dtype, ``float16`` included, works on both. The declaration is a node
+  param, so it is identity; an undeclared call records the same bytes as 0.0.6 (#57).
+* A numpy ``gufunc`` External refuses ``output_type=``: its signature and ``output_dtype=`` type it.
+
 0.0.6
 -----
 
