@@ -1,9 +1,9 @@
 """§7.2: `Plan` / `ExecResult` / monitor-payload schemas do not change for a VARIED program.
 
-Worded over KEY SETS against literally spelled sets, never against a sibling unvaried run — that
-comparison is equal by construction even after a field is added. Every assertion here rides a
-program that is genuinely varied: a version reading the schemas off an unvaried program would pass
-identically before and after m48 and could never fail in the direction it guards.
+Worded over KEY SETS. `ExecResult` and `TaskEvent` are held to literally spelled sets; `Plan` is
+compared with the plain program's `Plan` built from the same analysis, so a field every plan gains
+passes and a field or attribute only the varied path adds fails. Every assertion rides a program
+that is genuinely varied.
 """
 
 from __future__ import annotations
@@ -59,17 +59,26 @@ def _varied_run() -> tuple[Plan[list[float]], ExecResult[list[float]], _Collecti
     return plan, SequentialRunner(monitor).run(plan), monitor
 
 
+def _plain_plan() -> Plan[list[float]]:
+    """The same analysis with no `vary`: the three universes' arrays built plainly in a fresh session."""
+    _s, x, _src = partitioned_vector_source()
+    return graphed.aggregate_plan(
+        x,
+        x * 1.5,
+        x * 0.5,
+        reduce=sum_per_output,
+        combine=add_per_output,
+        empty=lambda: [0.0, 0.0, 0.0],
+        steps_per_file=3,
+    )
+
+
 def test_plan_schema_is_unchanged_by_a_varied_program() -> None:
-    plan, _result, _monitor = _varied_run()
-    assert {f.name for f in dataclasses.fields(plan)} == {
-        "process",
-        "combine",
-        "empty",
-        "tasks",
-        "next_tasks",
-        "stop",
-        "open_once",
-    }
+    varied, _result, _monitor = _varied_run()
+    plain = _plain_plan()
+    assert type(varied) is type(plain)
+    assert {f.name for f in dataclasses.fields(varied)} == {f.name for f in dataclasses.fields(plain)}
+    assert vars(varied).keys() == vars(plain).keys()
 
 
 def test_exec_result_schema_is_unchanged_by_a_varied_program() -> None:

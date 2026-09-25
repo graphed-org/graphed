@@ -15,7 +15,7 @@ job under `pytest hypothesis numpy` alone, so no module here may import `graphed
 | `vary-m48-F2` | §3.2 two-process byte-identical compile | `test_variation_determinism.py::test_two_fresh_processes_compile_the_same_bytes` |
 | `vary-m48-F2` | §2.2 label order (nominal first, insertion order) | `test_variation_determinism.py::test_label_order_is_nominal_first_then_insertion_order` |
 | `vary-m48-F2` | §2.1 stacking order (inherited before new) | `test_variation_determinism.py::test_stacking_puts_inherited_labels_before_new_ones` |
-| `vary-m48-F3` | §7.2 `Plan` key set | `test_varied_schema_absence.py::test_plan_schema_is_unchanged_by_a_varied_program` |
+| `vary-m48-F3` | §7.2 `Plan` key set: the varied program's `Plan` has the plain program's type, field names and `vars()` keys | `test_varied_schema_absence.py::test_plan_schema_is_unchanged_by_a_varied_program` |
 | `vary-m48-F3` | §7.2 `ExecResult` key set | `test_varied_schema_absence.py::test_exec_result_schema_is_unchanged_by_a_varied_program` |
 | `vary-m48-F3` | §7.2 monitor `TaskEvent` key set | `test_varied_schema_absence.py::test_monitor_task_payload_schema_is_unchanged_by_a_varied_program` |
 | `vary-m48-F4` | §7.2 seam (alpha): one call, the `CompiledGraph` | `test_varied_aggregate_plan.py::test_hook_fires_exactly_once_with_the_compiled_graph` |
