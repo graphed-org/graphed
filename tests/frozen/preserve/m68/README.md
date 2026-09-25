@@ -39,7 +39,8 @@ in the one-process preserve run. Plans run on `SequentialRunner`. Byte pins were
 | `test_triton_transport_by_scheme` · `scheme_picks_the_module_host_port_and_ssl[http, https, grpc, grpcs]` | D7, §3.2 `triton_external.py` | no `transport`: the scheme's fake `tritonclient` module connects once with `url="host:port"`, `ssl` only on `https`/`grpcs` (`grpcs://triton.fnal.gov:443`), requests built from it, the other module untouched | the 0.0.6 http-only transport; the full endpoint handed to the client; no `ssl` |
 | · `tcp_endpoint_is_refused_naming_the_wires` | D7 | `StageError` whose cause is `PreserveError` naming http and grpc, no client built | `tcp` treated as http |
 | · `literal_url_without_a_scheme_stays_http` | D7 | `url="tr-literal:8000"` reaches `tritonclient.http` unchanged | every literal url parsed as an endpoint |
-| · `node_params_are_part_of_the_connection_key` | D7 cache key | two nodes, one payload and endpoint, different params: two connects | a key without the params |
+| · `the_connection_key_is_the_endpoint_and_the_params_load_reads` | D7 cache key, §3.2 `_base.py` `load_params` | one payload: nodes on one endpoint differing only in `output_name` share one connect, another endpoint gets its own, a differing `transport` reaches its own (fake-transport) server | a key over every node param; a key without the endpoint; a key without the params `load` reads |
+| · `correctionlib_universes_off_one_payload_load_once` | D7 cache key (0.0.6 universe sharing kept) | two correctionlib nodes on one payload differing only in `systematic`: one `load`, each universe's value | a key over every node param |
 | · `equal_node_params_in_any_key_order_share_one_connection` | D7 cache key | one payload, endpoint and params, keys in two orders, in two sessions: one connect | a key over the params' insertion order |
 | · `transport_param_wins_over_any_scheme` | D7, frozen m26/m27 | with `transport`, a literal `triton://` url and a bound `grpcs://` endpoint reach the factory unchanged; neither tritonclient module is touched | the scheme parsed before `transport` is read |
 | `test_triton_service_live` · `live_triton_through_a_bound_service[http, grpc]` | D7, §6 | a `service=` node, no `transport`, served by the CI `triton` job's real server at `http://$GRAPHED_TRITON_HTTP` (check `http:/v2/health/ready`) and `grpc://$GRAPHED_TRITON_GRPC` (check `grpc:`), each leg gated on its variable like `preserve/m9/test_triton_server.py`; the gRPC port answers only gRPC | a bind the scheme-chosen tritonclient transport never sees |
@@ -55,7 +56,7 @@ Clause ends (each end's test, and the sanity mutant it kills):
 | `services` key only when non-empty | empty (`always-key`) | one spec (the key present and equal to `to_json`) |
 | §3 defaults rule | defaults by equality (other defaults) | defaults read-only (`launch-dict-default`, `report-dict-default`) |
 | old pickles valid | `Plan` (`plan-services-factory`) | `_PluginEvaluator` (`evaluator-endpoint-factory`) |
-| cache key | endpoint (`cache-no-endpoint`, `cache-06`) | params (`cache-no-params`); equal params in another key order share (sweep mutant 100) |
+| cache key | endpoint (`cache-no-endpoint`, `cache-06`) | the params `load` reads (`cache-no-params`); evaluate-time params (`cache-all-params`); equal params in another key order share (sweep mutant 100) |
 | `inspect()` recipe | image (`IMAGE`) | argv (`inspect-image-only`) |
 | bind | a service node bound, a `url=` node left alone (`endpoint-in-ir`) | the reduce hook bound, also with no service External (`reduce-needs-external`); a hook-less plan returned as is |
 | endpoint form | six accepted | four refused (`split-lenient`); refusal on bind, used or not (`bind-unchecked`) |
