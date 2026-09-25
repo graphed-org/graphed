@@ -19,3 +19,8 @@ duplicate-part check runs over every (write, task) at build, after the tasks exi
 `_ArrowParquet(column, arrow_options, parquet_options)` codec: `to_arrow_table(**arrow)`, KV
 replaced when given, `pq.write_table(**parquet)`. `_payload` is the wrap rule `_WritePart` now shares.
 Registered `"refusing"` in `VERB_DISPOSITIONS`.
+
+## G3 — `gak.num(axis=0)` records a reduction (awkward/m72 test 4)
+
+`record_op(..., reduction=axis == 0)`. No other use in `tests python docs` (the grep's only hit is
+the m72 test itself).

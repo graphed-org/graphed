@@ -146,7 +146,8 @@ def with_field(arr: Array, value: Array, where: str) -> Array:
 
 
 def num(arr: Array, axis: int = 1) -> Array:
-    return arr.session.record_op("ak.num", [arr], {"axis": axis})
+    # axis 0 counts the partitioned axis: a per-chunk partial, like any axis-0 reduction
+    return arr.session.record_op("ak.num", [arr], {"axis": axis}, reduction=axis == 0)
 
 
 def count(
