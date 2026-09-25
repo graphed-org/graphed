@@ -13,6 +13,8 @@ from graphed.awkward import AwkwardBackend, from_parquet
 from graphed.awkward.io import to_parquet
 from graphed.core.execution import SequentialRunner
 
+pytest.importorskip("pyarrow")
+
 
 def _write_plan(src: Path, rows: list[float], destination: Path) -> graphed.core.execution.Plan[list[str]]:
     ak.to_parquet(ak.Array({"x": rows}), src)

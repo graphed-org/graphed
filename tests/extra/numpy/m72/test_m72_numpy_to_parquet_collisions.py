@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pyarrow as pa
-import pyarrow.parquet as pq
 import pytest
 
 import graphed
@@ -13,6 +11,9 @@ from graphed import Session
 from graphed.core.execution import Plan, SequentialRunner
 from graphed.numpy import NumpyBackend
 from graphed.numpy.io import from_parquet, to_parquet
+
+pa = pytest.importorskip("pyarrow")
+pq = pytest.importorskip("pyarrow.parquet")
 
 
 def _write_plan(src: Path, rows: list[float], destination: Path) -> Plan[list[str]]:
