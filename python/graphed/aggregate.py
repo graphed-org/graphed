@@ -127,7 +127,7 @@ class _PartitionReduce(Generic[V]):
         return replace(self, externals=bind_externals(self.externals, endpoints), reduce=reduce)
 
     def part_paths(self, partition: Partition) -> list[str]:
-        """Where this partition's parts land, without reading: the hook `_written_parts` calls."""
+        """Where this partition's parts land, without reading."""
         return [os.path.join(destination, name(partition)) for _, destination, name, _, _ in self.writes]
 
     def _write(self, values: list[object], partition: Partition) -> list[object]:
@@ -343,7 +343,7 @@ def aggregate_plan(
 
 def _written_parts(process: object, partition: Partition) -> Sequence[str]:
     """The parts a plan's ``process`` writes for ``partition``, from its optional
-    ``part_paths(partition)`` hook (no I/O); a process without the hook writes none."""
+    ``part_paths(partition)`` hook (no I/O); a process without the hook is not checked."""
     hook = getattr(process, "part_paths", None)
     return () if hook is None else hook(partition)
 
@@ -396,9 +396,9 @@ def collate(plans: Mapping[str, Plan[Any]]) -> Plan[dict[str, Any]]:
     Tasks are each plan's in key order, concatenated in mapping order and re-keyed ``0..N-1``, so
     the reduction tree stays the runner's. A task runs the process of the plan that holds its
     ``(uri, tree)``; a ``(uri, tree)`` held by two plans is refused (record both over one source so
-    they share the read), and so is a part two tasks would both write, across plans too (each
-    process's optional ``part_paths(partition)`` hook names its parts). A name is in the value
-    exactly when its plan has at least one task.
+    they share the read), and so is a part two tasks would both write, across plans too (named by
+    each process's optional ``part_paths(partition)`` hook; a process without it is not checked).
+    A name is in the value exactly when its plan has at least one task.
     Running each plan on its own and collecting ``{name: value}`` gives the same product when each
     ``combine`` is exact."""
     if not plans:

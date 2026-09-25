@@ -167,7 +167,7 @@ class _WritePart:
 
 
 def _part_paths(writer: _WritePart | _VariedWritePart, partition: Partition) -> list[str]:
-    """A deferred writer's one part for ``partition``: its ``part_paths`` hook, which `collate` checks."""
+    """A deferred writer's one part for ``partition``: its ``part_paths`` hook."""
     if writer.reader is not None:
         index = gw.blind_part_index(partition, dict(writer.bases))
     else:

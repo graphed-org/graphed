@@ -1075,7 +1075,8 @@ Prints::
 ``name`` turns the task's partition into the part's file name. It sees the partition as the plan
 holds it, so a blind partition has no entry range yet (``entry_start == entry_stop == 0``); name
 it by ``blind_step``, or pass explicit ``partitions=``. Two tasks whose names collide are refused
-when the plan is built, across ``collate``'s plans too. A reduction in ``metadata`` is the reduction over this part's chunk, which
+when the plan is built, across ``collate``'s plans too. A reduction in ``metadata`` is the
+reduction over this part's chunk, which
 is what a per-part normalization needs; a value that is not an array is converted with ``str()``
 once, at build. ``parquet_write`` forwards ``arrow_options`` to ``ak.to_arrow_table`` and
 ``parquet_options`` to ``pyarrow.parquet.write_table``, and the metadata replaces the schema's
