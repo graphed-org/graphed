@@ -620,4 +620,4 @@ __all__ = [
     "zeros",
     "zeros_like",
 ]
-__version__ = "0.0.5"
+__version__ = "0.0.6"
