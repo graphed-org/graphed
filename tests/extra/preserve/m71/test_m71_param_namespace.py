@@ -32,7 +32,9 @@ def _params(s: Session, a: Any) -> dict[str, Any]:
     return dict(next(n for n in s._store.nodes() if n["id"] == a.node_id)["params"])
 
 
-@pytest.mark.parametrize("user", [{"output_type": "probabilities"}, {"output_type": "f4"}, {"output_dtype": "int8"}])
+@pytest.mark.parametrize(
+    "user", [{"output_type": "probabilities"}, {"output_type": "f4"}, {"output_dtype": "int8"}]
+)
 def test_directive_named_params_leave_form_and_params(user: dict[str, str]) -> None:
     s, x = _x()
     a = record_external(s, _plugin(), b"m", [x], params=user)
