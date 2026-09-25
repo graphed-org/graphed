@@ -377,6 +377,9 @@ class _Collated:
     def part_paths(self, partition: Partition) -> Sequence[str]:
         return _written_parts(self.processes[self.route[(partition.uri, partition.tree)]], partition)
 
+    def bind_services(self, endpoints: Mapping[str, str]) -> _Collated:
+        return replace(self, processes=dict(bind_externals(self.processes.items(), endpoints)))
+
 
 @dataclass(frozen=True)
 class _CollatedCombine:
@@ -398,11 +401,17 @@ def collate(plans: Mapping[str, Plan[Any]]) -> Plan[dict[str, Any]]:
     ``(uri, tree)``; a ``(uri, tree)`` held by two plans is refused (record both over one source so
     they share the read), and so is a part two tasks would both write, across plans too (named by
     each process's optional ``part_paths(partition)`` hook; a process without it is not checked).
-    A name is in the value exactly when its plan has at least one task.
+    A name is in the value exactly when its plan has at least one task. ``Plan.services`` is the
+    union of the plans' services; one name declared as two different specs is refused.
     Running each plan on its own and collecting ``{name: value}`` gives the same product when each
     ``combine`` is exact."""
     if not plans:
         raise ValueError("collate needs at least one plan")
+    services: dict[str, ServiceSpec] = {}
+    for name, plan in plans.items():
+        for spec in plan.services:
+            if services.setdefault(spec.name, spec) != spec:
+                raise ValueError(f"plan {name!r} declares service {spec.name!r} unlike another plan does")
     route: dict[tuple[str, str], str] = {}
     tasks: list[Task] = []
     for name, plan in plans.items():
@@ -425,4 +434,5 @@ def collate(plans: Mapping[str, Plan[Any]]) -> Plan[dict[str, Any]]:
         empty=dict,
         tasks=tuple(tasks),
         open_once=any(p.open_once for p in plans.values()),
+        services=tuple(services[n] for n in sorted(services)),
     )

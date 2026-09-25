@@ -64,3 +64,17 @@ fork's caller. F5: `_written_parts` and `collate` now say a hook-less process is
 uproot's ROOT writer hook goes to the PR stage as an issue on the uproot fork. N1: caller clauses cut,
 design.rst line re-wrapped. Test `tests/extra/numpy/m72/test_m72_numpy_to_parquet_collisions.py`:
 its refusal leg fails with the numpy hook removed; the control leg passes either way.
+
+## Integration — rebased onto m68 services + m71 declared output types
+
+Rebased onto `feat/external-output-form` (main 69c402b + m71). Conflicts kept both sides:
+`aggregate_plan` takes `services=` and `writes=`, compiles the writes into the IR `plan_services`
+walks, and `_PartitionReduce.bind_services` keeps the writes; the awkward writers keep
+`bind_services` beside `part_paths`. `collate` was the one m72 plan without services: it now
+carries the union of its plans' `Plan.services` (a name declared two ways is refused) and
+`_Collated.bind_services` binds each plan's process through `bind_externals`. numpy's backend
+records no service-calling External, so its write plan needs no services. m71: a declared `bool`
+and `Photon[pt: float32, eta: float32]` written by `parquet_write` read back as those types.
+Test `tests/extra/awkward/m72/test_m72_services.py`: the collate legs fail without this commit;
+the writes legs fail when `aggregate_plan` drops `services=` or `_PartitionReduce` leaves its
+externals unbound.

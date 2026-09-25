@@ -130,9 +130,9 @@ records the requirement — the ``name`` operations refer to, a ``kind`` a site 
 readiness ``check`` (``tcp``, ``http:<path>``, or ``grpc:<service>``) — and optionally a
 ``Launch`` recipe (argv, container image, resources) for starting one. An operation names a
 declared service through ``params["service"]``; naming one that was never declared is refused as
-you record it. ``aggregate_plan`` and the awkward ``to_parquet`` put the specs the recording
-references on ``Plan.services``, ``DurablePlan`` serializes them, and a preservation bundle lists
-them in its manifest.
+you record it. ``aggregate_plan`` (its ``writes=`` included) and the awkward ``to_parquet`` put
+the specs the recording references on ``Plan.services``, ``collate`` puts the union of its plans',
+``DurablePlan`` serializes them, and a preservation bundle lists them in its manifest.
 
 The run supplies where. An endpoint is ``scheme://host:port`` with the scheme one of ``tcp``,
 ``http``, ``https``, ``grpc`` or ``grpcs``; the wire and TLS live on the endpoint because the same

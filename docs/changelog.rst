@@ -64,7 +64,9 @@ One plan for every output
   say, into one plan whose value is ``{name: value}``. Each task runs its own plan's graph, and
   the runner tree-reduces all the tasks together. A part two of its plans would both write, from
   ``writes=`` or ``to_parquet``, is refused when it is built; ``graphed.debug.replay`` refuses a
-  plan with writes.
+  plan with writes. Its ``Plan.services`` is the union of its plans' services and
+  ``bind_services`` binds every plan's process; a service name two plans declare differently is
+  refused.
 * ``graphed.awkward.parquet_write`` writes parquet parts through ``ak.to_arrow_table`` and
   ``pyarrow.parquet.write_table`` with options for each, and per-part key-value metadata that
   replaces the schema's.
