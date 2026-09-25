@@ -131,4 +131,5 @@ TRITON_PLUGIN = ExternalPlugin(
     framework="tritonclient",
     check_params=_check_triton_params,
     load_params=("url", "transport"),
+    output_dtype="float64",
 )

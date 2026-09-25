@@ -80,6 +80,9 @@ class ExternalPlugin:
     check_params: Callable[[Mapping[str, Any]], None] | None = None
     #: the params ``load`` reads; they key the per-process resource cache with the endpoint
     load_params: tuple[str, ...] = ()
+    # m71: the value's leaf dtype when it is static (its structure follows the input), recorded
+    # as the form's leaves; form-only, so it never enters the node's params
+    output_dtype: object = None
 
 
 class ResourceCache:
@@ -261,6 +264,7 @@ def record_external(
         list(inputs),
         node_params,
         output_type=output_type,
+        form_params=None if plugin.output_dtype is None else {"output_dtype": plugin.output_dtype},
     )
 
 

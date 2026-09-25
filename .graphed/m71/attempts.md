@@ -21,3 +21,14 @@ all green.
 `output_type=` to `Session.record_external` (keyword-only, after `params`, for the m68 `service=`
 rebase). preserve m71b 12/12 and m71a pins green. Per r11 X16 nothing relies on the in-process
 `_PluginEvaluator` params carrying the key; only the bundle's `evaluate_external` sees it.
+
+## Iteration 3 — m71c the class cut (plan-C C2)
+
+`ExternalPlugin.output_dtype: object = None` (trailing field after `synthesize`; m68 appends
+`check_params` in the same slot, keep both), `"float64"` on the seven float64 built-ins.
+`Session.record_external(form_params=)` reaches `op_form` only, under the stored params; preserve
+passes `{"output_dtype": plugin.output_dtype}` when set. awkward `astype_form` (total over awkward
+forms, primitive dtypes only, scalar stays scalar) and the `output_dtype` branch after `output_type`.
+gak templates call `session._mine(inputs, (op, capture()))` before `session.form`; the correction
+template's form is `astype_form(..., "float64")` (literal; `import graphed.awkward` still loads no
+`graphed.preserve`/`graphed.checkpoint` module). All 99 frozen m71 tests green.

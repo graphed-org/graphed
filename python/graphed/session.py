@@ -381,6 +381,7 @@ class Session:
         descriptor: graphed.core.PayloadDescriptor | None = None,
         form: Form | None = None,
         output_type: object = None,
+        form_params: Mapping[str, object] | None = None,
     ) -> Array:
         """Record an External node. By default the BACKEND supplies the payload descriptor and
         output form (the M3 correctionlib/ONNX family); a package recording its OWN External
@@ -390,7 +391,11 @@ class Session:
         ``output_type=`` declares the per-element type of the External's value (m71). The
         backend's optional ``canonical_output_type`` reduces it to one string, stored as the
         ``output_type`` param (so it is node identity) and honoured by the backend's ``op_form``;
-        it is exclusive with ``form=``. The frontend never interprets it."""
+        it is exclusive with ``form=``. The frontend never interprets it.
+
+        ``form_params=`` reach ``op_form`` only, under the stored params: a default that is a
+        function of the descriptor (a preserve plugin's ``output_dtype``) types the form without
+        changing the node's identity or bytes."""
         params_d: dict[str, ParamValue] = dict(params or {})
         prov = capture()
         self._mine(inputs, (op, prov))
@@ -414,7 +419,7 @@ class Session:
         if form is None:
             in_forms = [self._forms[a.node_id] for a in inputs]
             try:
-                form = self._backend.op_form(op, in_forms, params_d)
+                form = self._backend.op_form(op, in_forms, {**(form_params or {}), **params_d})
             except GraphedTypeError:
                 raise
             except Exception as exc:  # backend type/shape error -> user-located error (as record_op)

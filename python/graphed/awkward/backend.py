@@ -102,6 +102,17 @@ def canonical_output_type(spec: object) -> str:
     return canonical
 
 
+def astype_form(form: AwkwardForm, dtype: object) -> AwkwardForm:
+    """``form`` with its leaves cast to the primitive ``dtype`` (any `canonical_output_type`
+    spelling of one); a scalar stays a scalar."""
+    t = _type(canonical_output_type(dtype))
+    if not isinstance(t, ak.types.NumpyType) or t.parameters:
+        raise TypeError(f"output_dtype {dtype!r} is not a primitive dtype")
+    if ak.typetracer.is_unknown_scalar(form.tt):
+        return AwkwardForm(ak.typetracer.create_unknown_scalar(np.dtype(t.primitive)))
+    return AwkwardForm(ak.values_astype(form.tt, t.primitive))
+
+
 def declared_form(first: AwkwardForm, canonical: str) -> AwkwardForm:
     """The form of an External declared ``canonical``: that element type over ``first``'s length."""
     t = _type(canonical)
@@ -138,10 +149,14 @@ class AwkwardBackend:
             return AwkwardForm(join.join_form([f.tt for f in forms], params))
         if op in _EXTERNAL:
             # an External's value type is not derivable from its inputs: a declared `output_type`
-            # is recorded as given, and an undeclared one records its first input's form
+            # is recorded as given, a plugin's static leaf `output_dtype` casts the first input's
+            # leaves, and anything else records the first input's form
             declared = params.get("output_type")
             if declared is not None:
                 return declared_form(forms[0], str(declared))
+            leaf = params.get("output_dtype")
+            if leaf is not None:
+                return astype_form(forms[0], leaf)
             return forms[0]
         operands = [f.tt for f in forms]
         return AwkwardForm(apply(op, operands, params, behavior=self._behavior))

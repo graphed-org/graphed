@@ -180,4 +180,5 @@ CORRECTIONLIB_PLUGIN = ExternalPlugin(
     samples=_correctionlib_samples,
     load=load_correctionlib,  # parse the correction set once per worker
     framework="correctionlib",
+    output_dtype="float64",
 )
