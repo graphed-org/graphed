@@ -551,9 +551,11 @@ Not supported yet
 * **Opaque Python callables are flagged, not preserved.** A ``.map(...)`` over your own
   function is listed as a preservation risk. Record it as a plugin-backed operation instead if
   it needs to survive.
-* **Remote models need their server.** A Triton-backed operation reproduces where an endpoint
-  for its service exists. The bundle carries the service's recipe, but ``reproduce`` does not
-  start it; bind an endpoint, or run through a ``graphed-executors`` runner that starts it.
+* **Operations that call a service do not reproduce.** The bundle carries each service's
+  declaration and recipe but no endpoint, and ``reproduce`` takes none: it raises
+  :class:`~graphed.preserve.PreserveError` at the first operation that names a service. Run such
+  an analysis as a plan instead, with :func:`graphed.services.bind_services` or through a
+  ``graphed-executors`` runner that resolves ``Plan.services``.
 * **No export to REANA, CAP, Zenodo or RECAST.** The bundle is the substrate those packagings
   would be built from; nothing writes them today.
 * **Behavior classes are not carried.** The reproducing interpreter evaluates through a plain
