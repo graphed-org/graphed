@@ -6,6 +6,7 @@ runs the same ops on real arrays. Both go through the single `apply` dispatch in
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import inspect
 from collections.abc import Mapping, Sequence
@@ -13,9 +14,11 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 import awkward as ak
+import numpy as np
+from awkward.types._awkward_datashape_parser import LarkError
 
 from graphed import Session
-from graphed.backend import Form
+from graphed.backend import PYTHON_TYPES, Form
 from graphed.core import PayloadDescriptor
 
 from . import join, payloads, shuffle
@@ -64,6 +67,52 @@ _INTROSPECT_EAGER = frozenset({"fields", "type", "typestr", "ndim", "is_tuple", 
 _EXTERNAL = frozenset({"map", "correction", "onnx", "external"})
 
 
+def _type(canonical: str) -> ak.types.Type:
+    """The awkward type of a canonical ``output_type``; a primitive the datashape grammar lacks
+    (``float16`` on awkward 2.14) but awkward's dtype table knows is built directly."""
+    try:
+        return ak.types.from_datashape(canonical, highlevel=False)
+    except LarkError:
+        ak.types.numpytype.primitive_to_dtype(canonical)  # TypeError unless a known primitive
+        return ak.types.NumpyType(canonical)
+
+
+def canonical_output_type(spec: object) -> str:
+    """Reduce an ``output_type`` spelling (datashape string, awkward Type/Form/ArrayType, numpy
+    dtype-like, Python type) to awkward's type string, a fixpoint; refuse what cannot be built."""
+    try:
+        s = PYTHON_TYPES[spec] if isinstance(spec, type) and spec in PYTHON_TYPES else spec
+        if isinstance(s, ak.forms.Form):
+            s = s.type
+        if isinstance(s, (ak.types.ArrayType, ak.types.ScalarType)):
+            s = s.content
+        canonical = str(s) if isinstance(s, ak.types.Type) else None
+        if isinstance(s, str):
+            with contextlib.suppress(LarkError):  # datashape first: `"byte"` is awkward's byte
+                canonical = str(ak.types.from_datashape(s, highlevel=False))
+        if canonical is None:
+            # length one: a zero-length `U` array raises on the awkward 2.6 floor
+            canonical = str(ak.from_numpy(np.zeros(1, dtype=np.dtype(cast("Any", s)))).type.content)
+        ak.forms.from_type(_type(canonical)).length_one_array(highlevel=False)
+    except (LarkError, TypeError, ValueError) as exc:
+        raise TypeError(
+            f"output_type {spec!r} is neither a type string the installed awkward can parse and "
+            "build nor a numpy dtype it represents"
+        ) from exc
+    return canonical
+
+
+def declared_form(first: AwkwardForm, canonical: str) -> AwkwardForm:
+    """The form of an External declared ``canonical``: that element type over ``first``'s length."""
+    t = _type(canonical)
+    if ak.typetracer.is_unknown_scalar(first.tt):
+        if isinstance(t, ak.types.NumpyType) and not t.parameters:
+            return AwkwardForm(ak.typetracer.create_unknown_scalar(np.dtype(t.primitive)))
+        raise TypeError(f"output_type {canonical!r} over a scalar input must be a primitive dtype")
+    layout = ak.forms.from_type(t).length_one_array(highlevel=False)
+    return AwkwardForm(ak.Array(layout.to_typetracer(forget_length=True)))
+
+
 class AwkwardBackend:
     #: the backend's versioned shuffle-format token (folded into the V2 task ids, §7.2)
     identity = "graphed-awkward/0"
@@ -88,8 +137,11 @@ class AwkwardBackend:
             # M40 (§3.3): flat relational record-merge form; how=left/outer ⇒ missing side option-typed
             return AwkwardForm(join.join_form([f.tt for f in forms], params))
         if op in _EXTERNAL:
-            # Opaque/external op: output form is not derivable from inputs. Approximate it by the
-            # first input's form (corrections/inference are ~shape-preserving for these fixtures).
+            # an External's value type is not derivable from its inputs: a declared `output_type`
+            # is recorded as given, and an undeclared one records its first input's form
+            declared = params.get("output_type")
+            if declared is not None:
+                return declared_form(forms[0], str(declared))
             return forms[0]
         operands = [f.tt for f in forms]
         return AwkwardForm(apply(op, operands, params, behavior=self._behavior))
@@ -100,6 +152,8 @@ class AwkwardBackend:
         return apply(op, inputs, params, behavior=self._behavior)
 
     # ---- M54: behavior methods with arguments ------------------------------------------------
+    canonical_output_type = staticmethod(canonical_output_type)
+
     def attribute_kind(self, form: AwkwardForm, name: str) -> str:
         """Classify `arr.<name>`: a record FIELD shadows the behavior (as `apply`'s `field` branch
         resolves it), a behavior function is a "method" the frontend hands back as a callable, ak.Array's

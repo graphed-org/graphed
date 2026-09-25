@@ -380,16 +380,33 @@ class Session:
         *,
         descriptor: graphed.core.PayloadDescriptor | None = None,
         form: Form | None = None,
+        output_type: object = None,
     ) -> Array:
         """Record an External node. By default the BACKEND supplies the payload descriptor and
         output form (the M3 correctionlib/ONNX family); a package recording its OWN External
         family (M23 — e.g. histogram fills) passes ``descriptor=`` and ``form=`` explicitly and
-        the backend is not consulted at all, so backends stay free of domain content (§A.4)."""
+        the backend is not consulted at all, so backends stay free of domain content (§A.4).
+
+        ``output_type=`` declares the per-element type of the External's value (m71). The
+        backend's optional ``canonical_output_type`` reduces it to one string, stored as the
+        ``output_type`` param (so it is node identity) and honoured by the backend's ``op_form``;
+        it is exclusive with ``form=``. The frontend never interprets it."""
         params_d: dict[str, ParamValue] = dict(params or {})
         prov = capture()
         self._mine(inputs, (op, prov))
         if (descriptor is None) != (form is None):
             raise GraphedTypeError(op, prov, "descriptor= and form= must be given together")
+        spec = output_type if output_type is not None else params_d.get("output_type")
+        if spec is not None:
+            if form is not None:
+                raise GraphedTypeError(op, prov, "output_type= and form= are exclusive")
+            canonical = getattr(self._backend, "canonical_output_type", None)
+            try:
+                if canonical is None:
+                    raise TypeError(f"{type(self._backend).__name__} cannot declare output_type")
+                params_d["output_type"] = str(canonical(spec))
+            except Exception as exc:  # an unrepresentable declaration -> user-located error
+                raise GraphedTypeError(op, prov, str(exc)) from exc
         if descriptor is None:
             descriptor = self._backend.external_payload(op, params_d)
             if descriptor is None:
