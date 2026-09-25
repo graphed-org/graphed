@@ -20,7 +20,7 @@ import operator
 import os
 import tempfile
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, cast
 
 import awkward as ak
@@ -39,10 +39,11 @@ from graphed import (
 )
 from graphed import parquet as gpq
 from graphed import write as gw
-from graphed.aggregate import external_evaluators
+from graphed.aggregate import external_evaluators, plan_services
 from graphed.core import Partition
 from graphed.core.execution import Plan, SequentialRunner, WorkerResources
 from graphed.errors import GraphedError
+from graphed.services import bind_externals
 from graphed.varied import Varied, member_of, most_derived_context, union_labels
 from graphed.write import PartitionedSource
 
@@ -140,6 +141,9 @@ class _WritePart:
     memory_data: ak.Array | None = None  # in-memory source payload (bounded by the dataset)
     memory_rows: int = 0
     externals: tuple[tuple[str, Callable[..., object]], ...] = ()
+
+    def bind_services(self, endpoints: Mapping[str, str]) -> _WritePart:
+        return replace(self, externals=bind_externals(self.externals, endpoints))
 
     def __call__(self, partition: Partition, resources: WorkerResources) -> list[str]:
         if self.reader is not None:
@@ -522,6 +526,9 @@ class _VariedWritePart:
     manifest: Mapping[str, Any] | None = None  # C4 fills the KV manifest; None writes plain parquet
     externals: tuple[tuple[str, Callable[..., object]], ...] = ()
 
+    def bind_services(self, endpoints: Mapping[str, str]) -> _VariedWritePart:
+        return replace(self, externals=bind_externals(self.externals, endpoints))
+
     def _chunk(self, partition: Partition, resources: WorkerResources) -> tuple[Any, int]:
         if self.reader is not None:
             return self.reader.read_partition(partition, self.columns, resources), gw.blind_part_index(
@@ -767,7 +774,7 @@ def _write_varied(
         )
         writer = _VariedWritePart(bases=(), memory_data=whole, memory_rows=n, **common)
 
-    plan = gw.write_plan(partitions, writer)
+    plan = gw.write_plan(partitions, writer, plan_services(session, compiled))
     if not compute:
         return plan
     runner = executor if executor is not None else SequentialRunner()
@@ -885,7 +892,7 @@ def to_parquet(
             externals=externals,
         )
 
-    plan = gw.write_plan(partitions, writer)
+    plan = gw.write_plan(partitions, writer, plan_services(session, compiled))
     if not compute:
         return plan
     runner = executor if executor is not None else SequentialRunner()

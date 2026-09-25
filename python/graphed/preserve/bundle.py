@@ -15,13 +15,14 @@ import json
 import os
 import pickle
 import platform
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from graphed.checkpoint import Store
 from graphed.core import GraphStore
+from graphed.services import referenced_services
 
 from .errors import PreserveError, UnresolvedPayload
 from .externals import ResourceCache, evaluate_external, get_plugin
@@ -136,6 +137,9 @@ def _render_run_reports(bundle: Bundle) -> list[str]:
             f"wall={r['wall_s']:.6f}s env={env}"
         )
         lines.append(f"      environment_digest={r['environment_digest']}")
+        if r.get("endpoints"):
+            pairs = ", ".join(f"{name} → {endpoint}" for name, endpoint in r["endpoints"].items())
+            lines.append(f"      endpoints: {pairs}")
         if r["error"] is not None:
             # one line whatever the message holds, so no line can read as a graph node ("    n")
             lines.append("      failed: " + " ".join(r["error"].split()))
@@ -145,6 +149,21 @@ def _render_run_reports(bundle: Bundle) -> list[str]:
                 f"      task {t['key']} partition={t['partition']} worker={t['worker']} "
                 f"state={t['state']} duration={duration}s"
             )
+    return lines
+
+
+def _render_services(specs: Sequence[Mapping[str, Any]]) -> list[str]:
+    lines = ["  services:"] if specs else []
+    for s in specs:
+        launch = s["launch"]
+        recipe = "external only"
+        if launch is not None:
+            recipe = f"argv={' '.join(launch['argv'])}"
+            if launch["image"] is not None:
+                recipe = f"image={launch['image']} {recipe}"
+            if launch["resources"]:
+                recipe += " resources=" + ",".join(f"{k}={v:g}" for k, v in launch["resources"].items())
+        lines.append(f"    {s['name']} kind={s['kind']} check={s['check']} {recipe}")
     return lines
 
 
@@ -243,6 +262,8 @@ def build_bundle(
             }
         )
 
+    services_manifest = [spec.to_json() for spec in referenced_services(session, nodes)]
+
     # 4. provenance sourcemap (basenames only -> build-location independent), stored
     sourcemap = {
         str(nid): {**prov, "filename": os.path.basename(str(prov.get("filename", "")))}
@@ -277,6 +298,8 @@ def build_bundle(
         "config": dict(config or {}),
         "seed": int(seed),
     }
+    if services_manifest:  # omitted when empty, like "variations": a bundle without services keeps its bytes
+        manifest["services"] = services_manifest
     (root / "manifest.json").write_bytes(canonical_bytes(manifest))
     return Bundle(root=root, manifest=manifest)
 
@@ -313,6 +336,11 @@ def reproduce(bundle: Bundle) -> Any:
         entry = ext_by_node.get(node["id"])
         if entry is None:
             raise PreserveError(f"external node {node['id']} is not in the manifest (opaque/unpreserved?)")
+        if "service" in node["params"]:  # the endpoint is run environment; the bundle keeps none
+            raise PreserveError(
+                f"external node {node['id']} calls service {node['params']['service']!r}, which "
+                "reproduce cannot reach: run the analysis as a Plan with the endpoint bound"
+            )
         payload = _resolve(store, entry["store"], what=f"{entry['kind']} payload")
         return evaluate_external(node, inputs, payload, resources)
 
@@ -385,6 +413,7 @@ def inspect(bundle: Bundle) -> str:
     lines.append("  external payloads (HEP standards, content-addressed):")
     for e in m["externals"]:
         lines.append(f"    n{e['node_id']} {e['kind']} ({e['io_schema']}) {e['content_hash']}")
+    lines += _render_services(m.get("services", ()))
     lines.append("  input datasets:")
     for name, h in m["sources"].items():
         lines.append(f"    {name}: sha256:{h}")

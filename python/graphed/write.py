@@ -14,10 +14,13 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable, Hashable, Mapping, Sequence
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from graphed.core import Partition
 from graphed.core.execution import Plan, Task, WorkerResources
+
+if TYPE_CHECKING:
+    from graphed.services import ServiceSpec
 
 
 # ---- the deferred write plan --------------------------------------------------------------------
@@ -32,14 +35,17 @@ def _no_paths() -> list[str]:
 def write_plan(
     partitions: Sequence[Partition],
     write_part: Callable[[Partition, WorkerResources], list[str]],
+    services: tuple[ServiceSpec, ...] | None = None,
 ) -> Plan[list[str]]:
     """A task graph of write tasks (R15.4 compute-disabled form): each task writes one output part
     and returns its path; the combine concatenates path lists up the FIXED key-ordered tree, so
     the final path list is deterministic. ``write_part`` must be picklable (a module-level
     function, ``functools.partial`` of one, or a frozen dataclass) so the plan runs on a
-    process-pool executor unchanged."""
+    process-pool executor unchanged. ``services`` is the plan's ``Plan.services``."""
     tasks = tuple(Task(i, p) for i, p in enumerate(partitions))
-    return Plan(process=write_part, combine=_concat_paths, empty=_no_paths, tasks=tasks)
+    return Plan(
+        process=write_part, combine=_concat_paths, empty=_no_paths, tasks=tasks, services=services or ()
+    )
 
 
 # ---- writer-side part naming and indexing (R15.9) ------------------------------------------------

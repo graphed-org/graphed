@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable, Mapping
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field, fields
+from types import MappingProxyType
 from typing import Any
 
 from graphed.core import ExecResult, Monitor, StopReason, TaskEvent, TaskPhase, WorkerProfiler
@@ -59,6 +60,19 @@ class RunReport:
     error: str | None
     environment: dict[str, Any]
     environment_digest: str
+    #: service name -> the endpoint this run reached it at; run provenance, outside any fingerprint
+    endpoints: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "endpoints", MappingProxyType(dict(self.endpoints)))
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        # a mappingproxy does not pickle; the constructor re-wraps the plain dict
+        values = {f.name: getattr(self, f.name) for f in fields(self)}
+        return (_report, (values | {"endpoints": dict(self.endpoints)},))
+
+    def __setstate__(self, state: dict[str, Any]) -> None:  # a 0.0.6 pickle carries no endpoints
+        self.__dict__.update({"endpoints": MappingProxyType({})} | state)
 
     @property
     def failed_keys(self) -> tuple[int, ...]:
@@ -81,7 +95,7 @@ class RunReport:
             "error": self.error,
             "environment": self.environment,
             "environment_digest": self.environment_digest,
-        }
+        } | ({"endpoints": dict(self.endpoints)} if self.endpoints else {})
 
     @classmethod
     def from_json(cls, data: Mapping[str, Any]) -> RunReport:
@@ -104,7 +118,12 @@ class RunReport:
             error=data["error"],
             environment=data["environment"],
             environment_digest=data["environment_digest"],
+            endpoints=data.get("endpoints", {}),
         )
+
+
+def _report(values: dict[str, Any]) -> RunReport:
+    return RunReport(**values)
 
 
 def _fold(key: int, events: list[TaskEvent]) -> TaskRecord:
@@ -158,9 +177,11 @@ class RunRecorder:
         result: ExecResult[Any] | None = None,
         error: BaseException | None = None,
         container_digest: str | None = None,
+        endpoints: Mapping[str, str] | None = None,
     ) -> RunReport:
         """Fold the events received since the previous ``report()`` (or construction) into a
-        ``RunReport`` of ``result`` or of the raised ``error`` — exactly one of them."""
+        ``RunReport`` of ``result`` or of the raised ``error`` — exactly one of them; ``endpoints``
+        records where the run reached each service."""
         if (result is None) == (error is None):
             raise ValueError("RunRecorder.report needs exactly one of result= or error=")
         from graphed.preserve import capture_environment, fingerprint  # noqa: PLC0415
@@ -190,4 +211,5 @@ class RunRecorder:
             error=message,
             environment=env,
             environment_digest=fingerprint(env),
+            endpoints=endpoints or {},
         )

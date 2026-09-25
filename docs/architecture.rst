@@ -114,6 +114,32 @@ recording, so the shared part is read and evaluated once rather than once per ou
 what ``graphed_histogram``'s ``plan({...})`` is built on, and what makes hundreds of histograms
 with systematic variations one pass over the data instead of hundreds.
 
+Service surface
+---------------
+
+Some operations call a service rather than a file: a Triton server that scores events, a
+histogram server that holds the fills. Where that service answers is a fact about the run, not
+about the analysis, so ``graphed`` keeps the two apart.
+
+The analysis declares what it needs. ``Session.declare_service(ServiceSpec(name, kind, ...))``
+records the requirement — the ``name`` operations refer to, a ``kind`` a site can match, the
+readiness ``check`` (``tcp``, ``http:<path>``, or ``grpc:<service>``) — and optionally a
+``Launch`` recipe (argv, container image, resources) for starting one. An operation names a
+declared service through ``params["service"]``; naming one that was never declared is refused as
+you record it. ``aggregate_plan`` and the awkward ``to_parquet`` put the specs the recording
+references on ``Plan.services``, ``DurablePlan`` serializes them, and a preservation bundle lists
+them in its manifest.
+
+The run supplies where. An endpoint is ``scheme://host:port`` with the scheme one of ``tcp``,
+``http``, ``https``, ``grpc`` or ``grpcs``; the wire and TLS live on the endpoint because the same
+service may be reached over different wires at different sites.
+``graphed.services.bind_services(plan, {name: endpoint})`` returns a plan whose process carries
+the endpoints; the recording is untouched, so two runs against two servers compile to the same
+bytes. A run's endpoints are provenance of that run: ``RunReport.endpoints`` keeps them, outside
+the bundle's fingerprint. ``graphed`` never starts a service itself; a runner in
+``graphed-executors`` resolves each spec — a user endpoint, a site's, or one it starts from the
+recipe — and binds them before the first task.
+
 What you install
 ----------------
 

@@ -23,7 +23,10 @@ from collections import OrderedDict
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Generic, Protocol, TypeVar, cast, runtime_checkable
+from typing import TYPE_CHECKING, Generic, Protocol, TypeVar, cast, runtime_checkable
+
+if TYPE_CHECKING:
+    from ..services import ServiceSpec
 
 R = TypeVar("R")  # a partial result (e.g. a histogram array)
 Block = TypeVar("Block")  # a backend-native partition of rows (opaque to the engine)
@@ -216,6 +219,8 @@ class Plan(Generic[R]):
     next_tasks: Callable[[ExecContext], Iterable[Task] | None] | None = None  # adaptive hook (DONE=None)
     stop: StopCondition | None = None
     open_once: bool = False
+    # a plain default, not a factory: a Plan pickled before this field existed still loads
+    services: tuple[ServiceSpec, ...] = ()  # the services the plan's nodes name (graphed.services)
 
 
 @dataclass(frozen=True)

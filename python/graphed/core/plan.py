@@ -32,6 +32,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
+from ..services import ServiceSpec
 from .execution import Partition, Task
 from .graphed_core import GraphStore
 
@@ -141,6 +142,8 @@ class DurablePlan:
     file_locality: Mapping[str, str] = field(default_factory=dict)
     resource_hints: Mapping[str, float] = field(default_factory=dict)
     format_version: int = FORMAT_VERSION
+    #: the services the IR's nodes name; not identity (``task_id`` ignores it)
+    services: tuple[ServiceSpec, ...] = ()
 
     # ---- the live graph -------------------------------------------------------------------------
     def graph(self) -> GraphStore:
@@ -206,6 +209,8 @@ class DurablePlan:
             "file_locality": dict(self.file_locality),
             "resource_hints": dict(self.resource_hints),
         }
+        if self.services:  # omitted when empty: a plan without services keeps its 0.0.6 bytes
+            doc["services"] = [spec.to_json() for spec in self.services]
         return json.dumps(doc, sort_keys=True, separators=(",", ":")).encode()
 
     @classmethod
@@ -222,6 +227,7 @@ class DurablePlan:
             file_locality=dict(doc["file_locality"]),
             resource_hints=dict(doc["resource_hints"]),
             format_version=int(doc["format_version"]),
+            services=tuple(ServiceSpec.from_json(spec) for spec in doc.get("services", ())),
         )
 
 

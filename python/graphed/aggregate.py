@@ -16,7 +16,7 @@ from __future__ import annotations
 import os
 import threading
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Generic, TypeVar
 
 from graphed.core import GraphStore, Partition
@@ -36,6 +36,7 @@ from .execute import (
     refuse_chunk_partials,
 )
 from .projection import read_columns
+from .services import Bindable, ServiceSpec, bind_externals, referenced_services
 from .session import Session
 from .varied import refuse_container
 from .write import PartitionedSource, declared_columns
@@ -105,6 +106,11 @@ class _PartitionReduce(Generic[V]):
         result = self.reduce(self._evaluate(chunk, partition))
         store.record_done(f"{cid}:output", label, store.put(codec.encode(result)), stage="replay-output")
         return result
+
+    def bind_services(self, endpoints: Mapping[str, str]) -> _PartitionReduce[V]:
+        """A copy whose External evaluators and ``reduce`` carry ``endpoints`` where they take them."""
+        reduce = self.reduce.bind_services(endpoints) if isinstance(self.reduce, Bindable) else self.reduce
+        return replace(self, externals=bind_externals(self.externals, endpoints), reduce=reduce)
 
     def _evaluate(self, chunk: object, partition: Partition) -> list[object]:
         return evaluate_ir(
@@ -193,6 +199,14 @@ def external_evaluators(session: Session, compiled: CompiledGraph) -> dict[str, 
     return wired
 
 
+def plan_services(
+    session: Session, compiled: CompiledGraph, names: Sequence[str] | None = None
+) -> tuple[ServiceSpec, ...]:
+    """The ``Plan.services`` of a plan over ``compiled``: the session's specs its External nodes name,
+    plus ``names``."""
+    return referenced_services(session, GraphStore.deserialize(bytes(compiled.ir)).nodes(), names)
+
+
 def aggregate_plan(
     *outputs: Array,
     reduce: Callable[[list[Any]], V],
@@ -204,6 +218,7 @@ def aggregate_plan(
     partitions: Sequence[Partition] | None = None,
     on_compiled: Callable[[CompiledGraph], Any] | None = None,
     store: str | os.PathLike[str] | None = None,
+    services: Sequence[str] | None = None,
 ) -> Plan[V]:
     """Build a one-pass partition-wise reduction :class:`~graphed.core.execution.Plan` over the
     session's single partitioned source (see module docstring). ``outputs`` are the output Arrays
@@ -218,7 +233,11 @@ def aggregate_plan(
 
     ``store`` (a directory, or an fsspec URL) makes each task capture its input chunk and its
     ``reduce`` partial into that checkpoint root, so :func:`graphed.debug.replay` can re-run a task
-    of this plan later from exactly what it read. A directory must be one every worker shares."""
+    of this plan later from exactly what it read. A directory must be one every worker shares.
+
+    ``Plan.services`` holds the session's specs named by the compiled External nodes'
+    ``params["service"]`` and by ``services`` (names a node does not carry, e.g. a service the
+    ``reduce`` calls), in name order."""
     refuse_container("graphed.aggregate_plan", *outputs)
     if not outputs:
         raise ValueError("aggregate_plan needs at least one output Array")
@@ -254,4 +273,10 @@ def aggregate_plan(
     if partitions is None:
         partitions = data.partitions(steps_per_file)
     tasks = tuple(Task(i, p) for i, p in enumerate(partitions))
-    return Plan(process=process, combine=combine, empty=empty, tasks=tasks)
+    return Plan(
+        process=process,
+        combine=combine,
+        empty=empty,
+        tasks=tasks,
+        services=plan_services(session, compiled, services),
+    )

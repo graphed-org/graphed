@@ -272,6 +272,8 @@ jobs:
           pytest tests/frozen/preserve -p no:cacheprovider
           pytest tests/frozen/preserve/m26 -q -rs | tee m26run.txt
           ! grep -i "skipped" m26run.txt || (echo "m26 skipped tests on the everything-present cell" && exit 1)
+          pytest tests/frozen/preserve/m68/test_triton_service_live.py -q -rs | tee m68run.txt
+          ! grep -i "skipped" m68run.txt || (echo "a live service-ref leg skipped" && exit 1)
       - name: Triton logs (on failure)
         if: failure()
         run: docker logs triton || true

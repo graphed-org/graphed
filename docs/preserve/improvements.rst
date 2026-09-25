@@ -42,7 +42,9 @@ Remote models reproduce only where the server does
 
 A Triton-backed operation preserves the served model's identity, not the service. Reproduction
 connects to the endpoint named in the operation's parameters; if the server is gone,
-``reproduce`` raises. Nothing packages a servable model into the bundle and launches it.
+``reproduce`` raises. An operation that names a service (``service=``) has no endpoint in its
+parameters, so ``reproduce`` raises for it wherever the server is. Nothing packages a servable
+model into the bundle and launches it.
 
 **Workaround:** for a model that has to outlive its serving infrastructure, export it to ONNX
 or TorchScript and record it as a local payload.

@@ -4,6 +4,32 @@ What changed
 Newest release first. Numbers in parentheses are the pull requests on
 `graphed-org/graphed <https://github.com/graphed-org/graphed>`_.
 
+0.0.7 (unreleased)
+------------------
+
+Services an analysis calls
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``graphed.services.ServiceSpec`` (with an optional ``Launch`` recipe) declares a service an
+  analysis calls: ``Session.declare_service``, ``Session.services()``, ``Session.service_for``. An
+  External names one through ``params["service"]``; an undeclared name is refused at record time.
+* ``Plan.services`` and ``DurablePlan.services`` carry the specs the recording names
+  (``aggregate_plan(services=...)`` adds names no node carries), and so does the awkward
+  ``to_parquet`` write plan. ``DurablePlan.to_bytes`` writes the key only when non-empty, so a plan
+  without services keeps its bytes.
+* ``graphed.services.bind_services(plan, {name: "scheme://host:port"})`` binds run endpoints into a
+  plan's process without changing the recording; ``split_endpoint`` checks the form (``tcp``,
+  ``http``, ``https``, ``grpc``, ``grpcs``). An unbound service raises ``UnboundService``.
+* A Triton External names ``service=`` or a literal ``url=``, not both. The endpoint's scheme picks
+  ``tritonclient.http`` or ``tritonclient.grpc`` (TLS on ``https``/``grpcs``); a url without a
+  scheme keeps the HTTP client and ``params["transport"]`` still overrides. The ``ml`` extra
+  installs ``tritonclient[grpc,http]``.
+* The per-process External resource cache keys on the endpoint and the params ``load`` reads
+  (``ExternalPlugin.load_params``), so a correction set is still loaded once across systematics.
+* Preservation bundles list the referenced specs in ``manifest["services"]`` (absent when there are
+  none) and ``inspect()`` prints them. ``RunReport.endpoints`` records where a run reached each
+  service, outside the fingerprint; ``reproduce`` refuses an External that calls a service.
+
 0.0.6
 -----
 
