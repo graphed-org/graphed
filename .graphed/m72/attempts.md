@@ -53,3 +53,14 @@ Tests `tests/extra/frontend/m72` (collision + nested refused, no read, no file; 
 run; replay refused) and `tests/extra/awkward/m72` (two `to_parquet` plans into one destination
 refused; distinct destinations run). The 3 refusal tests fail on 4a3ae76 and the 2 controls pass
 there; dropping `_Collated.part_paths` fails the nested leg.
+
+## R2 repair — numpy `to_parquet` parts hidden from `collate` (review impl-r2 F4, F5, N1)
+
+Class searched in `python/graphed` (every `write_plan(` caller and every parquet/table writer):
+the awkward `_WritePart`/`_VariedWritePart` were hooked; numpy `_WritePart` was the one in-repo
+member without `part_paths`. It now has one, and `__call__` writes through it. The cause-level cut
+(write_plan deriving paths itself) is unavailable: `write_plan`'s signature is fixed by the uproot
+fork's caller. F5: `_written_parts` and `collate` now say a hook-less process is not checked;
+uproot's ROOT writer hook goes to the PR stage as an issue on the uproot fork. N1: caller clauses cut,
+design.rst line re-wrapped. Test `tests/extra/numpy/m72/test_m72_numpy_to_parquet_collisions.py`:
+its refusal leg fails with the numpy hook removed; the control leg passes either way.
