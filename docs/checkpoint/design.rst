@@ -556,7 +556,10 @@ throughout, since the two layouts cannot share a directory.
 A capture is named by the plan's graph and the task's partition, nothing else, so **a capture root
 holds one run**: two plans that differ only in ``reduce`` or ``externals=``, or two runs of one
 plan, written into one root overwrite each other's records. Give each run a fresh root. Captures
-are pickled; a ``reduce`` whose partial does not pickle fails its task when ``store=`` is set.
+are pickled; a ``reduce`` whose partial does not pickle fails its task when ``store=`` is set. The
+input is kept as read, with cloudpickle so a behavior holding lambdas survives: an awkward chunk
+from a projected read keeps its whole type, and the buffers the read skipped reload as unread
+placeholders, so a replay reads nothing the task did not.
 
 
 Not supported yet
