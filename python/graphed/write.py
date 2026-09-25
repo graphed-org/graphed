@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable, Hashable, Mapping, Sequence
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from graphed.core import Partition
@@ -21,6 +22,8 @@ from graphed.core.execution import Plan, Task, WorkerResources
 
 if TYPE_CHECKING:
     from graphed.services import ServiceSpec
+
+    from .array import Array
 
 
 # ---- the deferred write plan --------------------------------------------------------------------
@@ -46,6 +49,25 @@ def write_plan(
     return Plan(
         process=write_part, combine=_concat_paths, empty=_no_paths, tasks=tasks, services=services or ()
     )
+
+
+# ---- a write as one output of a multi-output plan ------------------------------------------------
+@dataclass(frozen=True, eq=False)
+class PartWrite:
+    """One part per task of ``array``, written beside a plan's reductions by
+    :func:`graphed.aggregate_plan` (``writes=``) in the same read and evaluation.
+
+    The part lands at ``os.path.join(destination, name(partition))`` for the task's partition as
+    the plan holds it (a blind partition is unresolved). ``codec(value, path, kv)`` writes it: the
+    backend's format. ``metadata`` values that are Arrays are evaluated per part, so a reduction
+    there is THIS part's partial; any other value is ``str()``-ed once at build. ``kv`` is
+    ``None`` exactly when ``metadata`` is."""
+
+    array: Array
+    destination: str
+    name: Callable[[Partition], str]
+    codec: Callable[[object, str, Mapping[str, str] | None], None]
+    metadata: Mapping[str, Any] | None = None
 
 
 # ---- writer-side part naming and indexing (R15.9) ------------------------------------------------

@@ -21,7 +21,7 @@ hash, and fails loudly when one is missing.
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, field
 from functools import partial
 from typing import Any
@@ -287,17 +287,18 @@ def _unbound_external(chash: str) -> GraphedError:
     )
 
 
-def refuse_chunk_partials(compiled: CompiledGraph | bytes, *, as_outputs: bool) -> None:
+def refuse_chunk_partials(compiled: CompiledGraph | bytes, *, as_outputs: bool | Collection[int]) -> None:
     """A partition-wise driver evaluates ``compiled`` once per chunk, so a reduction node — an
     axis-0 slice or index, an ``axis=None`` reduce — yields a chunk PARTIAL. A partial is sound
     only as a plan output the driver's ``combine`` folds; consumed by another node it is silently
     the wrong number (``sum(x[2:8])`` over two chunks). ``as_outputs=True`` refuses partials as
-    outputs as well: a writer has no combine, and every row it writes is a row of the dataset."""
+    outputs as well: a writer has no combine, and every row it writes is a row of the dataset. A
+    collection of compiled output ids refuses partials at exactly those outputs (a plan's writes)."""
     blob = compiled.ir if isinstance(compiled, CompiledGraph) else compiled
     store = graphed.core.GraphStore.deserialize(bytes(blob))
     nodes = store.nodes()
     consumed = {i for nd in nodes for i in nd["inputs"]}
-    outputs = set(store.outputs())
+    refused = set(store.outputs()) if as_outputs is True else set(as_outputs or ())
     for nid, nd in enumerate(nodes):
         if nd["kind"] != "reduction":
             continue
@@ -307,7 +308,7 @@ def refuse_chunk_partials(compiled: CompiledGraph | bytes, *, as_outputs: bool) 
                 " run evaluates it per chunk, so what follows would see a per-chunk partial, not the"
                 " dataset-wide value. Make the reduction the plan's output and fold it in `combine`"
             )
-        if as_outputs and nid in outputs:
+        if nid in refused:
             raise GraphedError(
                 f"{nd['name']!r} reduces the partitioned axis: a partitioned write has no combine"
                 " step, so each part would hold a per-chunk partial. Write a row-aligned array and"

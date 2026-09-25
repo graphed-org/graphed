@@ -1,0 +1,15 @@
+# m72 — implementer iterations
+
+Multiout lane (plans in `graphed-workdir/lanes/multiout/`: `plan.md`, `plan-A.md`). Frozen suite
+`freeze-m72` = `d2b48e4` (`tests/frozen/frontend/m72`, `tests/frozen/awkward/m72`).
+
+Run: `python -m pytest tests/frozen/frontend/m72 -q -p no:cacheprovider` and the same for
+`tests/frozen/awkward/m72`.
+
+## G1 — deferred part writes in `aggregate_plan` (frontend/m72 writes 7/7, awkward/m72 test 5)
+
+`PartWrite` in `write.py`; `aggregate_plan(writes=)` compiles `outputs + write arrays + metadata
+Arrays` into one IR, slots every array through `correspondence.node_map`, and ships each write as
+`(codec, destination, name, slot, kv)` with `n_values` = the outputs' distinct slot count.
+`refuse_chunk_partials(as_outputs=)` takes a collection of compiled ids (the write roots). The
+duplicate-part check runs over every (write, task) at build, after the tasks exist.

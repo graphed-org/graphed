@@ -39,9 +39,20 @@ from .projection import read_columns
 from .services import Bindable, ServiceSpec, bind_externals, referenced_services
 from .session import Session
 from .varied import refuse_container
-from .write import PartitionedSource, declared_columns
+from .write import PartitionedSource, PartWrite, declared_columns
 
 V = TypeVar("V")
+
+#: A write as shipped: ``(codec, destination, name, value slot, kv)``, where ``kv`` is ``None`` or
+#: ``((key, slot | str), ...)`` — an int slot for an Array value, the build-time ``str()`` otherwise.
+#: Never a `PartWrite`: its Array holds the session's store, which does not pickle.
+_ShippedWrite = tuple[
+    Callable[[object, str, Mapping[str, str] | None], None],
+    str,
+    Callable[[Partition], str],
+    int,
+    tuple[tuple[str, int | str], ...] | None,
+]
 
 
 def resolve_backend(ref: Callable[[], Any] | str) -> Any:
@@ -79,20 +90,23 @@ class _PartitionReduce(Generic[V]):
     #: for `graphed.debug.replay`. The input is the chunk as read: buffers a projected read skipped
     #: stay unread placeholders.
     store: str | None = None
+    #: `aggregate_plan(writes=)`, lowered; each writes one part from this partition's values.
+    writes: tuple[_ShippedWrite, ...] = ()
+    #: with writes, how many leading values are the outputs' (`reduce` gets those, then the paths)
+    n_values: int | None = None
 
     def __call__(self, partition: Partition, resources: WorkerResources) -> V:
         chunk = self.reader.read_partition(partition, self.columns, resources)
         if self.store is None:
             # _evaluate inlined: the default path keeps its pre-capture frame count
-            return self.reduce(
-                evaluate_ir(
-                    self.ir,
-                    resolve_backend(self.backend_factory),
-                    {self.source_name: chunk},
-                    externals=dict(self.externals),
-                    on_failure=self._attribute(str(partition)),
-                )
+            values = evaluate_ir(
+                self.ir,
+                resolve_backend(self.backend_factory),
+                {self.source_name: chunk},
+                externals=dict(self.externals),
+                on_failure=self._attribute(str(partition)),
             )
+            return self.reduce(self._write(values, partition) if self.writes else values)
         import cloudpickle  # noqa: PLC0415  (only a capturing plan needs it)
 
         from graphed.checkpoint import PickleCodec  # noqa: PLC0415
@@ -111,6 +125,16 @@ class _PartitionReduce(Generic[V]):
         """A copy whose External evaluators and ``reduce`` carry ``endpoints`` where they take them."""
         reduce = self.reduce.bind_services(endpoints) if isinstance(self.reduce, Bindable) else self.reduce
         return replace(self, externals=bind_externals(self.externals, endpoints), reduce=reduce)
+
+    def _write(self, values: list[object], partition: Partition) -> list[object]:
+        paths: list[object] = []
+        for codec, destination, name, slot, kv in self.writes:
+            path = os.path.join(destination, name(partition))
+            os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+            meta = None if kv is None else {k: v if isinstance(v, str) else str(values[v]) for k, v in kv}
+            codec(values[slot], path, meta)
+            paths.append(path)
+        return [*values[: self.n_values], *paths]
 
     def _evaluate(self, chunk: object, partition: Partition) -> list[object]:
         return evaluate_ir(
@@ -219,6 +243,7 @@ def aggregate_plan(
     on_compiled: Callable[[CompiledGraph], Any] | None = None,
     store: str | os.PathLike[str] | None = None,
     services: Sequence[str] | None = None,
+    writes: Sequence[PartWrite] = (),
 ) -> Plan[V]:
     """Build a one-pass partition-wise reduction :class:`~graphed.core.execution.Plan` over the
     session's single partitioned source (see module docstring). ``outputs`` are the output Arrays
@@ -237,12 +262,22 @@ def aggregate_plan(
 
     ``Plan.services`` holds the session's specs named by the compiled External nodes'
     ``params["service"]`` and by ``services`` (names a node does not carry, e.g. a service the
-    ``reduce`` calls), in name order."""
-    refuse_container("graphed.aggregate_plan", *outputs)
-    if not outputs:
-        raise ValueError("aggregate_plan needs at least one output Array")
-    session = outputs[0].session
-    if any(o.session is not session for o in outputs):
+    ``reduce`` calls), in name order.
+
+    ``writes`` (:class:`~graphed.write.PartWrite`) write one part per task from the same read and
+    evaluation: ``reduce`` then receives the outputs' values as without writes, followed by one
+    part path per write. ``outputs`` may be empty when ``writes`` is not."""
+    writes = tuple(writes)
+    metadata = [value for w in writes for value in (w.metadata or {}).values()]
+    refuse_container("graphed.aggregate_plan", *outputs, *(w.array for w in writes), *metadata)
+    if not outputs and not writes:
+        raise ValueError("aggregate_plan needs at least one output Array or write")
+    if writes and store is not None:
+        # replay recompiles `outputs` only, and a replay must never rewrite a part
+        raise TypeError("aggregate_plan(store=) does not capture writes")
+    arrays = [*outputs, *(w.array for w in writes), *(v for v in metadata if isinstance(v, Array))]
+    session = arrays[0].session
+    if any(a.session is not session for a in arrays):
         raise TypeError("all outputs of one plan must record into one session")
     partitioned = {nid: d for nid, d in session.sources().items() if isinstance(d, PartitionedSource)}
     if len(partitioned) != 1:
@@ -250,29 +285,51 @@ def aggregate_plan(
             f"aggregate_plan needs exactly one partitioned source; this session has {len(partitioned)}"
         )
     ((nid, data),) = partitioned.items()
-    compiled = compile_ir(session, *outputs)
-    refuse_chunk_partials(compiled, as_outputs=False)
+    compiled = compile_ir(session, *arrays)
+    order = {cid: i for i, cid in enumerate(GraphStore.deserialize(bytes(compiled.ir)).outputs())}
+
+    def slot(array: Array) -> int:
+        # the optimizer may merge outputs (`w * 1.0` into `w`); the correspondence knows where each landed
+        return order[compiled.correspondence.node_map[array.node_id][0]]
+
+    written = {compiled.correspondence.node_map[w.array.node_id][0] for w in writes}
+    refuse_chunk_partials(compiled, as_outputs=written)
     # Wire EVERY External surviving in the compiled IR from the session (fills + upstream corrections
     # alike); an explicit `externals=` (keyed by `external_key`) overrides the auto-wired evaluator.
     wired = external_evaluators(session, compiled)
     if externals:
         wired.update(externals)
-    declared = declared_columns(data, outputs)
+    declared = declared_columns(data, arrays)
     process = _PartitionReduce(
         ir=bytes(compiled.ir),
         source_name=session.source_name(nid),
         backend_factory=backend if backend is not None else type(session.backend),
         reader=data,
-        columns=read_columns(list(outputs), nid) if declared is None else declared,
+        columns=read_columns(arrays, nid) if declared is None else declared,
         externals=tuple(wired.items()),
         reduce=reduce,
         variation_labels=None if on_compiled is None else on_compiled(compiled),
         frames=compiled.correspondence.frames,
         store=None if store is None else os.fspath(store),
+        writes=tuple(
+            (
+                w.codec,
+                w.destination,
+                w.name,
+                slot(w.array),
+                None
+                if w.metadata is None
+                else tuple((k, slot(v) if isinstance(v, Array) else str(v)) for k, v in w.metadata.items()),
+            )
+            for w in writes
+        ),
+        # outputs are marked first, so their distinct values lead the evaluated list
+        n_values=len({slot(o) for o in outputs}) if writes else None,
     )
     if partitions is None:
         partitions = data.partitions(steps_per_file)
     tasks = tuple(Task(i, p) for i, p in enumerate(partitions))
+    _refuse_shared_parts(writes, tasks)
     return Plan(
         process=process,
         combine=combine,
@@ -280,3 +337,17 @@ def aggregate_plan(
         tasks=tasks,
         services=plan_services(session, compiled, services),
     )
+
+
+def _refuse_shared_parts(writes: Sequence[PartWrite], tasks: Sequence[Task]) -> None:
+    """Driver-side, O(writes x tasks): a part two tasks share would be silently overwritten."""
+    seen: set[str] = set()
+    for w in writes:
+        for task in tasks:
+            path = os.path.normpath(os.path.join(w.destination, w.name(task.partition)))
+            if path in seen:
+                raise ValueError(
+                    f"two tasks of this plan write the same part {path!r}: `name` must tell every"
+                    " partition apart (a blind partition's entry range is 0-0 until it is read)"
+                )
+            seen.add(path)
