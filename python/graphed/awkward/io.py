@@ -44,7 +44,7 @@ from graphed.core import Partition
 from graphed.core.execution import Plan, SequentialRunner, WorkerResources
 from graphed.errors import GraphedError
 from graphed.services import bind_externals
-from graphed.varied import Varied, member_of, most_derived_context, union_labels
+from graphed.varied import Varied, member_of, most_derived_context, refuse_container, union_labels
 from graphed.write import PartitionedSource
 
 from .backend import AwkwardBackend, AwkwardForm
@@ -158,12 +158,59 @@ class _WritePart:
         (out,) = evaluate_ir(
             self.compiled, cast("Backend", backend), {self.source_name: chunk}, externals=dict(self.externals)
         )
-        result = ak.Array(out)
-        payload = result if result.fields else ak.Array({self.column: result})
+        payload = _payload(out, self.column)
         os.makedirs(self.destination, exist_ok=True)
         path = gpq.part_path(self.destination, index, prefix=self.prefix)
         ak.to_parquet(payload, path)
         return [path]
+
+
+def _payload(value: object, column: str) -> ak.Array:
+    """What a part holds: a record as is, anything else as the one field ``column``."""
+    result = ak.Array(value)
+    return result if result.fields else ak.Array({column: result})
+
+
+@dataclass(frozen=True)
+class _ArrowParquet:
+    """`parquet_write`'s codec: ``ak.to_arrow_table`` then ``pq.write_table``, each with its own
+    options, and the part's key-value metadata REPLACING the schema's (``to_arrow_table`` always
+    stamps ``ak:parameters``, whichever ``extensionarray``)."""
+
+    column: str
+    arrow_options: tuple[tuple[str, Any], ...]
+    parquet_options: tuple[tuple[str, Any], ...]
+
+    def __call__(self, value: object, path: str, kv: Mapping[str, str] | None) -> None:
+        table = ak.to_arrow_table(_payload(value, self.column), **dict(self.arrow_options))
+        if kv is not None:
+            table = table.replace_schema_metadata(kv)
+        gpq._pq().write_table(table, path, **dict(self.parquet_options))
+
+
+def parquet_write(
+    array: Array,
+    destination: str,
+    *,
+    name: Callable[[Partition], str],
+    metadata: Mapping[str, Any] | None = None,
+    arrow_options: Mapping[str, Any] | None = None,
+    parquet_options: Mapping[str, Any] | None = None,
+    column: str = "data",
+) -> gw.PartWrite:
+    """A parquet part per task of ``array``, for :func:`graphed.aggregate_plan` ``writes=``.
+
+    Each part is ``ak.to_arrow_table(array_chunk, **arrow_options)`` written by
+    ``pyarrow.parquet.write_table(table, path, **parquet_options)`` at
+    ``os.path.join(destination, name(partition))``. A non-record array is written as the field
+    ``column``. ``metadata`` (see :class:`~graphed.write.PartWrite`) replaces the schema's
+    key-value metadata when given. Column order is the array's: sort a record's fields in the
+    graph (``rec[sorted(rec.fields)]``) to write them sorted."""
+    refuse_container("graphed.awkward.parquet_write", array, *(metadata or {}).values())
+    codec = _ArrowParquet(
+        column, tuple((arrow_options or {}).items()), tuple((parquet_options or {}).items())
+    )
+    return gw.PartWrite(array=array, destination=destination, name=name, codec=codec, metadata=metadata)
 
 
 def _syntactic_fields(array: Any, source_node_id: int) -> set[str] | None:

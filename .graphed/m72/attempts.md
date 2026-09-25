@@ -13,3 +13,9 @@ Arrays` into one IR, slots every array through `correspondence.node_map`, and sh
 `(codec, destination, name, slot, kv)` with `n_values` = the outputs' distinct slot count.
 `refuse_chunk_partials(as_outputs=)` takes a collection of compiled ids (the write roots). The
 duplicate-part check runs over every (write, task) at build, after the tasks exist.
+
+## G2 — `graphed.awkward.parquet_write` (awkward/m72 tests 1, 2, 6; awkward/m48, m51 green)
+
+`_ArrowParquet(column, arrow_options, parquet_options)` codec: `to_arrow_table(**arrow)`, KV
+replaced when given, `pq.write_table(**parquet)`. `_payload` is the wrap rule `_WritePart` now shares.
+Registered `"refusing"` in `VERB_DISPOSITIONS`.
