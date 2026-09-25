@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import re
 from typing import Any
 
 import pytest
@@ -140,7 +141,9 @@ def test_plan_and_durable_plan_carry_the_referenced_specs() -> None:
     back = DurablePlan.from_bytes(raw)
     assert back.services == (_managed(),)
     assert back.to_bytes() == raw
-    bare = dataclasses.replace(durable, services=())
+    kept = {f.name: getattr(durable, f.name) for f in dataclasses.fields(durable) if f.name != "services"}
+    bare = DurablePlan(**kept)
+    assert bare.services == ()
     assert [durable.task_id(p) for p in parts] == [bare.task_id(p) for p in parts]  # the spec is not identity
 
 
@@ -179,7 +182,7 @@ def test_bundle_manifest_and_inspect_list_the_referenced_specs(tmp_path: Any) ->
         "triton-eaf",
     ):
         assert token in block, token
-    assert block.count("external only") == 1  # only scorer-site lacks a recipe
+    assert len(re.findall(r"\bexternal only\b", block)) == 1  # only scorer-site lacks a recipe
     assert "unused-svc" not in "\n".join(lines)
 
 
@@ -208,15 +211,17 @@ def test_specs_are_listed_in_name_order_whatever_the_kind(tmp_path: Any) -> None
     )
     opened = Bundle.open(bundle.root)
     assert [s["name"] for s in opened.manifest["services"]] == sorted(names)
-    assert "http-serve" in inspect(opened)  # an image-less recipe prints its argv
+    # an image-less recipe prints its argv
+    assert re.search(r"(?<![\w-])http-serve(?![\w-])", inspect(opened))
 
 
 def test_run_report_endpoints_are_run_provenance(tmp_path: Any) -> None:
     bundle = _bundle(tmp_path / "b")
     manifest_bytes = (bundle.root / "manifest.json").read_bytes()
     done = ExecResult(value=0, n_partitions=0, n_combines=0)
-    report = RunRecorder().report(result=done, endpoints={"scorer-svc": "grpc://10.1.2.3:8001"})
-    assert dict(report.endpoints) == {"scorer-svc": "grpc://10.1.2.3:8001"}
+    endpoints = {"scorer-svc": "grpc://10.1.2.3:8001", "scorer-site": "http://eaf.example:8000"}
+    report = RunRecorder().report(result=done, endpoints=endpoints)
+    assert dict(report.endpoints) == endpoints
     assert report.to_json()["version"] == 1
     bare = RunReport(**{k: v for k, v in vars(report).items() if k != "endpoints"})
     assert dict(bare.endpoints) == {}
@@ -235,6 +240,8 @@ def test_run_report_endpoints_are_run_provenance(tmp_path: Any) -> None:
     heads = [
         next(i for i, line in enumerate(lines) if line.startswith(f"    {d[:12]} ")) for d in (first, second)
     ]
-    (arrow,) = [i for i, line in enumerate(lines) if "scorer-svc → grpc://10.1.2.3:8001" in line]
+    (arrow,) = [i for i, line in enumerate(lines) if "endpoints:" in line]
+    for name, endpoint in endpoints.items():  # each pair a whole token on the one endpoints line
+        assert re.search(rf"(?<![\w-]){name} → {re.escape(endpoint)}(?!\w)", lines[arrow]), name
     assert heads[0] < arrow < heads[1]
     assert sum("endpoints:" in line for line in lines) == 1
