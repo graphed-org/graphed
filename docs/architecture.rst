@@ -113,6 +113,10 @@ selection feeding two histograms, a sum and a count over the same cut — compil
 recording, so the shared part is read and evaluated once rather than once per output. That is
 what ``graphed_histogram``'s ``plan({...})`` is built on, and what makes hundreds of histograms
 with systematic variations one pass over the data instead of hundreds.
+The same pass can write skims: ``aggregate_plan(writes=[...])`` has each task write its part from
+the values it already evaluated, beside the reductions. When datasets need different graphs (MC
+weighted, data not), ``graphed.collate`` joins their plans into one plan. Each task runs the graph
+of the dataset its file belongs to, and the value holds one result per dataset.
 
 Service surface
 ---------------

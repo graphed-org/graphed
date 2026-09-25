@@ -30,3 +30,11 @@ the m72 test itself).
 `_Collated(processes, route)` routes by `(uri, tree)` (the route is O(files), in the broadcast
 process); `_CollatedCombine` folds per name and returns names in mapping order whatever the tree;
 `empty=dict`. Tasks re-keyed `0..N-1` over each plan's key order in mapping order.
+
+## G5 — docs
+
+`docs/frontend/design.rst` (writes in "One pass…", new "Several graphs in one plan", the "Output
+groups" bullet replaced by the durable-collate limit), `improvements.rst` (blind part naming),
+`docs/awkward/design.rst`, `architecture.rst`, `api.rst`, `changelog.rst` (0.0.7 unreleased). Both
+new examples executed with `run_rst_blocks.py` (the 3 frontend and 1 awkward FAILs are the
+pre-existing fragment blocks, same on the base); `sphinx-build -W` clean.

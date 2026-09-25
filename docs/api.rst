@@ -15,7 +15,8 @@ Record and run
 The recording surface. ``Session`` owns the recording and ``Array`` is the proxy you manipulate;
 ``compile_ir`` and ``evaluate_ir`` turn a recording into something a worker evaluates, and
 ``aggregate_plan`` builds the task graph that computes several outputs in one pass over the
-data. ``vary`` declares a systematic variation, and ``labels`` / ``nominal`` / ``universe`` /
+data, part writes included (``graphed.write.PartWrite``), and ``collate`` joins plans over different
+graphs into one. ``vary`` declares a systematic variation, and ``labels`` / ``nominal`` / ``universe`` /
 ``variations`` read the results back (each tag's ``Kind``, a flag, beside its ordering). ``join``, ``repartition``, ``join_plan`` and
 ``shuffle_plan`` move rows between partitions; ``read_columns`` and ``impact_by_label`` tell you
 what a recording will actually read off disk.
@@ -31,7 +32,7 @@ Ragged analysis
 
 The backend HEP analyses live on. ``gak`` mirrors ``ak.*`` name for name and signature for
 signature; ``gnano.events`` wraps a record as an event context so ``vary`` can shift a whole
-collection; ``from_awkward`` and ``from_parquet`` are the sources; ``project`` and
+collection; ``from_awkward`` and ``from_parquet`` are the sources, and ``to_parquet`` and ``parquet_write`` the writers; ``project`` and
 ``project_buffers`` show which columns and which pieces of them a recording needs.
 
 .. autosummary::

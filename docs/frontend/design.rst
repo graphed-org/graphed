@@ -1019,6 +1019,121 @@ overrides the partitioning, and ``steps_per_file=`` splits each file into more t
 store, so a task can be replayed later with :func:`graphed.debug.replay`.
 ``graphed-histogram``'s ``gh.plan(...)`` is the same entry point specialised to histograms.
 
+A skim is one more output of the same pass. ``writes=`` takes :class:`graphed.write.PartWrite`
+objects, which ``graphed.awkward.parquet_write`` makes for parquet. Each task then writes one part
+from the values it already evaluated. ``reduce`` receives the outputs' values as before, followed by
+one part path per write:
+
+.. code-block:: python
+
+    import os
+    import tempfile
+
+    import awkward as ak
+    import numpy as np
+    import pyarrow.parquet as pq
+    from graphed import Session, aggregate_plan
+    from graphed.awkward import AwkwardBackend, from_parquet, gak, parquet_write
+    from graphed.core.execution import SequentialRunner
+
+    root = tempfile.mkdtemp()
+    ak.to_parquet(
+        ak.Array({"pt": [40.0, 25.0, 55.0, 30.0], "w": np.array([1.0, 0.5, 2.0, 1.5], dtype=np.float32)}),
+        f"{root}/events.parquet",
+    )
+
+    s = Session(AwkwardBackend())
+    ev = from_parquet(s, "events", f"{root}/events.parquet", steps_per_file=2)
+    selected = ev[ev.pt > 28.0]
+
+
+    def part_name(partition):
+        stem = os.path.basename(partition.uri).removesuffix(".parquet")
+        return f"{stem}_{partition.blind_step}.parquet"
+
+
+    skim = parquet_write(selected, f"{root}/skim", name=part_name, metadata={"sum_w": gak.sum(ev.w)})
+    plan = aggregate_plan(
+        gak.sum(ev.w),
+        reduce=lambda values: (float(values[0]), values[1:]),
+        combine=lambda a, b: (a[0] + b[0], a[1] + b[1]),
+        empty=lambda: (0.0, []),
+        steps_per_file=2,
+        writes=[skim],
+    )
+    total, parts = SequentialRunner().run(plan).value
+    print(total, [os.path.basename(p) for p in parts])
+    for p in parts:
+        print(ak.from_parquet(p).pt.tolist(), pq.read_schema(p).metadata)
+
+Prints::
+
+    5.0 ['events_0.parquet', 'events_1.parquet']
+    [40.0] {b'sum_w': b'1.5'}
+    [55.0, 30.0] {b'sum_w': b'3.5'}
+
+``name`` turns the task's partition into the part's file name. It sees the partition as the plan
+holds it, so a blind partition has no entry range yet (``entry_start == entry_stop == 0``); name
+it by ``blind_step``, or pass explicit ``partitions=``. Two tasks whose names collide are refused
+when the plan is built. A reduction in ``metadata`` is the reduction over this part's chunk, which
+is what a per-part normalization needs; a value that is not an array is converted with ``str()``
+once, at build. ``parquet_write`` forwards ``arrow_options`` to ``ak.to_arrow_table`` and
+``parquet_options`` to ``pyarrow.parquet.write_table``, and the metadata replaces the schema's
+key-value metadata, so a part can match another tool's files exactly; column order is the
+record's, so sort a record in the graph (``rec[sorted(rec.fields)]``) to write sorted columns. A
+write's array must be row-aligned: a reduction there is refused, since a part would hold a
+per-chunk partial. A plan with writes does not take ``store=``, because a replay would rewrite
+the part.
+
+
+Several graphs in one plan
+--------------------------
+
+Each source makes its own session, and analysis code often branches in Python on what a dataset
+is: MC is weighted and data is not, so their graphs differ. ``graphed.collate`` takes a mapping of
+name to plan and returns one plan whose value is ``{name: that plan's value}``:
+
+.. code-block:: python
+
+    import tempfile
+
+    import awkward as ak
+    import numpy as np
+    from graphed import Session, aggregate_plan, collate
+    from graphed.awkward import AwkwardBackend, from_parquet, gak
+    from graphed.core.execution import SequentialRunner
+
+    root = tempfile.mkdtemp()
+    ak.to_parquet(ak.Array({"pt": [40.0, 25.0, 55.0], "w": np.array([1.0, 0.5, 2.0])}), f"{root}/mc.parquet")
+    ak.to_parquet(ak.Array({"pt": [30.0, 60.0, 20.0, 45.0]}), f"{root}/data.parquet")
+
+
+    def dataset_plan(path, is_mc):
+        ev = from_parquet(Session(AwkwardBackend()), "events", path)
+        passed = ev.pt > 28.0
+        # decided in Python while recording: only the MC graph has a weight
+        count = gak.sum(ev.w * passed) if is_mc else gak.sum(passed)
+        return aggregate_plan(
+            count, reduce=lambda values: float(values[0]), combine=lambda a, b: a + b, empty=lambda: 0.0
+        )
+
+
+    plan = collate({"mc": dataset_plan(f"{root}/mc.parquet", True), "data": dataset_plan(f"{root}/data.parquet", False)})
+    print(SequentialRunner().run(plan).value)
+
+Prints::
+
+    {'mc': 3.0, 'data': 3.0}
+
+The collated plan's tasks are each plan's tasks, one after another in mapping order, so a runner
+tree-reduces them as usual. A task runs the graph of the plan that holds its ``(file, tree)``,
+looked up in a table with one row per file that ships once per worker; a file in two plans is
+refused, since one session over that file already shares the read. Writes ride along unchanged. A
+name appears in the value only when its plan has at least one task. Running each plan on its own
+and collecting ``{name: value}`` gives the same result when each plan's ``combine`` is exact (the
+fold order across tasks can differ), so datasets can also be launched separately and joined
+afterwards.
+
 
 Joining and repartitioning datasets
 -----------------------------------
@@ -1182,8 +1297,8 @@ Not supported yet
 
 * **Predicate pushdown.** Projection narrows what is read to the columns and buffers you touch,
   but a cut is applied after the read, not handed to the reader.
-* **Output groups.** Compiling a chosen set of outputs together is done; there is no higher-level
-  helper for organising many such groups with shared sub-plans.
+* **Durable collated plans.** A ``DurablePlan`` holds one graph's IR, so a collated plan, which
+  runs several graphs, has no durable form; any runner still runs it.
 * **Remote stores in the parquet base.** Discovery and row counts assume local filesystem paths.
 
 :doc:`improvements` lists the limits you are most likely to hit, with the workaround for each.
