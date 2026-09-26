@@ -236,3 +236,14 @@ def test_an_unrepresentable_output_dtype_beside_a_form_is_refused_at_its_line() 
             "map", fx.cut, [ev.x], {"fn": "f"}, descriptor=desc, form=form, form_params={"output_dtype": "x"}
         )
     assert info.value.provenance.lineno == line
+
+
+def test_a_ragged_list_value_or_input_is_an_array() -> None:
+    s = Session(AwkwardBackend())
+    j = from_awkward(s, "events", ak.Array({"j": [[1.0], [], [2.0, 3.0]]})).j
+    as_list = j.map(lambda v: v.tolist(), output_type="var * float64")
+    assert s.materialize(gak.sum(as_list, axis=1)).tolist() == [1.0, 0.0, 5.0]
+    counts = j.map(lambda v: v.tolist()).map(lambda v: ak.num(ak.Array(v)), output_type="int64")
+    assert s.materialize(counts).tolist() == [1, 0, 2]
+    out, line = j.map(lambda v: v.tolist(), output_type="var * int64"), fx.here()
+    assert "its value is 'var * float64'" in _refused(lambda: s.materialize(out), line).detail

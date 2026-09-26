@@ -164,7 +164,8 @@ def _leaves(t: ak.types.Type) -> list[str]:
 
 def _is_array(x: object) -> bool:
     """Array-ness at run time: a 0-d ndarray and an `ak.Record` are scalars."""
-    return isinstance(x, ak.Array) or np.ndim(x) > 0
+    # never np.ndim: it converts the value, and a ragged list raises
+    return isinstance(x, (ak.Array, list, tuple)) or getattr(x, "ndim", 0) > 0
 
 
 def check_output_type(value: object, inputs: Sequence[object], key: str, declared: str) -> str | None:
