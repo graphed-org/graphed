@@ -25,6 +25,8 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import TYPE_CHECKING, Generic, Protocol, TypeVar, cast, runtime_checkable
 
+from ..services import require_bound
+
 if TYPE_CHECKING:
     from ..services import ServiceSpec
 
@@ -531,6 +533,7 @@ class SequentialRunner:
         self.control = control
 
     def run(self, plan: Plan[R]) -> ExecResult[R]:
+        require_bound(plan)
         resources = LocalResources()
         monitor = self.monitor
         control = self.control

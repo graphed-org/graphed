@@ -3,6 +3,7 @@ binds its endpoint: a writes-only plan, writes beside reductions, and collated p
 
 from __future__ import annotations
 
+import pickle
 from pathlib import Path
 from typing import Any
 
@@ -115,3 +116,57 @@ def test_collate_refuses_one_service_name_declared_two_ways() -> None:
     }
     with pytest.raises(ValueError, match="'svc'"):
         graphed.collate(plans)
+
+
+def _writes(array: Any, tmp_path: Path, sub: str) -> Plan[Any]:
+    write = PartWrite(array=array, destination=str(tmp_path / sub), name=by_step, codec=json_codec)
+    return graphed.aggregate_plan(reduce=paths_only, combine=add, empty=no_paths, writes=[write])
+
+
+def _two_sources(tmp_path: Path) -> tuple[Plan[Any], Plan[Any]]:
+    """A service-free data plan and an mc plan calling ``svc`` then ``other``; both write parts."""
+    data_x, _y = _served(DATA_FILES, "Runs", SVC)
+    _x, mc_y = _served(MC_FILES, "Events", SVC)
+    mc_y.session.declare_service(OTHER)
+    mc_z = record_external(mc_y.session, PLUGIN, b"s", [mc_y], params={"service": OTHER.name})
+    return _writes(data_x, tmp_path, "data"), _writes(mc_z, tmp_path, "mc")
+
+
+def _written(tmp_path: Path) -> list[str]:
+    return sorted(str(p.relative_to(tmp_path)) for p in tmp_path.rglob("*.json"))
+
+
+def test_an_unbound_collated_plan_writes_nothing_and_names_every_missing_service(tmp_path: Path) -> None:
+    data, mc = _two_sources(tmp_path)
+    plan = graphed.collate({"data": data, "mc": mc})
+    with pytest.raises(UnboundService) as err:
+        SequentialRunner().run(plan)
+    assert _written(tmp_path) == []
+    assert err.value.names == ("other", "svc")
+    assert pickle.loads(pickle.dumps(err.value)).names == ("other", "svc")
+
+
+def test_a_partly_bound_plan_names_only_the_missing_service(tmp_path: Path) -> None:
+    _data, mc = _two_sources(tmp_path)
+    _x, data_y = _served(DATA_FILES, "Runs", ServiceSpec("alt", "http"))
+    plan = graphed.collate({"mc": bind_services(mc, ENDPOINTS), "data": _writes(data_y, tmp_path, "data")})
+    with pytest.raises(UnboundService) as err:
+        SequentialRunner().run(plan)
+    assert _written(tmp_path) == []
+    assert err.value.names == ("alt",)
+    value = SequentialRunner().run(bind_services(plan, {"alt": "http://h:8002"})).value
+    assert read_part(value["mc"][0])["values"] == (MC_FILES["mc-a"] + 2).tolist()
+    assert read_part(value["data"][0])["values"] == (DATA_FILES["mc-a"] + 1).tolist()
+
+
+class _RefusesBinding:
+    def __call__(self, partition: Any, resources: Any) -> list[str]:
+        return []
+
+    def bind_services(self, endpoints: Any) -> Any:
+        raise AssertionError("a plan without services is never walked")
+
+
+def test_a_plan_without_services_is_not_walked() -> None:
+    plan: Plan[list[str]] = Plan(process=_RefusesBinding(), combine=add, empty=no_paths)
+    assert SequentialRunner().run(plan).value == []
