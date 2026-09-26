@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import sys
+from collections.abc import Callable
 from typing import Any
 
 import awkward as ak
@@ -131,8 +132,9 @@ def test_only_a_declared_node_writes_its_type_to_the_manifest(
 def test_a_param_and_a_declaration_of_one_node_are_refused(declared_first: bool) -> None:
     s, x = _x()
     plugin = _plugin("float64", None)
-    calls = [{"output_type": "bool"}, {"params": {"output_type": "bool"}}]
+    calls: list[dict[str, Any]] = [{"output_type": "bool"}, {"params": {"output_type": "bool"}}]
     record_external(s, plugin, b"m", [x], **calls[not declared_first])
+    second: Callable[[], object]
     second, line = (lambda: record_external(s, plugin, b"m", [x], **calls[declared_first])), here()
     with pytest.raises(GraphedTypeError, match="declared on one call only") as info:
         second()
