@@ -29,6 +29,7 @@ from .array import NumpyArray, _f, _i
 from .forms import (
     NumpyForm,
     canonical_output_type,
+    check_output_type,
     declared_form,
     form_from_meta,
     is_numeric,
@@ -362,6 +363,7 @@ class NumpyBackend:
         return NumpyArray
 
     canonical_output_type = staticmethod(canonical_output_type)
+    check_output_type = staticmethod(check_output_type)
 
     def op_form(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> NumpyForm:
         forms = [f for f in inputs if isinstance(f, NumpyForm)]

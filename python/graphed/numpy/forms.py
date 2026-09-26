@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -99,3 +100,29 @@ def declared_form(first: NumpyForm, canonical: str) -> NumpyForm:
         return NumpyForm(np.dtype(object), kind="record", fields=tuple((n, d[n].str) for n in d.names))
     kind = "scalar" if first.kind == "scalar" else "vector"  # a record input's kind does not carry over
     return NumpyForm(d.base, kind=kind, shape=first.shape[:1] + d.shape)
+
+
+def check_output_type(value: object, inputs: Sequence[object], key: str, declared: str) -> str | None:
+    """``None`` when a `map`'s ``value`` has its declared type, else the value's description.
+
+    The dtype must be equal, an unsized string (``str``, ``<U0``) matching any length of its kind;
+    a subarray declaration pins the trailing shape. The leading axis is the first input's: none over
+    a scalar. A record declaration takes a structured array or a column mapping with those fields.
+    This backend records no ``output_dtype``, so it checks none."""
+    if key != "output_type":
+        return None
+    d = _dtype(declared)
+    first = inputs[0] if inputs else None
+    lead = 0 if np.ndim(first) == 0 and not isinstance(first, Mapping) else 1  # a record source is a dict
+    if isinstance(value, Mapping):
+        cols = tuple((str(k), np.asarray(v).dtype) for k, v in value.items())
+        ok = d.names is not None and cols == tuple((n, d[n]) for n in d.names)
+        return None if ok else f"record[{','.join(f'{k}: {t}' for k, t in cols)}]"
+    arr = np.asarray(value)
+    if d.names is not None:  # field by field: a packed and a padded layout are one record
+        same = arr.dtype.names == d.names and all(arr.dtype[n] == d[n] for n in d.names)
+    else:
+        want = d.base
+        same = arr.dtype == want or (want.itemsize == 0 and want.kind in "SU" and arr.dtype.kind == want.kind)
+    shape = arr.ndim == lead + len(d.shape) and arr.shape[lead:] == d.shape
+    return None if same and shape else form_from_meta(arr, lead == 1).describe()

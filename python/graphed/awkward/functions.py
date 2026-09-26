@@ -555,8 +555,9 @@ def apply_correction(
         list(inputs),
         params,
         descriptor=descriptor,
-        # the correctionlib plugin's value is float64 (its outputs are `real`)
+        # the correctionlib plugin's value is float64 (its outputs are `real`), checked at run time
         form=astype_form(cast("AwkwardForm", session.form(inputs[first_slot])), "float64"),
+        form_params={"output_dtype": "float64"},
     )
 
 

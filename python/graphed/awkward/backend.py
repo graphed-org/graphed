@@ -127,6 +127,60 @@ def declared_form(first: AwkwardForm, canonical: str) -> AwkwardForm:
     return AwkwardForm(ak.Array(layout.to_typetracer(forget_length=True)))
 
 
+def _fits(value: ak.types.Type, declared: ak.types.Type) -> bool:
+    """``value`` is ``declared`` wherever it holds data; ``unknown``, the type of a buffer holding no
+    values (an all-empty list), fits any declared type."""
+    if isinstance(value, ak.types.UnknownType):
+        return True
+    if type(value) is not type(declared) or value.parameters != declared.parameters:
+        return False
+    other: Any = declared
+    if isinstance(value, (ak.types.RecordType, ak.types.UnionType)):
+        fields = value.fields if isinstance(value, ak.types.RecordType) else None
+        return (
+            fields == (other.fields if fields is not None else None)
+            and len(value.contents) == len(other.contents)
+            and all(map(_fits, value.contents, other.contents))
+        )
+    if isinstance(value, ak.types.RegularType) and value.size != other.size:
+        return False
+    if isinstance(value, (ak.types.ListType, ak.types.RegularType, ak.types.OptionType)):
+        return _fits(value.content, other.content)
+    return str(value) == str(declared)
+
+
+def _leaves(t: ak.types.Type) -> list[str]:
+    """The primitive of every leaf of ``t``; an ``unknown`` leaf holds no values and has none."""
+    if isinstance(t, ak.types.NumpyType):
+        return [t.primitive]
+    if isinstance(t, (ak.types.RecordType, ak.types.UnionType)):
+        return [p for c in t.contents for p in _leaves(c)]
+    if isinstance(t, (ak.types.ListType, ak.types.RegularType, ak.types.OptionType)):
+        return _leaves(t.content)
+    return []
+
+
+def check_output_type(value: object, inputs: Sequence[object], key: str, declared: str) -> str | None:
+    """``None`` when an External's ``value`` has its declared type, else the value's type string.
+
+    ``output_type`` is the whole element type: the value's type string must equal it (option-ness,
+    regular vs var, record names and parameters included), except that ``unknown`` inside an array
+    fits anything. ``output_dtype`` is a static leaf dtype: every leaf must have it."""
+    try:
+        t = ak.type(value)
+    except (TypeError, ValueError):  # not array-like at all
+        return type(value).__name__
+    content = t.content if isinstance(t, (ak.types.ArrayType, ak.types.ScalarType)) else t
+    actual = str(content)
+    if key == "output_dtype":
+        return None if all(p == declared for p in _leaves(content)) else actual
+    if actual == declared:
+        return None
+    if isinstance(t, ak.types.ArrayType) and "unknown" in actual and _fits(content, _type(declared)):
+        return None
+    return actual
+
+
 class AwkwardBackend:
     #: the backend's versioned shuffle-format token (folded into the V2 task ids, §7.2)
     identity = "graphed-awkward/0"
@@ -171,6 +225,7 @@ class AwkwardBackend:
 
     # ---- M54: behavior methods with arguments ------------------------------------------------
     canonical_output_type = staticmethod(canonical_output_type)
+    check_output_type = staticmethod(check_output_type)
 
     def attribute_kind(self, form: AwkwardForm, name: str) -> str:
         """Classify `arr.<name>`: a record FIELD shadows the behavior (as `apply`'s `field` branch

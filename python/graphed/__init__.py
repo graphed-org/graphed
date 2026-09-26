@@ -26,7 +26,7 @@ from .array import Array, BoundMethod, apply
 from .backend import Backend, Form, ParamValue
 from .by_label import impact_by_label, read_columns_by_label
 from .context import Explanation, explain
-from .errors import GraphedError, GraphedTypeError, PointError
+from .errors import GraphedError, GraphedTypeError, OutputTypeError, PointError
 from .execute import CompiledGraph, compile_ir, evaluate_ir, refuse_chunk_partials
 from .projection import (
     CONSERVATIVE,
@@ -81,6 +81,7 @@ __all__ = [
     "GraphedTypeError",
     "Kind",
     "OnFail",
+    "OutputTypeError",
     "ParamValue",
     "PointError",
     "Projection",

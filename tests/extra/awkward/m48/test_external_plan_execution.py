@@ -34,6 +34,7 @@ from graphed.core import Partition
 from graphed.core.execution import SequentialRunner, WorkerResources
 from graphed.preserve import CORRECTIONLIB_PLUGIN, record_external
 from graphed.preserve.externals._base import _PluginEvaluator
+from graphed.session import CheckedExternal
 
 pytest.importorskip("correctionlib")
 
@@ -153,8 +154,8 @@ def test_the_recorded_evaluator_is_a_picklable_object() -> None:
     and it round-trips through pickle and evaluates identically."""
     session, _outs = _universes()
     (fn, _inputs) = next(iter(session._externals.values()))
-    assert isinstance(fn, _PluginEvaluator)
+    assert isinstance(fn, CheckedExternal) and isinstance(fn.fn, _PluginEvaluator)  # float64 leaves, checked
     restored = pickle.loads(pickle.dumps(fn))
-    assert isinstance(restored, _PluginEvaluator)
+    assert isinstance(restored, CheckedExternal) and isinstance(restored.fn, _PluginEvaluator)
     x = ak.Array([3, 5, 7])
     assert ak.to_list(fn(x)) == ak.to_list(restored(x))
