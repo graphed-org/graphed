@@ -1,7 +1,7 @@
 Current limits and workarounds
 ==============================
 
-Four things you are likely to run into while porting an analysis, and what to do about each.
+Five things you are likely to run into while porting an analysis, and what to do about each.
 :doc:`design` explains the machinery behind them.
 
 An opaque callable has no result type
@@ -110,3 +110,14 @@ a dataset whose files disagree about their schema is described by just one of th
 **Instead:** pass an explicit list of paths when you want a specific order or a specific first
 file, and pass ``columns=`` to pin the fields you rely on so a mismatch surfaces at recording time
 rather than mid-run.
+
+A part is named before its partition is read
+--------------------------------------------
+
+A write's ``name`` sees the task's partition as the plan holds it. A blind partition (the default
+of ``steps_per_file``, which opens no file to plan) has no entry range until a worker reads it, so
+its ``entry_start`` and ``entry_stop`` are both 0, and a name built from them is the same for every
+step of a file. ``aggregate_plan`` refuses such a plan when it is built.
+
+**Instead:** name blind parts by ``partition.blind_step``, or pass explicit ``partitions=`` (for
+example from the dataset's entry counts) and name them by their range.

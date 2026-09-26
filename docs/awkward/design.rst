@@ -600,6 +600,14 @@ stays a ``PartitionedSource`` and behaves as before.
 ``compute=False`` returns the plan instead of running it, so you can hand the identical write to
 a cluster runner rather than to the in-process one.
 
+``parquet_write`` is the other parquet writer. It writes nothing by itself: it describes a write
+that ``aggregate_plan(writes=[...])`` performs in the same pass as the plan's reductions (see "One
+pass over the dataset, many outputs" in the frontend design). You choose each part's file name
+from its partition, and the part's key-value metadata can hold that chunk's own reductions. Each
+part is ``ak.to_arrow_table`` written by ``pyarrow.parquet.write_table``, each given its own
+options, so a part can match files another tool writes. ``to_parquet`` keeps awkward's own
+``ak.to_parquet`` format and part names.
+
 Reading ROOT files
 ------------------
 

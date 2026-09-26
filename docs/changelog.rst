@@ -51,6 +51,29 @@ Declared output types for external calls
   ``Session`` with a ``GraphedTypeError`` at the call, not a plain ``TypeError``.
 * A numpy ``gufunc`` External refuses ``output_type=``: its signature and ``output_dtype=`` type it.
 
+One plan for every output
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``aggregate_plan(writes=[...])`` writes one part per task beside the plan's reductions, from the
+  same read and evaluation. ``reduce`` receives the outputs' values as before, then one part path
+  per write. A write is a ``graphed.write.PartWrite``: the array, a destination, a ``name`` for
+  each task's partition, the backend's codec, and ``metadata`` whose array values are that part's
+  own reductions. Colliding part names, a reduction as a written array, and ``store=`` with writes
+  are refused when the plan is built.
+* ``graphed.collate({name: plan})`` joins plans over different graphs and sources, data and MC
+  say, into one plan whose value is ``{name: value}``. Each task runs its own plan's graph, and
+  the runner tree-reduces all the tasks together. A part two of its plans would both write, from
+  ``writes=`` or ``to_parquet``, is refused when it is built; ``graphed.debug.replay`` refuses a
+  plan with writes. Its ``Plan.services`` is the union of its plans' services and
+  ``bind_services`` binds every plan's process; a service name two plans declare differently is
+  refused.
+* ``graphed.awkward.parquet_write`` writes parquet parts through ``ak.to_arrow_table`` and
+  ``pyarrow.parquet.write_table`` with options for each, and per-part key-value metadata that
+  replaces the schema's.
+* ``refuse_chunk_partials(as_outputs=)`` also accepts the compiled output ids to refuse.
+* ``gak.num(x, axis=0)`` records a reduction, so a per-chunk count can no longer feed another node
+  silently; as a plan output it folds like any other reduction.
+
 0.0.6
 -----
 

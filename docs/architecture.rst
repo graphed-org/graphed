@@ -113,6 +113,10 @@ selection feeding two histograms, a sum and a count over the same cut — compil
 recording, so the shared part is read and evaluated once rather than once per output. That is
 what ``graphed_histogram``'s ``plan({...})`` is built on, and what makes hundreds of histograms
 with systematic variations one pass over the data instead of hundreds.
+The same pass can write skims: ``aggregate_plan(writes=[...])`` has each task write its part from
+the values it already evaluated, beside the reductions. When datasets need different graphs (MC
+weighted, data not), ``graphed.collate`` joins their plans into one plan. Each task runs the graph
+of the dataset its file belongs to, and the value holds one result per dataset.
 
 Service surface
 ---------------
@@ -126,9 +130,9 @@ records the requirement — the ``name`` operations refer to, a ``kind`` a site 
 readiness ``check`` (``tcp``, ``http:<path>``, or ``grpc:<service>``) — and optionally a
 ``Launch`` recipe (argv, container image, resources) for starting one. An operation names a
 declared service through ``params["service"]``; naming one that was never declared is refused as
-you record it. ``aggregate_plan`` and the awkward ``to_parquet`` put the specs the recording
-references on ``Plan.services``, ``DurablePlan`` serializes them, and a preservation bundle lists
-them in its manifest.
+you record it. ``aggregate_plan`` (its ``writes=`` included) and the awkward ``to_parquet`` put
+the specs the recording references on ``Plan.services``, ``collate`` puts the union of its plans',
+``DurablePlan`` serializes them, and a preservation bundle lists them in its manifest.
 
 The run supplies where. An endpoint is ``scheme://host:port`` with the scheme one of ``tcp``,
 ``http``, ``https``, ``grpc`` or ``grpcs``; the wire and TLS live on the endpoint because the same

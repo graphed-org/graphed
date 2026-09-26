@@ -44,7 +44,7 @@ from graphed.core import Partition
 from graphed.core.execution import Plan, SequentialRunner, WorkerResources
 from graphed.errors import GraphedError
 from graphed.services import bind_externals
-from graphed.varied import Varied, member_of, most_derived_context, union_labels
+from graphed.varied import Varied, member_of, most_derived_context, refuse_container, union_labels
 from graphed.write import PartitionedSource
 
 from .backend import AwkwardBackend, AwkwardForm
@@ -145,25 +145,82 @@ class _WritePart:
     def bind_services(self, endpoints: Mapping[str, str]) -> _WritePart:
         return replace(self, externals=bind_externals(self.externals, endpoints))
 
+    def part_paths(self, partition: Partition) -> list[str]:
+        return _part_paths(self, partition)
+
     def __call__(self, partition: Partition, resources: WorkerResources) -> list[str]:
         if self.reader is not None:
             chunk = self.reader.read_partition(partition, self.columns, resources)
-            index = gw.blind_part_index(partition, dict(self.bases))
         elif self.memory_data is not None:
             chunk = self.memory_data[partition.entry_start : partition.entry_stop]
-            index = _memory_step(partition, self.memory_rows, self.steps_per_file)
         else:  # pragma: no cover - every source is a protocol reader or in-memory
             raise TypeError("write task has neither a partition reader nor in-memory data")
         backend = AwkwardBackend(behavior=_resolve_behavior(self.behavior))
         (out,) = evaluate_ir(
             self.compiled, cast("Backend", backend), {self.source_name: chunk}, externals=dict(self.externals)
         )
-        result = ak.Array(out)
-        payload = result if result.fields else ak.Array({self.column: result})
+        payload = _payload(out, self.column)
         os.makedirs(self.destination, exist_ok=True)
-        path = gpq.part_path(self.destination, index, prefix=self.prefix)
+        (path,) = self.part_paths(partition)
         ak.to_parquet(payload, path)
         return [path]
+
+
+def _part_paths(writer: _WritePart | _VariedWritePart, partition: Partition) -> list[str]:
+    """A deferred writer's one part for ``partition``: its ``part_paths`` hook."""
+    if writer.reader is not None:
+        index = gw.blind_part_index(partition, dict(writer.bases))
+    else:
+        index = _memory_step(partition, writer.memory_rows, writer.steps_per_file)
+    return [gpq.part_path(writer.destination, index, prefix=writer.prefix)]
+
+
+def _payload(value: object, column: str) -> ak.Array:
+    """What a part holds: a record as is, anything else as the one field ``column``."""
+    result = ak.Array(value)
+    return result if result.fields else ak.Array({column: result})
+
+
+@dataclass(frozen=True)
+class _ArrowParquet:
+    """`parquet_write`'s codec: ``ak.to_arrow_table`` then ``pq.write_table``, each with its own
+    options, and the part's key-value metadata REPLACING the schema's (``to_arrow_table`` always
+    stamps ``ak:parameters``, whichever ``extensionarray``)."""
+
+    column: str
+    arrow_options: tuple[tuple[str, Any], ...]
+    parquet_options: tuple[tuple[str, Any], ...]
+
+    def __call__(self, value: object, path: str, kv: Mapping[str, str] | None) -> None:
+        table = ak.to_arrow_table(_payload(value, self.column), **dict(self.arrow_options))
+        if kv is not None:
+            table = table.replace_schema_metadata(kv)
+        gpq._pq().write_table(table, path, **dict(self.parquet_options))
+
+
+def parquet_write(
+    array: Array,
+    destination: str,
+    *,
+    name: Callable[[Partition], str],
+    metadata: Mapping[str, Any] | None = None,
+    arrow_options: Mapping[str, Any] | None = None,
+    parquet_options: Mapping[str, Any] | None = None,
+    column: str = "data",
+) -> gw.PartWrite:
+    """A parquet part per task of ``array``, for :func:`graphed.aggregate_plan` ``writes=``.
+
+    Each part is ``ak.to_arrow_table(array_chunk, **arrow_options)`` written by
+    ``pyarrow.parquet.write_table(table, path, **parquet_options)`` at
+    ``os.path.join(destination, name(partition))``. A non-record array is written as the field
+    ``column``. ``metadata`` (see :class:`~graphed.write.PartWrite`) replaces the schema's
+    key-value metadata when given. Column order is the array's: sort a record's fields in the
+    graph (``rec[sorted(rec.fields)]``) to write them sorted."""
+    refuse_container("graphed.awkward.parquet_write", array, *(metadata or {}).values())
+    codec = _ArrowParquet(
+        column, tuple((arrow_options or {}).items()), tuple((parquet_options or {}).items())
+    )
+    return gw.PartWrite(array=array, destination=destination, name=name, codec=codec, metadata=metadata)
 
 
 def _syntactic_fields(array: Any, source_node_id: int) -> set[str] | None:
@@ -529,19 +586,18 @@ class _VariedWritePart:
     def bind_services(self, endpoints: Mapping[str, str]) -> _VariedWritePart:
         return replace(self, externals=bind_externals(self.externals, endpoints))
 
-    def _chunk(self, partition: Partition, resources: WorkerResources) -> tuple[Any, int]:
+    def _chunk(self, partition: Partition, resources: WorkerResources) -> Any:
         if self.reader is not None:
-            return self.reader.read_partition(partition, self.columns, resources), gw.blind_part_index(
-                partition, dict(self.bases)
-            )
+            return self.reader.read_partition(partition, self.columns, resources)
         if self.memory_data is not None:
-            return self.memory_data[partition.entry_start : partition.entry_stop], _memory_step(
-                partition, self.memory_rows, self.steps_per_file
-            )
+            return self.memory_data[partition.entry_start : partition.entry_stop]
         raise TypeError("write task has neither a partition reader nor in-memory data")
 
+    def part_paths(self, partition: Partition) -> list[str]:
+        return _part_paths(self, partition)
+
     def __call__(self, partition: Partition, resources: WorkerResources) -> list[str]:
-        chunk, index = self._chunk(partition, resources)
+        chunk = self._chunk(partition, resources)
         backend = AwkwardBackend(behavior=_resolve_behavior(self.behavior))
         values = evaluate_ir(
             self.compiled, cast("Backend", backend), {self.source_name: chunk}, externals=dict(self.externals)
@@ -598,7 +654,7 @@ class _VariedWritePart:
             fields = {name: base[name] for name in base.fields}
         payload = ak.zip({**fields, **cols}, depth_limit=1)
         os.makedirs(self.destination, exist_ok=True)
-        path = gpq.part_path(self.destination, index, prefix=self.prefix)
+        (path,) = self.part_paths(partition)
         _write_augmented(payload, path, self.manifest)
         return [path]
 

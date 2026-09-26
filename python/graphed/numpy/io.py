@@ -158,18 +158,23 @@ class _WritePart:
     memory_rows: int = 0
     externals: tuple[tuple[str, Callable[..., object]], ...] = ()
 
+    def part_paths(self, partition: Partition) -> list[str]:
+        if self.memory_data is not None:
+            index = _memory_step(partition, self.memory_rows, self.steps_per_file)
+        else:
+            index = gpq.derive_part_index(
+                partition, steps_per_file=self.steps_per_file, bases=dict(self.bases)
+            )
+        return [gpq.part_path(self.destination, index, prefix=self.prefix)]
+
     def __call__(self, partition: Partition, resources: WorkerResources) -> list[str]:
         chunk: object
         if self.memory_data is not None:
             sliced = {k: v[partition.entry_start : partition.entry_stop] for k, v in self.memory_data}
             # a single unnamed entry is a FLAT source: the chunk IS the array, not a record
             chunk = sliced[""] if set(sliced) == {""} else sliced
-            index = _memory_step(partition, self.memory_rows, self.steps_per_file)
         else:
             chunk = read_parquet_partition(partition, self.columns or None)
-            index = gpq.derive_part_index(
-                partition, steps_per_file=self.steps_per_file, bases=dict(self.bases)
-            )
         (out,) = evaluate_ir(
             self.compiled,
             cast("Backend", NumpyBackend()),
@@ -183,7 +188,7 @@ class _WritePart:
         import pyarrow.parquet as pq  # noqa: PLC0415
 
         os.makedirs(self.destination, exist_ok=True)
-        path = gpq.part_path(self.destination, index, prefix=self.prefix)
+        (path,) = self.part_paths(partition)
         pq.write_table(pa.table({self.column: result}), path)
         return [path]
 
