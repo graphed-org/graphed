@@ -153,7 +153,9 @@ def split_endpoint(endpoint: str) -> tuple[str, str]:
 
 @runtime_checkable
 class Bindable(Protocol):
-    """A plan part that takes run endpoints: returns a bound copy, never binds in place."""
+    """A plan part that takes run endpoints: returns a bound copy, never binds in place. A part that
+    calls a service raises :class:`UnboundService` naming it when ``endpoints`` lacks the name and the
+    part holds no endpoint of its own, so :func:`require_bound` sees every service a part needs."""
 
     def bind_services(self, endpoints: Mapping[str, str]) -> Any: ...
 
@@ -188,6 +190,8 @@ def require_bound(plan: Plan[Any]) -> None:
         try:
             plan.process.bind_services(missing)
         except UnboundService as err:
+            if err.name in missing:  # a part refusing a name it was handed breaks the Bindable contract
+                raise
             missing[err.name] = "tcp://unbound:0"
             continue
         if missing:

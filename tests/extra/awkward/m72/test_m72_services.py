@@ -4,6 +4,7 @@ binds its endpoint: a writes-only plan, writes beside reductions, and collated p
 from __future__ import annotations
 
 import pickle
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -30,7 +31,7 @@ from graphed.awkward import AwkwardBackend, AwkwardForm, gak
 from graphed.core import Plan
 from graphed.core.execution import SequentialRunner
 from graphed.preserve import ExternalPlugin, record_external, sha256_bytes
-from graphed.services import ServiceSpec, UnboundService, bind_services
+from graphed.services import ServiceSpec, UnboundService, bind_services, require_bound
 from graphed.write import PartWrite
 
 SVC = ServiceSpec("svc", "http")
@@ -170,3 +171,49 @@ class _RefusesBinding:
 def test_a_plan_without_services_is_not_walked() -> None:
     plan: Plan[list[str]] = Plan(process=_RefusesBinding(), combine=add, empty=no_paths)
     assert SequentialRunner().run(plan).value == []
+
+
+@dataclass(frozen=True)
+class _HistReduce:
+    """A reduce calling ``hist-svc``, which no External names; it keeps the Bindable contract."""
+
+    endpoint: str | None = None
+
+    def __call__(self, values: list[Any]) -> Any:
+        assert self.endpoint is not None
+        return paths_only(values)
+
+    def bind_services(self, endpoints: Any) -> _HistReduce:
+        endpoint = endpoints.get("hist-svc", self.endpoint)
+        if endpoint is None:
+            raise UnboundService("hist-svc")
+        return _HistReduce(endpoint)
+
+
+def test_a_reduce_only_service_is_refused_before_any_part_is_written(tmp_path: Path) -> None:
+    x, _y = _served(MC_FILES, "Events", ServiceSpec("hist-svc", "histserv"))
+    write = PartWrite(array=x, destination=str(tmp_path), name=by_step, codec=json_codec)
+    plan = graphed.aggregate_plan(
+        reduce=_HistReduce(), combine=add, empty=no_paths, writes=[write], services=["hist-svc"]
+    )
+    with pytest.raises(UnboundService) as err:
+        SequentialRunner().run(plan)
+    assert _written(tmp_path) == []
+    assert err.value.names == ("hist-svc",)
+    paths = SequentialRunner().run(bind_services(plan, {"hist-svc": "tcp://h:9000"})).value
+    assert read_part(paths[0])["values"] == MC_FILES["mc-a"].tolist()
+
+
+class _RefusesItsOwnName:
+    def __call__(self, partition: Any, resources: Any) -> list[str]:
+        return []
+
+    def bind_services(self, endpoints: Any) -> Any:
+        raise UnboundService("x")
+
+
+def test_a_part_refusing_a_name_it_was_handed_raises_instead_of_looping() -> None:
+    plan: Plan[list[str]] = Plan(process=_RefusesItsOwnName(), combine=add, empty=no_paths, services=(SVC,))
+    with pytest.raises(UnboundService) as err:
+        require_bound(plan)
+    assert err.value.names == ("x",)

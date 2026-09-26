@@ -23,6 +23,8 @@ Services an analysis calls
 * ``SequentialRunner`` refuses a plan with an unbound service before its first task:
   ``graphed.services.require_bound(plan)`` raises ``UnboundService`` naming every missing service
   (``.names``), so a collated plan writes no parts first. A plan without services skips the check.
+  A ``reduce`` with a ``bind_services`` hook that calls a service raises ``UnboundService`` when the
+  endpoints lack its name and it holds none, as an External does, so the check names it too.
 * A Triton External names ``service=`` or a literal ``url=``, not both. The endpoint's scheme picks
   ``tritonclient.http`` or ``tritonclient.grpc`` (TLS on ``https``/``grpcs``); a url without a
   scheme keeps the HTTP client and ``params["transport"]`` still overrides. The ``ml`` extra
