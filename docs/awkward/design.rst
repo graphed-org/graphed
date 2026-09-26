@@ -537,7 +537,8 @@ Printed output:
 The comparison is awkward's type string, exactly: option-ness (``?float64`` is not ``float64``),
 regular against var (``2 * float64``, as a 2-D numpy array returns, is not ``var * float64``),
 record names and parameters all count. The value is an array when any input is an array (the
-recorded form says so too) and a scalar when every input is a scalar. The one allowance is ``unknown``, the type awkward gives a
+recorded form says so too) and a scalar otherwise; a single record (``ev[0]``) and a 0-d numpy array
+count as scalars, as inputs and as values. The one allowance is ``unknown``, the type awkward gives a
 list that holds no values anywhere in the partition: it fits whatever was declared in its place.
 A plugin's ``output_dtype`` (see :doc:`../preserve/design`) is a leaf dtype, so every leaf of the
 value must have it. An undeclared call is not checked and costs nothing; a declared one costs

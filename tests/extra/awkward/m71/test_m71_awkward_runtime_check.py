@@ -81,6 +81,18 @@ def test_an_array_value_for_a_scalar_declaration_is_refused() -> None:
     assert "its value is '1 * float64'" in _refused(lambda: s.materialize(out), line).detail
 
 
+def test_a_zero_d_value_and_a_record_input_are_scalars() -> None:
+    s, ev = _events()
+    kept = gak.sum(ev.x).map(lambda t: np.where(np.greater(t, 1), t, 0.0), output_type="float64")
+    assert s.materialize(kept) == fx.X.sum()
+    first = ev[0].map(lambda r: r["x"] > 1, output_type="bool")
+    form: Any = s.form(first)
+    assert ak.typetracer.is_unknown_scalar(form.tt)
+    assert s.materialize(first) == bool(fx.X[0] > 1)
+    out, line = ev[0].map(lambda r: np.array([r["x"]]), output_type="float64"), fx.here()
+    assert "its value is '1 * float64'" in _refused(lambda: s.materialize(out), line).detail
+
+
 def test_a_matching_value_passes_unchanged() -> None:
     s, ev = _events()
     assert ak.to_list(s.materialize(ev.x[ev.x.map(fx.cut, output_type=bool)])) == [1.5, 2.5, 3.5]

@@ -119,9 +119,9 @@ def astype_form(form: AwkwardForm, dtype: object) -> AwkwardForm:
 
 def declared_form(forms: Sequence[AwkwardForm], canonical: str) -> AwkwardForm:
     """The form of an External declared ``canonical``: that element type over an array input's
-    length, or a scalar when every input is a scalar."""
+    length, or a scalar (a record one included) when no input is an array."""
     t = _type(canonical)
-    if all(ak.typetracer.is_unknown_scalar(f.tt) for f in forms):
+    if not any(isinstance(f.tt, ak.Array) for f in forms):
         if isinstance(t, ak.types.NumpyType) and not t.parameters:
             return AwkwardForm(ak.typetracer.create_unknown_scalar(np.dtype(t.primitive)))
         raise TypeError(f"output_type {canonical!r} over a scalar input must be a primitive dtype")
@@ -162,6 +162,11 @@ def _leaves(t: ak.types.Type) -> list[str]:
     return []
 
 
+def _is_array(x: object) -> bool:
+    """Array-ness at run time: a 0-d ndarray and an `ak.Record` are scalars."""
+    return isinstance(x, ak.Array) or np.ndim(x) > 0
+
+
 def check_output_type(value: object, inputs: Sequence[object], key: str, declared: str) -> str | None:
     """``None`` when an External's ``value`` has its declared type, else the value's type string.
 
@@ -176,13 +181,13 @@ def check_output_type(value: object, inputs: Sequence[object], key: str, declare
     actual = str(content)
     if key == "output_dtype":
         return None if all(p == declared for p in _leaves(content)) else actual
-    # as `declared_form`: an array when any input is one
-    scalar = isinstance(t, ak.types.ScalarType)
-    if scalar == any(isinstance(x, ak.Array) or np.ndim(x) > 0 for x in inputs):
+    # as `declared_form`: an array when any input is one; value and inputs share the predicate
+    scalar = not _is_array(value)
+    if scalar == any(map(_is_array, inputs)):
         return f"scalar {actual}" if scalar else str(t)
     if actual == declared:
         return None
-    if isinstance(t, ak.types.ArrayType) and "unknown" in actual and _fits(content, _type(declared)):
+    if not scalar and "unknown" in actual and _fits(content, _type(declared)):
         return None
     return actual
 
