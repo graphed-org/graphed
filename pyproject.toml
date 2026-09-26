@@ -169,7 +169,8 @@ warn_return_any = false
 module = [
   "analyses", "backends", "m13_toy", "m52_point_fixtures", "m55_lockstep_fixtures",
   "m57_dedupe_fixtures", "m58_declaration_fixtures", "m59_idiom_fixtures", "m60x_lib",
-  "m60x_libx", "m72_multiout_fixtures", "test_vary_stacking",
+  "m60x_libx", "m71_check_fixtures", "m71_triton_fixtures", "m72_multiout_fixtures",
+  "test_vary_stacking",
 ]
 ignore_missing_imports = true
 

@@ -36,6 +36,7 @@ from graphed.awkward.payloads import correctionlib_contents_hash, onnx_weights_h
 from graphed.core import Partition
 from graphed.core.execution import SequentialRunner, WorkerResources
 from graphed.preserve.errors import PreserveError
+from graphed.session import CheckedExternal
 
 EVENTS = make_events(n_events=1_500, seed=52)
 SYSTEMATICS = ("nominal", "up", "down")
@@ -314,7 +315,7 @@ def test_the_recorded_evaluator_round_trips_through_stdlib_pickle() -> None:
     # the "up" universe, NOT nominal: nominal's SF is all-ones, so fn(x) == restored(x) there for
     # any input even if the template were dropped. "up" varies by bin, so equality discriminates.
     fn = session._externals[outs[1].node_id][0]
-    assert isinstance(fn, _TemplateExternal)
+    assert isinstance(fn, CheckedExternal) and isinstance(fn.fn, _TemplateExternal)
     restored = pickle.loads(pickle.dumps(fn))
     assert restored.call is None  # the live handle does not ride the pickle
     x = ak.Array([3, 5, 7])  # njet -> "up" content bins [0,4), [5,6), [6,100)

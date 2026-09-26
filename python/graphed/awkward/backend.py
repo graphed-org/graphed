@@ -67,6 +67,7 @@ _INTROSPECT_EAGER = frozenset({"fields", "type", "typestr", "ndim", "is_tuple", 
 _EXTERNAL = frozenset({"map", "correction", "onnx", "external"})
 
 
+@functools.cache  # a declared type is parsed once, not on every checked call
 def _type(canonical: str) -> ak.types.Type:
     """The awkward type of a canonical ``output_type``; a primitive the datashape grammar lacks
     (``float16`` on awkward 2.14) but awkward's dtype table knows is built directly."""
@@ -116,15 +117,80 @@ def astype_form(form: AwkwardForm, dtype: object) -> AwkwardForm:
     return AwkwardForm(ak.values_astype(form.tt, t.primitive))
 
 
-def declared_form(first: AwkwardForm, canonical: str) -> AwkwardForm:
-    """The form of an External declared ``canonical``: that element type over ``first``'s length."""
+def declared_form(forms: Sequence[AwkwardForm], canonical: str) -> AwkwardForm:
+    """The form of an External declared ``canonical``: that element type over an array input's
+    length, or a scalar (a record one included) when no input is an array."""
     t = _type(canonical)
-    if ak.typetracer.is_unknown_scalar(first.tt):
+    if not any(isinstance(f.tt, ak.Array) for f in forms):
         if isinstance(t, ak.types.NumpyType) and not t.parameters:
             return AwkwardForm(ak.typetracer.create_unknown_scalar(np.dtype(t.primitive)))
         raise TypeError(f"output_type {canonical!r} over a scalar input must be a primitive dtype")
     layout = ak.forms.from_type(t).length_one_array(highlevel=False)
     return AwkwardForm(ak.Array(layout.to_typetracer(forget_length=True)))
+
+
+def _fits(value: ak.types.Type, declared: ak.types.Type) -> bool:
+    """``value`` is ``declared`` wherever it holds data; ``unknown``, the type of a buffer holding no
+    values (an all-empty list), fits any declared type."""
+    if isinstance(value, ak.types.UnknownType):
+        return True
+    if type(value) is not type(declared) or value.parameters != declared.parameters:
+        return False
+    other: Any = declared
+    if isinstance(value, (ak.types.RecordType, ak.types.UnionType)):
+        fields = value.fields if isinstance(value, ak.types.RecordType) else None
+        return (
+            fields == (other.fields if fields is not None else None)
+            and len(value.contents) == len(other.contents)
+            and all(map(_fits, value.contents, other.contents))
+        )
+    if isinstance(value, ak.types.RegularType) and value.size != other.size:
+        return False
+    if isinstance(value, (ak.types.ListType, ak.types.RegularType, ak.types.OptionType)):
+        return _fits(value.content, other.content)
+    return str(value) == str(declared)
+
+
+def _leaves(t: ak.types.Type) -> list[str]:
+    """The primitive of every leaf of ``t``; an ``unknown`` leaf holds no values and has none."""
+    if isinstance(t, ak.types.NumpyType):
+        return [t.primitive]
+    if isinstance(t, (ak.types.RecordType, ak.types.UnionType)):
+        return [p for c in t.contents for p in _leaves(c)]
+    if isinstance(t, (ak.types.ListType, ak.types.RegularType, ak.types.OptionType)):
+        return _leaves(t.content)
+    return []
+
+
+def _is_array(x: object) -> bool:
+    """Array-ness at run time: a 0-d ndarray and an `ak.Record` are scalars."""
+    # never np.ndim: it converts the value, and a ragged list raises
+    return isinstance(x, (ak.Array, list, tuple)) or getattr(x, "ndim", 0) > 0
+
+
+def check_output_type(value: object, inputs: Sequence[object], key: str, declared: str) -> str | None:
+    """``None`` when an External's ``value`` has its declared type, else the value's type string.
+
+    ``output_type`` is the whole element type: the value's type string must equal it (option-ness,
+    regular vs var, record names and parameters included), except that ``unknown`` inside an array
+    fits anything. ``output_dtype`` is a static leaf dtype: every leaf must have it."""
+    try:
+        t = ak.type(value)
+    except (TypeError, ValueError):  # not array-like at all
+        return type(value).__name__
+    content = t.content if isinstance(t, (ak.types.ArrayType, ak.types.ScalarType)) else t
+    actual = str(content)
+    if key == "output_dtype":
+        return None if all(p == declared for p in _leaves(content)) else actual
+    # as `declared_form`: an array when any input is one; value and inputs share the predicate
+    scalar = not _is_array(value)
+    if scalar == any(map(_is_array, inputs)):
+        return f"scalar {actual}" if scalar else str(t)
+    if actual == declared:
+        return None
+    if not scalar and "unknown" in actual and _fits(content, _type(declared)):
+        return None
+    return actual
 
 
 class AwkwardBackend:
@@ -156,7 +222,7 @@ class AwkwardBackend:
             # leaves, and anything else records the first input's form
             declared = params.get("output_type")
             if declared is not None:
-                return declared_form(forms[0], str(declared))
+                return declared_form(forms, str(declared))
             leaf = params.get("output_dtype")
             if leaf is not None:
                 return astype_form(forms[0], leaf)
@@ -171,6 +237,7 @@ class AwkwardBackend:
 
     # ---- M54: behavior methods with arguments ------------------------------------------------
     canonical_output_type = staticmethod(canonical_output_type)
+    check_output_type = staticmethod(check_output_type)
 
     def attribute_kind(self, form: AwkwardForm, name: str) -> str:
         """Classify `arr.<name>`: a record FIELD shadows the behavior (as `apply`'s `field` branch

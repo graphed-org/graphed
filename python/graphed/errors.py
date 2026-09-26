@@ -39,3 +39,10 @@ class GraphedTypeError(GraphedError):
         if detail:
             msg = f"{msg}: {detail}"
         super().__init__(msg)
+
+
+class OutputTypeError(GraphedTypeError):
+    """An External's value disagrees with the type its node declared; located at the declaring line."""
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        return (type(self), (self.op, self.provenance, self.detail))

@@ -24,7 +24,7 @@ from graphed.core.execution import Plan, Task, WorkerResources
 from graphed.core.plan import _partition_bytes, _sha256_hex
 
 from .array import Array
-from .errors import GraphedError
+from .errors import GraphedError, OutputTypeError
 from .execute import (
     CompiledGraph,
     Frame,
@@ -174,8 +174,9 @@ class _PartitionReduce(Generic[V]):
         def attribute(key: Key, op: str, ins: list[object], exc: BaseException) -> BaseException | None:
             # §8.2(ii): "a `GraphedError` re-raises untouched on EVERY arm regardless of entry — it
             # is already an attributed error, and §6.1d's blame parity (the plan path re-raises the
-            # guard's message verbatim) binds it".
-            if isinstance(exc, GraphedError):
+            # guard's message verbatim) binds it". A declared-type check fails only here, in the
+            # worker, so it is attributed: the External's key carries its declaring line.
+            if isinstance(exc, GraphedError) and not isinstance(exc, OutputTypeError):
                 return None
             entry = entries.get(key)
             if entry is not None:

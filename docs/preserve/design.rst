@@ -458,8 +458,14 @@ Prints::
     ## * var * float32
     [[30.0, 20.0], [], [40.0]]
 
-The declaration is part of the node's identity, and it travels in the bundle. It is a claim, not
-a conversion: ``evaluate`` must return what it declares.
+The declaration is part of the node's identity, and it travels in the bundle. A plugin param
+named ``output_type`` stays a plain param, but it records the same node as that declaration, so
+recording the call both ways in one session is refused at the second call. A declaration is checked,
+never converted: a value of another type raises ``graphed.OutputTypeError`` at the declaring line
+when the call runs, in process or in a plan's worker (see "Declaring what an external call
+returns" in :doc:`../awkward/design`). ``reproduce`` checks it too, at the declaring line the
+bundle's sourcemap keeps: a node declared with ``output_type=`` records it in its manifest entry, and
+a node without one is checked against its plugin's ``output_dtype``.
 
 A plugin whose value always has one leaf dtype can say so once, with
 ``ExternalPlugin(..., output_dtype="float64")``. The recorded type is then the first input's
@@ -469,7 +475,8 @@ PyTorch, XGBoost, JAX and Triton plugins set ``"float64"``. A call's ``output_ty
 precedence over the default. Unlike ``output_type=``, the default is not a node param, because
 the plugin kind is already part of the node's identity, so it leaves the plan bytes unchanged. A
 default that is not a single dtype, such as ``"var * float32"``, is refused where the call is
-recorded.
+recorded. The default is checked like a declaration: every leaf of ``evaluate``'s value must have
+that dtype. The structure is not checked, since the plugin does not declare it.
 
 The shipped correctionlib and ONNX plugins are the templates to copy, and
 ``registered_kinds()`` lists every kind the registry knows, yours included. The frameworks

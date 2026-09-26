@@ -12,6 +12,7 @@ import threading
 import types
 import weakref
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 
 import graphed.core
@@ -19,11 +20,46 @@ import graphed.core
 from ._points import Point
 from .array import Array
 from .backend import Backend, Form, ParamValue
-from .errors import GraphedTypeError
+from .errors import GraphedTypeError, OutputTypeError
 from .provenance import Provenance, capture
+from .services import Bindable
 
 if TYPE_CHECKING:
     from .services import ServiceSpec
+
+
+@dataclass(frozen=True)
+class CheckedExternal:
+    """The evaluator of an External that declared its type: its value must have that type, checked
+    by the backend on every call and never cast. Picklable when ``fn`` is."""
+
+    fn: Callable[..., object]
+    #: ``"output_type"`` (the element type) or ``"output_dtype"`` (a static leaf dtype)
+    key: str
+    declared: str
+    #: the recording backend's ``check_output_type``
+    check: Callable[[object, Sequence[object], str, str], str | None]
+    op: str
+    provenance: Provenance
+    node: str
+
+    def __call__(self, *inputs: object) -> object:
+        value = self.fn(*inputs)
+        actual = self.check(value, inputs, self.key, self.declared)
+        if actual is not None:
+            detail = f"{self.node} declares {self.key} {self.declared!r}; its value is {actual!r}"
+            raise OutputTypeError(self.op, self.provenance, detail)
+        return value
+
+    def bind_services(self, endpoints: Mapping[str, str]) -> CheckedExternal:
+        return replace(self, fn=self.fn.bind_services(endpoints)) if isinstance(self.fn, Bindable) else self
+
+    def __getattr__(self, name: str) -> Any:
+        # the wrapped evaluator's own attributes (a plugin evaluator's `endpoint`) read through;
+        # dunders and a half-unpickled instance must not recurse into `fn`
+        if name.startswith("__") or "fn" not in self.__dict__:
+            raise AttributeError(name)
+        return getattr(self.__dict__["fn"], name)
 
 
 class Session:
@@ -395,7 +431,12 @@ class Session:
 
         ``form_params=`` reach ``op_form`` only, over the stored params: a default that is a
         function of the descriptor (a preserve plugin's ``output_dtype``) types the form without
-        changing the node's identity or bytes."""
+        changing the node's identity or bytes.
+
+        A declaration is checked, never cast: with a backend ``check_output_type``, the evaluator
+        of a node declaring ``output_type`` or a ``form_params`` ``output_dtype`` (also beside
+        ``form=``) becomes a :class:`CheckedExternal`, and a value of another type raises
+        :class:`~graphed.OutputTypeError` at this call's line."""
         params_d: dict[str, ParamValue] = dict(params or {})
         prov = capture()
         self._mine(inputs, (op, prov))
@@ -428,8 +469,29 @@ class Session:
                 raise
             except Exception as exc:  # backend type/shape error -> user-located error (as record_op)
                 raise GraphedTypeError(op, prov, str(exc)) from exc
+        # the declaration op_form honoured (or, beside form=, a leaf dtype) is checked on every value
+        check = getattr(self._backend, "check_output_type", None)
+        canonical = getattr(self._backend, "canonical_output_type", None)
+        dtype = (form_params or {}).get("output_dtype")
+        declared: tuple[str, str] | None = None
+        if check is not None and spec is not None:
+            declared = ("output_type", str(params_d["output_type"]))
+        elif check is not None and canonical is not None and dtype is not None:
+            try:
+                declared = ("output_dtype", str(canonical(dtype)))
+            except Exception as exc:  # an unrepresentable leaf dtype -> user-located error
+                raise GraphedTypeError(op, prov, str(exc)) from exc
         ids = [a.node_id for a in inputs]
         node_id = self._store.add_external(descriptor, ids, params_d)
+        if declared is not None and check is not None:
+            node = f"{op} node {node_id} ({params_d.get('fn', descriptor.kind)!r})"
+            fn = CheckedExternal(fn, declared[0], declared[1], check, op, prov, node)
+        prior = self._externals.get(node_id)
+        if prior is not None and isinstance(prior[0], CheckedExternal) != isinstance(fn, CheckedExternal):
+            # an 'output_type' param and output_type= store the same params, so one node would drop the check
+            raise GraphedTypeError(
+                op, prov, "this External is already recorded with its type declared on one call only"
+            )
         self._forms.setdefault(node_id, form)
         self._externals.setdefault(node_id, (fn, ids))
         self._provenance.setdefault(node_id, prov)

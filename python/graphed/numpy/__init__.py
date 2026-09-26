@@ -29,6 +29,7 @@ from .array import NumpyArray, _f, _i
 from .forms import (
     NumpyForm,
     canonical_output_type,
+    check_output_type,
     declared_form,
     form_from_meta,
     is_numeric,
@@ -362,6 +363,7 @@ class NumpyBackend:
         return NumpyArray
 
     canonical_output_type = staticmethod(canonical_output_type)
+    check_output_type = staticmethod(check_output_type)
 
     def op_form(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> NumpyForm:
         forms = [f for f in inputs if isinstance(f, NumpyForm)]
@@ -423,7 +425,7 @@ class NumpyBackend:
         if op == "map":
             declared = params.get("output_type")
             if declared is not None:
-                return declared_form(forms[0], str(declared))
+                return declared_form(forms, str(declared))
             return NumpyForm(np.dtype(object))  # opaque callable: result form unknown
         if op == "gufunc":
             if "output_type" in params:  # the signature types a gufunc: `apply_gufunc(output_dtype=)`
