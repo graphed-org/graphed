@@ -67,6 +67,7 @@ _INTROSPECT_EAGER = frozenset({"fields", "type", "typestr", "ndim", "is_tuple", 
 _EXTERNAL = frozenset({"map", "correction", "onnx", "external"})
 
 
+@functools.cache  # a declared type is parsed once, not on every checked call
 def _type(canonical: str) -> ak.types.Type:
     """The awkward type of a canonical ``output_type``; a primitive the datashape grammar lacks
     (``float16`` on awkward 2.14) but awkward's dtype table knows is built directly."""
@@ -116,10 +117,11 @@ def astype_form(form: AwkwardForm, dtype: object) -> AwkwardForm:
     return AwkwardForm(ak.values_astype(form.tt, t.primitive))
 
 
-def declared_form(first: AwkwardForm, canonical: str) -> AwkwardForm:
-    """The form of an External declared ``canonical``: that element type over ``first``'s length."""
+def declared_form(forms: Sequence[AwkwardForm], canonical: str) -> AwkwardForm:
+    """The form of an External declared ``canonical``: that element type over an array input's
+    length, or a scalar when every input is a scalar."""
     t = _type(canonical)
-    if ak.typetracer.is_unknown_scalar(first.tt):
+    if all(ak.typetracer.is_unknown_scalar(f.tt) for f in forms):
         if isinstance(t, ak.types.NumpyType) and not t.parameters:
             return AwkwardForm(ak.typetracer.create_unknown_scalar(np.dtype(t.primitive)))
         raise TypeError(f"output_type {canonical!r} over a scalar input must be a primitive dtype")
@@ -174,6 +176,10 @@ def check_output_type(value: object, inputs: Sequence[object], key: str, declare
     actual = str(content)
     if key == "output_dtype":
         return None if all(p == declared for p in _leaves(content)) else actual
+    # as `declared_form`: an array when any input is one
+    scalar = isinstance(t, ak.types.ScalarType)
+    if scalar == any(isinstance(x, ak.Array) or np.ndim(x) > 0 for x in inputs):
+        return f"scalar {actual}" if scalar else str(t)
     if actual == declared:
         return None
     if isinstance(t, ak.types.ArrayType) and "unknown" in actual and _fits(content, _type(declared)):
@@ -210,7 +216,7 @@ class AwkwardBackend:
             # leaves, and anything else records the first input's form
             declared = params.get("output_type")
             if declared is not None:
-                return declared_form(forms[0], str(declared))
+                return declared_form(forms, str(declared))
             leaf = params.get("output_dtype")
             if leaf is not None:
                 return astype_form(forms[0], leaf)

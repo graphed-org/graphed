@@ -59,7 +59,8 @@ Declared output types for external calls
 * A numpy ``gufunc`` External refuses ``output_type=``: its signature and ``output_dtype=`` type it.
 * A declared type is checked against the value each time the call runs, never cast. A value of
   another type raises ``graphed.OutputTypeError``, a ``GraphedTypeError``, at the declaring line;
-  a plan raises a ``StageError`` there, from a worker process too. awkward compares the exact type
+  an aggregate plan raises a ``StageError`` there, from a worker process too, and a bundle's
+  ``reproduce`` raises it too. The value is an array when any input is. awkward compares the exact type
   string, letting ``unknown`` (a list with no values) fit anything; numpy compares the dtype, the
   trailing shape a subarray declares and the leading axis. A plugin's ``output_dtype``, and
   ``gak.apply_correction``'s float64, are checked leaf by leaf. Undeclared calls are not checked.

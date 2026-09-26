@@ -59,6 +59,28 @@ def test_an_apply_value_of_another_type_raises_at_the_declaring_line() -> None:
     assert "declares output_type 'int64'; its value is 'float64'" in err.detail
 
 
+def test_an_array_input_after_a_scalar_takes_the_leading_axis() -> None:
+    s, ev = _events()
+    out = graphed.apply(np.add, gak.sum(ev.x), ev.x, output_type="float64")
+    form: Any = s.form(out)
+    assert str(form.tt.type) == "## * float64"
+    assert ak.to_list(s.materialize(out)) == (fx.X.sum() + fx.X).tolist()
+
+
+def test_a_scalar_value_for_an_array_declaration_is_refused() -> None:
+    s, ev = _events()
+    out, line = ev.x.map(lambda x: float(np.sum(x)), output_type="float64"), fx.here()
+    assert "its value is 'scalar float64'" in _refused(lambda: s.materialize(out), line).detail
+
+
+def test_an_array_value_for_a_scalar_declaration_is_refused() -> None:
+    s, ev = _events()
+    total = gak.sum(ev.x)
+    assert s.materialize(total.map(lambda t: np.multiply(t, 2), output_type="float64")) == 2 * fx.X.sum()
+    out, line = total.map(lambda t: np.array([t]), output_type="float64"), fx.here()
+    assert "its value is '1 * float64'" in _refused(lambda: s.materialize(out), line).detail
+
+
 def test_a_matching_value_passes_unchanged() -> None:
     s, ev = _events()
     assert ak.to_list(s.materialize(ev.x[ev.x.map(fx.cut, output_type=bool)])) == [1.5, 2.5, 3.5]

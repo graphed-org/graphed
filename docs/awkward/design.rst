@@ -514,7 +514,7 @@ be a primitive, such as ``"bool"``.
 
 A declaration is checked, never converted. Each time the call runs, its value's type is compared
 with the declared one, and a value of another type raises ``graphed.OutputTypeError`` (a
-``GraphedTypeError``) at the declaring line. In a plan it is a ``StageError`` at that line, raised
+``GraphedTypeError``) at the declaring line. In an aggregate plan it is a ``StageError`` at that line, raised
 in a worker process too, instead of a failure at whichever later line first trips over the value.
 Continuing the example above:
 
@@ -536,11 +536,12 @@ Printed output:
 
 The comparison is awkward's type string, exactly: option-ness (``?float64`` is not ``float64``),
 regular against var (``2 * float64``, as a 2-D numpy array returns, is not ``var * float64``),
-record names and parameters all count. The one allowance is ``unknown``, the type awkward gives a
+record names and parameters all count. The value is an array when any input is an array (the
+recorded form says so too) and a scalar when every input is a scalar. The one allowance is ``unknown``, the type awkward gives a
 list that holds no values anywhere in the partition: it fits whatever was declared in its place.
 A plugin's ``output_dtype`` (see :doc:`../preserve/design`) is a leaf dtype, so every leaf of the
 value must have it. An undeclared call is not checked and costs nothing; a declared one costs
-about 10 µs per call, measured on 10⁵ and 10⁶-element values.
+10 to 20 µs per call, measured on 10⁵ and 10⁶-element values.
 
 
 Reading and writing parquet

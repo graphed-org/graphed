@@ -22,7 +22,10 @@ from typing import Any
 
 from graphed.checkpoint import Store
 from graphed.core import GraphStore
+from graphed.errors import OutputTypeError
+from graphed.provenance import Provenance
 from graphed.services import referenced_services
+from graphed.session import CheckedExternal
 
 from .errors import PreserveError, UnresolvedPayload
 from .externals import ResourceCache, evaluate_external, get_plugin
@@ -252,15 +255,18 @@ def build_bundle(
             raise PreserveError(
                 f"payload for node {node['id']} hashes to {actual}, not the recorded {ch} (mismatched/poisoned)"
             )
-        externals_manifest.append(
-            {
-                "node_id": node["id"],
-                "kind": desc["kind"],
-                "content_hash": ch,
-                "store": store.put(blob),
-                "io_schema": desc["io_schema"],
-            }
-        )
+        entry = {
+            "node_id": node["id"],
+            "kind": desc["kind"],
+            "content_hash": ch,
+            "store": store.put(blob),
+            "io_schema": desc["io_schema"],
+        }
+        # only a declaring node gets the key: a plugin param named `output_type` is not a declaration
+        fn = session._externals[node["id"]][0]
+        if isinstance(fn, CheckedExternal) and fn.key == "output_type":
+            entry["output_type"] = fn.declared
+        externals_manifest.append(entry)
 
     services_manifest = [spec.to_json() for spec in referenced_services(session, nodes)]
 
@@ -312,11 +318,13 @@ def reproduce(bundle: Bundle) -> Any:
     store (raising :class:`UnresolvedPayload` for anything missing), interprets the IR through the
     awkward backend + payload-backed external evaluators, and applies the histogram spec."""
     from graphed.awkward import AwkwardBackend  # noqa: PLC0415
+    from graphed.awkward.backend import canonical_output_type  # noqa: PLC0415
 
     store = bundle.store
     m = bundle.manifest
     nodes = GraphStore.deserialize(_resolve(store, m["analysis"]["ir"], what="IR")).nodes()
     backend = AwkwardBackend()
+    sourcemap = json.loads(_resolve(store, m["provenance"], what="sourcemap"))
 
     data_cache: dict[str, Any] = {}
 
@@ -342,7 +350,17 @@ def reproduce(bundle: Bundle) -> Any:
                 "reproduce cannot reach: run the analysis as a Plan with the endpoint bound"
             )
         payload = _resolve(store, entry["store"], what=f"{entry['kind']} payload")
-        return evaluate_external(node, inputs, payload, resources)
+        value = evaluate_external(node, inputs, payload, resources)
+        key, declared = "output_type", entry.get("output_type")
+        if declared is None:  # a plugin's static leaf dtype, as `record_external` checked it
+            key, dtype = "output_dtype", getattr(get_plugin(entry["kind"]), "output_dtype", None)
+            declared = None if dtype is None else canonical_output_type(dtype)
+        actual = None if declared is None else backend.check_output_type(value, inputs, key, declared)
+        if actual is not None:
+            prov = Provenance(**sourcemap[str(node["id"])])
+            detail = f"external node {node['id']} ({entry['kind']!r}) declares {key} {declared!r}; its value is {actual!r}"
+            raise OutputTypeError("external", prov, detail)
+        return value
 
     try:
         values = run_ir(

@@ -1248,7 +1248,7 @@ cannot carry the fact that a node declared, since a plugin param may itself be n
 record time. The wrapper travels wherever the evaluator does, into plans and process pools, and
 raises ``graphed.OutputTypeError`` at the recorded line. An ``output_dtype`` in ``form_params``
 beside ``form=`` declares too, as ``gak.apply_correction`` does. An undeclared node keeps its bare
-evaluator. A plan re-raises any other ``GraphedError`` from a worker unchanged, and turns this
+evaluator. An aggregate plan re-raises any other ``GraphedError`` from a worker unchanged, and turns this
 one into the ``StageError`` at the declaring line.
 
 A package that records its *own* call-outs — histogram fills are the example — passes

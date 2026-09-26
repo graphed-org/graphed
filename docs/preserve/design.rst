@@ -461,8 +461,9 @@ Prints::
 The declaration is part of the node's identity, and it travels in the bundle. It is checked,
 never converted: a value of another type raises ``graphed.OutputTypeError`` at the declaring line
 when the call runs, in process or in a plan's worker (see "Declaring what an external call
-returns" in :doc:`../awkward/design`). ``reproduce`` evaluates the plugin from the payload and does
-not check.
+returns" in :doc:`../awkward/design`). ``reproduce`` checks it too, at the declaring line the
+bundle's sourcemap keeps: a node declared with ``output_type=`` records it in its manifest entry, and
+a node without one is checked against its plugin's ``output_dtype``.
 
 A plugin whose value always has one leaf dtype can say so once, with
 ``ExternalPlugin(..., output_dtype="float64")``. The recorded type is then the first input's

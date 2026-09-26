@@ -86,6 +86,13 @@ def test_a_scalar_input_takes_no_leading_axis() -> None:
     assert "its value is 'vector[bool]'" in _refused(lambda: s.materialize(out), line).detail
 
 
+def test_an_array_input_after_a_scalar_takes_the_leading_axis() -> None:
+    s, x = _x()
+    out = graphed.apply(np.add, x.reduce("sum"), x, output_type="float32")
+    assert s.form(out).describe() == "vector[float32]"
+    assert np.asarray(s.materialize(out)).dtype == np.float32
+
+
 def _a_above_one(t: Any) -> Any:
     return t["a"] > 1
 

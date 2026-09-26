@@ -425,7 +425,7 @@ class NumpyBackend:
         if op == "map":
             declared = params.get("output_type")
             if declared is not None:
-                return declared_form(forms[0], str(declared))
+                return declared_form(forms, str(declared))
             return NumpyForm(np.dtype(object))  # opaque callable: result form unknown
         if op == "gufunc":
             if "output_type" in params:  # the signature types a gufunc: `apply_gufunc(output_dtype=)`

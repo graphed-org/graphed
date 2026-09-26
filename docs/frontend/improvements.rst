@@ -73,7 +73,8 @@ The declaration is part of the node's identity and is never a cast: each value i
 the call runs, and one of another type raises ``graphed.OutputTypeError`` at the declaring line.
 The dtype must be equal, except that an unsized string declaration (``str``, ``"S0"``) takes
 strings of any length. A subarray declaration such as ``("f4", (3,))`` also pins the trailing
-shape, and the value has the first input's leading axis, none over a scalar. A record declaration
+shape, and the value has a leading axis when any input is an array, none when every input is a
+scalar. A record declaration
 takes a structured array or a mapping of columns with those fields and dtypes. On flat data, ``graphed.numpy.apply_gufunc(fn, signature, *arrays,
 output_dtype=...)`` also takes a gufunc signature such as ``"(i),(i)->()"``, which types the
 core dimensions too. Typed transformations are better expressed as operations than as opaque
