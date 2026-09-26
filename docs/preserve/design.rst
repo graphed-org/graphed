@@ -458,7 +458,9 @@ Prints::
     ## * var * float32
     [[30.0, 20.0], [], [40.0]]
 
-The declaration is part of the node's identity, and it travels in the bundle. It is checked,
+The declaration is part of the node's identity, and it travels in the bundle. A plugin param
+named ``output_type`` stays a plain param, but it records the same node as that declaration, so
+recording the call both ways in one session is refused at the second call. A declaration is checked,
 never converted: a value of another type raises ``graphed.OutputTypeError`` at the declaring line
 when the call runs, in process or in a plan's worker (see "Declaring what an external call
 returns" in :doc:`../awkward/design`). ``reproduce`` checks it too, at the declaring line the
