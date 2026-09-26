@@ -486,6 +486,12 @@ class Session:
         if declared is not None and check is not None:
             node = f"{op} node {node_id} ({params_d.get('fn', descriptor.kind)!r})"
             fn = CheckedExternal(fn, declared[0], declared[1], check, op, prov, node)
+        prior = self._externals.get(node_id)
+        if prior is not None and isinstance(prior[0], CheckedExternal) != isinstance(fn, CheckedExternal):
+            # an 'output_type' param and output_type= store the same params, so one node would drop the check
+            raise GraphedTypeError(
+                op, prov, "this External is already recorded with its type declared on one call only"
+            )
         self._forms.setdefault(node_id, form)
         self._externals.setdefault(node_id, (fn, ids))
         self._provenance.setdefault(node_id, prov)

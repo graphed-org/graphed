@@ -125,3 +125,15 @@ def test_only_a_declared_node_writes_its_type_to_the_manifest(
     assert [e.get("output_type") for e in declared.manifest["externals"]] == ["float64"]
     assert [e.get("output_type") for e in as_param.manifest["externals"]] == [None]
     assert ak.to_list(reproduce(declared)) == ak.to_list(reproduce(as_param)) == [0.0, 1.0]
+
+
+@pytest.mark.parametrize("declared_first", [True, False])
+def test_a_param_and_a_declaration_of_one_node_are_refused(declared_first: bool) -> None:
+    s, x = _x()
+    plugin = _plugin("float64", None)
+    calls = [{"output_type": "bool"}, {"params": {"output_type": "bool"}}]
+    record_external(s, plugin, b"m", [x], **calls[not declared_first])
+    second, line = (lambda: record_external(s, plugin, b"m", [x], **calls[declared_first])), here()
+    with pytest.raises(GraphedTypeError, match="declared on one call only") as info:
+        second()
+    assert info.value.provenance.lineno == line
