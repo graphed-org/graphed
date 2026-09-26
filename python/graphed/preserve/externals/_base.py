@@ -293,9 +293,10 @@ class _PluginEvaluator:
         name = self.node_params.get("service")
         if name is None:
             return self
-        if name not in endpoints:
+        endpoint = endpoints.get(name, self.endpoint)  # binding adds endpoints, never drops one
+        if endpoint is None:
             raise UnboundService(str(name))
-        return replace(self, endpoint=endpoints[name])
+        return replace(self, endpoint=endpoint)
 
     def __call__(self, *values: Any) -> Any:
         params = self.node_params

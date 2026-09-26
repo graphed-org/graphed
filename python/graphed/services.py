@@ -113,18 +113,21 @@ class ServiceSpec:
 
 
 class UnboundService(GraphedError):
-    """A node names a service no endpoint was bound for."""
+    """Nodes name services no endpoint was bound for; ``names`` lists them, ``name`` is the first."""
 
-    def __init__(self, name: str) -> None:
-        self.name = name
+    def __init__(self, *names: str) -> None:
+        self.names = names
+        self.name = names[0]
+        listed = ", ".join(map(repr, names))
+        endpoints = ", ".join(f"{name!r}: 'scheme://host:port'" for name in names)
+        has = f"service {listed} has" if len(names) == 1 else f"services {listed} have"
         super().__init__(
-            f"service {name!r} has no endpoint: bind one with graphed.services.bind_services(plan, "
-            f"{{{name!r}: 'scheme://host:port'}}), or run the plan through an executor that resolves "
-            "Plan.services"
+            f"{has} no endpoint: bind with graphed.services.bind_services(plan, {{{endpoints}}}), or run"
+            " the plan through an executor that resolves Plan.services"
         )
 
     def __reduce__(self) -> tuple[Any, ...]:
-        return (UnboundService, (self.name,))
+        return (UnboundService, self.names)
 
 
 def split_endpoint(endpoint: str) -> tuple[str, str]:
@@ -150,7 +153,9 @@ def split_endpoint(endpoint: str) -> tuple[str, str]:
 
 @runtime_checkable
 class Bindable(Protocol):
-    """A plan part that takes run endpoints: returns a bound copy, never binds in place."""
+    """A plan part that takes run endpoints: returns a bound copy, never binds in place. A part that
+    calls a service raises :class:`UnboundService` naming it when ``endpoints`` lacks the name and the
+    part holds no endpoint of its own, so :func:`require_bound` sees every service a part needs."""
 
     def bind_services(self, endpoints: Mapping[str, str]) -> Any: ...
 
@@ -175,6 +180,25 @@ def bind_externals(
     )
 
 
+def require_bound(plan: Plan[Any]) -> None:
+    """Raise :class:`UnboundService` naming every service ``plan``'s process has no endpoint for; a
+    runner calls it before its first task. A plan without ``services`` returns at once."""
+    if not plan.services or not isinstance(plan.process, Bindable):
+        return
+    missing: dict[str, str] = {}
+    while True:  # each pass through bind_services' own traversal names one more unbound service
+        try:
+            plan.process.bind_services(missing)
+        except UnboundService as err:
+            if err.name in missing:  # a part refusing a name it was handed breaks the Bindable contract
+                raise
+            missing[err.name] = "tcp://unbound:0"
+            continue
+        if missing:
+            raise UnboundService(*sorted(missing))
+        return
+
+
 def bind_services(plan: Plan[R], endpoints: Mapping[str, str]) -> Plan[R]:
     """``plan`` with ``endpoints`` (service name -> ``scheme://host:port``) bound into its process; the
     same plan when the process has no ``bind_services`` hook. Every endpoint is checked first."""
@@ -194,5 +218,6 @@ __all__ = [
     "bind_externals",
     "bind_services",
     "referenced_services",
+    "require_bound",
     "split_endpoint",
 ]

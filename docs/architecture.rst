@@ -142,7 +142,15 @@ the endpoints; the recording is untouched, so two runs against two servers compi
 bytes. A run's endpoints are provenance of that run: ``RunReport.endpoints`` keeps them, outside
 the bundle's fingerprint. ``graphed`` never starts a service itself; a runner in
 ``graphed-executors`` resolves each spec — a user endpoint, a site's, or one it starts from the
-recipe — and binds them before the first task.
+recipe — and binds them before the first task. Binding adds endpoints: a part bound earlier keeps
+its own. An External raises ``UnboundService`` when binding leaves it without an endpoint; a
+``reduce`` that calls a service must give itself a ``bind_services`` hook that does the same
+(``graphed.services.Bindable``), and a reduce without such a hook is not checked.
+``SequentialRunner`` calls ``graphed.services.require_bound(plan)`` before its first task, so a
+plan with a service left unbound raises ``UnboundService`` naming every such service before any
+task runs or any part is written; a plan without services skips the check. A runner with its own
+task loop must make the same call before its first task; the ``graphed-executors`` runners do not
+yet.
 
 What you install
 ----------------

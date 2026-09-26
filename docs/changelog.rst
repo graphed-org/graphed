@@ -19,7 +19,14 @@ Services an analysis calls
   without services keeps its bytes.
 * ``graphed.services.bind_services(plan, {name: "scheme://host:port"})`` binds run endpoints into a
   plan's process without changing the recording; ``split_endpoint`` checks the form (``tcp``,
-  ``http``, ``https``, ``grpc``, ``grpcs``). An unbound service raises ``UnboundService``.
+  ``http``, ``https``, ``grpc``, ``grpcs``). A part bound earlier keeps its endpoint.
+* ``SequentialRunner`` refuses a plan with an unbound service before its first task:
+  ``graphed.services.require_bound(plan)`` raises ``UnboundService`` naming every missing service
+  (``.names``), so a collated plan writes no parts first. A plan without services skips the check.
+  A runner with its own task loop must make the same call before its first task.
+* A ``reduce`` that calls a service must give itself a ``bind_services`` hook that raises
+  ``UnboundService`` when the endpoints lack its name and it holds none, as an External does; the
+  check then names it too. A reduce without such a hook is not checked.
 * A Triton External names ``service=`` or a literal ``url=``, not both. The endpoint's scheme picks
   ``tritonclient.http`` or ``tritonclient.grpc`` (TLS on ``https``/``grpcs``); a url without a
   scheme keeps the HTTP client and ``params["transport"]`` still overrides. The ``ml`` extra
