@@ -506,12 +506,41 @@ string, an ``ak.types.Type``, an ``ak.forms.Form`` or an array's ``.type``, a nu
 kind (``"U5"`` is ``string``, a structured dtype is a record, ``("f4", (3,))`` is ``3 *
 float32``), or ``bool``, ``int``, ``float`` or ``complex`` (``int`` is ``int64`` everywhere).
 Every spelling of one type is one node, recorded under awkward's own type string, and two
-declared types are two nodes. A declaration is a claim, not a conversion: the callable must
-return what it declares. A type awkward cannot build — ``"nope"``, ``object``, a non-native byte
+declared types are two nodes. A type awkward cannot build — ``"nope"``, ``object``, a non-native byte
 order — is refused at your line. ``float16`` is accepted on its own; awkward 2.14's type grammar
 cannot read it inside a list or record or with parameters, so ``"var * float16"`` is refused
 until an awkward release reads it, with no graphed change needed then. Over a scalar input the declared type must
 be a primitive, such as ``"bool"``.
+
+A declaration is checked, never converted. Each time the call runs, its value's type is compared
+with the declared one, and a value of another type raises ``graphed.OutputTypeError`` (a
+``GraphedTypeError``) at the declaring line. In a plan it is a ``StageError`` at that line, raised
+in a worker process too, instead of a failure at whichever later line first trips over the value.
+Continuing the example above:
+
+.. code-block:: python
+
+    from graphed import OutputTypeError
+
+    score = ev.run.map(lambda run: run * 0.5, name="score", output_type="bool")
+    try:
+        s.materialize(ev.Jet.pt[score])
+    except OutputTypeError as err:
+        print(err.detail)
+
+Printed output:
+
+.. code-block:: text
+
+    map node 9 ('score') declares output_type 'bool'; its value is 'float64'
+
+The comparison is awkward's type string, exactly: option-ness (``?float64`` is not ``float64``),
+regular against var (``2 * float64``, as a 2-D numpy array returns, is not ``var * float64``),
+record names and parameters all count. The one allowance is ``unknown``, the type awkward gives a
+list that holds no values anywhere in the partition: it fits whatever was declared in its place.
+A plugin's ``output_dtype`` (see :doc:`../preserve/design`) is a leaf dtype, so every leaf of the
+value must have it. An undeclared call is not checked and costs nothing; a declared one costs
+about 10 µs per call, measured on 10⁵ and 10⁶-element values.
 
 
 Reading and writing parquet
