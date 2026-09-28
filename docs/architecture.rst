@@ -146,6 +146,12 @@ recipe — and binds them before the first task. Binding adds endpoints: a part 
 its own. An External raises ``UnboundService`` when binding leaves it without an endpoint; a
 ``reduce`` that calls a service must give itself a ``bind_services`` hook that does the same
 (``graphed.services.Bindable``), and a reduce without such a hook is not checked.
+``graphed.services.resolve_services(plan, value)`` hands a run's value back through the same
+parts, so a part can turn it into its final form while the services are still up (a histogram
+server's receipt into its snapshot, say): a process with a ``resolve_services`` hook
+(``graphed.services.Resolvable``) returns the resolved value, ``aggregate_plan``'s process forwards
+it to its ``reduce``, and ``collate``'s to each plan's process with that plan's own ``{name: value}``
+entry. A part without the hook keeps its value, and a name absent from the value is not called.
 ``SequentialRunner`` calls ``graphed.services.require_bound(plan)`` before its first task, so a
 plan with a service left unbound raises ``UnboundService`` naming every such service before any
 task runs or any part is written; a plan without services skips the check. A runner with its own

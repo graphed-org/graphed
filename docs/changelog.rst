@@ -27,6 +27,10 @@ Services an analysis calls
 * A ``reduce`` that calls a service must give itself a ``bind_services`` hook that raises
   ``UnboundService`` when the endpoints lack its name and it holds none, as an External does; the
   check then names it too. A reduce without such a hook is not checked.
+* ``graphed.services.resolve_services(plan, value)`` resolves a run's value through the parts
+  ``bind_services`` reaches: a process or ``reduce`` with a ``resolve_services`` hook
+  (``graphed.services.Resolvable``) returns the resolved value, and ``collate`` hands each plan's
+  process its own entry. A part without the hook keeps its value.
 * A Triton External names ``service=`` or a literal ``url=``, not both. The endpoint's scheme picks
   ``tritonclient.http`` or ``tritonclient.grpc`` (TLS on ``https``/``grpcs``); a url without a
   scheme keeps the HTTP client and ``params["transport"]`` still overrides. The ``ml`` extra
