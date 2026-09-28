@@ -5,8 +5,9 @@ A :class:`ServiceSpec` is the requirement (``name`` nodes reference, ``kind`` a 
 :class:`Launch` recipe. A ``Session`` holds the declared specs (``declare_service``), a node names one
 through ``params["service"]``, and ``Plan``/``DurablePlan``/the preservation bundle carry the specs
 the graph references. The endpoint a run reaches a service at is environment, never graph identity:
-:func:`bind_services` hands it to a plan's process after the IR is fixed, and ``RunReport.endpoints``
-records it as run provenance.
+:func:`bind_services` hands it to a plan's process after the IR is fixed, :func:`resolve_services`
+hands the run's value back through the same parts, and ``RunReport.endpoints`` records it as run
+provenance.
 """
 
 from __future__ import annotations
@@ -160,6 +161,14 @@ class Bindable(Protocol):
     def bind_services(self, endpoints: Mapping[str, str]) -> Any: ...
 
 
+@runtime_checkable
+class Resolvable(Protocol):
+    """A plan part that turns a run's value into its final form while the run's services are up
+    (a receipt into a snapshot, say): returns the resolved value, never resolves in place."""
+
+    def resolve_services(self, value: Any) -> Any: ...
+
+
 def referenced_services(
     session: Session, nodes: Iterable[Mapping[str, Any]], names: Iterable[str] | None = None
 ) -> tuple[ServiceSpec, ...]:
@@ -209,15 +218,28 @@ def bind_services(plan: Plan[R], endpoints: Mapping[str, str]) -> Plan[R]:
     return replace(plan, process=plan.process.bind_services(endpoints))
 
 
+def resolve_services(plan: Plan[R], value: R) -> R:
+    """``value``, a run of ``plan``'s, resolved through its process; ``value`` itself when the process
+    has no ``resolve_services`` hook. A runner that holds the run's services calls it at the end of
+    the run, before they close (``SequentialRunner`` holds none and does not); it walks the parts
+    :func:`bind_services` reaches."""
+    if not isinstance(plan.process, Resolvable):
+        return value
+    resolved: R = plan.process.resolve_services(value)
+    return resolved
+
+
 __all__ = [
     "SCHEMES",
     "Bindable",
     "Launch",
+    "Resolvable",
     "ServiceSpec",
     "UnboundService",
     "bind_externals",
     "bind_services",
     "referenced_services",
     "require_bound",
+    "resolve_services",
     "split_endpoint",
 ]

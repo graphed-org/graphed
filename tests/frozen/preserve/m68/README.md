@@ -44,6 +44,14 @@ in the one-process preserve run. Plans run on `SequentialRunner`. Byte pins were
 | · `equal_node_params_in_any_key_order_share_one_connection` | D7 cache key | one payload, endpoint and params, keys in two orders, in two sessions: one connect | a key over the params' insertion order |
 | · `transport_param_wins_over_any_scheme` | D7, frozen m26/m27 | with `transport`, a literal `triton://` url and a bound `grpcs://` endpoint reach the factory unchanged; neither tritonclient module is touched | the scheme parsed before `transport` is read |
 | `test_triton_service_live` · `live_triton_through_a_bound_service[http, grpc]` | D7, §6 | a `service=` node, no `transport`, served by the CI `triton` job's real server at `http://$GRAPHED_TRITON_HTTP` (check `http:/v2/health/ready`) and `grpc://$GRAPHED_TRITON_GRPC` (check `grpc:`), each leg gated on its variable like `preserve/m9/test_triton_server.py`; the gRPC port answers only gRPC | a bind the scheme-chosen tritonclient transport never sees |
+| `test_resolve_services` (tag `freeze-preserve-m68-3`, the `-2` amendment precedent) · `a_resolvable_process_is_handed_the_value` | §3.2 resolve walk, D8 | a `Resolvable` spy as the plan's process: `resolve_services(plan, value)` hands it the run's value (`is`) once and returns its return (`is`) | the process skipped; a copy handed over; the return dropped |
+| · `a_collated_part_is_handed_its_own_sub_value` | §3.2 resolve walk (`_Collated`) | the spy as `collate`'s `a` part is handed `value["a"]` (`is`) once, its return lands at `a`; `b` (a hook-less reduce) keeps its value (`is`) | no per-name forwarding (probe r16's control); the whole `{name: value}` handed over; other names rebuilt |
+| · `a_resolvable_reduce_is_handed_the_value` | §3.2 resolve walk (`_PartitionReduce`), D8 | the spy as `aggregate_plan`'s `reduce` is handed the run's value (`is`) once and its return is the result | no forwarding to `reduce`; a copy handed over |
+| · `a_process_without_the_hook_returns_the_value_itself` | §3.2 `services.py` | a plain-function process, and an aggregate plan whose `reduce` has no hook: the value itself (`is`) | a copied or rebuilt value |
+| · `a_collated_name_without_a_sub_value_is_not_called` | §3.2 resolve walk (`_Collated`) | a part whose plan has no tasks (so no name in the value): the spy is never called, the value keeps its names | every part called, with `None` or a missing key |
+| · `the_composites_forward_to_the_spy` | §3.2 resolve walk, probe r16 | `collate`'s and `aggregate_plan`'s processes are `Resolvable` themselves and their `resolve_services` reaches a spy that is not the top-level process | a top-level-only resolve; composites without the hook |
+| · `resolvable_is_runtime_checkable` | §3.2 `services.py` | an object with `resolve_services` isinstance-checks true; a function and a bare `object()` false | a non-runtime-checkable protocol |
+| · `an_external_evaluator_is_not_resolvable` | §3.2 (binds only externals gain nothing) | a `GENERIC` node's `_PluginEvaluator` (via `plan.process.externals`, as `test_bind_services` reads it) has `bind_services` and is not `Resolvable` | the hook added to the externals-only binders |
 
 Clause ends (each end's test, and the sanity mutant it kills):
 | Clause | One end | The other end |
@@ -62,6 +70,7 @@ Clause ends (each end's test, and the sanity mutant it kills):
 | endpoint form | six accepted | four refused (`split-lenient`); refusal on bind, used or not (`bind-unchecked`) |
 | transport | scheme'd endpoints (`scheme-ignored`, `full-url-to-client`, `no-ssl`, `tcp-as-http`) | a scheme-less literal (`literal-split`); `transport` given (`scheme-before-transport`) |
 | RunReport | with endpoints (`report-in-fingerprint`) | without (a 0.0.6 report); version (`report-version-2`) |
+| resolve walk | the top-level process (`no-top`), the `reduce` (`pr-no-forward`) | a collated part, its own sub-value (`col-no-forward`, `col-whole`), and a name absent from the value (`col-call-missing`); a hook-less value kept (`pr-copy`); externals left alone (`eval-resolvable`) |
 - The bundle's "IR references" has one end: `build_bundle` serializes with `optimize=False`, which keeps every recorded External, so none is outside the bundle's IR.
 
 Readings of the plan:
@@ -75,3 +84,6 @@ Readings of the plan:
 - A message is asserted by the names the plan says it carries, each a whole token; its wording is free.
 - The live test uses the `scorer` model the graphed `triton` job already serves.
 - Import blocks are sorted with `python/graphed/services.py` present; before it exists `ruff check` reports I001 on them.
+- `resolve_services` is a pure walk: the resolve tests clear the spy's record after the run and count only the calls the walk makes, so whether a runner also resolves at the end of its run is left to the executors (D8).
+- "Its return lands at the same place": for a process or a `reduce` the result is the spy's return (`is`); for a collated part it is the value at that name, the other names' values kept by identity. A hook-less part (the `_PartitionReduce` whose `reduce` has no hook) returns the value itself, as the plain process does.
+- Of the externals-only binders, only `_PluginEvaluator` is reachable through already-frozen access (`plan.process.externals`); `_WritePart`, `_VariedWritePart` and `CheckedExternal` are not pinned.

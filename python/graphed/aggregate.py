@@ -36,7 +36,7 @@ from .execute import (
     refuse_chunk_partials,
 )
 from .projection import read_columns
-from .services import Bindable, ServiceSpec, bind_externals, referenced_services
+from .services import Bindable, Resolvable, ServiceSpec, bind_externals, referenced_services
 from .session import Session
 from .varied import refuse_container
 from .write import PartitionedSource, PartWrite, declared_columns
@@ -125,6 +125,13 @@ class _PartitionReduce(Generic[V]):
         """A copy whose External evaluators and ``reduce`` carry ``endpoints`` where they take them."""
         reduce = self.reduce.bind_services(endpoints) if isinstance(self.reduce, Bindable) else self.reduce
         return replace(self, externals=bind_externals(self.externals, endpoints), reduce=reduce)
+
+    def resolve_services(self, value: V) -> V:
+        """``value`` resolved by ``reduce`` when it takes it; ``value`` itself otherwise."""
+        if not isinstance(self.reduce, Resolvable):
+            return value
+        resolved: V = self.reduce.resolve_services(value)
+        return resolved
 
     def part_paths(self, partition: Partition) -> list[str]:
         """Where this partition's parts land, without reading."""
@@ -380,6 +387,16 @@ class _Collated:
 
     def bind_services(self, endpoints: Mapping[str, str]) -> _Collated:
         return replace(self, processes=dict(bind_externals(self.processes.items(), endpoints)))
+
+    def resolve_services(self, value: Mapping[str, Any]) -> dict[str, Any]:
+        """Each name's value resolved by its process when it takes it; a name absent from ``value``
+        is not called."""
+        return {
+            name: fn.resolve_services(value[name])
+            if isinstance(fn := self.processes.get(name), Resolvable)
+            else value[name]
+            for name in value
+        }
 
 
 @dataclass(frozen=True)
