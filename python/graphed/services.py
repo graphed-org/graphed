@@ -220,8 +220,9 @@ def bind_services(plan: Plan[R], endpoints: Mapping[str, str]) -> Plan[R]:
 
 def resolve_services(plan: Plan[R], value: R) -> R:
     """``value``, a run of ``plan``'s, resolved through its process; ``value`` itself when the process
-    has no ``resolve_services`` hook. A runner calls it at the end of the run, before its services
-    close; it walks the parts :func:`bind_services` reaches."""
+    has no ``resolve_services`` hook. A runner that holds the run's services calls it at the end of
+    the run, before they close (``SequentialRunner`` holds none and does not); it walks the parts
+    :func:`bind_services` reaches."""
     if not isinstance(plan.process, Resolvable):
         return value
     resolved: R = plan.process.resolve_services(value)
