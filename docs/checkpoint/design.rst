@@ -419,8 +419,10 @@ The keys here also fold in the stage's routing — which key goes to which outpu
 which exchange backend decided that. Two backends that route the same key to different destinations
 therefore never file different content under the same key.
 
-It returns a ``ShuffleResumeResult``: the gather blocks' content hashes in destination order, plus
-the same ``ResumeReport`` you get from ``run_resumable``.
+It returns a ``ShuffleResumeResult``: the content hashes of the last stage's blocks in task order,
+plus the same ``ResumeReport`` you get from ``run_resumable``. ``plan.value([store.get(h) for h in
+result.value])`` turns them into the run's value. A plan that calls a service must be bound first
+(``graphed.services.bind_services``); an unbound one is refused before its first task.
 
 
 A store at a URL

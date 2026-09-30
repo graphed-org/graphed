@@ -23,12 +23,13 @@ from collections import OrderedDict
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import TYPE_CHECKING, Generic, Protocol, TypeVar, cast, runtime_checkable
+from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar, cast, overload, runtime_checkable
 
 from ..services import require_bound
 
 if TYPE_CHECKING:
     from ..services import ServiceSpec
+    from .plan import DurablePlanV2
 
 R = TypeVar("R")  # a partial result (e.g. a histogram array)
 Block = TypeVar("Block")  # a backend-native partition of rows (opaque to the engine)
@@ -526,14 +527,26 @@ class SequentialRunner:
     An optional :class:`Monitor` observes the run (M37). It is purely passive: emission is
     best-effort and a misbehaving monitor cannot change the result. An optional :class:`RunControl`
     steers it: checked on entry and before each task, a pause holds the next task and a cancel
-    returns the fold of the tasks that completed with ``stopped=StopReason.CANCELLED``."""
+    returns the fold of the tasks that completed with ``stopped=StopReason.CANCELLED``.
+
+    A :class:`~graphed.core.plan.DurablePlanV2` runs stage by stage, each task handed every upstream
+    payload, to ``plan.value`` of the last stage's payloads; ``n_partitions`` counts the tasks of
+    stages with no inputs and ``n_combines`` the rest. The control is checked on entry and before each
+    stage, and a cancel returns ``value=None``: a staged run cut short has no value. It emits no task
+    events."""
 
     def __init__(self, monitor: Monitor | None = None, control: RunControl | None = None) -> None:
         self.monitor = monitor
         self.control = control
 
-    def run(self, plan: Plan[R]) -> ExecResult[R]:
+    @overload
+    def run(self, plan: Plan[R]) -> ExecResult[R]: ...
+    @overload
+    def run(self, plan: DurablePlanV2) -> ExecResult[Any]: ...
+    def run(self, plan: Plan[R] | DurablePlanV2) -> ExecResult[R] | ExecResult[Any]:
         require_bound(plan)
+        if not isinstance(plan, Plan):
+            return self._run_stages(plan)
         resources = LocalResources()
         monitor = self.monitor
         control = self.control
@@ -568,6 +581,30 @@ class SequentialRunner:
             return ExecResult(value=value, n_partitions=n, n_combines=max(0, n - 1), stopped=stopped)
         finally:
             resources.close()  # release file handles deterministically at end of run
+            if control is not None and control.state is RunState.CANCELLED:
+                control.reset()  # a cancel ends this run only, whether or not a check saw it
+
+    def _run_stages(self, plan: DurablePlanV2) -> ExecResult[Any]:
+        resources = LocalResources()
+        control = self.control
+        ran = [0, 0]  # tasks of stages with no inputs, tasks of the others
+        try:
+            payloads: list[list[bytes]] = []
+            for stage in plan.stages:
+                if control is not None and control.wait() is RunState.CANCELLED:
+                    return ExecResult(
+                        value=None, n_partitions=ran[0], n_combines=ran[1], stopped=StopReason.CANCELLED
+                    )
+                process = stage.process.resolve()
+                upstream = tuple(p for dep in stage.inputs for p in payloads[dep])
+                out = []
+                for task in stage.tasks:
+                    out.append(process(task, upstream, resources))
+                    ran[bool(stage.inputs)] += 1
+                payloads.append(out)
+            return ExecResult(value=plan.value(payloads[-1]), n_partitions=ran[0], n_combines=ran[1])
+        finally:
+            resources.close()
             if control is not None and control.state is RunState.CANCELLED:
                 control.reset()  # a cancel ends this run only, whether or not a check saw it
 

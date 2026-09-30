@@ -41,6 +41,37 @@ Services an analysis calls
   none) and ``inspect()`` prints them. ``RunReport.endpoints`` records where a run reached each
   service, outside the fingerprint; ``reproduce`` refuses an External that calls a service.
 
+Join and repartition plans run their recording
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``join_plan`` and ``shuffle_plan`` build stages that evaluate the recorded graph: each
+  ``map_write`` task reads its partition and evaluates up to the join or exchange, each gather
+  task joins or concatenates its destination and runs what was recorded after it. Before, the
+  stages were block kernels that no runner could run, and operations after a join were dropped.
+  ``shuffle_plan`` now ends in a one-task ``reduce`` stage that folds the destinations; the
+  plans' bytes and task ids change with their stages.
+* ``join_plan(reduce=, combine=, empty=)`` (all or none) folds the per-destination values as
+  ``aggregate_plan`` folds partitions; without them the plan's value is one output per
+  destination. Each ``map_write`` stage reads the source of the matching join input, so the left
+  side stays on the left whatever order the sources were registered in.
+* ``SequentialRunner().run`` takes a ``DurablePlanV2`` and returns ``plan.value`` of its last
+  stage (``DurablePlanV2.value``); a cancel returns ``value=None``. ``run_shuffle_resumable`` runs
+  builder output too. ``graphed.shuffle.split``/``pick`` read and slice a map-write payload.
+* ``DurablePlanV2.services`` carries the services a join or repartition plan's operations call
+  (``services=`` adds names), written only when non-empty, outside the task ids.
+  ``bind_services``, ``require_bound`` and ``resolve_services`` take a ``DurablePlanV2``; binding
+  sets ``OpSpec.live`` and changes neither the bytes nor any task id.
+* ``evaluate_ir`` evaluates ``exchange`` and ``join`` nodes through the backend, as
+  ``Session.materialize`` does, and takes ``outputs=``/``given=`` to evaluate one side of a
+  barrier.
+* A per-destination awkward join has the whole join's type, also where one side has no rows.
+* The builders refuse, when the plan is built, a ``target_bytes=`` repartition (run it with
+  ``run_repartition_by_size``), an operation after the join or exchange that reads a source
+  directly, a reduction a node consumes on either side of the barrier (and an unfolded one at a
+  ``join_plan`` output), and ``gak.join(grouped=True)`` with ``how="right"`` or ``"outer"``.
+* An operation that fails in a join or repartition plan raises a ``StageError`` at its recording
+  line, as in an aggregate plan.
+
 Declared output types for external calls
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
