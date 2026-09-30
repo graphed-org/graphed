@@ -28,6 +28,7 @@ import base64
 import hashlib
 import importlib
 import json
+import pickle
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any, Literal
@@ -65,6 +66,8 @@ class OpSpec:
     kind: Literal["ref", "opaque"]
     ref: str = ""
     blob_b64: str = ""
+    #: a bound copy of the callable (``graphed.services.bind_services``); never identity or bytes
+    live: Callable[..., Any] | None = field(default=None, compare=False, repr=False)
 
     @property
     def opaque(self) -> bool:
@@ -77,6 +80,8 @@ class OpSpec:
         return b"opaque\0" + base64.b64decode(self.blob_b64)
 
     def resolve(self) -> Callable[..., Any]:
+        if self.live is not None:
+            return self.live
         if self.kind == "ref":
             mod_name, _, qual = self.ref.partition(":")
             if not qual:
@@ -281,6 +286,8 @@ class DurablePlanV2:
     ir: bytes
     stages: tuple[StageSpec, ...] = ()
     format_version: str = FORMAT_VERSION_V2
+    #: the services the IR's nodes name; not identity (``task_id`` ignores it)
+    services: tuple[ServiceSpec, ...] = ()
 
     def graph(self) -> GraphStore:
         """Rebuild the interned IR (no user source files required)."""
@@ -308,11 +315,13 @@ class DurablePlanV2:
 
     def to_bytes(self) -> bytes:
         """Canonical, byte-identical serialization (sorted-key JSON; the IR base64'd)."""
-        doc = {
+        doc: dict[str, Any] = {
             "format_version": self.format_version,
             "ir_b64": base64.b64encode(self.ir).decode(),
             "stages": [s._to_json() for s in self.stages],
         }
+        if self.services:  # omitted when empty: a plan without services keeps its bytes
+            doc["services"] = [spec.to_json() for spec in self.services]
         return json.dumps(doc, sort_keys=True, separators=(",", ":")).encode()
 
     @classmethod
@@ -326,7 +335,17 @@ class DurablePlanV2:
         return cls(
             ir=base64.b64decode(doc["ir_b64"]),
             stages=tuple(StageSpec._from_json(s) for s in doc["stages"]),
+            services=tuple(ServiceSpec.from_json(spec) for spec in doc.get("services", ())),
         )
+
+    def value(self, payloads: Sequence[bytes]) -> Any:
+        """A run's value from its last stage's payloads, in task order: the one decoded payload of a
+        ``kind="reduce"`` last stage, else the tuple of decoded payloads."""
+        decoded = tuple(pickle.loads(p) for p in payloads)
+        if self.stages and self.stages[-1].kind == "reduce":
+            (only,) = decoded
+            return only
+        return decoded
 
 
 @dataclass(frozen=True)
