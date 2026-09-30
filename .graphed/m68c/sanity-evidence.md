@@ -82,12 +82,14 @@ passes (only the 6 m68c tests fail), so core/m68c is awkward-free.
   inner/left; per-dest lengths show dest 1 empty for inner/left and right-only for right/outer.
 - Attribution premise: the compiled correspondence carries the External key `(n, None)` with the
   test's `record_external` line (probed via `compile_ir(...).correspondence.frames`).
-- Mutants each test refuses (by construction):
-  - broadcast honoured in V2: dest-1 right-only check.
+- Mutants each test refuses (by construction; measured against a stand-in in `sanity-G tests-1.md`):
+  - broadcast honoured in V2: dest-1 right-only check (refused by the left and outer cases only).
   - post-barrier ops dropped: post-op rows differ from the bare join, and the test asserts that.
-  - whole-dataset read instead of per partition: `READS` counts.
-  - count route by dest instead of `task.key % parts`, or a zero-row filler of a different type:
-    `[0, 4, 0]` plus the per-block type check.
+  - whole-dataset read instead of per partition: `READS` counts; a whole-file read per task keeps
+    the uri, so `READS` passes and the row count in `.type` refuses it.
+  - count route that splits a block across dests, or a zero-row filler of a different type:
+    `[0, 4, 0]` plus the per-block type check. (`task.key` without `% parts` is not refused: with
+    2 map tasks and 3 dests the two agree.)
   - `services` = every declared spec: the no-service join must give `()`.
   - `plan.value` returning a list, or folding a non-reduce last stage: `(3, 6)` tuple.
   - control checked only on entry, or not reset: the in-stage cancel test and `state is RUNNING`.
