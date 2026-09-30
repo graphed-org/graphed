@@ -1,10 +1,10 @@
 # m68c TEST_SANITY evidence (graphed, test author)
 
 Base: graphed-org/graphed main d0ad16b (branch m68c). Venv `/Users/lgray/vibe-coding/cloud/.venv-m68c`.
-Regenerate the table: run each dir with `--junitxml` and `python .graphed/m68c/probes/reasons.py <xml>...`:
+Regenerate the table: run each dir with `--junitxml` and `python lanes/services-v2/probes/g_author/reasons.py <xml>...` (probes live in the lane, outside this repo):
 `python -m pytest tests/frozen/core/m68c --junitxml=core.xml`, same for `tests/frozen/awkward/m68c`.
 
-## First exception per test on d0ad16b (every test fails; 50 of 50)
+## First exception per test on d0ad16b (every test fails; 51 of 51)
 Each matches plan-graphed.md §6's stated reason. The two core tests that construct
 `DurablePlanV2(services=…)` fail at that keyword (§6 *Bytes round-trip*; the unbound core leg).
 
@@ -50,6 +50,7 @@ Each matches plan-graphed.md §6's stated reason. The two core tests that constr
   runs_no_service::test_join_plan_without_reduce_returns_the_per_dest_blocks[left] -> AttributeError: 'DurablePlanV2' object has no attribute 'services'
   runs_no_service::test_join_plan_without_reduce_returns_the_per_dest_blocks[right] -> AttributeError: 'DurablePlanV2' object has no attribute 'services'
   runs_no_service::test_join_plan_without_reduce_returns_the_per_dest_blocks[outer] -> AttributeError: 'DurablePlanV2' object has no attribute 'services'
+  runs_no_service::test_join_plan_keeps_the_later_registered_source_on_the_left -> AttributeError: 'DurablePlanV2' object has no attribute 'services'
   runs_no_service::test_shuffle_plan_by_key_routes_each_key_to_one_dest_and_runs_the_post_op -> AttributeError: 'DurablePlanV2' object has no attribute 'services'
   runs_no_service::test_shuffle_plan_by_count_sends_each_map_block_whole_to_one_dest -> AttributeError: 'DurablePlanV2' object has no attribute 'services'
   service_live::test_a_bound_server_call_runs_in_a_v2_plan[_before_repartition] -> AttributeError: 'DurablePlanV2' object has no attribute 'process'
@@ -73,10 +74,10 @@ passes (only the 6 m68c tests fail), so core/m68c is awkward-free.
 `.services`) and one comparison-overlap that follows from `resolve_services`' V1 typing.
 
 ## Pass-ability and discrimination (measured where the fix is local)
-- Per-dest join type under §3.3's `take` fix (`probes/takefix_plugin.py`, `-p takefix_plugin`): 6/6
-  pass. Under the r1 `.simplified`-only mutant (`probes/simplified_plugin.py`): 5/6 fail (outer passes,
+- Per-dest join type under §3.3's `take` fix (`g_author/takefix_plugin.py`, `-p takefix_plugin`): 6/6
+  pass. Under the r1 `.simplified`-only mutant (`g_author/simplified_plugin.py`): 5/6 fail (outer passes,
   as g3 predicts). On main: 6/6 TypeError.
-- `probes/gather_sim.py` runs §3.3's map/gather by hand over the harness data (read per partition,
+- `g_author/gather_sim.py` runs §3.3's map/gather by hand over the harness data (read per partition,
   `pack_key`, `partition` into 2, wire round trip, per-dest `concat` + `eval_stage("join")`, post op,
   pickle) with the `take` fix: `.type` and rows equal `materialize` for flat × 4 `how` and grouped
   inner/left; per-dest lengths show dest 1 empty for inner/left and right-only for right/outer.
@@ -90,6 +91,8 @@ passes (only the 6 m68c tests fail), so core/m68c is awkward-free.
   - count route that splits a block across dests, or a zero-row filler of a different type:
     `[0, 4, 0]` plus the per-block type check. (`task.key` without `% parts` is not refused: with
     2 map tasks and 3 dests the two agree.)
+  - join sides in sorted source-id order (swaps a join whose left source was registered second):
+    `join(lu, ev, how="left")` gives 8 rows instead of 9.
   - `services` = every declared spec: the no-service join must give `()`.
   - `plan.value` returning a list, or folding a non-reduce last stage: `(3, 6)` tuple.
   - control checked only on entry, or not reset: the in-stage cancel test and `state is RUNNING`.

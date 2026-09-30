@@ -77,6 +77,14 @@ def test_join_plan_without_reduce_returns_the_per_dest_blocks(how: str) -> None:
     _assert_same(res.value, expected)
 
 
+def test_join_plan_keeps_the_later_registered_source_on_the_left() -> None:
+    ev, lu = two_sources()
+    j = graphed.join(lu, ev, on=["run"], how="left")
+    expected = ev.session.materialize(j)
+    res = SequentialRunner().run(graphed.join_plan(j, steps_per_file=2))
+    _assert_same(res.value, expected)
+
+
 def test_shuffle_plan_by_key_routes_each_key_to_one_dest_and_runs_the_post_op() -> None:
     lu = source(new_session(), "lumi", *lumi_files())
     rep = graphed.repartition(lu, by="run")

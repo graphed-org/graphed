@@ -7,6 +7,7 @@ functions here pickle by reference) rather than instance state."""
 from __future__ import annotations
 
 import json
+import socketserver
 import threading
 import urllib.request
 from collections.abc import Iterator, Sequence
@@ -107,13 +108,24 @@ def one_source() -> Any:
 
 
 # ---- the scale-factor service and the External that calls it -------------------------------------
+class _LookupFreeHTTPServer(ThreadingHTTPServer):
+    """Binds without ``HTTPServer.server_bind``'s ``socket.getfqdn``, which stalls for tens of seconds on
+    macOS CI runners."""
+
+    def server_bind(self) -> None:
+        socketserver.TCPServer.server_bind(self)
+        host, port = self.server_address[:2]
+        self.server_name = str(host)
+        self.server_port = int(port)
+
+
 class SFServer:
     """A local HTTP server answering ``{"sf": SF}``; ``requests`` counts the calls it served."""
 
     def __init__(self) -> None:
         self.requests = 0
         self._lock = threading.Lock()
-        self._http = ThreadingHTTPServer(("127.0.0.1", 0), partial(_Handler, self))
+        self._http = _LookupFreeHTTPServer(("127.0.0.1", 0), partial(_Handler, self))
         self._thread = threading.Thread(target=self._http.serve_forever, daemon=True)
 
     @property
