@@ -84,11 +84,16 @@ def take(block: ak.Array, index: np.ndarray) -> ak.Array:
     row-count check while silently corrupting the value (plan M40 trap #1). A ZERO-ROW ``block`` (a
     schema-only carrier for a one-sided join dest, or a partition an upstream cut emptied) has no row 0
     for the clamp-to-0 below to land on, and a gather from an empty block can only be misses — so it
-    short-circuits to ``len(index)`` typed ``None`` rows (the null-fill a left/right/outer join needs)."""
+    short-circuits to ``len(index)`` typed ``None`` rows (the null-fill a left/right/outer join needs).
+    A ZERO-LENGTH ``index`` gathers no row, so no row can miss: it returns ``block[:0]`` with no option,
+    keeping a per-dest join option-typed exactly where the whole join is."""
     idx = np.asarray(index).astype(np.int64)
+    if len(idx) == 0:
+        return block[:0]
     if len(block) == 0:  # empty carrier -> all-None option column of block's type, length len(idx)
+        # `simplified`: a partitioned zero-row block can be an IndexedArray, which an option cannot wrap
         return ak.Array(
-            ak.contents.IndexedOptionArray(
+            ak.contents.IndexedOptionArray.simplified(
                 ak.index.Index64(np.full(len(idx), -1, dtype=np.int64)), block.layout
             )
         )
