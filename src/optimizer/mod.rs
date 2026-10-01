@@ -101,7 +101,7 @@ pub fn reduce_with_mode(
 }
 
 /// `dead_code_elimination`'s remap entry for a node the pass dropped.
-const DROPPED: usize = usize::MAX;
+pub(crate) const DROPPED: usize = usize::MAX;
 
 /// Reachability from the outputs (plan M4: DCE = reachability; never drops a node on a path to an
 /// output). Returns the reachable nodes compacted into topological order, the remapped outputs,

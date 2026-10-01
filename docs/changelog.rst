@@ -88,6 +88,11 @@ One plan for every output
 * ``graphed.awkward.parquet_write`` writes parquet parts through ``ak.to_arrow_table`` and
   ``pyarrow.parquet.write_table`` with options for each, and per-part key-value metadata that
   replaces the schema's.
+* ``aggregate_plan(opt_level=0)`` ships the 1:1 cone of the plan's outputs, written arrays and
+  metadata arrays (``GraphStore.cone(outputs=)``) instead of the optimized graph, so ``reduce``
+  receives one value per distinct output where ``1``, the default, may merge equal ones; any other
+  level is refused. Its ``StageError`` reports the level, and ``graphed.debug.replay`` recompiles at
+  the plan's level and reduces one value per output of the plan's IR, as the run does.
 * ``refuse_chunk_partials(as_outputs=)`` also accepts the compiled output ids to refuse.
 * ``gak.num(x, axis=0)`` records a reduction, so a per-chunk count can no longer feed another node
   silently; as a plan output it folds like any other reduction.

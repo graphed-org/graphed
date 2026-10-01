@@ -637,11 +637,12 @@ lines, so replay works while that session is alive.
 ``steps()`` is lazy: each ``Step`` carries the lowered operation (its op, kind, form and your
 source frame), its value, and the seconds it took, and nothing runs until you ask for the next
 one. A step that fails raises the same ``StageError`` ``gd.run`` would, pointing at your line.
-``value`` is the task's partial, the plan's ``reduce`` over the replayed outputs. ``diff()``
-compares it with what the run recorded (``reference == "recorded"``), or, when the run kept no
-output for that task, with the plan's fused graph run again on the same input
-(``"re-evaluated"``), so a difference between the fused and the one-at-a-time evaluation shows up
-too. The comparison is by value: dicts by key, tuples and lists by position, arrays with
+``value`` is the task's partial, the plan's ``reduce`` over the replayed outputs, one value per
+output of the plan's graph as the run's ``reduce`` received them. ``diff()`` compares it with what
+the run recorded (``reference == "recorded"``), or, when the run kept no output for that task,
+with the plan's graph (fused, unless the plan was built with ``opt_level=0``) run again on the same
+input (``"re-evaluated"``), so a difference between the fused and the one-at-a-time evaluation
+shows up too. The comparison is by value: dicts by key, tuples and lists by position, arrays with
 ``numpy.array_equal``, which counts NaN as unequal to itself.
 
 External evaluators, including ``aggregate_plan(externals=)`` overrides, are the plan's own, so

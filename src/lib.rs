@@ -364,6 +364,14 @@ impl PyGraphStore {
         self.store.node_map()
     }
 
+    /// opt_level=0 (M6): the 1:1 cone of `outputs` — DCE without the rewrites — as a fresh store
+    /// marked with `outputs`; its `node_map` sends each kept id to `(cone id, None)`.
+    #[pyo3(signature = (*, outputs))]
+    fn cone(&self, outputs: Vec<NodeId>) -> PyResult<PyGraphStore> {
+        let store = self.store.cone(&outputs).map_err(map_err)?;
+        Ok(PyGraphStore { store })
+    }
+
     /// Reduce via the M4 optimizer (DCE + CSE + equality-saturation stage fusion behind
     /// RewriteEngine). Returns the reduced store and a report dict. `maximal_fusion=True` opts in
     /// to fusing fan-out ops whose consumers all land in one stage (the default single-use rule is
