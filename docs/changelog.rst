@@ -7,6 +7,17 @@ Newest release first. Numbers in parentheses are the pull requests on
 0.0.7 (unreleased)
 ------------------
 
+Writes to an fsspec URL
+~~~~~~~~~~~~~~~~~~~~~~~
+
+* A write destination containing ``://`` (``root://``, ``s3://``, ``memory://``, ...) is an fsspec
+  URL: ``aggregate_plan(writes=...)`` with ``parquet_write``, ``graphed.awkward.to_parquet``
+  (``select=`` too) and ``graphed.numpy.to_parquet`` write each part, and its parent directory, on
+  that URL's filesystem instead of creating a local ``root:`` tree or failing in pyarrow. A part is
+  named ``destination.rstrip("/") + "/" + name`` on every OS. A URL needs ``graphed[checkpoint]``
+  (an ``ImportError`` names it) plus the protocol's fsspec driver; a local destination imports no
+  fsspec. ``graphed.write`` gains ``is_url``, ``join_part``, ``part_fs`` and ``prepare_part``.
+
 Services an analysis calls
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 

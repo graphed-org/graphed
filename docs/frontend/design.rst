@@ -1085,6 +1085,28 @@ columns. A write's array must be row-aligned: a reduction there is refused, sinc
 a per-chunk partial. A plan with writes does not take ``store=``, since a capturing task evaluates
 and reduces but does not write, and ``graphed.debug.replay`` refuses it.
 
+A ``destination`` containing ``://`` is an fsspec URL (``root://``, ``s3://``, ``memory://``, ...):
+the part is ``destination`` with its trailing slashes dropped, then ``/`` and the name, and it is
+written, parent directory included, on that URL's filesystem. A URL needs ``pip install
+'graphed[checkpoint]'`` and the protocol's own fsspec driver (``fsspec-xrootd`` for ``root://``);
+any other destination is a local directory and never imports fsspec. ``graphed.awkward.to_parquet``
+and ``graphed.numpy.to_parquet`` take a URL the same way. Continuing the example above:
+
+.. code-block:: python
+
+    skim = parquet_write(selected, "memory://skims/run1/", name=part_name)
+    plan = aggregate_plan(
+        reduce=lambda values: values, combine=lambda a, b: a + b, empty=list, steps_per_file=2, writes=[skim]
+    )
+    parts = SequentialRunner().run(plan).value
+    print(parts)
+    print([ak.from_parquet(p).pt.tolist() for p in parts])
+
+Prints::
+
+    ['memory://skims/run1/events_0.parquet', 'memory://skims/run1/events_1.parquet']
+    [[40.0], [55.0, 30.0]]
+
 
 Several graphs in one plan
 --------------------------
@@ -1207,7 +1229,8 @@ Two modules hold what every I/O integration shares, with no array-library conten
     The format-agnostic partitioned write: ``write_plan`` builds a plan whose tasks each write one
     part and report their paths up a deterministic combine tree, so the returned file list does
     not depend on which task finished first. ``file_bases``, ``blind_part_index``, ``step_of`` and
-    ``part_path`` let a worker derive its own part name from its partition alone. The module also
+    ``part_path`` let a worker derive its own part name from its partition alone; ``join_part``,
+    ``part_fs`` and ``prepare_part`` place a part under a local directory or an fsspec URL. The module also
     defines :class:`~graphed.write.PartitionedSource`: implement ``partitions()`` and
     ``read_partition(partition, columns, resources)`` and any generic consumer — the parquet
     writer, the histogram aggregator, ``aggregate_plan`` — can drive your source partition by
