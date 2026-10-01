@@ -1,12 +1,14 @@
-"""m68c edges the frozen suite does not take: the executors' payload slicer, a partial fold set, and
-a join side that reads no partitioned source."""
+"""m68c edges the frozen suite does not take: the executors' payload slicer, a partial fold set, a
+join side that reads no partitioned source, and a plan with a lambda or ``__main__`` reduce."""
 
 from __future__ import annotations
 
+import inspect
 import os
 import pickle
+import subprocess
 import sys
-from dataclasses import replace
+from typing import Any
 
 import awkward as ak
 import numpy as np
@@ -17,6 +19,7 @@ from m68c_services_harness import FOLD, two_sources
 
 import graphed
 from graphed.awkward import AwkwardForm
+from graphed.core import SequentialRunner
 from graphed.shuffle import pick, split
 
 
@@ -49,20 +52,30 @@ def test_a_join_side_reading_no_partitioned_source_is_refused() -> None:
         graphed.join_plan(graphed.join(ev, table, on=["run"]))
 
 
-def test_a_main_reduce_stage_process_pickles_and_live_stays_out_of_bytes(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    def rows(values: list[object]) -> list[str]:
-        return [str(v) for v in values]
+def _main_rows(values: list[Any]) -> list[str]:
+    return [str(v) for v in values]
 
-    rows.__module__, rows.__qualname__ = "__main__", "m68c_rows"
-    monkeypatch.setattr(sys.modules["__main__"], "m68c_rows", rows, raising=False)
+
+@pytest.mark.parametrize("kind", ["lambda", "main"])
+def test_a_plan_with_an_unimportable_reduce_runs_in_a_fresh_process(
+    kind: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    reduce: Any = lambda values: [str(v) for v in values]  # noqa: E731
+    if kind == "main":
+        reduce = _main_rows
+        monkeypatch.setattr(reduce, "__module__", "__main__")
+        monkeypatch.setattr(reduce, "__qualname__", "m68c_rows")
+        monkeypatch.setattr(sys.modules["__main__"], "m68c_rows", reduce, raising=False)
     ev, lu = two_sources()
-    plan = graphed.join_plan(graphed.join(ev, lu, on=["run"]), **{**FOLD, "reduce": rows})
-    for stage in plan.stages:
-        pickle.dumps(stage.process.resolve())
-    bare = replace(plan, stages=tuple(replace(s, process=replace(s.process, live=None)) for s in plan.stages))
-    assert plan.to_bytes() == bare.to_bytes()
-    assert [plan.task_id(i, t) for i, s in enumerate(plan.stages) for t in s.tasks] == [
-        bare.task_id(i, t) for i, s in enumerate(bare.stages) for t in s.tasks
-    ]
+    plan = graphed.join_plan(graphed.join(ev, lu, on=["run"]), **{**FOLD, "reduce": reduce})
+    want = SequentialRunner().run(plan).value
+    code = (
+        "import pickle, sys; from graphed.core import SequentialRunner; "
+        "sys.stdout.buffer.write(pickle.dumps(SequentialRunner().run(pickle.load(sys.stdin.buffer)).value))"
+    )
+    env = {**os.environ, "PYTHONPATH": os.path.dirname(inspect.getfile(two_sources))}
+    done = subprocess.run(
+        [sys.executable, "-c", code], input=pickle.dumps(plan), capture_output=True, env=env
+    )
+    assert done.returncode == 0, done.stderr.decode()[-400:]
+    assert want and pickle.loads(done.stdout) == want

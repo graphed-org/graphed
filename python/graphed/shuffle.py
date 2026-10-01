@@ -407,7 +407,9 @@ def _build(
             route=route,
         )
         tasks = tuple(Task(i, p) for i, p in enumerate(data.partitions(steps_per_file)))
-        map_stages.append(StageSpec(kind="map_write", process=_spec(process), routing=routing, tasks=tasks))
+        map_stages.append(
+            StageSpec(kind="map_write", process=OpSpec.from_callable(process), routing=routing, tasks=tasks)
+        )
     gather = _Gather(
         ir=ir,
         barrier_inputs=targets,
@@ -428,7 +430,7 @@ def _build(
         StageSpec(
             kind="gather_join" if is_join else "gather",
             inputs=tuple(range(len(map_stages))),  # the barrier edge: every map-write stage
-            process=_spec(gather),
+            process=OpSpec.from_callable(gather),
             routing=gather_routing,
             tasks=tuple(Task(d, Partition("dest", "p", d, d + 1)) for d in range(parts)),
         ),
@@ -438,18 +440,12 @@ def _build(
             StageSpec(
                 kind="reduce",
                 inputs=(len(map_stages),),
-                process=_spec(_Fold(fold[1], fold[2])),
+                process=OpSpec.from_callable(_Fold(fold[1], fold[2])),
                 routing={"backend_id": backend_id},
                 tasks=(Task(0, Partition("reduce", "", 0, 1)),),
             )
         )
     return DurablePlanV2(ir=ir, stages=tuple(stages), services=plan_services(session, compiled, names))
-
-
-def _spec(process: Callable[..., bytes]) -> OpSpec:
-    """``process``'s OpSpec keeping the object itself, which an in-process runner pickles by reference;
-    a cloudpickled copy of a ``__main__`` callable is one stdlib pickle cannot name."""
-    return replace(OpSpec.from_callable(process), live=process)
 
 
 def _cone_externals(
