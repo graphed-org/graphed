@@ -1156,6 +1156,7 @@ Because a join or a repartition is a barrier, the plan for it has stages:
     import numpy as np
     from graphed import Session, join, join_plan
     from graphed.awkward import AwkwardBackend, from_parquet
+    from graphed.core.execution import SequentialRunner
 
     root = tempfile.mkdtemp()
     ak.to_parquet(ak.Array({"run": np.array([1, 1, 2]), "MET_pt": np.array([10.0, 20.0, 30.0])}),
@@ -1168,18 +1169,27 @@ Because a join or a repartition is a barrier, the plan for it has stages:
     lumi = from_parquet(s, "lumi", f"{root}/lumi.parquet")
 
     joined = join(events, lumi, on=["run"], how="inner")
-    plan = join_plan(joined)
+    weighted = joined.MET_pt * joined.lumi_w
+    plan = join_plan(weighted)
     print([(st.kind, len(st.tasks)) for st in plan.stages])
+    print(SequentialRunner().run(plan).value)
 
 Prints::
 
     [('map_write', 1), ('map_write', 1), ('gather_join', 1)]
+    (<Array [9, 18, 33] type='3 * float64'>,)
 
-Each side is routed and written by its own map stage; one gather stage depends on both and does
-the matching. ``shuffle_plan`` is the single-source counterpart for a plain repartition: a
-map-write stage and a gather stage, with the barrier edge between them. Both builders produce a
-durable, byte-deterministic plan; running one across processes is ``graphed-executors``' job, and
-its shuffle documentation covers where the blocks actually travel.
+Each side is read, evaluated up to the join and routed by its own map stage; one gather stage per
+destination depends on both, joins that destination's rows and runs what you recorded after the
+join. Without ``reduce``/``combine``/``empty`` the value is one output per destination; with them,
+``join_plan`` adds a one-task ``reduce`` stage that folds the destinations, as ``aggregate_plan``
+folds partitions. ``shuffle_plan`` is the single-source counterpart for a plain repartition: a
+map-write stage, a gather stage and a ``reduce`` stage, with the barrier edge after the map-write.
+Both builders produce a durable, byte-deterministic plan that carries the services its operations
+call (``bind_services`` binds them as for any plan). Three runners run one: ``SequentialRunner``
+in-process, ``graphed.checkpoint.run_shuffle_resumable`` against a checkpoint store, and
+``graphed-executors``' ``SubmitRunner`` across workers. A ``target_bytes=`` repartition is sized
+at run time, so it has no plan; ``graphed-executors``' ``run_repartition_by_size`` runs it.
 
 
 Reading and writing partitioned files

@@ -12,16 +12,17 @@ provenance.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Protocol, TypeVar, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, TypeVar, overload, runtime_checkable
 from urllib.parse import urlsplit
 
 from .errors import GraphedError
 
 if TYPE_CHECKING:
     from .core.execution import Plan
+    from .core.plan import DurablePlanV2
     from .session import Session
 
 R = TypeVar("R")
@@ -189,15 +190,28 @@ def bind_externals(
     )
 
 
-def require_bound(plan: Plan[Any]) -> None:
-    """Raise :class:`UnboundService` naming every service ``plan``'s process has no endpoint for; a
-    runner calls it before its first task. A plan without ``services`` returns at once."""
-    if not plan.services or not isinstance(plan.process, Bindable):
+def _stage_processes(plan: DurablePlanV2) -> tuple[Any, ...]:
+    return tuple(stage.process.resolve() for stage in plan.stages)
+
+
+def require_bound(plan: Plan[Any] | DurablePlanV2) -> None:
+    """Raise :class:`UnboundService` naming every service ``plan``'s process (a ``DurablePlanV2``'s
+    stage processes) has no endpoint for; a runner calls it before its first task. A plan without
+    ``services`` returns at once."""
+    if not plan.services:
         return
+    from .core.plan import DurablePlanV2  # noqa: PLC0415  (core.plan imports this module)
+
+    parts = _stage_processes(plan) if isinstance(plan, DurablePlanV2) else (plan.process,)
+    _require_parts([p for p in parts if isinstance(p, Bindable)])
+
+
+def _require_parts(parts: Sequence[Bindable]) -> None:
     missing: dict[str, str] = {}
     while True:  # each pass through bind_services' own traversal names one more unbound service
         try:
-            plan.process.bind_services(missing)
+            for part in parts:
+                part.bind_services(missing)
         except UnboundService as err:
             if err.name in missing:  # a part refusing a name it was handed breaks the Bindable contract
                 raise
@@ -208,25 +222,49 @@ def require_bound(plan: Plan[Any]) -> None:
         return
 
 
-def bind_services(plan: Plan[R], endpoints: Mapping[str, str]) -> Plan[R]:
-    """``plan`` with ``endpoints`` (service name -> ``scheme://host:port``) bound into its process; the
-    same plan when the process has no ``bind_services`` hook. Every endpoint is checked first."""
+@overload
+def bind_services(plan: DurablePlanV2, endpoints: Mapping[str, str]) -> DurablePlanV2: ...
+@overload
+def bind_services(plan: Plan[R], endpoints: Mapping[str, str]) -> Plan[R]: ...
+def bind_services(plan: Plan[R] | DurablePlanV2, endpoints: Mapping[str, str]) -> Plan[R] | DurablePlanV2:
+    """``plan`` with ``endpoints`` (service name -> ``scheme://host:port``) bound into its process (a
+    ``DurablePlanV2``: into each stage process, as ``OpSpec.live``, so bytes and task ids stay); the
+    same plan when nothing has a ``bind_services`` hook. Every endpoint is checked first."""
     for endpoint in endpoints.values():
         split_endpoint(endpoint)
+    from .core.plan import DurablePlanV2, OpSpec  # noqa: PLC0415  (core.plan imports this module)
+
+    if isinstance(plan, DurablePlanV2):
+        stages = []
+        for stage in plan.stages:
+            op, fn = stage.process, stage.process.resolve()
+            if isinstance(fn, Bindable):
+                stage = replace(
+                    stage, process=OpSpec(op.kind, op.ref, op.blob_b64, live=fn.bind_services(endpoints))
+                )
+            stages.append(stage)
+        return replace(plan, stages=tuple(stages))
     if not isinstance(plan.process, Bindable):
         return plan
     return replace(plan, process=plan.process.bind_services(endpoints))
 
 
-def resolve_services(plan: Plan[R], value: R) -> R:
-    """``value``, a run of ``plan``'s, resolved through its process; ``value`` itself when the process
-    has no ``resolve_services`` hook. A runner that holds the run's services calls it at the end of
-    the run, before they close (``SequentialRunner`` holds none and does not); it walks the parts
-    :func:`bind_services` reaches."""
-    if not isinstance(plan.process, Resolvable):
-        return value
-    resolved: R = plan.process.resolve_services(value)
-    return resolved
+@overload
+def resolve_services(plan: DurablePlanV2, value: Any) -> Any: ...
+@overload
+def resolve_services(plan: Plan[R], value: R) -> R: ...
+def resolve_services(plan: Plan[R] | DurablePlanV2, value: Any) -> Any:
+    """``value``, a run of ``plan``'s, resolved through its process (a ``DurablePlanV2``: through each
+    stage process in stage order); ``value`` itself when nothing has a ``resolve_services`` hook. A
+    runner that holds the run's services calls it at the end of the run, before they close
+    (``SequentialRunner`` holds none and does not); it walks the parts :func:`bind_services` reaches."""
+    from .core.plan import DurablePlanV2  # noqa: PLC0415  (core.plan imports this module)
+
+    parts = _stage_processes(plan) if isinstance(plan, DurablePlanV2) else (plan.process,)
+    for part in parts:
+        if isinstance(part, Resolvable):
+            value = part.resolve_services(value)
+    return value
 
 
 __all__ = [

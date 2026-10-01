@@ -25,6 +25,7 @@ from functools import reduce
 from typing import Any
 
 from graphed.core import DurablePlan, DurablePlanV2, Partition
+from graphed.services import require_bound
 
 from .codec import Codec, PickleCodec
 from .errors import dead_letter_descriptor
@@ -189,7 +190,9 @@ def run_shuffle_resumable(
     the result (the tuple of gather-block hashes) is byte-identical to an uninterrupted run.
 
     Stage-process convention: ``process(task, inputs, resources) -> bytes`` where ``inputs`` is the
-    tuple of upstream dep block payloads (empty for stage 0)."""
+    tuple of upstream dep block payloads (empty for stage 0). A plan with unbound ``services`` is
+    refused before its first task (``graphed.services.require_bound``)."""
+    require_bound(plan)
     completed = store.completed()
     report = ResumeReport()
     committed = 0

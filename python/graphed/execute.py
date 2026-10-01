@@ -236,6 +236,8 @@ def evaluate_ir(
     *,
     externals: Mapping[str, Callable[..., object]] | None = None,
     on_failure: OnFailure | None = None,
+    outputs: Sequence[int] | None = None,
+    given: Mapping[int, object] | None = None,
 ) -> list[object]:
     """Evaluate a compiled (reduced) IR: one backend dispatch per reduced node, fused stage members
     inline. ``sources`` binds each source name to its data (or a zero-arg loader); ``externals``
@@ -245,11 +247,21 @@ def evaluate_ir(
 
     ``on_failure`` is §8.2(iii)'s attribution hook: it sees the reduced address of the failing
     dispatch — ``(node_id, member_index)``, the member index being ``None`` outside a fused stage —
-    and returns the exception to raise instead, or ``None`` to let the original propagate."""
+    and returns the exception to raise instead, or ``None`` to let the original propagate.
+
+    ``outputs`` (reduced node ids) replaces the marked outputs, and ``given`` (``{node id: value}``)
+    supplies those nodes' values; either one restricts evaluation to the cone of the outputs, cut at
+    the given nodes (a V2 stage evaluates its side of a barrier this way)."""
     blob = compiled.ir if isinstance(compiled, CompiledGraph) else compiled
     store = graphed.core.GraphStore.deserialize(bytes(blob))
+    nodes = store.nodes()
+    wanted = list(store.outputs()) if outputs is None else list(outputs)
+    cone = None if outputs is None and given is None else ir_cone(nodes, wanted, stop=given or ())
     vals: list[object] = []
-    for nid, nd in enumerate(store.nodes()):
+    for nid, nd in enumerate(nodes):
+        if cone is not None and (nid not in cone or (given is not None and nid in given)):
+            vals.append(None if given is None else given.get(nid))
+            continue
         kind = nd["kind"]
         ins = [vals[i] for i in nd["inputs"]]
         if kind == "source":
@@ -261,8 +273,9 @@ def evaluate_ir(
             # misattribute it to all variations at once
             value = sources[name]
             vals.append(value() if callable(value) else value)
-        elif kind in ("op", "reduction"):
-            name = nd["name"]
+        elif kind in ("op", "reduction", "exchange", "join"):
+            # a boundary is evaluated by its backend reference kernel, as `Session.materialize` does
+            name = nd["name"] if kind in ("op", "reduction") else kind
             call = partial(backend.eval_stage, name, ins, nd["params"])
             vals.append(_dispatch(call, name, ins, (nid, None), on_failure))
         elif kind == "stage":
@@ -287,7 +300,23 @@ def evaluate_ir(
             vals.append(_dispatch(partial(fn, *ins), op, ins, (nid, None), on_failure))
         else:  # pragma: no cover - the codec only emits the kinds above
             raise GraphedError(f"evaluate_ir: unknown node kind {kind!r}")
-    return [vals[o] for o in store.outputs()]
+    return [vals[o] for o in wanted]
+
+
+def ir_cone(
+    nodes: Sequence[Mapping[str, Any]], roots: Collection[int], stop: Collection[int] = ()
+) -> set[int]:
+    """The node ids ``roots`` depend on, ``roots`` included, not walking past a ``stop`` node."""
+    seen: set[int] = set()
+    todo = list(roots)
+    while todo:
+        nid = todo.pop()
+        if nid in seen:
+            continue
+        seen.add(nid)
+        if nid not in stop:
+            todo.extend(nodes[nid]["inputs"])
+    return seen
 
 
 def _unbound_source(name: str) -> GraphedError:

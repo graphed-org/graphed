@@ -171,44 +171,53 @@ class _PartitionReduce(Generic[V]):
         return FsspecStore(self.store, node) if "://" in self.store else Store(self.store, node)
 
     def _attribute(self, partition: str) -> OnFailure | None:
-        """§8.2(ii): the worker-side wrap. A RAW failure at any key with a frame becomes a
-        `StageError` pointing at the user's line, carrying the key's variation label when the label
-        channel has an entry; a key with no frame re-raises the original untouched, since
-        `StageError` needs frames at construction."""
-        entries = dict(self.variation_labels or ())
-        frames = dict(self.frames)
-        if not entries and not frames:
+        return attribute_failures(self.frames, partition, self.variation_labels, self.opt_level)
+
+
+def attribute_failures(
+    frames: Sequence[tuple[Key, Frame]],
+    partition: str,
+    variation_labels: Sequence[Any] | None = None,
+    opt_level: int = 1,
+) -> OnFailure | None:
+    """§8.2(ii): the worker-side wrap. A RAW failure at any key with a frame becomes a
+    `StageError` pointing at the user's line, carrying the key's variation label when the label
+    channel has an entry; a key with no frame re-raises the original untouched, since
+    `StageError` needs frames at construction."""
+    entries = dict(variation_labels or ())
+    by_key = dict(frames)
+    if not entries and not by_key:
+        return None
+    from .debug.errors import SourceFrame, StageError  # noqa: PLC0415  (import cycle)
+
+    def attribute(key: Key, op: str, ins: list[object], exc: BaseException) -> BaseException | None:
+        # §8.2(ii): "a `GraphedError` re-raises untouched on EVERY arm regardless of entry — it
+        # is already an attributed error, and §6.1d's blame parity (the plan path re-raises the
+        # guard's message verbatim) binds it". A declared-type check fails only here, in the
+        # worker, so it is attributed: the External's key carries its declaring line.
+        if isinstance(exc, GraphedError) and not isinstance(exc, OutputTypeError):
             return None
-        from .debug.errors import SourceFrame, StageError  # noqa: PLC0415  (import cycle)
-
-        def attribute(key: Key, op: str, ins: list[object], exc: BaseException) -> BaseException | None:
-            # §8.2(ii): "a `GraphedError` re-raises untouched on EVERY arm regardless of entry — it
-            # is already an attributed error, and §6.1d's blame parity (the plan path re-raises the
-            # guard's message verbatim) binds it". A declared-type check fails only here, in the
-            # worker, so it is attributed: the External's key carries its declaring line.
-            if isinstance(exc, GraphedError) and not isinstance(exc, OutputTypeError):
+        entry = entries.get(key)
+        if entry is not None:
+            labels, frame = entry
+        else:
+            frame = by_key.get(key)
+            if frame is None:
                 return None
-            entry = entries.get(key)
-            if entry is not None:
-                labels, frame = entry
-            else:
-                frame = frames.get(key)
-                if frame is None:
-                    return None
-                labels = ()
-            return StageError(
-                op=op,
-                frames=(SourceFrame(*frame),),
-                # a worker holds values, not forms: the runtime types are what it can honestly report
-                input_forms=tuple(type(value).__name__ for value in ins),
-                partition=partition,
-                cause_type=type(exc).__name__,
-                cause_message=str(exc),
-                opt_level=self.opt_level,
-                variation=",".join(sorted(labels)),
-            )
+            labels = ()
+        return StageError(
+            op=op,
+            frames=(SourceFrame(*frame),),
+            # a worker holds values, not forms: the runtime types are what it can honestly report
+            input_forms=tuple(type(value).__name__ for value in ins),
+            partition=partition,
+            cause_type=type(exc).__name__,
+            cause_message=str(exc),
+            opt_level=opt_level,
+            variation=",".join(sorted(labels)),
+        )
 
-        return attribute
+    return attribute
 
 
 def _compile_at(opt_level: int, session: Session, arrays: Sequence[Array]) -> CompiledGraph:

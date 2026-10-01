@@ -367,8 +367,10 @@ serialized through ``ak.to_buffers``/``ak.from_buffers``, so jaggedness survives
 the network intact rather than being flattened and rebuilt.
 
 ``graphed.repartition`` gives you that exchange on its own — by key, by target partition count,
-or by target bytes — when you want to reshape partitioning without a join, and
-``graphed.shuffle_plan`` turns such a graph into a plan a cluster runner can execute.
+or by target bytes — when you want to reshape partitioning without a join.
+``graphed.shuffle_plan`` turns a keyed or counted repartition into a plan any runner can execute.
+A target-bytes repartition sizes its destinations from data measured at run time, so it has no
+plan: ``graphed-executors``' ``run_repartition_by_size`` runs it.
 
 Corrections and models are recorded, not inlined
 ------------------------------------------------
