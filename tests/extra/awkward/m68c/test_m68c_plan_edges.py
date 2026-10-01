@@ -6,6 +6,7 @@ from __future__ import annotations
 import os
 import pickle
 import sys
+from dataclasses import replace
 
 import awkward as ak
 import numpy as np
@@ -46,3 +47,22 @@ def test_a_join_side_reading_no_partitioned_source_is_refused() -> None:
     graphed.join_plan(graphed.join(ev, lu, on=["run"]))
     with pytest.raises(TypeError, match="exactly one partitioned source; one reads \\['table'\\]"):
         graphed.join_plan(graphed.join(ev, table, on=["run"]))
+
+
+def test_a_main_reduce_stage_process_pickles_and_live_stays_out_of_bytes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def rows(values: list[object]) -> list[str]:
+        return [str(v) for v in values]
+
+    rows.__module__, rows.__qualname__ = "__main__", "m68c_rows"
+    monkeypatch.setattr(sys.modules["__main__"], "m68c_rows", rows, raising=False)
+    ev, lu = two_sources()
+    plan = graphed.join_plan(graphed.join(ev, lu, on=["run"]), **{**FOLD, "reduce": rows})
+    for stage in plan.stages:
+        pickle.dumps(stage.process.resolve())
+    bare = replace(plan, stages=tuple(replace(s, process=replace(s.process, live=None)) for s in plan.stages))
+    assert plan.to_bytes() == bare.to_bytes()
+    assert [plan.task_id(i, t) for i, s in enumerate(plan.stages) for t in s.tasks] == [
+        bare.task_id(i, t) for i, s in enumerate(bare.stages) for t in s.tasks
+    ]
