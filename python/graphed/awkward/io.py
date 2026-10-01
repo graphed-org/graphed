@@ -160,8 +160,8 @@ class _WritePart:
             self.compiled, cast("Backend", backend), {self.source_name: chunk}, externals=dict(self.externals)
         )
         payload = _payload(out, self.column)
-        os.makedirs(self.destination, exist_ok=True)
         (path,) = self.part_paths(partition)
+        gw.prepare_part(path)
         ak.to_parquet(payload, path)
         return [path]
 
@@ -195,7 +195,8 @@ class _ArrowParquet:
         table = ak.to_arrow_table(_payload(value, self.column), **dict(self.arrow_options))
         if kv is not None:
             table = table.replace_schema_metadata(kv)
-        gpq._pq().write_table(table, path, **dict(self.parquet_options))
+        fs, where = gw.part_fs(path)
+        gpq._pq().write_table(table, where, **{"filesystem": fs, **dict(self.parquet_options)})
 
 
 def parquet_write(
@@ -212,7 +213,8 @@ def parquet_write(
 
     Each part is ``ak.to_arrow_table(array_chunk, **arrow_options)`` written by
     ``pyarrow.parquet.write_table(table, path, **parquet_options)`` at
-    ``os.path.join(destination, name(partition))``. A non-record array is written as the field
+    :func:`graphed.write.join_part` ``(destination, name(partition))``; a ``destination``
+    containing ``://`` is an fsspec URL, written through its filesystem. A non-record array is written as the field
     ``column``. ``metadata`` (see :class:`~graphed.write.PartWrite`) replaces the schema's
     key-value metadata when given. Column order is the array's: sort a record's fields in the
     graph (``rec[sorted(rec.fields)]``) to write them sorted."""
@@ -653,8 +655,8 @@ class _VariedWritePart:
         else:
             fields = {name: base[name] for name in base.fields}
         payload = ak.zip({**fields, **cols}, depth_limit=1)
-        os.makedirs(self.destination, exist_ok=True)
         (path,) = self.part_paths(partition)
+        gw.prepare_part(path)
         _write_augmented(payload, path, self.manifest)
         return [path]
 
@@ -671,10 +673,11 @@ def _write_augmented(payload: ak.Array, path: str, manifest: Mapping[str, Any] |
         return
     import pyarrow.parquet as pq  # noqa: PLC0415
 
-    table = pq.read_table(path)
+    fs, where = gw.part_fs(path)
+    table = pq.read_table(where, filesystem=fs)
     meta = dict(table.schema.metadata or {})
     meta[_MANIFEST_KEY] = json.dumps(manifest, sort_keys=True).encode()
-    pq.write_table(table.replace_schema_metadata(meta), path)
+    pq.write_table(table.replace_schema_metadata(meta), where, filesystem=fs)
 
 
 def _build_manifest(
@@ -870,7 +873,8 @@ def to_parquet(
 
     With ``compute=False`` returns the task graph of write tasks; with ``compute=True`` runs that
     SAME plan (``SequentialRunner`` by default; pass any R7 executor). The array must be recorded
-    over exactly one source; the per-task read list comes from the recorded graph's projection.
+    over exactly one source; the per-task read list comes from the recorded graph's projection. A
+    ``destination`` containing ``://`` is an fsspec URL: the parts are written on its filesystem.
 
     ``select=`` turns this into a §6.4 variation-aware write: ``array`` is the PRE-selection record
     and ``select`` carries the per-level ``Varied`` mask(s) (a single row mask ⇔ ``{0: mask}``, or a
