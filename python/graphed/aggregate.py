@@ -95,8 +95,7 @@ class _PartitionReduce(Generic[V]):
     writes: tuple[_ShippedWrite, ...] = ()
     #: with writes, how many leading values are the outputs' (`reduce` gets those, then the paths)
     n_values: int | None = None
-    #: `aggregate_plan(opt_level=)`, the level `ir` compiled at: every site that produces or
-    #: re-derives a plan's IR (`graphed.debug.replay`) compiles at it, through `_compile_at`.
+    #: `aggregate_plan(opt_level=)`: the level `ir` was compiled at.
     opt_level: int = 1
 
     def __call__(self, partition: Partition, resources: WorkerResources) -> V:
@@ -300,7 +299,7 @@ def aggregate_plan(
     :func:`graphed.debug.lower` calls ``opt_level=0``), so ``reduce`` receives one value per
     distinct output. A ``StageError`` reports the level, and :func:`graphed.debug.replay`
     recompiles at it. Any other value is refused."""
-    if opt_level not in (0, 1):
+    if type(opt_level) is not int or opt_level not in (0, 1):
         raise ValueError(
             f"aggregate_plan(opt_level=) is 0 (the outputs' 1:1 cone) or 1 (optimized), not {opt_level!r}"
         )

@@ -26,3 +26,13 @@ m69b tests.
   (32 lines) and Rust (46 lines); the 4 files under 90% locally are the torch/tf/jax/xgboost
   plugins (frameworks not installed here; CI installs them). prek ruff/format/mypy/cargo-fmt/
   clippy, cargo test 51, loom, sphinx -W, precommit --fast --no-coverage: all ok.
+
+## Iteration 2 — review r1 Lows (impl-m69b-A-r1.md)
+- L1: `opt_level` `True`/`False`/`0.0`/`1.0` passed the equality check and were stored as given
+  (probed). The check now also requires `type(opt_level) is int`; extra
+  `test_m69b_level_type.py` fails 4/4 on the old check, passes on the new.
+- L2: `_PartitionReduce.opt_level`'s comment cut to the field's meaning.
+- Gates: frozen m69b 12/12; frontend (per-milestone) + extra frontend + debug subtrees green;
+  touched-file coverage over those subtrees aggregate 98% / replaying 100% / execute 98%;
+  diff-cover vs origin/main 100% (32 lines); prek ruff/format/mypy/cargo-fmt/clippy and
+  precommit --fast --no-coverage ok.
