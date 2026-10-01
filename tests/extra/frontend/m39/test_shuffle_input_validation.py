@@ -1,5 +1,5 @@
 """M39/M40 — ``graphed.shuffle``'s input-validation raises (plan guards in ``repartition``,
-``join``, ``shuffle_plan``, ``join_plan``), plus the stage-1/stage-2 kernels called direct.
+``join``, ``shuffle_plan``, ``join_plan``).
 
 The frozen M39/M40 shape suites build only VALID plans, so these guard branches — wrong scheme
 kwargs, a cross-session join, a graph missing its Exchange/Join boundary, the wrong partitioned-
@@ -24,7 +24,6 @@ from graphed import Session
 from graphed.backend import Form
 from graphed.core import Partition, PayloadDescriptor
 from graphed.errors import GraphedError
-from graphed.shuffle import _GatherReduce, partition_block
 
 Row = dict[str, int]
 Block = list[Row]
@@ -186,26 +185,3 @@ def test_join_plan_self_join_has_one_partitioned_source_raises_type_error() -> N
     joined = graphed.join(a, a, on=["__joinkey__"])
     with pytest.raises(TypeError, match=r"exactly two partitioned sources; this session has 1"):
         graphed.join_plan(joined, backend=ToyBackend)
-
-
-# ---- _GatherReduce / partition_block: the stage-2/stage-1 kernels, never executed by graphed's
-# own frozen suite (execution lives in graphed-exec-local) but unit-callable directly ------------
-
-
-def test_gather_reduce_folds_reduce_over_combine_from_the_empty_identity() -> None:
-    # __call__ wraps each gathered block as a singleton list before handing it to `reduce`
-    # (the real stage-2 per-block-list reduce contract), so `reduce` here sums the numbers
-    # inside that one-block list.
-    gr = _GatherReduce(
-        reduce=lambda blocks: sum(x for blk in blocks for x in blk),
-        combine=lambda a, b: a + b,
-        empty=lambda: 0,
-    )
-    assert gr([[1, 2], [3], [4, 5, 6]]) == 21, "each block reduces, then combines onto the empty identity"
-
-
-def test_partition_block_delegates_to_the_backend_partition_primitive() -> None:
-    block = _rows(6)
-    out = partition_block(ToyBackend(), block, parts=3)
-    assert len(out) == 3
-    assert sum(len(p) for p in out) == 6, "every row lands in exactly one output partition"

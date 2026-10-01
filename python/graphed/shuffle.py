@@ -31,7 +31,7 @@ import functools
 import pickle
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import Any, Generic, TypeVar
+from typing import Any, TypeVar
 
 from graphed.core import DurablePlanV2, GraphStore, OpSpec, Partition, StageSpec, Task
 from graphed.core.execution import WorkerResources
@@ -50,19 +50,6 @@ from .write import PartitionedSource, declared_columns
 V = TypeVar("V")
 #: a plan's ``(reduce, combine, empty)``
 _Monoid = tuple[Callable[[list[Any]], Any], Callable[[Any, Any], Any], Callable[[], Any]]
-
-
-@dataclass(frozen=True)
-class _GatherReduce(Generic[V]):
-    """A picklable reduction monoid over blocks: ``reduce`` each block, ``combine`` the results onto
-    ``empty()``."""
-
-    reduce: Callable[[list[Any]], V]
-    combine: Callable[[V, V], V]
-    empty: Callable[[], V]
-
-    def __call__(self, blocks: Sequence[Any]) -> V:
-        return functools.reduce(self.combine, (self.reduce([b]) for b in blocks), self.empty())
 
 
 def _scheme_params(*, by: str | None, n: int | None, target_bytes: int | None) -> dict[str, ParamValue]:
@@ -136,14 +123,6 @@ def join_blocks(
     two-phase executor's gather-join."""
     build_idx, probe_idx = backend.match_indices(left, right, on=list(on), how=how)
     return backend.merge_records(backend.take(left, build_idx), backend.take(right, probe_idx), on=list(on))
-
-
-def partition_block(
-    backend: Any, block: Any, *, parts: int, salt: int = 0, boundaries: object = None
-) -> tuple[Any, ...]:
-    """Route a block's rows to ``parts`` sub-blocks by the pinned hash of ``__joinkey__`` (a
-    ``ShuffleBackend`` primitive)."""
-    return backend.partition(block, JOINKEY, parts, salt=salt, boundaries=boundaries)  # type: ignore[no-any-return]
 
 
 def _backend_identity(session: Session, backend: Callable[[], Any] | str | None) -> str:

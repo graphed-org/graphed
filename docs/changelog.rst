@@ -71,6 +71,8 @@ Join and repartition plans run their recording
   ``join_plan`` output), and ``gak.join(grouped=True)`` with ``how="right"`` or ``"outer"``.
 * An operation that fails in a join or repartition plan raises a ``StageError`` at its recording
   line, as in an aggregate plan.
+* ``graphed.shuffle.partition_block`` is removed: no stage routes blocks outside the recorded
+  graph any more.
 
 Declared output types for external calls
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
