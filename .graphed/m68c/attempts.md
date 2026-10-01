@@ -29,3 +29,9 @@ every changed file 96-100%; `diff-cover --compare-branch=d0ad16b` 100% (240 line
 clean; sphinx -W clean; doc example executed from the rst, output matches; join/shuffle plan bytes
 identical across two processes (PYTHONHASHSEED 1, 2); `git diff freeze-m68c -- tests/frozen` empty;
 precommit --fast ok.
+
+## Iteration 2 — 275c802 (builder `OpSpec.live`) reverted
+- `live=` made `pickle.dumps(plan)` carry the user callable by reference (lambda: dumps fails;
+  __main__: fresh-process load fails). Reverted; docstring cleanup kept. Executors broadcasts V2
+  stage processes by value instead. `test_a_plan_with_an_unimportable_reduce_runs_in_a_fresh_process`
+  (lambda, __main__) passes here, fails against 275c802's shuffle.py.
