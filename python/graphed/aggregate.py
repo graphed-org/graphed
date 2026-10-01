@@ -30,6 +30,7 @@ from .execute import (
     Frame,
     Key,
     OnFailure,
+    _compile_cone,
     compile_ir,
     evaluate_ir,
     external_key,
@@ -94,6 +95,8 @@ class _PartitionReduce(Generic[V]):
     writes: tuple[_ShippedWrite, ...] = ()
     #: with writes, how many leading values are the outputs' (`reduce` gets those, then the paths)
     n_values: int | None = None
+    #: `aggregate_plan(opt_level=)`: the level `ir` was compiled at.
+    opt_level: int = 1
 
     def __call__(self, partition: Partition, resources: WorkerResources) -> V:
         chunk = self.reader.read_partition(partition, self.columns, resources)
@@ -168,11 +171,14 @@ class _PartitionReduce(Generic[V]):
         return FsspecStore(self.store, node) if "://" in self.store else Store(self.store, node)
 
     def _attribute(self, partition: str) -> OnFailure | None:
-        return attribute_failures(self.frames, partition, self.variation_labels)
+        return attribute_failures(self.frames, partition, self.variation_labels, self.opt_level)
 
 
 def attribute_failures(
-    frames: Sequence[tuple[Key, Frame]], partition: str, variation_labels: Sequence[Any] | None = None
+    frames: Sequence[tuple[Key, Frame]],
+    partition: str,
+    variation_labels: Sequence[Any] | None = None,
+    opt_level: int = 1,
 ) -> OnFailure | None:
     """§8.2(ii): the worker-side wrap. A RAW failure at any key with a frame becomes a
     `StageError` pointing at the user's line, carrying the key's variation label when the label
@@ -207,11 +213,22 @@ def attribute_failures(
             partition=partition,
             cause_type=type(exc).__name__,
             cause_message=str(exc),
-            opt_level=1,  # every plan builder compiles optimized
+            opt_level=opt_level,
             variation=",".join(sorted(labels)),
         )
 
     return attribute
+
+
+def _compile_at(opt_level: int, session: Session, arrays: Sequence[Array]) -> CompiledGraph:
+    return (_compile_cone if opt_level == 0 else compile_ir)(session, *arrays)
+
+
+def _slot_of(compiled: CompiledGraph) -> Callable[[Array], int]:
+    """Where an Array's value sits among the values ``compiled`` evaluates to: the optimizer may
+    merge outputs (``w * 1.0`` into ``w``), and the correspondence knows where each landed."""
+    order = {cid: i for i, cid in enumerate(GraphStore.deserialize(bytes(compiled.ir)).outputs())}
+    return lambda array: order[compiled.correspondence.node_map[array.node_id][0]]
 
 
 def external_evaluators(session: Session, compiled: CompiledGraph) -> dict[str, Callable[..., object]]:
@@ -260,6 +277,7 @@ def aggregate_plan(
     store: str | os.PathLike[str] | None = None,
     services: Sequence[str] | None = None,
     writes: Sequence[PartWrite] = (),
+    opt_level: int = 1,
 ) -> Plan[V]:
     """Build a one-pass partition-wise reduction :class:`~graphed.core.execution.Plan` over the
     session's single partitioned source (see module docstring). ``outputs`` are the output Arrays
@@ -282,7 +300,18 @@ def aggregate_plan(
 
     ``writes`` (:class:`~graphed.write.PartWrite`) write one part per task from the same read and
     evaluation: ``reduce`` then receives the outputs' values as without writes, followed by one
-    part path per write. ``outputs`` may be empty when ``writes`` is not."""
+    part path per write. ``outputs`` may be empty when ``writes`` is not.
+
+    ``opt_level`` picks the compile. ``1``, the default, optimizes: equal outputs may merge, and
+    ``reduce`` then receives one value for them. ``0`` ships the 1:1 cone of the outputs, the
+    written arrays and the metadata arrays, every recorded operation its own node (the graph
+    :func:`graphed.debug.lower` calls ``opt_level=0``), so ``reduce`` receives one value per
+    distinct output. A ``StageError`` reports the level, and :func:`graphed.debug.replay`
+    recompiles at it. Any other value is refused."""
+    if type(opt_level) is not int or opt_level not in (0, 1):
+        raise ValueError(
+            f"aggregate_plan(opt_level=) is 0 (the outputs' 1:1 cone) or 1 (optimized), not {opt_level!r}"
+        )
     writes = tuple(writes)
     metadata = [value for w in writes for value in (w.metadata or {}).values()]
     refuse_container("graphed.aggregate_plan", *outputs, *(w.array for w in writes), *metadata)
@@ -301,13 +330,8 @@ def aggregate_plan(
             f"aggregate_plan needs exactly one partitioned source; this session has {len(partitioned)}"
         )
     ((nid, data),) = partitioned.items()
-    compiled = compile_ir(session, *arrays)
-    order = {cid: i for i, cid in enumerate(GraphStore.deserialize(bytes(compiled.ir)).outputs())}
-
-    def slot(array: Array) -> int:
-        # the optimizer may merge outputs (`w * 1.0` into `w`); the correspondence knows where each landed
-        return order[compiled.correspondence.node_map[array.node_id][0]]
-
+    compiled = _compile_at(opt_level, session, arrays)
+    slot = _slot_of(compiled)
     written = {compiled.correspondence.node_map[w.array.node_id][0] for w in writes}
     refuse_chunk_partials(compiled, as_outputs=written)
     # Wire EVERY External surviving in the compiled IR from the session (fills + upstream corrections
@@ -341,6 +365,7 @@ def aggregate_plan(
         ),
         # outputs are marked first, so their distinct values lead the evaluated list
         n_values=len({slot(o) for o in outputs}) if writes else None,
+        opt_level=opt_level,
     )
     if partitions is None:
         partitions = data.partitions(steps_per_file)

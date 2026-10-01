@@ -244,15 +244,36 @@ impl GraphStore {
         engine: &dyn RewriteEngine,
         mode: optimizer::FusionMode,
     ) -> Result<(GraphStore, ReductionReport), BadNodeId> {
-        let nodes = { self.lock().nodes.clone() };
-        for &o in outputs {
-            if o >= nodes.len() as NodeId {
-                return Err(BadNodeId(o));
-            }
-        }
+        let nodes = self.arena_holding(outputs)?;
         Ok(GraphStore::from_reduced(optimizer::reduce_with_mode(
             &nodes, outputs, engine, mode,
         )))
+    }
+
+    /// opt_level=0 (M6): the 1:1 cone of `outputs` — M4's DCE without the rewrites — rebuilt into a
+    /// fresh store marked with `outputs`, whose `node_map` sends each kept id to `(cone id, None)`.
+    pub fn cone(&self, outputs: &[NodeId]) -> Result<GraphStore, BadNodeId> {
+        let nodes = self.arena_holding(outputs)?;
+        let (kept, outs, remap) = optimizer::dead_code_elimination(&nodes, outputs);
+        let reduced = optimizer::Reduced {
+            nodes: kept,
+            outputs: outs.into_iter().map(|o| o as NodeId).collect(),
+            report: ReductionReport::default(),
+            node_map: remap
+                .into_iter()
+                .map(|r| (r != optimizer::DROPPED).then_some((r as NodeId, None)))
+                .collect(),
+        };
+        Ok(GraphStore::from_reduced(reduced).0)
+    }
+
+    /// The arena, refusing an output id it does not hold (the DCE pass indexes it unchecked).
+    fn arena_holding(&self, outputs: &[NodeId]) -> Result<Vec<NodeKey>, BadNodeId> {
+        let nodes = { self.lock().nodes.clone() };
+        match outputs.iter().find(|&&o| o >= nodes.len() as NodeId) {
+            Some(&bad) => Err(BadNodeId(bad)),
+            None => Ok(nodes),
+        }
     }
 
     /// One-shot incremental reduction of the current graph — same result as `reduce`. For genuine
@@ -392,6 +413,36 @@ mod tests {
             vec![a],
             "the default stays the marks path"
         );
+    }
+
+    #[test]
+    fn cone_keeps_what_the_outputs_reach_one_to_one() {
+        let build = || {
+            let s = GraphStore::new();
+            let src = s.add_source("events".into(), pm(vec![]));
+            let pt = s.add_op("pt".into(), vec![src], pm(vec![])).unwrap();
+            let neg = s.add_op("neg".into(), vec![pt], pm(vec![])).unwrap();
+            (s, pt, neg)
+        };
+        let s = GraphStore::new();
+        let src = s.add_source("events".into(), pm(vec![]));
+        s.add_op("eta".into(), vec![src], pm(vec![])).unwrap();
+        let pt = s.add_op("pt".into(), vec![src], pm(vec![])).unwrap();
+        let neg = s.add_op("neg".into(), vec![pt], pm(vec![])).unwrap();
+        let cone = s.cone(&[neg, pt]).unwrap();
+        let (reference, rpt, rneg) = build();
+        reference.mark_output(rneg).unwrap();
+        reference.mark_output(rpt).unwrap();
+        assert_eq!(
+            crate::serialize::serialize(&cone),
+            crate::serialize::serialize(&reference)
+        );
+        assert_eq!(
+            cone.node_map(),
+            vec![Some((0, None)), None, Some((1, None)), Some((2, None))]
+        );
+        assert!(s.outputs().is_empty(), "the cone wrote no store state");
+        assert_eq!(s.cone(&[pt, 99]).err(), Some(BadNodeId(99)));
     }
 
     #[test]

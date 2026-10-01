@@ -15,10 +15,10 @@ from functools import cached_property
 from typing import Any
 
 from graphed import Array
-from graphed.aggregate import _PartitionReduce, resolve_backend
+from graphed.aggregate import _compile_at, _PartitionReduce, _slot_of, resolve_backend
 from graphed.core import GraphStore, LocalResources
 from graphed.core.execution import Plan, Task
-from graphed.execute import _unbound_external, _unbound_source, compile_ir, external_key
+from graphed.execute import CompiledGraph, _unbound_external, _unbound_source, compile_ir, external_key
 
 from .lowering import LoweredOp, lower
 from .runner import _stage_error
@@ -36,7 +36,7 @@ class Step:
 @dataclass(frozen=True)
 class ReplayDiff:
     """The replayed partial against the reference: ``"recorded"`` (the run's captured output) or
-    ``"re-evaluated"`` (the plan's optimized graph run again on the same input)."""
+    ``"re-evaluated"`` (the plan's graph run again on the same input)."""
 
     reference: str
     equal: bool
@@ -68,11 +68,23 @@ def _equal(a: Any, b: Any) -> bool:
 class Replay:
     """One task of a run, ready to replay. ``steps()`` is lazy; ``value`` runs it once and caches."""
 
-    def __init__(self, process: _PartitionReduce[Any], task: Task, outputs: tuple[Array, ...]) -> None:
+    def __init__(
+        self,
+        process: _PartitionReduce[Any],
+        task: Task,
+        outputs: tuple[Array, ...],
+        compiled: CompiledGraph | None = None,
+    ) -> None:
         self.task = task
         self._process = process
         self._session = outputs[0].session
-        self._output_ids = [o.node_id for o in outputs]
+        if compiled is None:
+            compiled = _compile_at(process.opt_level, self._session, outputs)
+        slot, first = _slot_of(compiled), dict[int, int]()
+        for o in outputs:
+            first.setdefault(slot(o), o.node_id)
+        # one value per IR output, in its order, as the run's `reduce` receives them
+        self._reduced_ids = [first[s] for s in sorted(first)]
         cone = {op.node_id: op for o in outputs for op in lower(self._session, o, opt_level=0).ops}
         self._cone = [cone[i] for i in sorted(cone)]
         # the unfused IR keeps record ids; it is the whole arena, so only the cone is evaluated
@@ -134,13 +146,14 @@ class Replay:
 
     @cached_property
     def value(self) -> Any:
-        """The replayed partial: the plan's ``reduce`` over the replayed output values."""
-        out = {s.node.node_id: s.value for s in self.steps() if s.node.node_id in self._output_ids}
-        return self._process.reduce([out[i] for i in self._output_ids])
+        """The replayed partial: the plan's ``reduce`` over one replayed value per output of the plan's
+        IR, as the run's ``reduce`` receives them."""
+        out = {s.node.node_id: s.value for s in self.steps() if s.node.node_id in self._reduced_ids}
+        return self._process.reduce([out[i] for i in self._reduced_ids])
 
     def diff(self) -> ReplayDiff:
         """Compare the replayed partial with the run's recorded one, or, when the run kept no output
-        for this task, with the plan's optimized graph evaluated on the same input."""
+        for this task, with the plan's graph evaluated on the same input."""
         replayed = self.value
         if "output" in self._captured:
             reference, recorded = "recorded", _decode(self._store, self._captured["output"])
@@ -162,8 +175,9 @@ def replay(plan: Plan[Any], key: int, *outputs: Array) -> Replay:
     task = next((t for t in plan.tasks if t.key == key), None)
     if task is None:
         raise ValueError(f"the plan has no task with key {key!r}")
-    if not outputs or bytes(compile_ir(outputs[0].session, *outputs).ir) != process.ir:
+    compiled = _compile_at(process.opt_level, outputs[0].session, outputs) if outputs else None
+    if compiled is None or bytes(compiled.ir) != process.ir:
         raise ValueError(
             "these outputs do not recompile to the plan's IR: pass the outputs given to aggregate_plan, in order"
         )
-    return Replay(process, task, outputs)
+    return Replay(process, task, outputs, compiled)

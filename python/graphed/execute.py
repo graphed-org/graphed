@@ -135,6 +135,21 @@ def compile_ir(
             else session._store.reduce(maximal_fusion=maximal_fusion, outputs=ids)[0]
         )
         blob, landings = bytes(reduced.serialize()), reduced.node_map()
+    return _compiled(session, outputs, blob, landings)
+
+
+def _compile_cone(session: Session, *outputs: Any) -> CompiledGraph:
+    """``opt_level=0``'s plan IR: the 1:1 cone of ``outputs`` (M6), M4's DCE without the rewrites,
+    keyed and framed as :func:`compile_ir`'s optimized branch keys the reduced store."""
+    refuse_container("graphed.compile_ir", *outputs)
+    session._mine(outputs)
+    cone = session._store.cone(outputs=[arr.node_id for arr in outputs])
+    return _compiled(session, outputs, bytes(cone.serialize()), cone.node_map())
+
+
+def _compiled(
+    session: Session, outputs: tuple[Any, ...], blob: bytes, landings: Sequence[Key | None]
+) -> CompiledGraph:
     node_map = {nid: landed for nid, landed in enumerate(landings) if landed is not None}
     names = tuple(session.source_name(nid) for nid in session.source_ids())
     reached: set[str] = set()
