@@ -40,7 +40,7 @@ from .projection import read_columns
 from .services import Bindable, Resolvable, ServiceSpec, bind_externals, referenced_services
 from .session import Session
 from .varied import refuse_container
-from .write import PartitionedSource, PartWrite, declared_columns
+from .write import PartitionedSource, PartWrite, declared_columns, is_url, join_part, prepare_part
 
 V = TypeVar("V")
 
@@ -138,12 +138,12 @@ class _PartitionReduce(Generic[V]):
 
     def part_paths(self, partition: Partition) -> list[str]:
         """Where this partition's parts land, without reading."""
-        return [os.path.join(destination, name(partition)) for _, destination, name, _, _ in self.writes]
+        return [join_part(destination, name(partition)) for _, destination, name, _, _ in self.writes]
 
     def _write(self, values: list[object], partition: Partition) -> list[object]:
         paths = self.part_paths(partition)
         for (codec, _, _, slot, kv), path in zip(self.writes, paths, strict=True):
-            os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+            prepare_part(path)
             meta = None if kv is None else {k: v if isinstance(v, str) else str(values[v]) for k, v in kv}
             codec(values[slot], path, meta)
         return [*values[: self.n_values], *paths]
@@ -168,7 +168,7 @@ class _PartitionReduce(Generic[V]):
         from graphed.checkpoint import FsspecStore, Store  # noqa: PLC0415  (only a capturing plan needs it)
 
         assert self.store is not None
-        return FsspecStore(self.store, node) if "://" in self.store else Store(self.store, node)
+        return FsspecStore(self.store, node) if is_url(self.store) else Store(self.store, node)
 
     def _attribute(self, partition: str) -> OnFailure | None:
         return attribute_failures(self.frames, partition, self.variation_labels, self.opt_level)

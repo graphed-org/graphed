@@ -57,8 +57,9 @@ class PartWrite:
     """One part per task of ``array``, written beside a plan's reductions by
     :func:`graphed.aggregate_plan` (``writes=``) in the same read and evaluation.
 
-    The part lands at ``os.path.join(destination, name(partition))`` for the task's partition as
-    the plan holds it (a blind partition is unresolved). ``codec(value, path, kv)`` writes it: the
+    The part lands at :func:`join_part` ``(destination, name(partition))`` for the task's partition
+    as the plan holds it (a blind partition is unresolved); a ``destination`` containing ``://`` is
+    an fsspec URL and the part lands on its filesystem. ``codec(value, path, kv)`` writes it: the
     backend's format. ``metadata`` values that are Arrays are evaluated per part, so a reduction
     there is THIS part's partial; any other value is ``str()``-ed once at build. ``kv`` is
     ``None`` exactly when ``metadata`` is."""
@@ -111,7 +112,48 @@ def step_of(entry_start: int, entry_stop: int, n_entries: int, steps_per_file: i
 
 def part_path(destination: str, index: int, *, prefix: str = "part", suffix: str) -> str:
     """Deterministic part naming; the SUFFIX is the specialization's (".parquet", ".root", ...)."""
-    return os.path.join(destination, f"{prefix}-{index:05d}{suffix}")
+    return join_part(destination, f"{prefix}-{index:05d}{suffix}")
+
+
+# ---- where a part lands: a local path or an fsspec URL -------------------------------------------
+def is_url(destination: str) -> bool:
+    """A destination containing ``://`` is an fsspec URL, as for a checkpoint store's root."""
+    return "://" in destination
+
+
+def join_part(destination: str, name: str) -> str:
+    """``name`` under ``destination``: joined by ``/`` with the URL's own spelling kept, or by the
+    OS separator for a local directory."""
+    if is_url(destination):
+        # the strip stops at "://", so a scheme-only root ("memory://") stays a URL
+        head, sep, tail = destination.partition("://")
+        return f"{head}{sep}{tail.rstrip('/')}/{name}"
+    return os.path.join(destination, name)
+
+
+def part_fs(path: str) -> tuple[Any, str]:
+    """``(filesystem, path on it)`` for a part — the pair pyarrow's ``filesystem=`` takes: fsspec's
+    for a URL, ``(None, path)`` for a local path, which never imports fsspec."""
+    if not is_url(path):
+        return None, path
+    try:
+        from fsspec.core import url_to_fs  # noqa: PLC0415  (lazy: fsspec is the optional extra)
+    except ImportError as exc:
+        raise ImportError(
+            "writing to a URL needs fsspec — install the optional extra: pip install 'graphed[checkpoint]'"
+        ) from exc
+    fs, stripped = url_to_fs(path)
+    return fs, stripped
+
+
+def prepare_part(path: str) -> tuple[Any, str]:
+    """Create ``path``'s parent directory on the part's own filesystem; return :func:`part_fs`."""
+    fs, where = part_fs(path)
+    if fs is None:
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    else:
+        fs.makedirs(where.rsplit("/", 1)[0], exist_ok=True)
+    return fs, where
 
 
 # ---- the partitioned-source protocol (read side of the base) -------------------------------------

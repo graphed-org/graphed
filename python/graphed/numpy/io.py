@@ -14,7 +14,6 @@ here), evaluates the compiled IR, and writes one single-column parquet part.
 
 from __future__ import annotations
 
-import os
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, cast
@@ -30,6 +29,7 @@ from graphed import (
     refuse_chunk_partials,
 )
 from graphed import parquet as gpq
+from graphed import write as gw
 from graphed.aggregate import external_evaluators
 from graphed.core import Partition
 from graphed.core.execution import Plan, SequentialRunner, WorkerResources
@@ -187,9 +187,9 @@ class _WritePart:
         pa = _pa()
         import pyarrow.parquet as pq  # noqa: PLC0415
 
-        os.makedirs(self.destination, exist_ok=True)
         (path,) = self.part_paths(partition)
-        pq.write_table(pa.table({self.column: result}), path)
+        fs, where = gw.prepare_part(path)
+        pq.write_table(pa.table({self.column: result}), where, filesystem=fs)
         return [path]
 
 
@@ -214,7 +214,8 @@ def to_parquet(
 
     With ``compute=False`` returns the task graph of write tasks; ``compute=True`` runs that SAME
     plan (sequential reference runner by default; any R7 executor pluggable). Exactly one source;
-    the per-task read list is the M5 field-touch projection (exact for flat columns)."""
+    the per-task read list is the M5 field-touch projection (exact for flat columns). A
+    ``destination`` containing ``://`` is an fsspec URL: the parts are written on its filesystem."""
     if isinstance(array, Varied):
         # §6.4f: the numpy idiom hard-caps output at one 1-D column and gains no variation-aware
         # write-out — a `Varied` first positional is refused here rather than dying on §2.2's
