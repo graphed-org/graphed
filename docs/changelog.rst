@@ -14,9 +14,10 @@ Writes to an fsspec URL
   URL: ``aggregate_plan(writes=...)`` with ``parquet_write``, ``graphed.awkward.to_parquet``
   (``select=`` too) and ``graphed.numpy.to_parquet`` write each part, and its parent directory, on
   that URL's filesystem instead of creating a local ``root:`` tree or failing in pyarrow. A part is
-  named ``destination.rstrip("/") + "/" + name`` on every OS. A URL needs ``graphed[checkpoint]``
-  (an ``ImportError`` names it) plus the protocol's fsspec driver; a local destination imports no
-  fsspec. ``graphed.write`` gains ``is_url``, ``join_part``, ``part_fs`` and ``prepare_part``.
+  ``destination`` with the trailing slashes after its ``://`` dropped, then ``/`` and the name, on
+  every OS. A URL needs ``graphed[checkpoint]`` (an ``ImportError`` names it) plus the protocol's
+  fsspec driver; ``parquet_write`` and the numpy writer import no fsspec for a local destination.
+  ``graphed.write`` gains ``is_url``, ``join_part``, ``part_fs`` and ``prepare_part``.
 
 Services an analysis calls
 ~~~~~~~~~~~~~~~~~~~~~~~~~~

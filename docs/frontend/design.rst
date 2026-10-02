@@ -1086,10 +1086,11 @@ a per-chunk partial. A plan with writes does not take ``store=``, since a captur
 and reduces but does not write, and ``graphed.debug.replay`` refuses it.
 
 A ``destination`` containing ``://`` is an fsspec URL (``root://``, ``s3://``, ``memory://``, ...):
-the part is ``destination`` with its trailing slashes dropped, then ``/`` and the name, and it is
-written, parent directory included, on that URL's filesystem. A URL needs ``pip install
-'graphed[checkpoint]'`` and the protocol's own fsspec driver (``fsspec-xrootd`` for ``root://``);
-any other destination is a local directory and never imports fsspec. ``graphed.awkward.to_parquet``
+the part is ``destination`` with the trailing slashes after its ``://`` dropped, then ``/`` and the
+name, and it is written, parent directory included, on that URL's filesystem. A URL needs ``pip
+install 'graphed[checkpoint]'`` and the protocol's own fsspec driver (``fsspec-xrootd`` for
+``root://``); any other destination is a local directory, which ``parquet_write`` and the numpy
+writer place without importing fsspec. ``graphed.awkward.to_parquet``
 and ``graphed.numpy.to_parquet`` take a URL the same way. Continuing the example above:
 
 .. code-block:: python

@@ -125,7 +125,9 @@ def join_part(destination: str, name: str) -> str:
     """``name`` under ``destination``: joined by ``/`` with the URL's own spelling kept, or by the
     OS separator for a local directory."""
     if is_url(destination):
-        return destination.rstrip("/") + "/" + name
+        # the strip stops at "://", so a scheme-only root ("memory://") stays a URL
+        head, sep, tail = destination.partition("://")
+        return f"{head}{sep}{tail.rstrip('/')}/{name}"
     return os.path.join(destination, name)
 
 
