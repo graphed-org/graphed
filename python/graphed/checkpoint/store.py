@@ -147,12 +147,19 @@ class Store:
     def put(self, data: bytes) -> str:
         """Store ``data`` under its content hash, atomically and idempotently. Returns the hash.
 
-        A present blob is not read back; one this instance's ``get`` found not to verify is rewritten."""
+        A present blob is not read back; one of the wrong size, or that this instance's ``get`` found
+        not to verify, is rewritten."""
         digest = self.content_hash(data)
-        if digest in self._bad or not self.has_blob(digest):
+        if digest in self._bad or self._blob_size(digest) != len(data):
             self._atomic_write(digest, data)
             self._bad.discard(digest)
         return digest
+
+    def _blob_size(self, digest: str) -> int | None:
+        try:
+            return (self.objects / digest).stat().st_size
+        except FileNotFoundError:
+            return None
 
     def has_blob(self, digest: str) -> bool:
         return (self.objects / digest).exists()

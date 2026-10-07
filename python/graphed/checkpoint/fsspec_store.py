@@ -11,8 +11,9 @@ which cannot append in place: each log file becomes a prefix of one-record objec
   within a writer and follows creation time across writers.
 
 A blob write is one whole-object write, and ``get`` verifies the bytes against the name. A torn or
-tampered object is therefore never served; once ``get`` has refused it, the next ``put`` of the true
-bytes on that instance rewrites it. ``put`` of a present blob costs one existence check, not a read.
+tampered object is therefore never served. ``put`` of a present blob costs one ``info`` request, not
+a read, and rewrites a copy of the wrong size or one this instance's ``get`` refused; a same-size
+corruption that no instance has read stays until a ``get`` refuses it.
 Identical-content writers need no exclusion, because they write the same bytes to the same name.
 """
 
@@ -63,20 +64,26 @@ class FsspecStore:
             self.fs.makedirs(prefix, exist_ok=True)
         self._lock = threading.Lock()
         self._bad: set[str] = set()
-        self._new_writer()
         # protocol is a str, tuple or list by filesystem; the record cache key must be hashable
         self._protocol = str(self.fs.protocol)
+        self._new_writer()
 
     # ---- content-addressed blobs ----------------------------------------------------------------
     def put(self, data: bytes) -> str:
-        """Store ``data`` under its content hash and return the hash; a copy that this instance's
-        ``get`` found not to verify is rewritten."""
+        """Store ``data`` under its content hash and return the hash."""
         digest = Store.content_hash(data)
         path = f"{self.objects}/{digest}"
-        if digest in self._bad or not self.fs.exists(path):
+        if digest in self._bad or self._size(path) != len(data):
             self.fs.pipe_file(path, data)
             self._bad.discard(digest)
         return digest
+
+    def _size(self, path: str) -> int | None:
+        try:
+            size: int = self.fs.info(path)["size"]
+        except FileNotFoundError:
+            return None
+        return size
 
     def get(self, digest: str) -> bytes | None:
         """The blob named ``digest``, or ``None`` when it is absent or its bytes do not hash to it."""
