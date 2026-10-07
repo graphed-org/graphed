@@ -18,6 +18,7 @@ Identical-content writers need no exclusion, because they write the same bytes t
 
 from __future__ import annotations
 
+import copy
 import glob
 import os
 import threading
@@ -27,6 +28,11 @@ from collections.abc import Mapping
 from typing import Any
 
 from .store import JournalEntry, Store, _done_record, _parse_record, _record_line, _replay
+
+
+# a record object is written once and never changes, so a parsed one is kept for every later listing
+_RECORDS: dict[tuple[Any, str], Any] = {}
+_RECORDS_LOCK = threading.Lock()
 
 
 class FsspecStore:
@@ -104,7 +110,7 @@ class FsspecStore:
         self._append(self.dead_letter_path, dict(descriptor))
 
     def dead_letters(self) -> list[dict[str, object]]:
-        return self._records(f"{glob.escape(self.dead_letter_path)}/*")
+        return copy.deepcopy(self._records(f"{glob.escape(self.dead_letter_path)}/*"))
 
     # ---- internals ------------------------------------------------------------------------------
     def _new_writer(self) -> None:
@@ -130,8 +136,17 @@ class FsspecStore:
         # async fsspec (2025.9 and older) returns a failed read in the list whatever on_error says
         # a record is one small object: s3fs's concurrent-read path would spend a HEAD on each to size it
         opts = {"max_concurrency": 1} if hasattr(self.fs, "max_concurrency") else {}
-        data = self.fs.cat_ranges(paths, [None] * len(paths), [None] * len(paths), **opts)
-        for raw in data:
-            if isinstance(raw, Exception):
-                raise raw
-        return [rec for rec in map(_parse_record, data) if rec is not None]
+        keys = [(self.fs.protocol, path) for path in paths]
+        with _RECORDS_LOCK:
+            missing = [path for path, key in zip(paths, keys, strict=True) if key not in _RECORDS]
+        if missing:
+            data = self.fs.cat_ranges(missing, [None] * len(missing), [None] * len(missing), **opts)
+            for raw in data:
+                if isinstance(raw, Exception):
+                    raise raw
+            with _RECORDS_LOCK:
+                for path, raw in zip(missing, data, strict=True):
+                    if (rec := _parse_record(raw)) is not None:
+                        _RECORDS[(self.fs.protocol, path)] = rec
+        with _RECORDS_LOCK:
+            return [rec for key in keys if (rec := _RECORDS.get(key)) is not None]
