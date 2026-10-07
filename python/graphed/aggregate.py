@@ -70,6 +70,8 @@ def resolve_backend(ref: Callable[[], Any] | str) -> Any:
 
 
 _OPEN = threading.local()
+#: filesystems with no directories, so a cached store cannot outlive its root
+_DIRLESS = frozenset({"s3", "s3a", "gcs", "gs", "abfs", "az", "adl", "memory"})
 
 
 @dataclass(frozen=True)
@@ -168,8 +170,8 @@ class _PartitionReduce(Generic[V]):
         return _sha256_hex(b"graphed-replay-capture-v1", self.ir, _partition_bytes(partition))
 
     def _task_store(self) -> Any:
-        """A remote root's store, opened once per thread: reopening costs a bucket HEAD per task. A
-        local directory (bare or ``file://``) is opened per call, since the cache would outlive it."""
+        """An object-store root's store, opened once per thread: reopening costs a bucket HEAD per task.
+        Any other root is opened per call, since a cached store would outlive a removed directory."""
         assert self.store is not None
         node = f"{os.getpid()}-{threading.get_ident()}"
         cache: dict[tuple[int, str, str], Any] = _OPEN.__dict__.setdefault("stores", {})
@@ -178,7 +180,7 @@ class _PartitionReduce(Generic[V]):
             return cache[key]
         store = self._open_store(node)
         protocols = getattr(getattr(store, "fs", None), "protocol", ())
-        if is_url(self.store) and not {"file", "local"} & set(
+        if is_url(self.store) and _DIRLESS & set(
             protocols if isinstance(protocols, (tuple, list)) else (protocols,)
         ):
             cache[key] = store

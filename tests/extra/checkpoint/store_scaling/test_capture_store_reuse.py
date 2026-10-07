@@ -84,8 +84,9 @@ def test_a_removed_local_root_is_reopened_by_a_rerun(tmp_path: Path) -> None:
     assert len(gcp.Store(cap).completed()) == 8
 
 
-def test_a_removed_file_url_root_is_reopened_by_a_rerun(tmp_path: Path) -> None:
-    url = "file://" + str(tmp_path / "ck")
+@pytest.mark.parametrize("scheme", ["file://", "dir::file://"])
+def test_a_removed_file_url_root_is_reopened_by_a_rerun(tmp_path: Path, scheme: str) -> None:
+    url = scheme + str(tmp_path / "ck")
     SequentialRunner().run(_plan(tmp_path, url))
     shutil.rmtree(tmp_path / "ck")
     SequentialRunner().run(_plan(tmp_path, url))
