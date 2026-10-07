@@ -11,7 +11,8 @@ which cannot append in place: each log file becomes a prefix of one-record objec
   within a writer and follows creation time across writers.
 
 A blob write is one whole-object write, and ``get`` verifies the bytes against the name. A torn or
-tampered object is therefore never served; the next ``put`` of the true bytes rewrites it.
+tampered object is therefore never served; once ``get`` has refused it, the next ``put`` of the true
+bytes on that instance rewrites it. ``put`` of a present blob costs one existence check, not a read.
 Identical-content writers need no exclusion, because they write the same bytes to the same name.
 """
 
@@ -56,15 +57,18 @@ class FsspecStore:
         for prefix in (self.objects, self.journal_path, self.dead_letter_path):
             self.fs.makedirs(prefix, exist_ok=True)
         self._lock = threading.Lock()
+        self._bad: set[str] = set()
         self._new_writer()
 
     # ---- content-addressed blobs ----------------------------------------------------------------
     def put(self, data: bytes) -> str:
-        """Store ``data`` under its content hash and return the hash; a copy that does not verify
-        is rewritten."""
+        """Store ``data`` under its content hash and return the hash; a copy that this instance's
+        ``get`` found not to verify is rewritten."""
         digest = Store.content_hash(data)
-        if self.get(digest) is None:
-            self.fs.pipe_file(f"{self.objects}/{digest}", data)
+        path = f"{self.objects}/{digest}"
+        if digest in self._bad or not self.fs.exists(path):
+            self.fs.pipe_file(path, data)
+            self._bad.discard(digest)
         return digest
 
     def get(self, digest: str) -> bytes | None:
@@ -73,7 +77,10 @@ class FsspecStore:
             data: bytes = self.fs.cat_file(f"{self.objects}/{digest}")
         except FileNotFoundError:
             return None
-        return data if Store.content_hash(data) == digest else None
+        if Store.content_hash(data) == digest:
+            return data
+        self._bad.add(digest)
+        return None
 
     # ---- manifest / journal ---------------------------------------------------------------------
     def record_done(

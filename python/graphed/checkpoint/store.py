@@ -137,6 +137,7 @@ class Store:
         self.journal_path = self.root / journal_name
         self.dead_letter_path = self.root / "dead_letter.log"
         self.objects.mkdir(parents=True, exist_ok=True)
+        self._bad: set[str] = set()
 
     # ---- content-addressed blobs ----------------------------------------------------------------
     @staticmethod
@@ -146,10 +147,11 @@ class Store:
     def put(self, data: bytes) -> str:
         """Store ``data`` under its content hash, atomically and idempotently. Returns the hash.
 
-        A present object whose bytes do not verify is rewritten, so a put heals a corrupted blob."""
+        A present blob is not read back; one this instance's ``get`` found not to verify is rewritten."""
         digest = self.content_hash(data)
-        if self.get(digest) is None:
+        if digest in self._bad or not self.has_blob(digest):
             self._atomic_write(digest, data)
+            self._bad.discard(digest)
         return digest
 
     def has_blob(self, digest: str) -> bool:
@@ -171,7 +173,10 @@ class Store:
                     raise
                 time.sleep(delay)
             else:
-                return data if self.content_hash(data) == digest else None
+                if self.content_hash(data) == digest:
+                    return data
+                self._bad.add(digest)
+                return None
 
     # ---- append-only manifest / journal ---------------------------------------------------------
     def record_done(
