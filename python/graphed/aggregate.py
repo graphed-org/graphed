@@ -168,17 +168,21 @@ class _PartitionReduce(Generic[V]):
         return _sha256_hex(b"graphed-replay-capture-v1", self.ir, _partition_bytes(partition))
 
     def _task_store(self) -> Any:
-        """A URL root's store, opened once per thread: reopening costs a bucket HEAD per task. A
-        directory is opened per call, since the cache would outlive the directory."""
+        """A remote root's store, opened once per thread: reopening costs a bucket HEAD per task. A
+        local directory (bare or ``file://``) is opened per call, since the cache would outlive it."""
         assert self.store is not None
-        pid = os.getpid()
-        if not is_url(self.store):
-            return self._open_store(f"{pid}-{threading.get_ident()}")
+        node = f"{os.getpid()}-{threading.get_ident()}"
         cache: dict[tuple[int, str, str], Any] = _OPEN.__dict__.setdefault("stores", {})
-        key = (pid, str(self.store), repr(self.storage_options))
-        if key not in cache:
-            cache[key] = self._open_store(f"{pid}-{threading.get_ident()}")
-        return cache[key]
+        key = (os.getpid(), str(self.store), repr(self.storage_options))
+        if key in cache:
+            return cache[key]
+        store = self._open_store(node)
+        protocols = getattr(getattr(store, "fs", None), "protocol", ())
+        if is_url(self.store) and not {"file", "local"} & set(
+            protocols if isinstance(protocols, (tuple, list)) else (protocols,)
+        ):
+            cache[key] = store
+        return store
 
     def _open_store(self, node: str | None = None) -> Any:
         """The capture root as a checkpoint store: an fsspec URL when it contains ``://``, else a
