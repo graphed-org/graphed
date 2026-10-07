@@ -34,8 +34,8 @@ from typing import Any, Protocol, runtime_checkable
 @dataclass(frozen=True)
 class JournalEntry:
     """One completed task recorded in the manifest. M39 adds ``stage`` (which pipeline stage the
-    block belongs to — ``map_write``/``gather_join``/``manifest``/…) and ``deps`` (the upstream input
-    block hashes for a gather block), so a multi-stage shuffle resumes with the right dependency
+    block belongs to — ``map_write``/``gather_join``/``manifest``/…) and ``deps`` (hashes naming a
+    gather block's upstream inputs: the blocks themselves, or one blob that lists them), so a multi-stage shuffle resumes with the right dependency
     structure. Both default empty, so a V1 single-stage entry is unchanged."""
 
     task_id: str
