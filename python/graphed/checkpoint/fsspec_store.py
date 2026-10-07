@@ -29,7 +29,6 @@ from typing import Any
 
 from .store import JournalEntry, Store, _done_record, _parse_record, _record_line, _replay
 
-
 # a record object is written once and never changes, so a parsed one is kept for every later listing
 _RECORDS: dict[tuple[Any, str], Any] = {}
 _RECORDS_LOCK = threading.Lock()
