@@ -69,6 +69,9 @@ def resolve_backend(ref: Callable[[], Any] | str) -> Any:
     return ref()
 
 
+_OPEN = threading.local()
+
+
 @dataclass(frozen=True)
 class _PartitionReduce(Generic[V]):
     """One partition's work for a multi-output graph: read once, evaluate the shared IR once into the
@@ -91,6 +94,8 @@ class _PartitionReduce(Generic[V]):
     #: for `graphed.debug.replay`. The input is the chunk as read: buffers a projected read skipped
     #: stay unread placeholders.
     store: str | None = None
+    #: `aggregate_plan(storage_options=)`: passed to the capture root's fsspec filesystem.
+    storage_options: tuple[tuple[str, Any], ...] = ()
     #: `aggregate_plan(writes=)`, lowered; each writes one part from this partition's values.
     writes: tuple[_ShippedWrite, ...] = ()
     #: with writes, how many leading values are the outputs' (`reduce` gets those, then the paths)
@@ -114,7 +119,7 @@ class _PartitionReduce(Generic[V]):
 
         from graphed.checkpoint import PickleCodec  # noqa: PLC0415
 
-        store = self._open_store(f"{os.getpid()}-{threading.get_ident()}")
+        store = self._task_store()
         cid, label, codec = self._capture_id(partition), str(partition), PickleCodec()
         capturable = getattr(resolve_backend(self.backend_factory), "capturable", lambda chunk: chunk)
         # the input is kept before evaluating, so a failing task's input survives it
@@ -162,13 +167,24 @@ class _PartitionReduce(Generic[V]):
         run, so one capture root holds one run."""
         return _sha256_hex(b"graphed-replay-capture-v1", self.ir, _partition_bytes(partition))
 
+    def _task_store(self) -> Any:
+        """This thread's capture store, opened once: reopening per task costs a bucket HEAD each."""
+        pid = os.getpid()
+        cache: dict[tuple[int, str, str], Any] = _OPEN.__dict__.setdefault("stores", {})
+        key = (pid, str(self.store), repr(self.storage_options))
+        if key not in cache:
+            cache[key] = self._open_store(f"{pid}-{threading.get_ident()}")
+        return cache[key]
+
     def _open_store(self, node: str | None = None) -> Any:
         """The capture root as a checkpoint store: an fsspec URL when it contains ``://``, else a
         directory. Task and replay both open it here, so one root string always means one layout."""
         from graphed.checkpoint import FsspecStore, Store  # noqa: PLC0415  (only a capturing plan needs it)
 
         assert self.store is not None
-        return FsspecStore(self.store, node) if is_url(self.store) else Store(self.store, node)
+        if not is_url(self.store):
+            return Store(self.store, node)
+        return FsspecStore(self.store, node, **dict(self.storage_options))
 
     def _attribute(self, partition: str) -> OnFailure | None:
         return attribute_failures(self.frames, partition, self.variation_labels, self.opt_level)
@@ -275,6 +291,7 @@ def aggregate_plan(
     partitions: Sequence[Partition] | None = None,
     on_compiled: Callable[[CompiledGraph], Any] | None = None,
     store: str | os.PathLike[str] | None = None,
+    storage_options: Mapping[str, Any] | None = None,
     services: Sequence[str] | None = None,
     writes: Sequence[PartWrite] = (),
     opt_level: int = 1,
@@ -293,6 +310,7 @@ def aggregate_plan(
     ``store`` (a directory, or an fsspec URL) makes each task capture its input chunk and its
     ``reduce`` partial into that checkpoint root, so :func:`graphed.debug.replay` can re-run a task
     of this plan later from exactly what it read. A directory must be one every worker shares.
+    ``storage_options`` pass through to the URL's filesystem (credentials, endpoint, ...).
 
     ``Plan.services`` holds the session's specs named by the compiled External nodes'
     ``params["service"]`` and by ``services`` (names a node does not carry, e.g. a service the
@@ -351,6 +369,7 @@ def aggregate_plan(
         variation_labels=None if on_compiled is None else on_compiled(compiled),
         frames=compiled.correspondence.frames,
         store=None if store is None else os.fspath(store),
+        storage_options=tuple((storage_options or {}).items()),
         writes=tuple(
             (
                 w.codec,
