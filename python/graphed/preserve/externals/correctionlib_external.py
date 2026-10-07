@@ -9,11 +9,14 @@ from typing import Any
 
 from ..errors import PreserveError
 from ._base import ExternalPlugin
-from ._helpers import parse_call_template
+from ._helpers import memoized_model_hash, parse_call_template
 
 
 def correctionlib_content_hash(payload: bytes) -> str:
+    return memoized_model_hash("correctionlib", payload, _correctionlib_content_hash_impl)
 
+
+def _correctionlib_content_hash_impl(payload: bytes) -> str:
     data = json.loads(payload)
     canonical = json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return "sha256:" + hashlib.sha256(b"correctionlib-contents-v1" + canonical).hexdigest()

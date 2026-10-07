@@ -4,15 +4,20 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 from collections import OrderedDict
 from collections.abc import Callable
-from typing import Any
+from typing import Any, TypeVar
 
 from ..errors import PreserveError
 
 
 def _canonical_json_hash(domain: bytes, payload: bytes) -> str:
     """sha256 over domain-separated, canonicalized JSON (key order + whitespace = formatting)."""
+    return memoized_model_hash(domain.decode(), payload, lambda p: _canonical_json_hash_impl(domain, p))
+
+
+def _canonical_json_hash_impl(domain: bytes, payload: bytes) -> str:
     try:
         parsed = json.loads(payload.decode("utf-8"))
     except (UnicodeDecodeError, ValueError) as err:
@@ -133,18 +138,22 @@ def ml_matrix(entry: TemplateEntry, inputs: list[Any]) -> Any:
 # a cheap raw-bytes digest so the same payload parses once. Bounded FIFO; keyed per (domain, bytes)
 # so distinct plugins never collide. Cold in a fresh process, so the by-value validate subprocess
 # still computes correctly.
-_HASH_MEMO: OrderedDict[str, str] = OrderedDict()
-_HASH_MEMO_CAP = 64
+_HASH_MEMO: OrderedDict[str, Any] = OrderedDict()
+_HASH_MEMO_CAP = 64  # entries hold digests and short identity strings, never payload bytes
+_HASH_MEMO_LOCK = threading.Lock()
+_T = TypeVar("_T")
 
 
-def memoized_model_hash(domain: str, payload: bytes, compute: Callable[[bytes], str]) -> str:
+def memoized_model_hash(domain: str, payload: bytes, compute: Callable[[bytes], _T]) -> _T:
     key = domain + ":" + hashlib.sha256(payload).hexdigest()
-    cached = _HASH_MEMO.get(key)
-    if cached is not None:
-        _HASH_MEMO.move_to_end(key)
-        return cached
+    with _HASH_MEMO_LOCK:  # get + move_to_end must not interleave with another thread's eviction
+        if key in _HASH_MEMO:
+            _HASH_MEMO.move_to_end(key)
+            cached: _T = _HASH_MEMO[key]
+            return cached
     result = compute(payload)
-    _HASH_MEMO[key] = result
-    while len(_HASH_MEMO) > _HASH_MEMO_CAP:
-        _HASH_MEMO.popitem(last=False)
+    with _HASH_MEMO_LOCK:
+        _HASH_MEMO[key] = result
+        while len(_HASH_MEMO) > _HASH_MEMO_CAP:
+            _HASH_MEMO.popitem(last=False)
     return result

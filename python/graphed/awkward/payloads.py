@@ -120,13 +120,23 @@ def onnx_weights_hash(payload: bytes) -> str:
     return "sha256:" + h.hexdigest()
 
 
-def correctionlib_contents_descriptor(payload: bytes, correction_name: str) -> PayloadDescriptor:
+def _correctionlib_identity(payload: bytes) -> tuple[str, str]:
     schema_version = "unknown"
     with contextlib.suppress(Exception):  # malformed JSON still fails loudly at the hash step
         schema_version = str(json.loads(payload).get("schema_version", "unknown"))
+    return correctionlib_contents_hash(payload), schema_version
+
+
+def correctionlib_contents_descriptor(payload: bytes, correction_name: str) -> PayloadDescriptor:
+    from graphed.preserve.externals._helpers import memoized_model_hash  # noqa: PLC0415
+
+    # one set is recorded once per call (e.g. per systematic universe): parse it once
+    content_hash, schema_version = memoized_model_hash(
+        "correctionlib-descriptor", payload, _correctionlib_identity
+    )
     return PayloadDescriptor(
         kind="correctionlib",
-        content_hash=correctionlib_contents_hash(payload),
+        content_hash=content_hash,
         framework="correctionlib",
         version=schema_version,
         io_schema=correction_name,
@@ -135,6 +145,20 @@ def correctionlib_contents_descriptor(payload: bytes, correction_name: str) -> P
 
 
 def onnx_weights_descriptor(payload: bytes) -> PayloadDescriptor:
+    from graphed.preserve.externals._helpers import memoized_model_hash  # noqa: PLC0415
+
+    content_hash, opset, io_schema = memoized_model_hash("onnx-descriptor", payload, _onnx_identity)
+    return PayloadDescriptor(
+        kind="onnx_model",
+        content_hash=content_hash,
+        framework="onnxruntime",
+        version=opset,
+        io_schema=io_schema,
+        preprocessing_ref=None,
+    )
+
+
+def _onnx_identity(payload: bytes) -> tuple[str, str, str]:
     opset, io_schema = "unknown", "opaque"
     try:
         import onnx  # noqa: PLC0415
@@ -146,11 +170,4 @@ def onnx_weights_descriptor(payload: bytes) -> PayloadDescriptor:
         io_schema = f"{ins}->{outs}"
     except Exception:  # pragma: no cover
         pass
-    return PayloadDescriptor(
-        kind="onnx_model",
-        content_hash=onnx_weights_hash(payload),
-        framework="onnxruntime",
-        version=opset,
-        io_schema=io_schema,
-        preprocessing_ref=None,
-    )
+    return onnx_weights_hash(payload), opset, io_schema
