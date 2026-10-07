@@ -52,14 +52,16 @@ def _count_parses(monkeypatch: pytest.MonkeyPatch, module: Any, name: str, paylo
 
 
 def _onnx_model(weight: float) -> bytes:
-    pytest.importorskip("onnx")
-    from onnx import TensorProto, helper, numpy_helper
+    onnx = pytest.importorskip("onnx")
+    helper, numpy_helper, TensorProto = onnx.helper, onnx.numpy_helper, onnx.TensorProto
 
     w = numpy_helper.from_array(np.array([[weight]], dtype=np.float32), name="W")
     b = numpy_helper.from_array(np.array([0.0], dtype=np.float32), name="B")
     x = helper.make_tensor_value_info("x", TensorProto.FLOAT, [None, 1])
     y = helper.make_tensor_value_info("y", TensorProto.FLOAT, [None, 1])
-    graph = helper.make_graph([helper.make_node("Gemm", ["x", "W", "B"], ["y"])], "m", [x], [y], initializer=[w, b])
+    graph = helper.make_graph(
+        [helper.make_node("Gemm", ["x", "W", "B"], ["y"])], "m", [x], [y], initializer=[w, b]
+    )
     model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 13)], ir_version=9)
     out: bytes = model.SerializeToString()
     return out
