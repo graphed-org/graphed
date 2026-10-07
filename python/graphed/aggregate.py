@@ -168,8 +168,12 @@ class _PartitionReduce(Generic[V]):
         return _sha256_hex(b"graphed-replay-capture-v1", self.ir, _partition_bytes(partition))
 
     def _task_store(self) -> Any:
-        """This thread's capture store, opened once: reopening per task costs a bucket HEAD each."""
+        """A URL root's store, opened once per thread: reopening costs a bucket HEAD per task. A
+        directory is opened per call, since the cache would outlive the directory."""
+        assert self.store is not None
         pid = os.getpid()
+        if not is_url(self.store):
+            return self._open_store(f"{pid}-{threading.get_ident()}")
         cache: dict[tuple[int, str, str], Any] = _OPEN.__dict__.setdefault("stores", {})
         key = (pid, str(self.store), repr(self.storage_options))
         if key not in cache:

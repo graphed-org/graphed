@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import collections
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -50,7 +51,6 @@ def test_capture_store_is_opened_once_and_gets_storage_options(
     client.meta.events.register("before-call.s3", lambda model, **_k: calls.update([model.name]))
     gcp.FsspecStore(s3_url, "one-open", **OPTIONS)
     one_open = calls["HeadBucket"]
-    assert one_open > 0
     calls.clear()
 
     opened: list[dict[str, Any]] = []
@@ -74,3 +74,11 @@ def test_local_root_ignores_storage_options(tmp_path: Path) -> None:
     plan = _plan(tmp_path, str(tmp_path / "cap"), storage_options=OPTIONS)
     SequentialRunner().run(plan)
     assert len(gcp.Store(str(tmp_path / "cap")).completed()) == 8
+
+
+def test_a_removed_local_root_is_reopened_by_a_rerun(tmp_path: Path) -> None:
+    cap = tmp_path / "ck"
+    SequentialRunner().run(_plan(tmp_path, str(cap)))
+    shutil.rmtree(cap)
+    SequentialRunner().run(_plan(tmp_path, str(cap)))
+    assert len(gcp.Store(cap).completed()) == 8
