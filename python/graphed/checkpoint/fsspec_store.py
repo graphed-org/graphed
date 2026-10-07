@@ -64,6 +64,8 @@ class FsspecStore:
         self._lock = threading.Lock()
         self._bad: set[str] = set()
         self._new_writer()
+        # protocol is a str, tuple or list by filesystem; the record cache key must be hashable
+        self._protocol = str(self.fs.protocol)
 
     # ---- content-addressed blobs ----------------------------------------------------------------
     def put(self, data: bytes) -> str:
@@ -135,7 +137,7 @@ class FsspecStore:
         # async fsspec (2025.9 and older) returns a failed read in the list whatever on_error says
         # a record is one small object: s3fs's concurrent-read path would spend a HEAD on each to size it
         opts = {"max_concurrency": 1} if hasattr(self.fs, "max_concurrency") else {}
-        keys = [(self.fs.protocol, path) for path in paths]
+        keys = [(self._protocol, path) for path in paths]
         with _RECORDS_LOCK:
             missing = [path for path, key in zip(paths, keys, strict=True) if key not in _RECORDS]
         if missing:
@@ -146,6 +148,6 @@ class FsspecStore:
             with _RECORDS_LOCK:
                 for path, raw in zip(missing, data, strict=True):
                     if (rec := _parse_record(raw)) is not None:
-                        _RECORDS[(self.fs.protocol, path)] = rec
+                        _RECORDS[(self._protocol, path)] = rec
         with _RECORDS_LOCK:
             return [rec for key in keys if (rec := _RECORDS.get(key)) is not None]

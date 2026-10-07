@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import collections
+import fnmatch
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
@@ -66,3 +67,41 @@ def test_dead_letters_are_not_shared_through_the_cache(tmp_path: Path) -> None:
     store.record_dead({"task_id": "t"})
     store.dead_letters()[0]["task_id"] = "mutated"
     assert store.dead_letters()[0]["task_id"] == "t"
+
+
+class _ListProtocolFS:
+    """Stands in for a filesystem whose ``protocol`` is a list, as old s3fs reports."""
+
+    protocol: ClassVar[list[str]] = ["s3", "s3a"]
+
+    def __init__(self) -> None:
+        self.objects: dict[str, bytes] = {}
+        self.reads: list[str] = []
+
+    def makedirs(self, path: str, exist_ok: bool = False) -> None:
+        pass
+
+    def pipe_file(self, path: str, data: bytes) -> None:
+        self.objects[path] = data
+
+    def find(self, prefix: str) -> list[str]:
+        return [p for p in self.objects if p.startswith(prefix + "/")]
+
+    def glob(self, pattern: str) -> list[str]:
+        return [p for p in self.objects if fnmatch.fnmatchcase(p, pattern)]
+
+    def cat_ranges(self, paths: list[str], starts: list[Any], ends: list[Any], **_kw: Any) -> list[bytes]:
+        self.reads.extend(paths)
+        return [self.objects[p] for p in paths]
+
+
+def test_completed_reads_each_record_once_with_a_list_protocol(monkeypatch: pytest.MonkeyPatch) -> None:
+    fs = _ListProtocolFS()
+    monkeypatch.setattr("fsspec.core.url_to_fs", lambda url, **_o: (fs, "bkt/root"))
+    store = gcp.FsspecStore("s3://bkt/root")
+    for i in range(3):
+        store.record_done(f"t{i}", "p", f"{i:064d}")
+        fs.objects[f"{store.objects}/{i:064d}"] = b""
+    assert len(store.completed()) == 3
+    assert len(store.completed()) == 3
+    assert len(fs.reads) == 3
