@@ -121,7 +121,9 @@ class FsspecStore:
         if not paths:
             return []
         # async fsspec (2025.9 and older) returns a failed read in the list whatever on_error says
-        data = self.fs.cat_ranges(paths, [None] * len(paths), [None] * len(paths))
+        # a record is one small object: s3fs's concurrent-read path would spend a HEAD on each to size it
+        opts = {"max_concurrency": 1} if hasattr(self.fs, "max_concurrency") else {}
+        data = self.fs.cat_ranges(paths, [None] * len(paths), [None] * len(paths), **opts)
         for raw in data:
             if isinstance(raw, Exception):
                 raise raw
