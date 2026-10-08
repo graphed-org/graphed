@@ -13,6 +13,7 @@ codec and naming suffix.
 from __future__ import annotations
 
 import os
+import warnings
 from collections.abc import Callable, Hashable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
@@ -139,8 +140,14 @@ def url_fs(url: str, **storage_options: Any) -> tuple[Any, str]:
         raise ImportError(
             "a URL needs fsspec — install the optional extra: pip install 'graphed[checkpoint]'"
         ) from exc
-    # fsspec hands a "dir::" chain the wrapped path, which the dir filesystem nests under itself,
-    # and gives the options to the wrapper; the wrapped URL alone is the same root
+    if url.startswith("dir::"):
+        # fsspec hands a "dir::" chain the wrapped path, which the dir filesystem nests under itself,
+        # and gives the options to the wrapper; the wrapped URL alone is the same root
+        warnings.warn(
+            "graphed treats 'dir::<url>' as '<url>', because fsspec nests a 'dir::' chain's wrapped "
+            "path under itself; pass the wrapped URL instead",
+            stacklevel=3,
+        )
     fs, stripped = url_to_fs(url.removeprefix("dir::"), **storage_options)
     return fs, stripped
 

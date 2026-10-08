@@ -12,6 +12,7 @@ from graphed.write import part_path, prepare_part
 def test_dir_part_lands_under_the_wrapped_destination(tmp_path: Path) -> None:
     pytest.importorskip("fsspec")
     out = tmp_path / "out"
-    fs, where = prepare_part(part_path(f"dir::{out.as_uri()}", 0, suffix=".bin"))
+    with pytest.warns(UserWarning, match="pass the wrapped URL instead"):
+        fs, where = prepare_part(part_path(f"dir::{out.as_uri()}", 0, suffix=".bin"))
     fs.pipe_file(where, b"part")
     assert (out / "part-00000.bin").read_bytes() == b"part"

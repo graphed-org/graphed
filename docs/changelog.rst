@@ -19,7 +19,8 @@ Writes to an fsspec URL
   fsspec driver; ``parquet_write`` and the numpy writer import no fsspec for a local destination.
   ``graphed.write`` gains ``is_url``, ``join_part``, ``part_fs``, ``prepare_part`` and ``url_fs``.
 * A leading ``dir::`` on a write destination or a ``FsspecStore`` URL roots at the wrapped URL,
-  and the store's storage options reach the wrapped filesystem. A ``dir::`` store written by an
+  with a ``UserWarning`` to pass that URL instead, and the store's storage options reach the
+  wrapped filesystem. A ``dir::`` store written by an
   earlier release sits at the wrapped path repeated under itself and is not found at the new root.
 
 Services an analysis calls
