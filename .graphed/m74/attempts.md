@@ -39,9 +39,19 @@ Run: `python -m pytest tests/frozen/checkpoint/m74 -p no:cacheprovider -n 8`.
   `check_resumable`/`resumable` raise `TypeError` naming cloudpickle; `import graphed.checkpoint`,
   the stores and `run_resumable` keep working. Extra test: one subprocess leg per deleted private name
   plus a control; both deletion legs fail on da9c20c.
-- N1: the key pass pickles into a sha256 sink (`_key_digest`), so key memory stays flat; the refusal's
-  process repr is built only on failure (an eager repr held every payload). Element sort keys keep bytes.
+- N1: the key pass pickles into a sha256 sink (`_key_digest`), so key memory stays flat. The memory
+  regression was this iteration's own eager label in the sink version; da9c20c already built the
+  process repr only in `except`, so the lazy `_of` label fixes nothing there. Element sort keys keep bytes.
 - N2: each `ak.behavior` entry is keyed alone; an unkeyable one is refused as `ak.behavior[<key>]`.
 - T-1: the vacuous tracker test is replaced by by-value TypeVars of different names; it kills
   "blank every str", "no blanking" and "`_TRACKED = (type,)`". T-2: two tests renamed. D-1: the two
   m74 headings no longer nest a literal in bold.
+
+## Iteration 4 (2026-10-07) — delta-review follow-ups (m74-r2-N1, N2, N3)
+- r2-N1: `_cloudpickle()` reads the private names listed in `_CLOUDPICKLE_PRIVATE`; the subprocess
+  test is parametrized over that list, so an import-time read of any of them fails its leg (the
+  reviewer's `_module_reduce`, `dynamic_subimport` and `Pickler._dispatch_table` mutants now die).
+- r2-N2: `_task_ids` calls `_cloudpickle()` before keying anything, so a missing name refuses with the
+  cloudpickle message alone; the in-process test registers a keyable `ak.behavior` entry and asserts
+  the exact message.
+- r2-N3: Iteration 3's N1 line corrected.

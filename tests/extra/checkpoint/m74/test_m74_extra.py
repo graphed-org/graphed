@@ -16,6 +16,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+import cloudpickle
 import pytest
 
 from graphed.checkpoint import EnvironmentChanged, Store, check_resumable, resumable
@@ -276,36 +277,37 @@ for key in (ck.check_resumable, lambda plan: ck.resumable(plan, sys.argv[1] + "-
 """
 
 
-@pytest.mark.parametrize(
-    ("delete", "verdict"),
-    [
-        ("", "accepted"),
-        ("del cp.Pickler._function_getnewargs", "refused:"),
-        ("del cp._DYNAMIC_CLASS_TRACKER_BY_CLASS", "refused:"),
-    ],
-)
-def test_a_missing_cloudpickle_private_name_refuses_keys_only(
-    tmp_path: Path, delete: str, verdict: str
-) -> None:
-    script = _PRIVATE_GONE.format(delete=delete)
+@pytest.mark.parametrize("path", ["", *rs._CLOUDPICKLE_PRIVATE.values()])
+def test_a_missing_cloudpickle_private_name_refuses_keys_only(tmp_path: Path, path: str) -> None:
+    script = _PRIVATE_GONE.format(delete=f"del cp.{path}" if path else "")
     run = subprocess.run(
         [sys.executable, "-c", script, str(tmp_path)], capture_output=True, text=True, check=False
     )
     assert run.returncode == 0, run.stderr
     value, *refusals = run.stdout.splitlines()
     assert value == "3.0"
+    if not path:
+        assert refusals == ["accepted"] * 2
+        return
     assert len(refusals) == 2
     for refusal in refusals:
-        assert refusal.startswith(verdict)
-        assert ("cloudpickle" in refusal) == bool(delete)
+        assert refusal.startswith(
+            f"refused: resumable cannot key tasks with cloudpickle {cloudpickle.__version__}: "
+        )
+        assert refusal.endswith(f"has no attribute {path.rpartition('.')[2]!r}")
 
 
 def test_a_missing_cloudpickle_private_name_is_refused_in_process(monkeypatch: pytest.MonkeyPatch) -> None:
-    import cloudpickle  # noqa: PLC0415
+    import awkward as ak  # noqa: PLC0415
 
+    monkeypatch.setitem(ak.behavior, "m74x-keyable", 1.0)
     monkeypatch.delattr(cloudpickle.cloudpickle.Pickler, "_function_getnewargs")
     rs._cloudpickle.cache_clear()
-    with pytest.raises(TypeError, match=r"cloudpickle .*_function_getnewargs"):
+    with pytest.raises(TypeError) as refused:
         check_resumable(_plan(lambda p, r: 1.0))
+    assert str(refused.value) == (
+        f"resumable cannot key tasks with cloudpickle {cloudpickle.__version__}: "
+        "type object 'Pickler' has no attribute '_function_getnewargs'"
+    )
     monkeypatch.undo()
     check_resumable(_plan(lambda p, r: 1.0))

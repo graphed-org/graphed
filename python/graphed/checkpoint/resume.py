@@ -24,6 +24,7 @@ import importlib.metadata
 import io
 import json
 import logging
+import operator
 import os
 import pickle
 import re
@@ -98,20 +99,26 @@ def _code_reduce(code: types.CodeType) -> tuple[Any, ...]:
     return _key_only, ("code", attrs)
 
 
+_CLOUDPICKLE_PRIVATE = {
+    "reducer_override": "Pickler.reducer_override",
+    "function_reduce": "Pickler._function_reduce",
+    "dynamic_function_reduce": "Pickler._dynamic_function_reduce",
+    "function_getnewargs": "Pickler._function_getnewargs",
+    "dispatch_table": "Pickler._dispatch_table",
+    "trackers": "_DYNAMIC_CLASS_TRACKER_BY_CLASS",
+    "module_reduce": "_module_reduce",
+    "dynamic_subimport": "dynamic_subimport",
+}
+
+
 @functools.cache
 def _cloudpickle() -> types.SimpleNamespace:
-    """cloudpickle's private API the key pickler reuses, read here alone and only when a key is taken."""
+    """cloudpickle's private API the key pickler reuses (named in ``_CLOUDPICKLE_PRIVATE``), read here
+    alone and only when a key is taken."""
     try:
         cp = cloudpickle.cloudpickle
         return types.SimpleNamespace(
-            reducer_override=cp.Pickler.reducer_override,
-            function_reduce=cp.Pickler._function_reduce,
-            dynamic_function_reduce=cp.Pickler._dynamic_function_reduce,
-            function_getnewargs=cp.Pickler._function_getnewargs,
-            dispatch_table=cp.Pickler._dispatch_table,
-            trackers=cp._DYNAMIC_CLASS_TRACKER_BY_CLASS,
-            module_reduce=cp._module_reduce,
-            dynamic_subimport=cp.dynamic_subimport,
+            **{name: operator.attrgetter(path)(cp) for name, path in _CLOUDPICKLE_PRIVATE.items()}
         )
     except AttributeError as exc:
         raise TypeError(
@@ -521,6 +528,7 @@ def _task_ids(
     plan: Plan[Any] | DurablePlan | DurablePlanV2, codec: Codec, salt: str
 ) -> tuple[list[Any], list[list[str]]]:
     """The plan's processes and each one's task keys, in task order."""
+    _cloudpickle()  # refuses a missing private name itself, not as the first thing keyed
     processes = _processes(plan)
     behaviors = _behaviors()
     if isinstance(plan, DurablePlanV2):
