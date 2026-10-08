@@ -34,8 +34,8 @@ from typing import Any, Protocol, runtime_checkable
 @dataclass(frozen=True)
 class JournalEntry:
     """One completed task recorded in the manifest. M39 adds ``stage`` (which pipeline stage the
-    block belongs to — ``map_write``/``gather_join``/``manifest``/…) and ``deps`` (the upstream input
-    block hashes for a gather block), so a multi-stage shuffle resumes with the right dependency
+    block belongs to — ``map_write``/``gather_join``/``manifest``/…) and ``deps`` (hashes naming a
+    gather block's upstream inputs: the blocks themselves, or one blob that lists them), so a multi-stage shuffle resumes with the right dependency
     structure. Both default empty, so a V1 single-stage entry is unchanged."""
 
     task_id: str
@@ -137,6 +137,7 @@ class Store:
         self.journal_path = self.root / journal_name
         self.dead_letter_path = self.root / "dead_letter.log"
         self.objects.mkdir(parents=True, exist_ok=True)
+        self._bad: set[str] = set()
 
     # ---- content-addressed blobs ----------------------------------------------------------------
     @staticmethod
@@ -146,11 +147,19 @@ class Store:
     def put(self, data: bytes) -> str:
         """Store ``data`` under its content hash, atomically and idempotently. Returns the hash.
 
-        A present object whose bytes do not verify is rewritten, so a put heals a corrupted blob."""
+        A present blob is not read back; one of the wrong size, or that this instance's ``get`` found
+        not to verify, is rewritten."""
         digest = self.content_hash(data)
-        if self.get(digest) is None:
+        if digest in self._bad or self._blob_size(digest) != len(data):
             self._atomic_write(digest, data)
+            self._bad.discard(digest)
         return digest
+
+    def _blob_size(self, digest: str) -> int | None:
+        try:
+            return (self.objects / digest).stat().st_size
+        except FileNotFoundError:
+            return None
 
     def has_blob(self, digest: str) -> bool:
         return (self.objects / digest).exists()
@@ -171,7 +180,10 @@ class Store:
                     raise
                 time.sleep(delay)
             else:
-                return data if self.content_hash(data) == digest else None
+                if self.content_hash(data) == digest:
+                    return data
+                self._bad.add(digest)
+                return None
 
     # ---- append-only manifest / journal ---------------------------------------------------------
     def record_done(

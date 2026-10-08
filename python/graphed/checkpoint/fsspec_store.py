@@ -11,12 +11,15 @@ which cannot append in place: each log file becomes a prefix of one-record objec
   within a writer and follows creation time across writers.
 
 A blob write is one whole-object write, and ``get`` verifies the bytes against the name. A torn or
-tampered object is therefore never served; the next ``put`` of the true bytes rewrites it.
+tampered object is therefore never served. ``put`` of a present blob costs one ``info`` request, not
+a read, and rewrites a copy of the wrong size or one this instance's ``get`` refused; a same-size
+corruption that no instance has read stays until a ``get`` refuses it.
 Identical-content writers need no exclusion, because they write the same bytes to the same name.
 """
 
 from __future__ import annotations
 
+import copy
 import glob
 import os
 import threading
@@ -26,6 +29,10 @@ from collections.abc import Mapping
 from typing import Any
 
 from .store import JournalEntry, Store, _done_record, _parse_record, _record_line, _replay
+
+# a record object is written once and never changes, so a parsed one is kept for every later listing
+_RECORDS: dict[tuple[Any, str], Any] = {}
+_RECORDS_LOCK = threading.Lock()
 
 
 class FsspecStore:
@@ -56,16 +63,27 @@ class FsspecStore:
         for prefix in (self.objects, self.journal_path, self.dead_letter_path):
             self.fs.makedirs(prefix, exist_ok=True)
         self._lock = threading.Lock()
+        self._bad: set[str] = set()
+        # protocol is a str, tuple or list by filesystem; the record cache key must be hashable
+        self._protocol = str(self.fs.protocol)
         self._new_writer()
 
     # ---- content-addressed blobs ----------------------------------------------------------------
     def put(self, data: bytes) -> str:
-        """Store ``data`` under its content hash and return the hash; a copy that does not verify
-        is rewritten."""
+        """Store ``data`` under its content hash and return the hash."""
         digest = Store.content_hash(data)
-        if self.get(digest) is None:
-            self.fs.pipe_file(f"{self.objects}/{digest}", data)
+        path = f"{self.objects}/{digest}"
+        if digest in self._bad or self._size(path) != len(data):
+            self.fs.pipe_file(path, data)
+            self._bad.discard(digest)
         return digest
+
+    def _size(self, path: str) -> int | None:
+        try:
+            size: int = self.fs.info(path)["size"]
+        except FileNotFoundError:
+            return None
+        return size
 
     def get(self, digest: str) -> bytes | None:
         """The blob named ``digest``, or ``None`` when it is absent or its bytes do not hash to it."""
@@ -73,7 +91,10 @@ class FsspecStore:
             data: bytes = self.fs.cat_file(f"{self.objects}/{digest}")
         except FileNotFoundError:
             return None
-        return data if Store.content_hash(data) == digest else None
+        if Store.content_hash(data) == digest:
+            return data
+        self._bad.add(digest)
+        return None
 
     # ---- manifest / journal ---------------------------------------------------------------------
     def record_done(
@@ -97,7 +118,7 @@ class FsspecStore:
         self._append(self.dead_letter_path, dict(descriptor))
 
     def dead_letters(self) -> list[dict[str, object]]:
-        return self._records(f"{glob.escape(self.dead_letter_path)}/*")
+        return copy.deepcopy(self._records(f"{glob.escape(self.dead_letter_path)}/*"))
 
     # ---- internals ------------------------------------------------------------------------------
     def _new_writer(self) -> None:
@@ -121,8 +142,19 @@ class FsspecStore:
         if not paths:
             return []
         # async fsspec (2025.9 and older) returns a failed read in the list whatever on_error says
-        data = self.fs.cat_ranges(paths, [None] * len(paths), [None] * len(paths))
-        for raw in data:
-            if isinstance(raw, Exception):
-                raise raw
-        return [rec for rec in map(_parse_record, data) if rec is not None]
+        # a record is one small object: s3fs's concurrent-read path would spend a HEAD on each to size it
+        opts = {"max_concurrency": 1} if hasattr(self.fs, "max_concurrency") else {}
+        keys = [(self._protocol, path) for path in paths]
+        with _RECORDS_LOCK:
+            missing = [path for path, key in zip(paths, keys, strict=True) if key not in _RECORDS]
+        if missing:
+            data = self.fs.cat_ranges(missing, [None] * len(missing), [None] * len(missing), **opts)
+            for raw in data:
+                if isinstance(raw, Exception):
+                    raise raw
+            with _RECORDS_LOCK:
+                for path, raw in zip(missing, data, strict=True):
+                    if (rec := _parse_record(raw)) is not None:
+                        _RECORDS[(self._protocol, path)] = rec
+        with _RECORDS_LOCK:
+            return [rec for key in keys if (rec := _RECORDS.get(key)) is not None]

@@ -19,6 +19,7 @@ The runner itself is single-machine; the store it takes may be local (``Store``)
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import reduce
@@ -185,7 +186,8 @@ def run_shuffle_resumable(
     """Run a two-phase :class:`~graphed.core.DurablePlanV2` (map-write -> gather) against ``store``,
     skipping already-journaled blocks (plan §5.3/§7.3, the M8 kill/resume pattern extended to two
     stages). Each block is content-addressed by its V2 ``task_id`` and journaled with its ``stage``
-    and its upstream input block hashes (``deps``); a stage's tasks receive the payloads of the
+    and ``deps``, the hash of one blob listing its upstream input block hashes (shared by the stage's
+    records, so a record stays constant-size); a stage's tasks receive the payloads of the
     stages it depends on as ``inputs``. A crash at any point resumes from the last durable block, and
     the result (the tuple of gather-block hashes) is byte-identical to an uninterrupted run.
 
@@ -203,6 +205,7 @@ def run_shuffle_resumable(
         process = stage.process.resolve()
         upstream_payloads = [p for dep in stage.inputs for p in stage_payloads[dep]]
         upstream_hashes = tuple(h for dep in stage.inputs for h in stage_hashes[dep])
+        deps: tuple[str, ...] | None = None
         this_payloads: list[bytes] = []
         this_hashes: list[str] = []
         for task in stage.tasks:
@@ -218,9 +221,10 @@ def run_shuffle_resumable(
 
             payload = process(task, tuple(upstream_payloads), resources)
             blob_hash = store.put(payload)
-            store.record_done(
-                tid, _partition_tag(task.partition), blob_hash, stage=stage.kind, deps=upstream_hashes
-            )
+            if deps is None:
+                listing = json.dumps(upstream_hashes, separators=(",", ":")).encode()
+                deps = (store.put(listing),) if upstream_hashes else ()
+            store.record_done(tid, _partition_tag(task.partition), blob_hash, stage=stage.kind, deps=deps)
             this_payloads.append(payload)
             this_hashes.append(blob_hash)
             report.executed += 1
