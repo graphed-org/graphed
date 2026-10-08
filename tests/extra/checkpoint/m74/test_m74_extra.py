@@ -428,6 +428,13 @@ _SLOTTED = "class C:\n    __slots__ = ('a', '__dict__')\nO = C()\nO.a = 1\nO.__d
 _INC = "C = 0\ndef INC():\n    global C\n    C += 1\n"
 _ANNOTATED = "K = type('K', (), {'__annotations__': {'x': %s}, '__annotations_cache__': {'x': int}})"
 
+#: how class K's annotated field x gets its type
+_HINTED = {
+    "through-a-global": "T = {}\nclass K:\n    x: T",
+    "through-a-cell": "def make(T):\n    class K:\n        x: T\n    return K\nK = make({})",
+    "of-an-abc": "class K(abc.ABC):\n    x: {}",
+}
+
 #: pairs of processes that compute differently: (source A, source B, process body)
 _APART = {
     "slot-shadowed-entry": (_SLOTTED + "5", _SLOTTED + "6", "return float(vars(O)['a'])"),
@@ -453,10 +460,29 @@ _APART = {
         _MK_NESTED + "INC, _ = mk()\n_, GET = mk()",
         "INC()\n    return float(GET())",
     ),
-    "unread-annotations": (
-        "import abc, typing\nclass K(abc.ABC):\n    x: int",
-        "import abc, typing\nclass K(abc.ABC):\n    x: str",
-        "return float(typing.get_type_hints(K)['x'] is int)",
+    **{
+        f"{read}-annotations-{via}": (
+            *(f"import abc, typing\n{hinted.format(t)}{reads}" for t in ("int", "str")),
+            "return float(typing.get_type_hints(K)['x'] is int)",
+        )
+        for read, reads in (("unread", ""), ("read", "\nK.__annotations__"))
+        for via, hinted in _HINTED.items()
+    },
+    "a-class-body-global": (
+        "CONST = 42",
+        "CONST = 43",
+        "class Rec:\n        q = CONST\n    return float(Rec.q)",
+    ),
+    **(
+        {
+            "a-class-scope-type-alias": (
+                "G = int",
+                "G = str",
+                "class Holder:\n        type Inner = G\n    return float(Holder.Inner.__value__ is int)",
+            )
+        }
+        if sys.version_info >= (3, 12)  # the type statement
+        else {}
     ),
     "globals-shared-with-a-rebinder": (
         _INC + "def GET():\n    return C",

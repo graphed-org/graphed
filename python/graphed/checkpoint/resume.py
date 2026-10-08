@@ -262,7 +262,10 @@ class _KeyPickler(pickle._Pickler):
                 if name in rebound
             )
         make, args, (state, slotstate), *rest = self._cp.dynamic_function_reduce(self, func)
-        return (make, args, (state, {**slotstate, "__doc__": None}), *rest)
+        # cloudpickle records only the globals LOAD_GLOBAL-family ops read, not class-scope reads
+        read = {n: func.__globals__[n] for n in _class_scope_reads(func.__code__) if n in func.__globals__}
+        slotstate = {**slotstate, "__doc__": None, "__globals__": {**slotstate["__globals__"], **read}}
+        return (make, args, (state, slotstate), *rest)
 
     def _function_getnewargs(self, func: types.FunctionType) -> tuple[Any, ...]:
         code, base_globals, *rest = self._cp.function_getnewargs(self, func)
@@ -278,6 +281,20 @@ class _KeyPickler(pickle._Pickler):
             if tracker is not None:
                 args = tuple(None if isinstance(a, str) and a == tracker else a for a in args)
         _PURE._Pickler.save_reduce(self, func, args, *rest, obj=obj)
+
+
+def _class_scope_reads(code: types.CodeType) -> list[str]:
+    """The names ``code``, or code nested in it, reads by ``LOAD_NAME`` or ``LOAD_FROM_DICT_OR_GLOBALS``
+    (3.12+), in code order."""
+    names = [
+        ins.argval
+        for ins in dis.get_instructions(code)
+        if ins.opname in ("LOAD_NAME", "LOAD_FROM_DICT_OR_GLOBALS")
+    ]
+    for const in code.co_consts:
+        if isinstance(const, types.CodeType):
+            names += _class_scope_reads(const)
+    return names
 
 
 def _rebinds(code: types.CodeType, names: frozenset[str]) -> set[str]:

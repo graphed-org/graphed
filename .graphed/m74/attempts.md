@@ -142,3 +142,19 @@ Run: `python -m pytest tests/frozen/checkpoint/m74 -p no:cacheprovider -n 8`.
   the globals pair on 3.13; the annotations pair fails with the classdict rewrite removed (`_abc_data`
   cannot be pickled) and runs unskipped below 3.14, where `__annotations__` keys it (a version skip trips
   the integrity scan's `skip_or_xfail_added`).
+
+## Iteration 10 (2026-10-08) — names class-scope code reads from globals are keyed
+- Review B1: cloudpickle records a by-value function's globals only from `LOAD_GLOBAL`/`STORE_GLOBAL`/
+  `DELETE_GLOBAL`, so a global read by class-scope code was unkeyed: through `LOAD_NAME` (a class body,
+  every version) or `LOAD_FROM_DICT_OR_GLOBALS` (a class body's `type` alias from 3.12, a class
+  `__annotate__` and a generic class's parameters from 3.14). `T = int` vs `T = str` under an unread
+  `class K: x: T`, and `class Rec: q = CONST` with CONST 42 vs 43, shared a key. `_dynamic_function_reduce`
+  now adds every global either opcode reads, in the function's code or its nested code, to the recorded
+  globals in code order; this covers annotate functions without a path of their own. A class-local or
+  builtin name absent from `__globals__` adds nothing; a class body's implicit `__name__` read adds
+  `__name__`, which cloudpickle's base globals already hold.
+- Extra: `test_processes_that_compute_differently_key_apart` replaces its unread-annotations pair with
+  read/unread x {through a global, through a closure cell, of an ABC}, a class-body global, and a
+  class-scope `type` alias (3.12+). At 0363337 the class-body and alias pairs fail on 3.12, 3.13, 3.14 and
+  3.14t, and the unread global pair on 3.14 and 3.14t; the read global pair passes there, since a read
+  class keys its evaluated annotations.
