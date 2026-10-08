@@ -16,15 +16,23 @@ Current limitations
   local S3 stand-in rather than a real bucket. Any other fsspec scheme (``root://``,
   ``https://``, ...) is a URL plus storage options and should work, but has not been tried.
 
-- **Recompute is sequential.** ``run_resumable`` processes missing partitions one at a time, in
-  order, so a large recompute is not faster than the work itself. The ``graphed-executors``
-  runners run a plan in parallel but do not skip work a store already holds: pick
-  ``run_resumable`` when surviving a crash matters more than wall time, and a parallel runner
-  when it does not.
+- **``run_resumable`` recomputes sequentially.** It processes missing partitions one at a time, in
+  order. ``resumable(plan, store)`` resumes the same plan on any fixed-task runner in parallel.
 
-- **Everything is combined at the end.** All of a run's per-partition results are held and reduced
-  once the last one is in. For a very wide fan-in that is a lot of memory; partial accumulators
-  with backpressure would fix it.
+- **Adaptive plans cannot resume.** ``resumable`` refuses a plan with ``next_tasks``, and stores no
+  interior combine, so a resumed run recombines every partial.
+
+- **A resumed task still costs store requests.** One journal read on the driver and one blob read
+  on a worker per task; on an object store these are separate requests.
+
+- **No lock between drivers.** Two drivers on one store each recompute what they do not see done,
+  which is correct for deterministic tasks and duplicate work otherwise.
+
+- **Some keys move when nothing changed.** Data ordered by set iteration, class-level state a task
+  fills on a ``__main__`` class, and ``__main__`` numba kernels recompute after a restart; sort the
+  data, keep the state on instances or in a module, keep the kernels in a module, or set ``salt``.
+  State outside the process (environment variables, files beyond the partition, editable installs)
+  is not in the key at all: ``salt`` covers it.
 
 - **Nothing prunes the store.** Results and records accumulate under the store root. Delete the
   directory (or the URL's prefix) when a set of results is stale.

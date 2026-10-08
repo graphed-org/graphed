@@ -127,7 +127,7 @@ Three partitions survived the kill, three were redone, and ``[1499 1493 1518 149
 array the uninterrupted run printed on the previous page.
 
 The reason it is the same array and not merely a correct one: what gets stored is each partition's
-own result, never a running total. The final combine walks those results in partition order, so
+own result, never a running total. The combine folds those results in partition order, so
 every partition contributes exactly once and the additions happen in the same sequence whether or
 not anything crashed. That matters because floating-point addition is not associative — a running
 accumulator resumed from a different point would give you a different last digit. It also means
@@ -538,6 +538,92 @@ wrote after it was taken. And the constructor creates the bucket if it does not 
 mistyped bucket name gives you a new, empty store, and the run recomputes everything.
 
 
+Resuming on any executor
+------------------------
+
+``run_resumable`` is one runner, and a serial one. ``graphed.checkpoint.resumable(plan, store)``
+makes resuming a property of the plan instead, so whichever runner you already use resumes: the
+``SequentialRunner``, the ``graphed-executors`` thread and process pools, ``SubmitRunner`` over
+dask, parsl or HTCondor, the peer transports. It takes any plan with a fixed task set (a runtime
+``Plan``, a ``DurablePlan``, which it turns into a runtime ``Plan``, or a ``DurablePlanV2``) and
+returns the same plan with a wrapped process. A task the store already holds is decoded by the
+worker that runs it and enters the runner's reduction tree as it loads; any other task runs and is
+recorded as it finishes. The tree is the runner's own, so an interrupted run resumed on the same
+runner equals the uninterrupted run bit for bit.
+
+.. code-block:: python
+
+    from graphed.checkpoint import resumable
+    from graphed.core import Partition, Plan, SequentialRunner, Task
+
+    import myanalysis
+
+    plan = Plan(
+        process=myanalysis.hist_chunk,
+        combine=myanalysis.hist_add,
+        empty=myanalysis.hist_empty,
+        tasks=tuple(Task(i, Partition("toy", "Events", i * 1000, (i + 1) * 1000)) for i in range(6)),
+    )
+
+    for attempt in ("first", "second"):
+        rp = resumable(plan, "checkpoints-any/")
+        print(attempt, "reused:", rp.process.reused, " result:", SequentialRunner().run(rp).value)
+
+::
+
+    first reused: 0  result: [1499 1493 1518 1490]
+    second reused: 6  result: [1499 1493 1518 1490]
+
+``store`` is the root every worker opens, not a store object: a directory, which must be on a
+filesystem every worker mounts, or an fsspec URL with ``storage_options``. Each worker thread
+writes its own journal under it. A worker that cannot reach it raises
+``graphed.checkpoint.StoreUnavailable`` naming the root; errors from your own code pass through
+unchanged. ``reused`` on the returned process (on each stage's, for a ``DurablePlanV2``) counts the
+tasks the store held, and the same count is logged at INFO on ``graphed.checkpoint``.
+
+**What the key sees.** The key is what a worker runs, pickled the way cloudpickle ships it, with
+only what carries no value removed: line numbers and file names, cloudpickle's per-process ids,
+the order a set happens to iterate in. A function defined in your notebook or script is keyed by
+its code and the values it reads, so editing its body recomputes and adding a line above it does
+not. A function in an installed module is keyed by its name; the module's version is covered by
+the environment record below. The codec, the global ``ak.behavior``, and the backend a graphed task
+builds (with a behavior dict an import reference names) are in the key too, so editing a
+``__main__`` mixin recomputes what it touches. Four cases need a hand:
+
+- A ``reused`` of 0 after a restart, when nothing changed, means the process holds data ordered by
+  set iteration (a list built from a set, say). Sort it, or set ``salt``.
+- State a task fills on a class defined in ``__main__`` (a class-level cache) changes that class's
+  key. Keep it on instances, or define the class in an importable module.
+- A numba kernel defined in ``__main__`` recomputes after every restart, since its pickle carries a
+  fresh id. Keep kernels in a module, which pickles them by name.
+- Process-global state other than ``ak.behavior`` (an environment variable, a file a task reads
+  beyond its partition, an editable install or a local module whose version does not change when
+  you edit it) is not in the key. ``salt``, a string that goes into every key, covers it: change it
+  and every task recomputes.
+
+**The environment record.** Installed distributions and the interpreter's cache tag are not in
+the key; they are kept in the store, one record per ``salt``. The first run writes it. A later run
+in the same environment resumes; a run in a different one raises
+``graphed.checkpoint.EnvironmentChanged`` naming each distribution added, removed, or changed
+``old -> new``, before any task runs and without writing anything. ``accept_environment=True``
+records the new environment and resumes, and a new ``salt`` starts its own record. Two first runs
+in two environments on one store leave two records, and both refuse until one is accepted.
+``run_resumable`` and ``run_shuffle_resumable`` check the same record, with
+``accept_environment=``; a store with no ``record_environment`` method is refused.
+
+**What is refused.** A plan that pulls tasks from ``next_tasks``, an already-resumable plan, a
+process that cannot be keyed (one holding a lock, or reading a name in ``__main__`` whose content
+pickle cannot carry, such as a ``functools.cache`` function), and a plan with ``services`` whose
+process does not declare ``checkpointable``: its tasks may return receipts for state held in a
+server, which a store cannot hold. graphed's own plan processes declare it; a process whose result
+is self-contained may set ``checkpointable = True``. Each is a ``TypeError`` before any store
+I/O, and ``check_resumable(plan)`` raises the same without I/O, so a submitter can refuse at
+submit time.
+
+Two drivers on one store are not locked out of each other: each recomputes what it does not see
+done, which is correct for deterministic tasks.
+
+
 Keeping each task's input for replay
 ------------------------------------
 
@@ -567,9 +653,11 @@ placeholders, so a replay reads nothing the task did not.
 Not supported yet
 -----------------
 
-**Recompute is sequential.** Missing partitions are processed one at a time, in order, so a big
-recompute takes as long as the work does. The runners in ``graphed-executors`` run a plan in
-parallel, but they do not skip work a store already holds.
+**``run_resumable`` recomputes sequentially.** Its missing partitions are processed one at a time,
+in order. Wrap the plan with ``resumable`` and run it on a parallel runner instead.
+
+**Plans that pull tasks as they go cannot resume.** ``resumable`` needs a fixed task set; a plan
+with ``next_tasks`` is refused.
 
 **No garbage collection.** Results accumulate under the store root and nothing prunes them. Delete
 the directory when a set of results is stale; there is no reachability sweep.

@@ -7,6 +7,22 @@ Newest release first. Numbers in parentheses are the pull requests on
 0.0.7 (unreleased)
 ------------------
 
+Resuming any plan from a store
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``graphed.checkpoint.resumable(plan, store, *, storage_options=None, codec=None, salt="",
+  accept_environment=False)`` returns a plan (a runtime ``Plan``, a ``DurablePlan`` as a runtime
+  ``Plan``, or a ``DurablePlanV2``) whose process records each finished task under ``store`` and
+  decodes the ones it already holds, so any fixed-task runner resumes. ``check_resumable(plan)``
+  runs its refusals without I/O. Workers raise ``StoreUnavailable`` for a store they cannot reach.
+* A store keeps an environment record per ``salt`` (installed distributions and the interpreter's
+  cache tag); a run in another environment raises ``EnvironmentChanged`` unless
+  ``accept_environment=True``. ``run_resumable`` and ``run_shuffle_resumable`` check it too and take
+  ``accept_environment=``. ``Store`` and ``FsspecStore`` gain ``record_environment``, and
+  ``completed()`` sets those records aside on its ``environments`` attribute.
+* ``run_resumable`` folds each partial into the result as it is produced, in task order, instead of
+  holding every partial until the end; values are unchanged bit for bit.
+
 Writes to an fsspec URL
 ~~~~~~~~~~~~~~~~~~~~~~~
 
