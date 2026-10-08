@@ -353,11 +353,11 @@ def test_a_class_whose_annotations_were_set_after_creation_is_reused(tmp_path: P
 
 
 _COPY_LEG = """
-import abc, sys, typing, weakref, cloudpickle
+import abc, sys, typing, cloudpickle
 from graphed.checkpoint.resume import _key_digest
 mode, path, source, access = sys.argv[1:]
 if mode == "build":
-    namespace = {"__name__": "m74copy", "typing": typing, "weakref": weakref}
+    namespace = {"__name__": "m74copy", "typing": typing}
     exec(compile(source + "\\ndef process(p, r):\\n    return float(OBJ is not None)\\n", "<m74>", "exec", dont_inherit=True), namespace)
     process = namespace["process"]
     open(path, "wb").write(cloudpickle.dumps(process))
@@ -380,12 +380,6 @@ _COPIES = {
     "protocol": ("class P(typing.Protocol):\n    def f(self) -> int: ...\nOBJ = P", "", ""),
     "memoryview": ("OBJ = memoryview(b'abc')", "", ""),
     "read-file": (f"OBJ = open({__file__!r})\nOBJ.readline()", "", ""),
-    "tied-set": ("class K: pass\nKEEP = [K() for _ in range(6)]\nOBJ = (set(KEEP), KEEP)", "", ""),
-    "tied-weakset": (
-        "class K: pass\nKEEP = [K() for _ in range(6)]\nOBJ = (weakref.WeakSet(KEEP), KEEP)",
-        "",
-        "",
-    ),
 }
 
 
@@ -406,3 +400,49 @@ def test_an_object_and_its_loaded_copy_share_a_key_before_and_after_a_first_read
     keys = leg(1, "build", read_a) + leg(2, "load", read_b)
     assert len(keys) == 4
     assert len(set(keys)) == 1, keys
+
+
+_FACTORY = """
+def make(n):
+    class K:
+        N = n
+    return K
+K1, K2 = make(1), make(2)
+OBJ = (K1, K2, {%s})
+def process(p, r):
+    return float(sum(type(k).N for k in OBJ[2]))
+"""
+
+
+def _factory_key(elements: str) -> bytes:
+    namespace: dict[str, Any] = {"__name__": "m74copy"}
+    exec(_FACTORY % elements, namespace)
+    return rs._key_digest(namespace["process"])
+
+
+def test_set_elements_of_two_classes_from_one_factory_key_apart_from_one_class_twice() -> None:
+    assert _factory_key("K1(), K2()") not in {_factory_key("K2(), K2()"), _factory_key("K1(), K1()")}
+
+
+class _Slotted:
+    __slots__ = ("__dict__", "a")
+    a: int
+
+
+def _shadowed_key(cls: type, entry: int) -> bytes:
+    obj = cls()
+    obj.a = 1
+    obj.__dict__["a"] = entry
+    namespace: dict[str, Any] = {"__name__": "m74copy", "OBJ": obj}
+    exec("def process(p, r):\n    return float(vars(OBJ)['a'])\n", namespace)
+    return rs._key_digest(namespace["process"])
+
+
+def test_a_slotted_instance_keys_a_shadowed_dict_entry_unless_its_class_is_written_by_value() -> None:
+    assert _shadowed_key(_Slotted, 5) != _shadowed_key(_Slotted, 6)
+    by_value = type("_Slotted", (), {"__slots__": ("__dict__", "a"), "__module__": "m74copy"})
+    assert _shadowed_key(by_value, 5) == _shadowed_key(by_value, 6)
+
+
+def test_a_memoryview_keys_as_the_bytes_it_loads_as() -> None:
+    assert rs._key_digest(memoryview(b"abc")) == rs._key_digest(b"abc")

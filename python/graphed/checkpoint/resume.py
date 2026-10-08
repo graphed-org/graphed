@@ -22,7 +22,6 @@ import functools
 import hashlib
 import importlib.metadata
 import io
-import itertools
 import json
 import logging
 import operator
@@ -111,6 +110,7 @@ _CLOUDPICKLE_PRIVATE = {
     "trackers": "_DYNAMIC_CLASS_TRACKER_BY_CLASS",
     "module_reduce": "_module_reduce",
     "dynamic_subimport": "dynamic_subimport",
+    "by_reference": "_should_pickle_by_reference",
 }
 
 
@@ -154,15 +154,12 @@ class _KeyPickler(pickle._Pickler):
     ``seen`` holds the classes pickled by value so far; a set element's sort key, pickled apart from
     the whole, names such a class instead of recursing into it."""
 
-    memo: dict[int, tuple[int, Any]]
-
     def __init__(self, file: io.BytesIO | _HashSink, seen: Mapping[int, type]) -> None:
         super().__init__(file, protocol=5)
         self._cp = _cloudpickle()
         self.globals_ref: dict[int, dict[str, Any]] = {}
         self.proto = 5
         self._seen = dict(seen)
-        self._twins: dict[int, int] = {}
         self._rebuilt: dict[int, tuple[object, object]] = {}
         own: dict[type, Callable[[Any], Any]] = {
             weakref.WeakSet: lambda ws: (weakref.WeakSet, (self._sorted(ws),)),
@@ -185,16 +182,7 @@ class _KeyPickler(pickle._Pickler):
         return reduced
 
     def _sorted(self, items: Iterable[Any]) -> list[Any]:
-        unwritten = (-1,)
-        keyed = sorted(
-            ((_dumps(item, self._seen), item) for item in items),
-            key=lambda pair: (pair[0], self.memo.get(id(pair[1]), unwritten)[0]),
-        )
-        # which of two equal-keyed elements another reference shares follows the set's iteration order
-        for (a, x), (b, y) in itertools.pairwise(keyed):
-            if a == b:
-                self._twins[id(y)] = self._twins.get(id(x), id(x))
-        return [item for _, item in keyed]
+        return sorted(items, key=lambda item: _dumps(item, self._seen))
 
     def memoize(self, obj: Any) -> None:
         # interning would decide where memo references fall, and a loaded closure never shares a cell
@@ -202,11 +190,6 @@ class _KeyPickler(pickle._Pickler):
             _PURE._Pickler.memoize(self, obj)
 
     def save(self, obj: Any, save_persistent_id: bool = True) -> None:
-        twin = self.memo.get(self._twins.get(id(obj), -1))
-        if twin is not None:
-            pure: Any = self
-            pure.write(pure.get(twin[0]))
-            return
         if type(obj) in (memoryview, io.TextIOWrapper):  # cloudpickle loads these as bytes and StringIO
             if id(obj) not in self._rebuilt:
                 func, args = self._cp.dispatch_table[type(obj)](obj)
@@ -274,9 +257,14 @@ class _KeyPickler(pickle._Pickler):
 
     def save_reduce(self, func: Any, args: Any, *rest: Any, obj: Any = None) -> None:
         state, setter = (*rest, None, None, None, None)[0:4:3]
-        plain = setter is None and not hasattr(obj, "__setstate__")
-        if plain and isinstance(state, tuple) and len(state) == 2 and isinstance(state[1], dict):
-            # BUILD sets slots after __dict__, and cloudpickle rebuilds a slotted class without its slots
+        slotted = isinstance(state, tuple) and len(state) == 2 and isinstance(state[1], dict)
+        if (
+            slotted
+            and setter is None
+            and not hasattr(obj, "__setstate__")
+            and not self._cp.by_reference(type(obj))
+        ):
+            # BUILD sets slots after __dict__, and cloudpickle rebuilds a by-value class without its slots
             shadowed = {k: v for k, v in (state[0] or {}).items() if k not in state[1]}
             rest = ((shadowed or None, state[1]), *rest[1:])
         if isinstance(obj, _TRACKED):  # cloudpickle's per-process tracker id of a by-value class
@@ -296,16 +284,17 @@ def _key_digest(obj: object) -> bytes:
     """The sha256 of ``obj``'s key pickling: cloudpickle's by-value pickling of what a worker
     resolves, made the same in every interpreter that holds the same values.
 
-    Loading rebuilds an object from the state its reducer shipped, not from how it was made, so the
-    key writes each object as its loaded copy would be written:
+    The key writes each object as the state its reducer ships, which is what a worker's copy is
+    rebuilt from, less what tells the object and that copy apart without changing what either computes:
 
     - sets, frozensets, a ``weakref.WeakSet`` and an ABC's registry are written sorted by their
-      elements' key bytes, and an element whose key bytes equal an earlier one's as that one;
+      elements' key bytes;
     - a ``memoryview`` and a file are written as the ``bytes`` and ``io.StringIO`` cloudpickle loads;
     - interpreter-filled class caches (``__slotnames__``, typing's protocol-member caches) and an empty
       class annotations dict are dropped, and a class's ``__annotations_cache__`` is written as
       ``__annotations__``;
-    - an instance's ``__dict__`` entry that a slot of the same name shadows is dropped;
+    - an instance of a class written by value drops a ``__dict__`` entry that a slot of the same name
+      shadows;
     - an object other than a function, class or module, of a type outside the pickler's dispatch
       table, that its ``__module__``/``__qualname__`` name in a module other than ``__main__`` is
       written by that name;

@@ -89,3 +89,22 @@ Run: `python -m pytest tests/frozen/checkpoint/m74 -p no:cacheprovider -n 8`.
   sees the class state.
 - Extra: one subprocess leg per cut member (two hash seeds); with the cut reverted, seven legs fail on
   3.12 and 3.13, and eight on 3.14 and 3.14t.
+
+## Iteration 7 (2026-10-08) — ties and by-reference slots stay keyed by their values
+- Review F1: the twin rule wrote an element whose key bytes tied an earlier one's as a reference to it,
+  and a set element's sort key names a by-value class already written by module and qualname alone, so
+  `{K1(), K2()}` from one factory keyed like `{K2(), K2()}` (stale reuse). The twin rule and its tie
+  break are deleted; tied set elements keep set iteration order, a recompute, never a reuse (F2: ties
+  inside tuple or frozenset elements were never covered by it).
+- Review F3: the slot-shadow rule applied to every default-BUILD instance; an importable class's copy
+  keeps both the slot and the `__dict__` entry. It now applies only when cloudpickle writes the class by
+  value (`_should_pickle_by_reference`, read through `_cloudpickle()`).
+- Review N3: a class `__dict__` mappingproxy loads as a snapshot dict whose `__dict__` entry is
+  `getattr(copy, "__dict__")`, the copy's own mappingproxy, not the descriptor, and the original proxy
+  shows later class-dict fills; the copy holds different values, so it stays a recompute.
+- `_key_digest` opens with one characterization; the tie and slot bullets are corrected. The docs list
+  identity-only set elements among the recompute cases. Walk rerun on four versions
+  (`probes/walk/results.md`); `enumerate.py` now lists the `_*_getnewargs` helpers.
+- Extra: two factory classes' instances key apart from one class's twice; a by-reference slotted
+  instance keys its shadowed entry while a by-value one does not; a memoryview keys as its bytes. Each
+  fails at c827ebf or with its rule removed.
