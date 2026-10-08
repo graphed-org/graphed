@@ -181,8 +181,8 @@ class _KeyPickler(pickle._Pickler):
         return sorted(items, key=lambda item: _dumps(item, self._seen))
 
     def memoize(self, obj: Any) -> None:
-        # interning would decide where memo references fall
-        if not isinstance(obj, _IMMUTABLE):
+        # interning would decide where memo references fall, and a loaded closure never shares a cell
+        if not isinstance(obj, (*_IMMUTABLE, types.CellType)):
             _PURE._Pickler.memoize(self, obj)
 
     def save_global(self, obj: Any, name: str | None = None) -> None:
@@ -219,7 +219,12 @@ class _KeyPickler(pickle._Pickler):
             return reduced
         self._seen[id(obj)] = obj
         func, args, (state, slotstate), *rest = reduced
-        state = {k: v for k, v in state.items() if k not in _CLASS_BLANKS}
+        # from 3.14, a class cloudpickle rebuilt by setattr holds its annotations under this name
+        state = {
+            "__annotations__" if k == "__annotations_cache__" else k: v
+            for k, v in state.items()
+            if k not in _CLASS_BLANKS
+        }
         if isinstance(state.get("_abc_impl"), list):  # cloudpickle lists an ABC's registry from a set
             state["_abc_impl"] = self._sorted(state["_abc_impl"])
         return (func, args, (state, slotstate), *rest)
@@ -255,14 +260,15 @@ def _key_digest(obj: object) -> bytes:
 
     - sets, frozensets, a ``weakref.WeakSet`` and an ABC's registry are written sorted by their
       elements' key bytes;
-    - interpreter-filled class caches (``__slotnames__``, typing's protocol-member caches) are dropped;
+    - interpreter-filled class caches (``__slotnames__``, typing's protocol-member caches) are dropped,
+      and a class's ``__annotations_cache__`` is written as ``__annotations__``;
     - an object other than a function, class or module that its ``__module__``/``__qualname__``
       name in a module other than ``__main__`` is written by that name;
     - a module without ``__spec__`` is written by value; a name into ``__main__`` and the ``__main__``
       module are refused (``TypeError``), since their content cannot be keyed;
     - cloudpickle's per-process tracker ids, code locations (``co_filename``, ``co_firstlineno``,
       line and position tables), a function's ``__file__`` global and doc, and a class's
-      ``__firstlineno__`` and doc are blanked, and no immutable is memoized;
+      ``__firstlineno__`` and doc are blanked, and no immutable or closure cell is memoized;
     - an instance whose class declares ``checkpoint_ignore`` is written with those fields ``None``,
       and one whose class declares ``checkpoint_resolve`` with each declared field as
       ``(value, resolver(value))``.

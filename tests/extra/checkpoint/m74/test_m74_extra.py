@@ -6,6 +6,7 @@ wrappers' forwarding hooks."""
 from __future__ import annotations
 
 import abc
+import gc
 import os
 import pickle
 import subprocess
@@ -100,6 +101,8 @@ def _registry(order: Sequence[str]) -> Any:
         def scale(self) -> int: ...
 
     class Registry(Scaled):
+        made: list[type]
+
         def scale(self) -> int:
             return 1
 
@@ -109,13 +112,17 @@ def _registry(order: Sequence[str]) -> Any:
     made = {n: type(n, (), {"f": lambda self: 1}) for n in order}
     for n in sorted(made):
         Registry.register(made[n])
-    return Registry()
+    registry = Registry()
+    registry.made = [made[n] for n in sorted(made)]  # the ABC registry holds its classes only weakly
+    return registry
 
 
 def test_an_abc_registry_made_in_another_order_is_reused(tmp_path: Path) -> None:
     names = [f"C{i}" for i in range(12)]
     _filled(_registry(names), tmp_path)
-    assert _reused(_registry(names[::-1]), tmp_path) == T
+    again = _registry(names[::-1])
+    gc.collect()
+    assert _reused(again, tmp_path) == T
 
 
 #: called, not declared, so each TypeVar is a fresh unimportable one cloudpickle gives a tracker id
@@ -311,3 +318,35 @@ def test_a_missing_cloudpickle_private_name_is_refused_in_process(monkeypatch: p
     )
     monkeypatch.undo()
     check_resumable(_plan(lambda p, r: 1.0))
+
+
+def _sharing_a_cell() -> Any:
+    n = 2
+
+    def get() -> int:
+        return n
+
+    def process(p: Any, r: Any) -> float:
+        return float(p.entry_start + get() + n)
+
+    return process
+
+
+def test_a_cloudpickled_copy_of_functions_sharing_a_cell_is_reused(tmp_path: Path) -> None:
+    process = _sharing_a_cell()
+    _filled(process, tmp_path)
+    assert _reused(cloudpickle.loads(cloudpickle.dumps(process)), tmp_path) == T
+
+
+def _annotated(rebuilt: bool) -> Any:
+    namespace: dict[str, Any] = {"__call__": lambda self, p, r: float(p.entry_start)}
+    if not rebuilt:
+        return type("Annotated", (), {**namespace, "__annotations__": {"scale": "int"}})()
+    cls: Any = type("Annotated", (), namespace)
+    cls.__annotations__ = {"scale": "int"}  # as cloudpickle's loader sets it
+    return cls()
+
+
+def test_a_class_whose_annotations_were_set_after_creation_is_reused(tmp_path: Path) -> None:
+    _filled(_annotated(rebuilt=False), tmp_path)
+    assert _reused(_annotated(rebuilt=True), tmp_path) == T

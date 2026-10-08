@@ -55,3 +55,18 @@ Run: `python -m pytest tests/frozen/checkpoint/m74 -p no:cacheprovider -n 8`.
   cloudpickle message alone; the in-process test registers a keyable `ak.behavior` entry and asserts
   the exact message.
 - r2-N3: Iteration 3's N1 line corrected.
+
+## Iteration 5 (2026-10-08) — CI fixes (PR #69)
+- `test_cloudpickled_plan_loaded_twice` reused `[0, 0]` on 3.13+. From 3.13 a frozen dataclass's
+  generated `__setattr__`/`__delattr__` share closure cells, and cloudpickle's loader gives each
+  function fresh cells, so the memo wrote BINGET in the building interpreter and new cells in the
+  loading one. `_KeyPickler.memoize` skips `types.CellType`.
+- On 3.14 the same test still failed: cloudpickle's loader sets a class's annotations by `setattr`,
+  which 3.14 stores as `__annotations_cache__`. The class-state rule writes that key as
+  `__annotations__`.
+- `test_an_abc_registry_made_in_another_order_is_reused` was flaky: the ABC registry holds its classes
+  weakly and `_registry` dropped them, so a collection emptied it. The instance now holds them, and
+  the test collects between fill and resume.
+- Extra: functions sharing a cell, and a class whose annotations were set after creation, are each
+  reused from a rebuilt copy; each fails with its fix reverted (the cell one on every version, the
+  annotations one on 3.14).
