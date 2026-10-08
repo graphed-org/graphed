@@ -108,3 +108,20 @@ Run: `python -m pytest tests/frozen/checkpoint/m74 -p no:cacheprovider -n 8`.
 - Extra: two factory classes' instances key apart from one class's twice; a by-reference slotted
   instance keys its shadowed entry while a by-value one does not; a memoryview keys as its bytes. Each
   fails at c827ebf or with its rule removed.
+
+## Iteration 8 (2026-10-08) — the key equates an object with its loaded copy only where loading loses nothing
+- Owner ruling on the iteration-7 review (`stale.py`, `copies.py`, `slotorder.py`): a rule that keys an
+  original like its lossy copy is a stale reuse, since in-process runners run the original. Dropped: the
+  slot-shadow rule (and the `_should_pickle_by_reference` read it needed), the memoryview/TextIOWrapper
+  rewrite, the empty-annotations drop. `__annotations_cache__` is written as `__annotations__` only when
+  the class has no `__annotations__`; with both, two classes differing in `__annotations__` keyed alike.
+- Cells, option (b): a first key pass collects the cells a function in the graph rebinds (`STORE_DEREF`/
+  `DELETE_DEREF` in its code, or in nested code sharing the name, via `dis`); those are memoized, so their
+  sharing is keyed, and the second pass runs only when the first found one. Unrebound cells stay
+  unmemoized, so a copy of closures sharing one is still reused.
+- `_key_digest` opens with one characterization true of every remaining rule; bullets match. The docs'
+  recompute list names the objects cloudpickle cannot copy exactly.
+- Extra: seven pairs of processes that compute differently (asserted) must key apart; all seven fail at
+  5976f6d, and the annotations and both cell pairs fail at c41b5fd. The memoryview/file/slot/annotation
+  copy legs are deleted; the protocol leg stays (fails at c41b5fd). Walk rerun on four versions
+  (`probes/walk/results.md`): every unstable member is a stated residual.

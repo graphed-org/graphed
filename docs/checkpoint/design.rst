@@ -588,14 +588,20 @@ its code and the values it reads, so editing its body recomputes and adding a li
 not. A function in an installed module is keyed by its name; the module's version is covered by
 the environment record below. The codec, the global ``ak.behavior``, and the backend a graphed task
 builds (with a behavior dict an import reference names) are in the key too, so editing a
-``__main__`` mixin recomputes what it touches. Five cases need a hand:
+``__main__`` mixin recomputes what it touches. Six cases need a hand:
 
 - A ``reused`` of 0 after a restart, when nothing changed, means the process holds data ordered by
   set iteration (a list built from a set, say). Sort it, or set ``salt``.
 - State a task fills on a class defined in ``__main__`` (a class-level cache) changes that class's
   key. Keep it on instances, or define the class in an importable module.
 - Set elements that only object identity tells apart (equal-valued instances) can recompute after a
-  restart. Keep them in a list, or give each a distinguishing value.
+  restart or a load from a pickle. Keep them in a list, or give each a distinguishing value.
+- An object cloudpickle cannot copy exactly keys apart from its loaded copy: a memoryview, an open
+  file, an instance of a slotted class defined at run time, an annotations dict a first read
+  created, a class ``__dict__`` mappingproxy, and a closure cell that two functions share and one
+  rebinds. A plan built in one interpreter and loaded from a
+  pickle in another recomputes those tasks; a rebuilt plan, or one reloaded from the same pickle, is
+  unaffected.
 - A numba kernel defined in ``__main__`` recomputes after every restart, since its pickle carries a
   fresh id. Keep kernels in a module, which pickles them by name.
 - Process-global state other than ``ak.behavior`` (an environment variable, a file a task reads

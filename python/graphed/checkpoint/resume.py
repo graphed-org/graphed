@@ -8,9 +8,9 @@ either decodes the stored partial or runs the inner process and records the resu
 the extra fields, so resume is a property of the plan, not of the executor that runs it.
 
 A task's key is :func:`_key_digest`, a hash of cloudpickle's own by-value pickling of what a worker
-runs, with only value-free bytes blanked, so it changes exactly when what the worker computes can
-change. The environment (installed distributions and the interpreter's cache tag) is kept beside the keys as a
-store record a changed environment refuses on, rather than in them.
+runs, with only state that never changes what it computes blanked or canonicalized. The environment
+(installed distributions and the interpreter's cache tag) is kept beside the keys as a store record a
+changed environment refuses on, rather than in them.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from __future__ import annotations
 import collections
 import copyreg
 import dataclasses
+import dis
 import functools
 import hashlib
 import importlib.metadata
@@ -80,8 +81,6 @@ _CLASS_BLANKS = (
     "__firstlineno__",
     "__doc__",
 )
-#: names a class's annotations are read from, which a first read fills with ``{}`` when it has none
-_ANNOTATIONS = ("__annotations__", "__annotations_cache__")
 _TRACKED = (type, typing.TypeVar, typing.ParamSpec, typing.TypeVarTuple)
 #: the pure-Python pickler, whose hooks typeshed does not declare
 _PURE: Any = pickle
@@ -110,7 +109,6 @@ _CLOUDPICKLE_PRIVATE = {
     "trackers": "_DYNAMIC_CLASS_TRACKER_BY_CLASS",
     "module_reduce": "_module_reduce",
     "dynamic_subimport": "dynamic_subimport",
-    "by_reference": "_should_pickle_by_reference",
 }
 
 
@@ -154,13 +152,13 @@ class _KeyPickler(pickle._Pickler):
     ``seen`` holds the classes pickled by value so far; a set element's sort key, pickled apart from
     the whole, names such a class instead of recursing into it."""
 
-    def __init__(self, file: io.BytesIO | _HashSink, seen: Mapping[int, type]) -> None:
+    def __init__(self, file: io.BytesIO | _HashSink, seen: Mapping[int, type], rebound: set[int]) -> None:
         super().__init__(file, protocol=5)
         self._cp = _cloudpickle()
         self.globals_ref: dict[int, dict[str, Any]] = {}
         self.proto = 5
         self._seen = dict(seen)
-        self._rebuilt: dict[int, tuple[object, object]] = {}
+        self._rebound = rebound
         own: dict[type, Callable[[Any], Any]] = {
             weakref.WeakSet: lambda ws: (weakref.WeakSet, (self._sorted(ws),)),
             types.ModuleType: self._module_reduce,
@@ -182,20 +180,13 @@ class _KeyPickler(pickle._Pickler):
         return reduced
 
     def _sorted(self, items: Iterable[Any]) -> list[Any]:
-        return sorted(items, key=lambda item: _dumps(item, self._seen))
+        return sorted(items, key=lambda item: _dumps(item, self._seen, self._rebound))
 
     def memoize(self, obj: Any) -> None:
-        # interning would decide where memo references fall, and a loaded closure never shares a cell
-        if not isinstance(obj, (*_IMMUTABLE, types.CellType)):
+        # interning would decide where memo references fall; a loaded closure shares no cell, and
+        # sharing changes what runs only for a cell some function rebinds
+        if not isinstance(obj, _IMMUTABLE) and (type(obj) is not types.CellType or id(obj) in self._rebound):
             _PURE._Pickler.memoize(self, obj)
-
-    def save(self, obj: Any, save_persistent_id: bool = True) -> None:
-        if type(obj) in (memoryview, io.TextIOWrapper):  # cloudpickle loads these as bytes and StringIO
-            if id(obj) not in self._rebuilt:
-                func, args = self._cp.dispatch_table[type(obj)](obj)
-                self._rebuilt[id(obj)] = (obj, func(*args))
-            obj = self._rebuilt[id(obj)][1]
-        _PURE._Pickler.save(self, obj, save_persistent_id)
 
     def save_global(self, obj: Any, name: str | None = None) -> None:
         qualname = name or getattr(obj, "__qualname__", None) or obj.__name__
@@ -238,7 +229,7 @@ class _KeyPickler(pickle._Pickler):
         state = {
             "__annotations__" if k == "__annotations_cache__" else k: v
             for k, v in state.items()
-            if k not in _CLASS_BLANKS and not (k in _ANNOTATIONS and type(v) is dict and not v)
+            if k not in _CLASS_BLANKS and not (k == "__annotations_cache__" and "__annotations__" in state)
         }
         if isinstance(state.get("_abc_impl"), list):  # cloudpickle lists an ABC's registry from a set
             state["_abc_impl"] = self._sorted(state["_abc_impl"])
@@ -248,6 +239,13 @@ class _KeyPickler(pickle._Pickler):
         return self._cp.function_reduce(self, obj)
 
     def _dynamic_function_reduce(self, func: types.FunctionType) -> tuple[Any, ...]:
+        if func.__closure__:
+            rebound = _rebinds(func.__code__, frozenset(func.__code__.co_freevars))
+            self._rebound.update(
+                id(cell)
+                for name, cell in zip(func.__code__.co_freevars, func.__closure__, strict=True)
+                if name in rebound
+            )
         make, args, (state, slotstate), *rest = self._cp.dynamic_function_reduce(self, func)
         return (make, args, (state, {**slotstate, "__doc__": None}), *rest)
 
@@ -256,17 +254,6 @@ class _KeyPickler(pickle._Pickler):
         return (code, {k: v for k, v in base_globals.items() if k != "__file__"}, *rest)
 
     def save_reduce(self, func: Any, args: Any, *rest: Any, obj: Any = None) -> None:
-        state, setter = (*rest, None, None, None, None)[0:4:3]
-        slotted = isinstance(state, tuple) and len(state) == 2 and isinstance(state[1], dict)
-        if (
-            slotted
-            and setter is None
-            and not hasattr(obj, "__setstate__")
-            and not self._cp.by_reference(type(obj))
-        ):
-            # BUILD sets slots after __dict__, and cloudpickle rebuilds a by-value class without its slots
-            shadowed = {k: v for k, v in (state[0] or {}).items() if k not in state[1]}
-            rest = ((shadowed or None, state[1]), *rest[1:])
         if isinstance(obj, _TRACKED):  # cloudpickle's per-process tracker id of a by-value class
             tracker = self._cp.trackers.get(obj)
             if tracker is not None:
@@ -274,9 +261,22 @@ class _KeyPickler(pickle._Pickler):
         _PURE._Pickler.save_reduce(self, func, args, *rest, obj=obj)
 
 
-def _dumps(obj: object, seen: Mapping[int, type]) -> bytes:
+def _rebinds(code: types.CodeType, names: frozenset[str]) -> set[str]:
+    """The free variables in ``names`` that ``code``, or code nested in it that shares them, rebinds."""
+    found = {
+        ins.argval
+        for ins in dis.get_instructions(code)
+        if ins.opname in ("STORE_DEREF", "DELETE_DEREF") and ins.argval in names
+    }
+    for const in code.co_consts:
+        if isinstance(const, types.CodeType):
+            found |= _rebinds(const, names & frozenset(const.co_freevars))
+    return found
+
+
+def _dumps(obj: object, seen: Mapping[int, type], rebound: set[int]) -> bytes:
     buffer = io.BytesIO()
-    _KeyPickler(buffer, seen).dump(obj)
+    _KeyPickler(buffer, seen, rebound).dump(obj)
     return buffer.getvalue()
 
 
@@ -284,17 +284,13 @@ def _key_digest(obj: object) -> bytes:
     """The sha256 of ``obj``'s key pickling: cloudpickle's by-value pickling of what a worker
     resolves, made the same in every interpreter that holds the same values.
 
-    The key writes each object as the state its reducer ships, which is what a worker's copy is
-    rebuilt from, less what tells the object and that copy apart without changing what either computes:
+    The key writes the state a worker's copy is rebuilt from, and blanks or canonicalizes only state
+    that never changes what the object or that copy computes:
 
     - sets, frozensets, a ``weakref.WeakSet`` and an ABC's registry are written sorted by their
       elements' key bytes;
-    - a ``memoryview`` and a file are written as the ``bytes`` and ``io.StringIO`` cloudpickle loads;
-    - interpreter-filled class caches (``__slotnames__``, typing's protocol-member caches) and an empty
-      class annotations dict are dropped, and a class's ``__annotations_cache__`` is written as
-      ``__annotations__``;
-    - an instance of a class written by value drops a ``__dict__`` entry that a slot of the same name
-      shadows;
+    - interpreter-filled class caches (``__slotnames__``, typing's protocol-member caches) are dropped,
+      and a class's ``__annotations_cache__`` is written as ``__annotations__`` when it has none;
     - an object other than a function, class or module, of a type outside the pickler's dispatch
       table, that its ``__module__``/``__qualname__`` name in a module other than ``__main__`` is
       written by that name;
@@ -302,15 +298,21 @@ def _key_digest(obj: object) -> bytes:
       module are refused (``TypeError``), since their content cannot be keyed;
     - cloudpickle's per-process tracker ids, code locations (``co_filename``, ``co_firstlineno``,
       line and position tables), a function's ``__file__`` global and doc, and a class's
-      ``__firstlineno__`` and doc are blanked, and no immutable or closure cell is memoized;
+      ``__firstlineno__`` and doc are blanked;
+    - no immutable is memoized, nor a closure cell that no function in ``obj`` rebinds
+      (``STORE_DEREF``/``DELETE_DEREF``), since a loaded closure shares no cell;
     - an instance whose class declares ``checkpoint_ignore`` is written with those fields ``None``,
       and one whose class declares ``checkpoint_resolve`` with each declared field as
       ``(value, resolver(value))``.
 
     The pickling is hashed as it is written, so a payload many objects share is never held twice.
     """
+    rebound: set[int] = set()
     sink = _HashSink()
-    _KeyPickler(sink, {}).dump(obj)
+    _KeyPickler(sink, {}, rebound).dump(obj)
+    if rebound:  # the first pass wrote cells unmemoized before meeting the function that rebinds them
+        sink = _HashSink()
+        _KeyPickler(sink, {}, rebound).dump(obj)
     return sink.hash.digest()
 
 

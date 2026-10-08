@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import abc
 import gc
+import io
 import os
 import pickle
 import subprocess
@@ -82,7 +83,7 @@ def test_key_bytes_are_never_loaded() -> None:
         return 1.0
 
     with pytest.raises(AssertionError, match="never loaded"):
-        pickle.loads(rs._dumps(process, {}))
+        pickle.loads(rs._dumps(process, {}, set()))
 
 
 def test_the_main_module_is_refused(tmp_path: Path) -> None:
@@ -353,53 +354,37 @@ def test_a_class_whose_annotations_were_set_after_creation_is_reused(tmp_path: P
 
 
 _COPY_LEG = """
-import abc, sys, typing, cloudpickle
+import sys, typing, cloudpickle
 from graphed.checkpoint.resume import _key_digest
-mode, path, source, access = sys.argv[1:]
+mode, path = sys.argv[1:]
 if mode == "build":
     namespace = {"__name__": "m74copy", "typing": typing}
-    exec(compile(source + "\\ndef process(p, r):\\n    return float(OBJ is not None)\\n", "<m74>", "exec", dont_inherit=True), namespace)
+    source = "class P(typing.Protocol):\\n    def f(self) -> int: ...\\ndef process(p, r):\\n    return float(P is not None)\\n"
+    exec(compile(source, "<m74>", "exec", dont_inherit=True), namespace)
     process = namespace["process"]
     open(path, "wb").write(cloudpickle.dumps(process))
 else:
     process = cloudpickle.loads(open(path, "rb").read())
 print(_key_digest(process).hex())
-exec(access, {"OBJ": process.__globals__["OBJ"], "typing": typing})
-print(_key_digest(process).hex())
 """
 
-#: objects whose loaded copy, or whose first read, a key pickling once told apart: (source, read in A, read in B)
-_COPIES = {
-    "unannotated-class": ("class C:\n    k = 1\nOBJ = C", "OBJ.__annotations__", "OBJ.__annotations__"),
-    "unread-annotations": ("class C:\n    x: int\nOBJ = C", "", "OBJ.__annotations__"),
-    "slotted-instance": (
-        "class C:\n    __slots__ = ('a',)\n    def __init__(self):\n        self.a = 1\nOBJ = C()",
-        "",
-        "",
-    ),
-    "protocol": ("class P(typing.Protocol):\n    def f(self) -> int: ...\nOBJ = P", "", ""),
-    "memoryview": ("OBJ = memoryview(b'abc')", "", ""),
-    "read-file": (f"OBJ = open({__file__!r})\nOBJ.readline()", "", ""),
-}
 
-
-@pytest.mark.parametrize("name", sorted(_COPIES))
-def test_an_object_and_its_loaded_copy_share_a_key_before_and_after_a_first_read(
-    tmp_path: Path, name: str
-) -> None:
-    source, read_a, read_b = _COPIES[name]
+def test_a_protocol_and_its_loaded_copy_share_a_key(tmp_path: Path) -> None:
     path = str(tmp_path / "process.pkl")
 
-    def leg(seed: int, mode: str, access: str) -> list[str]:
+    def leg(seed: int, mode: str) -> str:
         env = {**os.environ, "PYTHONHASHSEED": str(seed)}
-        argv = [sys.executable, "-c", _COPY_LEG, mode, path, source, access]
-        run = subprocess.run(argv, capture_output=True, text=True, env=env, check=False)
+        run = subprocess.run(
+            [sys.executable, "-c", _COPY_LEG, mode, path],
+            capture_output=True,
+            text=True,
+            env=env,
+            check=False,
+        )
         assert run.returncode == 0, run.stderr
-        return run.stdout.split()
+        return run.stdout.strip()
 
-    keys = leg(1, "build", read_a) + leg(2, "load", read_b)
-    assert len(keys) == 4
-    assert len(set(keys)) == 1, keys
+    assert leg(1, "build") == leg(2, "load")
 
 
 _FACTORY = """
@@ -424,25 +409,65 @@ def test_set_elements_of_two_classes_from_one_factory_key_apart_from_one_class_t
     assert _factory_key("K1(), K2()") not in {_factory_key("K2(), K2()"), _factory_key("K1(), K1()")}
 
 
-class _Slotted:
-    __slots__ = ("__dict__", "a")
-    a: int
+_MK = """
+def mk():
+    c = 0
+    def inc():
+        nonlocal c
+        c += 1
+    def get():
+        return c
+    return inc, get
+"""
+_MK_NESTED = _MK.replace(
+    "        nonlocal c\n        c += 1\n",
+    "        def bump():\n            nonlocal c\n            c += 1\n        bump()\n",
+)
+_TEXT = f"import io\nF = io.StringIO()\nF.write(open({__file__!r}).read())\nF.seek(0)\nF.name = {__file__!r}"
+_SLOTTED = "class C:\n    __slots__ = ('a', '__dict__')\nO = C()\nO.a = 1\nO.__dict__['a'] = "
+_ANNOTATED = "K = type('K', (), {'__annotations__': {'x': %s}, '__annotations_cache__': {'x': int}})"
+
+#: pairs of processes that compute differently: (source A, source B, process body)
+_APART = {
+    "slot-shadowed-entry": (_SLOTTED + "5", _SLOTTED + "6", "return float(vars(O)['a'])"),
+    "memoryview-and-bytes": ("X = memoryview(b'abc')", "X = b'abc'", "return float(type(X) is bytes)"),
+    "file-and-stringio": (f"F = open({__file__!r})", _TEXT, "return float(hasattr(F, 'buffer'))"),
+    "first-read-annotations": (
+        "class K:\n    pass\nK.__annotations__",
+        "class K:\n    pass",
+        "return float(len(vars(K)))",
+    ),
+    "annotations-beside-a-cache": (
+        _ANNOTATED % "int",
+        _ANNOTATED % "str",
+        "return float(K.__annotations__['x'] is int)",
+    ),
+    "rebound-shared-cell": (
+        _MK + "INC, GET = mk()",
+        _MK + "INC, _ = mk()\n_, GET = mk()",
+        "INC()\n    return float(GET())",
+    ),
+    "cell-rebound-in-nested-code": (
+        _MK_NESTED + "INC, GET = mk()",
+        _MK_NESTED + "INC, _ = mk()\n_, GET = mk()",
+        "INC()\n    return float(GET())",
+    ),
+}
 
 
-def _shadowed_key(cls: type, entry: int) -> bytes:
-    obj = cls()
-    obj.a = 1
-    obj.__dict__["a"] = entry
-    namespace: dict[str, Any] = {"__name__": "m74copy", "OBJ": obj}
-    exec("def process(p, r):\n    return float(vars(OBJ)['a'])\n", namespace)
-    return rs._key_digest(namespace["process"])
+def _keyed_run(source: str, body: str) -> tuple[bytes, float]:
+    namespace: dict[str, Any] = {"__name__": "m74copy"}
+    exec(f"{source}\ndef process(p, r):\n    {body}\n", namespace)
+    key = rs._key_digest(namespace["process"])
+    value: float = namespace["process"](None, None)
+    if isinstance(namespace.get("F"), io.TextIOWrapper):
+        namespace["F"].close()
+    return key, value
 
 
-def test_a_slotted_instance_keys_a_shadowed_dict_entry_unless_its_class_is_written_by_value() -> None:
-    assert _shadowed_key(_Slotted, 5) != _shadowed_key(_Slotted, 6)
-    by_value = type("_Slotted", (), {"__slots__": ("__dict__", "a"), "__module__": "m74copy"})
-    assert _shadowed_key(by_value, 5) == _shadowed_key(by_value, 6)
-
-
-def test_a_memoryview_keys_as_the_bytes_it_loads_as() -> None:
-    assert rs._key_digest(memoryview(b"abc")) == rs._key_digest(b"abc")
+@pytest.mark.parametrize("name", sorted(_APART))
+def test_processes_that_compute_differently_key_apart(name: str) -> None:
+    source_a, source_b, body = _APART[name]
+    (key_a, value_a), (key_b, value_b) = _keyed_run(source_a, body), _keyed_run(source_b, body)
+    assert value_a != value_b
+    assert key_a != key_b
