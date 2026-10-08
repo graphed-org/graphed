@@ -29,7 +29,15 @@ from collections.abc import Mapping
 from typing import Any
 
 from ..write import url_fs
-from .store import JournalEntry, Store, _done_record, _parse_record, _record_line, _replay
+from .store import (
+    ENVIRONMENT_JOURNAL,
+    Completed,
+    Store,
+    _done_record,
+    _parse_record,
+    _record_line,
+    _replay,
+)
 
 # a record object is written once and never changes, so a parsed one is kept for every later listing
 _RECORDS: dict[tuple[Any, str], Any] = {}
@@ -103,7 +111,13 @@ class FsspecStore:
     ) -> None:
         self._append(self.journal_path, _done_record(task_id, partition, blob, stage, deps))
 
-    def completed(self) -> dict[str, JournalEntry]:
+    def record_environment(self, task_id: str, blob: str) -> None:
+        """Append an environment record under its own prefix, ``journal.environment.log/``."""
+        prefix = f"{self.root}/{ENVIRONMENT_JOURNAL}"
+        self.fs.makedirs(prefix, exist_ok=True)
+        self._append(prefix, _done_record(task_id, "", blob, "environment", ()))
+
+    def completed(self) -> Completed:
         """Replay the union of every writer's journal prefix into ``task_id -> JournalEntry``."""
         present = {path.rsplit("/", 1)[-1] for path in self.fs.find(self.objects)}
         return _replay(self._records(f"{glob.escape(self.root)}/journal*.log/*"), present.__contains__)

@@ -24,7 +24,7 @@ import json
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import partial
-from typing import Any
+from typing import Any, ClassVar
 
 import graphed.core
 
@@ -75,6 +75,8 @@ class Correspondence:
 class CompiledGraph:
     """A compiled analysis: the reduced canonical IR plus the source names it reads. Picklable and
     self-contained — exactly what ships to an executor worker (no Session, no analysis function)."""
+
+    checkpoint_ignore: ClassVar[tuple[str, ...]] = ("correspondence",)
 
     ir: bytes
     source_names: tuple[str, ...]

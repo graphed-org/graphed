@@ -22,7 +22,6 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from functools import reduce
 from typing import Any
 
 from graphed.core import DurablePlan, DurablePlanV2, Partition
@@ -30,6 +29,7 @@ from graphed.services import require_bound
 
 from .codec import Codec, PickleCodec
 from .errors import dead_letter_descriptor
+from .resume import _partition_tag, check_environment, require_environment_store
 from .retry import RetryPolicy
 from .store import CheckpointStore
 
@@ -67,6 +67,7 @@ def run_resumable(
     retry: RetryPolicy | None = None,
     codec: Codec | None = None,
     error_budget: int | None = None,
+    accept_environment: bool = False,
     _kill_after: int | None = None,
 ) -> ResumeResult:
     """Run ``plan`` against ``store``, skipping already-completed tasks. See module docstring.
@@ -77,7 +78,11 @@ def run_resumable(
     the run would finish before committing that many tasks (the plan has too few partitions), it
     raises ``ValueError`` instead of completing silently — a simulated crash that can never fire is
     a misconfiguration, not an uninterrupted run.
+
+    The store's environment record is checked as :func:`graphed.checkpoint.resumable` checks it
+    (salt ``""``), with ``accept_environment``.
     """
+    require_environment_store(store)
     codec = codec or PickleCodec()
     process = plan.process.resolve()
     combine = plan.combine.resolve()
@@ -87,17 +92,21 @@ def run_resumable(
         error_budget = int(eb) if eb is not None else None
 
     completed = store.completed()
+    check_environment(store, completed, "", accept_environment)
     report = ResumeReport()
     committed = 0  # tasks committed (executed) during THIS invocation, for the kill simulation
-    partials: list[tuple[int, Any]] = []  # (task index, partial) — reduced in deterministic order
+    # folded in task order as produced, the grouping functools.reduce gives, holding one partial
+    acc: Any = None
+    folded = False
 
-    for idx, part in enumerate(plan.partitions):
+    for part in plan.partitions:
         tid = plan.task_id(part)
         entry = completed.get(tid)
         if entry is not None:
             blob = store.get(entry.blob)
             if blob is not None:
-                partials.append((idx, codec.decode(blob)))
+                value = codec.decode(blob)
+                acc, folded = (combine(acc, value) if folded else value), True
                 report.skipped += 1
                 continue
 
@@ -115,7 +124,7 @@ def run_resumable(
 
         digest = store.put(codec.encode(value))
         store.record_done(tid, _partition_tag(part), digest)
-        partials.append((idx, value))
+        acc, folded = (combine(acc, value) if folded else value), True
         report.executed += 1
         committed += 1
         if _kill_after is not None and committed >= _kill_after:
@@ -131,8 +140,7 @@ def run_resumable(
         )
 
     report.dead_letters = store.dead_letters()
-    value = _reduce_partials(partials, combine, empty)
-    return ResumeResult(value=value, report=report)
+    return ResumeResult(value=acc if folded else empty(), report=report)
 
 
 def _run_one(
@@ -151,21 +159,6 @@ def _run_one(
         return retry.recover(part, exc, process=process, combine=combine, resources=resources)
 
 
-def _reduce_partials(
-    partials: list[tuple[int, Any]], combine: Callable[..., Any], empty: Callable[[], Any]
-) -> Any:
-    if not partials:
-        return empty()
-    # deterministic order: by task index, so an interrupted+resumed run reduces in the same order
-    # as an uninterrupted run -> bit-for-bit identical (combine is associative + commutative)
-    ordered = [v for _, v in sorted(partials, key=lambda kv: kv[0])]
-    return reduce(combine, ordered)
-
-
-def _partition_tag(p: Partition) -> str:
-    return f"{p.uri}@{p.entry_start}:{p.entry_stop}"
-
-
 # ---- M39: two-phase (map-write -> gather) shuffle resume ----------------------------------------
 @dataclass
 class ShuffleResumeResult:
@@ -181,6 +174,7 @@ def run_shuffle_resumable(
     store: CheckpointStore,
     *,
     resources: Any = None,
+    accept_environment: bool = False,
     _kill_after: int | None = None,
 ) -> ShuffleResumeResult:
     """Run a two-phase :class:`~graphed.core.DurablePlanV2` (map-write -> gather) against ``store``,
@@ -193,9 +187,12 @@ def run_shuffle_resumable(
 
     Stage-process convention: ``process(task, inputs, resources) -> bytes`` where ``inputs`` is the
     tuple of upstream dep block payloads (empty for stage 0). A plan with unbound ``services`` is
-    refused before its first task (``graphed.services.require_bound``)."""
+    refused before its first task (``graphed.services.require_bound``). The store's environment
+    record is checked as :func:`run_resumable` checks it."""
+    require_environment_store(store)
     require_bound(plan)
     completed = store.completed()
+    check_environment(store, completed, "", accept_environment)
     report = ResumeReport()
     committed = 0
     stage_payloads: dict[int, list[bytes]] = {}  # stage index -> its blocks' payloads (in task order)

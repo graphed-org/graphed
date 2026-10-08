@@ -21,7 +21,7 @@ import os
 import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 
 import awkward as ak
 import numpy as np
@@ -120,10 +120,24 @@ def read_parquet_partition(partition: Partition, columns: Sequence[str] | None =
     return arr[part.entry_start : part.entry_stop]
 
 
+def _resolve_behavior(behavior: Any) -> Any:
+    """A behavior dict, or an importable "module:attr" reference (behavior dicts often contain
+    lambdas, which do not pickle to process workers)."""
+    if isinstance(behavior, str):
+        import importlib  # noqa: PLC0415
+
+        mod_name, _, attr = behavior.partition(":")
+        return getattr(importlib.import_module(mod_name), attr)
+    return behavior
+
+
 # ---- deferred writing ------------------------------------------------------------------------
 @dataclass(frozen=True)
 class _WritePart:
     """The picklable per-partition write task: compiled IR in, one parquet part out."""
+
+    checkpointable: ClassVar[bool] = True
+    checkpoint_resolve: ClassVar[Mapping[str, Callable[[Any], Any]]] = {"behavior": _resolve_behavior}
 
     compiled: CompiledGraph
     source_name: str
@@ -290,17 +304,6 @@ def _evaluation_columns(
             under = sorted(c for c in leaves if c == f or c.startswith(f + "."))
             out.add(under[0] if under else f)
     return tuple(sorted(out))
-
-
-def _resolve_behavior(behavior: Any) -> Any:
-    """A behavior dict, or an importable "module:attr" reference (behavior dicts often contain
-    lambdas, which do not pickle to process workers)."""
-    if isinstance(behavior, str):
-        import importlib  # noqa: PLC0415
-
-        mod_name, _, attr = behavior.partition(":")
-        return getattr(importlib.import_module(mod_name), attr)
-    return behavior
 
 
 def _memory_step(partition: Partition, n: int, steps: int) -> int:
@@ -561,6 +564,9 @@ class _VariedWritePart:
     """The picklable per-partition varied-write task (§6.4). Widens `_WritePart`: one `compile_ir`
     over base + per-label values + per-label masks, resolved BY NODE ID through `rank` (§7.2), XOR/
     packbits-encoded on the evaluated buffers, and written as one augmented row-level record."""
+
+    checkpointable: ClassVar[bool] = True
+    checkpoint_resolve: ClassVar[Mapping[str, Callable[[Any], Any]]] = {"behavior": _resolve_behavior}
 
     compiled: CompiledGraph
     source_name: str

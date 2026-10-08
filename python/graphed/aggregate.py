@@ -14,10 +14,9 @@ specializes this for boost histograms; any other partition-wise reduction reuses
 from __future__ import annotations
 
 import os
-import threading
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import Any, Generic, TypeVar
+from typing import Any, ClassVar, Generic, TypeVar
 
 from graphed.core import GraphStore, Partition
 from graphed.core.execution import Plan, Task, WorkerResources
@@ -40,7 +39,7 @@ from .projection import read_columns
 from .services import Bindable, Resolvable, ServiceSpec, bind_externals, referenced_services
 from .session import Session
 from .varied import refuse_container
-from .write import PartitionedSource, PartWrite, declared_columns, is_url, join_part, prepare_part
+from .write import PartitionedSource, PartWrite, declared_columns, join_part, prepare_part
 
 V = TypeVar("V")
 
@@ -69,15 +68,14 @@ def resolve_backend(ref: Callable[[], Any] | str) -> Any:
     return ref()
 
 
-_OPEN = threading.local()
-#: filesystems with no directories, so a cached store cannot outlive its root
-_DIRLESS = frozenset({"s3", "s3a", "gcs", "gs", "abfs", "az", "adl", "memory"})
-
-
 @dataclass(frozen=True)
 class _PartitionReduce(Generic[V]):
     """One partition's work for a multi-output graph: read once, evaluate the shared IR once into the
     output-node values, then ``reduce`` them to this partition's result. Picklable for process pools."""
+
+    checkpointable: ClassVar[bool] = True
+    checkpoint_ignore: ClassVar[tuple[str, ...]] = ("frames", "variation_labels")
+    checkpoint_resolve: ClassVar[Mapping[str, Callable[[Any], Any]]] = {"backend_factory": resolve_backend}
 
     ir: bytes
     source_name: str
@@ -170,31 +168,17 @@ class _PartitionReduce(Generic[V]):
         return _sha256_hex(b"graphed-replay-capture-v1", self.ir, _partition_bytes(partition))
 
     def _task_store(self) -> Any:
-        """An object-store root's store, opened once per thread: reopening costs a bucket HEAD per task.
-        Any other root is opened per call, since a cached store would outlive a removed directory."""
+        from graphed.checkpoint.resume import task_store  # noqa: PLC0415  (only a capturing plan needs it)
+
         assert self.store is not None
-        node = f"{os.getpid()}-{threading.get_ident()}"
-        cache: dict[tuple[int, str, str], Any] = _OPEN.__dict__.setdefault("stores", {})
-        key = (os.getpid(), str(self.store), repr(self.storage_options))
-        if key in cache:
-            return cache[key]
-        store = self._open_store(node)
-        protocols = getattr(getattr(store, "fs", None), "protocol", ())
-        if is_url(self.store) and _DIRLESS & set(
-            protocols if isinstance(protocols, (tuple, list)) else (protocols,)
-        ):
-            cache[key] = store
-        return store
+        return task_store(self.store, self.storage_options)
 
     def _open_store(self, node: str | None = None) -> Any:
-        """The capture root as a checkpoint store: an fsspec URL when it contains ``://``, else a
-        directory. Task and replay both open it here, so one root string always means one layout."""
-        from graphed.checkpoint import FsspecStore, Store  # noqa: PLC0415  (only a capturing plan needs it)
+        """The capture root as a checkpoint store, as every task and replay opens it."""
+        from graphed.checkpoint.resume import open_store  # noqa: PLC0415  (only a capturing plan needs it)
 
         assert self.store is not None
-        if not is_url(self.store):
-            return Store(self.store, node)
-        return FsspecStore(self.store, node, **dict(self.storage_options))
+        return open_store(self.store, node, dict(self.storage_options))
 
     def _attribute(self, partition: str) -> OnFailure | None:
         return attribute_failures(self.frames, partition, self.variation_labels, self.opt_level)
@@ -433,6 +417,10 @@ def _refuse_shared_parts(runs: Iterable[tuple[object, Partition]]) -> None:
 @dataclass(frozen=True)
 class _Collated:
     """A collated plan's process: the task's ``(uri, tree)`` picks the sub-plan whose graph reads it."""
+
+    @property
+    def checkpointable(self) -> bool:
+        return all(getattr(fn, "checkpointable", False) for fn in self.processes.values())
 
     processes: Mapping[str, Callable[[Partition, WorkerResources], Any]]
     #: O(files), never O(tasks): it ships once per worker, not in any task
