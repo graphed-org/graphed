@@ -142,6 +142,13 @@ One plan for every output
 * ``gak.num(x, axis=0)`` records a reduction, so a per-chunk count can no longer feed another node
   silently; as a plan output it folds like any other reduction.
 
+Fixes
+~~~~~
+
+* ``NetworkMonitor`` no longer drops an event emitted just as its sender wakes with no connection
+  open, typically a worker's first event. The sender drains its buffer before deciding to connect, so
+  a per-worker monitor in a spawned process ships that event before the process exits.
+
 0.0.6
 -----
 
