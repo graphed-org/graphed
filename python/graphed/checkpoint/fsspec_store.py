@@ -28,6 +28,7 @@ import uuid
 from collections.abc import Mapping
 from typing import Any
 
+from ..write import url_fs
 from .store import (
     ENVIRONMENT_JOURNAL,
     Completed,
@@ -53,16 +54,10 @@ class FsspecStore:
     """
 
     def __init__(self, url: str, node: str | None = None, **storage_options: Any) -> None:
-        try:
-            from fsspec.core import url_to_fs  # noqa: PLC0415  (lazy: fsspec is the optional extra)
-        except ImportError as exc:
-            raise ImportError(
-                "FsspecStore needs fsspec — install the optional extra: pip install 'graphed[checkpoint]'"
-            ) from exc
         self.url = url
         self.node = node
         # a caching backend (s3) would serve a listing taken before another process wrote
-        self.fs, self.root = url_to_fs(url, **{**storage_options, "use_listings_cache": False})
+        self.fs, self.root = url_fs(url, **{**storage_options, "use_listings_cache": False})
         self.objects = f"{self.root}/objects"
         journal_name = "journal.log" if node is None else f"journal.{node}.log"
         self.journal_path = f"{self.root}/{journal_name}"

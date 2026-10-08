@@ -33,7 +33,11 @@ Writes to an fsspec URL
   ``destination`` with the trailing slashes after its ``://`` dropped, then ``/`` and the name, on
   every OS. A URL needs ``graphed[checkpoint]`` (an ``ImportError`` names it) plus the protocol's
   fsspec driver; ``parquet_write`` and the numpy writer import no fsspec for a local destination.
-  ``graphed.write`` gains ``is_url``, ``join_part``, ``part_fs`` and ``prepare_part``.
+  ``graphed.write`` gains ``is_url``, ``join_part``, ``part_fs``, ``prepare_part`` and ``url_fs``.
+* A leading ``dir::`` on a write destination or a ``FsspecStore`` URL roots at the wrapped URL,
+  with a ``UserWarning`` to pass that URL instead, and the store's storage options reach the
+  wrapped filesystem. A ``dir::`` store written by an
+  earlier release sits at the wrapped path repeated under itself and is not found at the new root.
 
 Services an analysis calls
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -157,6 +161,13 @@ One plan for every output
 * ``refuse_chunk_partials(as_outputs=)`` also accepts the compiled output ids to refuse.
 * ``gak.num(x, axis=0)`` records a reduction, so a per-chunk count can no longer feed another node
   silently; as a plan output it folds like any other reduction.
+
+Fixes
+~~~~~
+
+* ``NetworkMonitor`` no longer drops an event emitted just as its sender wakes with no connection
+  open, typically a worker's first event. The sender drains its buffer before deciding to connect, so
+  a per-worker monitor in a spawned process ships that event before the process exits.
 
 0.0.6
 -----

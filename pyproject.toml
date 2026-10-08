@@ -53,8 +53,9 @@ dev = [
   "pyarrow>=15; sys_platform != 'win32' or platform_machine != 'ARM64'",
   "perspective-python==4.5.1; sys_platform != 'win32' or platform_machine != 'ARM64'",
   # FsspecStore's s3 tests run against a local moto server; moto has no win_arm64 resolution
-  # (pyyaml on 3.11), and flask/flask-cors are there only to run moto's server
-  "s3fs",
+  # (pyyaml on 3.11), and flask/flask-cors are there only to run moto's server; the s3fs floor
+  # keeps pip from settling on a pre-aiobotocore s3fs when boto3 outruns aiobotocore's botocore pin
+  "s3fs>=2026.7.0",
   "moto[s3]; sys_platform != 'win32' or platform_machine != 'ARM64'",
   "flask; sys_platform != 'win32' or platform_machine != 'ARM64'",
   "flask-cors; sys_platform != 'win32' or platform_machine != 'ARM64'",

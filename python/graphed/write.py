@@ -13,6 +13,7 @@ codec and naming suffix.
 from __future__ import annotations
 
 import os
+import warnings
 from collections.abc import Callable, Hashable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
@@ -131,19 +132,32 @@ def join_part(destination: str, name: str) -> str:
     return os.path.join(destination, name)
 
 
+def url_fs(url: str, **storage_options: Any) -> tuple[Any, str]:
+    """``(filesystem, path on it)`` for an fsspec ``url``, with ``storage_options`` given to it."""
+    try:
+        from fsspec.core import url_to_fs  # noqa: PLC0415  (lazy: fsspec is the optional extra)
+    except ImportError as exc:
+        raise ImportError(
+            "a URL needs fsspec — install the optional extra: pip install 'graphed[checkpoint]'"
+        ) from exc
+    if url.startswith("dir::"):
+        # fsspec hands a "dir::" chain the wrapped path, which the dir filesystem nests under itself,
+        # and gives the options to the wrapper; the wrapped URL alone is the same root
+        warnings.warn(
+            "graphed treats 'dir::<url>' as '<url>', because fsspec nests a 'dir::' chain's wrapped "
+            "path under itself; pass the wrapped URL instead",
+            stacklevel=3,
+        )
+    fs, stripped = url_to_fs(url.removeprefix("dir::"), **storage_options)
+    return fs, stripped
+
+
 def part_fs(path: str) -> tuple[Any, str]:
     """``(filesystem, path on it)`` for a part — the pair pyarrow's ``filesystem=`` takes: fsspec's
     for a URL, ``(None, path)`` for a local path, which never imports fsspec."""
     if not is_url(path):
         return None, path
-    try:
-        from fsspec.core import url_to_fs  # noqa: PLC0415  (lazy: fsspec is the optional extra)
-    except ImportError as exc:
-        raise ImportError(
-            "writing to a URL needs fsspec — install the optional extra: pip install 'graphed[checkpoint]'"
-        ) from exc
-    fs, stripped = url_to_fs(path)
-    return fs, stripped
+    return url_fs(path)
 
 
 def prepare_part(path: str) -> tuple[Any, str]:
