@@ -139,6 +139,7 @@ def _stage_payloads(plan: DurablePlanV2) -> list[list[bytes]]:
 
 def test_shuffle_plan_interrupted_resumes_with_identical_gather_payloads(tmp_path: Path) -> None:
     # T7
+    pytest.importorskip("pyarrow")
     ev = from_parquet(Session(AwkwardBackend()), "events", h.events(tmp_path), open_files=False, steps_per_file=2)
     plan = shuffle_plan(
         gak.sum(repartition(ev, n=2).x), reduce=h.StopReduce(), combine=h.agg_combine, empty=h.agg_empty, steps_per_file=2

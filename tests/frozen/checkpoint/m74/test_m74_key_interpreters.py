@@ -9,6 +9,8 @@ from typing import Any
 import m74_helpers as h
 import pytest
 
+pytest.importorskip("pyarrow")
+
 CELL_A = "/tmp/ipykernel_1111/3071629813.py"
 CELL_B = "/tmp/ipykernel_2222/3071629813.py"
 

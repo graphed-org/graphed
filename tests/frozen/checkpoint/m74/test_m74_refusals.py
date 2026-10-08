@@ -92,6 +92,7 @@ def test_already_resumable_plan(tmp_path: Path) -> None:
 
 @pytest.fixture(scope="module")
 def paths(tmp_path_factory: pytest.TempPathFactory) -> list[str]:
+    pytest.importorskip("pyarrow")
     return h.events(tmp_path_factory.mktemp("m74refusals"))
 
 
