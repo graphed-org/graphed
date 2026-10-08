@@ -125,3 +125,20 @@ Run: `python -m pytest tests/frozen/checkpoint/m74 -p no:cacheprovider -n 8`.
   5976f6d, and the annotations and both cell pairs fail at c41b5fd. The memoryview/file/slot/annotation
   copy legs are deleted; the protocol leg stays (fails at c41b5fd). Walk rerun on four versions
   (`probes/walk/results.md`): every unstable member is a stated residual.
+
+## Iteration 9 (2026-10-08) — unread class annotations and shared function globals are keyed
+- Review P1 (3.14+): cloudpickle pops an unread class's `__annotate_func__` and its state holds no
+  `__annotations_cache__`, so editing an annotation reused a stale result. A class with a callable
+  `__annotate_func__` and no annotations in its state now keys that function, unevaluated, under a
+  key-only state name; its `__classdict__` cell (the class's own dict) is written as a reference to the
+  class, since that dict holds an ABC's unpicklable `_abc_impl` and caches the class state drops. A read
+  class keeps its form; below 3.14 nothing changes.
+- Review P2: `_function_getnewargs` built a fresh filtered globals dict per function; it is now cached per
+  namespace on the pickler, so functions sharing `__globals__` (one rebinding a global) key apart from
+  ones with separate equal-valued globals, as cloudpickle's copy keeps them.
+- Docs: the cell-rebinding residual (review N1), team-lead's in-place input rewrite line beside `salt`,
+  and the unread-annotations recompute case; the `_key_digest` opening names shared globals (review N2).
+- Extra: two pairs in `test_processes_that_compute_differently_key_apart`; both fail at 1d9c9e0 on 3.14,
+  the globals pair on 3.13; the annotations pair fails with the classdict rewrite removed (`_abc_data`
+  cannot be pickled) and runs unskipped below 3.14, where `__annotations__` keys it (a version skip trips
+  the integrity scan's `skip_or_xfail_added`).

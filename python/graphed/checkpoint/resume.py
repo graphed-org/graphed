@@ -158,6 +158,8 @@ class _KeyPickler(pickle._Pickler):
         self.globals_ref: dict[int, dict[str, Any]] = {}
         self.proto = 5
         self._seen = dict(seen)
+        self._classdicts: dict[int, type] = {}
+        self._globals: dict[int, dict[str, Any]] = {}
         self._rebound = rebound
         own: dict[type, Callable[[Any], Any]] = {
             weakref.WeakSet: lambda ws: (weakref.WeakSet, (self._sorted(ws),)),
@@ -204,6 +206,8 @@ class _KeyPickler(pickle._Pickler):
             return kind, (self._sorted(cast("Iterable[Any]", obj)),)
         if isinstance(obj, type) and id(obj) in self._seen:
             return _key_only, (obj.__module__, obj.__qualname__)
+        if id(obj) in self._classdicts:  # a class's own dict, reached from its annotate function
+            return _key_only, (self._classdicts[id(obj)],)
         ignore: Sequence[str] = getattr(kind, "checkpoint_ignore", ())
         resolve: Mapping[str, Callable[[Any], Any]] = getattr(kind, "checkpoint_resolve", {})
         if ignore or resolve:
@@ -231,6 +235,17 @@ class _KeyPickler(pickle._Pickler):
             for k, v in state.items()
             if k not in _CLASS_BLANKS and not (k == "__annotations_cache__" and "__annotations__" in state)
         }
+        annotate = vars(obj).get("__annotate_func__")
+        if callable(annotate) and "__annotations__" not in state:
+            # cloudpickle drops an unread class's annotate function, so key it, never evaluated; its
+            # __classdict__ cell holds this class's own dict, which the class's state already keys
+            cells = (
+                zip(annotate.__code__.co_freevars, annotate.__closure__ or (), strict=True)
+                if isinstance(annotate, types.FunctionType)
+                else ()
+            )
+            self._classdicts.update({id(c.cell_contents): obj for n, c in cells if n == "__classdict__"})
+            state["<key-only annotate>"] = annotate
         if isinstance(state.get("_abc_impl"), list):  # cloudpickle lists an ABC's registry from a set
             state["_abc_impl"] = self._sorted(state["_abc_impl"])
         return (func, args, (state, slotstate), *rest)
@@ -251,7 +266,11 @@ class _KeyPickler(pickle._Pickler):
 
     def _function_getnewargs(self, func: types.FunctionType) -> tuple[Any, ...]:
         code, base_globals, *rest = self._cp.function_getnewargs(self, func)
-        return (code, {k: v for k, v in base_globals.items() if k != "__file__"}, *rest)
+        # one dict per shared namespace, so the memo keys which functions share their globals
+        kept = self._globals.setdefault(
+            id(base_globals), {k: v for k, v in base_globals.items() if k != "__file__"}
+        )
+        return (code, kept, *rest)
 
     def save_reduce(self, func: Any, args: Any, *rest: Any, obj: Any = None) -> None:
         if isinstance(obj, _TRACKED):  # cloudpickle's per-process tracker id of a by-value class
@@ -282,7 +301,8 @@ def _dumps(obj: object, seen: Mapping[int, type], rebound: set[int]) -> bytes:
 
 def _key_digest(obj: object) -> bytes:
     """The sha256 of ``obj``'s key pickling: cloudpickle's by-value pickling of what a worker
-    resolves, made the same in every interpreter that holds the same values.
+    resolves (functions that share a namespace share one globals dict), made the same in every
+    interpreter that holds the same values.
 
     The key writes the state a worker's copy is rebuilt from, and blanks or canonicalizes only state
     that never changes what the object or that copy computes:
@@ -291,6 +311,7 @@ def _key_digest(obj: object) -> bytes:
       elements' key bytes;
     - interpreter-filled class caches (``__slotnames__``, typing's protocol-member caches) are dropped,
       and a class's ``__annotations_cache__`` is written as ``__annotations__`` when it has none;
+    - a class that holds neither has its unevaluated ``__annotate_func__`` written in their place;
     - an object other than a function, class or module, of a type outside the pickler's dispatch
       table, that its ``__module__``/``__qualname__`` name in a module other than ``__main__`` is
       written by that name;

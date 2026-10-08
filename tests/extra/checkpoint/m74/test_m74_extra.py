@@ -425,6 +425,7 @@ _MK_NESTED = _MK.replace(
 )
 _TEXT = f"import io\nF = io.StringIO()\nF.write(open({__file__!r}).read())\nF.seek(0)\nF.name = {__file__!r}"
 _SLOTTED = "class C:\n    __slots__ = ('a', '__dict__')\nO = C()\nO.a = 1\nO.__dict__['a'] = "
+_INC = "C = 0\ndef INC():\n    global C\n    C += 1\n"
 _ANNOTATED = "K = type('K', (), {'__annotations__': {'x': %s}, '__annotations_cache__': {'x': int}})"
 
 #: pairs of processes that compute differently: (source A, source B, process body)
@@ -452,12 +453,25 @@ _APART = {
         _MK_NESTED + "INC, _ = mk()\n_, GET = mk()",
         "INC()\n    return float(GET())",
     ),
+    "unread-annotations": (
+        "import abc, typing\nclass K(abc.ABC):\n    x: int",
+        "import abc, typing\nclass K(abc.ABC):\n    x: str",
+        "return float(typing.get_type_hints(K)['x'] is int)",
+    ),
+    "globals-shared-with-a-rebinder": (
+        _INC + "def GET():\n    return C",
+        _INC + "ns = {'__name__': 'm74copy', 'C': 0}\nexec('def GET():\\n    return C', ns)\nGET = ns['GET']",
+        "INC()\n    return float(GET())",
+    ),
 }
 
 
 def _keyed_run(source: str, body: str) -> tuple[bytes, float]:
     namespace: dict[str, Any] = {"__name__": "m74copy"}
-    exec(f"{source}\ndef process(p, r):\n    {body}\n", namespace)
+    # dont_inherit: this module's future import would turn the sources' annotations into strings
+    exec(
+        compile(f"{source}\ndef process(p, r):\n    {body}\n", "<pair>", "exec", dont_inherit=True), namespace
+    )
     key = rs._key_digest(namespace["process"])
     value: float = namespace["process"](None, None)
     if isinstance(namespace.get("F"), io.TextIOWrapper):

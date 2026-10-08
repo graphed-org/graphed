@@ -588,7 +588,7 @@ its code and the values it reads, so editing its body recomputes and adding a li
 not. A function in an installed module is keyed by its name; the module's version is covered by
 the environment record below. The codec, the global ``ak.behavior``, and the backend a graphed task
 builds (with a behavior dict an import reference names) are in the key too, so editing a
-``__main__`` mixin recomputes what it touches. Six cases need a hand:
+``__main__`` mixin recomputes what it touches. Seven cases need a hand:
 
 - A ``reused`` of 0 after a restart, when nothing changed, means the process holds data ordered by
   set iteration (a list built from a set, say). Sort it, or set ``salt``.
@@ -597,17 +597,21 @@ builds (with a behavior dict an import reference names) are in the key too, so e
 - Set elements that only object identity tells apart (equal-valued instances) can recompute after a
   restart or a load from a pickle. Keep them in a list, or give each a distinguishing value.
 - An object cloudpickle cannot copy exactly keys apart from its loaded copy: a memoryview, an open
-  file, an instance of a slotted class defined at run time, an annotations dict a first read
-  created, a class ``__dict__`` mappingproxy, and a closure cell that two functions share and one
-  rebinds. A plan built in one interpreter and loaded from a
-  pickle in another recomputes those tasks; a rebuilt plan, or one reloaded from the same pickle, is
-  unaffected.
+  file, an instance of a slotted class defined at run time, a class whose annotations nothing has
+  read (from Python 3.14), an annotations dict a first read created, a class ``__dict__``
+  mappingproxy, and a closure cell that two functions share and one rebinds. A plan built in one
+  interpreter and loaded from a pickle in another recomputes those tasks; a rebuilt plan, or one
+  reloaded from the same pickle, is unaffected.
+- A closure cell rebound without ``STORE_DEREF``/``DELETE_DEREF`` (through ``cell_contents`` or a
+  frame's ``f_locals``) can be reused stale; rebind it in code, or set ``salt``.
 - A numba kernel defined in ``__main__`` recomputes after every restart, since its pickle carries a
   fresh id. Keep kernels in a module, which pickles them by name.
 - Process-global state other than ``ak.behavior`` (an environment variable, a file a task reads
   beyond its partition, an editable install or a local module whose version does not change when
   you edit it) is not in the key. ``salt``, a string that goes into every key, covers it: change it
   and every task recomputes.
+  Task keys cover a partition's uri, tree and entry range, not the file's bytes, so after rewriting
+  an input in place, change ``salt``.
 
 **The environment record.** Installed distributions and the interpreter's cache tag are not in
 the key; they are kept in the store, one record per ``salt``. The first run writes it. A later run
