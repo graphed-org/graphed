@@ -350,3 +350,59 @@ def _annotated(rebuilt: bool) -> Any:
 def test_a_class_whose_annotations_were_set_after_creation_is_reused(tmp_path: Path) -> None:
     _filled(_annotated(rebuilt=False), tmp_path)
     assert _reused(_annotated(rebuilt=True), tmp_path) == T
+
+
+_COPY_LEG = """
+import abc, sys, typing, weakref, cloudpickle
+from graphed.checkpoint.resume import _key_digest
+mode, path, source, access = sys.argv[1:]
+if mode == "build":
+    namespace = {"__name__": "m74copy", "typing": typing, "weakref": weakref}
+    exec(compile(source + "\\ndef process(p, r):\\n    return float(OBJ is not None)\\n", "<m74>", "exec", dont_inherit=True), namespace)
+    process = namespace["process"]
+    open(path, "wb").write(cloudpickle.dumps(process))
+else:
+    process = cloudpickle.loads(open(path, "rb").read())
+print(_key_digest(process).hex())
+exec(access, {"OBJ": process.__globals__["OBJ"], "typing": typing})
+print(_key_digest(process).hex())
+"""
+
+#: objects whose loaded copy, or whose first read, a key pickling once told apart: (source, read in A, read in B)
+_COPIES = {
+    "unannotated-class": ("class C:\n    k = 1\nOBJ = C", "OBJ.__annotations__", "OBJ.__annotations__"),
+    "unread-annotations": ("class C:\n    x: int\nOBJ = C", "", "OBJ.__annotations__"),
+    "slotted-instance": (
+        "class C:\n    __slots__ = ('a',)\n    def __init__(self):\n        self.a = 1\nOBJ = C()",
+        "",
+        "",
+    ),
+    "protocol": ("class P(typing.Protocol):\n    def f(self) -> int: ...\nOBJ = P", "", ""),
+    "memoryview": ("OBJ = memoryview(b'abc')", "", ""),
+    "read-file": (f"OBJ = open({__file__!r})\nOBJ.readline()", "", ""),
+    "tied-set": ("class K: pass\nKEEP = [K() for _ in range(6)]\nOBJ = (set(KEEP), KEEP)", "", ""),
+    "tied-weakset": (
+        "class K: pass\nKEEP = [K() for _ in range(6)]\nOBJ = (weakref.WeakSet(KEEP), KEEP)",
+        "",
+        "",
+    ),
+}
+
+
+@pytest.mark.parametrize("name", sorted(_COPIES))
+def test_an_object_and_its_loaded_copy_share_a_key_before_and_after_a_first_read(
+    tmp_path: Path, name: str
+) -> None:
+    source, read_a, read_b = _COPIES[name]
+    path = str(tmp_path / "process.pkl")
+
+    def leg(seed: int, mode: str, access: str) -> list[str]:
+        env = {**os.environ, "PYTHONHASHSEED": str(seed)}
+        argv = [sys.executable, "-c", _COPY_LEG, mode, path, source, access]
+        run = subprocess.run(argv, capture_output=True, text=True, env=env, check=False)
+        assert run.returncode == 0, run.stderr
+        return run.stdout.split()
+
+    keys = leg(1, "build", read_a) + leg(2, "load", read_b)
+    assert len(keys) == 4
+    assert len(set(keys)) == 1, keys

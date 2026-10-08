@@ -22,6 +22,7 @@ import functools
 import hashlib
 import importlib.metadata
 import io
+import itertools
 import json
 import logging
 import operator
@@ -80,6 +81,8 @@ _CLASS_BLANKS = (
     "__firstlineno__",
     "__doc__",
 )
+#: names a class's annotations are read from, which a first read fills with ``{}`` when it has none
+_ANNOTATIONS = ("__annotations__", "__annotations_cache__")
 _TRACKED = (type, typing.TypeVar, typing.ParamSpec, typing.TypeVarTuple)
 #: the pure-Python pickler, whose hooks typeshed does not declare
 _PURE: Any = pickle
@@ -151,12 +154,16 @@ class _KeyPickler(pickle._Pickler):
     ``seen`` holds the classes pickled by value so far; a set element's sort key, pickled apart from
     the whole, names such a class instead of recursing into it."""
 
+    memo: dict[int, tuple[int, Any]]
+
     def __init__(self, file: io.BytesIO | _HashSink, seen: Mapping[int, type]) -> None:
         super().__init__(file, protocol=5)
         self._cp = _cloudpickle()
         self.globals_ref: dict[int, dict[str, Any]] = {}
         self.proto = 5
         self._seen = dict(seen)
+        self._twins: dict[int, int] = {}
+        self._rebuilt: dict[int, tuple[object, object]] = {}
         own: dict[type, Callable[[Any], Any]] = {
             weakref.WeakSet: lambda ws: (weakref.WeakSet, (self._sorted(ws),)),
             types.ModuleType: self._module_reduce,
@@ -178,12 +185,34 @@ class _KeyPickler(pickle._Pickler):
         return reduced
 
     def _sorted(self, items: Iterable[Any]) -> list[Any]:
-        return sorted(items, key=lambda item: _dumps(item, self._seen))
+        unwritten = (-1,)
+        keyed = sorted(
+            ((_dumps(item, self._seen), item) for item in items),
+            key=lambda pair: (pair[0], self.memo.get(id(pair[1]), unwritten)[0]),
+        )
+        # which of two equal-keyed elements another reference shares follows the set's iteration order
+        for (a, x), (b, y) in itertools.pairwise(keyed):
+            if a == b:
+                self._twins[id(y)] = self._twins.get(id(x), id(x))
+        return [item for _, item in keyed]
 
     def memoize(self, obj: Any) -> None:
         # interning would decide where memo references fall, and a loaded closure never shares a cell
         if not isinstance(obj, (*_IMMUTABLE, types.CellType)):
             _PURE._Pickler.memoize(self, obj)
+
+    def save(self, obj: Any, save_persistent_id: bool = True) -> None:
+        twin = self.memo.get(self._twins.get(id(obj), -1))
+        if twin is not None:
+            pure: Any = self
+            pure.write(pure.get(twin[0]))
+            return
+        if type(obj) in (memoryview, io.TextIOWrapper):  # cloudpickle loads these as bytes and StringIO
+            if id(obj) not in self._rebuilt:
+                func, args = self._cp.dispatch_table[type(obj)](obj)
+                self._rebuilt[id(obj)] = (obj, func(*args))
+            obj = self._rebuilt[id(obj)][1]
+        _PURE._Pickler.save(self, obj, save_persistent_id)
 
     def save_global(self, obj: Any, name: str | None = None) -> None:
         qualname = name or getattr(obj, "__qualname__", None) or obj.__name__
@@ -209,7 +238,10 @@ class _KeyPickler(pickle._Pickler):
                 {name: (getattr(obj, name), fn(getattr(obj, name))) for name, fn in resolve.items()}
             )
             return dataclasses.replace(cast("Any", obj), **fields).__reduce_ex__(5)
-        if not isinstance(obj, (type, types.FunctionType, types.ModuleType)):
+        if (
+            not isinstance(obj, (type, types.FunctionType, types.ModuleType))
+            and kind not in self.dispatch_table
+        ):
             qualname, module = getattr(obj, "__qualname__", None), getattr(obj, "__module__", None)
             named = isinstance(qualname, str) and isinstance(module, str) and module != "__main__"
             if named and _resolves(cast("str", module), cast("str", qualname), obj):
@@ -223,7 +255,7 @@ class _KeyPickler(pickle._Pickler):
         state = {
             "__annotations__" if k == "__annotations_cache__" else k: v
             for k, v in state.items()
-            if k not in _CLASS_BLANKS
+            if k not in _CLASS_BLANKS and not (k in _ANNOTATIONS and type(v) is dict and not v)
         }
         if isinstance(state.get("_abc_impl"), list):  # cloudpickle lists an ABC's registry from a set
             state["_abc_impl"] = self._sorted(state["_abc_impl"])
@@ -241,6 +273,12 @@ class _KeyPickler(pickle._Pickler):
         return (code, {k: v for k, v in base_globals.items() if k != "__file__"}, *rest)
 
     def save_reduce(self, func: Any, args: Any, *rest: Any, obj: Any = None) -> None:
+        state, setter = (*rest, None, None, None, None)[0:4:3]
+        plain = setter is None and not hasattr(obj, "__setstate__")
+        if plain and isinstance(state, tuple) and len(state) == 2 and isinstance(state[1], dict):
+            # BUILD sets slots after __dict__, and cloudpickle rebuilds a slotted class without its slots
+            shadowed = {k: v for k, v in (state[0] or {}).items() if k not in state[1]}
+            rest = ((shadowed or None, state[1]), *rest[1:])
         if isinstance(obj, _TRACKED):  # cloudpickle's per-process tracker id of a by-value class
             tracker = self._cp.trackers.get(obj)
             if tracker is not None:
@@ -258,12 +296,19 @@ def _key_digest(obj: object) -> bytes:
     """The sha256 of ``obj``'s key pickling: cloudpickle's by-value pickling of what a worker
     resolves, made the same in every interpreter that holds the same values.
 
+    Loading rebuilds an object from the state its reducer shipped, not from how it was made, so the
+    key writes each object as its loaded copy would be written:
+
     - sets, frozensets, a ``weakref.WeakSet`` and an ABC's registry are written sorted by their
-      elements' key bytes;
-    - interpreter-filled class caches (``__slotnames__``, typing's protocol-member caches) are dropped,
-      and a class's ``__annotations_cache__`` is written as ``__annotations__``;
-    - an object other than a function, class or module that its ``__module__``/``__qualname__``
-      name in a module other than ``__main__`` is written by that name;
+      elements' key bytes, and an element whose key bytes equal an earlier one's as that one;
+    - a ``memoryview`` and a file are written as the ``bytes`` and ``io.StringIO`` cloudpickle loads;
+    - interpreter-filled class caches (``__slotnames__``, typing's protocol-member caches) and an empty
+      class annotations dict are dropped, and a class's ``__annotations_cache__`` is written as
+      ``__annotations__``;
+    - an instance's ``__dict__`` entry that a slot of the same name shadows is dropped;
+    - an object other than a function, class or module, of a type outside the pickler's dispatch
+      table, that its ``__module__``/``__qualname__`` name in a module other than ``__main__`` is
+      written by that name;
     - a module without ``__spec__`` is written by value; a name into ``__main__`` and the ``__main__``
       module are refused (``TypeError``), since their content cannot be keyed;
     - cloudpickle's per-process tracker ids, code locations (``co_filename``, ``co_firstlineno``,

@@ -70,3 +70,22 @@ Run: `python -m pytest tests/frozen/checkpoint/m74 -p no:cacheprovider -n 8`.
 - Extra: functions sharing a cell, and a class whose annotations were set after creation, are each
   reused from a rebuilt copy; each fails with its fix reverted (the cell one on every version, the
   annotations one on 3.14).
+
+## Iteration 6 (2026-10-08) — closed walk of cloudpickle's by-value reducers
+- Walk: every `reducer_override`/`_class_reduce` branch, `Pickler._dispatch_table` key and
+  `_*_getstate`/`_*_reduce` helper of cloudpickle 3.1.2, plus lazily filled attributes, probed for the key
+  of an object against its loaded copy in a fresh interpreter, before and after first access, on 3.12,
+  3.13, 3.14 and 3.14t. Member list, per-version results, causes and cuts:
+  `graphed-workdir/lanes/ckpt-resume/probes/walk/` (`members.txt`, `results.md`).
+- Unstable on every version, now cut in `_KeyPickler`: an empty class annotations dict a first read
+  stores; a slotted instance whose copy (cloudpickle rebuilds the class without slots) carries a
+  `__dict__`; a dispatch-table object the by-name rule named while cloudpickle ships it by value
+  (typing's `_proto_hook`); a memoryview and a file, which load as bytes and StringIO; set elements with
+  equal key bytes, whose iteration order decided which one a later reference shared. On 3.14 the copy of
+  an unread annotated class is also cut by the empty-annotations rule.
+- Kept, as values a worker uses: a `cached_property` value, and on 3.14 a class's annotations, which
+  cloudpickle 3.1.2 ships only once read. The stopped iteration's WIP patch is superseded: its
+  `__annotate_func__` condition never held, because cloudpickle pops that key before the key pickler
+  sees the class state.
+- Extra: one subprocess leg per cut member (two hash seeds); with the cut reverted, seven legs fail on
+  3.12 and 3.13, and eight on 3.14 and 3.14t.
