@@ -653,7 +653,7 @@ placeholders, so a replay reads nothing the task did not.
 Not supported yet
 -----------------
 
-**``run_resumable`` recomputes sequentially.** Its missing partitions are processed one at a time,
+``run_resumable`` **recomputes sequentially.** Its missing partitions are processed one at a time,
 in order. Wrap the plan with ``resumable`` and run it on a parallel runner instead.
 
 **Plans that pull tasks as they go cannot resume.** ``resumable`` needs a fixed task set; a plan

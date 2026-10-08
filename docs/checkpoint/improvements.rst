@@ -16,7 +16,7 @@ Current limitations
   local S3 stand-in rather than a real bucket. Any other fsspec scheme (``root://``,
   ``https://``, ...) is a URL plus storage options and should work, but has not been tried.
 
-- **``run_resumable`` recomputes sequentially.** It processes missing partitions one at a time, in
+- ``run_resumable`` **recomputes sequentially.** It processes missing partitions one at a time, in
   order. ``resumable(plan, store)`` resumes the same plan on any fixed-task runner in parallel.
 
 - **Adaptive plans cannot resume.** ``resumable`` refuses a plan with ``next_tasks``, and stores no

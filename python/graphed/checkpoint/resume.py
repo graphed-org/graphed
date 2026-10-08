@@ -7,9 +7,9 @@ holds, its blob's hash. A runner ships and calls that process as it would any ot
 either decodes the stored partial or runs the inner process and records the result. No runner reads
 the extra fields, so resume is a property of the plan, not of the executor that runs it.
 
-A task's key is :func:`_key_bytes`, cloudpickle's own by-value pickling of what a worker runs, with
-only value-free bytes blanked, so it changes exactly when what the worker computes can change. The
-environment (installed distributions and the interpreter's cache tag) is kept beside the keys as a
+A task's key is :func:`_key_digest`, a hash of cloudpickle's own by-value pickling of what a worker
+runs, with only value-free bytes blanked, so it changes exactly when what the worker computes can
+change. The environment (installed distributions and the interpreter's cache tag) is kept beside the keys as a
 store record a changed environment refuses on, rather than in them.
 """
 
@@ -18,6 +18,7 @@ from __future__ import annotations
 import collections
 import copyreg
 import dataclasses
+import functools
 import hashlib
 import importlib.metadata
 import io
@@ -37,7 +38,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Any, NoReturn, TypeVar, cast, overload
 
-from cloudpickle import cloudpickle as _cp
+import cloudpickle
 
 from graphed.core import DurablePlan, DurablePlanV2, OpSpec, Partition, Plan, Task
 from graphed.core.plan import _partition_bytes, _sha256_hex
@@ -97,16 +98,36 @@ def _code_reduce(code: types.CodeType) -> tuple[Any, ...]:
     return _key_only, ("code", attrs)
 
 
-def _module_reduce(module: types.ModuleType) -> tuple[Any, ...]:
-    if module.__name__ == "__main__":
-        raise TypeError("the __main__ module cannot be keyed: a worker's __main__ is not the driver's")
-    if getattr(module, "__spec__", None) is None:  # made at run time, so no import finds it by name
-        return _cp.dynamic_subimport, (
-            module.__name__,
-            {k: v for k, v in vars(module).items() if k != "__builtins__"},
+@functools.cache
+def _cloudpickle() -> types.SimpleNamespace:
+    """cloudpickle's private API the key pickler reuses, read here alone and only when a key is taken."""
+    try:
+        cp = cloudpickle.cloudpickle
+        return types.SimpleNamespace(
+            reducer_override=cp.Pickler.reducer_override,
+            function_reduce=cp.Pickler._function_reduce,
+            dynamic_function_reduce=cp.Pickler._dynamic_function_reduce,
+            function_getnewargs=cp.Pickler._function_getnewargs,
+            dispatch_table=cp.Pickler._dispatch_table,
+            trackers=cp._DYNAMIC_CLASS_TRACKER_BY_CLASS,
+            module_reduce=cp._module_reduce,
+            dynamic_subimport=cp.dynamic_subimport,
         )
-    reduced: tuple[Any, ...] = _cp._module_reduce(module)
-    return reduced
+    except AttributeError as exc:
+        raise TypeError(
+            f"resumable cannot key tasks with cloudpickle {cloudpickle.__version__}: {exc}"
+        ) from exc
+
+
+class _HashSink:
+    """A pickler's file that hashes what it is given instead of keeping it."""
+
+    def __init__(self) -> None:
+        self.hash = hashlib.sha256()
+
+    def write(self, data: bytes) -> int:
+        self.hash.update(data)
+        return len(data)
 
 
 def _resolves(module: str, qualname: str, obj: object) -> bool:
@@ -118,29 +139,36 @@ def _resolves(module: str, qualname: str, obj: object) -> bool:
 
 class _KeyPickler(pickle._Pickler):
     """cloudpickle's by-value/by-name partition and reducers on the pure-Python pickler (the C one
-    skips ``reducer_override`` for exact sets), with the key rules of :func:`_key_bytes`.
+    skips ``reducer_override`` for exact sets), with the key rules of :func:`_key_digest`.
 
     ``seen`` holds the classes pickled by value so far; a set element's sort key, pickled apart from
     the whole, names such a class instead of recursing into it."""
 
-    _cp_reducer_override = _cp.Pickler.reducer_override
-    _function_reduce = _cp.Pickler._function_reduce
-    _cp_dynamic_function_reduce = _cp.Pickler._dynamic_function_reduce
-    _cp_function_getnewargs = _cp.Pickler._function_getnewargs
-
-    def __init__(self, file: io.BytesIO, seen: Mapping[int, type]) -> None:
+    def __init__(self, file: io.BytesIO | _HashSink, seen: Mapping[int, type]) -> None:
         super().__init__(file, protocol=5)
+        self._cp = _cloudpickle()
         self.globals_ref: dict[int, dict[str, Any]] = {}
         self.proto = 5
         self._seen = dict(seen)
         own: dict[type, Callable[[Any], Any]] = {
             weakref.WeakSet: lambda ws: (weakref.WeakSet, (self._sorted(ws),)),
-            types.ModuleType: _module_reduce,
+            types.ModuleType: self._module_reduce,
             types.CodeType: _code_reduce,
         }
         # built per call, so a reducer registered after import is honoured
         live = cast("dict[type, Callable[[Any], Any]]", copyreg.dispatch_table)
-        self.dispatch_table = collections.ChainMap(own, _cp.Pickler._dispatch_table, live)
+        self.dispatch_table = collections.ChainMap(own, self._cp.dispatch_table, live)
+
+    def _module_reduce(self, module: types.ModuleType) -> tuple[Any, ...]:
+        if module.__name__ == "__main__":
+            raise TypeError("the __main__ module cannot be keyed: a worker's __main__ is not the driver's")
+        if getattr(module, "__spec__", None) is None:  # made at run time, so no import finds it by name
+            return self._cp.dynamic_subimport, (
+                module.__name__,
+                {k: v for k, v in vars(module).items() if k != "__builtins__"},
+            )
+        reduced: tuple[Any, ...] = self._cp.module_reduce(module)
+        return reduced
 
     def _sorted(self, items: Iterable[Any]) -> list[Any]:
         return sorted(items, key=lambda item: _dumps(item, self._seen))
@@ -179,7 +207,7 @@ class _KeyPickler(pickle._Pickler):
             named = isinstance(qualname, str) and isinstance(module, str) and module != "__main__"
             if named and _resolves(cast("str", module), cast("str", qualname), obj):
                 return qualname  # by name, before a library reduce that carries per-object ids
-        reduced = self._cp_reducer_override(obj)
+        reduced = self._cp.reducer_override(self, obj)
         if reduced is NotImplemented or not isinstance(obj, type) or len(reduced) < 3:
             return reduced
         self._seen[id(obj)] = obj
@@ -189,17 +217,20 @@ class _KeyPickler(pickle._Pickler):
             state["_abc_impl"] = self._sorted(state["_abc_impl"])
         return (func, args, (state, slotstate), *rest)
 
+    def _function_reduce(self, obj: object) -> Any:
+        return self._cp.function_reduce(self, obj)
+
     def _dynamic_function_reduce(self, func: types.FunctionType) -> tuple[Any, ...]:
-        make, args, (state, slotstate), *rest = self._cp_dynamic_function_reduce(func)
+        make, args, (state, slotstate), *rest = self._cp.dynamic_function_reduce(self, func)
         return (make, args, (state, {**slotstate, "__doc__": None}), *rest)
 
     def _function_getnewargs(self, func: types.FunctionType) -> tuple[Any, ...]:
-        code, base_globals, *rest = self._cp_function_getnewargs(func)
+        code, base_globals, *rest = self._cp.function_getnewargs(self, func)
         return (code, {k: v for k, v in base_globals.items() if k != "__file__"}, *rest)
 
     def save_reduce(self, func: Any, args: Any, *rest: Any, obj: Any = None) -> None:
         if isinstance(obj, _TRACKED):  # cloudpickle's per-process tracker id of a by-value class
-            tracker = _cp._DYNAMIC_CLASS_TRACKER_BY_CLASS.get(obj)
+            tracker = self._cp.trackers.get(obj)
             if tracker is not None:
                 args = tuple(None if isinstance(a, str) and a == tracker else a for a in args)
         _PURE._Pickler.save_reduce(self, func, args, *rest, obj=obj)
@@ -211,8 +242,8 @@ def _dumps(obj: object, seen: Mapping[int, type]) -> bytes:
     return buffer.getvalue()
 
 
-def _key_bytes(obj: object) -> bytes:
-    """The bytes a task key hashes for ``obj``: cloudpickle's by-value pickling of what a worker
+def _key_digest(obj: object) -> bytes:
+    """The sha256 of ``obj``'s key pickling: cloudpickle's by-value pickling of what a worker
     resolves, made the same in every interpreter that holds the same values.
 
     - sets, frozensets, a ``weakref.WeakSet`` and an ABC's registry are written sorted by their
@@ -228,8 +259,12 @@ def _key_bytes(obj: object) -> bytes:
     - an instance whose class declares ``checkpoint_ignore`` is written with those fields ``None``,
       and one whose class declares ``checkpoint_resolve`` with each declared field as
       ``(value, resolver(value))``.
+
+    The pickling is hashed as it is written, so a payload many objects share is never held twice.
     """
-    return _dumps(obj, {})
+    sink = _HashSink()
+    _KeyPickler(sink, {}).dump(obj)
+    return sink.hash.digest()
 
 
 # ---- the per-task channel and the worker side -------------------------------------------------
@@ -455,21 +490,27 @@ def _processes(plan: Plan[Any] | DurablePlan | DurablePlanV2) -> list[Any]:
     return processes
 
 
-def _behaviors() -> tuple[tuple[Any, Any], ...]:
-    """The global ``ak.behavior`` a backend built without its own behavior dict reads at run time."""
+def _behaviors() -> tuple[bytes, ...]:
+    """The sorted key digests of the global ``ak.behavior`` entries, which a backend built without its
+    own behavior dict reads at run time."""
     ak = sys.modules.get("awkward")
     if ak is None:
         return ()
-    return tuple(sorted(ak.behavior.items(), key=lambda item: _key_bytes(item[0])))
+    entries = ak.behavior.items()
+    return tuple(
+        sorted(_keyed(entry, functools.partial("ak.behavior[{!r}]".format, entry[0])) for entry in entries)
+    )
 
 
-def _keyed(obj: object, process: object) -> bytes:
+def _keyed(obj: object, what: Callable[[], str]) -> bytes:
     try:
-        return _key_bytes(obj)
+        return _key_digest(obj)
     except Exception as exc:
-        raise TypeError(
-            f"resumable cannot key the process {reprlib.repr(process)}: {type(exc).__name__}: {exc}"
-        ) from exc
+        raise TypeError(f"resumable cannot key {what()}: {type(exc).__name__}: {exc}") from exc
+
+
+def _of(process: object) -> Callable[[], str]:
+    return lambda: f"the process {reprlib.repr(process)}"  # a repr can be as large as the payloads it shows
 
 
 def _task_id(ident: str, salt: str, partition: Partition) -> str:
@@ -485,7 +526,7 @@ def _task_ids(
     if isinstance(plan, DurablePlanV2):
         ids: list[list[str]] = []
         for si, (stage, process) in enumerate(zip(plan.stages, processes, strict=True)):
-            body = _keyed((process, behaviors), process)
+            body = _keyed((process, behaviors), _of(process))
             routing = json.dumps(dict(stage.routing), sort_keys=True, separators=(",", ":")).encode()
             upstream = [tid.encode() for dep in stage.inputs for tid in ids[dep]]
             head = (plan.ir, str(si).encode(), stage.kind.encode(), routing)
@@ -498,9 +539,9 @@ def _task_ids(
         return processes, ids
     (process,) = processes
     if isinstance(plan, DurablePlan):
-        ident = _sha256_hex(plan.ir, _keyed((process, codec, behaviors), process))
+        ident = _sha256_hex(plan.ir, _keyed((process, codec, behaviors), _of(process)))
         return processes, [[_task_id(ident, salt, p) for p in plan.partitions]]
-    ident = hashlib.sha256(_keyed((process, codec, behaviors), process)).hexdigest()
+    ident = _keyed((process, codec, behaviors), _of(process)).hex()
     return processes, [[_task_id(ident, salt, t.partition) for t in plan.tasks]]
 
 

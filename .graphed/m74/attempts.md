@@ -32,3 +32,16 @@ Run: `python -m pytest tests/frozen/checkpoint/m74 -p no:cacheprovider -n 8`.
   (376 lines); precommit static checks ok, sphinx -W ok. The precommit `pytest` fallback collects the
   whole tree in one process and fails collection on helper-basename collisions (`analyses`,
   `shuffle_backends`) unrelated to m74; `run-tests.sh` is this repo's runner.
+
+## Iteration 3 (2026-10-07) — review fixes (impl1-findings: m74-D1, N1, N2, T-1, T-2, D-1)
+- m74-D1: every read of cloudpickle's private API is in `_cloudpickle()` (cached, called from
+  `_KeyPickler.__init__`); no class attribute or module global binds one. A missing name makes
+  `check_resumable`/`resumable` raise `TypeError` naming cloudpickle; `import graphed.checkpoint`,
+  the stores and `run_resumable` keep working. Extra test: one subprocess leg per deleted private name
+  plus a control; both deletion legs fail on da9c20c.
+- N1: the key pass pickles into a sha256 sink (`_key_digest`), so key memory stays flat; the refusal's
+  process repr is built only on failure (an eager repr held every payload). Element sort keys keep bytes.
+- N2: each `ak.behavior` entry is keyed alone; an unkeyable one is refused as `ak.behavior[<key>]`.
+- T-1: the vacuous tracker test is replaced by by-value TypeVars of different names; it kills
+  "blank every str", "no blanking" and "`_TRACKED = (type,)`". T-2: two tests renamed. D-1: the two
+  m74 headings no longer nest a literal in bold.

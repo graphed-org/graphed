@@ -1,13 +1,16 @@
 """m74 paths the frozen suite reaches only in subprocesses, or not at all: the environment record in
-process, the key rules for ABC registries, ``__main__`` modules and untracked reductions, the worker
-store cache, and the wrappers' forwarding hooks."""
+process, the key rules for ABC registries, ``__main__`` modules, by-value ``TypeVar``s and behavior
+entries, a cloudpickle without a private name the key reads, the worker store cache, and the
+wrappers' forwarding hooks."""
 
 from __future__ import annotations
 
 import abc
 import os
 import pickle
+import subprocess
 import sys
+import threading
 import typing
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -77,7 +80,7 @@ def test_key_bytes_are_never_loaded() -> None:
         return 1.0
 
     with pytest.raises(AssertionError, match="never loaded"):
-        pickle.loads(rs._key_bytes(process))
+        pickle.loads(rs._dumps(process, {}))
 
 
 def test_the_main_module_is_refused(tmp_path: Path) -> None:
@@ -114,19 +117,20 @@ def test_an_abc_registry_made_in_another_order_is_reused(tmp_path: Path) -> None
     assert _reused(_registry(names[::-1]), tmp_path) == T
 
 
-V = typing.TypeVar("V")
+#: called, not declared, so each TypeVar is a fresh unimportable one cloudpickle gives a tracker id
+_TYPEVAR: Any = typing.TypeVar
 
 
-def test_reductions_without_a_tracker_id_are_kept(tmp_path: Path) -> None:
+def test_a_by_value_typevar_is_keyed_by_its_name_not_its_tracker_id(tmp_path: Path) -> None:
     def make(kind: Any) -> Any:
         def process(p: Any, r: Any) -> float:
-            return float(p.entry_start) if kind in (type(None), V) else -1.0
+            return float(p.entry_start) if kind is not None else -1.0
 
         return process
 
-    _filled(make(type(None)), tmp_path)
-    assert _reused(make(type(None)), tmp_path) == T
-    assert _reused(make(V), tmp_path) == 0
+    _filled(make(_TYPEVAR("VA")), tmp_path)
+    assert _reused(make(_TYPEVAR("VA")), tmp_path) == T
+    assert _reused(make(_TYPEVAR("VB")), tmp_path) == 0
 
 
 def test_the_environment_record_in_process(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -151,12 +155,23 @@ def test_behaviors_are_empty_without_awkward(monkeypatch: pytest.MonkeyPatch) ->
     import awkward as ak  # noqa: PLC0415
 
     monkeypatch.setitem(ak.behavior, "m74x", _add)
-    assert rs._behaviors() == (("m74x", _add),)
+    assert rs._key_digest(("m74x", _add)) in rs._behaviors()
     monkeypatch.delitem(sys.modules, "awkward")
     assert rs._behaviors() == ()
 
 
-def test_worker_stores_per_process_and_thread(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_an_unkeyable_behavior_entry_is_named(monkeypatch: pytest.MonkeyPatch) -> None:
+    import awkward as ak  # noqa: PLC0415
+
+    check_resumable(_plan(lambda p, r: 1.0))
+    monkeypatch.setitem(ak.behavior, "m74x-lock", threading.Lock())
+    with pytest.raises(TypeError, match=r"cannot key ak\.behavior\['m74x-lock'\]: TypeError: .*lock"):
+        check_resumable(_plan(lambda p, r: 1.0))
+
+
+def test_task_store_caches_dirless_roots_and_renews_a_forked_token(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     url = "memory://m74x-cache"
     assert rs.task_store(url) is rs.task_store(url)
     directory = str(tmp_path / "dir")
@@ -230,8 +245,67 @@ def test_stage_wrapper_forwards_service_hooks(tmp_path: Path) -> None:
 BEHAVIOR: dict[str, Any] = {"m74x": _add}
 
 
-def test_a_writer_behavior_reference_resolves_for_the_key() -> None:
+def test_resolve_behavior_imports_a_module_reference() -> None:
     from graphed.awkward.io import _resolve_behavior  # noqa: PLC0415
 
     assert _resolve_behavior("test_m74_extra:BEHAVIOR") is BEHAVIOR
     assert _resolve_behavior(BEHAVIOR) is BEHAVIOR
+
+
+_PRIVATE_GONE = """
+import sys
+import cloudpickle.cloudpickle as cp
+{delete}
+import graphed.checkpoint as ck
+from graphed.core import DurablePlan, OpSpec, Partition
+plan = DurablePlan(
+    ir=b"m74x",
+    process=OpSpec("ref", "m74x:p", live=lambda p, r: float(p.entry_start)),
+    combine=OpSpec("ref", "operator:add"),
+    empty=OpSpec("ref", "builtins:float"),
+    partitions=tuple(Partition("mem://m74x", "Events", i, i + 1) for i in range(3)),
+)
+print(ck.run_resumable(plan, ck.Store(sys.argv[1])).value)
+for key in (ck.check_resumable, lambda plan: ck.resumable(plan, sys.argv[1] + "-r")):
+    try:
+        key(plan)
+    except TypeError as exc:
+        print("refused:", exc)
+    else:
+        print("accepted")
+"""
+
+
+@pytest.mark.parametrize(
+    ("delete", "verdict"),
+    [
+        ("", "accepted"),
+        ("del cp.Pickler._function_getnewargs", "refused:"),
+        ("del cp._DYNAMIC_CLASS_TRACKER_BY_CLASS", "refused:"),
+    ],
+)
+def test_a_missing_cloudpickle_private_name_refuses_keys_only(
+    tmp_path: Path, delete: str, verdict: str
+) -> None:
+    script = _PRIVATE_GONE.format(delete=delete)
+    run = subprocess.run(
+        [sys.executable, "-c", script, str(tmp_path)], capture_output=True, text=True, check=False
+    )
+    assert run.returncode == 0, run.stderr
+    value, *refusals = run.stdout.splitlines()
+    assert value == "3.0"
+    assert len(refusals) == 2
+    for refusal in refusals:
+        assert refusal.startswith(verdict)
+        assert ("cloudpickle" in refusal) == bool(delete)
+
+
+def test_a_missing_cloudpickle_private_name_is_refused_in_process(monkeypatch: pytest.MonkeyPatch) -> None:
+    import cloudpickle  # noqa: PLC0415
+
+    monkeypatch.delattr(cloudpickle.cloudpickle.Pickler, "_function_getnewargs")
+    rs._cloudpickle.cache_clear()
+    with pytest.raises(TypeError, match=r"cloudpickle .*_function_getnewargs"):
+        check_resumable(_plan(lambda p, r: 1.0))
+    monkeypatch.undo()
+    check_resumable(_plan(lambda p, r: 1.0))
