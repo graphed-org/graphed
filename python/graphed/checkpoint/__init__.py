@@ -10,6 +10,7 @@ from __future__ import annotations
 from .codec import Codec, NumpyCodec, PickleCodec
 from .errors import dead_letter_descriptor
 from .fsspec_store import FsspecStore
+from .resume import EnvironmentChanged, StoreUnavailable, check_resumable, resumable
 from .retry import Quarantine, RetryElsewhere, RetryN, RetrySmallerChunk
 from .runner import (
     ResumeReport,
@@ -23,6 +24,7 @@ from .store import CheckpointStore, JournalEntry, Store
 __all__ = [
     "CheckpointStore",
     "Codec",
+    "EnvironmentChanged",
     "FsspecStore",
     "JournalEntry",
     "NumpyCodec",
@@ -35,7 +37,10 @@ __all__ = [
     "RetrySmallerChunk",
     "ShuffleResumeResult",
     "Store",
+    "StoreUnavailable",
+    "check_resumable",
     "dead_letter_descriptor",
+    "resumable",
     "run_resumable",
     "run_shuffle_resumable",
 ]

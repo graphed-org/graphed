@@ -31,7 +31,7 @@ import functools
 import pickle
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import Any, TypeVar
+from typing import Any, ClassVar, TypeVar
 
 from graphed.core import DurablePlanV2, GraphStore, OpSpec, Partition, StageSpec, Task
 from graphed.core.execution import WorkerResources
@@ -151,6 +151,10 @@ class _MapWrite:
     none of its rows go. ``route`` is ``(scheme, key, parts)``: ``hash`` routes rows by ``key``,
     ``count`` sends the whole block to dest ``task.key % parts``."""
 
+    checkpointable: ClassVar[bool] = True
+    checkpoint_ignore: ClassVar[tuple[str, ...]] = ("frames",)
+    checkpoint_resolve: ClassVar[Mapping[str, Callable[[Any], Any]]] = {"backend_factory": resolve_backend}
+
     ir: bytes
     target: int
     source_name: str
@@ -191,6 +195,10 @@ class _Gather:
     inputs on — the barrier itself (an exchange is the identity, a join the backend's join kernel) and
     everything recorded after it. The payload is ``reduce(values)``, or the one output's value."""
 
+    checkpointable: ClassVar[bool] = True
+    checkpoint_ignore: ClassVar[tuple[str, ...]] = ("frames",)
+    checkpoint_resolve: ClassVar[Mapping[str, Callable[[Any], Any]]] = {"backend_factory": resolve_backend}
+
     ir: bytes
     barrier_inputs: tuple[int, ...]
     backend_factory: Callable[[], Any] | str
@@ -225,6 +233,8 @@ class _Gather:
 class _Fold:
     """The one-task ``reduce`` stage: ``combine`` the decoded gather payloads, in dest order, onto
     ``empty()``."""
+
+    checkpointable: ClassVar[bool] = True
 
     combine: Callable[[Any, Any], Any]
     empty: Callable[[], Any]

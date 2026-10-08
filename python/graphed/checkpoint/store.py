@@ -46,6 +46,7 @@ class JournalEntry:
 
 
 _READ_BACKOFF = (0.01, 0.05, 0.25, 1.0)
+ENVIRONMENT_JOURNAL = "journal.environment.log"
 
 
 def _record_line(record: Mapping[str, object]) -> str:
@@ -74,20 +75,31 @@ def _done_record(
     return rec
 
 
-def _replay(records: Iterable[Any], present: Callable[[str], bool]) -> dict[str, JournalEntry]:
+class Completed(dict[str, JournalEntry]):
+    """``completed()``'s mapping of task records; ``environments`` holds the environment records
+    (``stage == "environment"``) the same read set aside."""
+
+    environments: tuple[JournalEntry, ...] = ()
+
+
+def _replay(records: Iterable[Any], present: Callable[[str], bool]) -> Completed:
     """``task_id -> JournalEntry`` from records in write order (the later record wins), honouring
     only a record whose blob is present (a journal line can outrace its object write across a
     crash)."""
-    done: dict[str, JournalEntry] = {}
+    done = Completed()
+    environments = []
     for rec in records:
         blob = rec.get("blob")
         if isinstance(blob, str) and present(blob):
             tid = str(rec.get("task_id", ""))
             raw_deps = rec.get("deps", [])
             deps = tuple(str(d) for d in raw_deps) if isinstance(raw_deps, list) else ()
-            done[tid] = JournalEntry(
-                tid, str(rec.get("partition", "")), blob, str(rec.get("stage", "")), deps
-            )
+            entry = JournalEntry(tid, str(rec.get("partition", "")), blob, str(rec.get("stage", "")), deps)
+            if entry.stage == "environment":
+                environments.append(entry)
+            else:
+                done[tid] = entry
+    done.environments = tuple(environments)
     return done
 
 
@@ -197,7 +209,11 @@ class Store:
     ) -> None:
         self._append(self.journal_path, _done_record(task_id, partition, blob, stage, deps))
 
-    def completed(self) -> dict[str, JournalEntry]:
+    def record_environment(self, task_id: str, blob: str) -> None:
+        """Append an environment record to its own journal, ``journal.environment.log``."""
+        self._append(self.root / ENVIRONMENT_JOURNAL, _done_record(task_id, "", blob, "environment", ()))
+
+    def completed(self) -> Completed:
         """Replay the UNION of every writer's journal (``journal.log`` + ``journal.<node>.log``) into
         ``task_id -> JournalEntry`` (last write wins, deterministic file order). A torn trailing line
         (interrupted append) is skipped, never fatal."""
