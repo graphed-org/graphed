@@ -168,11 +168,13 @@ class NetworkMonitor:
             final = self._stop.is_set()  # after a stop, one last drain goes out
             if conn is not None and not conn.connected:
                 conn = None
-            if conn is None and (self._buf or (self._control is not None and not final)):
+            # drain before deciding to connect: an event appended between a buffer check and the
+            # drain would otherwise be popped with no connection and dropped
+            messages = self._drain()
+            if conn is None and (messages or (self._control is not None and not final)):
                 with contextlib.suppress(Exception):  # the server is down: retry on the next tick
                     conn = self._connect()
-            messages = self._drain()
-            if messages and conn is not None:  # with no connection the batch is dropped
+            if messages and conn is not None:  # a failed connect drops the batch
                 try:
                     conn.send(json.dumps(_wire.batch_message(messages)))
                 except Exception:
