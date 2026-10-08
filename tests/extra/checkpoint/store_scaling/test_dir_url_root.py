@@ -24,5 +24,5 @@ def test_dir_s3_store_takes_its_endpoint_option(s3_url: str, monkeypatch: pytest
     monkeypatch.setenv("AWS_ENDPOINT_URL", "http://127.0.0.1:9")
     monkeypatch.setenv("AWS_MAX_ATTEMPTS", "1")
     s3fs.S3FileSystem.clear_instance_cache()
-    digest = FsspecStore(f"dir::{s3_url}", endpoint_url=endpoint).put(b"blob")
-    assert FsspecStore(s3_url, endpoint_url=endpoint).get(digest) == b"blob"
+    digest = FsspecStore(f"dir::{s3_url}", client_kwargs={"endpoint_url": endpoint}).put(b"blob")
+    assert FsspecStore(s3_url, client_kwargs={"endpoint_url": endpoint}).get(digest) == b"blob"
