@@ -1812,7 +1812,7 @@ requires-dist = [
     { name = "pytest-cov", marker = "extra == 'dev'" },
     { name = "pytest-xdist", marker = "extra == 'dev'" },
     { name = "ruff", marker = "extra == 'dev'" },
-    { name = "s3fs", marker = "extra == 'dev'" },
+    { name = "s3fs", marker = "extra == 'dev'", specifier = ">=2026.7.0" },
     { name = "sphinx", marker = "extra == 'docs'" },
     { name = "tensorflow", marker = "extra == 'ml'" },
     { name = "torch", marker = "extra == 'ml'" },
