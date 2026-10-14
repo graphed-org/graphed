@@ -14,7 +14,8 @@ A deferred array has no truth value
   ``Varied`` raise ``GraphedTypeError`` at the calling line. They answered ``True`` and a 0-d object
   array, so an ``if`` on a deferred condition always ran its body and ``np.where`` on an
   awkward-backed condition took one branch for every row. Select elementwise with
-  ``np.where``/``gak.where`` or ``&``/``|``/``~``, or ``materialize`` first.
+  ``np.where`` (numpy) or ``ak.where``/``gak.where`` (awkward) or ``&``/``|``/``~``, or
+  ``materialize`` first.
 
 ``ak.*`` on deferred awkward arrays
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

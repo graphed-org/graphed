@@ -50,7 +50,7 @@ def _session(value: Any) -> Session:
 def test_if_on_a_deferred_value_raises_at_the_users_line(make: Callable[[], Any]) -> None:
     value = make()
     count = _session(value).node_count()
-    with pytest.raises(GraphedTypeError, match="no truth value") as info:
+    with pytest.raises(GraphedTypeError, match=r"'bool\(\.\.\.\)'.*no truth value") as info:
         line = sys._getframe().f_lineno + 1
         if value:
             pass
@@ -65,7 +65,7 @@ def test_numpy_conversion_of_a_deferred_value_raises(
     make: Callable[[], Any], convert: Callable[[Any], Any]
 ) -> None:
     value = make()
-    with pytest.raises(GraphedTypeError, match="no numpy value") as info:
+    with pytest.raises(GraphedTypeError, match=r"'np\.asarray\(\.\.\.\)'.*no numpy value") as info:
         line = sys._getframe().f_lineno + 1
         convert(value)
     assert info.value.provenance.lineno == line
@@ -73,8 +73,9 @@ def test_numpy_conversion_of_a_deferred_value_raises(
 
 def test_np_where_on_a_plain_deferred_condition_raises_instead_of_picking_a_branch() -> None:
     cond = _awkward() > 1.5
-    with pytest.raises(GraphedTypeError, match="no numpy value"):
+    with pytest.raises(GraphedTypeError, match="no numpy value") as info:
         np.where(cond, 1, 0)
+    assert "ak.where/gak.where on an awkward-backed" in str(info.value)
 
 
 def test_numpy_dispatch_and_deferred_logic_still_record() -> None:

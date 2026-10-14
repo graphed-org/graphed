@@ -127,10 +127,10 @@ class Varied:
         )
 
     def __bool__(self) -> bool:
-        raise no_eager_value("bool", "truth value")
+        raise no_eager_value("bool(...)", "truth value")
 
     def __array__(self, dtype: object = None, copy: object = None) -> Any:
-        raise no_eager_value("__array__", "numpy value")
+        raise no_eager_value("np.asarray(...)", "numpy value")
 
     def __repr__(self) -> str:
         return f"Varied(labels={list(self._members)})"

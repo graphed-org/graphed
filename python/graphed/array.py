@@ -243,7 +243,8 @@ def no_eager_value(op: str, missing: str) -> GraphedTypeError:
         op,
         capture(),
         f"a deferred graphed array has no {missing} until it runs; select elementwise with "
-        "np.where/gak.where or &/|/~, or evaluate it first with session.materialize(...)",
+        "np.where on a numpy-backed array or ak.where/gak.where on an awkward-backed one (or "
+        "&/|/~), or evaluate it first with session.materialize(...)",
     )
 
 
@@ -488,10 +489,10 @@ class Array:
         )
 
     def __bool__(self) -> bool:
-        raise no_eager_value("bool", "truth value")
+        raise no_eager_value("bool(...)", "truth value")
 
     def __array__(self, dtype: object = None, copy: object = None) -> Any:
-        raise no_eager_value("__array__", "numpy value")
+        raise no_eager_value("np.asarray(...)", "numpy value")
 
     def __getitem__(self, key: object) -> Array:
         if getattr(key, "_varied_container", False):  # a Varied mask selects PER UNIVERSE
