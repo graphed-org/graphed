@@ -148,6 +148,13 @@ axis. Everything ragged-specific comes from the module:
 field name every time — ``gak.with_field(jets, jets.pt * 1.05, "pt")`` — where
 ``ak.with_field`` lets you leave it out.
 
+**Or call** ``ak`` **itself, on an** ``AwkwardArray``. A session whose backend's ``array_type``
+returns ``graphed.awkward.AwkwardArray`` (or a subclass of it) hands back arrays that awkward's own
+functions recognise: ``ak.sum(x, axis=1)`` records exactly the node ``gak.sum(x, axis=1)`` records,
+with ``ak``'s positions and names — ``ak.mean(x, w)`` takes ``w`` as the weight — and a ``Varied``
+of them dispatches the same way. Options ``gak`` lacks still raise ``TypeError``, and an ``ak``
+function with no ``gak`` counterpart, such as ``ak.to_numpy``, raises ``GraphedError``.
+
 **No** ``behavior=`` **per call.** Behaviors belong to the session, not to a call site — see the
 next section.
 

@@ -7,6 +7,15 @@ Newest release first. Numbers in parentheses are the pull requests on
 0.0.7 (unreleased)
 ------------------
 
+``ak.*`` on deferred awkward arrays
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``graphed.awkward.AwkwardArray`` (and ``AwkwardVaried`` for its ``Varied`` containers) answers
+  awkward's ``__awkward_function__`` hook: ``ak.<fn>(x)`` records exactly what ``gak.<fn>`` records,
+  binding ``ak``'s own argument positions and names. A backend opts in by returning it, or a
+  subclass, from ``array_type``. ``ak`` functions with no ``gak`` counterpart raise
+  ``GraphedError``.
+
 Resuming any plan from a store
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
