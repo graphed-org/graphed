@@ -128,3 +128,9 @@ def test_varied_dispatches_like_gak(arrays: dict[str, Any]) -> None:
     assert [graphed.member_of(out, k).node_id for k in labels] == [
         graphed.member_of(expected, k).node_id for k in labels
     ]
+
+
+@pytest.mark.parametrize("cls", [AwkwardArray, AwkwardVaried])
+def test_the_awkward_proxy_adds_no_member_functions(cls: type) -> None:
+    assert "__awkward_function__" in vars(cls)
+    assert [name for name in vars(cls) if not name.startswith("_")] == []
