@@ -326,9 +326,9 @@ _VARY_PREFIX = "__vary_"
 _BASE_FIELD = "__base__"
 #: §6.4e: the manifest lives in parquet key-value file metadata (greenfield — graphed writes none).
 _MANIFEST_KEY = b"graphed.variations"
-#: suffix of a manifest entry that names no column: an `xor` entry whose `field` matches no stored leaf,
-#: so a reader that predates `base` refuses the file instead of returning nominal for that label.
-_REQUIRES_BASE = "__requires_base"
+#: prefix of a manifest entry that names no column (outside `_VARY_PREFIX`, so no leaf name collides): an
+#: `xor` entry whose `field` matches no stored leaf, so a reader that predates `base` refuses the file.
+_REQUIRES_BASE = "requires_base__"
 
 _SelectKey = Any  # `int` (bare depth) or `tuple[str, int]` (field-scoped, depth >= 1)
 
@@ -531,12 +531,17 @@ def _counts(values: ak.Array) -> np.ndarray:
 
 def _xor_representable(leaf_type: ak.types.Type) -> bool:
     """The leaf types `_encode_delta` round-trips exactly: `T`, `?T`, `var * T`, `var * ?T` over a
-    primitive, none of them a string-like `__array__`."""
-    if isinstance(leaf_type, ak.types.ListType) and leaf_type.parameter("__array__") is None:
+    primitive, none of them a string-like `__array__`, nor `datetime64[s]`, which parquet stores as `[ms]`
+    so nominal's bits on disk differ from the ones the delta was taken against."""
+    if isinstance(leaf_type, ak.types.ListType):
         leaf_type = leaf_type.content
     if isinstance(leaf_type, ak.types.OptionType):
         leaf_type = leaf_type.content
-    return isinstance(leaf_type, ak.types.NumpyType) and leaf_type.parameter("__array__") is None
+    return (
+        isinstance(leaf_type, ak.types.NumpyType)
+        and leaf_type.parameter("__array__") is None
+        and leaf_type.primitive != "datetime64[s]"
+    )
 
 
 def _filled(values: ak.Array, jagged: bool) -> tuple[np.ndarray, Any]:
@@ -742,7 +747,7 @@ def _build_manifest(
                 "entry": None,
             }
             if label in spec.verbatim:
-                manifest[label][f"{_VARY_PREFIX}{label}__{spec.flat}{_REQUIRES_BASE}"] = {
+                manifest[label][f"{_REQUIRES_BASE}{label}__{spec.flat}"] = {
                     "representation": "xor",
                     "field": f"graphed>=0.0.7 needed: {label} stores {spec.flat} as representation base",
                     "entry": None,
@@ -1105,7 +1110,7 @@ def _reconstruct_universe(
     columns = manifest[label]
     rec = base
     for col, info in columns.items():
-        if info["representation"] in ("xor", "base") and not col.endswith(_REQUIRES_BASE):
+        if info["representation"] in ("xor", "base") and col.startswith(_VARY_PREFIX):
             path = _dotted_for_flat(rec, info["field"])
             if info["representation"] == "base":
                 value = full[col]

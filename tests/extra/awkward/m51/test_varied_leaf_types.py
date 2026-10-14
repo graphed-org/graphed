@@ -113,7 +113,9 @@ NULL_CASES: dict[str, tuple[Build, str]] = {
 }
 
 
-def _write_and_check(build: Build, tmp_path: Any) -> tuple[dict[str, Any], dict[str, Any]]:
+def _write_and_check(
+    build: Build, tmp_path: Any, *, exact_type: bool = True
+) -> tuple[dict[str, Any], dict[str, Any]]:
     """Write, read back, assert every universe equals its in-memory member; return the varied manifest
     and awkward's own per-column metadata."""
     session = Session(AwkwardBackend())
@@ -128,7 +130,8 @@ def _write_and_check(build: Build, tmp_path: Any) -> tuple[dict[str, Any], dict[
         member: Any = session.materialize(graphed.member_of(record, label))
         expected = member[session.materialize(graphed.member_of(keep, label))]
         disk = got[label]
-        assert (str(disk.type), ak.to_list(disk)) == (str(expected.type), ak.to_list(expected)), label
+        assert ak.to_list(disk) == ak.to_list(expected), label
+        assert not exact_type or str(disk.type) == str(expected.type), label
     meta = pq.ParquetFile(path).metadata.metadata
     return json.loads(meta[b"graphed.variations"]), json.loads(meta[b"awkward_array_metadata"])
 
@@ -140,7 +143,7 @@ def test_every_universe_reads_back_with_its_own_type_and_values(case: str, tmp_p
     for label, rep in (("s_up", up_rep), ("s_same", same_rep)):
         assert manifest[label][f"__vary_{label}__{flat}"]["representation"] == rep
         # a "base" label also carries an xor marker naming no leaf, which a pre-"base" reader refuses
-        marker = manifest[label].get(f"__vary_{label}__{flat}__requires_base")
+        marker = manifest[label].get(f"requires_base__{label}__{flat}")
         assert (marker or {}).get("representation") == ("xor" if rep == "base" else None), label
 
 
@@ -155,3 +158,46 @@ def test_an_option_delta_without_none_stays_unmasked_on_disk(tmp_path: Any) -> N
     build, _leaf, _up, _same = CASES["?f64->?f32"]
     _, columns = _write_and_check(build, tmp_path)
     assert columns["__vary_s_same__x"]["mask_type"] == "UnmaskedArray"
+
+
+def test_a_datetime64_s_leaf_is_stored_as_is(tmp_path: Any) -> None:
+    def dt(x: Any) -> Any:
+        return gak.values_astype(x, "datetime64[s]")
+
+    def build(ev: Any) -> Any:
+        v = graphed.vary(dt(ev.n), "s", points={"up": dt(ev.n * 2), "same": dt(ev.n * 3)})
+        return gak.zip({"x": v}, depth_limit=1)
+
+    # parquet itself stores datetime64[s] as [ms], for nominal too, so only the values are compared
+    manifest, _ = _write_and_check(build, tmp_path, exact_type=False)
+    assert manifest["s_up"]["__vary_s_up__x"]["representation"] == "base"
+
+
+@pytest.mark.parametrize(
+    ("ups", "reps"),
+    [
+        ({"y__requires_base": lambda x: x * 2}, {"__vary_s_up__y__requires_base": "xor"}),
+        (
+            {"x": lambda x: _f32(x * 2), "x__requires_base": lambda x: x * 2},
+            {
+                "__vary_s_up__x": "base",
+                "__vary_s_up__x__requires_base": "xor",
+                "requires_base__s_up__x": "xor",
+            },
+        ),
+    ],
+)
+def test_a_leaf_named_like_the_marker_is_an_ordinary_column(
+    ups: dict[str, Build], reps: dict[str, str], tmp_path: Any
+) -> None:
+    def build(ev: Any) -> Any:
+        varied = {
+            name: graphed.vary(ev.m, "s", points={"up": up(ev.m), "same": ev.m * 3})
+            for name, up in ups.items()
+        }
+        return gak.zip(varied, depth_limit=1)
+
+    manifest, _ = _write_and_check(build, tmp_path)
+    assert {
+        col: info["representation"] for col, info in manifest["s_up"].items() if "mask" not in col
+    } == reps

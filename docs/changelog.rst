@@ -199,7 +199,8 @@ Fixes
   nominal's). The XOR delta is masked where the label is ``None``.
 * A varied regular-list or optional-list leaf keeps its type through ``read_varied`` (it came back
   ``var``, or without its option), and a leaf that ``zip`` broadcasts into a collection, or that a
-  universe turns from jagged to flat, no longer crashes the write. Such leaves are stored as-is.
+  universe turns from jagged to flat, no longer crashes the write. Such leaves, and ``datetime64[s]``
+  leaves (which parquet stores as ``[ms]``), are stored as-is.
 
 0.0.6
 -----
