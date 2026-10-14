@@ -15,14 +15,9 @@ from graphed.awkward import AwkwardArray, AwkwardBackend, AwkwardVaried, from_aw
 from graphed.errors import GraphedError
 
 
-class _Backend(AwkwardBackend):
-    def array_type(self) -> type[AwkwardArray]:
-        return AwkwardArray
-
-
 @pytest.fixture
 def arrays() -> dict[str, Any]:
-    s = Session(_Backend())
+    s = Session(AwkwardBackend())
     return {
         "s": s,
         "a": from_awkward(s, "a", ak.Array([[1.0, 2.0], [], [3.0]])),

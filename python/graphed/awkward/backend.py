@@ -17,7 +17,7 @@ import awkward as ak
 import numpy as np
 from awkward.types._awkward_datashape_parser import LarkError
 
-from graphed import Session
+from graphed import Array, Session
 from graphed.backend import PYTHON_TYPES, Form
 from graphed.core import PayloadDescriptor
 
@@ -204,6 +204,12 @@ class AwkwardBackend:
         # M18: a registered behavior dict (e.g. vector's) makes behavior PROPERTIES work through
         # plain attribute access — on the typetracer at record time and on real arrays in eval.
         self._behavior = dict(behavior) if behavior else None
+
+    def array_type(self) -> type[Array]:
+        """The awkward-idiom proxy: Sessions return ``AwkwardArray``, so ``ak.<fn>`` records ``gak.<fn>``."""
+        from .array import AwkwardArray  # noqa: PLC0415  # array imports gak, which imports this module
+
+        return AwkwardArray
 
     def op_form(self, op: str, inputs: Sequence[Form], params: Mapping[str, object]) -> AwkwardForm:
         # `inputs` is the protocol-wide `Sequence[Form]`, not `Sequence[AwkwardForm]`: narrowing a
