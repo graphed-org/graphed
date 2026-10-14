@@ -137,8 +137,11 @@ def _write_and_check(build: Build, tmp_path: Any) -> tuple[dict[str, Any], dict[
 def test_every_universe_reads_back_with_its_own_type_and_values(case: str, tmp_path: Any) -> None:
     build, flat, up_rep, same_rep = CASES[case]
     manifest, _ = _write_and_check(build, tmp_path)
-    assert manifest["s_up"][f"__vary_s_up__{flat}"]["representation"] == up_rep
-    assert manifest["s_same"][f"__vary_s_same__{flat}"]["representation"] == same_rep
+    for label, rep in (("s_up", up_rep), ("s_same", same_rep)):
+        assert manifest[label][f"__vary_{label}__{flat}"]["representation"] == rep
+        # a "base" label also carries an xor marker naming no leaf, which a pre-"base" reader refuses
+        marker = manifest[label].get(f"__vary_{label}__{flat}__requires_base")
+        assert (marker or {}).get("representation") == ("xor" if rep == "base" else None), label
 
 
 @pytest.mark.parametrize("case", NULL_CASES)

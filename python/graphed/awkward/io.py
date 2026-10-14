@@ -326,6 +326,9 @@ _VARY_PREFIX = "__vary_"
 _BASE_FIELD = "__base__"
 #: §6.4e: the manifest lives in parquet key-value file metadata (greenfield — graphed writes none).
 _MANIFEST_KEY = b"graphed.variations"
+#: suffix of a manifest entry that names no column: an `xor` entry whose `field` matches no stored leaf,
+#: so a reader that predates `base` refuses the file instead of returning nominal for that label.
+_REQUIRES_BASE = "__requires_base"
 
 _SelectKey = Any  # `int` (bare depth) or `tuple[str, int]` (field-scoped, depth >= 1)
 
@@ -725,7 +728,8 @@ def _build_manifest(
 ) -> dict[str, Any]:
     """§6.4e: the driver-derived reconstruction manifest — every label's stored columns (value columns
     keyed `xor` or `base`/field, masks keyed `packbits`/entry) plus the reserved ordered `levels` list.
-    Mirrors exactly the columns `_VariedWritePart.__call__` writes, so it is data-independent and deterministic
+    Mirrors exactly the columns `_VariedWritePart.__call__` writes, plus one `_REQUIRES_BASE` marker entry
+    per `base` column that names no column, so it is data-independent and deterministic
     (serialized `json.dumps(sort_keys=True)`; `levels` order is the explicit key `sorted()` cannot give)."""
     manifest: dict[str, Any] = {label: {} for label in labels}
     for spec in value_specs:
@@ -737,6 +741,12 @@ def _build_manifest(
                 "field": spec.flat,
                 "entry": None,
             }
+            if label in spec.verbatim:
+                manifest[label][f"{_VARY_PREFIX}{label}__{spec.flat}{_REQUIRES_BASE}"] = {
+                    "representation": "xor",
+                    "field": f"graphed>=0.0.7 needed: {label} stores {spec.flat} as representation base",
+                    "entry": None,
+                }
     for ms in mask_specs:
         for label in labels:
             manifest[label][f"{_VARY_PREFIX}{label}__mask__{ms.entry_flat}"] = {
@@ -1095,7 +1105,7 @@ def _reconstruct_universe(
     columns = manifest[label]
     rec = base
     for col, info in columns.items():
-        if info["representation"] in ("xor", "base"):
+        if info["representation"] in ("xor", "base") and not col.endswith(_REQUIRES_BASE):
             path = _dotted_for_flat(rec, info["field"])
             if info["representation"] == "base":
                 value = full[col]

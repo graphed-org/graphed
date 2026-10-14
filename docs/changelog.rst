@@ -191,7 +191,9 @@ Fixes
   differs from nominal's (``float32`` vs ``float64``, ``int`` vs ``float``, option vs not):
   ``read_varied`` gave it nominal's type, with its bits reinterpreted. That universe's value is now
   stored as-is (manifest representation ``"base"``); leaves that keep nominal's type still store an
-  XOR delta, and those files are unchanged.
+  XOR delta, and those files are unchanged. A file holding a ``"base"`` column also carries a manifest
+  marker that makes ``read_varied`` from graphed 0.0.6 raise ``GraphedError`` instead of returning
+  nominal's values for that universe.
 * ``read_varied`` no longer crashes on a flat option leaf holding ``None``, and a universe whose
   ``None`` rows differ from nominal's reads back with its own ``None`` rows (a jagged leaf also took
   nominal's). The XOR delta is masked where the label is ``None``.
