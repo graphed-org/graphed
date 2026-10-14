@@ -42,8 +42,16 @@ def _awkward_function(
     name = dispatch.__name__
     # identity, not the name alone: ak.str.join is also named "join"
     if getattr(ak, name, None) is not dispatch or not hasattr(gak, name):
+        spelled = next(
+            (
+                f"{prefix}.{name}"
+                for prefix, ns in (("ak", ak), ("ak.str", ak.str))
+                if getattr(ns, name, None) is dispatch
+            ),
+            f"{dispatch.__module__}.{name}",
+        )
         raise GraphedError(
-            f"graphed records no deferred {dispatch.__module__}.{name}: graphed.awkward.gak has no "
+            f"graphed records no deferred {spelled}: graphed.awkward.gak has no "
             "equivalent; materialize the array first (Session.materialize) to use it eagerly"
         )
     fn = getattr(gak, name)

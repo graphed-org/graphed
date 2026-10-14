@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from typing import Any
 
@@ -106,18 +107,20 @@ def test_options_gak_lacks_are_refused_like_gak(arrays: dict[str, Any]) -> None:
 
 
 @pytest.mark.parametrize(
-    "call",
+    ("spelled", "call"),
     [
-        lambda a: ak.to_numpy(a),
-        lambda a: ak.to_arrow_table(a),
-        lambda a: ak.str.join(a, "-"),  # named "join" like gak.join, but a different function
+        ("ak.to_numpy", lambda a: ak.to_numpy(a)),
+        ("ak.to_arrow_table", lambda a: ak.to_arrow_table(a)),
+        ("ak.str.join", lambda a: ak.str.join(a, "-")),  # named "join" like gak.join, a different function
     ],
 )
 def test_functions_without_a_gak_equivalent_refuse(
-    arrays: dict[str, Any], call: Callable[[Any], Any]
+    arrays: dict[str, Any], spelled: str, call: Callable[[Any], Any]
 ) -> None:
     count = arrays["s"].node_count()
-    with pytest.raises(GraphedError, match="gak has no equivalent"):
+    with pytest.raises(
+        GraphedError, match=rf"^graphed records no deferred {re.escape(spelled)}: .*gak has no equivalent"
+    ):
         call(arrays["a"])
     assert arrays["s"].node_count() == count
 
