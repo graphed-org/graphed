@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from . import functions, gnano, io, payloads, shuffle
 from . import functions as gak
+from .array import AwkwardArray, AwkwardVaried
 from .backend import AwkwardBackend, AwkwardForm, from_awkward
 from .io import from_parquet, parquet_write, read_parquet_partition, read_varied, to_parquet
 from .projection import project, project_buffers, project_buffers_many
@@ -25,8 +26,10 @@ VERB_DISPOSITIONS: dict[str, str] = {
 
 __all__ = [
     "VERB_DISPOSITIONS",
+    "AwkwardArray",
     "AwkwardBackend",
     "AwkwardForm",
+    "AwkwardVaried",
     "from_awkward",
     "from_parquet",
     "functions",

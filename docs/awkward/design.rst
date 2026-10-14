@@ -136,7 +136,7 @@ silently to a neighbouring parameter.
 name — so ``ak.mean(x, w)`` ports to ``gak.mean(x, weight=w)``, never to ``gak.mean(x, w)``.
 ``gak.softmax`` defaults to ``axis=1``, per event, where ``ak.softmax`` defaults to ``axis=-1``.
 
-**Free functions, not methods.** You hold graphed's plain deferred ``Array`` — field access,
+**Free functions, not methods.** You hold graphed's deferred ``Array`` — field access,
 operators, ufuncs, ``getitem``, and the inner-axis tuple key (``jets.pt[:, :2]``, ``jets[:, 0]``,
 ``jets.pt[..., 0]``), which records the form eager awkward infers for that key and stays fusible
 because the event axis is left whole. A leading ``...`` leaves it whole only while there is an
@@ -147,6 +147,13 @@ axis. Everything ragged-specific comes from the module:
 ``gak.with_name``, ``gak.where``, and the rest of the working set. ``gak.with_field`` wants the
 field name every time — ``gak.with_field(jets, jets.pt * 1.05, "pt")`` — where
 ``ak.with_field`` lets you leave it out.
+
+**Or call** ``ak`` **itself.** An awkward session hands back ``graphed.awkward.AwkwardArray``, an
+``Array`` that awkward's own functions recognise: ``ak.sum(x, axis=1)`` records exactly the node
+``gak.sum(x, axis=1)`` records, with ``ak``'s positions and names — ``ak.mean(x, w)`` takes ``w``
+as the weight — and a ``Varied`` of them dispatches the same way. Options ``gak`` lacks still raise
+``TypeError``, and an ``ak`` function with no ``gak`` counterpart, such as ``ak.to_numpy``, raises
+``GraphedError``.
 
 **No** ``behavior=`` **per call.** Behaviors belong to the session, not to a call site — see the
 next section.
