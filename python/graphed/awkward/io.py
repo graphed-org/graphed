@@ -516,13 +516,23 @@ def _uint_view(a: np.ndarray) -> np.ndarray:
     return a.view({1: np.uint8, 2: np.uint16, 4: np.uint32, 8: np.uint64}[a.dtype.itemsize])
 
 
+def _filled(values: ak.Array, jagged: bool) -> tuple[np.ndarray, Any]:
+    """A leaf's flat values with `None` read as 0 (so both sides XOR the same bits), and its `None` mask
+    (numpy's `nomask` when it holds none, which keeps a no-`None` delta an `UnmaskedArray` on disk)."""
+    flat = ak.to_numpy(ak.flatten(values) if jagged else values)
+    if isinstance(flat, np.ma.MaskedArray):
+        return flat.filled(0), np.ma.getmask(flat)
+    return flat, None
+
+
 def _encode_delta(nominal: ak.Array, label: ak.Array, jagged: bool) -> ak.Array:
-    """§6.4c: the same-dtype XOR bit-delta vs nominal (zero wherever a label equals nominal)."""
-    if jagged:
-        fn = _uint_view(ak.to_numpy(ak.flatten(nominal)))
-        fl = _uint_view(ak.to_numpy(ak.flatten(label)))
-        return ak.unflatten(fl ^ fn, ak.num(nominal))
-    return ak.Array(_uint_view(ak.to_numpy(label)) ^ _uint_view(ak.to_numpy(nominal)))
+    """§6.4c: the same-dtype XOR bit-delta vs nominal (zero wherever a label equals nominal), masked
+    where the label is `None`."""
+    nominal_flat, _ = _filled(nominal, jagged)
+    label_flat, mask = _filled(label, jagged)
+    delta = _uint_view(label_flat) ^ _uint_view(nominal_flat)
+    out = delta if mask is None else np.ma.array(delta, mask=mask)
+    return ak.unflatten(out, ak.num(nominal)) if jagged else ak.Array(out)
 
 
 def _encode_mask(mask: ak.Array) -> ak.Array:
@@ -1004,15 +1014,12 @@ def _get_leaf(record: ak.Array, path: str) -> ak.Array:
 
 def _apply_xor(nominal_value: ak.Array, delta: ak.Array, jagged: bool) -> ak.Array:
     """§6.4c inverse: the label value is `nominal XOR delta` on the shared uint view, reinterpreted
-    back to nominal's dtype (XOR is its own inverse, so this is exact)."""
-    if jagged:
-        nom = ak.to_numpy(ak.flatten(nominal_value))
-        del_ = ak.to_numpy(ak.flatten(delta))
-        restored = (_uint_view(nom) ^ _uint_view(del_)).view(nom.dtype)
-        return ak.unflatten(restored, np.asarray(ak.num(nominal_value)))
-    nom = ak.to_numpy(nominal_value)
-    restored = (_uint_view(nom) ^ _uint_view(np.asarray(delta))).view(nom.dtype)
-    return ak.Array(restored)
+    back to nominal's dtype (XOR is its own inverse, so this is exact), `None` where the delta is."""
+    nom, _ = _filled(nominal_value, jagged)
+    del_, mask = _filled(delta, jagged)
+    restored = (_uint_view(nom) ^ _uint_view(del_)).view(nom.dtype)
+    out = restored if mask is None else np.ma.array(restored, mask=mask)
+    return ak.unflatten(out, np.asarray(ak.num(nominal_value))) if jagged else ak.Array(out)
 
 
 def _decode_level0(packed: ak.Array) -> np.ndarray:

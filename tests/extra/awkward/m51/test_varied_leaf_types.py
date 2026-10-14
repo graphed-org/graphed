@@ -30,9 +30,11 @@ def _flat(up: Callable[[Any], Any], nominal: Callable[[Any], Any] = lambda e: e.
     return build
 
 
-def _nested(up: Callable[[Any], Any]) -> Callable[[Any], Any]:
+def _nested(
+    up: Callable[[Any], Any], nominal: Callable[[Any], Any] = lambda e: e.Jet.pt
+) -> Callable[[Any], Any]:
     def build(ev: Any) -> Any:
-        pt = graphed.vary(ev.Jet.pt, "s", points={"up": up(ev), "same": ev.Jet.pt * 2})
+        pt = graphed.vary(nominal(ev), "s", points={"up": up(ev), "same": nominal(ev) * 2})
         return gak.zip({"Jet": gak.zip({"pt": pt}), "m": ev.m}, depth_limit=1)
 
     return build
@@ -60,6 +62,22 @@ CASES: dict[str, tuple[Callable[[Any], Any], str]] = {
     "nested jagged Jet.pt f64->f32": (_nested(lambda e: _f32(e.Jet.pt * 1.05)), "Jet_pt"),
 }
 
+#: same leaf type, different `None` rows: the XOR delta carries the label's own `None`s.
+NULL_CASES: dict[str, tuple[Callable[[Any], Any], str]] = {
+    "flat, None in nominal only": (
+        _flat(lambda e: gak.mask(e.m * 2, e.m > 0), lambda e: gak.mask(e.m, e.m > 125)),
+        "x",
+    ),
+    "flat, None in up only": (
+        _flat(lambda e: gak.mask(e.m * 2, e.m > 125), lambda e: gak.mask(e.m, e.m > 0)),
+        "x",
+    ),
+    "jagged, None in nominal only": (
+        _nested(lambda e: gak.mask(e.Jet.pt * 2, e.Jet.pt > 0), lambda e: gak.mask(e.Jet.pt, e.Jet.pt > 35)),
+        "Jet_pt",
+    ),
+}
+
 
 def _write_and_read(
     build: Callable[[Any], Any], tmp_path: Any
@@ -75,15 +93,27 @@ def _write_and_read(
     return session, record, keep, manifest, ga.read_varied(path)
 
 
-@pytest.mark.parametrize("case", CASES)
-def test_every_universe_reads_back_with_its_own_type_and_values(case: str, tmp_path: Any) -> None:
-    build, flat = CASES[case]
+def _assert_universes_read_back(build: Callable[[Any], Any], tmp_path: Any) -> dict[str, Any]:
     session, record, keep, manifest, got = _write_and_read(build, tmp_path)
     for label in ("nominal", "s_up", "s_same"):
         member: Any = session.materialize(graphed.member_of(record, label))
         expected = member[session.materialize(graphed.member_of(keep, label))]
         disk = got[label]
         assert (str(disk.type), ak.to_list(disk)) == (str(expected.type), ak.to_list(expected)), label
+    return manifest
+
+
+@pytest.mark.parametrize("case", CASES)
+def test_every_universe_reads_back_with_its_own_type_and_values(case: str, tmp_path: Any) -> None:
+    build, flat = CASES[case]
+    manifest = _assert_universes_read_back(build, tmp_path)
     # only the type-changing universe leaves the XOR representation
     assert manifest["s_up"][f"__vary_s_up__{flat}"]["representation"] == "base"
     assert manifest["s_same"][f"__vary_s_same__{flat}"]["representation"] == "xor"
+
+
+@pytest.mark.parametrize("case", NULL_CASES)
+def test_a_universe_keeps_its_own_nones_through_the_xor_delta(case: str, tmp_path: Any) -> None:
+    build, flat = NULL_CASES[case]
+    manifest = _assert_universes_read_back(build, tmp_path)
+    assert manifest["s_up"][f"__vary_s_up__{flat}"]["representation"] == "xor"
