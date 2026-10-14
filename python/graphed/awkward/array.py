@@ -52,13 +52,20 @@ def _awkward_function(
     gak_params = inspect.signature(fn).parameters
     positional: list[object] = []
     keywords: dict[str, object] = {}
-    for i, (param, value) in enumerate(bound.items()):
-        if signature.parameters[param].kind is inspect.Parameter.VAR_POSITIONAL:
+    for i, param in enumerate(signature.parameters.values()):
+        target = param.name if param.name in gak_params else _RENAMED.get(param.name, param.name)
+        if param.name in bound:
+            value = bound[param.name]
+        elif target in gak_params and gak_params[target].default not in (param.default, param.empty):
+            value = param.default  # an omitted ak argument means ak's default (ak.softmax: axis=-1)
+        else:
+            continue
+        if param.kind is inspect.Parameter.VAR_POSITIONAL:
             positional.extend(value)
         elif i == 0:
             positional.append(value)
         else:
-            keywords[param if param in gak_params else _RENAMED.get(param, param)] = value
+            keywords[target] = value
     return fn(*positional, **keywords)
 
 

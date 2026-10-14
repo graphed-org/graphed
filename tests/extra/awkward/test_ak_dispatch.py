@@ -23,6 +23,7 @@ def arrays() -> dict[str, Any]:
         "a": from_awkward(s, "a", ak.Array([[1.0, 2.0], [], [3.0]])),
         "w": from_awkward(s, "w", ak.Array([[0.5, 2.0], [], [1.0]])),
         "r": from_awkward(s, "r", ak.Array([{"pt": 1.0, "eta": 2.0}, {"pt": 3.0, "eta": 4.0}])),
+        "n3": from_awkward(s, "n3", ak.Array([[[1.0, 2.0], [3.0]], [[4.0, 5.0, 6.0]]])),
     }
 
 
@@ -66,6 +67,7 @@ PAIRS: dict[str, tuple[Call, Call]] = {
         lambda x: ak.zip({"p": x["a"], "q": x["w"]}, depth_limit=1),
         lambda x: gak.zip({"p": x["a"], "q": x["w"]}, depth_limit=1),
     ),
+    "softmax-default": (lambda x: ak.softmax(x["n3"]), lambda x: gak.softmax(x["n3"], axis=-1)),
     "combinations": (
         lambda x: ak.combinations(x["a"], 2, fields=["p", "q"]),
         lambda x: gak.combinations(x["a"], 2, fields=["p", "q"]),
@@ -99,6 +101,8 @@ def test_provenance_is_the_user_line(arrays: dict[str, Any]) -> None:
 def test_options_gak_lacks_are_refused_like_gak(arrays: dict[str, Any]) -> None:
     with pytest.raises(TypeError, match="highlevel"):
         ak.sum(arrays["a"], axis=1, highlevel=False)
+    with pytest.raises(TypeError, match="where"):  # gak requires the name ak defaults to None
+        ak.with_field(arrays["r"], arrays["r"].pt)
 
 
 @pytest.mark.parametrize(
