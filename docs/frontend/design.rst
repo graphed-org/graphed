@@ -69,6 +69,11 @@ library's package: ``graphed.numpy`` hands you a richer proxy with ``.shape``, `
 ``__array_function__``; ``graphed.awkward`` keeps the plain proxy and exposes its idiom as free
 functions, exactly as ``ak.*`` does. One library's conventions never leak into the other's.
 
+A proxy has no value until it runs, so ``if x:``, ``bool(x)`` and ``np.asarray(x)`` raise
+:class:`~graphed.GraphedTypeError` at your line rather than guess; select elementwise with
+``np.where`` on a numpy-backed proxy or ``ak.where``/``gak.where`` on an awkward-backed one, or
+``materialize`` first.
+
 A scalar operand is not an input but a param, and it records everything it imposes on the result.
 A Python ``bool``, ``int`` or ``float`` records as itself; a numpy scalar records its dtype name
 beside its exact value, so ``mask * np.uint64(1 << 3)`` is ``uint64`` rather than the ``float64``

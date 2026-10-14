@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, SupportsFloat
 from .backend import ParamValue
 
 if TYPE_CHECKING:
+    from .errors import GraphedTypeError
     from .session import Session
 
 # numpy ufunc name -> canonical op name (so np.subtract(a, b) and a - b record the same op).
@@ -231,6 +232,20 @@ def _scalar_params(value: object) -> dict[str, ParamValue]:
     if isinstance(item, int) and not isinstance(item, bool) and not -(2**63) <= item < 2**63:
         return {"scalar": str(item), "dtype": str(dtype)}
     return {"scalar": _as_param(item), "dtype": str(dtype)}
+
+
+def no_eager_value(op: str, missing: str) -> GraphedTypeError:
+    """The refusal for ``bool()``/``np.asarray()`` on a deferred value, located at the user's line."""
+    from .errors import GraphedTypeError  # noqa: PLC0415  (cycle: errors -> provenance -> array)
+    from .provenance import capture  # noqa: PLC0415
+
+    return GraphedTypeError(
+        op,
+        capture(),
+        f"a deferred graphed array has no {missing} until it runs; select elementwise with "
+        "np.where on a numpy-backed array or ak.where/gak.where on an awkward-backed one (or "
+        "&/|/~), or evaluate it first with session.materialize(...)",
+    )
 
 
 class Array:
@@ -472,6 +487,12 @@ class Array:
         raise TypeError(
             "deferred graphed arrays are not iterable (unknown partitioned length); materialize first"
         )
+
+    def __bool__(self) -> bool:
+        raise no_eager_value("bool(...)", "truth value")
+
+    def __array__(self, dtype: object = None, copy: object = None) -> Any:
+        raise no_eager_value("np.asarray(...)", "numpy value")
 
     def __getitem__(self, key: object) -> Array:
         if getattr(key, "_varied_container", False):  # a Varied mask selects PER UNIVERSE

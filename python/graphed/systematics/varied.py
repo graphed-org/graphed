@@ -15,7 +15,7 @@ import functools
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from typing import Any
 
-from ..array import Array, BoundMethod
+from ..array import Array, BoundMethod, no_eager_value
 from ..errors import GraphedError
 from .points import Point, restrict
 
@@ -125,6 +125,12 @@ class Varied:
         raise TypeError(
             "deferred graphed arrays are not iterable (unknown partitioned length); materialize first"
         )
+
+    def __bool__(self) -> bool:
+        raise no_eager_value("bool(...)", "truth value")
+
+    def __array__(self, dtype: object = None, copy: object = None) -> Any:
+        raise no_eager_value("np.asarray(...)", "numpy value")
 
     def __repr__(self) -> str:
         return f"Varied(labels={list(self._members)})"
