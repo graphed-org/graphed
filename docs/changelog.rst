@@ -195,6 +195,9 @@ Fixes
 * ``read_varied`` no longer crashes on a flat option leaf holding ``None``, and a universe whose
   ``None`` rows differ from nominal's reads back with its own ``None`` rows (a jagged leaf also took
   nominal's). The XOR delta is masked where the label is ``None``.
+* A varied regular-list or optional-list leaf keeps its type through ``read_varied`` (it came back
+  ``var``, or without its option), and a leaf that ``zip`` broadcasts into a collection, or that a
+  universe turns from jagged to flat, no longer crashes the write. Such leaves are stored as-is.
 
 0.0.6
 -----

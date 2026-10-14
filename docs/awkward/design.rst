@@ -769,8 +769,8 @@ you get a plain skim, with none of the extra columns below.
 **What the file holds.** One pass over one compiled graph writes: the superset of rows — the OR
 over every universe's event mask, so no universe loses a row it selected; the nominal values on
 those rows; for each leaf that a variation actually changes, a same-dtype XOR delta against
-nominal (or, for a universe that changes the leaf's type, its value as-is, since an XOR delta needs
-one dtype); each universe's per-level mask as a bit-packed column; and a small JSON manifest in the
+nominal (or the universe's value as-is, when it changes the leaf's type or the leaf is anything but
+a primitive, optional, or once-jagged, which an XOR delta cannot rebuild); each universe's per-level mask as a bit-packed column; and a small JSON manifest in the
 parquet key-value metadata naming what each stored column is.
 
 A leaf that is equal in every universe contributes no delta column at all, which is why this is

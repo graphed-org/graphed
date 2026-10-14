@@ -388,6 +388,10 @@ def _tt(session: Session, array: Any) -> ak.Array:
     return form.tt
 
 
+def _leaf_type(session: Session, array: Any) -> ak.types.Type:
+    return _tt(session, array).layout.form.type
+
+
 def _record_context(value: Any) -> Any:
     """The row-space handle of a write operand: a plain value's own handle, a container's
     most-derived member handle (§2.3e)."""
@@ -516,6 +520,22 @@ def _uint_view(a: np.ndarray) -> np.ndarray:
     return a.view({1: np.uint8, 2: np.uint16, 4: np.uint32, 8: np.uint64}[a.dtype.itemsize])
 
 
+def _counts(values: ak.Array) -> np.ndarray:
+    """Per-row list lengths, -1 for a `None` list."""
+    counts: np.ndarray = np.asarray(ak.fill_none(ak.num(values), -1))
+    return counts
+
+
+def _xor_representable(leaf_type: ak.types.Type) -> bool:
+    """The leaf types `_encode_delta` round-trips exactly: `T`, `?T`, `var * T`, `var * ?T` over a
+    primitive, none of them a string-like `__array__`."""
+    if isinstance(leaf_type, ak.types.ListType) and leaf_type.parameter("__array__") is None:
+        leaf_type = leaf_type.content
+    if isinstance(leaf_type, ak.types.OptionType):
+        leaf_type = leaf_type.content
+    return isinstance(leaf_type, ak.types.NumpyType) and leaf_type.parameter("__array__") is None
+
+
 def _filled(values: ak.Array, jagged: bool) -> tuple[np.ndarray, Any]:
     """A leaf's flat values with `None` read as 0 (so both sides XOR the same bits), and its `None` mask
     (numpy's `nomask` when it holds none, which keeps a no-`None` delta an `UnmaskedArray` on disk)."""
@@ -632,11 +652,12 @@ class _VariedWritePart:
         for spec in self.value_specs:
             nominal_value = resolved(dict(spec.members)["nominal"])
             if spec.jagged:
-                nominal_counts = np.asarray(ak.num(nominal_value))
+                nominal_counts = _counts(nominal_value)
                 for label, node_id in spec.members:
-                    if label == "nominal":
+                    value = resolved(node_id)
+                    if label == "nominal" or value.ndim == 1:
                         continue
-                    if not np.array_equal(np.asarray(ak.num(resolved(node_id))), nominal_counts):
+                    if not np.array_equal(_counts(value), nominal_counts):
                         # §6.4d: differing per-label offsets have no representable XOR delta —
                         # execution-time (offsets are data), naming the label and the field.
                         raise GraphedError(
@@ -778,18 +799,39 @@ def _write_varied(
     value_specs: list[_ValueSpec] = []
     outputs: list[Any] = [base]
     for path in varied:
-        nominal_tt = _tt(session, Array(session, _canonical_leaf(nodes, session, nominal_record, path)))
+        leaves = {
+            label: Array(session, _canonical_leaf(nodes, session, member_of(record, label), path))
+            for label in labels
+        }
+        parts = path.split(".")
+        if any(
+            _leaf_type(session, leaves[label])
+            != functools.reduce(
+                operator.getitem, parts, _tt(session, member_of(record, label))
+            ).layout.form.type
+            for label in labels
+        ):  # a zip broadcast the leaf: encode what the reader's record holds
+            leaves = {
+                label: functools.reduce(operator.getitem, parts, member_of(record, label)) for label in labels
+            }
+        nominal_type = _leaf_type(session, leaves["nominal"])
         members: list[tuple[str, int]] = []
         verbatim: set[str] = set()
         for label in labels:
-            leaf = Array(session, _canonical_leaf(nodes, session, member_of(record, label), path))
-            if _tt(session, leaf).layout.form.type != nominal_tt.layout.form.type:
+            leaf = leaves[label]
+            if _leaf_type(session, leaf) != nominal_type or not _xor_representable(nominal_type):
                 verbatim.add(label)
             leaf = leaf if superset is None else leaf[superset]
             members.append((label, leaf.node_id))
             outputs.append(leaf)
         value_specs.append(
-            _ValueSpec(path, _flat_field(path), nominal_tt.ndim > 1, tuple(members), frozenset(verbatim))
+            _ValueSpec(
+                path,
+                _flat_field(path),
+                _tt(session, leaves["nominal"]).ndim > 1,
+                tuple(members),
+                frozenset(verbatim),
+            )
         )
 
     mask_specs: list[_MaskSpec] = []
