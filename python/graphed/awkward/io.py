@@ -545,6 +545,8 @@ class _ValueSpec:
     flat: str
     jagged: bool
     members: tuple[tuple[str, int], ...]
+    #: labels whose leaf type differs from nominal's: stored as-is (`"base"`), since XOR needs one dtype.
+    verbatim: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -635,8 +637,9 @@ class _VariedWritePart:
             for label, node_id in spec.members:
                 if label == "nominal":
                     continue
-                cols[f"{_VARY_PREFIX}{label}__{spec.flat}"] = _encode_delta(
-                    nominal_value, resolved(node_id), spec.jagged
+                value = resolved(node_id)
+                cols[f"{_VARY_PREFIX}{label}__{spec.flat}"] = (
+                    value if label in spec.verbatim else _encode_delta(nominal_value, value, spec.jagged)
                 )
         for mask_spec in self.mask_specs:
             field_values = base if mask_spec.field_path is None else base[mask_spec.field_path]
@@ -689,9 +692,9 @@ def _write_augmented(payload: ak.Array, path: str, manifest: Mapping[str, Any] |
 def _build_manifest(
     labels: Sequence[str], value_specs: Sequence[_ValueSpec], mask_specs: Sequence[_MaskSpec]
 ) -> dict[str, Any]:
-    """§6.4e: the driver-derived reconstruction manifest — every label's stored columns (value deltas
-    keyed `xor`/field, masks keyed `packbits`/entry) plus the reserved ordered `levels` list. Mirrors
-    exactly the columns `_VariedWritePart.__call__` writes, so it is data-independent and deterministic
+    """§6.4e: the driver-derived reconstruction manifest — every label's stored columns (value columns
+    keyed `xor` or `base`/field, masks keyed `packbits`/entry) plus the reserved ordered `levels` list.
+    Mirrors exactly the columns `_VariedWritePart.__call__` writes, so it is data-independent and deterministic
     (serialized `json.dumps(sort_keys=True)`; `levels` order is the explicit key `sorted()` cannot give)."""
     manifest: dict[str, Any] = {label: {} for label in labels}
     for spec in value_specs:
@@ -699,7 +702,7 @@ def _build_manifest(
             if label == "nominal":
                 continue
             manifest[label][f"{_VARY_PREFIX}{label}__{spec.flat}"] = {
-                "representation": "xor",
+                "representation": "base" if label in spec.verbatim else "xor",
                 "field": spec.flat,
                 "entry": None,
             }
@@ -765,14 +768,19 @@ def _write_varied(
     value_specs: list[_ValueSpec] = []
     outputs: list[Any] = [base]
     for path in varied:
-        jagged = _tt(session, Array(session, _canonical_leaf(nodes, session, nominal_record, path))).ndim > 1
+        nominal_tt = _tt(session, Array(session, _canonical_leaf(nodes, session, nominal_record, path)))
         members: list[tuple[str, int]] = []
+        verbatim: set[str] = set()
         for label in labels:
             leaf = Array(session, _canonical_leaf(nodes, session, member_of(record, label), path))
+            if _tt(session, leaf).layout.form.type != nominal_tt.layout.form.type:
+                verbatim.add(label)
             leaf = leaf if superset is None else leaf[superset]
             members.append((label, leaf.node_id))
             outputs.append(leaf)
-        value_specs.append(_ValueSpec(path, _flat_field(path), jagged, tuple(members)))
+        value_specs.append(
+            _ValueSpec(path, _flat_field(path), nominal_tt.ndim > 1, tuple(members), frozenset(verbatim))
+        )
 
     mask_specs: list[_MaskSpec] = []
     for key in sorted(entries, key=_level_sort_key):
@@ -1038,10 +1046,13 @@ def _reconstruct_universe(
     columns = manifest[label]
     rec = base
     for col, info in columns.items():
-        if info["representation"] == "xor":
+        if info["representation"] in ("xor", "base"):
             path = _dotted_for_flat(rec, info["field"])
-            nominal_value = _get_leaf(rec, path)
-            value = _apply_xor(nominal_value, full[col], nominal_value.ndim > 1)
+            if info["representation"] == "base":
+                value = full[col]
+            else:
+                nominal_value = _get_leaf(rec, path)
+                value = _apply_xor(nominal_value, full[col], nominal_value.ndim > 1)
             rec = ak.with_field(rec, value, where=path.split("."))
 
     packed = {  # entry -> the label's packbits column, still at superset granularity

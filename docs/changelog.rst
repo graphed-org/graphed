@@ -187,6 +187,11 @@ Fixes
 * ``NetworkMonitor`` no longer drops an event emitted just as its sender wakes with no connection
   open, typically a worker's first event. The sender drains its buffer before deciding to connect, so
   a per-worker monitor in a spawned process ships that event before the process exits.
+* A variation-aware ``to_parquet(..., select=)`` no longer corrupts a universe whose leaf type
+  differs from nominal's (``float32`` vs ``float64``, ``int`` vs ``float``, option vs not):
+  ``read_varied`` gave it nominal's type, with its bits reinterpreted. That universe's value is now
+  stored as-is (manifest representation ``"base"``); leaves that keep nominal's type still store an
+  XOR delta, and those files are unchanged.
 
 0.0.6
 -----
