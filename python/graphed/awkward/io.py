@@ -583,7 +583,7 @@ class _ValueSpec:
     flat: str
     jagged: bool
     members: tuple[tuple[str, int], ...]
-    #: labels whose leaf type differs from nominal's: stored as-is (`"base"`), since XOR needs one dtype.
+    #: labels stored as-is (`"base"`): a type change from nominal, or a leaf `_xor_representable` refuses.
     verbatim: frozenset[str] = frozenset()
 
 
