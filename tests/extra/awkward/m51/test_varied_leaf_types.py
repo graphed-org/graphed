@@ -318,3 +318,30 @@ def test_a_file_without_the_record_type_entry_keeps_each_universes_own_type(tmp_
     member: Any = session.materialize(graphed.member_of(record, "s_up"))
     got = ga.read_varied(old)["s_up"]
     assert (str(got.type), ak.to_list(got)) == (str(member.type), ak.to_list(member))
+
+
+class _CountingStore:
+    def __init__(self, store: Any) -> None:
+        self.store, self.calls = store, 0
+
+    def nodes(self) -> Any:
+        self.calls += 1
+        return self.store.nodes()
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.store, name)
+
+
+def _store_snapshots(n_labels: int, tmp_path: Any) -> int:
+    session = Session(AwkwardBackend())
+    ev = from_awkward(session, "ev", ak.Array(DATA))
+    points = {f"p{i}": ev.m * (i + 2) for i in range(n_labels)}
+    record = gak.with_name(gak.with_field(ev, graphed.vary(ev.m, "s", points=points), "m"), "Event")
+    counting = _CountingStore(session._store)
+    session._store = counting  # type: ignore[assignment]
+    ga.to_parquet(record, str(tmp_path / f"n{n_labels}"), select={0: ev.m > 0}, compute=False)
+    return counting.calls
+
+
+def test_resolving_varied_leaves_snapshots_the_store_independently_of_the_label_count(tmp_path: Any) -> None:
+    assert _store_snapshots(2, tmp_path) == _store_snapshots(8, tmp_path)

@@ -447,8 +447,8 @@ def _resolve_field(nodes: list[dict[str, Any]], session: Session, node_id: int, 
     the M4 optimizer does not push field projection through a `zip`, so the raw per-label field node
     always differs even when the value does not. Distinguishes a genuinely varying leaf (§6.4b) from
     an untouched one that only the record's construction couples to the shift."""
-    if node_id >= len(nodes):  # a node the getattr below recorded after the caller's snapshot
-        nodes[:] = session._store.nodes()
+    if node_id >= len(nodes):  # newer than the snapshot: a projection we recorded, never a zip
+        return int(getattr(Array(session, node_id), name).node_id)
     nd = nodes[node_id]
     op = nd["name"] if nd["kind"] == "op" else None
     if op == "ak.zip":
