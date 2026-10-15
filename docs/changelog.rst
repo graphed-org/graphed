@@ -201,6 +201,15 @@ Fixes
   ``var``, or without its option), and a leaf that ``zip`` broadcasts into a collection, or that a
   universe turns from jagged to flat, no longer crashes the write. Such leaves, and ``datetime64[s]``
   leaves (which parquet stores as ``[ms]``), are stored as-is.
+* ``read_varied`` restores each universe's parameters (``__doc__`` and the like) on leaves stored as
+  an XOR delta, and the top record's own parameters (``with_name``, ``__doc__``) for every universe,
+  nominal included; both came back without them. The manifest records a universe's form when its
+  type, parameters included, differs from nominal's, and nominal's when its top record has
+  parameters; other files are unchanged.
+* A variation-aware ``to_parquet(..., select=)`` no longer raises ``IndexError`` on a record whose
+  fields are reached through a nested collection, such as ``gak.with_field(events, varied, "m")``.
+* Under a ``with_name`` or ``with_parameter`` record, a leaf that is equal in every universe no
+  longer gets an all-zero delta column per universe.
 
 0.0.6
 -----
