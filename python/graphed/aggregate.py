@@ -13,12 +13,12 @@ specializes this for boost histograms; any other partition-wise reduction reuses
 
 from __future__ import annotations
 
+import functools
 import os
-import pickle
 import types
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import Any, ClassVar, Generic, TypeVar
+from typing import Any, ClassVar, Generic, TypeVar, cast
 
 from graphed.core import GraphStore, Partition
 from graphed.core.execution import Plan, Task, WorkerResources
@@ -84,14 +84,38 @@ def _load_by_value(blob: bytes) -> _ByValue:
 
 
 def by_value(fn: T) -> T:
-    """``fn``, wrapped to pickle by value when it is a function stdlib pickle cannot pickle by name."""
-    if not isinstance(fn, types.FunctionType):
-        return fn
-    try:
-        pickle.dumps(fn)
-    except (pickle.PicklingError, AttributeError, TypeError):
+    """``fn``, a function or partial, wrapped to pickle through cloudpickle: by name when importable,
+    by value otherwise (a lambda, a closure, a ``__main__`` def a worker cannot import). A callable
+    object stays itself, so its ``bind_services``/``resolve_services`` hooks are still seen."""
+    if isinstance(fn, types.FunctionType | functools.partial):
         return _ByValue(fn)  # type: ignore[return-value]  # calls as fn does
     return fn
+
+
+@functools.cache
+def _resolved(ref: str) -> Any:
+    return resolve_backend(ref)
+
+
+def _adopted(backend: Callable[[], Any] | str | None, value: T) -> T:
+    """``value`` with its arrays given back the behavior of the backend ``backend`` imports: an op
+    over several of them leaves an equal copy, which does not pickle by that import ref."""
+    adopt = getattr(_resolved(backend), "adopt", None) if isinstance(backend, str) else None
+    return value if adopt is None else cast("T", adopt(value))
+
+
+@dataclass(frozen=True)
+class _Adopting:
+    """A plan's ``combine``/``empty``, its result's arrays given back the backend ``ref``'s behavior."""
+
+    fn: Callable[..., Any]
+    ref: str
+
+    def __call__(self, *args: Any) -> Any:
+        return _adopted(self.ref, self.fn(*args))
+
+    def _keyed_as(self) -> Callable[..., Any]:
+        return self.fn
 
 
 def resolve_backend(ref: Callable[[], Any] | str) -> Any:
@@ -155,7 +179,9 @@ class _PartitionReduce(Generic[V]):
                 externals=dict(self.externals),
                 on_failure=self._attribute(str(partition)),
             )
-            return self.reduce(self._write(values, partition) if self.writes else values)
+            return _adopted(
+                self.backend_factory, self.reduce(self._write(values, partition) if self.writes else values)
+            )
         import cloudpickle  # noqa: PLC0415  (only a capturing plan needs it)
 
         from graphed.checkpoint import PickleCodec  # noqa: PLC0415
@@ -166,7 +192,7 @@ class _PartitionReduce(Generic[V]):
         # the input is kept before evaluating, so a failing task's input survives it
         blob = store.put(cloudpickle.dumps(capturable(chunk), protocol=codec.PROTOCOL))
         store.record_done(f"{cid}:input", label, blob, stage="replay-input")
-        result = self.reduce(self._evaluate(chunk, partition))
+        result = _adopted(self.backend_factory, self.reduce(self._evaluate(chunk, partition)))
         store.record_done(f"{cid}:output", label, store.put(codec.encode(result)), stage="replay-output")
         return result
 
@@ -427,8 +453,8 @@ def aggregate_plan(
     _refuse_shared_parts((process, t.partition) for t in tasks)
     return Plan(
         process=process,
-        combine=by_value(combine),
-        empty=by_value(empty),
+        combine=by_value(combine) if not isinstance(backend, str) else _Adopting(by_value(combine), backend),
+        empty=by_value(empty) if not isinstance(backend, str) else _Adopting(by_value(empty), backend),
         tasks=tasks,
         services=plan_services(session, compiled, services),
     )

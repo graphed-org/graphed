@@ -187,8 +187,7 @@ class _KeyPickler(pickle._Pickler):
 
     def save(self, obj: Any, save_persistent_id: bool = True) -> None:
         # a transport wrapper keys as what it carries, so wrapping moves no task key
-        keyed_as = getattr(type(obj), "_keyed_as", None)
-        if keyed_as is not None:
+        while (keyed_as := getattr(type(obj), "_keyed_as", None)) is not None:
             obj = self._keyed.setdefault(id(obj), keyed_as(obj))
         _PURE._Pickler.save(self, obj, save_persistent_id)
 

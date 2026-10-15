@@ -61,6 +61,22 @@ def _behavior_from(ref: str) -> Any:
     return resolve_backend(ref)._behavior
 
 
+def _adopt(value: Any, behavior: Mapping[Any, Any] | None) -> Any:
+    """``value`` with each array whose behavior merely equals ``behavior`` given ``behavior`` itself:
+    awkward merges the behaviors of several arrays into a new dict, which loses its pickling."""
+    if not behavior:
+        return value
+    if isinstance(value, ak.Array):
+        if value.behavior is behavior or value.behavior != behavior:
+            return value
+        return ak.Array(value.layout, behavior=behavior, attrs=value.attrs)
+    if type(value) in (list, tuple):
+        return type(value)(_adopt(item, behavior) for item in value)
+    if type(value) is dict:
+        return {key: _adopt(item, behavior) for key, item in value.items()}
+    return value
+
+
 @dataclass(eq=False)
 class AwkwardForm:
     """Opaque form backed by a metadata-only typetracer array (implements graphed.Form)."""
@@ -260,7 +276,7 @@ class AwkwardBackend:
     def eval_stage(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> object:
         if op == "join":  # needs `self` (the shared kernel routes through JoinBackend primitives)
             return self._eval_join(inputs, params)
-        return apply(op, inputs, params, behavior=self._behavior)
+        return self.adopt(apply(op, inputs, params, behavior=self._behavior))
 
     # ---- M54: behavior methods with arguments ------------------------------------------------
     canonical_output_type = staticmethod(canonical_output_type)
@@ -321,6 +337,11 @@ class AwkwardBackend:
         if self._behavior and not isinstance(self._behavior, _BehaviorByRef):
             self._behavior = _BehaviorByRef(self._behavior, ref)
         return self
+
+    def adopt(self, value: Any) -> Any:
+        """``value`` (an array, or a list, tuple or dict of them) carrying this backend's behavior
+        object wherever it carries an equal copy."""
+        return _adopt(value, self._behavior)
 
     def capturable(self, chunk: ak.Array) -> _AsRead:
         """``chunk`` in a form that pickles (with cloudpickle, as behaviors hold lambdas) back to
