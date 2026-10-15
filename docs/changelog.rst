@@ -30,7 +30,8 @@ A deferred array has no truth value
   A key that is not a field name or a tuple of them raises ``GraphedTypeError``, as does assigning a
   ``Varied`` value into a plain array (rebind with ``gak.with_field`` instead).
 * ``gak.with_field`` (and so field assignment) takes a scalar value, which awkward broadcasts in the
-  scalar's own dtype (``np.float32(0.5)`` stays ``float32``); it raised ``AttributeError``.
+  scalar's own dtype (``np.float32(0.5)`` stays ``float32``); it raised ``AttributeError``. Any other
+  value (``None``, a complex or datetime scalar, a list or concrete array) raises ``GraphedTypeError``.
 
 Resuming any plan from a store
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

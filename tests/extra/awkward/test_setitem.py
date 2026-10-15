@@ -48,11 +48,41 @@ def test_assignment_on_a_varied_container_applies_to_every_universe() -> None:
         assert got.w.tolist() == [x + 1 for x in m], label
 
 
+def _slots(x: Any) -> dict[str, Any]:
+    def plain(v: Any) -> Any:
+        if isinstance(v, graphed.Array):
+            return v.node_id
+        return {k: plain(m) for k, m in v.items()} if isinstance(v, dict) else v
+
+    names = [n for c in type(x).__mro__ for n in getattr(c, "__slots__", ()) if n != "__weakref__"]
+    return {n: plain(getattr(x, n)) for n in names}
+
+
+@pytest.mark.parametrize("member", [False, True], ids=["varied", "member_of"])
+def test_assignment_rebinds_every_slot_of_the_recorded_result(member: bool) -> None:
+    _, ev = _source()
+    x: Any = graphed.vary(ev, "s", points={"up": gak.with_field(ev, ev.m * 2, "m")})
+    value: Any = graphed.vary(ev.m, "t", points={"dn": ev.m * 3})
+    if member:
+        x, value = graphed.member_of(x, "s_up"), graphed.member_of(value, "t_dn")
+    before, expected = _slots(x), _slots(gak.with_field(x, value, "w"))
+    x["w"] = value
+    assert _slots(x) == expected
+    assert {n for n in expected if expected[n] != before[n]} - {"_node_id", "_members"}
+
+
 @pytest.mark.parametrize("key", [0, ["m"], (), ("r", 1)])
 def test_a_non_field_key_is_refused_as_ak_refuses_it(key: Any) -> None:
     _, ev = _source()
     with pytest.raises(GraphedTypeError, match="only fields may be assigned"):
         ev[key] = ev.m
+
+
+@pytest.mark.parametrize("value", [None, 1j, np.datetime64("2020-01-01"), np.array([1.0]), [1.0]], ids=repr)
+def test_a_non_scalar_value_is_refused_naming_with_field(value: Any) -> None:
+    _, ev = _source()
+    with pytest.raises(GraphedTypeError, match=r"with_field.*bool/int/float/str scalar"):
+        ev["w"] = value
 
 
 def test_a_varied_value_into_a_plain_array_is_refused() -> None:
