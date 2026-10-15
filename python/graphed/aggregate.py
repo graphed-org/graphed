@@ -114,9 +114,6 @@ class _Adopting:
     def __call__(self, *args: Any) -> Any:
         return _adopted(self.ref, self.fn(*args))
 
-    def _keyed_as(self) -> Callable[..., Any]:
-        return self.fn
-
 
 def resolve_backend(ref: Callable[[], Any] | str) -> Any:
     """A worker's evaluation backend: a zero-arg factory/class, or an importable ``"module:attr"``

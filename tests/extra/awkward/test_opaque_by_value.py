@@ -197,3 +197,26 @@ def test_an_op_output_held_by_a_user_object_stays_picklable() -> None:
     )
     boxed = plan.process(plan.tasks[0].partition, LocalResources())
     assert ak.to_list(pickle.loads(pickle.dumps(boxed)).value) == ak.to_list(boxed.value)
+
+
+def _paired(values: list[Any]) -> dict[str, Any]:
+    pt = values[0]
+    return {"pairs": [ak.zip({"a": pt, "b": pt}), ak.cartesian([pt, pt])], "first": (ak.zip({"a": pt}),)}
+
+
+def test_a_partial_whose_reduce_merges_arrays_inside_containers_stays_picklable() -> None:
+    session = Session(make_backend())
+    form = AwkwardForm(ak.Array(EVENTS.layout.to_typetracer(forget_length=True)))
+    ev = session.source("events", form=form, data=Events(EVENTS))
+    plan = aggregate_plan(
+        ev.Jet.pt,
+        reduce=_paired,
+        combine=_cat,
+        empty=_empty,
+        steps_per_file=2,
+        backend=f"{__name__}:make_backend",
+    )
+    partial = plan.process(plan.tasks[0].partition, LocalResources())
+    loaded = pickle.loads(pickle.dumps(partial))
+    assert [ak.to_list(p) for p in loaded["pairs"]] == [ak.to_list(p) for p in partial["pairs"]]
+    assert ak.to_list(loaded["first"][0]) == ak.to_list(partial["first"][0])
