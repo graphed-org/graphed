@@ -153,7 +153,6 @@ def _triton_case() -> tuple[ExternalPlugin, bytes, dict[str, Any], Callable[[np.
     return TRITON_PLUGIN, b'{"model": "scorer"}', params, lambda x: x.astype(np.float32) @ W
 
 
-# xgboost before torch: their macOS wheels each bundle libomp, and loading xgboost's second aborts
 CASES = {
     "onnx": _onnx_case,
     "xgboost": _xgboost_case,
@@ -212,6 +211,29 @@ def test_a_float64_onnx_model_is_fed_float64_bit_equal_to_eager() -> None:
         session.materialize(record_external(session, ONNX_PLUGIN, payload, [ev.a, ev.b], params=ARGS))
     )
     assert np.array_equal(got, _onnx_eager(payload, X).reshape(-1))
+
+
+def test_an_unfed_optional_string_input_does_not_block_the_fed_ones() -> None:
+    string = helper.make_tensor_type_proto(TensorProto.STRING, [None])
+    graph = helper.make_graph(
+        [helper.make_node("MatMul", ["x", "W"], ["y"])],
+        "m",
+        [
+            helper.make_tensor_value_info("x", TensorProto.FLOAT, [None, 2]),
+            helper.make_value_info("tag", helper.make_optional_type_proto(string)),
+        ],
+        [helper.make_tensor_value_info("y", TensorProto.FLOAT, [None, 1])],
+        initializer=[numpy_helper.from_array(W[:, :1], name="W")],
+    )
+    payload = helper.make_model(
+        graph, opset_imports=[helper.make_opsetid("", 18)], ir_version=9
+    ).SerializeToString()
+    session, ev = _events()
+    params = {"args": {"x": ["$0", "$1"]}}
+    got = ak.to_numpy(
+        session.materialize(record_external(session, ONNX_PLUGIN, payload, [ev.a, ev.b], params=params))
+    )
+    assert np.array_equal(got, _onnx_eager(payload, X.astype(np.float32)).reshape(-1))
 
 
 def test_an_external_on_a_varied_input_records_one_node_per_universe() -> None:

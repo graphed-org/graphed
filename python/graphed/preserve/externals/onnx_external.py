@@ -44,7 +44,7 @@ def eval_onnx(session: Any, params: Mapping[str, Any], inputs: list[Any]) -> Any
     import numpy as np  # noqa: PLC0415
 
     # onnxruntime takes no implicit cast: feed each input the dtype the graph declares for it
-    declared = {i.name: np.dtype(_ORT_DTYPES.get(i.type, i.type[7:-1])) for i in session.get_inputs()}
+    declared = {i.name: i.type for i in session.get_inputs()}
     template = parse_call_template(params, len(inputs), allow_kwargs=False)
     if template is None:  # legacy: one (-1, 1) feed
         name = str(params.get("input_name", "")) or session.get_inputs()[0].name
@@ -57,7 +57,10 @@ def eval_onnx(session: Any, params: Mapping[str, Any], inputs: list[Any]) -> Any
             graph_inputs = [i.name for i in session.get_inputs()]
             feeds = {graph_inputs[k]: ml_matrix(entry, inputs) for k, entry in enumerate(args)}
     feeds = {
-        name: x.astype(declared[name], copy=False) if name in declared else x for name, x in feeds.items()
+        name: x.astype(_ORT_DTYPES.get(declared[name], declared[name][7:-1]), copy=False)
+        if name in declared
+        else x
+        for name, x in feeds.items()
     }
     return _as_event_array(session.run(None, feeds)[0])
 
