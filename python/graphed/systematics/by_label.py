@@ -107,7 +107,15 @@ def impact_by_label(outputs: Sequence[Varied] | Mapping[str, Sequence[Array]]) -
 
 
 def _reach(arrays: Sequence[Array]) -> set[int]:
-    return {nid for array in arrays for nid in cone(array.session, array.node_id)}
+    memos: dict[Session, dict[int, object]] = {}  # one per Session: node ids are Session-local
+    for array in arrays:
+        memo = memos.setdefault(array.session, {})
+        array.session.walk(array, source=_ignore, op=_ignore, external=_ignore, memo=memo)
+    return {nid for memo in memos.values() for nid in memo}
+
+
+def _ignore(*_args: object) -> None:
+    return None
 
 
 def read_columns_by_label(

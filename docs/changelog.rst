@@ -184,6 +184,9 @@ One plan for every output
 Fixes
 ~~~~~
 
+* ``project_buffers_many`` replays a sub-graph its outputs share once instead of once per output, so
+  planning many outputs over common selections no longer costs the shared graph once per output.
+  ``Session.walk`` takes a ``memo`` that walks of several outputs share.
 * ``NetworkMonitor`` no longer drops an event emitted just as its sender wakes with no connection
   open, typically a worker's first event. The sender drains its buffer before deciding to connect, so
   a per-worker monitor in a spawned process ships that event before the process exits.
