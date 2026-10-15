@@ -35,7 +35,9 @@ def _counted_ops(session: Session, monkeypatch: pytest.MonkeyPatch) -> list[str]
 
 
 @pytest.mark.parametrize("n_outputs", [1, 4, 16])
-def test_each_op_node_is_evaluated_once_across_the_outputs(n_outputs: int, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_each_op_node_is_evaluated_once_across_the_outputs(
+    n_outputs: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
     session, ev, outputs = _outputs(n_outputs)
     union = {nid for out in outputs for nid in cone(session, out.node_id)}
     calls = _counted_ops(session, monkeypatch)
@@ -45,7 +47,9 @@ def test_each_op_node_is_evaluated_once_across_the_outputs(n_outputs: int, monke
 
 def test_the_shared_memo_leaves_the_projection_unchanged() -> None:
     _, _, outputs = _outputs(4)
-    assert project_buffers_many(outputs).read_buffers == {"ev": {"m": BufferNeed.DATA, "Jet.pt": BufferNeed.DATA}}
+    assert project_buffers_many(outputs).read_buffers == {
+        "ev": {"m": BufferNeed.DATA, "Jet.pt": BufferNeed.DATA}
+    }
 
 
 def test_reach_walks_a_shared_sub_dag_once(monkeypatch: pytest.MonkeyPatch) -> None:
