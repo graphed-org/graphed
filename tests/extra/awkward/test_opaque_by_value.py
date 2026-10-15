@@ -97,3 +97,9 @@ def test_wrapping_a_closure_leaves_its_task_key_unchanged() -> None:
     assert _key_digest(wrapped) == _key_digest(closure)
     assert pickle.loads(pickle.dumps(wrapped))(3.0) == 6.0
     assert by_value(_jet_pt_sums) is _jet_pt_sums
+
+
+def test_resolving_a_backend_from_its_import_ref_leaves_its_key_unchanged() -> None:
+    resolved = make_backend().resolved_from(f"{__name__}:make_backend")
+    assert type(resolved._behavior).__name__ == "_BehaviorByRef"
+    assert _key_digest(resolved) == _key_digest(make_backend())
