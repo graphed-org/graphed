@@ -443,10 +443,11 @@ def _lineage_refusal(record_ctx: Any, select_ctx: Any) -> None:
 
 
 def _resolve_field(nodes: list[dict[str, Any]], session: Session, node_id: int, name: str) -> int | str:
-    """The CANONICAL value node for `field(node, name)`, seeing through zip/with_field projection —
-    the M4 optimizer does not push field projection through a `zip`, so the raw per-label field node
-    always differs even when the value does not. Distinguishes a genuinely varying leaf (§6.4b) from
-    an untouched one that only the record's construction couples to the shift."""
+    """The canonical value node for `field(node, name)`: the field is followed back to the node that
+    produced it through every op that passes fields through unchanged (zip, with_field, with_name,
+    with_parameter, without_field, a field selection, a field projection), and any other op ends the
+    walk at its own projection. The M4 optimizer pushes no projection through these, so without the
+    walk an untouched leaf of a varied record would look varied (§6.4b)."""
     if node_id >= len(nodes):  # newer than the snapshot: a projection we recorded, never a zip
         return int(getattr(Array(session, node_id), name).node_id)
     nd = nodes[node_id]
@@ -454,7 +455,13 @@ def _resolve_field(nodes: list[dict[str, Any]], session: Session, node_id: int, 
     if op == "ak.zip":
         fields = str(nd["params"]["fields"]).split(",")
         return int(nd["inputs"][fields.index(name)])
-    if op in ("ak.with_name", "ak.with_parameter"):  # record-level only: fields pass through unchanged
+    if op == "field":
+        record, field = int(nd["inputs"][0]), str(nd["params"]["field"])
+        if field in _tt(session, Array(session, record)).fields:  # else a behavior property
+            inner = _resolve_field(nodes, session, record, field)
+            if isinstance(inner, int) and inner != node_id:  # a source's field is its own fixpoint
+                return _resolve_field(nodes, session, inner, name)
+    if op in ("ak.with_name", "ak.with_parameter", "ak.without_field", "fields"):
         return _resolve_field(nodes, session, int(nd["inputs"][0]), name)
     if op == "ak.with_field":
         if str(nd["params"]["field"]) == name:
