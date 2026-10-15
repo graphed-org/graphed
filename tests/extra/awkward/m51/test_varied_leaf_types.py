@@ -49,6 +49,10 @@ def _f32(x: Any) -> Any:
     return gak.values_astype(x, "float32")
 
 
+def _f16(x: Any) -> Any:
+    return gak.values_astype(x, "float16")
+
+
 def _regular(x: Any) -> Any:
     return gak.to_regular(gak.unflatten(x, 1), axis=1)
 
@@ -226,6 +230,11 @@ PARAM_CASES: dict[str, tuple[Build, bool]] = {
     ),
     "__doc__ on up only": (_flat(lambda e: _doc(e.m * 3, "up")), True),
     "__doc__ differs": (_flat(lambda e: _doc(e.m * 3, "b"), lambda e: _doc(e.m, "a")), True),
+    "float16 up, float64 nominal": (_flat(lambda e: gak.values_astype(e.m * 3, "float16")), True),
+    "float16 nominal, __doc__ on up": (
+        _flat(lambda e: _doc(_f16(e.m * 3), "u"), lambda e: _f16(e.m)),
+        True,
+    ),
     "Jet list __doc__ lifted by zip": (
         lambda e: _jet_record(
             graphed.vary(
@@ -264,6 +273,19 @@ def test_every_universe_reads_back_with_its_parameters(case: str, tmp_path: Any)
     # a universe whose type matches nominal's, parameters included, adds nothing to the file
     assert ("type__s_up" in manifest["s_up"]) is stored
     assert "type__s_same" not in manifest["s_same"]
+    assert "type__nominal" not in manifest["nominal"]
+
+
+@pytest.mark.parametrize(
+    "top",
+    [lambda r: gak.with_name(r, "Event"), lambda r: gak.with_parameter(r, "__doc__", "event")],
+    ids=["with_name", "__doc__"],
+)
+def test_every_universe_keeps_the_top_records_parameters(top: Callable[[Any], Any], tmp_path: Any) -> None:
+    flat = _flat(lambda e: e.m * 3)
+    manifest, _ = _write_and_check(lambda e: top(flat(e)), tmp_path)
+    assert "type__nominal" in manifest["nominal"]
+    assert "type__s_up" not in manifest["s_up"]
 
 
 def test_a_file_without_the_record_type_entry_keeps_each_universes_own_type(tmp_path: Any) -> None:

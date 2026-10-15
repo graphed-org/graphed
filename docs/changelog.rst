@@ -202,8 +202,10 @@ Fixes
   universe turns from jagged to flat, no longer crashes the write. Such leaves, and ``datetime64[s]``
   leaves (which parquet stores as ``[ms]``), are stored as-is.
 * ``read_varied`` restores each universe's parameters (``__doc__`` and the like) on leaves stored as
-  an XOR delta, which came back without them. A universe whose type differs from nominal's only in
-  parameters has that type recorded in the manifest; other files are unchanged.
+  an XOR delta, and the top record's own parameters (``with_name``, ``__doc__``) for every universe,
+  nominal included; both came back without them. The manifest records a universe's form when its
+  type, parameters included, differs from nominal's, and nominal's when its top record has
+  parameters; other files are unchanged.
 
 0.0.6
 -----
