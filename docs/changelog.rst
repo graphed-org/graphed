@@ -194,6 +194,29 @@ Fixes
 * ``NetworkMonitor`` no longer drops an event emitted just as its sender wakes with no connection
   open, typically a worker's first event. The sender drains its buffer before deciding to connect, so
   a per-worker monitor in a spawned process ships that event before the process exits.
+* A variation-aware ``to_parquet(..., select=)`` no longer corrupts a universe whose leaf type
+  differs from nominal's (``float32`` vs ``float64``, ``int`` vs ``float``, option vs not):
+  ``read_varied`` gave it nominal's type, with its bits reinterpreted. That universe's value is now
+  stored as-is (manifest representation ``"base"``); a primitive or once-jagged leaf that keeps
+  nominal's type still stores an XOR delta, and those files are unchanged. A file holding a ``"base"`` column also carries a manifest
+  marker that makes ``read_varied`` from graphed 0.0.6 raise ``GraphedError`` instead of returning
+  nominal's values for that universe.
+* ``read_varied`` no longer crashes on a flat option leaf holding ``None``, and a universe whose
+  ``None`` rows differ from nominal's reads back with its own ``None`` rows (a jagged leaf also took
+  nominal's). The XOR delta is masked where the label is ``None``.
+* A varied regular-list or optional-list leaf keeps its type through ``read_varied`` (it came back
+  ``var``, or without its option), and a leaf that ``zip`` broadcasts into a collection, or that a
+  universe turns from jagged to flat, no longer crashes the write. Such leaves, and ``datetime64[s]``
+  leaves (which parquet stores as ``[ms]``), are stored as-is.
+* ``read_varied`` restores each universe's parameters (``__doc__`` and the like) on leaves stored as
+  an XOR delta, and the top record's own parameters (``with_name``, ``__doc__``) for every universe,
+  nominal included; both came back without them. The manifest records a universe's form when its
+  type, parameters included, differs from nominal's, and nominal's when its top record has
+  parameters; other files are unchanged.
+* A variation-aware ``to_parquet(..., select=)`` no longer raises ``IndexError`` on a record whose
+  fields are reached through a nested collection, such as ``gak.with_field(events, varied, "m")``.
+* Under a ``with_name`` or ``with_parameter`` record, a leaf that is equal in every universe no
+  longer gets an all-zero delta column per universe.
 
 0.0.6
 -----
