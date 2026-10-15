@@ -114,10 +114,12 @@ def test_an_array_from_another_session_is_refused_by_a_binary_op() -> None:
     assert op_count(session) == before
 
 
-def test_a_zero_dimensional_numpy_array_is_coerced_not_refused() -> None:
-    """The refusal is about ELEMENTS, not about numpy: a 0-d array is a scalar and passes `.item()`."""
-    _session, jets, _probe = recorded()
-    assert jets.scaled(np.array(2.0)).node_id == jets.scaled(2.0).node_id
+def test_a_zero_dimensional_numpy_array_is_a_typed_scalar_not_refused() -> None:
+    """The refusal is about ELEMENTS, not about numpy: a 0-d array is a scalar, typed by its dtype."""
+    session, jets, _probe = recorded()
+    typed = jets.scaled(np.array(2.0))
+    assert typed.node_id != jets.scaled(2.0).node_id
+    assert ak.array_equal(ak.Array(session.materialize(typed)), eager("Jet").scaled(np.array(2.0)))
 
 
 def test_an_unknown_keyword_is_refused_at_the_call_site() -> None:

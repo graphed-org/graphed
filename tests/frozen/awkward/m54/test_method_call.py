@@ -57,14 +57,14 @@ def test_an_array_and_a_constant_mix_in_one_call() -> None:
     assert ak.array_equal(got, e_lead.near(e_partner, threshold=2.0))
 
 
-def test_a_numpy_scalar_constant_is_coerced_and_matches_the_python_scalar() -> None:
+def test_a_numpy_scalar_constant_keeps_its_dtype_as_a_distinct_node() -> None:
     session, jets, _probe = recorded()
-    coerced = jets.scaled(np.float64(2.0))
+    typed = jets.scaled(np.float64(2.0))
     plain = jets.scaled(2.0)
 
-    assert coerced.node_id == plain.node_id  # `.item()` at the encoder, not a second node
+    assert typed.node_id != plain.node_id  # NEP 50: a numpy scalar's dtype promotes, a float's does not
     assert ak.array_equal(
-        ak.Array(session.materialize(coerced)), eager("Jet").scaled(2.0)
+        ak.Array(session.materialize(typed)), eager("Jet").scaled(np.float64(2.0))
     )
 
 
