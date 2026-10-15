@@ -281,11 +281,25 @@ def test_every_universe_reads_back_with_its_parameters(case: str, tmp_path: Any)
     [lambda r: gak.with_name(r, "Event"), lambda r: gak.with_parameter(r, "__doc__", "event")],
     ids=["with_name", "__doc__"],
 )
-def test_every_universe_keeps_the_top_records_parameters(top: Callable[[Any], Any], tmp_path: Any) -> None:
-    flat = _flat(lambda e: e.m * 3)
-    manifest, _ = _write_and_check(lambda e: top(flat(e)), tmp_path)
+@pytest.mark.parametrize("with_jet", [False, True], ids=["flat", "with Jet"])
+def test_every_universe_keeps_the_top_records_parameters(
+    top: Callable[[Any], Any], with_jet: bool, tmp_path: Any
+) -> None:
+    def build(ev: Any) -> Any:
+        x = graphed.vary(ev.m, "s", points={"up": ev.m * 3, "same": ev.m * 2})
+        return top(gak.zip({"x": x, "Jet": ev.Jet} if with_jet else {"x": x}, depth_limit=1))
+
+    manifest, _ = _write_and_check(build, tmp_path)
     assert "type__nominal" in manifest["nominal"]
     assert "type__s_up" not in manifest["s_up"]
+
+
+def test_a_varied_field_set_on_the_source_record_reads_back(tmp_path: Any) -> None:
+    def build(ev: Any) -> Any:
+        return gak.with_field(ev, graphed.vary(ev.m, "s", points={"up": ev.m * 3, "same": ev.m * 2}), "m")
+
+    manifest, _ = _write_and_check(build, tmp_path)
+    assert manifest["s_up"]["__vary_s_up__m"]["representation"] == "xor"
 
 
 def test_a_file_without_the_record_type_entry_keeps_each_universes_own_type(tmp_path: Any) -> None:

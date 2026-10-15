@@ -206,6 +206,8 @@ Fixes
   nominal included; both came back without them. The manifest records a universe's form when its
   type, parameters included, differs from nominal's, and nominal's when its top record has
   parameters; other files are unchanged.
+* A variation-aware ``to_parquet(..., select=)`` no longer raises ``IndexError`` on a record whose
+  fields are reached through a nested collection, such as ``gak.with_field(events, varied, "m")``.
 
 0.0.6
 -----
