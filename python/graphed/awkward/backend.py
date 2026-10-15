@@ -40,6 +40,27 @@ class _AsRead:
         return rebuild, (form, length, buffers)
 
 
+class _BehaviorByRef(dict[Any, Any]):
+    """A backend's behavior that pickles as the import ref its backend was resolved from, since its
+    lambdas do not pickle; every array derived from one carrying it keeps this same object."""
+
+    def __init__(self, behavior: Mapping[Any, Any], ref: str) -> None:
+        super().__init__(behavior)
+        self.ref = ref
+
+    def _keyed_as(self) -> dict[Any, Any]:
+        return dict(self)
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        return _behavior_from, (self.ref,)
+
+
+def _behavior_from(ref: str) -> Any:
+    from graphed.aggregate import resolve_backend  # noqa: PLC0415  (aggregate imports this module's users)
+
+    return resolve_backend(ref)._behavior
+
+
 @dataclass(eq=False)
 class AwkwardForm:
     """Opaque form backed by a metadata-only typetracer array (implements graphed.Form)."""
@@ -293,6 +314,13 @@ class AwkwardBackend:
             f"{params['method']}() returned {type(result).__name__}, which is not an awkward array "
             "or a tuple of awkward arrays, so it cannot be recorded"
         )
+
+    def resolved_from(self, ref: str) -> AwkwardBackend:
+        """This backend as a worker resolved it from the import ``ref``: its behavior, and so every
+        partial carrying it, pickles as ``ref``."""
+        if self._behavior and not isinstance(self._behavior, _BehaviorByRef):
+            self._behavior = _BehaviorByRef(self._behavior, ref)
+        return self
 
     def capturable(self, chunk: ak.Array) -> _AsRead:
         """``chunk`` in a form that pickles (with cloudpickle, as behaviors hold lambdas) back to

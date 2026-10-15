@@ -161,6 +161,7 @@ class _KeyPickler(pickle._Pickler):
         self._classdicts: dict[int, type] = {}
         self._globals: dict[int, dict[str, Any]] = {}
         self._rebound = rebound
+        self._keyed: dict[int, Any] = {}
         own: dict[type, Callable[[Any], Any]] = {
             weakref.WeakSet: lambda ws: (weakref.WeakSet, (self._sorted(ws),)),
             types.ModuleType: self._module_reduce,
@@ -183,6 +184,13 @@ class _KeyPickler(pickle._Pickler):
 
     def _sorted(self, items: Iterable[Any]) -> list[Any]:
         return sorted(items, key=lambda item: _dumps(item, self._seen, self._rebound))
+
+    def save(self, obj: Any, save_persistent_id: bool = True) -> None:
+        # a transport wrapper keys as what it carries, so wrapping moves no task key
+        keyed_as = getattr(type(obj), "_keyed_as", None)
+        if keyed_as is not None:
+            obj = self._keyed.setdefault(id(obj), keyed_as(obj))
+        _PURE._Pickler.save(self, obj, save_persistent_id)
 
     def memoize(self, obj: Any) -> None:
         # interning would decide where memo references fall; a loaded closure shares no cell, and

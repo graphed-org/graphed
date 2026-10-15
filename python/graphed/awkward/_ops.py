@@ -351,7 +351,7 @@ def apply(
     if op == "ak.with_name":
         named = ak.with_name(operands[0], str(params["name"]))
         if behavior:
-            return ak.Array(named.layout, behavior=dict(behavior), attrs=named.attrs)
+            return ak.Array(named.layout, behavior=behavior, attrs=named.attrs)
         return named
     if op == "ak.with_parameter":
         return ak.with_parameter(operands[0], str(params["key"]), params["value"])

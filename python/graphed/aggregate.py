@@ -14,6 +14,8 @@ specializes this for boost histograms; any other partition-wise reduction reuses
 from __future__ import annotations
 
 import os
+import pickle
+import types
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Any, ClassVar, Generic, TypeVar
@@ -41,6 +43,7 @@ from .session import Session
 from .varied import refuse_container
 from .write import PartitionedSource, PartWrite, declared_columns, join_part, prepare_part
 
+T = TypeVar("T")
 V = TypeVar("V")
 
 #: A write as shipped: ``(codec, destination, name, value slot, kv)``, where ``kv`` is ``None`` or
@@ -55,6 +58,42 @@ _ShippedWrite = tuple[
 ]
 
 
+@dataclass(frozen=True)
+class _ByValue:
+    """A user callable stdlib pickle cannot name (a lambda, closure or local def): it ships by value,
+    the one use of cloudpickle §A.3.1 allows, so every runner's own pickling carries it."""
+
+    fn: Callable[..., Any]
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        return self.fn(*args, **kwargs)
+
+    def _keyed_as(self) -> Callable[..., Any]:
+        return self.fn
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        import cloudpickle  # noqa: PLC0415  (only an opaque callable needs it)
+
+        return _load_by_value, (cloudpickle.dumps(self.fn),)
+
+
+def _load_by_value(blob: bytes) -> _ByValue:
+    import cloudpickle  # noqa: PLC0415
+
+    return _ByValue(cloudpickle.loads(blob))
+
+
+def by_value(fn: T) -> T:
+    """``fn``, wrapped to pickle by value when it is a function stdlib pickle cannot pickle by name."""
+    if not isinstance(fn, types.FunctionType):
+        return fn
+    try:
+        pickle.dumps(fn)
+    except (pickle.PicklingError, AttributeError, TypeError):
+        return _ByValue(fn)  # type: ignore[return-value]  # calls as fn does
+    return fn
+
+
 def resolve_backend(ref: Callable[[], Any] | str) -> Any:
     """A worker's evaluation backend: a zero-arg factory/class, or an importable ``"module:attr"``
     reference resolved HERE in the worker — behavior-carrying backends (whose behavior dicts hold
@@ -64,7 +103,9 @@ def resolve_backend(ref: Callable[[], Any] | str) -> Any:
 
         mod_name, _, attr = ref.partition(":")
         target = getattr(importlib.import_module(mod_name), attr)
-        return target() if callable(target) else target
+        backend = target() if callable(target) else target
+        hook = getattr(backend, "resolved_from", None)
+        return backend if hook is None else hook(ref)
     return ref()
 
 
@@ -262,7 +303,7 @@ def external_evaluators(session: Session, compiled: CompiledGraph) -> dict[str, 
             key = external_key(node)
             evaluator = by_key.get(key)
             if evaluator is not None:
-                wired[key] = evaluator
+                wired[key] = by_value(evaluator)
     return wired
 
 
@@ -350,7 +391,7 @@ def aggregate_plan(
     # alike); an explicit `externals=` (keyed by `external_key`) overrides the auto-wired evaluator.
     wired = external_evaluators(session, compiled)
     if externals:
-        wired.update(externals)
+        wired.update((key, by_value(fn)) for key, fn in externals.items())
     declared = declared_columns(data, arrays)
     process = _PartitionReduce(
         ir=bytes(compiled.ir),
@@ -359,7 +400,7 @@ def aggregate_plan(
         reader=data,
         columns=read_columns(arrays, nid) if declared is None else declared,
         externals=tuple(wired.items()),
-        reduce=reduce,
+        reduce=by_value(reduce),
         variation_labels=None if on_compiled is None else on_compiled(compiled),
         frames=compiled.correspondence.frames,
         store=None if store is None else os.fspath(store),
@@ -386,8 +427,8 @@ def aggregate_plan(
     _refuse_shared_parts((process, t.partition) for t in tasks)
     return Plan(
         process=process,
-        combine=combine,
-        empty=empty,
+        combine=by_value(combine),
+        empty=by_value(empty),
         tasks=tasks,
         services=plan_services(session, compiled, services),
     )

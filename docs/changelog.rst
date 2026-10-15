@@ -184,6 +184,12 @@ One plan for every output
 Fixes
 ~~~~~
 
+* A plan whose ``graphed.apply``/``map`` functions, ``reduce``, ``combine`` or ``empty`` are lambdas,
+  closures or local functions runs on process and remote runners: such a function now pickles by
+  value (cloudpickle) inside the plan, while importable ones still pickle by name and task keys are
+  unchanged. A backend given to ``aggregate_plan(backend="module:factory")`` gives its behavior to
+  the arrays it evaluates as that import ref, so a partial carrying it (vector's behaviors hold
+  lambdas) pickles too.
 * ``NetworkMonitor`` no longer drops an event emitted just as its sender wakes with no connection
   open, typically a worker's first event. The sender drains its buffer before deciding to connect, so
   a per-worker monitor in a spawned process ships that event before the process exits.
