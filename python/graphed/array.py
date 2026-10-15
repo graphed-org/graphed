@@ -217,7 +217,7 @@ def _as_param(value: object) -> ParamValue:
     raise TypeError(f"unsupported scalar operand {value!r}")
 
 
-def _scalar_params(value: object) -> dict[str, ParamValue]:
+def _scalar_params(value: object, key: str = "scalar", dtype_key: str = "dtype") -> dict[str, ParamValue]:
     """The params a scalar operand records (M59).
 
     A value carrying a ``dtype`` — a numpy scalar — keeps BOTH halves of what it imposes on the
@@ -227,11 +227,11 @@ def _scalar_params(value: object) -> dict[str, ParamValue]:
     """
     dtype = getattr(value, "dtype", None)
     if dtype is None or getattr(value, "shape", None) != () or not hasattr(value, "item"):
-        return {"scalar": _as_param(value)}
+        return {key: _as_param(value)}
     item = value.item()  # a 0-d array-like: guarded above
     if isinstance(item, int) and not isinstance(item, bool) and not -(2**63) <= item < 2**63:
-        return {"scalar": str(item), "dtype": str(dtype)}
-    return {"scalar": _as_param(item), "dtype": str(dtype)}
+        return {key: str(item), dtype_key: str(dtype)}
+    return {key: _as_param(item), dtype_key: str(dtype)}
 
 
 def no_eager_value(op: str, missing: str) -> GraphedTypeError:
@@ -479,7 +479,12 @@ class Array:
             if kind == "introspection":  # answered at record time; nothing is recorded
                 backend: Any = self._session.backend  # the optional hook that goes with this kind
                 return backend.introspect(self._session.form(self), name)
-        return self._session.record_op("field", [self], {"field": name})
+        from .errors import GraphedTypeError, MissingFieldError  # noqa: PLC0415  (cycle: errors -> provenance -> array)
+
+        try:
+            return self._session.record_op("field", [self], {"field": name})
+        except GraphedTypeError as err:
+            raise MissingFieldError(err.op, err.provenance, err.detail) from None
 
     def __iter__(self) -> Any:
         # int __getitem__ (M13) would otherwise make Array INFINITELY iterable through Python's

@@ -184,6 +184,22 @@ One plan for every output
 Fixes
 ~~~~~
 
+* ``gak.values_astype``, ``zeros_like``, ``ones_like`` and ``full_like`` take a dtype as numpy reads
+  one (``np.float64``, ``float``, ``np.dtype(...)``), not only its name.
+* ``gak.cartesian``/``argcartesian`` (and ``ak.cartesian`` on a deferred array) take a dict of named
+  slots, nesting by key, as awkward does.
+* numpy functions that are not ufuncs (``np.clip``, ``np.where``, ``np.nan_to_num``, ...) record on a
+  deferred awkward array or ``Varied`` the way ``ak.Array`` answers them; one awkward implements but
+  ``gak`` lacks (``np.round``) is refused naming the missing ``ak`` function.
+* ``hasattr``/``getattr(x, name, default)`` on a deferred array report a missing field as absent: the
+  ``GraphedTypeError`` it raises is also an ``AttributeError``.
+* A ``Varied`` answers a form attribute (``.fields``, ``.ndim``, ...) with the value, not another
+  ``Varied``, and refuses one its universes disagree on.
+* A scalar operand keeps its type, as eagerly: a numpy scalar in ``gak.where``/``fill_none``
+  (``where(m, x_float32, np.float32(1))`` stays ``float32``), an integer ``initial`` of a reducer
+  (it crashed on an integer array) or ``full_like`` value, and any scalar in the numpy backend's
+  ``np.where``/``np.clip`` (``np.where(m, x_int32, 0)`` stays ``int32``). Scalars of different
+  dtypes no longer share one node.
 * ``NetworkMonitor`` no longer drops an event emitted just as its sender wakes with no connection
   open, typically a worker's first event. The sender drains its buffer before deciding to connect, so
   a per-worker monitor in a spawned process ships that event before the process exits.

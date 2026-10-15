@@ -127,14 +127,14 @@ _AK_TWO_INPUT: dict[str, Any] = {
 }
 
 
-def scalar_param(params: Mapping[str, Any]) -> Any:
+def scalar_param(params: Mapping[str, Any], key: str = "scalar", dtype_key: str = "dtype") -> Any:
     """The scalar operand a binary op recorded — back in its own dtype when it had one (M59). The
     frontend cannot build a numpy scalar, so it records the dtype name beside the value, and a
     value wider than the store's i64 param as text."""
-    value = params["scalar"]
-    if "dtype" not in params:
+    value = params[key]
+    if dtype_key not in params:
         return value
-    return np.dtype(str(params["dtype"])).type(value)  # the dtype parses the wide int's text itself
+    return np.dtype(str(params[dtype_key])).type(value)  # the dtype parses the wide int's text itself
 
 
 def _scalar_operands(operands: Sequence[Any], params: Mapping[str, Any]) -> list[Any]:
@@ -297,9 +297,11 @@ def apply(
         )
     if op in ("ak.cartesian", "ak.argcartesian"):
         fn3 = ak.cartesian if op == "ak.cartesian" else ak.argcartesian
+        keys = _fields(params)
+        nested = _nested(params)
         return fn3(
-            list(operands),
-            nested=_nested(params),
+            dict(zip(keys, operands, strict=True)) if keys else list(operands),
+            nested=[keys[i] for i in nested] if keys and isinstance(nested, list) else nested,
             axis=int(params.get("axis", 1)),
             **_naming_kwargs(params),
         )
@@ -335,7 +337,9 @@ def apply(
     if op == "ak.flatten":
         return ak.flatten(operands[0], axis=_axis(params, default=1))
     if op == "ak.fill_none":
-        return ak.fill_none(operands[0], params["value"], axis=int(params.get("axis", -1)))
+        return ak.fill_none(
+            operands[0], scalar_param(params, "value", "value_dtype"), axis=int(params.get("axis", -1))
+        )
     if op == "ak.drop_none":
         ax = params.get("axis")
         return ak.drop_none(operands[0], axis=None if ax is None else int(ax))
@@ -390,7 +394,7 @@ def apply(
         return ak.from_regular(operands[0], axis=int(params.get("axis", 1)))
     if op == "ak.full_like":
         dtype = np.dtype(str(params["dtype"])) if "dtype" in params else None
-        return ak.full_like(operands[0], params["value"], dtype=dtype)
+        return ak.full_like(operands[0], scalar_param(params, "value", "value_dtype"), dtype=dtype)
     if op == "ak.nan_to_num":
         return ak.nan_to_num(
             operands[0],
@@ -468,7 +472,7 @@ def _reduce_kwargs(op: str, params: Mapping[str, Any], operands: Sequence[Any]) 
     if "mask_identity" in params:
         kw["mask_identity"] = bool(params["mask_identity"])
     if "initial" in params:
-        kw["initial"] = float(params["initial"])
+        kw["initial"] = scalar_param(params, "initial", "initial_dtype")
     if params.get("weighted"):
         kw["weight"] = operands[1]
     return kw
@@ -509,5 +513,5 @@ def _three_operands(operands: Sequence[Any], params: Mapping[str, Any]) -> tuple
     it = iter(operands)
     for i in range(3):
         key = f"const{i}"
-        out.append(params[key] if key in params else next(it))
+        out.append(scalar_param(params, key, f"{key}_dtype") if key in params else next(it))
     return out[0], out[1], out[2]

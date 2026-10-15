@@ -13,6 +13,8 @@ from collections.abc import Callable
 from typing import Any
 
 import awkward as ak
+import numpy as np
+from awkward._connect.numpy import implemented as _ak_numpy
 
 from graphed import Array
 from graphed.errors import GraphedError
@@ -23,6 +25,7 @@ from . import functions as gak
 
 # a node recorded through ak.<fn> points at the user's line, not at awkward's dispatcher
 register_internal("awkward._dispatch")
+register_internal("awkward._connect.numpy")
 
 #: ak keyword names whose gak parameter is spelled differently (a gak name of its own wins)
 _RENAMED = {
@@ -77,12 +80,26 @@ def _awkward_function(
     return fn(*positional, **keywords)
 
 
+def _clip(a: object, a_min: object = None, a_max: object = None) -> object:
+    """``np.clip`` as its two ufuncs: awkward has no ``np.clip`` of its own."""
+    low = a if a_min is None else np.maximum(a, a_min)
+    return low if a_max is None else np.minimum(low, a_max)
+
+
+def _array_function(self: object, func: Any, types: object, args: Any, kwargs: Any) -> Any:
+    """A numpy function that is not a ufunc, answered as ``ak.Array`` answers it: by awkward's own
+    implementation, whose ``ak.<fn>`` calls dispatch back through ``__awkward_function__``."""
+    impl = _clip if func is np.clip else _ak_numpy.get(func)
+    return NotImplemented if impl is None else impl(*args, **kwargs)
+
+
 class AwkwardArray(Array):
     """The awkward idiom's proxy: the neutral ``Array`` plus awkward's function-dispatch hook."""
 
     __slots__ = ()
 
     __awkward_function__ = _awkward_function
+    __array_function__ = _array_function
 
 
 class AwkwardVaried(Varied):
@@ -91,6 +108,7 @@ class AwkwardVaried(Varied):
     __slots__ = ()
 
     __awkward_function__ = _awkward_function
+    __array_function__ = _array_function
 
 
 register_varied(AwkwardArray, AwkwardVaried)

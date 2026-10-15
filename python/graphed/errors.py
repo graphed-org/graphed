@@ -46,3 +46,10 @@ class OutputTypeError(GraphedTypeError):
 
     def __reduce__(self) -> tuple[Any, ...]:
         return (type(self), (self.op, self.provenance, self.detail))
+
+
+class MissingFieldError(GraphedTypeError, AttributeError):
+    """``arr.<name>`` naming no field: an ill-typed ``field`` op that ``hasattr`` reads as absent."""
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        return (type(self), (self.op, self.provenance, self.detail))

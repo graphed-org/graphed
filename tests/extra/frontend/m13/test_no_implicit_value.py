@@ -71,11 +71,10 @@ def test_numpy_conversion_of_a_deferred_value_raises(
     assert info.value.provenance.lineno == line
 
 
-def test_np_where_on_a_plain_deferred_condition_raises_instead_of_picking_a_branch() -> None:
-    cond = _awkward() > 1.5
-    with pytest.raises(GraphedTypeError, match="no numpy value") as info:
-        np.where(cond, 1, 0)
-    assert "ak.where/gak.where on an awkward-backed" in str(info.value)
+def test_np_where_on_an_awkward_deferred_condition_selects_elementwise() -> None:
+    x = _awkward()
+    picked = np.where(x > 1.5, 1, 0)
+    assert x.session.materialize(picked).tolist() == [[0], [1, 1]]
 
 
 def test_numpy_dispatch_and_deferred_logic_still_record() -> None:

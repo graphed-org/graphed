@@ -10,9 +10,13 @@ import functools
 import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, SupportsFloat, cast
+from typing import Any, cast
+
+import numpy as np
+import numpy.typing as npt
 
 from graphed import Array, ParamValue
+from graphed.array import _scalar_params
 from graphed.provenance import capture
 
 from . import payloads
@@ -78,16 +82,21 @@ def combinations(
 
 
 def _cartesian_params(
+    arrays: Sequence[Array] | Mapping[str, Array],
     axis: int,
-    nested: bool | Sequence[int] | None,
+    nested: bool | Sequence[int] | Sequence[str] | None,
     with_name: str | None,
     parameters: Mapping[str, ParamValue] | None,
 ) -> dict[str, ParamValue]:
     params: dict[str, ParamValue] = {}
+    keys = list(arrays) if isinstance(arrays, Mapping) else []
+    if keys:
+        params["fields"] = ",".join(keys)
     if isinstance(nested, bool):
         params["nested"] = nested
     elif nested is not None:
-        params["nested_axes"] = ",".join(str(int(i)) for i in nested)
+        # a dict's slots nest by key, as ak.cartesian's do; the record keeps their positions
+        params["nested_axes"] = ",".join(str(keys.index(str(i)) if keys else int(i)) for i in nested)
     if axis != 1:
         params["axis"] = axis
     params.update(_structure_params(with_name=with_name, parameters=parameters))
@@ -95,15 +104,16 @@ def _cartesian_params(
 
 
 def cartesian(
-    arrays: Sequence[Array],
+    arrays: Sequence[Array] | Mapping[str, Array],
     *,
     axis: int = 1,
-    nested: bool | Sequence[int] | None = None,
+    nested: bool | Sequence[int] | Sequence[str] | None = None,
     with_name: str | None = None,
     parameters: Mapping[str, ParamValue] | None = None,
 ) -> Array:
-    return arrays[0].session.record_op(
-        "ak.cartesian", list(arrays), _cartesian_params(axis, nested, with_name, parameters)
+    inputs = list(arrays.values() if isinstance(arrays, Mapping) else arrays)
+    return inputs[0].session.record_op(
+        "ak.cartesian", inputs, _cartesian_params(arrays, axis, nested, with_name, parameters)
     )
 
 
@@ -180,7 +190,7 @@ def _reduce(
     if mask_identity is not None:
         params["mask_identity"] = mask_identity
     if initial is not None:
-        params["initial"] = float(initial)
+        params.update(_scalar_params(initial, "initial", "initial_dtype"))
     inputs = [arr] if weight is None else [arr, weight]
     if weight is not None:
         params["weighted"] = True
@@ -393,8 +403,9 @@ def flatten(arr: Array, axis: int | None = 1) -> Array:
     return arr.session.record_op("ak.flatten", [arr], {"axis": "none" if axis is None else axis})
 
 
-def fill_none(arr: Array, value: bool | int | float, axis: int = -1) -> Array:
-    return arr.session.record_op("ak.fill_none", [arr], {"value": value, "axis": axis})
+def fill_none(arr: Array, value: object, axis: int = -1) -> Array:
+    params = {**_scalar_params(value, "value", "value_dtype"), "axis": axis}
+    return arr.session.record_op("ak.fill_none", [arr], params)
 
 
 def drop_none(arr: Array, axis: int | None = None) -> Array:
@@ -408,23 +419,24 @@ def where(cond: Array, a: object, b: object) -> Array:
     for i, operand in enumerate((cond, a, b)):
         if isinstance(operand, Array):
             inputs.append(operand)
-        elif isinstance(operand, bool | int | str):
-            params[f"const{i}"] = operand
-        elif isinstance(operand, SupportsFloat):
-            params[f"const{i}"] = float(operand)
         else:
-            raise TypeError(f"unsupported where operand {operand!r}")
+            params.update(_scalar_params(operand, f"const{i}", f"const{i}_dtype"))
     return cond.session.record_op("ak.where", inputs, params)
 
 
-def zeros_like(arr: Array, *, dtype: str | None = None) -> Array:
+def _dtype_name(dtype: npt.DTypeLike) -> str:
+    """A dtype read as awkward reads one (``np.dtype``), recorded by name."""
+    return np.dtype(dtype).name
+
+
+def zeros_like(arr: Array, *, dtype: npt.DTypeLike = None) -> Array:
     """``ak.zeros_like`` parity: ``dtype=None`` PRESERVES the input dtype (no forced int64)."""
-    params: dict[str, ParamValue] = {} if dtype is None else {"dtype": dtype}
+    params: dict[str, ParamValue] = {} if dtype is None else {"dtype": _dtype_name(dtype)}
     return arr.session.record_op("ak.zeros_like", [arr], params)
 
 
-def ones_like(arr: Array, *, dtype: str | None = None) -> Array:
-    params: dict[str, ParamValue] = {} if dtype is None else {"dtype": dtype}
+def ones_like(arr: Array, *, dtype: npt.DTypeLike = None) -> Array:
+    params: dict[str, ParamValue] = {} if dtype is None else {"dtype": _dtype_name(dtype)}
     return arr.session.record_op("ak.ones_like", [arr], params)
 
 
@@ -667,15 +679,19 @@ def from_regular(arr: Array, axis: int = 1) -> Array:
     return arr.session.record_op("ak.from_regular", [arr], {"axis": axis})
 
 
-def full_like(arr: Array, value: float, *, dtype: str | None = None) -> Array:
-    params: dict[str, object] = {"value": float(value)}
+def full_like(arr: Array, value: float, *, dtype: npt.DTypeLike = None) -> Array:
+    params = _scalar_params(value, "value", "value_dtype")
     if dtype is not None:
-        params["dtype"] = dtype
-    return arr.session.record_op("ak.full_like", [arr], params)  # type: ignore[arg-type]
+        params["dtype"] = _dtype_name(dtype)
+    return arr.session.record_op("ak.full_like", [arr], params)
 
 
 def nan_to_num(
-    arr: Array, *, nan: float = 0.0, posinf: float | None = None, neginf: float | None = None
+    arr: Array,
+    copy: bool = True,  # ponytail: ignored, a recorded op never mutates its input
+    nan: float = 0.0,
+    posinf: float | None = None,
+    neginf: float | None = None,
 ) -> Array:
     params: dict[str, ParamValue] = {}
     if nan != 0.0:
@@ -712,15 +728,16 @@ def argcombinations(
 
 
 def argcartesian(
-    arrays: Sequence[Array],
+    arrays: Sequence[Array] | Mapping[str, Array],
     *,
     axis: int = 1,
-    nested: bool | Sequence[int] | None = None,
+    nested: bool | Sequence[int] | Sequence[str] | None = None,
     with_name: str | None = None,
     parameters: Mapping[str, ParamValue] | None = None,
 ) -> Array:
-    return arrays[0].session.record_op(
-        "ak.argcartesian", list(arrays), _cartesian_params(axis, nested, with_name, parameters)
+    inputs = list(arrays.values() if isinstance(arrays, Mapping) else arrays)
+    return inputs[0].session.record_op(
+        "ak.argcartesian", inputs, _cartesian_params(arrays, axis, nested, with_name, parameters)
     )
 
 
@@ -728,8 +745,8 @@ def without_field(arr: Array, field: str) -> Array:
     return arr.session.record_op("ak.without_field", [arr], {"field": field})
 
 
-def values_astype(arr: Array, dtype: str) -> Array:
-    return arr.session.record_op("ak.values_astype", [arr], {"dtype": dtype})
+def values_astype(arr: Array, dtype: npt.DTypeLike) -> Array:
+    return arr.session.record_op("ak.values_astype", [arr], {"dtype": _dtype_name(dtype)})
 
 
 def broadcast_arrays(*arrays: Array, depth_limit: int | None = None) -> tuple[Array, ...]:
