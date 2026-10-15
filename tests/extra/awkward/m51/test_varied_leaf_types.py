@@ -9,13 +9,14 @@ from collections.abc import Callable
 from typing import Any
 
 import awkward as ak
-import pyarrow.parquet as pq
 import pytest
 
 import graphed
 import graphed.awkward as ga
 from graphed import Session
 from graphed.awkward import AwkwardBackend, from_awkward, gak
+
+pq = pytest.importorskip("pyarrow.parquet")
 
 DATA = {
     "m": [124.84, 125.5, 130.25, 90.0],
