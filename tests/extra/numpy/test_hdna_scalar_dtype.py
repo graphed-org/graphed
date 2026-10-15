@@ -9,6 +9,7 @@ import numpy as np
 import numpy.typing as npt
 import pytest
 
+import graphed.numpy as gnp
 from graphed import Session
 from graphed.numpy import NumpyBackend, from_array
 
@@ -32,5 +33,18 @@ def test_a_scalar_operand_keeps_its_numpy_dtype(op: Callable[[Any, Any], Any], a
     session = Session(NumpyBackend())
     got = np.asarray(session.materialize(op(from_array(session, "x", arr), scalar)))
     want = op(arr, scalar)
+    assert got.dtype == want.dtype
+    np.testing.assert_array_equal(got, want)
+
+
+@pytest.mark.parametrize(
+    ("arr", "fill"),
+    [(I32.astype(np.int64), np.int64(2**62 + 1)), (I32, 7), (I32, 2.5), (F32, np.float64(0.1))],
+    ids=["wide_int64", "int", "float_into_int", "float64_into_float32"],
+)
+def test_full_like_fills_the_value_numpy_fills(arr: Any, fill: Any) -> None:
+    session = Session(NumpyBackend())
+    got = np.asarray(session.materialize(gnp.full_like(from_array(session, "x", arr), fill)))
+    want = np.full_like(arr, fill)
     assert got.dtype == want.dtype
     np.testing.assert_array_equal(got, want)

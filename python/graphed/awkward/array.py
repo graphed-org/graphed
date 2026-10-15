@@ -17,6 +17,7 @@ import numpy as np
 from awkward._connect.numpy import implemented as _ak_numpy
 
 from graphed import Array
+from graphed.array import no_eager_value
 from graphed.errors import GraphedError
 from graphed.provenance import register_internal
 from graphed.varied import Varied, register_varied
@@ -90,7 +91,9 @@ def _array_function(self: object, func: Any, types: object, args: Any, kwargs: A
     """A numpy function that is not a ufunc, answered as ``ak.Array`` answers it: by awkward's own
     implementation, whose ``ak.<fn>`` calls dispatch back through ``__awkward_function__``."""
     impl = _clip if func is np.clip else _ak_numpy.get(func)
-    return NotImplemented if impl is None else impl(*args, **kwargs)
+    if impl is None:  # awkward would convert eagerly; a deferred array has nothing to convert
+        raise no_eager_value(f"np.{func.__name__}(...)", "numpy value")
+    return impl(*args, **kwargs)
 
 
 class AwkwardArray(Array):

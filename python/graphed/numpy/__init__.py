@@ -466,7 +466,7 @@ class NumpyBackend:
         if op in _LIKE and "scalar" not in params:
             (x,) = operands
             if op == "full_like":
-                return np.full_like(x, params["fill"])
+                return np.full_like(x, _scalar_param(params, "fill", "fill_dtype"))
             return _LIKE[op](x)
         if op in _UNARY and "scalar" not in params:
             (x,) = operands

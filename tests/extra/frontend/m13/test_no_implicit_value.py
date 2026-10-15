@@ -74,6 +74,7 @@ def test_numpy_conversion_of_a_deferred_value_raises(
 def test_np_where_on_an_awkward_deferred_condition_selects_elementwise() -> None:
     x = _awkward()
     picked = np.where(x > 1.5, 1, 0)
+    assert isinstance(picked, graphed.Array)
     assert x.session.materialize(picked).tolist() == [[0], [1, 1]]
 
 

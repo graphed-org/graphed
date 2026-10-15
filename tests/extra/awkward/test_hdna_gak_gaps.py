@@ -5,6 +5,7 @@ a Varied's form answers (GW20) and numpy-typed scalar operands (GW4)."""
 from __future__ import annotations
 
 import pickle
+import sys
 from collections.abc import Callable
 from typing import Any
 
@@ -87,6 +88,15 @@ def test_a_numpy_function_awkward_lacks_in_gak_is_a_located_refusal() -> None:
     session = Session(AwkwardBackend())
     with pytest.raises(GraphedError, match=r"no deferred ak\.round"):
         np.round(from_awkward(session, "a", JAGGED))
+
+
+@pytest.mark.parametrize("fn", [np.unique, np.histogram], ids=lambda f: f.__name__)
+def test_a_numpy_function_awkward_does_not_implement_is_refused_at_the_call(fn: Callable[[Any], Any]) -> None:
+    x = from_awkward(Session(AwkwardBackend()), "x", FLAT)
+    with pytest.raises(GraphedTypeError, match=f"np.{fn.__name__}") as info:
+        line = sys._getframe().f_lineno + 1
+        fn(x)
+    assert info.value.provenance.lineno == line
 
 
 def _varied(up: Callable[[Any], Any]) -> tuple[Any, Any]:
