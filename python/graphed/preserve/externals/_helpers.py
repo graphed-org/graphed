@@ -135,17 +135,18 @@ def ml_matrix(entry: TemplateEntry, inputs: list[Any]) -> Any:
 # ---- M36: memoize the EXPENSIVE (model-parsing) content hashes -----------------------------------
 # A model's content hash is computed at record time AND re-verified at bundle-build time; each call
 # re-parses the model (onnx.load, torch.jit.load, keras load, jax deserialize). Cache the result by
-# a cheap raw-bytes digest so the same payload parses once. Bounded FIFO; keyed per (domain, bytes)
+# the payload bytes so the same payload parses once. Bounded FIFO; keyed per (domain, bytes)
 # so distinct plugins never collide. Cold in a fresh process, so the by-value validate subprocess
 # still computes correctly.
-_HASH_MEMO: OrderedDict[str, Any] = OrderedDict()
-_HASH_MEMO_CAP = 64  # entries hold digests and short identity strings, never payload bytes
+# keyed by the payload itself: bytes cache their hash, so a repeat with the same object is O(1)
+_HASH_MEMO: OrderedDict[tuple[str, bytes], Any] = OrderedDict()
+_HASH_MEMO_CAP = 64  # also bounds the payloads the keys keep alive
 _HASH_MEMO_LOCK = threading.Lock()
 _T = TypeVar("_T")
 
 
 def memoized_model_hash(domain: str, payload: bytes, compute: Callable[[bytes], _T]) -> _T:
-    key = domain + ":" + hashlib.sha256(payload).hexdigest()
+    key = (domain, payload)
     with _HASH_MEMO_LOCK:  # get + move_to_end must not interleave with another thread's eviction
         if key in _HASH_MEMO:
             _HASH_MEMO.move_to_end(key)

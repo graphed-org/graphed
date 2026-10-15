@@ -4,6 +4,16 @@ What changed
 Newest release first. Numbers in parentheses are the pull requests on
 `graphed-org/graphed <https://github.com/graphed-org/graphed>`_.
 
+0.0.8 (unreleased)
+------------------
+
+Fixes
+~~~~~
+
+* ``gak.apply_correction`` called again with the same payload object no longer re-digests it, and
+  its ``float64`` output type is parsed once per process: recording a 14 MB correction set drops
+  from about 10 ms to 0.5 ms per call.
+
 0.0.7
 -----
 
