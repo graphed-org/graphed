@@ -4,8 +4,8 @@ What changed
 Newest release first. Numbers in parentheses are the pull requests on
 `graphed-org/graphed <https://github.com/graphed-org/graphed>`_.
 
-0.0.7 (unreleased)
-------------------
+0.0.7
+-----
 
 A deferred array has no truth value
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
