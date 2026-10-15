@@ -56,9 +56,9 @@ class _BehaviorByRef(dict[Any, Any]):
 
 
 def _behavior_from(ref: str) -> Any:
-    from graphed.aggregate import resolve_backend  # noqa: PLC0415  (aggregate imports this module's users)
+    from graphed.aggregate import _resolved  # noqa: PLC0415  (aggregate imports this module's users)
 
-    return resolve_backend(ref)._behavior
+    return _resolved(ref)._behavior
 
 
 def _adopt(value: Any, behavior: Mapping[Any, Any] | None) -> Any:

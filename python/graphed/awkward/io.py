@@ -39,7 +39,7 @@ from graphed import (
 )
 from graphed import parquet as gpq
 from graphed import write as gw
-from graphed.aggregate import external_evaluators, plan_services
+from graphed.aggregate import plan_services, shipped_evaluators
 from graphed.core import Partition
 from graphed.core.execution import Plan, SequentialRunner, WorkerResources
 from graphed.errors import GraphedError
@@ -923,7 +923,7 @@ def _write_varied(
         "wrapped": wrapped,
         "behavior": behavior,
         "manifest": manifest,
-        "externals": tuple(external_evaluators(session, compiled).items()),
+        "externals": shipped_evaluators(session, compiled),
     }
     if isinstance(data, PartitionedSource):
         partitions = data.partitions(steps_per_file)
@@ -1016,7 +1016,7 @@ def to_parquet(
         columns = _evaluation_columns(array, node_id, source_name, source_form) or None
     compiled = compile_ir(session, array)
     refuse_chunk_partials(compiled, as_outputs=True)
-    externals = tuple(external_evaluators(session, compiled).items())
+    externals = shipped_evaluators(session, compiled)
 
     if isinstance(data, PartitionedSource):
         # the generic path: ANY source describing its own partitioning (parquet datasets, the

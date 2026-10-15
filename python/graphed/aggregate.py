@@ -326,8 +326,15 @@ def external_evaluators(session: Session, compiled: CompiledGraph) -> dict[str, 
             key = external_key(node)
             evaluator = by_key.get(key)
             if evaluator is not None:
-                wired[key] = by_value(evaluator)
+                wired[key] = evaluator
     return wired
+
+
+def shipped_evaluators(
+    session: Session, compiled: CompiledGraph
+) -> tuple[tuple[str, Callable[..., object]], ...]:
+    """:func:`external_evaluators` for a plan runners pickle with stdlib pickle, each :func:`by_value`."""
+    return tuple((key, by_value(fn)) for key, fn in external_evaluators(session, compiled).items())
 
 
 def plan_services(
@@ -412,7 +419,7 @@ def aggregate_plan(
     refuse_chunk_partials(compiled, as_outputs=written)
     # Wire EVERY External surviving in the compiled IR from the session (fills + upstream corrections
     # alike); an explicit `externals=` (keyed by `external_key`) overrides the auto-wired evaluator.
-    wired = external_evaluators(session, compiled)
+    wired = dict(shipped_evaluators(session, compiled))
     if externals:
         wired.update((key, by_value(fn)) for key, fn in externals.items())
     declared = declared_columns(data, arrays)
