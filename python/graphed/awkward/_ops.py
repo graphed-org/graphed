@@ -188,12 +188,15 @@ def _broadcast_blame(operands: Sequence[Any], exc: ValueError) -> Exception:
 
 
 def _decode_call(text: str, operands: Sequence[Any]) -> Any:
-    """Rebuild a `method` op's argument structure: `{"$": i}` becomes operand `i` (M54)."""
+    """Rebuild a `method` op's argument structure: `{"$": i}` becomes operand `i` (M54) and
+    `{"$dtype": name, "v": item}` the numpy scalar it was recorded from."""
 
     def walk(value: Any) -> Any:
         if isinstance(value, dict):
             if set(value) == {"$"}:
                 return operands[int(value["$"])]
+            if set(value) == {"$dtype", "v"}:
+                return np.dtype(value["$dtype"]).type(value["v"])
             return {key: walk(item) for key, item in value.items()}
         if isinstance(value, list):
             return [walk(item) for item in value]

@@ -681,14 +681,16 @@ def _record_method(receiver: Array, name: str, args: tuple[Any, ...], kwargs: di
         if isinstance(value, dict):
             if not all(isinstance(key, str) for key in value):
                 raise refuse(where, value)
-            if set(value) == {"$"}:  # the array-reference marker's own shape
+            if set(value) in ({"$"}, {"$dtype", "v"}):  # the array-reference and typed-scalar shapes
                 raise GraphedTypeError(
-                    "method", prov, f'{name}(): {where} is a dict whose only key is "$", which is reserved'
+                    "method", prov, f"{name}(): {where} is a dict of the reserved shape {sorted(value)}"
                 )
             # sorted at every level: nested array inputs join in key order, not spelling order
             return {key: encode(value[key], f"{where}[{key!r}]") for key in sorted(value)}
         if getattr(value, "shape", None) == () and hasattr(value, "item"):
-            value = value.item()  # a numpy scalar
+            item = encode(value.item(), where)  # a numpy scalar, refused as its item would be
+            dtype = getattr(value, "dtype", None)
+            return item if dtype is None else {"$dtype": str(dtype), "v": item}
         if value is None or isinstance(value, bool | int | str):
             return value
         if isinstance(value, float):

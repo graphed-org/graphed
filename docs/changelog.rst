@@ -23,9 +23,10 @@ Fixes
   ``Varied``, and refuses one its universes disagree on.
 * A scalar operand keeps its type, as eagerly: a numpy scalar in ``gak.where``/``fill_none``
   (``where(m, x_float32, np.float32(1))`` stays ``float32``), an integer ``initial`` of a reducer
-  (it crashed on an integer array) or ``full_like`` value, and any scalar in the numpy backend's
-  ``np.where``/``np.clip`` (``np.where(m, x_int32, 0)`` stays ``int32``). Scalars of different
-  dtypes no longer share one node.
+  (it crashed on an integer array) or ``full_like`` value, a numpy scalar or 0-d array passed to a
+  behavior method, and any scalar in the numpy backend's ``np.where``/``np.clip``/``full_like``
+  (``np.where(m, x_int32, 0)`` stays ``int32``). Scalars of different dtypes no longer share one
+  node.
 
 0.0.7
 -----

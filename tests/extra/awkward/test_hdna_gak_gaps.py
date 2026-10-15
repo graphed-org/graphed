@@ -178,3 +178,29 @@ def test_scalars_of_different_dtypes_record_different_nodes() -> None:
     x = from_awkward(session, "x", F32)
     masked = gak.mask(x, x > 1)
     assert gak.fill_none(masked, np.float32(0)).node_id != gak.fill_none(masked, 0.0).node_id
+
+
+class MomArray(ak.Array):  # type: ignore[misc]
+    def scaled(self, k: Any) -> Any:
+        return self.pt * k
+
+
+MOM_BEHAVIOR: dict[Any, Any] = {("*", "Mom"): MomArray}
+
+
+@pytest.mark.parametrize("k", [np.float64(2), np.int64(2), np.float32(2), 2.0, 2], ids=repr)
+@pytest.mark.parametrize("pt", [F32, I32], ids=["f32", "i32"])
+def test_a_numpy_scalar_method_argument_keeps_its_dtype(pt: ak.Array, k: Any) -> None:
+    moms = ak.zip({"pt": pt}, with_name="Mom")
+    session = Session(AwkwardBackend(behavior=MOM_BEHAVIOR))
+    got = ak.Array(session.materialize(from_awkward(session, "moms", moms).scaled(k)))
+    want = ak.Array(moms.layout, behavior=MOM_BEHAVIOR).scaled(k)
+    assert str(got.type) == str(want.type)
+    assert ak.array_equal(got, want)
+
+
+def test_a_user_dict_of_the_typed_scalar_shape_is_refused() -> None:
+    session = Session(AwkwardBackend(behavior=MOM_BEHAVIOR))
+    moms = from_awkward(session, "moms", ak.zip({"pt": F32}, with_name="Mom"))
+    with pytest.raises(GraphedTypeError, match=r"scaled\(\): args\[0\] is a dict of the reserved shape"):
+        moms.scaled({"$dtype": "float64", "v": 2.0})
