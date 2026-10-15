@@ -183,6 +183,7 @@ def test_a_datetime64_s_leaf_is_stored_as_is(tmp_path: Any) -> None:
                 "__vary_s_up__x": "base",
                 "__vary_s_up__x__requires_base": "xor",
                 "requires_base__s_up__x": "xor",
+                "type__s_up": "base",
             },
         ),
     ],
@@ -201,3 +202,82 @@ def test_a_leaf_named_like_the_marker_is_an_ordinary_column(
     assert {
         col: info["representation"] for col, info in manifest["s_up"].items() if "mask" not in col
     } == reps
+
+
+def _doc(x: Any, doc: str) -> Any:
+    return gak.with_parameter(x, "__doc__", doc)
+
+
+def _jet_record(pt: Any, ev: Any) -> Any:
+    return gak.zip({"Jet": gak.zip({"pt": pt}), "m": ev.m}, depth_limit=1)
+
+
+#: name -> (record builder, whether s_up's record type differs from nominal's in a parameter)
+PARAM_CASES: dict[str, tuple[Build, bool]] = {
+    "flat, same __doc__": (_flat(lambda e: _doc(e.m * 3, "mass"), lambda e: _doc(e.m, "mass")), False),
+    "?flat, same __doc__": (
+        _flat(lambda e: _doc(gak.mask(e.m * 3, e.m > 0), "m"), lambda e: _doc(gak.mask(e.m, e.m > 0), "m")),
+        False,
+    ),
+    "jagged list, same __doc__": (
+        _flat(lambda e: _doc(e.Jet.pt * 3, "pt"), lambda e: _doc(e.Jet.pt, "pt")),
+        False,
+    ),
+    "__doc__ on up only": (_flat(lambda e: _doc(e.m * 3, "up")), True),
+    "__doc__ differs": (_flat(lambda e: _doc(e.m * 3, "b"), lambda e: _doc(e.m, "a")), True),
+    "Jet list __doc__ lifted by zip": (
+        lambda e: _jet_record(
+            graphed.vary(
+                _doc(e.Jet.pt, "pt"),
+                "s",
+                points={"up": _doc(e.Jet.pt * 3, "pt"), "same": _doc(e.Jet.pt * 2, "pt")},
+            ),
+            e,
+        ),
+        False,
+    ),
+    "named record, shifted collection": (
+        lambda e: gak.zip(
+            {
+                "Jet": graphed.vary(
+                    gak.with_name(e.Jet, "Momentum"),
+                    "s",
+                    points={
+                        "up": gak.with_field(gak.with_name(e.Jet, "Momentum"), e.Jet.pt * 3, "pt"),
+                        "same": gak.with_field(gak.with_name(e.Jet, "Momentum"), e.Jet.pt * 2, "pt"),
+                    },
+                ),
+                "m": e.m,
+            },
+            depth_limit=1,
+        ),
+        False,
+    ),
+}
+
+
+@pytest.mark.parametrize("case", PARAM_CASES)
+def test_every_universe_reads_back_with_its_parameters(case: str, tmp_path: Any) -> None:
+    build, stored = PARAM_CASES[case]
+    manifest, _ = _write_and_check(build, tmp_path)
+    # a universe whose type matches nominal's, parameters included, adds nothing to the file
+    assert ("type__s_up" in manifest["s_up"]) is stored
+    assert "type__s_same" not in manifest["s_same"]
+
+
+def test_a_file_without_the_record_type_entry_keeps_each_universes_own_type(tmp_path: Any) -> None:
+    session = Session(AwkwardBackend())
+    ev = from_awkward(session, "ev", ak.Array(DATA))
+    record = _flat(lambda e: _f32(e.m * 3))(ev)
+    paths = ga.to_parquet(record, str(tmp_path / "skim"), select={0: ev.m > 0})
+    assert isinstance(paths, list)
+    table = pq.read_table(paths[0])
+    meta = dict(table.schema.metadata)
+    manifest = json.loads(meta[b"graphed.variations"])
+    del manifest["s_up"]["type__s_up"]  # as the writer did before the entry existed
+    meta[b"graphed.variations"] = json.dumps(manifest, sort_keys=True).encode()
+    old = str(tmp_path / "old.parquet")
+    pq.write_table(table.replace_schema_metadata(meta), old)
+    member: Any = session.materialize(graphed.member_of(record, "s_up"))
+    got = ga.read_varied(old)["s_up"]
+    assert (str(got.type), ak.to_list(got)) == (str(member.type), ak.to_list(member))

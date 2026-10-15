@@ -201,6 +201,9 @@ Fixes
   ``var``, or without its option), and a leaf that ``zip`` broadcasts into a collection, or that a
   universe turns from jagged to flat, no longer crashes the write. Such leaves, and ``datetime64[s]``
   leaves (which parquet stores as ``[ms]``), are stored as-is.
+* ``read_varied`` restores each universe's parameters (``__doc__`` and the like) on leaves stored as
+  an XOR delta, which came back without them. A universe whose type differs from nominal's only in
+  parameters has that type recorded in the manifest; other files are unchanged.
 
 0.0.6
 -----

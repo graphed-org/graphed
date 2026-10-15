@@ -329,6 +329,9 @@ _MANIFEST_KEY = b"graphed.variations"
 #: prefix of a manifest entry that names no column (outside `_VARY_PREFIX`, so no leaf name collides): an
 #: `xor` entry whose `field` matches no stored leaf, so a reader that predates `base` refuses the file.
 _REQUIRES_BASE = "requires_base__"
+#: prefix of the entry carrying a universe's record type when it differs from nominal's in a parameter
+#: (`__doc__`, …) the XOR rebuild cannot restore; it names no column either.
+_RECORD_TYPE = "type__"
 
 _SelectKey = Any  # `int` (bare depth) or `tuple[str, int]` (field-scoped, depth >= 1)
 
@@ -391,7 +394,7 @@ def _tt(session: Session, array: Any) -> ak.Array:
     return form.tt
 
 
-def _leaf_type(session: Session, array: Any) -> ak.types.Type:
+def _type_of(session: Session, array: Any) -> ak.types.Type:
     return _tt(session, array).layout.form.type
 
 
@@ -729,12 +732,16 @@ def _write_augmented(payload: ak.Array, path: str, manifest: Mapping[str, Any] |
 
 
 def _build_manifest(
-    labels: Sequence[str], value_specs: Sequence[_ValueSpec], mask_specs: Sequence[_MaskSpec]
+    labels: Sequence[str],
+    value_specs: Sequence[_ValueSpec],
+    mask_specs: Sequence[_MaskSpec],
+    record_types: Mapping[str, str],
 ) -> dict[str, Any]:
     """§6.4e: the driver-derived reconstruction manifest — every label's stored columns (value columns
     keyed `xor` or `base`/field, masks keyed `packbits`/entry) plus the reserved ordered `levels` list.
     Mirrors exactly the columns `_VariedWritePart.__call__` writes, plus one `_REQUIRES_BASE` marker entry
-    per `base` column that names no column, so it is data-independent and deterministic
+    per `base` column and one `_RECORD_TYPE` entry per `record_types` label, neither naming a column, so it
+    is data-independent and deterministic
     (serialized `json.dumps(sort_keys=True)`; `levels` order is the explicit key `sorted()` cannot give)."""
     manifest: dict[str, Any] = {label: {} for label in labels}
     for spec in value_specs:
@@ -759,6 +766,13 @@ def _build_manifest(
                 "field": None,
                 "entry": ms.manifest,
             }
+    for label, record_type in record_types.items():
+        manifest[label][f"{_RECORD_TYPE}{label}"] = {
+            "representation": "base",
+            "field": None,
+            "entry": None,
+            "type": record_type,
+        }
     manifest["levels"] = [ms.manifest for ms in mask_specs]
     return manifest
 
@@ -820,7 +834,7 @@ def _write_varied(
         }
         parts = path.split(".")
         if any(
-            _leaf_type(session, leaves[label])
+            _type_of(session, leaves[label])
             != functools.reduce(
                 operator.getitem, parts, _tt(session, member_of(record, label))
             ).layout.form.type
@@ -829,12 +843,12 @@ def _write_varied(
             leaves = {
                 label: functools.reduce(operator.getitem, parts, member_of(record, label)) for label in labels
             }
-        nominal_type = _leaf_type(session, leaves["nominal"])
+        nominal_type = _type_of(session, leaves["nominal"])
         members: list[tuple[str, int]] = []
         verbatim: set[str] = set()
         for label in labels:
             leaf = leaves[label]
-            if _leaf_type(session, leaf) != nominal_type or not _xor_representable(nominal_type):
+            if _type_of(session, leaf) != nominal_type or not _xor_representable(nominal_type):
                 verbatim.add(label)
             leaf = leaf if superset is None else leaf[superset]
             members.append((label, leaf.node_id))
@@ -867,7 +881,15 @@ def _write_varied(
     refuse_chunk_partials(compiled, as_outputs=True)
     _refuse_optimizer_merge(session, outputs, compiled)
 
-    manifest = _build_manifest(labels, value_specs, mask_specs)
+    record_type = _type_of(session, nominal_record)
+    record_types = {
+        label: str(label_type)
+        for label in labels
+        if not (label_type := _type_of(session, member_of(record, label))).is_equal_to(
+            record_type, all_parameters=True
+        )
+    }
+    manifest = _build_manifest(labels, value_specs, mask_specs, record_types)
     rank = {node_id: i for i, node_id in enumerate(dict.fromkeys(out.node_id for out in outputs))}
     wrapped = _tt(session, nominal_record).ndim > 1
 
@@ -1145,6 +1167,12 @@ def _reconstruct_universe(
             rec = rec[inner]
         else:
             rec = ak.with_field(rec, rec[field_path][inner], where=field_path.split("."))
+    # the XOR rebuild carries no parameters: impose the universe's record type (nominal's, unless stored)
+    stored = columns.get(f"{_RECORD_TYPE}{label}")
+    if stored is not None:
+        return ak.enforce_type(rec, ak.types.from_datashape(stored["type"], highlevel=False))
+    if rec.type.content.is_equal_to(base.type.content):
+        return ak.enforce_type(rec, base.type.content)
     return rec
 
 
