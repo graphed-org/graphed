@@ -25,6 +25,12 @@ A deferred array has no truth value
   binding ``ak``'s own argument positions and names. ``AwkwardBackend`` sessions return it; a
   backend subclass can return its own subclass of it from ``array_type``. ``ak`` functions with no
   ``gak`` counterpart raise ``GraphedError``.
+* ``AwkwardArray`` and ``AwkwardVaried`` take ak's field assignment, ``events["Photon"] = photons``
+  and ``events["Photon", "pt"] = pt``, recorded as ``with_field`` and rebinding only that proxy.
+  A key that is not a field name or a tuple of them raises ``GraphedTypeError``, as does assigning a
+  ``Varied`` value into a plain array (rebind with ``gak.with_field`` instead).
+* ``gak.with_field`` (and so field assignment) takes a scalar value, which awkward broadcasts in the
+  scalar's own dtype (``np.float32(0.5)`` stays ``float32``); it raised ``AttributeError``.
 
 Resuming any plan from a store
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

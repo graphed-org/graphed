@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from typing import Any, SupportsFloat, cast
 
 from graphed import Array, ParamValue
+from graphed.array import _scalar_params
 from graphed.provenance import capture
 
 from . import payloads
@@ -141,8 +142,11 @@ def zip(
     return arrays[0].session.record_op("ak.zip", arrays, params)
 
 
-def with_field(arr: Array, value: Array, where: str) -> Array:
-    return arr.session.record_op("ak.with_field", [arr, value], {"field": where})
+def with_field(arr: Array, value: object, where: str) -> Array:
+    if isinstance(value, Array):
+        return arr.session.record_op("ak.with_field", [arr, value], {"field": where})
+    # a scalar, which ak broadcasts, travels as a param in its own dtype (M59)
+    return arr.session.record_op("ak.with_field", [arr], {"field": where, **_scalar_params(value)})
 
 
 def num(arr: Array, axis: int = 1) -> Array:
