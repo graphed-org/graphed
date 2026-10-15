@@ -4,6 +4,23 @@ What changed
 Newest release first. Numbers in parentheses are the pull requests on
 `graphed-org/graphed <https://github.com/graphed-org/graphed>`_.
 
+0.0.8 (unreleased)
+------------------
+
+Fixes
+~~~~~
+
+* ``graphed.preserve.record_external`` on a ``Varied`` input records one External per universe, as
+  ``graphed.apply`` does; it raised ``AttributeError``.
+* An ML plugin's (n, k) output keeps one row of k per event, as ``ak.from_numpy`` gives it; it was
+  flattened to n·k values. An (n,) or (n, 1) output is still one value per event. Declare the row
+  with ``output_type="k * float64"``.
+* ML plugin inputs keep their dtype: torch and onnxruntime models are fed the dtype the model
+  declares (a float64 model runs in float64, bit-equal to calling it), xgboost, keras and jax
+  convert as they do when called directly, and Triton requests stay FP32.
+* A gzipped JSON payload (correctionlib's ``.json.gz``, an xgboost or Triton JSON) hashes, loads and
+  evaluates as its plain twin; its content hash raised ``UnicodeDecodeError``.
+
 0.0.7
 -----
 

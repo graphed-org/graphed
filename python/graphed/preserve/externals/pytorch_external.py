@@ -49,13 +49,19 @@ def eval_pytorch(model: Any, params: Mapping[str, Any], inputs: list[Any]) -> An
     import torch  # noqa: PLC0415
 
     template = parse_call_template(params, len(inputs))
+    # TorchScript takes no implicit cast: feed the dtype the model's weights declare
+    dtype = next((p.dtype for p in model.parameters()), None)
+
+    def tensor(matrix: Any) -> Any:
+        return torch.from_numpy(matrix).to(dtype) if dtype is not None else torch.from_numpy(matrix)
+
     with torch.no_grad():
         if template is None:  # legacy: one stacked feature matrix
-            out = model(torch.from_numpy(_stack_feature_columns(inputs))).numpy()
+            out = model(tensor(_stack_feature_columns(inputs))).numpy()
         else:
             args, kwargs = template
-            tensors = [torch.from_numpy(ml_matrix(e, inputs)) for e in args]
-            kwtensors = {k: torch.from_numpy(ml_matrix(e, inputs)) for k, e in kwargs.items()}
+            tensors = [tensor(ml_matrix(e, inputs)) for e in args]
+            kwtensors = {k: tensor(ml_matrix(e, inputs)) for k, e in kwargs.items()}
             out = model(*tensors, **kwtensors).numpy()
     return _as_event_array(out)
 
