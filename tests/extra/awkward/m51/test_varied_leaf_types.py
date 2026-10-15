@@ -345,3 +345,20 @@ def _store_snapshots(n_labels: int, tmp_path: Any) -> int:
 
 def test_resolving_varied_leaves_snapshots_the_store_independently_of_the_label_count(tmp_path: Any) -> None:
     assert _store_snapshots(2, tmp_path) == _store_snapshots(8, tmp_path)
+
+
+@pytest.mark.parametrize(
+    "top",
+    [lambda r: gak.with_name(r, "Event"), lambda r: gak.with_parameter(r, "__doc__", "event")],
+    ids=["with_name", "with_parameter"],
+)
+def test_a_named_record_stores_deltas_only_for_its_varied_leaves(
+    top: Callable[[Any], Any], tmp_path: Any
+) -> None:
+    def build(ev: Any) -> Any:
+        x = graphed.vary(ev.m, "s", points={"up": ev.m * 3, "same": ev.m * 2})
+        return top(gak.zip({"x": x, "n": ev.n, "Jet": ev.Jet}, depth_limit=1))
+
+    manifest, _ = _write_and_check(build, tmp_path)
+    values = [col for col in manifest["s_up"] if col.startswith("__vary_s_up__") and "__mask__" not in col]
+    assert values == ["__vary_s_up__x"]

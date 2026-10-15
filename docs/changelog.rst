@@ -208,6 +208,8 @@ Fixes
   parameters; other files are unchanged.
 * A variation-aware ``to_parquet(..., select=)`` no longer raises ``IndexError`` on a record whose
   fields are reached through a nested collection, such as ``gak.with_field(events, varied, "m")``.
+* Under a ``with_name`` or ``with_parameter`` record, a leaf that is equal in every universe no
+  longer gets an all-zero delta column per universe.
 
 0.0.6
 -----

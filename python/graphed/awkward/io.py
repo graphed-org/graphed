@@ -454,6 +454,8 @@ def _resolve_field(nodes: list[dict[str, Any]], session: Session, node_id: int, 
     if op == "ak.zip":
         fields = str(nd["params"]["fields"]).split(",")
         return int(nd["inputs"][fields.index(name)])
+    if op in ("ak.with_name", "ak.with_parameter"):  # record-level only: fields pass through unchanged
+        return _resolve_field(nodes, session, int(nd["inputs"][0]), name)
     if op == "ak.with_field":
         if str(nd["params"]["field"]) == name:
             return int(nd["inputs"][1])
