@@ -326,6 +326,9 @@ _VARY_PREFIX = "__vary_"
 _BASE_FIELD = "__base__"
 #: §6.4e: the manifest lives in parquet key-value file metadata (greenfield — graphed writes none).
 _MANIFEST_KEY = b"graphed.variations"
+#: prefix of a manifest entry that names no column (outside `_VARY_PREFIX`, so no leaf name collides): an
+#: `xor` entry whose `field` matches no stored leaf, so a reader that predates `base` refuses the file.
+_REQUIRES_BASE = "requires_base__"
 
 _SelectKey = Any  # `int` (bare depth) or `tuple[str, int]` (field-scoped, depth >= 1)
 
@@ -386,6 +389,10 @@ def _tt(session: Session, array: Any) -> ak.Array:
     form = session.form(array)
     assert isinstance(form, AwkwardForm)
     return form.tt
+
+
+def _leaf_type(session: Session, array: Any) -> ak.types.Type:
+    return _tt(session, array).layout.form.type
 
 
 def _record_context(value: Any) -> Any:
@@ -516,13 +523,44 @@ def _uint_view(a: np.ndarray) -> np.ndarray:
     return a.view({1: np.uint8, 2: np.uint16, 4: np.uint32, 8: np.uint64}[a.dtype.itemsize])
 
 
+def _counts(values: ak.Array) -> np.ndarray:
+    """Per-row list lengths, -1 for a `None` list."""
+    counts: np.ndarray = np.asarray(ak.fill_none(ak.num(values), -1))
+    return counts
+
+
+def _xor_representable(leaf_type: ak.types.Type) -> bool:
+    """The leaf types `_encode_delta` round-trips exactly: `T`, `?T`, `var * T`, `var * ?T` over a
+    primitive, none of them a string-like `__array__`, nor `datetime64[s]`, which parquet stores as `[ms]`
+    so nominal's bits on disk differ from the ones the delta was taken against."""
+    if isinstance(leaf_type, ak.types.ListType):
+        leaf_type = leaf_type.content
+    if isinstance(leaf_type, ak.types.OptionType):
+        leaf_type = leaf_type.content
+    return (
+        isinstance(leaf_type, ak.types.NumpyType)
+        and leaf_type.parameter("__array__") is None
+        and leaf_type.primitive != "datetime64[s]"
+    )
+
+
+def _filled(values: ak.Array, jagged: bool) -> tuple[np.ndarray, Any]:
+    """A leaf's flat values with `None` read as 0 (so both sides XOR the same bits), and its `None` mask
+    (numpy's `nomask` when it holds none, which keeps a no-`None` delta an `UnmaskedArray` on disk)."""
+    flat = ak.to_numpy(ak.flatten(values) if jagged else values)
+    if isinstance(flat, np.ma.MaskedArray):
+        return flat.filled(0), np.ma.getmask(flat)
+    return flat, None
+
+
 def _encode_delta(nominal: ak.Array, label: ak.Array, jagged: bool) -> ak.Array:
-    """§6.4c: the same-dtype XOR bit-delta vs nominal (zero wherever a label equals nominal)."""
-    if jagged:
-        fn = _uint_view(ak.to_numpy(ak.flatten(nominal)))
-        fl = _uint_view(ak.to_numpy(ak.flatten(label)))
-        return ak.unflatten(fl ^ fn, ak.num(nominal))
-    return ak.Array(_uint_view(ak.to_numpy(label)) ^ _uint_view(ak.to_numpy(nominal)))
+    """§6.4c: the same-dtype XOR bit-delta vs nominal (zero wherever a label equals nominal), masked
+    where the label is `None`."""
+    nominal_flat, _ = _filled(nominal, jagged)
+    label_flat, mask = _filled(label, jagged)
+    delta = _uint_view(label_flat) ^ _uint_view(nominal_flat)
+    out = delta if mask is None else np.ma.array(delta, mask=mask)
+    return ak.unflatten(out, ak.num(nominal)) if jagged else ak.Array(out)
 
 
 def _encode_mask(mask: ak.Array) -> ak.Array:
@@ -545,6 +583,8 @@ class _ValueSpec:
     flat: str
     jagged: bool
     members: tuple[tuple[str, int], ...]
+    #: labels stored as-is (`"base"`): a type change from nominal, or a leaf `_xor_representable` refuses.
+    verbatim: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -620,11 +660,12 @@ class _VariedWritePart:
         for spec in self.value_specs:
             nominal_value = resolved(dict(spec.members)["nominal"])
             if spec.jagged:
-                nominal_counts = np.asarray(ak.num(nominal_value))
+                nominal_counts = _counts(nominal_value)
                 for label, node_id in spec.members:
-                    if label == "nominal":
+                    value = resolved(node_id)
+                    if label == "nominal" or value.ndim == 1:
                         continue
-                    if not np.array_equal(np.asarray(ak.num(resolved(node_id))), nominal_counts):
+                    if not np.array_equal(_counts(value), nominal_counts):
                         # §6.4d: differing per-label offsets have no representable XOR delta —
                         # execution-time (offsets are data), naming the label and the field.
                         raise GraphedError(
@@ -635,8 +676,9 @@ class _VariedWritePart:
             for label, node_id in spec.members:
                 if label == "nominal":
                     continue
-                cols[f"{_VARY_PREFIX}{label}__{spec.flat}"] = _encode_delta(
-                    nominal_value, resolved(node_id), spec.jagged
+                value = resolved(node_id)
+                cols[f"{_VARY_PREFIX}{label}__{spec.flat}"] = (
+                    value if label in spec.verbatim else _encode_delta(nominal_value, value, spec.jagged)
                 )
         for mask_spec in self.mask_specs:
             field_values = base if mask_spec.field_path is None else base[mask_spec.field_path]
@@ -689,9 +731,10 @@ def _write_augmented(payload: ak.Array, path: str, manifest: Mapping[str, Any] |
 def _build_manifest(
     labels: Sequence[str], value_specs: Sequence[_ValueSpec], mask_specs: Sequence[_MaskSpec]
 ) -> dict[str, Any]:
-    """§6.4e: the driver-derived reconstruction manifest — every label's stored columns (value deltas
-    keyed `xor`/field, masks keyed `packbits`/entry) plus the reserved ordered `levels` list. Mirrors
-    exactly the columns `_VariedWritePart.__call__` writes, so it is data-independent and deterministic
+    """§6.4e: the driver-derived reconstruction manifest — every label's stored columns (value columns
+    keyed `xor` or `base`/field, masks keyed `packbits`/entry) plus the reserved ordered `levels` list.
+    Mirrors exactly the columns `_VariedWritePart.__call__` writes, plus one `_REQUIRES_BASE` marker entry
+    per `base` column that names no column, so it is data-independent and deterministic
     (serialized `json.dumps(sort_keys=True)`; `levels` order is the explicit key `sorted()` cannot give)."""
     manifest: dict[str, Any] = {label: {} for label in labels}
     for spec in value_specs:
@@ -699,10 +742,16 @@ def _build_manifest(
             if label == "nominal":
                 continue
             manifest[label][f"{_VARY_PREFIX}{label}__{spec.flat}"] = {
-                "representation": "xor",
+                "representation": "base" if label in spec.verbatim else "xor",
                 "field": spec.flat,
                 "entry": None,
             }
+            if label in spec.verbatim:
+                manifest[label][f"{_REQUIRES_BASE}{label}__{spec.flat}"] = {
+                    "representation": "xor",
+                    "field": f"graphed>=0.0.7 needed: {label} stores {spec.flat} as representation base",
+                    "entry": None,
+                }
     for ms in mask_specs:
         for label in labels:
             manifest[label][f"{_VARY_PREFIX}{label}__mask__{ms.entry_flat}"] = {
@@ -765,14 +814,40 @@ def _write_varied(
     value_specs: list[_ValueSpec] = []
     outputs: list[Any] = [base]
     for path in varied:
-        jagged = _tt(session, Array(session, _canonical_leaf(nodes, session, nominal_record, path))).ndim > 1
+        leaves = {
+            label: Array(session, _canonical_leaf(nodes, session, member_of(record, label), path))
+            for label in labels
+        }
+        parts = path.split(".")
+        if any(
+            _leaf_type(session, leaves[label])
+            != functools.reduce(
+                operator.getitem, parts, _tt(session, member_of(record, label))
+            ).layout.form.type
+            for label in labels
+        ):  # a zip broadcast the leaf: encode what the reader's record holds
+            leaves = {
+                label: functools.reduce(operator.getitem, parts, member_of(record, label)) for label in labels
+            }
+        nominal_type = _leaf_type(session, leaves["nominal"])
         members: list[tuple[str, int]] = []
+        verbatim: set[str] = set()
         for label in labels:
-            leaf = Array(session, _canonical_leaf(nodes, session, member_of(record, label), path))
+            leaf = leaves[label]
+            if _leaf_type(session, leaf) != nominal_type or not _xor_representable(nominal_type):
+                verbatim.add(label)
             leaf = leaf if superset is None else leaf[superset]
             members.append((label, leaf.node_id))
             outputs.append(leaf)
-        value_specs.append(_ValueSpec(path, _flat_field(path), jagged, tuple(members)))
+        value_specs.append(
+            _ValueSpec(
+                path,
+                _flat_field(path),
+                _tt(session, leaves["nominal"]).ndim > 1,
+                tuple(members),
+                frozenset(verbatim),
+            )
+        )
 
     mask_specs: list[_MaskSpec] = []
     for key in sorted(entries, key=_level_sort_key):
@@ -996,15 +1071,12 @@ def _get_leaf(record: ak.Array, path: str) -> ak.Array:
 
 def _apply_xor(nominal_value: ak.Array, delta: ak.Array, jagged: bool) -> ak.Array:
     """§6.4c inverse: the label value is `nominal XOR delta` on the shared uint view, reinterpreted
-    back to nominal's dtype (XOR is its own inverse, so this is exact)."""
-    if jagged:
-        nom = ak.to_numpy(ak.flatten(nominal_value))
-        del_ = ak.to_numpy(ak.flatten(delta))
-        restored = (_uint_view(nom) ^ _uint_view(del_)).view(nom.dtype)
-        return ak.unflatten(restored, np.asarray(ak.num(nominal_value)))
-    nom = ak.to_numpy(nominal_value)
-    restored = (_uint_view(nom) ^ _uint_view(np.asarray(delta))).view(nom.dtype)
-    return ak.Array(restored)
+    back to nominal's dtype (XOR is its own inverse, so this is exact), `None` where the delta is."""
+    nom, _ = _filled(nominal_value, jagged)
+    del_, mask = _filled(delta, jagged)
+    restored = (_uint_view(nom) ^ _uint_view(del_)).view(nom.dtype)
+    out = restored if mask is None else np.ma.array(restored, mask=mask)
+    return ak.unflatten(out, np.asarray(ak.num(nominal_value))) if jagged else ak.Array(out)
 
 
 def _decode_level0(packed: ak.Array) -> np.ndarray:
@@ -1038,10 +1110,13 @@ def _reconstruct_universe(
     columns = manifest[label]
     rec = base
     for col, info in columns.items():
-        if info["representation"] == "xor":
+        if info["representation"] in ("xor", "base") and col.startswith(_VARY_PREFIX):
             path = _dotted_for_flat(rec, info["field"])
-            nominal_value = _get_leaf(rec, path)
-            value = _apply_xor(nominal_value, full[col], nominal_value.ndim > 1)
+            if info["representation"] == "base":
+                value = full[col]
+            else:
+                nominal_value = _get_leaf(rec, path)
+                value = _apply_xor(nominal_value, full[col], nominal_value.ndim > 1)
             rec = ak.with_field(rec, value, where=path.split("."))
 
     packed = {  # entry -> the label's packbits column, still at superset granularity
