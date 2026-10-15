@@ -442,7 +442,7 @@ def _lineage_refusal(record_ctx: Any, select_ctx: Any) -> None:
     )
 
 
-def _resolve_field(nodes: list[dict[str, Any]], session: Session, node_id: int, name: str) -> int:
+def _resolve_field(nodes: list[dict[str, Any]], session: Session, node_id: int, name: str) -> int | str:
     """The CANONICAL value node for `field(node, name)`, seeing through zip/with_field projection —
     the M4 optimizer does not push field projection through a `zip`, so the raw per-label field node
     always differs even when the value does not. Distinguishes a genuinely varying leaf (§6.4b) from
@@ -458,16 +458,19 @@ def _resolve_field(nodes: list[dict[str, Any]], session: Session, node_id: int, 
         return _resolve_field(nodes, session, int(nd["inputs"][0]), name)
     if op == "ak.with_field":
         if str(nd["params"]["field"]) == name:
-            return int(nd["inputs"][1])
+            if len(nd["inputs"]) > 1:
+                return int(nd["inputs"][1])
+            # a scalar field has no value node: its value and dtype are its identity
+            return json.dumps({k: v for k, v in nd["params"].items() if k != "field"}, sort_keys=True)
         return _resolve_field(nodes, session, int(nd["inputs"][0]), name)
     return int(getattr(Array(session, node_id), name).node_id)
 
 
-def _canonical_leaf(nodes: list[dict[str, Any]], session: Session, member: Any, path: str) -> int:
-    node_id: int = member.node_id
+def _canonical_leaf(nodes: list[dict[str, Any]], session: Session, member: Any, path: str) -> int | str:
+    key: int | str = member.node_id
     for part in path.split("."):
-        node_id = _resolve_field(nodes, session, node_id, part)
-    return node_id
+        key = _resolve_field(nodes, session, int(key), part)  # a scalar key is always a path's last
+    return key
 
 
 def _varied_leaves(session: Session, record: Any, labels: tuple[str, ...]) -> list[str]:
@@ -832,11 +835,17 @@ def _write_varied(
     value_specs: list[_ValueSpec] = []
     outputs: list[Any] = [base]
     for path in varied:
-        leaves = {
-            label: Array(session, _canonical_leaf(nodes, session, member_of(record, label), path))
-            for label in labels
-        }
         parts = path.split(".")
+        leaves: dict[str, Any] = {}
+        for label in labels:
+            member = member_of(record, label)
+            key = _canonical_leaf(nodes, session, member, path)
+            # a scalar leaf has no value node: project it out of the record
+            leaves[label] = (
+                Array(session, key)
+                if isinstance(key, int)
+                else functools.reduce(operator.getitem, parts, member)
+            )
         if any(
             _type_of(session, leaves[label])
             != functools.reduce(

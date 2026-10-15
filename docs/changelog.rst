@@ -32,6 +32,8 @@ A deferred array has no truth value
 * ``gak.with_field`` (and so field assignment) takes a scalar value, which awkward broadcasts in the
   scalar's own dtype (``np.float32(0.5)`` stays ``float32``); it raised ``AttributeError``. Any other
   value (``None``, a complex or datetime scalar, a list or concrete array) raises ``GraphedTypeError``.
+  A varied ``to_parquet`` of a record holding such a field writes it (it raised ``IndexError``), with
+  no delta column when the scalar is the same in every universe.
 
 Resuming any plan from a store
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

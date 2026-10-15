@@ -9,6 +9,7 @@ from collections.abc import Callable
 from typing import Any
 
 import awkward as ak
+import numpy as np
 import pytest
 
 import graphed
@@ -362,3 +363,30 @@ def test_a_named_record_stores_deltas_only_for_its_varied_leaves(
     manifest, _ = _write_and_check(build, tmp_path)
     values = [col for col in manifest["s_up"] if col.startswith("__vary_s_up__") and "__mask__" not in col]
     assert values == ["__vary_s_up__x"]
+
+
+@pytest.mark.parametrize("varied_y", [False, True], ids=["x", "x_y"])
+@pytest.mark.parametrize("scalar", [1.5, np.float32(1.5)], ids=repr)
+def test_a_scalar_field_equal_in_every_universe_stores_no_delta(
+    scalar: Any, varied_y: bool, tmp_path: Any
+) -> None:
+    def build(ev: Any) -> Any:
+        rec = _flat(lambda e: e.m * 3)(ev)
+        if varied_y:
+            rec = gak.with_field(rec, graphed.vary(ev.m, "s", points={"up": ev.m * 4, "same": ev.m}), "y")
+        rec["k"] = scalar
+        return rec
+
+    manifest, _ = _write_and_check(build, tmp_path)
+    values = [col for col in manifest["s_up"] if col.startswith("__vary_s_up__") and "__mask__" not in col]
+    assert values == ["__vary_s_up__x", "__vary_s_up__y"][: 1 + varied_y]
+
+
+def test_a_scalar_field_that_differs_by_universe_stores_a_delta(tmp_path: Any) -> None:
+    def build(ev: Any) -> Any:
+        rec = gak.zip({"m": ev.m}, depth_limit=1)
+        k = {s: gak.with_field(rec, s, "k") for s in (1.5, 2.5)}
+        return graphed.vary(k[1.5], "s", points={"up": k[2.5], "same": k[1.5]})
+
+    manifest, _ = _write_and_check(build, tmp_path)
+    assert manifest["s_up"]["__vary_s_up__k"]["representation"] == "xor"
