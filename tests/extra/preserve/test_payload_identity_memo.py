@@ -155,3 +155,8 @@ def test_apply_correction_parses_its_output_type_once(monkeypatch: pytest.Monkey
 
     assert parses == []
     assert str(cast(AwkwardForm, s.form(arr)).tt.type.content) == "float64"
+
+
+def test_a_bytearray_payload_hashes_as_its_bytes() -> None:
+    mutable: Any = bytearray(CSET)
+    assert CORRECTIONLIB_PLUGIN.content_hash(mutable) == CORRECTIONLIB_PLUGIN.content_hash(CSET)

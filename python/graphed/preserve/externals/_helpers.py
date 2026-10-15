@@ -146,7 +146,7 @@ _T = TypeVar("_T")
 
 
 def memoized_model_hash(domain: str, payload: bytes, compute: Callable[[bytes], _T]) -> _T:
-    key = (domain, payload)
+    key = (domain, bytes(payload))
     with _HASH_MEMO_LOCK:  # get + move_to_end must not interleave with another thread's eviction
         if key in _HASH_MEMO:
             _HASH_MEMO.move_to_end(key)
