@@ -117,8 +117,16 @@ class Varied:
             raise AttributeError(name)
         # M54: a behavior METHOD answers as one callable over the container (its call expands);
         # the nominal probe interns, so the expansion below records nothing twice
-        if isinstance(getattr(self._members["nominal"], name), BoundMethod):
+        probe = getattr(self._members["nominal"], name)
+        if isinstance(probe, BoundMethod):
             return BoundMethod(self, name)
+        if not isinstance(probe, Array | Varied):  # a form answer, e.g. `.fields`: one for all universes
+            if any(getattr(member, name) != probe for member in self._members.values()):
+                raise GraphedError(
+                    f"the universes disagree on {name!r}; read one universe first, with "
+                    "graphed.universe(v, label)"
+                )
+            return probe
         return expand(lambda member: getattr(member, name), (self,), {})
 
     def __iter__(self) -> Iterator[Any]:

@@ -14,6 +14,7 @@ from typing import Any
 import numpy as np
 
 from graphed import Array, Session, broadcasting
+from graphed.array import _scalar_params
 
 from .forms import NumpyForm
 
@@ -91,5 +92,5 @@ def empty_like(array: Array) -> Array:
 
 
 @broadcasting
-def full_like(array: Array, fill_value: float) -> Array:
-    return array.session.record_op("full_like", [array], {"fill": float(fill_value)})
+def full_like(array: Array, fill_value: object) -> Array:
+    return array.session.record_op("full_like", [array], _scalar_params(fill_value, "fill", "fill_dtype"))

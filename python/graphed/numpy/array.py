@@ -17,6 +17,7 @@ from typing import Any
 import numpy as np
 
 from graphed import Array
+from graphed.array import _scalar_params
 from graphed.backend import ParamValue
 
 Handler = Callable[["NumpyArray", tuple[object, ...], dict[str, object]], Any]
@@ -136,14 +137,14 @@ class NumpyArray(Array):
     def astype(self, dtype: object) -> Array:
         return self._session.record_op("astype", [self], {"dtype": np.dtype(dtype).str})
 
-    def clip(self, lo: float | None = None, hi: float | None = None) -> Array:
+    def clip(self, lo: object = None, hi: object = None) -> Array:
         if lo is None and hi is None:
             raise TypeError("clip needs at least one bound")
         params: dict[str, ParamValue] = {}
         if lo is not None:
-            params["lo"] = float(lo)
+            params.update(_scalar_params(lo, "lo", "lo_dtype"))
         if hi is not None:
-            params["hi"] = float(hi)
+            params.update(_scalar_params(hi, "hi", "hi_dtype"))
         return self._session.record_op("clip", [self], params)
 
     def round(self, decimals: int = 0) -> Array:
@@ -316,7 +317,7 @@ def _fn_clip(arr: NumpyArray, args: tuple[object, ...], kwargs: dict[str, object
     hi: object = args[2] if len(args) > 2 else kw.pop("a_max", kw.pop("max", None))
     if kw or len(args) > 3:
         raise TypeError("graphed np.clip takes (array, min, max)")
-    return a.clip(None if lo is None else _f(lo), None if hi is None else _f(hi))
+    return a.clip(lo, hi)
 
 
 def _fn_round(arr: NumpyArray, args: tuple[object, ...], kwargs: dict[str, object]) -> Any:
@@ -354,11 +355,11 @@ def _fn_where(arr: NumpyArray, args: tuple[object, ...], kwargs: dict[str, objec
     if isinstance(x, NumpyArray):
         inputs.append(x)
     else:
-        params["x_scalar"] = _f(x)
+        params.update(_scalar_params(x, "x_scalar", "x_dtype"))
     if isinstance(y, NumpyArray):
         inputs.append(y)
     else:
-        params["y_scalar"] = _f(y)
+        params.update(_scalar_params(y, "y_scalar", "y_dtype"))
     return cond.session.record_op("where", inputs, params)
 
 

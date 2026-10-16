@@ -204,14 +204,14 @@ _MANIP_OPS = frozenset(
 _CONCRETE_AGGS = frozenset({"histogram", "histogram2d", "histogramdd"})
 
 
-def _scalar_param(params: Mapping[str, object]) -> Any:
+def _scalar_param(params: Mapping[str, object], key: str = "scalar", dtype_key: str = "dtype") -> Any:
     """The scalar operand a binary op recorded — back in its own dtype when it had one (M59). The
     frontend cannot build a numpy scalar, so it records the dtype name beside the value, and a
     value wider than the store's i64 param as text."""
-    value = params["scalar"]
-    if "dtype" not in params:
+    value = params[key]
+    if dtype_key not in params:
         return value
-    return np.dtype(str(params["dtype"])).type(value)  # the dtype parses the wide int's text itself
+    return np.dtype(str(params[dtype_key])).type(value)  # the dtype parses the wide int's text itself
 
 
 def _decode_dims(spec: object) -> tuple[int, ...]:
@@ -247,7 +247,8 @@ def _manip_eval(op: str, xs: Sequence[Any], params: Mapping[str, object]) -> Any
     if op == "astype":
         return np.asarray(xs[0]).astype(np.dtype(str(params["dtype"])))
     if op == "clip":
-        return np.clip(xs[0], params.get("lo"), params.get("hi"))
+        lo, hi = (_scalar_param(params, k, f"{k}_dtype") if k in params else None for k in ("lo", "hi"))
+        return np.clip(xs[0], lo, hi)
     if op == "round":
         return np.round(xs[0], _i(params.get("decimals", 0)))
     if op == "take":
@@ -255,8 +256,8 @@ def _manip_eval(op: str, xs: Sequence[Any], params: Mapping[str, object]) -> Any
         return np.take(xs[0], np.asarray(xs[1]).astype(np.intp), axis=None if axis is None else _i(axis))
     if op == "where":
         rest = list(xs[1:])
-        xval = params["x_scalar"] if "x_scalar" in params else rest.pop(0)
-        yval = params["y_scalar"] if "y_scalar" in params else rest.pop(0)
+        xval = _scalar_param(params, "x_scalar", "x_dtype") if "x_scalar" in params else rest.pop(0)
+        yval = _scalar_param(params, "y_scalar", "y_dtype") if "y_scalar" in params else rest.pop(0)
         return np.where(np.asarray(xs[0]), xval, yval)
     if op == "concatenate":
         return np.concatenate([np.asarray(x) for x in xs], axis=_i(params.get("axis", 0)))
@@ -465,7 +466,7 @@ class NumpyBackend:
         if op in _LIKE and "scalar" not in params:
             (x,) = operands
             if op == "full_like":
-                return np.full_like(x, params["fill"])
+                return np.full_like(x, _scalar_param(params, "fill", "fill_dtype"))
             return _LIKE[op](x)
         if op in _UNARY and "scalar" not in params:
             (x,) = operands
