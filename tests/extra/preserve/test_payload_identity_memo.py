@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 import awkward as ak
 import numpy as np
 import pytest
 
 from graphed import Session
-from graphed.awkward import AwkwardBackend, from_awkward, gak
+from graphed.awkward import AwkwardBackend, AwkwardForm, from_awkward, gak, payloads
 from graphed.awkward.payloads import correctionlib_contents_hash, onnx_weights_hash
 from graphed.preserve import CORRECTIONLIB_PLUGIN, XGBOOST_PLUGIN
 from graphed.preserve.externals import ExternalPlugin, record_external
@@ -133,3 +134,29 @@ def test_record_external_hashes_a_payload_once_across_recorded_calls(
     assert len(parses) == after_one
     assert {_descriptor(s, a)["content_hash"] for a in arrs} == {expected}
     assert _descriptor(s, other)["content_hash"] == other_expected != expected
+
+
+def test_apply_correction_digests_one_payload_object_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    payload = json.dumps({"schema_version": 2, "corrections": [], "description": "once"}).encode()
+    s, x = _x()
+    digests = _count_parses(monkeypatch, hashlib, "sha256", payload)
+    identities = _count_parses(monkeypatch, payloads, "_correctionlib_identity", payload)
+    arrs = [gak.apply_correction(payload, "sf", [x], lambda *a: a[0], args=["$0"]) for _ in range(N)]
+
+    assert (len(digests), len(identities)) == (0, 1)
+    assert {_descriptor(s, a)["content_hash"] for a in arrs} == {correctionlib_contents_hash(payload)}
+
+
+def test_apply_correction_parses_its_output_type_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    s, x = _x()
+    gak.apply_correction(CSET, "sf", [x], lambda *a: a[0], args=["$0"])
+    parses = _count_parses(monkeypatch, ak.types, "from_datashape", b"float64")
+    arr = gak.apply_correction(CSET, "sf", [x], lambda *a: a[0], args=["$0"])
+
+    assert parses == []
+    assert str(cast(AwkwardForm, s.form(arr)).tt.type.content) == "float64"
+
+
+def test_a_bytearray_payload_hashes_as_its_bytes() -> None:
+    mutable: Any = bytearray(CSET)
+    assert CORRECTIONLIB_PLUGIN.content_hash(mutable) == CORRECTIONLIB_PLUGIN.content_hash(CSET)

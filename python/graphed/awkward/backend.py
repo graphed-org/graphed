@@ -81,6 +81,10 @@ def _type(canonical: str) -> ak.types.Type:
 def canonical_output_type(spec: object) -> str:
     """Reduce an ``output_type`` spelling (datashape string, awkward Type/Form/ArrayType, numpy
     dtype-like, Python type) to awkward's type string, a fixpoint; refuse what cannot be built."""
+    return _canonical_string(spec) if isinstance(spec, str) else _canonical_output_type(spec)
+
+
+def _canonical_output_type(spec: object) -> str:
     try:
         s = PYTHON_TYPES[spec] if isinstance(spec, type) and spec in PYTHON_TYPES else spec
         if isinstance(s, ak.forms.Form):
@@ -104,6 +108,10 @@ def canonical_output_type(spec: object) -> str:
             "build nor a numpy dtype it represents"
         ) from exc
     return canonical
+
+
+# a string spelling (``"float64"`` on every apply_correction) is parsed once, not per record
+_canonical_string = functools.cache(_canonical_output_type)
 
 
 def astype_form(form: AwkwardForm, dtype: object) -> AwkwardForm:
