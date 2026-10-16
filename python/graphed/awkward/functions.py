@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 from typing import Any, SupportsFloat, cast
 
 from graphed import Array, ParamValue
+from graphed.array import _scalar_params
+from graphed.errors import GraphedTypeError
 from graphed.provenance import capture
 
 from . import payloads
@@ -141,8 +143,20 @@ def zip(
     return arrays[0].session.record_op("ak.zip", arrays, params)
 
 
-def with_field(arr: Array, value: Array, where: str) -> Array:
-    return arr.session.record_op("ak.with_field", [arr, value], {"field": where})
+def with_field(arr: Array, value: object, where: str) -> Array:
+    if isinstance(value, Array):
+        return arr.session.record_op("ak.with_field", [arr, value], {"field": where})
+    try:
+        # a scalar, which ak broadcasts, travels as a param in its own dtype (M59)
+        params = _scalar_params(value)
+    except (TypeError, ValueError) as err:
+        raise GraphedTypeError(
+            "with_field",
+            capture(),
+            "the value must be a deferred array or a bool/int/float/str scalar (numpy scalars "
+            f"keep their dtype), not {type(value).__name__}",
+        ) from err
+    return arr.session.record_op("ak.with_field", [arr], {"field": where, **params})
 
 
 def num(arr: Array, axis: int = 1) -> Array:

@@ -9,6 +9,7 @@ from collections.abc import Callable
 from typing import Any
 
 import awkward as ak
+import numpy as np
 import pytest
 
 import graphed
@@ -119,15 +120,15 @@ NULL_CASES: dict[str, tuple[Build, str]] = {
 
 
 def _write_and_check(
-    build: Build, tmp_path: Any, *, exact_type: bool = True
+    build: Build, tmp_path: Any, *, exact_type: bool = True, behavior: dict[Any, Any] | None = None
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Write, read back, assert every universe equals its in-memory member; return the varied manifest
     and awkward's own per-column metadata."""
-    session = Session(AwkwardBackend())
+    session = Session(AwkwardBackend(behavior=behavior))
     ev = from_awkward(session, "ev", ak.Array(DATA))
     record = build(ev)
     keep = graphed.vary(ev.m > 0, "s", points={"up": ev.m > 95, "same": ev.m > 0})
-    paths = ga.to_parquet(record, str(tmp_path / "skim"), select={0: keep})
+    paths = ga.to_parquet(record, str(tmp_path / "skim"), select={0: keep}, behavior=behavior)
     assert isinstance(paths, list)
     (path,) = paths
     got = ga.read_varied(path)
@@ -360,5 +361,88 @@ def test_a_named_record_stores_deltas_only_for_its_varied_leaves(
         return top(gak.zip({"x": x, "n": ev.n, "Jet": ev.Jet}, depth_limit=1))
 
     manifest, _ = _write_and_check(build, tmp_path)
+    values = [col for col in manifest["s_up"] if col.startswith("__vary_s_up__") and "__mask__" not in col]
+    assert values == ["__vary_s_up__x"]
+
+
+@pytest.mark.parametrize("varied_y", [False, True], ids=["x", "x_y"])
+@pytest.mark.parametrize("scalar", [1.5, np.float32(1.5)], ids=repr)
+def test_a_scalar_field_equal_in_every_universe_stores_no_delta(
+    scalar: Any, varied_y: bool, tmp_path: Any
+) -> None:
+    def build(ev: Any) -> Any:
+        rec = _flat(lambda e: e.m * 3)(ev)
+        if varied_y:
+            rec = gak.with_field(rec, graphed.vary(ev.m, "s", points={"up": ev.m * 4, "same": ev.m}), "y")
+        rec["k"] = scalar
+        return rec
+
+    manifest, _ = _write_and_check(build, tmp_path)
+    values = [col for col in manifest["s_up"] if col.startswith("__vary_s_up__") and "__mask__" not in col]
+    assert values == ["__vary_s_up__x", "__vary_s_up__y"][: 1 + varied_y]
+
+
+def test_a_scalar_field_that_differs_by_universe_stores_a_delta(tmp_path: Any) -> None:
+    def build(ev: Any) -> Any:
+        rec = gak.zip({"m": ev.m}, depth_limit=1)
+        k = {s: gak.with_field(rec, s, "k") for s in (1.5, 2.5)}
+        return graphed.vary(k[1.5], "s", points={"up": k[2.5], "same": k[1.5]})
+
+    manifest, _ = _write_and_check(build, tmp_path)
+    assert manifest["s_up"]["__vary_s_up__k"]["representation"] == "xor"
+
+
+def _sibling_record(ev: Any) -> Any:
+    x = graphed.vary(ev.m, "s", points={"up": ev.m * 3, "same": ev.m * 2})
+    return gak.zip({"x": x, "r": gak.zip({"y": ev.n}), "n": ev.n, "Jet": ev.Jet}, depth_limit=1)
+
+
+def _set_nested(rec: Any, ev: Any) -> Any:
+    rec["r", "k"] = ev.n * 2
+    return rec
+
+
+def _set_jagged(rec: Any, ev: Any) -> Any:
+    rec["Jet", "w"] = ev.Jet.pt * 2
+    return rec
+
+
+@pytest.mark.parametrize(
+    "reshape",
+    [_set_nested, _set_jagged, lambda r, _: gak.without_field(r, "n"), lambda r, _: r[["x", "r", "Jet"]]],
+    ids=["setitem_nested", "setitem_jagged", "without_field", "field_selection"],
+)
+def test_ops_that_pass_fields_through_leave_the_siblings_unvaried(
+    reshape: Callable[[Any, Any], Any], tmp_path: Any
+) -> None:
+    manifest, _ = _write_and_check(lambda ev: reshape(_sibling_record(ev), ev), tmp_path)
+    values = [col for col in manifest["s_up"] if col.startswith("__vary_s_up__") and "__mask__" not in col]
+    assert values == ["__vary_s_up__x"]
+
+
+def test_a_record_masked_by_a_varied_mask_keeps_its_fields_varied(tmp_path: Any) -> None:
+    def build(ev: Any) -> Any:
+        keep = graphed.vary(ev.Jet.pt > 0, "s", points={"up": ev.Jet.pt > 35, "same": ev.Jet.pt > 0})
+        return gak.zip({"x": ev.m, "Jet": gak.mask(ev.Jet, keep)}, depth_limit=1)
+
+    manifest, _ = _write_and_check(build, tmp_path)
+    values = [col for col in manifest["s_up"] if col.startswith("__vary_s_up__") and "__mask__" not in col]
+    assert values == ["__vary_s_up__Jet_pt"]
+
+
+class _Pair(ak.Array):  # type: ignore[misc]  # awkward ships no type stubs for subclassing
+    @property
+    def pair(self) -> Any:
+        return ak.zip({"a": self.n, "b": self.n * 2})
+
+
+def test_a_record_valued_behavior_property_is_walked_as_its_own_node(tmp_path: Any) -> None:
+    def build(ev: Any) -> Any:
+        named = gak.with_name(gak.zip({"n": ev.n}), "Pair")
+        x = graphed.vary(ev.m, "s", points={"up": ev.m * 3, "same": ev.m * 2})
+        return gak.zip({"x": x, "q": named.pair}, depth_limit=1)
+
+    behavior: dict[Any, Any] = {("*", "Pair"): _Pair}
+    manifest, _ = _write_and_check(build, tmp_path, behavior=behavior)
     values = [col for col in manifest["s_up"] if col.startswith("__vary_s_up__") and "__mask__" not in col]
     assert values == ["__vary_s_up__x"]

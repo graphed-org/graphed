@@ -4,6 +4,7 @@ awkward's high-level functions offer every array-like argument an ``__awkward_fu
 (``awkward._dispatch.named_high_level_function``). This class answers it by calling the ``gak``
 function of the same name, so ``ak.sum(a, axis=1)`` records exactly what ``gak.sum(a, axis=1)``
 records, refusals included. ``AwkwardVaried`` carries the same hook for containers of universes.
+Both also take ak's field assignment, ``events["Photon"] = photons``, as a recorded ``with_field``.
 """
 
 from __future__ import annotations
@@ -15,8 +16,8 @@ from typing import Any
 import awkward as ak
 
 from graphed import Array
-from graphed.errors import GraphedError
-from graphed.provenance import register_internal
+from graphed.errors import GraphedError, GraphedTypeError
+from graphed.provenance import capture, register_internal
 from graphed.varied import Varied, register_varied
 
 from . import functions as gak
@@ -77,12 +78,41 @@ def _awkward_function(
     return fn(*positional, **keywords)
 
 
+def _with_path(target: Any, path: tuple[str, ...], value: Any) -> Any:
+    if len(path) > 1:
+        value = _with_path(target[path[0]], path[1:], value)
+    return gak.with_field(target, value, path[0])
+
+
+def _setitem(self: Any, where: object, what: object) -> None:
+    """ak's ``Array.__setitem__``: a field name, or a tuple path into nested records, set by recording
+    ``with_field`` and rebinding this proxy to it; other proxies of the old node are untouched."""
+    path = (where,) if isinstance(where, str) else where
+    if not (isinstance(path, tuple) and path and all(isinstance(part, str) for part in path)):
+        raise GraphedTypeError(
+            "__setitem__", capture(), "only fields may be assigned in-place (by field name)"
+        )
+    new = _with_path(self, path, what)
+    if not isinstance(new, type(self)):
+        raise GraphedTypeError(
+            "__setitem__",
+            capture(),
+            "assigning a varied value turns this array into a container of universes, which an "
+            "in-place assignment cannot do; rebind instead: x = gak.with_field(x, value, field)",
+        )
+    for cls in type(new).__mro__:
+        for slot in getattr(cls, "__slots__", ()):
+            if slot != "__weakref__":
+                setattr(self, slot, getattr(new, slot))
+
+
 class AwkwardArray(Array):
     """The awkward idiom's proxy: the neutral ``Array`` plus awkward's function-dispatch hook."""
 
     __slots__ = ()
 
     __awkward_function__ = _awkward_function
+    __setitem__ = _setitem
 
 
 class AwkwardVaried(Varied):
@@ -91,6 +121,7 @@ class AwkwardVaried(Varied):
     __slots__ = ()
 
     __awkward_function__ = _awkward_function
+    __setitem__ = _setitem
 
 
 register_varied(AwkwardArray, AwkwardVaried)
