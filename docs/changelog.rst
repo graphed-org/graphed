@@ -4,6 +4,16 @@ What changed
 Newest release first. Numbers in parentheses are the pull requests on
 `graphed-org/graphed <https://github.com/graphed-org/graphed>`_.
 
+0.0.8 (unreleased)
+------------------
+
+Fixes
+~~~~~
+
+* A task drops each intermediate value once the last step that reads it has run, inside a fused
+  stage as well as between nodes, instead of holding every value until the task returns: a
+  whole-file task's peak memory no longer grows with the length of the analysis.
+
 0.0.7
 -----
 
