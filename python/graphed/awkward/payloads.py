@@ -99,7 +99,9 @@ def opaque_callable_descriptor(fn_name: str) -> PayloadDescriptor:
 # and gak-recorded Externals pass a bundle's payload-integrity check)
 def correctionlib_contents_hash(payload: bytes) -> str:
     """sha256 of the correction set's CONTENTS (canonical JSON) — formatting is not identity."""
-    data = json.loads(payload)
+    from graphed.preserve.externals._helpers import json_bytes  # noqa: PLC0415
+
+    data = json.loads(json_bytes(payload))
     canonical = json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return "sha256:" + hashlib.sha256(b"correctionlib-contents-v1" + canonical).hexdigest()
 
@@ -121,9 +123,11 @@ def onnx_weights_hash(payload: bytes) -> str:
 
 
 def _correctionlib_identity(payload: bytes) -> tuple[str, str]:
+    from graphed.preserve.externals._helpers import json_bytes  # noqa: PLC0415
+
     schema_version = "unknown"
     with contextlib.suppress(Exception):  # malformed JSON still fails loudly at the hash step
-        schema_version = str(json.loads(payload).get("schema_version", "unknown"))
+        schema_version = str(json.loads(json_bytes(payload)).get("schema_version", "unknown"))
     return correctionlib_contents_hash(payload), schema_version
 
 

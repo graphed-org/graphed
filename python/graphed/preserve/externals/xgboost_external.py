@@ -11,6 +11,7 @@ from ._helpers import (
     _as_event_array,
     _canonical_json_hash,
     _stack_feature_columns,
+    json_bytes,
     ml_matrix,
     parse_call_template,
 )
@@ -25,7 +26,7 @@ def load_xgboost(payload: bytes, params: Mapping[str, Any]) -> Any:
     import xgboost as xgb  # noqa: PLC0415
 
     booster = xgb.Booster()
-    booster.load_model(bytearray(payload))
+    booster.load_model(bytearray(json_bytes(payload)))
     return booster
 
 

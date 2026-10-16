@@ -7,7 +7,10 @@ from collections.abc import Mapping
 from typing import Any
 
 from ._base import ExternalPlugin
-from ._helpers import memoized_model_hash, ml_matrix, parse_call_template
+from ._helpers import _as_event_array, memoized_model_hash, ml_matrix, parse_call_template
+
+#: onnxruntime's input type strings whose element name is not numpy's
+_ORT_DTYPES = {"tensor(float)": "float32", "tensor(double)": "float64"}
 
 
 def onnx_content_hash(payload: bytes) -> str:
@@ -40,20 +43,26 @@ def eval_onnx(session: Any, params: Mapping[str, Any], inputs: list[Any]) -> Any
     import awkward as ak  # noqa: PLC0415
     import numpy as np  # noqa: PLC0415
 
+    # onnxruntime takes no implicit cast: feed each input the dtype the graph declares for it
+    declared = {i.name: i.type for i in session.get_inputs()}
     template = parse_call_template(params, len(inputs), allow_kwargs=False)
     if template is None:  # legacy: one (-1, 1) feed
         name = str(params.get("input_name", "")) or session.get_inputs()[0].name
-        x = np.asarray(ak.to_numpy(ak.Array(inputs[0])), dtype="float32").reshape(-1, 1)
-        out = session.run(None, {name: x})[0].reshape(-1)
-        return ak.Array(np.asarray(out, dtype="float64"))
-    args, _ = template
-    if len(args) == 1 and args[0][0] == "named":  # ONNX feeds are named — the natural form
-        feeds = {name: ml_matrix(entry, inputs) for name, entry in args[0][1].items()}
-    else:  # positional: mapped to the graph's declared input order
-        graph_inputs = [i.name for i in session.get_inputs()]
-        feeds = {graph_inputs[k]: ml_matrix(entry, inputs) for k, entry in enumerate(args)}
-    out = session.run(None, feeds)[0].reshape(-1)
-    return ak.Array(np.asarray(out, dtype="float64"))
+        feeds = {name: np.asarray(ak.to_numpy(ak.Array(inputs[0]))).reshape(-1, 1)}
+    else:
+        args, _ = template
+        if len(args) == 1 and args[0][0] == "named":  # ONNX feeds are named — the natural form
+            feeds = {name: ml_matrix(entry, inputs) for name, entry in args[0][1].items()}
+        else:  # positional: mapped to the graph's declared input order
+            graph_inputs = [i.name for i in session.get_inputs()]
+            feeds = {graph_inputs[k]: ml_matrix(entry, inputs) for k, entry in enumerate(args)}
+    feeds = {
+        name: x.astype(_ORT_DTYPES.get(declared[name], declared[name][7:-1]), copy=False)
+        if name in declared
+        else x
+        for name, x in feeds.items()
+    }
+    return _as_event_array(session.run(None, feeds)[0])
 
 
 def _onnx_samples() -> list[bytes]:

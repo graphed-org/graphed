@@ -9,7 +9,7 @@ from typing import Any
 
 from ..errors import PreserveError
 from ._base import ExternalPlugin
-from ._helpers import memoized_model_hash, parse_call_template
+from ._helpers import json_bytes, memoized_model_hash, parse_call_template
 
 
 def correctionlib_content_hash(payload: bytes) -> str:
@@ -17,7 +17,7 @@ def correctionlib_content_hash(payload: bytes) -> str:
 
 
 def _correctionlib_content_hash_impl(payload: bytes) -> str:
-    data = json.loads(payload)
+    data = json.loads(json_bytes(payload))
     canonical = json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return "sha256:" + hashlib.sha256(b"correctionlib-contents-v1" + canonical).hexdigest()
 
@@ -26,7 +26,7 @@ def load_correctionlib(payload: bytes, params: Mapping[str, Any]) -> Any:
     """Parse the correction set once (per worker)."""
     import correctionlib  # noqa: PLC0415
 
-    return correctionlib.CorrectionSet.from_string(payload.decode("utf-8"))
+    return correctionlib.CorrectionSet.from_string(json_bytes(payload).decode("utf-8"))
 
 
 def _peel_layout(layout: Any) -> tuple[list[tuple[str, Any]], Any] | None:
