@@ -7,26 +7,77 @@ Newest release first. Numbers in parentheses are the pull requests on
 0.0.8 (unreleased)
 ------------------
 
+Field assignment on deferred awkward arrays
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``AwkwardArray`` and ``AwkwardVaried`` take ak's field assignment, ``events["Photon"] = photons``
+  and ``events["Photon", "pt"] = pt``, recorded as ``with_field`` and rebinding only that proxy.
+  A key that is not a field name or a tuple of them raises ``GraphedTypeError``, as does assigning a
+  ``Varied`` value into a plain array (rebind with ``gak.with_field`` instead) (#80).
+* ``gak.with_field`` (and so field assignment) takes a scalar value, which awkward broadcasts in the
+  scalar's own dtype (``np.float32(0.5)`` stays ``float32``); it raised ``AttributeError``. Any other
+  value (``None``, a complex or datetime scalar, a list or concrete array) raises ``GraphedTypeError``.
+  A varied ``to_parquet`` of a record holding such a field writes it (it raised ``IndexError``), with
+  no delta column when the scalar is the same in every universe (#80).
+
+Less time and memory per plan and task
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``project_buffers_many`` replays a sub-graph its outputs share once instead of once per output, so
+  planning many outputs over common selections no longer costs the shared graph once per output.
+  ``Session.walk`` takes a ``memo`` that walks of several outputs share (#81).
+* ``gak.apply_correction`` called again with the same payload object no longer re-digests it, and
+  its ``float64`` output type is parsed once per process: recording a 14 MB correction set drops
+  from about 10 ms to 0.5 ms per call (#86).
+* A task drops each intermediate value once the last step that reads it has run, inside a fused
+  stage as well as between nodes, instead of holding every value until the task returns: a
+  whole-file task's peak memory no longer grows with the length of the analysis (#90).
+
 Fixes
 ~~~~~
 
 * ``gak.values_astype``, ``zeros_like``, ``ones_like`` and ``full_like`` take a dtype as numpy reads
-  one (``np.float64``, ``float``, ``np.dtype(...)``), not only its name.
+  one (``np.float64``, ``float``, ``np.dtype(...)``), not only its name (#83).
 * ``gak.cartesian``/``argcartesian`` (and ``ak.cartesian`` on a deferred array) take a dict of named
-  slots, nesting by key, as awkward does.
+  slots, nesting by key, as awkward does (#83).
 * numpy functions that are not ufuncs (``np.clip``, ``np.where``, ``np.nan_to_num``, ...) record on a
   deferred awkward array or ``Varied`` the way ``ak.Array`` answers them; one awkward implements but
-  ``gak`` lacks (``np.round``) is refused naming the missing ``ak`` function.
+  ``gak`` lacks (``np.round``) is refused naming the missing ``ak`` function (#83).
 * ``hasattr``/``getattr(x, name, default)`` on a deferred array report a missing field as absent: the
-  ``GraphedTypeError`` it raises is also an ``AttributeError``.
+  ``GraphedTypeError`` it raises is also an ``AttributeError`` (#83).
 * A ``Varied`` answers a form attribute (``.fields``, ``.ndim``, ...) with the value, not another
-  ``Varied``, and refuses one its universes disagree on.
+  ``Varied``, and refuses one its universes disagree on (#83).
 * A scalar operand keeps its type, as eagerly: a numpy scalar in ``gak.where``/``fill_none``
   (``where(m, x_float32, np.float32(1))`` stays ``float32``), an integer ``initial`` of a reducer
   (it crashed on an integer array) or ``full_like`` value, a numpy scalar or 0-d array passed to a
   behavior method, and any scalar in the numpy backend's ``np.where``/``np.clip``/``full_like``
   (``np.where(m, x_int32, 0)`` stays ``int32``). Scalars of different dtypes no longer share one
-  node.
+  node (#83).
+* A leaf that is equal in every universe no longer gets an all-zero delta column per universe when
+  it reaches the written record through ``without_field``, a field selection (``rec[["x", "y"]]``),
+  or a field projection (a sibling of ``rec["Jet", "w"] = w``), as under ``with_name`` and
+  ``with_parameter`` since 0.0.7 (#80).
+* A plan whose ``graphed.apply``/``map`` functions, ``reduce``, ``combine`` or ``empty`` are lambdas,
+  closures, partials of them or ``__main__`` functions runs on process and remote runners: the plan
+  pickles each such function through cloudpickle (by value unless importable), and task keys are
+  unchanged. A backend given to ``aggregate_plan(backend="module:factory")`` gives its behavior to
+  the arrays it evaluates, and to what ``reduce``, ``combine`` and ``empty`` return, as that import
+  ref, so a partial carrying it (vector's behaviors hold lambdas) pickles too, also after an op or a
+  combine over several arrays (#82).
+* ``graphed.preserve.record_external`` on a ``Varied`` input records one External per universe, as
+  ``graphed.apply`` does; it raised ``AttributeError`` (#85).
+* An ML plugin's (n, k) output keeps one row of k per event, as ``ak.from_numpy`` gives it; it was
+  flattened to n·k values. An (n,) or (n, 1) output is still one value per event. Declare the row
+  with ``output_type="k * float64"`` (#85).
+* ML plugin inputs keep their dtype: torch and onnxruntime models are fed the dtype the model
+  declares (a float64 model runs in float64, bit-equal to calling it), xgboost, keras and jax
+  convert as they do when called directly, and Triton requests stay FP32 (#85).
+* A gzipped JSON payload (correctionlib's ``.json.gz``, an xgboost or Triton JSON) hashes, loads and
+  evaluates as its plain twin; its content hash raised ``UnicodeDecodeError`` (#85).
+* A preservation bundle holds a histogram fill with scalar constants (``h.fill(x, 1.5,
+  weight=[w, 2.0])``, graphed-histogram's constant fills): the histogram plugin rebuilds the
+  fill's content hash and evaluator with its constants, so ``build_bundle`` no longer reports a
+  hash mismatch and ``reproduce`` replays the fill (#89).
 
 0.0.7
 -----
