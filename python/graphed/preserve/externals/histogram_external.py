@@ -29,13 +29,19 @@ def eval_histogram(resource: Any, params: Mapping[str, Any], inputs: list[Any]) 
     from graphed_histogram.boost import FillEvaluator  # noqa: PLC0415  (optional integration)
 
     variation = params.get("variation")
+    constants = params.get("constants")
+    # `n_axes` counts the recorded axis inputs; constant axes ride in `constants`, which only a
+    # graphed-histogram that records them accepts, so an older one is never passed the keyword
+    fixed = {} if constants is None else {"constants": str(constants)}
+    n_constant_axes = 0 if constants is None else len(json.loads(constants).get("axes", []))
     evaluator = FillEvaluator(
         spec=str(params["spec"]),
-        n_axes=int(params.get("n_axes", 1)),
+        n_axes=int(params.get("n_axes", 1)) + n_constant_axes,
         has_weight=bool(params.get("weighted", False)),
         has_sample=bool(params.get("sampled", False)),
         n_weights=int(params.get("n_weights", 1)),
         variation=tuple(json.loads(variation)) if variation is not None else None,
+        **fixed,
     )
     return evaluator(*inputs)
 
@@ -51,7 +57,8 @@ def _histogram_samples() -> list[bytes]:
 def _canonical_payload(params: Mapping[str, Any]) -> str:
     """graphed-histogram ``boost._fill_chash``'s canonical string, rebuilt from the node's params:
     the bare spec for the canonical single-weight sibling fill, else the spec with a
-    ``\\x00``-joined discriminator suffix (``unweighted`` / ``n_weights=N`` / ``variation=<json>``)
+    ``\\x00``-joined discriminator suffix (``unweighted`` / ``n_weights=N`` / ``variation=<json>`` /
+    ``constants=<json>``)
     folded in — the SAME set and order ``_fill_chash`` uses, so re-hashing it reproduces the
     recorded node id. ``params["variation"]`` is already ``json.dumps(list(node_labels))``."""
     spec = str(params["spec"])
@@ -64,6 +71,9 @@ def _canonical_payload(params: Mapping[str, Any]) -> str:
     variation = params.get("variation")
     if variation is not None:
         disc.append("variation=" + str(variation))
+    constants = params.get("constants")
+    if constants is not None:
+        disc.append("constants=" + str(constants))
     return spec if not disc else spec + "\x00" + "\x00".join(disc)
 
 

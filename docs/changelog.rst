@@ -4,6 +4,17 @@ What changed
 Newest release first. Numbers in parentheses are the pull requests on
 `graphed-org/graphed <https://github.com/graphed-org/graphed>`_.
 
+0.0.8 (unreleased)
+------------------
+
+Fixes
+~~~~~
+
+* A preservation bundle holds a histogram fill with scalar constants (``h.fill(x, 1.5,
+  weight=[w, 2.0])``, graphed-histogram's constant fills): the histogram plugin rebuilds the
+  fill's content hash and evaluator with its constants, so ``build_bundle`` no longer reports a
+  hash mismatch and ``reproduce`` replays the fill.
+
 0.0.7
 -----
 
