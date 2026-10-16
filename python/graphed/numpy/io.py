@@ -30,7 +30,7 @@ from graphed import (
 )
 from graphed import parquet as gpq
 from graphed import write as gw
-from graphed.aggregate import external_evaluators
+from graphed.aggregate import shipped_evaluators
 from graphed.core import Partition
 from graphed.core.execution import Plan, SequentialRunner, WorkerResources
 from graphed.errors import GraphedError
@@ -236,7 +236,7 @@ def to_parquet(
 
     common = {
         "compiled": compiled,
-        "externals": tuple(external_evaluators(session, compiled).items()),
+        "externals": shipped_evaluators(session, compiled),
         "source_name": source_name,
         "columns": columns,
         "destination": destination,

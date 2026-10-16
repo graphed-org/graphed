@@ -40,6 +40,43 @@ class _AsRead:
         return rebuild, (form, length, buffers)
 
 
+class _BehaviorByRef(dict[Any, Any]):
+    """A backend's behavior that pickles as the import ref its backend was resolved from, since its
+    lambdas do not pickle; every array derived from one carrying it keeps this same object."""
+
+    def __init__(self, behavior: Mapping[Any, Any], ref: str) -> None:
+        super().__init__(behavior)
+        self.ref = ref
+
+    def _keyed_as(self) -> dict[Any, Any]:
+        return dict(self)
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        return _behavior_from, (self.ref,)
+
+
+def _behavior_from(ref: str) -> Any:
+    from graphed.aggregate import _resolved  # noqa: PLC0415  (aggregate imports this module's users)
+
+    return _resolved(ref)._behavior
+
+
+def _adopt(value: Any, behavior: Mapping[Any, Any] | None) -> Any:
+    """``value`` with each array whose behavior merely equals ``behavior`` given ``behavior`` itself:
+    awkward merges the behaviors of several arrays into a new dict, which loses its pickling."""
+    if not behavior:
+        return value
+    if isinstance(value, ak.Array):
+        if value.behavior is behavior or value.behavior != behavior:
+            return value
+        return ak.Array(value.layout, behavior=behavior, attrs=value.attrs)
+    if type(value) in (list, tuple):
+        return type(value)(_adopt(item, behavior) for item in value)
+    if type(value) is dict:
+        return {key: _adopt(item, behavior) for key, item in value.items()}
+    return value
+
+
 @dataclass(eq=False)
 class AwkwardForm:
     """Opaque form backed by a metadata-only typetracer array (implements graphed.Form)."""
@@ -247,7 +284,7 @@ class AwkwardBackend:
     def eval_stage(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> object:
         if op == "join":  # needs `self` (the shared kernel routes through JoinBackend primitives)
             return self._eval_join(inputs, params)
-        return apply(op, inputs, params, behavior=self._behavior)
+        return self.adopt(apply(op, inputs, params, behavior=self._behavior))
 
     # ---- M54: behavior methods with arguments ------------------------------------------------
     canonical_output_type = staticmethod(canonical_output_type)
@@ -301,6 +338,18 @@ class AwkwardBackend:
             f"{params['method']}() returned {type(result).__name__}, which is not an awkward array "
             "or a tuple of awkward arrays, so it cannot be recorded"
         )
+
+    def resolved_from(self, ref: str) -> AwkwardBackend:
+        """This backend as a worker resolved it from the import ``ref``: its behavior, and so every
+        partial carrying it, pickles as ``ref``."""
+        if self._behavior and not isinstance(self._behavior, _BehaviorByRef):
+            self._behavior = _BehaviorByRef(self._behavior, ref)
+        return self
+
+    def adopt(self, value: Any) -> Any:
+        """``value`` (an array, or a list, tuple or dict of them) carrying this backend's behavior
+        object wherever it carries an equal copy."""
+        return _adopt(value, self._behavior)
 
     def capturable(self, chunk: ak.Array) -> _AsRead:
         """``chunk`` in a form that pickles (with cloudpickle, as behaviors hold lambdas) back to

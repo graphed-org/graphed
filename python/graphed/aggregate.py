@@ -13,10 +13,12 @@ specializes this for boost histograms; any other partition-wise reduction reuses
 
 from __future__ import annotations
 
+import functools
 import os
+import types
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import Any, ClassVar, Generic, TypeVar
+from typing import Any, ClassVar, Generic, TypeVar, cast
 
 from graphed.core import GraphStore, Partition
 from graphed.core.execution import Plan, Task, WorkerResources
@@ -41,6 +43,7 @@ from .session import Session
 from .varied import refuse_container
 from .write import PartitionedSource, PartWrite, declared_columns, join_part, prepare_part
 
+T = TypeVar("T")
 V = TypeVar("V")
 
 #: A write as shipped: ``(codec, destination, name, value slot, kv)``, where ``kv`` is ``None`` or
@@ -55,6 +58,63 @@ _ShippedWrite = tuple[
 ]
 
 
+@dataclass(frozen=True)
+class _ByValue:
+    """A user callable stdlib pickle cannot name (a lambda, closure or local def): it ships by value,
+    the one use of cloudpickle §A.3.1 allows, so every runner's own pickling carries it."""
+
+    fn: Callable[..., Any]
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        return self.fn(*args, **kwargs)
+
+    def _keyed_as(self) -> Callable[..., Any]:
+        return self.fn
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        import cloudpickle  # noqa: PLC0415  (only an opaque callable needs it)
+
+        return _load_by_value, (cloudpickle.dumps(self.fn),)
+
+
+def _load_by_value(blob: bytes) -> _ByValue:
+    import cloudpickle  # noqa: PLC0415
+
+    return _ByValue(cloudpickle.loads(blob))
+
+
+def by_value(fn: T) -> T:
+    """``fn``, a function or partial, wrapped to pickle through cloudpickle: by name when importable,
+    by value otherwise (a lambda, a closure, a ``__main__`` def a worker cannot import). A callable
+    object stays itself, so its ``bind_services``/``resolve_services`` hooks are still seen."""
+    if isinstance(fn, types.FunctionType | functools.partial):
+        return _ByValue(fn)  # type: ignore[return-value]  # calls as fn does
+    return fn
+
+
+@functools.cache
+def _resolved(ref: str) -> Any:
+    return resolve_backend(ref)
+
+
+def _adopted(backend: Callable[[], Any] | str | None, value: T) -> T:
+    """``value`` with its arrays given back the behavior of the backend ``backend`` imports: an op
+    over several of them leaves an equal copy, which does not pickle by that import ref."""
+    adopt = getattr(_resolved(backend), "adopt", None) if isinstance(backend, str) else None
+    return value if adopt is None else cast("T", adopt(value))
+
+
+@dataclass(frozen=True)
+class _Adopting:
+    """A plan's ``combine``/``empty``, its result's arrays given back the backend ``ref``'s behavior."""
+
+    fn: Callable[..., Any]
+    ref: str
+
+    def __call__(self, *args: Any) -> Any:
+        return _adopted(self.ref, self.fn(*args))
+
+
 def resolve_backend(ref: Callable[[], Any] | str) -> Any:
     """A worker's evaluation backend: a zero-arg factory/class, or an importable ``"module:attr"``
     reference resolved HERE in the worker — behavior-carrying backends (whose behavior dicts hold
@@ -64,7 +124,9 @@ def resolve_backend(ref: Callable[[], Any] | str) -> Any:
 
         mod_name, _, attr = ref.partition(":")
         target = getattr(importlib.import_module(mod_name), attr)
-        return target() if callable(target) else target
+        backend = target() if callable(target) else target
+        hook = getattr(backend, "resolved_from", None)
+        return backend if hook is None else hook(ref)
     return ref()
 
 
@@ -114,7 +176,9 @@ class _PartitionReduce(Generic[V]):
                 externals=dict(self.externals),
                 on_failure=self._attribute(str(partition)),
             )
-            return self.reduce(self._write(values, partition) if self.writes else values)
+            return _adopted(
+                self.backend_factory, self.reduce(self._write(values, partition) if self.writes else values)
+            )
         import cloudpickle  # noqa: PLC0415  (only a capturing plan needs it)
 
         from graphed.checkpoint import PickleCodec  # noqa: PLC0415
@@ -125,7 +189,7 @@ class _PartitionReduce(Generic[V]):
         # the input is kept before evaluating, so a failing task's input survives it
         blob = store.put(cloudpickle.dumps(capturable(chunk), protocol=codec.PROTOCOL))
         store.record_done(f"{cid}:input", label, blob, stage="replay-input")
-        result = self.reduce(self._evaluate(chunk, partition))
+        result = _adopted(self.backend_factory, self.reduce(self._evaluate(chunk, partition)))
         store.record_done(f"{cid}:output", label, store.put(codec.encode(result)), stage="replay-output")
         return result
 
@@ -266,6 +330,13 @@ def external_evaluators(session: Session, compiled: CompiledGraph) -> dict[str, 
     return wired
 
 
+def shipped_evaluators(
+    session: Session, compiled: CompiledGraph
+) -> tuple[tuple[str, Callable[..., object]], ...]:
+    """:func:`external_evaluators` for a plan runners pickle with stdlib pickle, each :func:`by_value`."""
+    return tuple((key, by_value(fn)) for key, fn in external_evaluators(session, compiled).items())
+
+
 def plan_services(
     session: Session, compiled: CompiledGraph, names: Sequence[str] | None = None
 ) -> tuple[ServiceSpec, ...]:
@@ -348,9 +419,9 @@ def aggregate_plan(
     refuse_chunk_partials(compiled, as_outputs=written)
     # Wire EVERY External surviving in the compiled IR from the session (fills + upstream corrections
     # alike); an explicit `externals=` (keyed by `external_key`) overrides the auto-wired evaluator.
-    wired = external_evaluators(session, compiled)
+    wired = dict(shipped_evaluators(session, compiled))
     if externals:
-        wired.update(externals)
+        wired.update((key, by_value(fn)) for key, fn in externals.items())
     declared = declared_columns(data, arrays)
     process = _PartitionReduce(
         ir=bytes(compiled.ir),
@@ -359,7 +430,7 @@ def aggregate_plan(
         reader=data,
         columns=read_columns(arrays, nid) if declared is None else declared,
         externals=tuple(wired.items()),
-        reduce=reduce,
+        reduce=by_value(reduce),
         variation_labels=None if on_compiled is None else on_compiled(compiled),
         frames=compiled.correspondence.frames,
         store=None if store is None else os.fspath(store),
@@ -386,8 +457,8 @@ def aggregate_plan(
     _refuse_shared_parts((process, t.partition) for t in tasks)
     return Plan(
         process=process,
-        combine=combine,
-        empty=empty,
+        combine=by_value(combine) if not isinstance(backend, str) else _Adopting(by_value(combine), backend),
+        empty=by_value(empty) if not isinstance(backend, str) else _Adopting(by_value(empty), backend),
         tasks=tasks,
         services=plan_services(session, compiled, services),
     )
