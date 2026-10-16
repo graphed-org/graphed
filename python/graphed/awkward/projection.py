@@ -104,12 +104,14 @@ def _replay(arrays: Sequence[Array], on_fail: str) -> tuple[dict[int, tuple[obje
         form = session.form_of(nid)
         return form.tt if isinstance(form, AwkwardForm) else inputs[0]
 
+    memo: dict[int, object] = {}  # one memo, so a sub-DAG the outputs share is replayed once
     for array in arrays:  # `walk` refuses an array from another Session
         result = session.walk(
             array,
             source=lambda nid: tracers[nid],
             op=lambda _nid, name, ins, params: backend.eval_stage(name, ins, params),
             external=on_external,
+            memo=memo,
         )
         # the output is materialized, so its own columns are read — touch them (covers a bare
         # field-access output that otherwise only touches shape, not leaf data).
