@@ -39,7 +39,7 @@ from graphed import (
 )
 from graphed import parquet as gpq
 from graphed import write as gw
-from graphed.aggregate import external_evaluators, plan_services
+from graphed.aggregate import plan_services, shipped_evaluators
 from graphed.core import Partition
 from graphed.core.execution import Plan, SequentialRunner, WorkerResources
 from graphed.errors import GraphedError
@@ -442,11 +442,12 @@ def _lineage_refusal(record_ctx: Any, select_ctx: Any) -> None:
     )
 
 
-def _resolve_field(nodes: list[dict[str, Any]], session: Session, node_id: int, name: str) -> int:
-    """The CANONICAL value node for `field(node, name)`, seeing through zip/with_field projection —
-    the M4 optimizer does not push field projection through a `zip`, so the raw per-label field node
-    always differs even when the value does not. Distinguishes a genuinely varying leaf (§6.4b) from
-    an untouched one that only the record's construction couples to the shift."""
+def _resolve_field(nodes: list[dict[str, Any]], session: Session, node_id: int, name: str) -> int | str:
+    """The canonical value node for `field(node, name)`: the field is followed back to the node that
+    produced it through every op that passes fields through unchanged (zip, with_field, with_name,
+    with_parameter, without_field, a field selection, a field projection), and any other op ends the
+    walk at its own projection. The M4 optimizer pushes no projection through these, so without the
+    walk an untouched leaf of a varied record would look varied (§6.4b)."""
     if node_id >= len(nodes):  # newer than the snapshot: a projection we recorded, never a zip
         return int(getattr(Array(session, node_id), name).node_id)
     nd = nodes[node_id]
@@ -454,20 +455,29 @@ def _resolve_field(nodes: list[dict[str, Any]], session: Session, node_id: int, 
     if op == "ak.zip":
         fields = str(nd["params"]["fields"]).split(",")
         return int(nd["inputs"][fields.index(name)])
-    if op in ("ak.with_name", "ak.with_parameter"):  # record-level only: fields pass through unchanged
+    if op == "field":
+        record, field = int(nd["inputs"][0]), str(nd["params"]["field"])
+        if field in _tt(session, Array(session, record)).fields:  # else a behavior property
+            inner = _resolve_field(nodes, session, record, field)
+            if isinstance(inner, int) and inner != node_id:  # a source's field is its own fixpoint
+                return _resolve_field(nodes, session, inner, name)
+    if op in ("ak.with_name", "ak.with_parameter", "ak.without_field", "fields"):
         return _resolve_field(nodes, session, int(nd["inputs"][0]), name)
     if op == "ak.with_field":
         if str(nd["params"]["field"]) == name:
-            return int(nd["inputs"][1])
+            if len(nd["inputs"]) > 1:
+                return int(nd["inputs"][1])
+            # a scalar field has no value node: its value and dtype are its identity
+            return json.dumps({k: v for k, v in nd["params"].items() if k != "field"}, sort_keys=True)
         return _resolve_field(nodes, session, int(nd["inputs"][0]), name)
     return int(getattr(Array(session, node_id), name).node_id)
 
 
-def _canonical_leaf(nodes: list[dict[str, Any]], session: Session, member: Any, path: str) -> int:
-    node_id: int = member.node_id
+def _canonical_leaf(nodes: list[dict[str, Any]], session: Session, member: Any, path: str) -> int | str:
+    key: int | str = member.node_id
     for part in path.split("."):
-        node_id = _resolve_field(nodes, session, node_id, part)
-    return node_id
+        key = _resolve_field(nodes, session, int(key), part)  # a scalar key is always a path's last
+    return key
 
 
 def _varied_leaves(session: Session, record: Any, labels: tuple[str, ...]) -> list[str]:
@@ -832,11 +842,17 @@ def _write_varied(
     value_specs: list[_ValueSpec] = []
     outputs: list[Any] = [base]
     for path in varied:
-        leaves = {
-            label: Array(session, _canonical_leaf(nodes, session, member_of(record, label), path))
-            for label in labels
-        }
         parts = path.split(".")
+        leaves: dict[str, Any] = {}
+        for label in labels:
+            member = member_of(record, label)
+            key = _canonical_leaf(nodes, session, member, path)
+            # a scalar leaf has no value node: project it out of the record
+            leaves[label] = (
+                Array(session, key)
+                if isinstance(key, int)
+                else functools.reduce(operator.getitem, parts, member)
+            )
         if any(
             _type_of(session, leaves[label])
             != functools.reduce(
@@ -923,7 +939,7 @@ def _write_varied(
         "wrapped": wrapped,
         "behavior": behavior,
         "manifest": manifest,
-        "externals": tuple(external_evaluators(session, compiled).items()),
+        "externals": shipped_evaluators(session, compiled),
     }
     if isinstance(data, PartitionedSource):
         partitions = data.partitions(steps_per_file)
@@ -1016,7 +1032,7 @@ def to_parquet(
         columns = _evaluation_columns(array, node_id, source_name, source_form) or None
     compiled = compile_ir(session, array)
     refuse_chunk_partials(compiled, as_outputs=True)
-    externals = tuple(external_evaluators(session, compiled).items())
+    externals = shipped_evaluators(session, compiled)
 
     if isinstance(data, PartitionedSource):
         # the generic path: ANY source describing its own partitioning (parquet datasets, the

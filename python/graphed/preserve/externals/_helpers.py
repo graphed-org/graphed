@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gzip
 import hashlib
 import json
 import threading
@@ -12,6 +13,11 @@ from typing import Any, TypeVar
 from ..errors import PreserveError
 
 
+def json_bytes(payload: bytes) -> bytes:
+    """A JSON payload's bytes, gunzipped when gzipped (CMS POGs ship correction sets as .json.gz)."""
+    return gzip.decompress(payload) if payload[:2] == b"\x1f\x8b" else payload
+
+
 def _canonical_json_hash(domain: bytes, payload: bytes) -> str:
     """sha256 over domain-separated, canonicalized JSON (key order + whitespace = formatting)."""
     return memoized_model_hash(domain.decode(), payload, lambda p: _canonical_json_hash_impl(domain, p))
@@ -19,27 +25,30 @@ def _canonical_json_hash(domain: bytes, payload: bytes) -> str:
 
 def _canonical_json_hash_impl(domain: bytes, payload: bytes) -> str:
     try:
-        parsed = json.loads(payload.decode("utf-8"))
-    except (UnicodeDecodeError, ValueError) as err:
+        parsed = json.loads(json_bytes(payload).decode("utf-8"))
+    except (UnicodeDecodeError, ValueError, OSError, EOFError) as err:
         raise PreserveError(f"payload is not valid JSON ({err})") from err
     canon = json.dumps(parsed, sort_keys=True, separators=(",", ":"), default=str)
     return "sha256:" + hashlib.sha256(domain + canon.encode("utf-8")).hexdigest()
 
 
 def _stack_feature_columns(inputs: list[Any]) -> Any:
-    """Per-event feature arrays -> one float32 (n_events, n_features) matrix (the M9 convention)."""
+    """Per-event feature arrays -> one (n_events, n_features) matrix in their common dtype; a
+    framework that needs one dtype casts it to the model's own."""
     import awkward as ak  # noqa: PLC0415
     import numpy as np  # noqa: PLC0415
 
-    cols = [np.asarray(ak.to_numpy(ak.Array(i)), dtype="float32") for i in inputs]
-    return np.stack(cols, axis=1)
+    return np.stack([np.asarray(ak.to_numpy(ak.Array(i))) for i in inputs], axis=1)
 
 
 def _as_event_array(out: Any) -> Any:
+    """A model's (n,) or (n, 1) output as one value per event; (n, k, ...) as ``ak.from_numpy``
+    gives it, regular rows of k."""
     import awkward as ak  # noqa: PLC0415
     import numpy as np  # noqa: PLC0415
 
-    return ak.Array(np.asarray(out, dtype="float64").reshape(-1))
+    values = np.asarray(out, dtype="float64")
+    return ak.from_numpy(values.reshape(-1) if values.shape[1:] == (1,) else values)
 
 
 def _strip_config_names(obj: Any) -> Any:
@@ -123,7 +132,7 @@ def parse_call_template(
 
 
 def ml_matrix(entry: TemplateEntry, inputs: list[Any]) -> Any:
-    """Materialize one template entry as the ML convention: a float32 (n_events, k) matrix."""
+    """Materialize one template entry as the ML convention: an (n_events, k) matrix."""
     kind, value = entry
     if kind == "slot":
         return _stack_feature_columns([inputs[value]])
@@ -135,17 +144,18 @@ def ml_matrix(entry: TemplateEntry, inputs: list[Any]) -> Any:
 # ---- M36: memoize the EXPENSIVE (model-parsing) content hashes -----------------------------------
 # A model's content hash is computed at record time AND re-verified at bundle-build time; each call
 # re-parses the model (onnx.load, torch.jit.load, keras load, jax deserialize). Cache the result by
-# a cheap raw-bytes digest so the same payload parses once. Bounded FIFO; keyed per (domain, bytes)
+# the payload bytes so the same payload parses once. Bounded FIFO; keyed per (domain, bytes)
 # so distinct plugins never collide. Cold in a fresh process, so the by-value validate subprocess
 # still computes correctly.
-_HASH_MEMO: OrderedDict[str, Any] = OrderedDict()
-_HASH_MEMO_CAP = 64  # entries hold digests and short identity strings, never payload bytes
+# keyed by the payload itself: bytes cache their hash, so a repeat with the same object is O(1)
+_HASH_MEMO: OrderedDict[tuple[str, bytes], Any] = OrderedDict()
+_HASH_MEMO_CAP = 64  # also bounds the payloads the keys keep alive
 _HASH_MEMO_LOCK = threading.Lock()
 _T = TypeVar("_T")
 
 
 def memoized_model_hash(domain: str, payload: bytes, compute: Callable[[bytes], _T]) -> _T:
-    key = domain + ":" + hashlib.sha256(payload).hexdigest()
+    key = (domain, bytes(payload))
     with _HASH_MEMO_LOCK:  # get + move_to_end must not interleave with another thread's eviction
         if key in _HASH_MEMO:
             _HASH_MEMO.move_to_end(key)

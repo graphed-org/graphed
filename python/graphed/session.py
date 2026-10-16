@@ -506,13 +506,15 @@ class Session:
         source: Callable[[int], object],
         op: Callable[[int, str, list[object], Mapping[str, ParamValue]], object],
         external: Callable[[int, Callable[..., object], list[object]], object],
+        memo: dict[int, object] | None = None,
     ) -> object:
         """Evaluate the graph from ``array`` with caller-supplied handlers for sources, ops, and
         externals. `materialize` evaluates real data; projection evaluates reporting tracers.
+        Walks of several outputs that share one ``memo`` evaluate each shared node once.
 
         `materialize` reaches the m60 own-session guard through this one call."""
         self._mine([array])
-        cache: dict[int, object] = {}
+        cache: dict[int, object] = {} if memo is None else memo
 
         def inputs_of(node_id: int) -> tuple[int, ...]:
             if node_id in self._sources:

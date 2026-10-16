@@ -315,7 +315,8 @@ def apply(
             kw["depth_limit"] = int(params["depth_limit"])
         return ak.zip(zipped, **kw)
     if op == "ak.with_field":
-        return ak.with_field(operands[0], operands[1], where=params["field"])
+        value = scalar_param(params) if "scalar" in params else operands[1]
+        return ak.with_field(operands[0], value, where=params["field"])
     if op == "ak.firsts":
         return ak.firsts(operands[0], axis=int(params.get("axis", 1)))
     if op in ("ak.argmin", "ak.argmax"):
@@ -358,7 +359,7 @@ def apply(
     if op == "ak.with_name":
         named = ak.with_name(operands[0], str(params["name"]))
         if behavior:
-            return ak.Array(named.layout, behavior=dict(behavior), attrs=named.attrs)
+            return ak.Array(named.layout, behavior=behavior, attrs=named.attrs)
         return named
     if op == "ak.with_parameter":
         return ak.with_parameter(operands[0], str(params["key"]), params["value"])

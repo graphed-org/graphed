@@ -39,7 +39,7 @@ def test_ml_matrix_stacks_a_single_slot_entry() -> None:
     x = np.array([1.0, 2.0, 3.0])
     out = ml_matrix(("slot", 0), [x])
     assert out.shape == (3, 1)
-    assert out.dtype == np.float32
+    assert out.dtype == x.dtype
     assert out[:, 0].tolist() == [1.0, 2.0, 3.0]
 
 

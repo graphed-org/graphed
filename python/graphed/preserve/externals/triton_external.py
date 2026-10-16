@@ -102,8 +102,9 @@ def eval_triton(resource: Any, params: Mapping[str, Any], inputs: list[Any]) -> 
         named = {name: ml_matrix(entry, inputs) for name, entry in args[0][1].items()}
     requests = []
     for name, x in named.items():
+        # the server checks the declared type, which only it knows; requests are FP32 models'
         request = resource.module.InferInput(name, list(x.shape), "FP32")
-        request.set_data_from_numpy(x)
+        request.set_data_from_numpy(x.astype("float32", copy=False))
         requests.append(request)
     wanted = resource.module.InferRequestedOutput(output_name)
     result = resource.client.infer(str(params["model"]), requests, outputs=[wanted])

@@ -242,6 +242,16 @@ def record_external(
     ``output_type=`` declares the type of each element of the plugin's value (any spelling the
     session's backend accepts, see ``Session.record_external``); it is recorded as the node's form
     and its canonical string joins the node's params."""
+    from ...varied import containers_in, expand  # noqa: PLC0415  (`varied` imports `Array`)
+
+    if containers_in(*inputs):  # one External per universe, as `graphed.apply` records
+        return expand(
+            lambda *members: record_external(
+                session, plugin, payload, members, params=params, output_type=output_type
+            ),
+            tuple(inputs),
+            {},
+        )
     if plugin.check_params is not None:
         plugin.check_params(params or {})
     if params and "service" in params:

@@ -259,9 +259,16 @@ def evaluate_ir(
     nodes = store.nodes()
     wanted = list(store.outputs()) if outputs is None else list(outputs)
     cone = None if outputs is None and given is None else ir_cone(nodes, wanted, stop=given or ())
+    # a value is dropped once its last consumer has run, so a task holds only live intermediates
+    skipped = (
+        set() if cone is None else {nid for nid in range(len(nodes)) if nid not in cone} | set(given or ())
+    )
+    release = _last_consumers(
+        [() if nid in skipped else nd["inputs"] for nid, nd in enumerate(nodes)], keep=set(wanted)
+    )
     vals: list[object] = []
     for nid, nd in enumerate(nodes):
-        if cone is not None and (nid not in cone or (given is not None and nid in given)):
+        if nid in skipped:
             vals.append(None if given is None else given.get(nid))
             continue
         kind = nd["kind"]
@@ -281,12 +288,19 @@ def evaluate_ir(
             call = partial(backend.eval_stage, name, ins, nd["params"])
             vals.append(_dispatch(call, name, ins, (nid, None), on_failure))
         elif kind == "stage":
+            members = nd["members"]
+            member_inputs = [[i for tag, i in m["inputs"] if tag != "input"] for m in members]
+            release_member = _last_consumers(member_inputs, keep={len(members) - 1})
             mvals: list[object] = []
-            for index, m in enumerate(nd["members"]):
+            for index, m in enumerate(members):
                 mins = [ins[i] if tag == "input" else mvals[i] for tag, i in m["inputs"]]
                 mcall = partial(backend.eval_stage, m["name"], mins, m["params"])
                 mvals.append(_dispatch(mcall, m["name"], mins, (nid, index), on_failure))
+                del mins, mcall
+                for i in release_member.get(index, ()):
+                    mvals[i] = None
             vals.append(mvals[-1])
+            del mvals
         elif kind == "external":
             # Resolve by the specific (content_hash, params) `external_key` first — that is what
             # `aggregate_plan` wires, and it keeps N systematic universes off one payload distinct.
@@ -302,7 +316,24 @@ def evaluate_ir(
             vals.append(_dispatch(partial(fn, *ins), op, ins, (nid, None), on_failure))
         else:  # pragma: no cover - the codec only emits the kinds above
             raise GraphedError(f"evaluate_ir: unknown node kind {kind!r}")
+        del ins
+        for i in release.get(nid, ()):
+            vals[i] = None
     return [vals[o] for o in wanted]
+
+
+def _last_consumers(inputs: Sequence[Sequence[int]], *, keep: set[int]) -> dict[int, list[int]]:
+    """``{consumer: [values it is the last to read]}`` over ``inputs`` (each consumer's input
+    indices, in evaluation order), leaving out the indices in ``keep``."""
+    last: dict[int, int] = {}
+    for consumer, used in enumerate(inputs):
+        for i in used:
+            last[i] = consumer
+    out: dict[int, list[int]] = {}
+    for i, consumer in last.items():
+        if i not in keep:
+            out.setdefault(consumer, []).append(i)
+    return out
 
 
 def ir_cone(
