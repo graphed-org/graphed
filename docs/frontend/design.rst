@@ -1303,9 +1303,12 @@ A library that records graphed operations on an analyst's behalf — a jet-clust
 file reader, a corrections layer — has four things to get right.
 
 **Your frames are not the user's line.** Every node remembers the source line that created it, and
-that line is the first frame outside ``graphed`` itself. From inside your library that frame is
-*yours*, so every error and every sourcemap entry points at your source instead of the analysis.
-Declare yourself internal once, at import::
+that line is the first frame outside ``graphed`` itself and outside installed packages
+(site-packages), or the first frame outside ``graphed`` when every other frame is installed, as for
+an analysis installed non-editable. An installed library is skipped already; from inside one run
+from a source tree, or an editable install, that frame is *yours*, so every error and every
+sourcemap entry points at your source instead of the analysis. Declare yourself internal once, at
+import::
 
     import graphed.provenance
 

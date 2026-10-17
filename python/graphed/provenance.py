@@ -9,7 +9,9 @@ reads the calling thread's own stack). It is toggleable so builds can opt out of
 from __future__ import annotations
 
 import ast
+import os
 import sys
+import sysconfig
 import threading
 from dataclasses import dataclass
 from types import FrameType
@@ -27,6 +29,18 @@ _lock = threading.Lock()
 #: has). A tuple so the per-frame test in `capture` — on the hot path of every recorded op — stays
 #: ONE `str.startswith` call however many libraries have registered.
 _SKIP: tuple[str, ...] = ("graphed",)
+
+#: installed third-party code (site-packages), skipped unless no frame lies outside it: an analysis
+#: installed non-editable lives there too, and its own frame is then the best answer left.
+_INSTALLED: tuple[str, ...] = tuple(
+    sorted(
+        {
+            os.path.join(path, "")
+            for key in ("purelib", "platlib")
+            for path in (sysconfig.get_path(key), os.path.realpath(sysconfig.get_path(key)))
+        }
+    )
+)
 
 
 @dataclass(frozen=True)
@@ -92,7 +106,8 @@ def _source_text(frame: FrameType) -> str:
 
 
 def capture() -> Provenance:
-    """Return provenance for the first stack frame outside the graphed* packages (the user's line).
+    """Return provenance for the user's line: the first stack frame outside the graphed* packages and
+    outside installed third-party code, else the first frame outside graphed*.
 
     Walks the frame chain directly (`f_back`) rather than `inspect.stack()`, which builds a
     `FrameInfo` — reading and `stat`ing the source file — for EVERY frame before we discard all but
@@ -104,15 +119,22 @@ def capture() -> Provenance:
         return _DISABLED
     frame: FrameType | None = sys._getframe(1)  # capture()'s caller; its own frame is graphed*
     skip = _SKIP  # one read of the rebound global, so a concurrent registration cannot split a walk
+    first: FrameType | None = None
     while frame is not None:
         # the trailing dot is what makes a registered prefix match whole dotted COMPONENTS; it
         # cannot change the built-in `graphed` answer, which is a prefix of the name either way
         if not (frame.f_globals.get("__name__", "") + ".").startswith(skip):
-            return Provenance(
-                filename=frame.f_code.co_filename,
-                lineno=frame.f_lineno,
-                function=frame.f_code.co_name,
-                source=_source_text(frame),
-            )
+            if not frame.f_code.co_filename.startswith(_INSTALLED):
+                return _provenance(frame)
+            first = first or frame
         frame = frame.f_back
-    return Provenance("<unknown>", 0)
+    return Provenance("<unknown>", 0) if first is None else _provenance(first)
+
+
+def _provenance(frame: FrameType) -> Provenance:
+    return Provenance(
+        filename=frame.f_code.co_filename,
+        lineno=frame.f_lineno,
+        function=frame.f_code.co_name,
+        source=_source_text(frame),
+    )
