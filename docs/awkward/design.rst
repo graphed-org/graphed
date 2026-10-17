@@ -763,16 +763,17 @@ Printed output:
 
 ``select=`` is the selection, given per level: a single row mask, or a mapping keyed by the
 record's own depth (``0`` for the event mask) and by ``(field, depth)`` for a cut scoped to one
-collection. ``to_parquet`` still returns an ordinary list of part paths; leave ``select=`` out and
-you get a plain skim, with none of the extra columns below.
+collection. A mask may be option-typed: a ``None`` entry selects as ak indexing does, giving a
+``None`` row or object. ``to_parquet`` still returns an ordinary list of part paths; leave
+``select=`` out and you get a plain skim, with none of the extra columns below.
 
 **What the file holds.** One pass over one compiled graph writes: the superset of rows — the OR
 over every universe's event mask, so no universe loses a row it selected; the nominal values on
 those rows; for each leaf that a variation actually changes, a same-dtype XOR delta against
 nominal (or the universe's value as-is, when it changes the leaf's type or the leaf is anything but
 a primitive, optional, or once-jagged, which an XOR delta cannot rebuild); each universe's
-per-level mask as a bit-packed column; and a small JSON manifest in the parquet key-value metadata
-naming what each stored column is.
+per-level mask as a bit-packed column (as-is when it is option-typed); and a small JSON manifest
+in the parquet key-value metadata naming what each stored column is.
 
 A leaf that is equal in every universe contributes no delta column at all, which is why this is
 cheaper than *N* skims rather than merely tidier: only the values a systematic actually moves are
