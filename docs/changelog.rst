@@ -39,7 +39,7 @@ Fixes
 * An op recorded or refused inside installed third-party code (``ak.from_iter``, a ``boost_histogram``
   or ``hist`` fill, a correctionlib ``evaluate``) names the analysis line that called it, not the
   library's file: provenance skips frames in site-packages, unless every frame outside graphed is
-  there, as for an analysis installed non-editable.
+  there, as for an analysis installed non-editable (#92).
 * ``gak.values_astype``, ``zeros_like``, ``ones_like`` and ``full_like`` take a dtype as numpy reads
   one (``np.float64``, ``float``, ``np.dtype(...)``), not only its name (#83).
 * ``gak.cartesian``/``argcartesian`` (and ``ak.cartesian`` on a deferred array) take a dict of named
