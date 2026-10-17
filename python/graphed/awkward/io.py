@@ -48,6 +48,7 @@ from graphed.varied import Varied, member_of, most_derived_context, refuse_conta
 from graphed.write import PartitionedSource
 
 from .backend import AwkwardBackend, AwkwardForm
+from .functions import fill_none
 from .projection import project_buffers
 
 
@@ -387,6 +388,16 @@ def _normalize_select(select: Any) -> dict[_SelectKey, Any]:
     return {0: select}
 
 
+def _is_option(session: Session, array: Any) -> bool:
+    """Whether a mask's type holds an option at any depth (`?bool`, `var * ?bool`, `?var * bool`)."""
+    t = _tt(session, array).type.content
+    while t is not None:
+        if isinstance(t, ak.types.OptionType):
+            return True
+        t = getattr(t, "content", None)
+    return False
+
+
 def _tt(session: Session, array: Any) -> ak.Array:
     """The typetracer of an array's form — the awkward-idiom depth/leaf oracle (§6.4a's `.tt.ndim`)."""
     form = session.form(array)
@@ -614,6 +625,8 @@ class _MaskSpec:
     depth: int
     field_path: str | None
     members: tuple[tuple[str, int], ...]
+    #: labels whose mask is option-typed: stored as-is (`"option"`), since packbits has no `None`.
+    option: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -706,14 +719,17 @@ class _VariedWritePart:
                         f"the level-{mask_spec.entry_flat} select= mask for {label!r} spans {len(mask)} "
                         f"rows but the record spans {len(base)} (§6.4a(2b))"
                     )
+                valid = ~ak.is_none(mask, axis=0)  # a None row has no objects to check
                 if mask_spec.depth >= 1 and not np.array_equal(
-                    np.asarray(ak.num(mask)), np.asarray(ak.num(field_values))
+                    np.asarray(ak.num(mask[valid])), np.asarray(ak.num(field_values[valid]))
                 ):  # level->=1 STRUCTURAL: the mask's offsets must match the field's (§6.4a)
                     raise GraphedError(
                         f"the level-{mask_spec.entry_flat} select= mask for {label!r} does not share the "
                         "offsets of the field it filters (§6.4a level->=1 structural check)"
                     )
-                cols[f"{_VARY_PREFIX}{label}__mask__{mask_spec.entry_flat}"] = _encode_mask(mask)
+                cols[f"{_VARY_PREFIX}{label}__mask__{mask_spec.entry_flat}"] = (
+                    mask if label in mask_spec.option else _encode_mask(mask)
+                )
 
         if self.wrapped:
             fields: dict[str, ak.Array] = {_BASE_FIELD: base}
@@ -776,7 +792,7 @@ def _build_manifest(
     for ms in mask_specs:
         for label in labels:
             manifest[label][f"{_VARY_PREFIX}{label}__mask__{ms.entry_flat}"] = {
-                "representation": "packbits",
+                "representation": "option" if label in ms.option else "packbits",
                 "field": None,
                 "entry": ms.manifest,
             }
@@ -833,7 +849,13 @@ def _write_varied(
 
     # --- superset rows: the level-0 OR over the per-label masks (ordinary graph ops, §6.4a) ---
     if level0 is not None:
-        superset = functools.reduce(operator.or_, (member_of(level0, label) for label in labels))
+        superset = functools.reduce(
+            operator.or_,
+            (
+                fill_none(m, True) if _is_option(session, m) else m  # a None row stays, as a None record
+                for m in (member_of(level0, label) for label in labels)
+            ),
+        )
     else:
         superset = None
     base = nominal_record if superset is None else nominal_record[superset]
@@ -888,13 +910,23 @@ def _write_varied(
         mask = entries[key]
         field_path = None if isinstance(key, int) else key[0]
         members = []
+        option = set()
         for label in labels:
             member = member_of(mask, label)
+            if _is_option(session, member):
+                option.add(label)
             member = member if superset is None else member[superset]
             members.append((label, member.node_id))
             outputs.append(member)
         mask_specs.append(
-            _MaskSpec(_entry_flat(key), _entry_manifest(key), _entry_depth(key), field_path, tuple(members))
+            _MaskSpec(
+                _entry_flat(key),
+                _entry_manifest(key),
+                _entry_depth(key),
+                field_path,
+                tuple(members),
+                frozenset(option),
+            )
         )
 
     compiled = compile_ir(session, *outputs)
@@ -1163,23 +1195,30 @@ def _reconstruct_universe(
                 value = _apply_xor(nominal_value, full[col], nominal_value.ndim > 1)
             rec = ak.with_field(rec, value, where=path.split("."))
 
-    packed = {  # entry -> the label's packbits column, still at superset granularity
-        _entry_key(info["entry"]): full[col]
+    packed = {  # entry -> the label's mask column, still at superset granularity
+        _entry_key(info["entry"]): (info["representation"], full[col])
         for col, info in columns.items()
-        if info["representation"] == "packbits"
+        if info["representation"] in ("packbits", "option")
     }
     # level 0 selects rows; a higher level's mask is decoded over the PRE-selection field counts, then
     # restricted to the kept rows — `X[m0][m_k[m0]]` == the analyst's `X[event][object]` (§6.4c).
     higher: list[tuple[str | None, ak.Array]] = []
-    m0: np.ndarray | None = None
+    m0: Any = None
     for entry in manifest["levels"]:
         key = _entry_key(entry)
         field_path, depth = key
-        if depth == 0:
-            m0 = _decode_level0(packed[key])
+        representation, column = packed[key]
+        if representation == "option":  # indexes as ak does: a None entry gives a None
+            mask: Any = column
+        elif depth == 0:
+            mask = _decode_level0(column)
         else:
             target = rec if field_path is None else rec[field_path]
-            higher.append((field_path, _decode_jagged(packed[key], np.asarray(ak.num(target)))))
+            mask = _decode_jagged(column, np.asarray(ak.num(target)))
+        if depth == 0:
+            m0 = mask
+        else:
+            higher.append((field_path, mask))
 
     if m0 is not None:
         rec = rec[m0]
@@ -1191,11 +1230,15 @@ def _reconstruct_universe(
             rec = ak.with_field(rec, rec[field_path][inner], where=field_path.split("."))
     # the XOR rebuild carries no parameters: impose the universe's record type (nominal's, unless stored)
     stored = columns.get(f"{_RECORD_TYPE}{label}") or manifest["nominal"].get(f"{_RECORD_TYPE}nominal")
+    option = isinstance(rec.type.content, ak.types.OptionType)  # an option level-0 mask gave None rows
+    target = rec.type.content.content if option else rec.type.content
     if stored is not None:
-        return ak.enforce_type(rec, ak.forms.from_dict(stored["type"]).type)
-    if rec.type.content.is_equal_to(base.type.content):
-        return ak.enforce_type(rec, base.type.content)
-    return rec
+        want = ak.forms.from_dict(stored["type"]).type
+    elif target.is_equal_to(base.type.content):
+        want = base.type.content
+    else:
+        return rec
+    return ak.enforce_type(rec, ak.types.OptionType(want) if option else want)
 
 
 def read_varied(path: str) -> dict[str, ak.Array]:

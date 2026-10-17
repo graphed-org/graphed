@@ -78,6 +78,12 @@ Fixes
   weight=[w, 2.0])``, graphed-histogram's constant fills): the histogram plugin rebuilds the
   fill's content hash and evaluator with its constants, so ``build_bundle`` no longer reports a
   hash mismatch and ``reproduce`` replays the fill (#89).
+* A varied ``to_parquet`` whose ``select=`` mask is option-typed (``gak.mask(e.m > 100, e.n > 0)``)
+  selects as ak indexing does: a ``None`` row reads back from ``read_varied`` as a ``None`` record in
+  every universe whose mask holds it, and a ``None`` object as ``None``, with the leaves' own types.
+  It raised ``ValueError`` at a level-1 mask and dropped the row at level 0, making the leaves
+  optional.
+
 
 0.0.7
 -----
