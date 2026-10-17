@@ -82,7 +82,7 @@ Fixes
   selects as ak indexing does: a ``None`` row reads back from ``read_varied`` as a ``None`` record in
   every universe whose mask holds it, and a ``None`` object as ``None``, with the leaves' own types.
   It raised ``ValueError`` at a level-1 mask and dropped the row at level 0, making the leaves
-  optional.
+  optional (#91).
 
 
 0.0.7
