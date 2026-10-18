@@ -4,6 +4,23 @@ What changed
 Newest release first. Numbers in parentheses are the pull requests on
 `graphed-org/graphed <https://github.com/graphed-org/graphed>`_.
 
+0.0.9 (unreleased)
+------------------
+
+Fixes
+~~~~~
+
+* ``gak.apply_correction`` takes ``compound=True`` to apply an entry of the set's
+  ``compound_corrections``, and searches only the list asked for: a compound correction that
+  shares its name with a regular one evaluated the regular one. The flag is part of the node's
+  identity; a regular correction's node and plan bytes are unchanged. A compound correction
+  recorded without ``compound=True`` now raises naming both lists, where it used to fall back
+  to ``compound_corrections`` (#96).
+* ``gak.apply_correction`` with ``args=``, and an External recorded through a preserve plugin,
+  record the broadcast of their array inputs' types instead of the first input's: a flat argument
+  before a jagged one recorded a flat result, so ``gak.sum``/``gak.num``/``gak.flatten`` at
+  ``axis=1`` on it raised ``GraphedTypeError`` (#97).
+
 0.0.8
 -----
 
