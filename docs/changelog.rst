@@ -11,11 +11,10 @@ Fixes
 ~~~~~
 
 * ``gak.apply_correction`` takes ``compound=True`` to apply an entry of the set's
-  ``compound_corrections``, and searches only the list asked for: a compound correction that
-  shares its name with a regular one evaluated the regular one. The flag is part of the node's
-  identity; a regular correction's node and plan bytes are unchanged. A compound correction
-  recorded without ``compound=True`` now raises naming both lists, where it used to fall back
-  to ``compound_corrections`` (#96).
+  ``compound_corrections``: a compound correction that shares its name with a regular one
+  evaluated the regular one. The flag is part of the node's identity; a regular correction's node
+  and plan bytes are unchanged. Without the flag a regular correction still wins and a
+  compound-only name still falls back to ``compound_corrections`` (#96).
 * ``gak.apply_correction`` with ``args=``, and an External recorded through a preserve plugin,
   record the broadcast of their array inputs' types instead of the first input's: a flat argument
   before a jagged one recorded a flat result, so ``gak.sum``/``gak.num``/``gak.flatten`` at

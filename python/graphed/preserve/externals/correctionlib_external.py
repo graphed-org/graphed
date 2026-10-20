@@ -117,12 +117,14 @@ def _flat_buffer_fast_path(evaluate: Callable[..., Any], call: list[Any]) -> Any
 
 def _resolve(cset: Any, name: str, compound: bool) -> Any:
     """A *compound* correction (the JEC L1L2L3 stack) lives in ``cset.compound``, not in ``cset``,
-    and the schema lets one name sit in both, so only the list asked for is searched. Both
-    ``__getitem__``s raise ``IndexError`` on a miss instead of ``KeyError``, so membership is
-    tested against the key sets rather than caught."""
-    corrections = cset.compound if compound else cset
-    if name in set(corrections):
-        return corrections[name]
+    and the schema lets one name sit in both: ``compound`` searches only the compound list, else a
+    regular correction wins and the compound list is the fallback. Both ``__getitem__``s raise
+    ``IndexError`` on a miss instead of ``KeyError``, so membership is tested against the key sets
+    rather than caught."""
+    if not compound and name in set(cset):
+        return cset[name]
+    if name in set(cset.compound):
+        return cset.compound[name]
     raise PreserveError(
         f"correctionlib payload has no {'compound ' if compound else ''}correction named {name!r} "
         f"(corrections: {sorted(cset)}; compound_corrections: {sorted(cset.compound)})"

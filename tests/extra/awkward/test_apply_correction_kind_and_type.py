@@ -34,7 +34,7 @@ def _formula(name: str, expression: str, variables: list[str]) -> dict[str, Any]
     }
 
 
-#: a regular and a compound correction both named "X" (legal: names are unique per list only)
+#: a regular and a compound correction both named "X" (legal: names are unique per list only); "Y" is compound only
 CSET = json.dumps(
     {
         "schema_version": 2,
@@ -52,7 +52,16 @@ CSET = json.dumps(
                 "input_op": "*",
                 "output_op": "*",
                 "stack": ["a"],
-            }
+            },
+            {
+                "name": "Y",
+                "inputs": [{"name": "pt", "type": "real"}],
+                "output": {"name": "sf", "type": "real"},
+                "inputs_update": [],
+                "input_op": "*",
+                "output_op": "*",
+                "stack": ["a"],
+            },
         ],
     }
 ).encode("utf-8")
@@ -88,7 +97,15 @@ def test_a_plugin_recorded_compound_correction_evaluates_the_compound() -> None:
     assert ak.Array(session.materialize(out)).tolist() == EAGER.compound["X"].evaluate(EVENTS.pt).tolist()
 
 
-def test_a_compound_name_missing_from_the_compound_list_is_refused() -> None:
+def test_a_compound_only_name_without_the_flag_falls_back_to_the_compound_list() -> None:
+    session = Session(AwkwardBackend())
+    pt = from_awkward(session, "events", EVENTS).pt
+    out = gak.apply_correction(CSET, "Y", [pt], _unusable, args=["$0"])
+
+    assert ak.Array(session.materialize(out)).tolist() == EAGER.compound["Y"].evaluate(EVENTS.pt).tolist()
+
+
+def test_the_compound_flag_on_a_regular_only_name_is_refused() -> None:
     session = Session(AwkwardBackend())
     pt = from_awkward(session, "events", EVENTS).pt
     out = gak.apply_correction(CSET, "a", [pt], _unusable, args=["$0"], compound=True)

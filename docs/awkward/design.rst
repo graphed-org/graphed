@@ -453,12 +453,13 @@ worker — so a wrapper around ``evaluate`` cannot make one backend disagree wit
 in-process call gets the plugin's flat-buffer evaluation rather than correctionlib's per-call
 ``ak.transform``. Without ``args=`` (the older recording) your callable is still the evaluation.
 
-A correction set keeps its ``corrections`` and its ``compound_corrections`` (a stack such as the
-JEC L1L2L3 chain) in separate lists, and a name may appear in both. ``apply_correction`` looks
-``name`` up in ``corrections``; pass ``compound=True`` for a compound one. The flag is part of the
-node's identity, so the two are never merged as duplicates. The recorded type is what correctionlib
-returns: the broadcast of every array the template passes, so ``args=["$0", "$1"]`` over a per-event
-``rho`` and a per-jet ``pt`` records a per-jet result.
+A correction set keeps its ``corrections`` and its ``compound_corrections`` (a stack such as the JEC
+L1L2L3 chain) in separate lists, and a name may appear in both. ``apply_correction`` looks ``name``
+up in ``corrections``, then in ``compound_corrections``; ``compound=True`` searches only the
+compound list, which is how a compound correction sharing a regular one's name is reached. The flag
+is part of the node's identity, so the two are never merged as duplicates. The recorded type is what
+correctionlib returns: the broadcast of every array the template passes, so ``args=["$0", "$1"]``
+over a per-event ``rho`` and a per-jet ``pt`` records a per-jet result.
 
 Declaring what an external call returns
 ---------------------------------------

@@ -554,7 +554,8 @@ def apply_correction(
     """Record a correctionlib scale-factor application as an External node.
 
     ``compound=True`` names an entry of the set's ``compound_corrections`` rather than its
-    ``corrections``; the two lists may share a name, so only the one asked for is searched.
+    ``corrections``; without it a regular correction wins and a compound-only name falls back to
+    ``compound_corrections``.
 
     With ``args=`` (e.g. ``["nominal", "$0", "$1"]``): the M28 preservation-aligned path —
     content-identity descriptor, no path in the IR, inputs passed NATIVELY (awkward/numpy, jagged

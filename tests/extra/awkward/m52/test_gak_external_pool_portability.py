@@ -368,7 +368,7 @@ def test_a_compound_correction_resolves_out_of_cset_compound() -> None:
     correctionlib = pytest.importorskip("correctionlib")
     session = Session(AwkwardBackend())
     ev = from_awkward(session, "events", _COMPOUND_EVENTS)
-    jec = gak.apply_correction(COMPOUND_CSET, "jec", [ev.Jet.pt], _unusable, args=["$0"], compound=True)
+    jec = gak.apply_correction(COMPOUND_CSET, "jec", [ev.Jet.pt], _unusable, args=["$0"])
 
     got = ak.Array(session.materialize(jec))
     flat_pt = ak.to_numpy(ak.flatten(_COMPOUND_EVENTS.Jet.pt))
