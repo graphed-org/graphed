@@ -4,18 +4,11 @@ name: release
 # same standalone §A.5 matrix as wheels.yml (Linux manylinux+musllinux x86_64/aarch64, macOS x86_64+
 # arm64, Windows x86_64+arm64; one abi3 wheel per target + dedicated free-threaded cp314t/cp315t wheels).
 #
-# Auth:  a PyPI API token stored as the repo secret PYPI_TOKEN (uploaded as user __token__).
-# Verify: every wheel + the sdist gets an OIDC-signed GitHub build-provenance attestation
-#         (actions/attest-build-provenance, Sigstore) tying the artifact to this repo+workflow+commit.
-#         Anyone can verify a downloaded artifact with:
+# Auth:  PyPI Trusted Publishing (OIDC): publisher owner=graphed-org, repo=graphed,
+#        workflow=release.yml, environment=pypi; no API token is stored.
+# Verify: the upload carries PyPI's PEP 740 attestations (Sigstore-signed), and every wheel + the
+#         sdist also gets a GitHub build-provenance attestation, verifiable with:
 #             gh attestation verify <file> --repo graphed-org/graphed
-#
-# Why token auth AND OIDC (not PyPI's own PEP 740 attestations): PyPI's built-in attestations are
-# only generated via Trusted Publishing, which is mutually exclusive with API-token auth. So we
-# authenticate the upload with the token and attach independent, verifiable provenance via GitHub's
-# OIDC identity. To switch to Trusted Publishing instead: configure a publisher at
-# https://pypi.org/manage/project/graphed/settings/publishing/ (owner=graphed-org, repo=graphed,
-# workflow=release.yml, environment=pypi), then drop `password:` and set the publish `attestations: true`.
 #
 # NOTE: bump the version (Cargo.toml + pyproject) before tagging — re-uploading a version that is
 # already on PyPI is rejected.
@@ -68,12 +61,12 @@ jobs:
           path: dist/*.tar.gz
 
   publish:
-    name: publish to PyPI (token auth + OIDC build provenance)
+    name: publish to PyPI (Trusted Publishing + attestations)
     needs: [wheels, sdist]
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
-      id-token: write # mint the OIDC token for Sigstore-signed build provenance
+      id-token: write # OIDC: authenticate to PyPI and sign the attestations
       attestations: write # persist the provenance attestations to this repo
       contents: read
     steps:
@@ -89,7 +82,4 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist
-          password: ${{ secrets.PYPI_TOKEN }}
-          # PEP 740 attestations require Trusted Publishing (incompatible with token auth); provenance
-          # is supplied by the attest-build-provenance step above instead.
-          attestations: false
+          attestations: true # PEP 740 provenance on PyPI (Trusted Publishing only)
