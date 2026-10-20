@@ -21,7 +21,7 @@ from graphed.errors import GraphedTypeError
 from graphed.provenance import capture
 
 from . import payloads
-from .backend import AwkwardForm, astype_form
+from .backend import AwkwardForm, astype_form, broadcast_form
 
 
 def join(left: Array, right: Array, *, on: Sequence[str], how: str = "inner", grouped: bool = False) -> Array:
@@ -519,7 +519,7 @@ class _TemplateExternal:
 
     kind: str
     payload: bytes
-    params: dict[str, str]
+    params: dict[str, ParamValue]
     call: Callable[..., object] | None
 
     def __getstate__(self) -> dict[str, Any]:
@@ -549,8 +549,13 @@ def apply_correction(
     evaluator: Callable[..., object],
     *,
     args: list[object] | None = None,
+    compound: bool = False,
 ) -> Array:
     """Record a correctionlib scale-factor application as an External node.
+
+    ``compound=True`` names an entry of the set's ``compound_corrections`` rather than its
+    ``corrections``; without it a regular correction wins and a compound-only name falls back to
+    ``compound_corrections``.
 
     With ``args=`` (e.g. ``["nominal", "$0", "$1"]``): the M28 preservation-aligned path —
     content-identity descriptor, no path in the IR, inputs passed NATIVELY (awkward/numpy, jagged
@@ -561,18 +566,21 @@ def apply_correction(
     path EVERY backend — in-process included — evaluates through the correctionlib preserve
     plugin, rebuilt from the payload bytes under the recorded template, so ``evaluator`` is
     ignored: the two cannot diverge, and in-process gets the plugin's flat-buffer evaluation
-    instead of correctionlib's per-call ``ak.transform`` wrapper."""
+    instead of correctionlib's per-call ``ak.transform`` wrapper. The recorded type is the
+    broadcast of every slotted input, as that wrapper broadcasts them."""
+    # recorded only when set, so a regular correction's node identity is what it always was
+    which: dict[str, ParamValue] = {"compound": True} if compound else {}
     if args is None:
         return inputs[0].session.record_external(
-            "correction", evaluator, list(inputs), {"path": str(payload), "name": name}
+            "correction", evaluator, list(inputs), {"path": str(payload), "name": name, **which}
         )
     blob = _payload_bytes(payload)
     entries = _parse_template(args, len(inputs), constants=True, groups=False)
-    first_slot = next(int(i) for kind, i in entries if kind == "slot")
+    slots = [inputs[i] for kind, i in entries if kind == "slot"]
     session = inputs[0].session
     session._mine(list(inputs), ("correction", capture()))  # before `session.form` reads an input
     descriptor = payloads.correctionlib_contents_descriptor(blob, name)
-    params = {"name": name, "args": json.dumps(args, sort_keys=False)}
+    params: dict[str, ParamValue] = {"name": name, "args": json.dumps(args, sort_keys=False), **which}
     return session.record_external(
         "correction",
         # call=None: the plugin owns evaluation on every backend (see _TemplateExternal)
@@ -581,7 +589,7 @@ def apply_correction(
         params,
         descriptor=descriptor,
         # the correctionlib plugin's value is float64 (its outputs are `real`), checked at run time
-        form=astype_form(cast("AwkwardForm", session.form(inputs[first_slot])), "float64"),
+        form=astype_form(broadcast_form([cast("AwkwardForm", session.form(a)) for a in slots]), "float64"),
         form_params={"output_dtype": "float64"},
     )
 
