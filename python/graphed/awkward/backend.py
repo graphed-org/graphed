@@ -162,6 +162,15 @@ def astype_form(form: AwkwardForm, dtype: object) -> AwkwardForm:
     return AwkwardForm(ak.values_astype(form.tt, t.primitive))
 
 
+def broadcast_form(forms: Sequence[AwkwardForm]) -> AwkwardForm:
+    """The form ``ak.broadcast_arrays`` gives the array ``forms`` (scalars broadcast away), or the
+    first form when none is an array."""
+    arrays = [f for f in forms if isinstance(f.tt, ak.Array)]
+    if len(arrays) < 2:
+        return (arrays or list(forms))[0]
+    return AwkwardForm(ak.broadcast_arrays(*(f.tt for f in arrays))[0])
+
+
 def declared_form(forms: Sequence[AwkwardForm], canonical: str) -> AwkwardForm:
     """The form of an External declared ``canonical``: that element type over an array input's
     length, or a scalar (a record one included) when no input is an array."""
@@ -269,14 +278,14 @@ class AwkwardBackend:
             return AwkwardForm(join.join_form([f.tt for f in forms], params))
         if op in _EXTERNAL:
             # an External's value type is not derivable from its inputs: a declared `output_type`
-            # is recorded as given, a plugin's static leaf `output_dtype` casts the first input's
-            # leaves, and anything else records the first input's form
+            # is recorded as given, a plugin's static leaf `output_dtype` casts the leaves of the
+            # inputs' broadcast, and anything else records the first input's form
             declared = params.get("output_type")
             if declared is not None:
                 return declared_form(forms, str(declared))
             leaf = params.get("output_dtype")
             if leaf is not None:
-                return astype_form(forms[0], leaf)
+                return astype_form(broadcast_form(forms), leaf)
             return forms[0]
         operands = [f.tt for f in forms]
         return AwkwardForm(apply(op, operands, params, behavior=self._behavior))
