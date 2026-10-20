@@ -63,13 +63,15 @@ class PartWrite:
     an fsspec URL and the part lands on its filesystem. ``codec(value, path, kv)`` writes it: the
     backend's format. ``metadata`` values that are Arrays are evaluated per part, so a reduction
     there is THIS part's partial; any other value is ``str()``-ed once at build. ``kv`` is
-    ``None`` exactly when ``metadata`` is."""
+    ``None`` exactly when ``metadata`` is. ``storage_options`` go to the fsspec filesystem the
+    part's directory is created on; the codec opens its own."""
 
     array: Array
     destination: str
     name: Callable[[Partition], str]
     codec: Callable[[object, str, Mapping[str, str] | None], None]
     metadata: Mapping[str, Any] | None = None
+    storage_options: Mapping[str, Any] | None = None
 
 
 # ---- writer-side part naming and indexing (R15.9) ------------------------------------------------
@@ -152,17 +154,18 @@ def url_fs(url: str, **storage_options: Any) -> tuple[Any, str]:
     return fs, stripped
 
 
-def part_fs(path: str) -> tuple[Any, str]:
+def part_fs(path: str, **storage_options: Any) -> tuple[Any, str]:
     """``(filesystem, path on it)`` for a part — the pair pyarrow's ``filesystem=`` takes: fsspec's
-    for a URL, ``(None, path)`` for a local path, which never imports fsspec."""
+    for a URL, with ``storage_options``, ``(None, path)`` for a local path, which never imports
+    fsspec."""
     if not is_url(path):
         return None, path
-    return url_fs(path)
+    return url_fs(path, **storage_options)
 
 
-def prepare_part(path: str) -> tuple[Any, str]:
+def prepare_part(path: str, **storage_options: Any) -> tuple[Any, str]:
     """Create ``path``'s parent directory on the part's own filesystem; return :func:`part_fs`."""
-    fs, where = part_fs(path)
+    fs, where = part_fs(path, **storage_options)
     if fs is None:
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     else:

@@ -4,6 +4,14 @@ What changed
 Newest release first. Numbers in parentheses are the pull requests on
 `graphed-org/graphed <https://github.com/graphed-org/graphed>`_.
 
+0.0.9 (unreleased)
+------------------
+
+* ``PartWrite`` takes ``storage_options``, given to the fsspec filesystem its part directory is
+  created on; that filesystem was built from the URL alone, so a destination needing options to
+  connect (S3 with a custom endpoint, sftp) failed before its codec ran. A write without them ships
+  as before, so its plan's bytes do not change (uproot5#1758).
+
 0.0.8
 -----
 

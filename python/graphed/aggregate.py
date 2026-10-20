@@ -46,16 +46,17 @@ from .write import PartitionedSource, PartWrite, declared_columns, join_part, pr
 T = TypeVar("T")
 V = TypeVar("V")
 
-#: A write as shipped: ``(codec, destination, name, value slot, kv)``, where ``kv`` is ``None`` or
-#: ``((key, slot | str), ...)`` — an int slot for an Array value, the build-time ``str()`` otherwise.
+#: A write as shipped: ``(codec, destination, name, value slot, kv[, storage_options])``, where
+#: ``kv`` is ``None`` or ``((key, slot | str), ...)`` — an int slot for an Array value, the
+#: build-time ``str()`` otherwise — and ``storage_options`` items ship only when given, so a plan
+#: without them pickles as it did before they existed.
 #: Never a `PartWrite`: its Array holds the session's store, which does not pickle.
-_ShippedWrite = tuple[
-    Callable[[object, str, Mapping[str, str] | None], None],
-    str,
-    Callable[[Partition], str],
-    int,
-    tuple[tuple[str, int | str], ...] | None,
-]
+_Codec = Callable[[object, str, Mapping[str, str] | None], None]
+_Kv = tuple[tuple[str, int | str], ...] | None
+_ShippedWrite = (
+    tuple[_Codec, str, Callable[[Partition], str], int, _Kv]
+    | tuple[_Codec, str, Callable[[Partition], str], int, _Kv, tuple[tuple[str, Any], ...]]
+)
 
 
 @dataclass(frozen=True)
@@ -207,12 +208,12 @@ class _PartitionReduce(Generic[V]):
 
     def part_paths(self, partition: Partition) -> list[str]:
         """Where this partition's parts land, without reading."""
-        return [join_part(destination, name(partition)) for _, destination, name, _, _ in self.writes]
+        return [join_part(destination, name(partition)) for _, destination, name, *_ in self.writes]
 
     def _write(self, values: list[object], partition: Partition) -> list[object]:
         paths = self.part_paths(partition)
-        for (codec, _, _, slot, kv), path in zip(self.writes, paths, strict=True):
-            prepare_part(path)
+        for (codec, _, _, slot, kv, *storage_options), path in zip(self.writes, paths, strict=True):
+            prepare_part(path, **dict(*storage_options))
             meta = None if kv is None else {k: v if isinstance(v, str) else str(values[v]) for k, v in kv}
             codec(values[slot], path, meta)
         return [*values[: self.n_values], *paths]
@@ -444,6 +445,7 @@ def aggregate_plan(
                 None
                 if w.metadata is None
                 else tuple((k, slot(v) if isinstance(v, Array) else str(v)) for k, v in w.metadata.items()),
+                *((tuple(w.storage_options.items()),) if w.storage_options else ()),
             )
             for w in writes
         ),
