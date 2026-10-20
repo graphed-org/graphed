@@ -479,7 +479,10 @@ class Array:
             if kind == "introspection":  # answered at record time; nothing is recorded
                 backend: Any = self._session.backend  # the optional hook that goes with this kind
                 return backend.introspect(self._session.form(self), name)
-        from .errors import GraphedTypeError, MissingFieldError  # noqa: PLC0415  (cycle: errors -> provenance -> array)
+        from .errors import (  # noqa: PLC0415  (cycle: errors -> provenance -> array)
+            GraphedTypeError,
+            MissingFieldError,
+        )
 
         try:
             return self._session.record_op("field", [self], {"field": name})

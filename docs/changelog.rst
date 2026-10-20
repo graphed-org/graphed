@@ -19,6 +19,10 @@ Fixes
   record the broadcast of their array inputs' types instead of the first input's: a flat argument
   before a jagged one recorded a flat result, so ``gak.sum``/``gak.num``/``gak.flatten`` at
   ``axis=1`` on it raised ``GraphedTypeError`` (#97).
+* ``PartWrite`` takes ``storage_options``, given to the fsspec filesystem its part directory is
+  created on; that filesystem was built from the URL alone, so a destination needing options to
+  connect (S3 with a custom endpoint, sftp) failed before its codec ran. A write without them ships
+  as before, so its plan's bytes do not change (uproot5#1758).
 
 0.0.8
 -----
