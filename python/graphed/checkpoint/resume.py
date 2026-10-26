@@ -830,6 +830,7 @@ def resumable(
             combine=plan.combine.resolve(),
             empty=plan.empty.resolve(),
             services=plan.services,
+            finalize=None if plan.finalize is None else plan.finalize.resolve(),
         )
     else:
         tasks, base = plan.tasks, plan

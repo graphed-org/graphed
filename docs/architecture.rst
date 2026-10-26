@@ -155,6 +155,7 @@ server's receipt into its snapshot, say): a process with a ``resolve_services`` 
 it to its ``reduce``, and ``collate``'s to each plan's process with that plan's own ``{name: value}``
 entry. A part without the hook keeps its value, and a name absent from the value is not called.
 ``SequentialRunner`` does not call it; a runner that brings services up must, before it closes them.
+A plan's ``finalize`` runs after it, on the resolved value.
 ``SequentialRunner`` calls ``graphed.services.require_bound(plan)`` before its first task, so a
 plan with a service left unbound raises ``UnboundServiceError`` naming every such service before any
 task runs or any part is written; a plan without services skips the check. A runner with its own
