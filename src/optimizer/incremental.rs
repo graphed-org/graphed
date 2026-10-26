@@ -21,7 +21,7 @@
 
 use std::collections::HashMap;
 
-use crate::node::{NodeId, NodeKey};
+use crate::node::{index, NodeId, NodeKey};
 use crate::store::BadNodeId;
 
 use super::engine::{IDENTITY_TOKENS, SYMMETRIC_OPS};
@@ -66,7 +66,7 @@ impl IncrementalReducer {
         for key in delta {
             let mut inputs = Vec::with_capacity(key.inputs().len());
             for &i in key.inputs() {
-                inputs.push(self.map.get(i as usize).copied().ok_or(BadNodeId(i))?);
+                inputs.push(self.map.get(index(i)).copied().ok_or(BadNodeId(i))?);
             }
             let canon = self.canonicalize(key.with_inputs(inputs));
             self.map.push(canon);
@@ -124,14 +124,14 @@ impl IncrementalReducer {
     ) -> Result<Reduced, BadNodeId> {
         let mut outs = Vec::with_capacity(outputs.len());
         for &o in outputs {
-            outs.push(self.map.get(o as usize).copied().ok_or(BadNodeId(o))?);
+            outs.push(self.map.get(index(o)).copied().ok_or(BadNodeId(o))?);
         }
         let mut red = super::reduce_with_mode(&self.canon_nodes, &outs, engine, mode);
         // §8.2(i): the four passes answered in CANONICAL-arena ids, so compose this reducer's own
         // original->canonical map in front. Without it the accessor silently mis-keys every
         // `Session(incremental=True)` program.
         let canonical = std::mem::take(&mut red.node_map);
-        red.node_map = self.map.iter().map(|&c| canonical[c as usize]).collect();
+        red.node_map = self.map.iter().map(|&c| canonical[index(c)]).collect();
         Ok(red)
     }
 }
@@ -193,7 +193,7 @@ mod tests {
         // own canonical map in front of the four passes so both answer in original-arena ids.
         assert_eq!(inc.node_map.len(), s.node_count());
         assert_eq!(inc.node_map, full.node_map);
-        assert_eq!(inc.node_map[one as usize], inc.node_map[ab as usize]);
+        assert_eq!(inc.node_map[index(one)], inc.node_map[index(ab)]);
     }
 
     #[test]

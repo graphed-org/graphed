@@ -21,7 +21,7 @@ use loom::sync::{Mutex, MutexGuard};
 
 use std::collections::HashMap;
 
-use crate::node::{NodeId, NodeKey, PayloadDescriptor};
+use crate::node::{index, NodeId, NodeKey, PayloadDescriptor};
 use crate::optimizer::{self, NodeMap, ReductionReport, RewriteEngine};
 use crate::param::ParamMap;
 
@@ -205,7 +205,7 @@ impl GraphStore {
         let store = Self::new();
         let mut map: Vec<NodeId> = Vec::with_capacity(red.nodes.len());
         for key in &red.nodes {
-            let remapped: Vec<NodeId> = key.inputs().iter().map(|&i| map[i as usize]).collect();
+            let remapped: Vec<NodeId> = key.inputs().iter().map(|&i| map[index(i)]).collect();
             let id = store
                 .add_key(key.with_inputs(remapped))
                 .expect("reduced graph references only earlier nodes");
@@ -213,7 +213,7 @@ impl GraphStore {
         }
         for &o in &red.outputs {
             store
-                .mark_output(map[o as usize])
+                .mark_output(map[index(o)])
                 .expect("reduced output is valid");
         }
         // the correspondence rides `map` — the same re-intern remap the inputs and outputs above
@@ -222,7 +222,7 @@ impl GraphStore {
         store.lock().node_map = red
             .node_map
             .iter()
-            .map(|landed| landed.map(|(r, member)| (map[r as usize], member)))
+            .map(|landed| landed.map(|(r, member)| (map[index(r)], member)))
             .collect();
         (store, red.report)
     }

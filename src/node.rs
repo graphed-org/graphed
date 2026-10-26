@@ -10,6 +10,15 @@ use crate::param::ParamMap;
 
 pub(crate) type NodeId = u64;
 
+/// `id` as a position in an in-memory arena.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "ids index in-memory arenas and only 64-bit targets are built"
+)]
+pub(crate) const fn index(id: NodeId) -> usize {
+    id as usize
+}
+
 /// Reproducibility metadata an `External` node carries (plan A.6 "Payload descriptor").
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct PayloadDescriptor {

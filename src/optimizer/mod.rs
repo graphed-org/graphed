@@ -18,7 +18,7 @@ use std::collections::HashMap;
 pub(crate) use engine::{EggEngine, EngineGraph, EngineNode, RewriteEngine};
 pub(crate) use incremental::IncrementalReducer;
 
-use crate::node::{NodeId, NodeKey, StageOp, StageRef};
+use crate::node::{index, NodeId, NodeKey, StageOp, StageRef};
 
 /// How aggressively ops fuse into stages. `SingleUse` is the original M4 behavior (an op fuses only
 /// into its sole consumer) and stays the default — it is pinned by the frozen M4 suite. `Maximal`
@@ -111,14 +111,14 @@ pub(crate) fn dead_code_elimination(
     outputs: &[NodeId],
 ) -> (Vec<NodeKey>, Vec<usize>, Vec<usize>) {
     let mut keep = vec![false; nodes.len()];
-    let mut stack: Vec<usize> = outputs.iter().map(|&o| o as usize).collect();
+    let mut stack: Vec<usize> = outputs.iter().map(|&o| index(o)).collect();
     while let Some(i) = stack.pop() {
         if keep[i] {
             continue;
         }
         keep[i] = true;
         for &inp in nodes[i].inputs() {
-            stack.push(inp as usize);
+            stack.push(index(inp));
         }
     }
     // compact, preserving topological (ascending-id) order
@@ -130,12 +130,12 @@ pub(crate) fn dead_code_elimination(
             let new_inputs: Vec<NodeId> = node
                 .inputs()
                 .iter()
-                .map(|&x| remap[x as usize] as NodeId)
+                .map(|&x| remap[index(x)] as NodeId)
                 .collect();
             kept.push(node.with_inputs(new_inputs));
         }
     }
-    let out_idx = outputs.iter().map(|&o| remap[o as usize]).collect();
+    let out_idx = outputs.iter().map(|&o| remap[index(o)]).collect();
     (kept, out_idx, remap)
 }
 
@@ -145,7 +145,7 @@ fn to_engine_graph(keys: &[NodeKey], outputs: &[usize]) -> EngineGraph {
         .map(|k| EngineNode {
             token: k.token(),
             boundary: k.is_boundary(),
-            inputs: k.inputs().iter().map(|&i| i as usize).collect(),
+            inputs: k.inputs().iter().map(|&i| index(i)).collect(),
         })
         .collect();
     EngineGraph {
@@ -432,15 +432,15 @@ mod tests {
             vals[i] = match node {
                 NodeKey::Source { name, .. } => seeds[name],
                 NodeKey::Op { name, inputs, .. } => {
-                    let v: Vec<i64> = inputs.iter().map(|&x| vals[x as usize]).collect();
+                    let v: Vec<i64> = inputs.iter().map(|&x| vals[index(x)]).collect();
                     apply_op(name, &v)
                 }
                 NodeKey::Reduction { inputs, .. }
                 | NodeKey::External { inputs, .. }
                 | NodeKey::Exchange { inputs, .. }
-                | NodeKey::Join { inputs, .. } => vals[inputs[0] as usize],
+                | NodeKey::Join { inputs, .. } => vals[index(inputs[0])],
                 NodeKey::Stage { inputs, members } => {
-                    let inv: Vec<i64> = inputs.iter().map(|&x| vals[x as usize]).collect();
+                    let inv: Vec<i64> = inputs.iter().map(|&x| vals[index(x)]).collect();
                     let mut mv: Vec<i64> = Vec::new();
                     for op in members {
                         let ins: Vec<i64> = op
@@ -457,7 +457,7 @@ mod tests {
                 }
             };
         }
-        outputs.iter().map(|&o| vals[o as usize]).collect()
+        outputs.iter().map(|&o| vals[index(o)]).collect()
     }
 
     #[test]
@@ -588,8 +588,8 @@ mod tests {
         let (reduced, _) = s.reduce(&EggEngine::default());
         let map = reduced.node_map();
         assert_eq!(map.len(), s.node_count());
-        assert_eq!(map[dead as usize], None, "DCE dropped it");
-        let (src_id, src_member) = map[x as usize].unwrap();
+        assert_eq!(map[index(dead)], None, "DCE dropped it");
+        let (src_id, src_member) = map[index(x)].unwrap();
         assert_eq!(
             src_member, None,
             "a source reduces to itself, not into a stage"
@@ -598,7 +598,7 @@ mod tests {
         // folded onto its input, so it lands exactly where `b` did (the post-DCE passes).
         let stage: Vec<_> = [a, b, id, out]
             .iter()
-            .map(|&n| map[n as usize].unwrap())
+            .map(|&n| map[index(n)].unwrap())
             .collect();
         assert_ne!(stage[0].0, src_id);
         assert!(stage.iter().all(|&(node, _)| node == stage[0].0));
