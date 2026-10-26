@@ -27,7 +27,7 @@ use crate::param::ParamMap;
 
 /// Error returned when a referenced node id is not in the arena.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BadNodeId(pub NodeId);
+pub(crate) struct BadNodeId(pub NodeId);
 
 impl std::fmt::Display for BadNodeId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -45,7 +45,7 @@ struct Inner {
     node_map: NodeMap,
 }
 
-pub struct GraphStore {
+pub(crate) struct GraphStore {
     inner: Mutex<Inner>,
 }
 
@@ -56,7 +56,7 @@ impl Default for GraphStore {
 }
 
 impl GraphStore {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             inner: Mutex::new(Inner {
                 nodes: Vec::new(),
@@ -92,13 +92,13 @@ impl GraphStore {
         Ok(id)
     }
 
-    pub fn add_source(&self, name: String, params: ParamMap) -> NodeId {
+    pub(crate) fn add_source(&self, name: String, params: ParamMap) -> NodeId {
         // sources have no inputs -> interning cannot fail
         self.intern(NodeKey::Source { name, params })
             .expect("source has no inputs")
     }
 
-    pub fn add_op(
+    pub(crate) fn add_op(
         &self,
         name: String,
         inputs: Vec<NodeId>,
@@ -111,7 +111,7 @@ impl GraphStore {
         })
     }
 
-    pub fn add_reduction(
+    pub(crate) fn add_reduction(
         &self,
         name: String,
         inputs: Vec<NodeId>,
@@ -124,7 +124,7 @@ impl GraphStore {
         })
     }
 
-    pub fn add_external(
+    pub(crate) fn add_external(
         &self,
         descriptor: PayloadDescriptor,
         inputs: Vec<NodeId>,
@@ -139,17 +139,25 @@ impl GraphStore {
 
     /// Record an `Exchange` boundary (plan M39): its `scheme` ParamMap is its identity, its one
     /// logical `input` is the partition it repartitions.
-    pub fn add_exchange(&self, inputs: Vec<NodeId>, scheme: ParamMap) -> Result<NodeId, BadNodeId> {
+    pub(crate) fn add_exchange(
+        &self,
+        inputs: Vec<NodeId>,
+        scheme: ParamMap,
+    ) -> Result<NodeId, BadNodeId> {
         self.intern(NodeKey::Exchange { scheme, inputs })
     }
 
     /// Record a `Join` boundary (plan M40 §2.1): two co-partitioned inputs `[left, right]` combined
     /// per `scheme` (`how`, `on`). Like `Exchange`, its identity is its `scheme` + its ordered inputs.
-    pub fn add_join(&self, inputs: Vec<NodeId>, scheme: ParamMap) -> Result<NodeId, BadNodeId> {
+    pub(crate) fn add_join(
+        &self,
+        inputs: Vec<NodeId>,
+        scheme: ParamMap,
+    ) -> Result<NodeId, BadNodeId> {
         self.intern(NodeKey::Join { scheme, inputs })
     }
 
-    pub fn mark_output(&self, id: NodeId) -> Result<(), BadNodeId> {
+    pub(crate) fn mark_output(&self, id: NodeId) -> Result<(), BadNodeId> {
         let mut g = self.lock();
         if id >= g.nodes.len() as NodeId {
             return Err(BadNodeId(id));
@@ -160,35 +168,35 @@ impl GraphStore {
         Ok(())
     }
 
-    pub fn node_count(&self) -> usize {
+    pub(crate) fn node_count(&self) -> usize {
         self.lock().nodes.len()
     }
 
     /// §8.2(i)'s record→reduced correspondence, indexed by the id of the arena this store was
     /// reduced from. Empty unless this store came out of a reduction.
-    pub fn node_map(&self) -> NodeMap {
+    pub(crate) fn node_map(&self) -> NodeMap {
         self.lock().node_map.clone()
     }
 
     /// Intern a pre-built `NodeKey` (used when rebuilding the reduced graph).
-    pub fn add_key(&self, key: NodeKey) -> Result<NodeId, BadNodeId> {
+    pub(crate) fn add_key(&self, key: NodeKey) -> Result<NodeId, BadNodeId> {
         self.intern(key)
     }
 
     /// Snapshot the arena + outputs for the optimizer (clone under one lock).
-    pub fn snapshot(&self) -> (Vec<NodeKey>, Vec<NodeId>) {
+    pub(crate) fn snapshot(&self) -> (Vec<NodeKey>, Vec<NodeId>) {
         let g = self.lock();
         (g.nodes.clone(), g.outputs.clone())
     }
 
     /// Snapshot only the nodes with id >= `start` (the delta an `IncrementalReducer` consumes).
-    pub fn snapshot_from(&self, start: usize) -> Vec<NodeKey> {
+    pub(crate) fn snapshot_from(&self, start: usize) -> Vec<NodeKey> {
         let g = self.lock();
         g.nodes[start.min(g.nodes.len())..].to_vec()
     }
 
     /// The marked output ids, in mark order.
-    pub fn outputs(&self) -> Vec<NodeId> {
+    pub(crate) fn outputs(&self) -> Vec<NodeId> {
         self.lock().outputs.clone()
     }
 
@@ -221,12 +229,12 @@ impl GraphStore {
 
     /// Reduce the graph via the M4 pipeline (DCE + CSE + equality-saturation stage fusion) into a
     /// fresh interned store. Returns the reduced store and the reduction report.
-    pub fn reduce(&self, engine: &dyn RewriteEngine) -> (Self, ReductionReport) {
+    pub(crate) fn reduce(&self, engine: &dyn RewriteEngine) -> (Self, ReductionReport) {
         self.reduce_with(engine, optimizer::FusionMode::SingleUse)
     }
 
     /// `reduce` with an explicit stage-fusion mode (see `optimizer::FusionMode`).
-    pub fn reduce_with(
+    pub(crate) fn reduce_with(
         &self,
         engine: &dyn RewriteEngine,
         mode: optimizer::FusionMode,
@@ -238,7 +246,7 @@ impl GraphStore {
     /// `reduce_with` against an EXPLICIT output set — the compile request's — ignoring stored
     /// marks entirely (M22: outputs are a property of the compile request, not store state, so
     /// compiling is a READ-ONLY operation and sequential compiles never cross-talk).
-    pub fn reduce_with_outputs(
+    pub(crate) fn reduce_with_outputs(
         &self,
         outputs: &[NodeId],
         engine: &dyn RewriteEngine,
@@ -252,7 +260,7 @@ impl GraphStore {
 
     /// opt_level=0 (M6): the 1:1 cone of `outputs` — M4's DCE without the rewrites — rebuilt into a
     /// fresh store marked with `outputs`, whose `node_map` sends each kept id to `(cone id, None)`.
-    pub fn cone(&self, outputs: &[NodeId]) -> Result<Self, BadNodeId> {
+    pub(crate) fn cone(&self, outputs: &[NodeId]) -> Result<Self, BadNodeId> {
         let nodes = self.arena_holding(outputs)?;
         let (kept, outs, remap) = optimizer::dead_code_elimination(&nodes, outputs);
         let reduced = optimizer::Reduced {
@@ -279,12 +287,12 @@ impl GraphStore {
     /// One-shot incremental reduction of the current graph — same result as `reduce`. For genuine
     /// step-by-step reduction while building, use `optimizer::IncrementalReducer`, which processes
     /// only the delta per step (and whose work counter proves it).
-    pub fn reduce_incremental(&self, engine: &dyn RewriteEngine) -> (Self, ReductionReport) {
+    pub(crate) fn reduce_incremental(&self, engine: &dyn RewriteEngine) -> (Self, ReductionReport) {
         self.reduce(engine)
     }
 
     /// Byte-stable graphviz rendering: nodes in id order, edges in (node, input-position) order.
-    pub fn to_dot(&self) -> String {
+    pub(crate) fn to_dot(&self) -> String {
         use std::fmt::Write as _;
         let g = self.lock();
         let mut out = String::from("digraph graphed {\n");

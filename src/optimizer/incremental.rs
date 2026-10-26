@@ -28,7 +28,7 @@ use super::engine::{IDENTITY_TOKENS, SYMMETRIC_OPS};
 use super::{FusionMode, Reduced, RewriteEngine};
 
 #[derive(Default)]
-pub struct IncrementalReducer {
+pub(crate) struct IncrementalReducer {
     /// The canonical arena: identity-eliminated, symmetry-deduped, hash-consed nodes whose inputs
     /// are canonical ids. Grows monotonically; never rescanned by `step`.
     canon_nodes: Vec<NodeKey>,
@@ -41,28 +41,28 @@ pub struct IncrementalReducer {
 }
 
 impl IncrementalReducer {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::default()
     }
 
     /// How many original-arena nodes have been consumed so far.
-    pub fn watermark(&self) -> usize {
+    pub(crate) fn watermark(&self) -> usize {
         self.map.len()
     }
 
     /// Cumulative nodes processed across every `step` (each original node is touched once).
-    pub fn total_work(&self) -> usize {
+    pub(crate) fn total_work(&self) -> usize {
         self.total_work
     }
 
     /// Size of the maintained canonical (concise) form.
-    pub fn canonical_count(&self) -> usize {
+    pub(crate) fn canonical_count(&self) -> usize {
         self.canon_nodes.len()
     }
 
     /// Consume the nodes recorded since the last step (`delta` = original arena `[watermark..]`).
     /// Returns the number of nodes processed — always exactly `delta.len()`.
-    pub fn step(&mut self, delta: &[NodeKey]) -> Result<usize, BadNodeId> {
+    pub(crate) fn step(&mut self, delta: &[NodeKey]) -> Result<usize, BadNodeId> {
         for key in delta {
             let mut inputs = Vec::with_capacity(key.inputs().len());
             for &i in key.inputs() {
@@ -111,7 +111,7 @@ impl IncrementalReducer {
     /// Finish the reduction for the given original-arena outputs: translate them into the
     /// canonical arena and run the standard pipeline (DCE + engine + CSE + stage fusion) over the
     /// *canonical* nodes. Cost is O(canonical size) once — independent of how many steps fed it.
-    pub fn finalize(
+    pub(crate) fn finalize(
         &self,
         outputs: &[NodeId],
         engine: &dyn RewriteEngine,

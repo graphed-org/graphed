@@ -41,7 +41,7 @@ const R_MEMBER: u8 = 1;
 
 /// Error from decoding a malformed or wrong-version byte string.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DecodeError {
+pub(crate) enum DecodeError {
     BadMagic,
     Truncated,
     BadTag(&'static str, u8),
@@ -110,7 +110,7 @@ fn put_inputs(out: &mut Vec<u8>, inputs: &[u64]) {
 }
 
 /// Serialize the store's nodes (in id order) + its MARKED outputs into the canonical byte form.
-pub fn serialize(store: &GraphStore) -> Vec<u8> {
+pub(crate) fn serialize(store: &GraphStore) -> Vec<u8> {
     let outputs = store.outputs();
     serialize_with(store, &outputs)
 }
@@ -118,7 +118,7 @@ pub fn serialize(store: &GraphStore) -> Vec<u8> {
 /// `serialize` against an EXPLICIT output set (M22): the bytes flag exactly the requested
 /// outputs, ignoring stored marks. The byte FORMAT is identical — `serialize` is this with the
 /// marked set.
-pub fn serialize_with(store: &GraphStore, outputs: &[NodeId]) -> Vec<u8> {
+pub(crate) fn serialize_with(store: &GraphStore, outputs: &[NodeId]) -> Vec<u8> {
     let (nodes, _) = store.snapshot();
     let mut out = Vec::new();
     out.extend_from_slice(MAGIC);
@@ -285,7 +285,7 @@ impl<'a> Reader<'a> {
 /// Decode the canonical byte form back into a freshly interned store. Because nodes are written in
 /// dependency order and re-interned in that order, the rebuilt store has identical ids, so a
 /// re-serialize is byte-identical to the input (asserted by the round-trip tests).
-pub fn deserialize(data: &[u8]) -> Result<GraphStore, DecodeError> {
+pub(crate) fn deserialize(data: &[u8]) -> Result<GraphStore, DecodeError> {
     let mut r = Reader::new(data);
     if r.take(4)? != MAGIC {
         return Err(DecodeError::BadMagic);

@@ -8,11 +8,11 @@ use std::fmt;
 
 use crate::param::ParamMap;
 
-pub type NodeId = u64;
+pub(crate) type NodeId = u64;
 
 /// Reproducibility metadata an `External` node carries (plan A.6 "Payload descriptor").
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct PayloadDescriptor {
+pub(crate) struct PayloadDescriptor {
     pub kind: String,
     pub content_hash: String,
     pub framework: String,
@@ -24,21 +24,21 @@ pub struct PayloadDescriptor {
 /// A reference inside a fused `Stage`: either one of the stage's external inputs or an earlier
 /// member op. This makes a Stage a self-contained, executable, hashable mini-DAG.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum StageRef {
+pub(crate) enum StageRef {
     Input(usize),
     Member(usize),
 }
 
 /// One fused op inside a `Stage` (the M4 optimizer groups a maximal run of ops into a stage).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct StageOp {
+pub(crate) struct StageOp {
     pub token: String,
     pub inputs: Vec<StageRef>,
 }
 
 /// The structural identity of a node. Equality/Hash here define interning.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum NodeKey {
+pub(crate) enum NodeKey {
     Source {
         name: String,
         params: ParamMap,
@@ -85,7 +85,7 @@ pub enum NodeKey {
 }
 
 impl NodeKey {
-    pub fn inputs(&self) -> &[NodeId] {
+    pub(crate) fn inputs(&self) -> &[NodeId] {
         match self {
             Self::Source { .. } => &[],
             Self::Op { inputs, .. }
@@ -99,14 +99,14 @@ impl NodeKey {
 
     /// True for boundary nodes (source / reduction / external / stage) — fusion never merges
     /// across these (plan A.6 boundary op).
-    pub fn is_boundary(&self) -> bool {
+    pub(crate) fn is_boundary(&self) -> bool {
         !matches!(self, Self::Op { .. })
     }
 
     /// The "operator" identity of a node, excluding inputs — the egg symbol and the key into the
     /// reconstruction table. Two structurally identical operators share a token; inputs are
     /// children in the e-graph, not part of the token.
-    pub fn token(&self) -> String {
+    pub(crate) fn token(&self) -> String {
         use crate::param::escape_token as esc;
         match self {
             Self::Source { name, params } => with_params(format!("src|{}", esc(name)), params),
@@ -141,7 +141,7 @@ impl NodeKey {
 
     /// Clone this node's operator identity with a fresh input list (used when rebuilding the
     /// reduced graph). Sources ignore inputs.
-    pub fn with_inputs(&self, new_inputs: Vec<NodeId>) -> Self {
+    pub(crate) fn with_inputs(&self, new_inputs: Vec<NodeId>) -> Self {
         match self {
             Self::Source { name, params } => Self::Source {
                 name: name.clone(),
@@ -180,7 +180,7 @@ impl NodeKey {
     }
 
     /// Deterministic graphviz label (used by `to_dot`).
-    pub fn label(&self) -> String {
+    pub(crate) fn label(&self) -> String {
         match self {
             Self::Source { name, params } => fmt_label("Source", name, params),
             Self::Op { name, params, .. } => fmt_label("Op", name, params),
@@ -242,7 +242,7 @@ fn with_params(prefix: String, params: &ParamMap) -> String {
 /// carries. This is what lets `GraphStore.nodes()` expose stage members as executable
 /// (name, params) pairs for IR-driven evaluation, without changing the stage's structural identity
 /// or the serialized form. Returns `None` for non-op tokens (sources/externals never fuse).
-pub fn parse_op_token(token: &str) -> Option<(String, String, ParamMap)> {
+pub(crate) fn parse_op_token(token: &str) -> Option<(String, String, ParamMap)> {
     use crate::param::unescape_token;
     let mut parts = token.splitn(3, '|');
     let kind = parts.next()?;

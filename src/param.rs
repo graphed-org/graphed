@@ -10,7 +10,7 @@ use std::hash::{Hash, Hasher};
 const CANON_NAN: u64 = 0x7ff8_0000_0000_0000;
 
 #[derive(Clone, Debug)]
-pub enum ParamValue {
+pub(crate) enum ParamValue {
     Int(i64),
     Float(f64),
     Bool(bool),
@@ -39,7 +39,7 @@ impl ParamValue {
     /// Type-tagged token mirroring equality/hash identity (floats by canonical bits, so 0.0/-0.0
     /// stay distinct and all NaNs collapse, exactly as interning does). String payloads are
     /// escaped so the encoding is injective even when a value contains a separator character.
-    pub fn token(&self) -> String {
+    pub(crate) fn token(&self) -> String {
         match self {
             Self::Int(a) => format!("i{a}"),
             Self::Float(a) => format!("f{:016x}", Self::float_key(*a)),
@@ -49,7 +49,7 @@ impl ParamValue {
     }
 
     /// Decode one tagged value token (the inverse of `token`).
-    pub fn from_token(tok: &str) -> Option<Self> {
+    pub(crate) fn from_token(tok: &str) -> Option<Self> {
         let (tag, rest) = tok.split_at(tok.char_indices().nth(1).map_or(tok.len(), |(i, _)| i));
         match tag {
             "i" => rest.parse::<i64>().ok().map(ParamValue::Int),
@@ -69,7 +69,7 @@ impl ParamValue {
 
 /// Escape the separator characters (`%`, `;`, `=`, `|`) so param tokens are injective and
 /// losslessly parseable. `%` first so unescaping is its exact inverse.
-pub fn escape_token(s: &str) -> String {
+pub(crate) fn escape_token(s: &str) -> String {
     s.replace('%', "%25")
         .replace(';', "%3B")
         .replace('=', "%3D")
@@ -77,7 +77,7 @@ pub fn escape_token(s: &str) -> String {
 }
 
 /// Inverse of [`escape_token`].
-pub fn unescape_token(s: &str) -> String {
+pub(crate) fn unescape_token(s: &str) -> String {
     s.replace("%7C", "|")
         .replace("%3D", "=")
         .replace("%3B", ";")
@@ -123,20 +123,20 @@ impl fmt::Display for ParamValue {
 
 /// A parameter map with keys kept in a total order so its hash is deterministic (plan M1).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct ParamMap(Vec<(String, ParamValue)>);
+pub(crate) struct ParamMap(Vec<(String, ParamValue)>);
 
 impl ParamMap {
-    pub fn new(mut entries: Vec<(String, ParamValue)>) -> Self {
+    pub(crate) fn new(mut entries: Vec<(String, ParamValue)>) -> Self {
         entries.sort_by(|a, b| a.0.cmp(&b.0));
         Self(entries)
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
     /// The sorted (key, value) entries, for canonical serialization (plan M8).
-    pub fn entries(&self) -> &[(String, ParamValue)] {
+    pub(crate) fn entries(&self) -> &[(String, ParamValue)] {
         &self.0
     }
 
@@ -144,7 +144,7 @@ impl ParamMap {
     /// int/float/bool/str with the same printed form stay distinct, matching interning identity.
     /// Keys and string payloads are separator-escaped, so the encoding is genuinely injective and
     /// invertible via [`ParamMap::from_token`].
-    pub fn token(&self) -> String {
+    pub(crate) fn token(&self) -> String {
         self.0
             .iter()
             .map(|(k, v)| format!("{}={}", escape_token(k), v.token()))
@@ -154,7 +154,7 @@ impl ParamMap {
 
     /// Decode a `token()` string back into a `ParamMap` (used by `GraphStore.nodes()` to expose
     /// fused stage members for IR-driven execution). Returns `None` on a malformed token.
-    pub fn from_token(s: &str) -> Option<Self> {
+    pub(crate) fn from_token(s: &str) -> Option<Self> {
         if s.is_empty() {
             return Some(Self::new(vec![]));
         }

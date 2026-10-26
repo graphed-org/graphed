@@ -19,11 +19,12 @@ use egg::{EGraph, Id, Pattern, Rewrite, Runner, Symbol, SymbolLang};
 /// The symmetric binary ops in the frontend vocabulary (argument order is semantically
 /// irrelevant). ONE list shared by the egg rule set and the incremental canonicalizer, so the two
 /// reduction paths agree node-for-node. Asymmetric ops (sub/div/lt/...) are deliberately absent.
-pub const SYMMETRIC_OPS: &[&str] = &["add", "mul", "and", "or", "eq", "ne", "maximum", "minimum"];
+pub(super) const SYMMETRIC_OPS: &[&str] =
+    &["add", "mul", "and", "or", "eq", "ne", "maximum", "minimum"];
 
 /// Identity-elimination tokens: an op with this exact token is equivalent to its single input
 /// (`x + 0.0` / `0.0 + x` / `x * 1.0` / `1.0 * x`). Shared with the incremental canonicalizer.
-pub const IDENTITY_TOKENS: &[&str] = &[
+pub(super) const IDENTITY_TOKENS: &[&str] = &[
     "op|add|scalar=f0000000000000000;side=sr",
     "op|add|scalar=f0000000000000000;side=sl",
     "op|mul|scalar=f3ff0000000000000;side=sr",
@@ -32,7 +33,7 @@ pub const IDENTITY_TOKENS: &[&str] = &[
 
 /// An egg-free node view: an operator `token`, whether it is a boundary, and input indices.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct EngineNode {
+pub(crate) struct EngineNode {
     pub token: String,
     pub boundary: bool,
     pub inputs: Vec<usize>,
@@ -40,13 +41,13 @@ pub struct EngineNode {
 
 /// A topologically-ordered DAG passed across the engine boundary.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct EngineGraph {
+pub(crate) struct EngineGraph {
     pub nodes: Vec<EngineNode>,
     pub outputs: Vec<usize>,
 }
 
 /// The swappable optimizer engine boundary (egg today, egglog in Phase 2).
-pub trait RewriteEngine {
+pub(crate) trait RewriteEngine {
     /// Canonicalize the DAG via equality saturation. Returns the canonical graph plus a TOTAL
     /// `node_map`: for every input node index, the index of its representative in that graph.
     ///
@@ -61,7 +62,7 @@ fn boundary_from_token(token: &str) -> bool {
 }
 
 /// The MVP engine: `egg` over `SymbolLang`, with a SOUND rule set only.
-pub struct EggEngine {
+pub(crate) struct EggEngine {
     rules: Vec<Rewrite<SymbolLang, ()>>,
     /// Deterministic saturation budget (no wall-clock limit — that would be non-deterministic).
     iter_limit: usize,

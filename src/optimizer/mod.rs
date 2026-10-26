@@ -15,8 +15,8 @@ mod incremental;
 
 use std::collections::HashMap;
 
-pub use engine::{EggEngine, EngineGraph, EngineNode, RewriteEngine};
-pub use incremental::IncrementalReducer;
+pub(crate) use engine::{EggEngine, EngineGraph, EngineNode, RewriteEngine};
+pub(crate) use incremental::IncrementalReducer;
 
 use crate::node::{NodeId, NodeKey, StageOp, StageRef};
 
@@ -26,7 +26,7 @@ use crate::node::{NodeId, NodeKey, StageOp, StageRef};
 /// diamond inside an op region becomes ONE stage (the glossary's "maximal fused run"). Both modes
 /// never cross a boundary.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum FusionMode {
+pub(crate) enum FusionMode {
     #[default]
     SingleUse,
     Maximal,
@@ -34,7 +34,7 @@ pub enum FusionMode {
 
 /// Stats reported for one reduction (plan M4 `reduction_report`).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct ReductionReport {
+pub(crate) struct ReductionReport {
     pub input_nodes: usize,
     pub reachable_nodes: usize,
     pub canonical_nodes: usize,
@@ -46,14 +46,14 @@ pub struct ReductionReport {
 /// Where one input node landed in the reduced graph: the reduced node id, plus its position in
 /// that node's member list when the node fused into a Stage (`None` for a boundary, which reduces
 /// to itself).
-pub type Landing = (NodeId, Option<usize>);
+pub(crate) type Landing = (NodeId, Option<usize>);
 
 /// §8.2(i)'s record→reduced correspondence, indexed by input-arena node id. `None` where DCE
 /// dropped the node.
-pub type NodeMap = Vec<Option<Landing>>;
+pub(crate) type NodeMap = Vec<Option<Landing>>;
 
 /// The reduced graph: interned NodeKeys (topological), remapped outputs, and the report.
-pub struct Reduced {
+pub(crate) struct Reduced {
     pub nodes: Vec<NodeKey>,
     pub outputs: Vec<NodeId>,
     pub report: ReductionReport,
@@ -64,7 +64,7 @@ pub struct Reduced {
 /// Run the full reduction with an explicit fusion mode (see [`FusionMode`]). `nodes` is the
 /// interned arena (topological by id); `outputs` are marked output ids. Returns reduced NodeKeys
 /// whose inputs reference indices *within the returned list*.
-pub fn reduce_with_mode(
+pub(crate) fn reduce_with_mode(
     nodes: &[NodeKey],
     outputs: &[NodeId],
     engine: &dyn RewriteEngine,
@@ -106,7 +106,7 @@ pub(crate) const DROPPED: usize = usize::MAX;
 /// Reachability from the outputs (plan M4: DCE = reachability; never drops a node on a path to an
 /// output). Returns the reachable nodes compacted into topological order, the remapped outputs,
 /// and the `remap` vector itself (`DROPPED` for a node this pass dropped).
-pub fn dead_code_elimination(
+pub(crate) fn dead_code_elimination(
     nodes: &[NodeKey],
     outputs: &[NodeId],
 ) -> (Vec<NodeKey>, Vec<usize>, Vec<usize>) {
