@@ -2,8 +2,8 @@
 
 Plan M9: "A Preservation Bundle built for the AGC ttbar slice ... reproduces its histograms
 bit-for-bit." Here the bundle is built for the reduced AGC ttbar slice (ONNX model + correctionlib
-scale factors + JES/weight systematics) and ``reproduce`` (which runs purely off the content-addressed
-store) must equal the in-process build-time result exactly.
+scale factors + JES/weight systematics) and ``reproduce`` (which runs purely off the
+content-addressed store) must equal the in-process build-time result exactly.
 """
 
 from __future__ import annotations
@@ -47,14 +47,19 @@ def test_reproduce_is_deterministic(agc_bundle: tuple[Any, np.ndarray]) -> None:
 
 
 def test_systematic_variations_change_the_result(tmp_path) -> None:  # type: ignore[no-untyped-def]
-    # weight systematic (correctionlib up/down) and kinematic systematic (JES) both move the histogram
+    # weight systematic (correctionlib up/down) and kinematic systematic (JES) both move the
+    # histogram
     nominal, _ = agc.build_agc(
         tmp_path / "nom", config={"systematic": "nominal", "jes_factor": 1.0, "min_btag": 1}
     )
-    up, _ = agc.build_agc(tmp_path / "up", config={"systematic": "up", "jes_factor": 1.0, "min_btag": 1})
+    up, _ = agc.build_agc(
+        tmp_path / "up", config={"systematic": "up", "jes_factor": 1.0, "min_btag": 1}
+    )
     jes, _ = agc.build_agc(
         tmp_path / "jes", config={"systematic": "nominal", "jes_factor": 1.05, "min_btag": 1}
     )
     rn, ru, rj = reproduce(nominal), reproduce(up), reproduce(jes)
-    assert not np.array_equal(rn, ru), "correctionlib up variation must change the weighted histogram"
+    assert not np.array_equal(rn, ru), (
+        "correctionlib up variation must change the weighted histogram"
+    )
     assert not np.array_equal(rn, rj), "JES variation must change selection/observable"

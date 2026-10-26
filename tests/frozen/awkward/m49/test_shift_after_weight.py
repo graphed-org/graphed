@@ -1,23 +1,31 @@
-"""§2.5's shift-after-weight diagnostic (m49): a weight factor registered BEFORE the collection it
-reads is varied fills every shift universe with its pre-shift value, and §2.1's ordering rule makes
-that unfixable after the fact. Detection is RECORD-time — both operands are live only at the shift
-`vary` call — and the report is a second additive `CompiledGraph` field of sorted
-`(factor family, collection)` pairs, empty when the order is sound.
+"""§2.5's shift-after-weight diagnostic (m49).
+
+A weight factor registered BEFORE the collection it reads is varied fills every shift universe with
+its pre-shift value, and §2.1's ordering rule makes that unfixable after the fact. Detection is
+RECORD-time — both operands are live only at the shift `vary` call — and the report is a second
+additive `CompiledGraph` field of sorted `(factor family, collection)` pairs, empty when the order
+is sound.
 
 The fixture registers an ambient weight, so it is an event-context program (§2.1(b)).
 
-TWO positive controls, because the two ways of reporting nothing fail differently: the correct ORDER
-(the shift precedes the weight, so no ambient weight exists to test) and a correctly-ordered weight
-that legitimately does not read the shifted collection (an ambient weight exists and the walk
-answers no). The violating program carries TWO families over TWO shifted collections so the report
-pins the PAIRING, not membership: a cross-product implementation answers with four pairs.
+TWO positive controls, because the two ways of reporting nothing fail differently: the correct
+ORDER (the shift precedes the weight, so no ambient weight exists to test) and a correctly-ordered
+weight that legitimately does not read the shifted collection (an ambient weight exists and the
+walk answers no). The violating program carries TWO families over TWO shifted collections so the
+report pins the PAIRING, not membership: a cross-product implementation answers with four pairs.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from m49_ctx_fixtures import events_context, jes_collections, jet_weight, met_weight, weight_universes
+from m49_ctx_fixtures import (
+    events_context,
+    jes_collections,
+    jet_weight,
+    met_weight,
+    weight_universes,
+)
 
 import graphed
 from graphed import Session, compile_ir
@@ -31,10 +39,20 @@ def _compiled(session: Session, ctx: Any) -> CompiledGraph:
 def _with_both_weights(ctx: Any) -> Any:
     """`btag` reads Jet, `pu` reads MET — disjoint cones over the two shifted collections."""
     ctx = graphed.vary(
-        ctx, "btag", jet_weight(ctx), is_weight=True, up=jet_weight(ctx, 1.1), down=jet_weight(ctx, 0.9)
+        ctx,
+        "btag",
+        jet_weight(ctx),
+        is_weight=True,
+        up=jet_weight(ctx, 1.1),
+        down=jet_weight(ctx, 0.9),
     )
     return graphed.vary(
-        ctx, "pu", met_weight(ctx), is_weight=True, up=met_weight(ctx, 1.1), down=met_weight(ctx, 0.9)
+        ctx,
+        "pu",
+        met_weight(ctx),
+        is_weight=True,
+        up=met_weight(ctx, 1.1),
+        down=met_weight(ctx, 0.9),
     )
 
 
@@ -59,7 +77,12 @@ def test_an_ambient_weight_that_does_not_read_the_shifted_collection_reports_not
     """Positive control two: an ambient weight EXISTS and the cone walk answers no."""
     session, ctx = events_context()
     weighted = graphed.vary(
-        ctx, "pu", met_weight(ctx), is_weight=True, up=met_weight(ctx, 1.1), down=met_weight(ctx, 0.9)
+        ctx,
+        "pu",
+        met_weight(ctx),
+        is_weight=True,
+        up=met_weight(ctx, 1.1),
+        down=met_weight(ctx, 0.9),
     )
     jes = jes_collections(weighted)
     shifted = graphed.vary(weighted, "jes", collections={"Jet": jes["Jet"]})

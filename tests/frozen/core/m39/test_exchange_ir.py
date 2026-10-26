@@ -1,13 +1,15 @@
 """M39 — the ``Exchange`` boundary NodeKey variant (plan §2.1, §2.4).
 
-An ``Exchange`` is a pure data-movement boundary with exactly one logical input; its identity is its
-``scheme`` ParamMap (scheme=hash|range|coalesce|split, key, parts, seed, …). It is NOT an ``Op``, so
-it interns/CSEs like every other node, **ends a stage** (fusion never crosses it), survives reduce as
-itself, and serializes byte-identically. These tests pin that behavior at the IR layer; the routing
-*rule* it carries is pinned in the backend golden-vector suite (graphed-awkward/graphed-numpy m39).
+An ``Exchange`` is a pure data-movement boundary with exactly one logical input; its identity is
+its ``scheme`` ParamMap (scheme=hash|range|coalesce|split, key, parts, seed, …). It is NOT an
+``Op``, so it interns/CSEs like every other node, **ends a stage** (fusion never crosses it),
+survives reduce as itself, and serializes byte-identically. These tests pin that behavior at the IR
+layer; the routing *rule* it carries is pinned in the backend golden-vector suite
+(graphed-awkward/graphed-numpy m39).
 
 Pinned Python surface (test-author decision, faithful to the §2.1 enum which has no ``name``):
-``GraphStore.add_exchange(inputs: list[int], params) -> int`` and ``nodes()[i]["kind"] == "exchange"``.
+``GraphStore.add_exchange(inputs: list[int], params) -> int`` and
+``nodes()[i]["kind"] == "exchange"``.
 """
 
 from __future__ import annotations
@@ -16,7 +18,7 @@ from graphed.core import GraphStore
 
 
 def _chain_with_exchange(parts: int = 8) -> tuple[GraphStore, int, int]:
-    """src -> pt -> cut -> EXCHANGE(hash) -> shift -> scale -> sum(output)."""
+    """Src -> pt -> cut -> EXCHANGE(hash) -> shift -> scale -> sum(output)."""
     g = GraphStore()
     src = g.add_source("events", {"uri": "f.root"})
     pt = g.add_op("pt", [src])
@@ -54,7 +56,8 @@ def test_exchange_interns_and_cses_like_any_node() -> None:
 
 
 def test_exchange_scheme_participates_in_structural_identity() -> None:
-    # different scheme params -> different node (params must be in the structural hash, not ignored).
+    # different scheme params -> different node (params must be in the structural hash, not
+    # ignored).
     g = GraphStore()
     src = g.add_source("events", {"uri": "f.root"})
     p8 = g.add_exchange([src], {"scheme": "hash", "key": "k", "parts": 8})
@@ -77,7 +80,8 @@ def test_exchange_ends_a_stage_and_survives_reduce() -> None:
 
 
 def test_reduction_over_an_exchange_is_byte_deterministic() -> None:
-    # the M8/M4 determinism gate extends to the new variant: identical builds -> identical reduced dot.
+    # the M8/M4 determinism gate extends to the new variant: identical builds -> identical reduced
+    # dot.
     a, _, oa = _chain_with_exchange(parts=8)
     b, _, ob = _chain_with_exchange(parts=8)
     assert a.reduce(outputs=[oa])[0].to_dot() == b.reduce(outputs=[ob])[0].to_dot()

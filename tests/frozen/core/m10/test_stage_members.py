@@ -15,7 +15,7 @@ from graphed.core import GraphStore
 
 
 def _toy_eval(store: GraphStore, seeds: dict[str, int]) -> list[int]:
-    """A tiny integer interpreter over `nodes()` — the shape every IR evaluator takes."""
+    """Return a tiny integer interpreter over `nodes()` — the shape every IR evaluator takes."""
 
     def apply(name: str, vals: list[int], params: dict[str, Any]) -> int:
         if name == "add":

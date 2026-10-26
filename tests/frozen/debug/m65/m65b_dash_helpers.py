@@ -1,5 +1,7 @@
-"""Shared helpers for the M65 B dashboard tests: ingest waits, row reads, a spawn-child entry and a
-held fake ``websocket.create_connection``."""
+"""Shared helpers for the M65 B dashboard tests.
+
+Ingest waits, row reads, a spawn-child entry and a held fake ``websocket.create_connection``.
+"""
 
 from __future__ import annotations
 
@@ -27,7 +29,9 @@ def wait_stat(server: Any, stat: str, n: int, timeout: float = 5.0) -> None:
     try:
         until(lambda: server.snapshot()["stats"][stat] >= n, timeout)
     except AssertionError:
-        raise AssertionError(f"stats[{stat!r}] never reached {n}: {server.snapshot()['stats']}") from None
+        raise AssertionError(
+            f"stats[{stat!r}] never reached {n}: {server.snapshot()['stats']}"
+        ) from None
 
 
 def row(server: Any, key: int) -> tuple[Any, Any, Any]:
@@ -84,8 +88,11 @@ class FakeConn:
 
 
 class HeldConnect:
-    """Stands in for ``websocket.create_connection``: every call is recorded and blocks until
-    ``release(i)``; the first connection's first ``send`` raises."""
+    """Stands in for ``websocket.create_connection``.
+
+    Every call is recorded and blocks until ``release(i)``; the first connection's first ``send``
+    raises.
+    """
 
     def __init__(self) -> None:
         self.calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []

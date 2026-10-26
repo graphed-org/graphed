@@ -24,7 +24,11 @@ def _check(s, deferred, ref) -> None:  # type: ignore[no-untyped-def]
 def test_sort_and_ravel_and_run_lengths() -> None:
     s, g, raw = session_events()
     _check(s, gak.sort(g.Jet.pt, axis=1), ak.sort(raw.Jet.pt, axis=1))
-    _check(s, gak.sort(g.Jet.pt, axis=1, ascending=False), ak.sort(raw.Jet.pt, axis=1, ascending=False))
+    _check(
+        s,
+        gak.sort(g.Jet.pt, axis=1, ascending=False),
+        ak.sort(raw.Jet.pt, axis=1, ascending=False),
+    )
     _check(s, gak.ravel(g.Jet.pt), ak.ravel(raw.Jet.pt))
     _check(s, gak.run_lengths(gak.sort(g.met, axis=0)), ak.run_lengths(ak.sort(raw.met, axis=0)))
 
@@ -34,7 +38,9 @@ def test_mask_is_none_singletons_pad_none() -> None:
     cond = g.met > 20.0
     _check(s, gak.mask(g.met, cond), ak.mask(raw.met, raw.met > 20.0))
     _check(s, gak.is_none(gak.mask(g.met, cond)), ak.is_none(ak.mask(raw.met, raw.met > 20.0)))
-    _check(s, gak.singletons(gak.mask(g.met, cond)), ak.singletons(ak.mask(raw.met, raw.met > 20.0)))
+    _check(
+        s, gak.singletons(gak.mask(g.met, cond)), ak.singletons(ak.mask(raw.met, raw.met > 20.0))
+    )
     _check(s, gak.pad_none(g.Jet.pt, 3, axis=1), ak.pad_none(raw.Jet.pt, 3, axis=1))
     _check(
         s,
@@ -53,10 +59,14 @@ def test_unflatten_and_regular_conversions() -> None:
     s, g, raw = session_events()
     counts = gak.num(g.Jet, axis=1)
     flat = gak.ravel(g.Jet.pt)
-    _check(s, gak.unflatten(flat, counts), ak.unflatten(ak.ravel(raw.Jet.pt), ak.num(raw.Jet, axis=1)))
+    _check(
+        s, gak.unflatten(flat, counts), ak.unflatten(ak.ravel(raw.Jet.pt), ak.num(raw.Jet, axis=1))
+    )
     padded = gak.fill_none(gak.pad_none(g.Jet.pt, 3, axis=1, clip=True), 0.0)
     reg = gak.to_regular(padded, axis=1)
-    ref_reg = ak.to_regular(ak.fill_none(ak.pad_none(raw.Jet.pt, 3, axis=1, clip=True), 0.0), axis=1)
+    ref_reg = ak.to_regular(
+        ak.fill_none(ak.pad_none(raw.Jet.pt, 3, axis=1, clip=True), 0.0), axis=1
+    )
     _check(s, reg, ref_reg)
     _check(s, gak.from_regular(reg, axis=1), ak.from_regular(ref_reg, axis=1))
 
@@ -114,7 +124,11 @@ def test_to_list_is_eager_sugar() -> None:
 
 def test_structure_ops_stay_fusible() -> None:
     s, g, _ = session_events()
-    for arr in (gak.sort(g.Jet.pt, axis=1), gak.pad_none(g.Jet.pt, 3, axis=1), gak.ravel(g.Jet.pt)):
+    for arr in (
+        gak.sort(g.Jet.pt, axis=1),
+        gak.pad_none(g.Jet.pt, 3, axis=1),
+        gak.ravel(g.Jet.pt),
+    ):
         assert recorded(s, arr)["kind"] == "op"
 
 

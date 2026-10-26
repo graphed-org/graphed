@@ -32,7 +32,10 @@ def _events(n: int, offset: int = 0) -> ak.Array:
     return ak.Array(
         {
             "x": [float(offset + i) for i in range(n)],
-            "Jet": [[{"pt": float(offset + i + j), "eta": 0.1 * j} for j in range(i % 3)] for i in range(n)],
+            "Jet": [
+                [{"pt": float(offset + i + j), "eta": 0.1 * j} for j in range(i % 3)]
+                for i in range(n)
+            ],
         }
     )
 

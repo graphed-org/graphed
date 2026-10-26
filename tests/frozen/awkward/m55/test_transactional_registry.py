@@ -1,9 +1,10 @@
-"""m55 §2 item 5: every refusal lands before anything is minted, so a refused call is not a
-poisoned family.
+"""m55 §2 item 5.
+
+Every refusal lands before anything is minted, so a refused call is not a poisoned family.
 
 The other refusal tests each check the registry through `refused`; this one checks the CONSEQUENCE
-the registry check exists for — a leaked binding would make the retry collide on the very labels the
-refused call named, and the family would be unregisterable for the life of the Session.
+the registry check exists for — a leaked binding would make the retry collide on the very labels
+the refused call named, and the family would be unregisterable for the life of the Session.
 """
 
 from __future__ import annotations
@@ -28,11 +29,15 @@ def test_a_refused_call_leaves_the_family_registrable() -> None:
     before = dict(toy.session._points)
 
     message = refused(toy, lambda: graphed.vary(ctx, "jer", collections={"Jet": container}))
-    assert "jer_up__jes_up" in message  # the refusal fired on the labels, not on something upstream
+    assert (
+        "jer_up__jes_up" in message
+    )  # the refusal fired on the labels, not on something upstream
     assert dict(toy.session._points) == before
 
     containers = jer_containers(ctx)
-    registered = graphed.vary(ctx, "jer", collections=spelled("varied", containers, "jer", JER_TAGS))
+    registered = graphed.vary(
+        ctx, "jer", collections=spelled("varied", containers, "jer", JER_TAGS)
+    )
 
     assert set(graphed.labels(registered["Jet"])) == {
         "nominal",

@@ -82,7 +82,9 @@ def test_on_fail_policy_on_opaque_op(policy: str) -> None:
         proj = gn.project(opaque, on_fail=policy)
     if policy == "warn":
         assert len(w) == 1
-        assert proj.columns_for("events") == frozenset({"pt", "eta", "phi", "charge", "mask"})  # conservative
+        assert proj.columns_for("events") == frozenset(
+            {"pt", "eta", "phi", "charge", "mask"}
+        )  # conservative
     else:  # pass
         assert len(w) == 0
         assert proj.columns_for("events") == frozenset({"pt"})  # best-effort: only what was passed

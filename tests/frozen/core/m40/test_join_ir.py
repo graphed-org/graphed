@@ -1,14 +1,15 @@
 """M40 — the ``Join`` boundary NodeKey variant (plan §2.1, contract E2).
 
 A ``Join`` is a relational data-movement boundary with exactly **two** logical inputs (build side,
-probe side); its identity is its ``scheme`` ParamMap (``how``, ``on``, …) together with the ORDER of
-those two inputs. Like every non-``Op`` node it interns/CSEs (M1 hash-consing), **ends a stage**
-(fusion never crosses it), and survives reduction as itself — a Join is a boundary op (plan A.6), so
-`is_boundary` needs no change (it is ``!Op``). These tests pin that at the IR layer; the relational
-*semantics* it carries are pinned in the frontend/backend M40 suites.
+probe side); its identity is its ``scheme`` ParamMap (``how``, ``on``, …) together with the ORDER
+of those two inputs. Like every non-``Op`` node it interns/CSEs (M1 hash-consing), **ends a stage**
+(fusion never crosses it), and survives reduction as itself — a Join is a boundary op (plan A.6),
+so `is_boundary` needs no change (it is ``!Op``). These tests pin that at the IR layer; the
+relational *semantics* it carries are pinned in the frontend/backend M40 suites.
 
-Pinned Python surface (mirrors M39 ``add_exchange``): ``GraphStore.add_join(inputs, params) -> int``
-with ``len(inputs) == 2``; ``nodes()[i]["kind"] == "join"``; ``params`` is the scheme map.
+Pinned Python surface (mirrors M39 ``add_exchange``):
+``GraphStore.add_join(inputs, params) -> int`` with ``len(inputs) == 2``;
+``nodes()[i]["kind"] == "join"``; ``params`` is the scheme map.
 """
 
 from __future__ import annotations
@@ -79,9 +80,10 @@ def test_join_scheme_and_input_order_participate_in_structural_identity() -> Non
 
 
 def test_join_ends_stages_and_survives_reduce() -> None:
-    # THE boundary witness: the three op-runs fuse into THREE separate stages, the Join is emitted as
-    # itself between them, and it is NOT absorbed into an op run. If Join were a fusible Op, fusion
-    # would run straight through it: the whole graph collapses to ONE stage with NO join node.
+    # THE boundary witness: the three op-runs fuse into THREE separate stages, the Join is emitted
+    # as itself between them, and it is NOT absorbed into an op run. If Join were a fusible Op,
+    # fusion would run straight through it: the whole graph collapses to ONE stage with NO join
+    # node.
     g, _, out = _two_sided_join()
     reduced, _report = g.reduce(outputs=[out])
     kinds = _kinds(reduced)
@@ -105,12 +107,15 @@ def test_dce_keeps_a_reachable_join_and_drops_an_unreachable_one() -> None:
     dead = g.add_join([rsrc, lsrc], _SCHEME)  # distinct (swapped order); never on a path to output
     out = g.add_reduction("sum", [live])
     reduced, _ = g.reduce(outputs=[out])
-    assert [n["kind"] for n in reduced.nodes()].count("join") == 1, "only the reachable join survives"
+    assert [n["kind"] for n in reduced.nodes()].count("join") == 1, (
+        "only the reachable join survives"
+    )
     assert dead != live  # sanity: they really are two distinct nodes in the source graph
 
 
 def test_reduction_over_a_join_is_byte_deterministic() -> None:
-    # the M8/M4 determinism gate extends to the new variant: identical builds -> identical reduced dot.
+    # the M8/M4 determinism gate extends to the new variant: identical builds -> identical reduced
+    # dot.
     a, _, oa = _two_sided_join()
     b, _, ob = _two_sided_join()
     assert a.reduce(outputs=[oa])[0].to_dot() == b.reduce(outputs=[ob])[0].to_dot()

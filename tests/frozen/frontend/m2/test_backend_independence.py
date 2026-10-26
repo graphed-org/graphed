@@ -1,4 +1,7 @@
-"""Backend-independence: same program, two backends -> identical structure, different results (M2)."""
+"""Backend-independence (M2): same program, two backends.
+
+Identical structure, different results.
+"""
 
 from __future__ import annotations
 

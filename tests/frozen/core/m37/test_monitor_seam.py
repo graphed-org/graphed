@@ -48,11 +48,15 @@ class Recorder:
 
 def _plan(n: int = 5) -> Plan[int]:
     tasks = [Task(k, Partition(f"f{k}.root", "Events", 0, (k + 1) * 10)) for k in range(n)]
-    return Plan(process=lambda p, r: p.n_entries, combine=lambda a, b: a + b, empty=lambda: 0, tasks=tasks)
+    return Plan(
+        process=lambda p, r: p.n_entries, combine=lambda a, b: a + b, empty=lambda: 0, tasks=tasks
+    )
 
 
 def test_taskevent_is_frozen_with_expected_fields() -> None:
-    ev = TaskEvent(TaskPhase.STARTED, key=3, worker="w0", t=1.0, partition="f:Events:0-10", n_entries=10)
+    ev = TaskEvent(
+        TaskPhase.STARTED, key=3, worker="w0", t=1.0, partition="f:Events:0-10", n_entries=10
+    )
     assert ev.phase is TaskPhase.STARTED and ev.key == 3 and ev.n_entries == 10
     assert ev.bytes_read is None and ev.error is None
     with pytest.raises(dataclasses.FrozenInstanceError):

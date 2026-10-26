@@ -72,7 +72,8 @@ def test_an_unknown_node_tag_is_rejected_not_silently_misparsed() -> None:
 
 def test_tag_one_past_join_is_rejected() -> None:
     # discriminates a decoder whose match accidentally admits tag 7 (or treats >=6 as valid): the
-    # first tag AFTER T_JOIN=6 must still be rejected loudly, pinning the exhaustive-match contract.
+    # first tag AFTER T_JOIN=6 must still be rejected loudly, pinning the exhaustive-match
+    # contract.
     g, outs = _join_graph()
     blob = bytearray(g.serialize(outputs=outs))
     blob[8] = 7
@@ -82,9 +83,10 @@ def test_tag_one_past_join_is_rejected() -> None:
 
 def test_low_tags_and_magic_are_byte_frozen() -> None:
     # M8-determinism CONTROL (mirrors M39's `test_legacy_graphs_are_byte_stable`): a golden byte
-    # oracle for a graph of only pre-M40 node kinds. It PASSES today by design and is the guard that
-    # adding T_JOIN=6 did not renumber tags 0..2 (source=0/op=1/reduction=2) or bump the magic — a
-    # renumber/bump is self-consistent on a fresh round-trip, so only an external literal catches it.
+    # oracle for a graph of only pre-M40 node kinds. It PASSES today by design and is the guard
+    # that adding T_JOIN=6 did not renumber tags 0..2 (source=0/op=1/reduction=2) or bump the magic
+    # — a renumber/bump is self-consistent on a fresh round-trip, so only an external literal
+    # catches it.
     g = GraphStore()
     src = g.add_source("events", {"uri": "f.root"})
     pt = g.add_op("pt", [src], {"thr": 30})

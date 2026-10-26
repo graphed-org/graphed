@@ -1,11 +1,11 @@
 """M40 — the multi-source ``graphed.join_plan`` builder (plan §3.2; contract E1, target 13).
 
 A join has TWO independently-partitioned sources, so the single-source ``aggregate_plan`` /
-``shuffle_plan`` guards cannot express it. ``join_plan`` is a NEW builder mirroring ``shuffle_plan``
-that emits a **multi-stage** :class:`~graphed.core.DurablePlanV2`: one ``map_write`` stage per side
-that a single ``kind="gather_join"`` stage (``inputs=(0, 1)``) depends on. This witnesses the plan
-SHAPE (kinds + the two-input barrier edge) + its byte-identical serialization; cross-process
-execution is witnessed in graphed-executors.
+``shuffle_plan`` guards cannot express it. ``join_plan`` is a NEW builder mirroring
+``shuffle_plan`` that emits a **multi-stage** :class:`~graphed.core.DurablePlanV2`: one
+``map_write`` stage per side that a single ``kind="gather_join"`` stage (``inputs=(0, 1)``) depends
+on. This witnesses the plan SHAPE (kinds + the two-input barrier edge) + its byte-identical
+serialization; cross-process execution is witnessed in graphed-executors.
 
 Backend-agnostic (toy ``ShuffleBackend`` + ``ListSource``), mirroring
 ``tests/frozen/frontend/m39/test_shuffle_plan_builder.py``. Pre-implementation ``graphed`` has no

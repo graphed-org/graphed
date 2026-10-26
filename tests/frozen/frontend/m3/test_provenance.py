@@ -1,4 +1,7 @@
-"""Real provenance (M3): sub-expression text, toggle, and survival through realistic call patterns."""
+"""Real provenance (M3): sub-expression text, toggle, and survival.
+
+Survival is through realistic call patterns.
+"""
 
 from __future__ import annotations
 

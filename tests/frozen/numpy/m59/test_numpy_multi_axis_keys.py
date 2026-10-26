@@ -75,7 +75,9 @@ def test_the_tuple_keys_accepted_today_record_the_same_op_params_and_boundary_fl
 
 
 @pytest.mark.parametrize("label", list(REFUSED))
-def test_a_tuple_key_that_touches_the_partitioned_axis_or_is_malformed_is_refused(label: str) -> None:
+def test_a_tuple_key_that_touches_the_partitioned_axis_or_is_malformed_is_refused(
+    label: str,
+) -> None:
     session, d2, _d3 = loaded()
     before = session.node_count()
 

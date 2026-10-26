@@ -30,7 +30,7 @@ def _two_analyses() -> tuple[gc.GraphStore, int, int]:
 
 
 def _fresh_request_bytes(pick_second: bool) -> bytes:
-    """Reference: a FRESH store compiled for exactly the chosen analysis."""
+    """Return the reference: a FRESH store compiled for exactly the chosen analysis."""
     s, a, b = _two_analyses()
     return bytes(s.reduce(outputs=[b if pick_second else a])[0].serialize())
 
@@ -96,7 +96,10 @@ def test_concurrent_output_scoped_compiles_are_isolated() -> None:
     # compiling is READ-ONLY: many threads compiling DIFFERENT outputs from one shared store
     # must each get exactly their own single-output bytes (runs under 3.14t in CI)
     s, a, b = _two_analyses()
-    want = {a: bytes(s.reduce(outputs=[a])[0].serialize()), b: bytes(s.reduce(outputs=[b])[0].serialize())}
+    want = {
+        a: bytes(s.reduce(outputs=[a])[0].serialize()),
+        b: bytes(s.reduce(outputs=[b])[0].serialize()),
+    }
     results: list[tuple[int, bytes]] = []
     lock = threading.Lock()
 

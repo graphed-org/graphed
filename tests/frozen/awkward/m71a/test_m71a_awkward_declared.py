@@ -1,5 +1,8 @@
-"""m71a A-C1/A-C3 (awkward): the declared type is the recorded form, so build-time ops type-check
-against it — a bool mask indexes as a mask, and a named record resolves its behavior."""
+"""m71a A-C1/A-C3 (awkward).
+
+The declared type is the recorded form, so build-time ops type-check against it — a bool mask
+indexes as a mask, and a named record resolves its behavior.
+"""
 
 from __future__ import annotations
 

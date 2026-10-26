@@ -1,5 +1,8 @@
-"""m68c §3.3 builders: ``join_plan`` and ``shuffle_plan`` carry the services their External nodes
-name (plus ``services=``), and building the same plan twice gives the same bytes, services included."""
+"""m68c §3.3 builders.
+
+``join_plan`` and ``shuffle_plan`` carry the services their External nodes name (plus
+``services=``), and building the same plan twice gives the same bytes, services included.
+"""
 
 from __future__ import annotations
 

@@ -36,7 +36,9 @@ def test_changing_the_dataset_changes_the_fingerprint(tmp_path) -> None:  # type
 
 def test_changing_a_config_value_changes_the_fingerprint(tmp_path) -> None:  # type: ignore[no-untyped-def]
     base = {"systematic": "nominal", "jes_factor": 1.0, "min_btag": 1}
-    assert _fp(tmp_path / "a", config=base) != _fp(tmp_path / "b", config={**base, "systematic": "down"})
+    assert _fp(tmp_path / "a", config=base) != _fp(
+        tmp_path / "b", config={**base, "systematic": "down"}
+    )
 
 
 def test_a_payload_change_also_changes_the_canonical_ir(tmp_path) -> None:  # type: ignore[no-untyped-def]

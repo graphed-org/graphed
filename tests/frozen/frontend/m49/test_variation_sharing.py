@@ -87,8 +87,11 @@ def test_reduced_stage_count_equals_the_no_vary_oracle() -> None:
 
 
 def test_a_per_universe_prefix_copy_is_visible_in_the_reduced_shape() -> None:
-    """The control leg for the stage-shape witness: a copied prefix reaches the source once per
-    universe and carries the prefix work that many times."""
+    """The control leg for the stage-shape witness.
+
+    A copied prefix reaches the source once per universe and carries the prefix work that many
+    times.
+    """
     shared_session = Session(NumpyBackend())
     shared_nodes = _reduced(shared_session, vary_topology(shared_session).outputs)
 

@@ -1,5 +1,6 @@
-"""C2 / design §4.11-1, §4.11-2, §4.11-3, §4.11-5 and §4.5's transaction: the construction-time
-checks that make a label a globally unique name for a point within a Session.
+"""C2 / design §4.11-1, §4.11-2, §4.11-3, §4.11-5 and §4.5's transaction.
+
+The construction-time checks that make a label a globally unique name for a point within a Session.
 
 Each refusal ships with the admitted member that must still pass, in the same test — a blanket
 "refuse every re-mint" implementation has to fail one of them.
@@ -20,9 +21,12 @@ from graphed.errors import GraphedError
 
 
 def test_one_label_under_two_points_is_refused_naming_both() -> None:
-    """§4.11-1. `vary(x, "jes", btag_up=…)` and `vary(y, "jes_btag", up=…)` render ONE label out of
-    two different (name, tag) pairs; today neither call raises and combination silently merges them
-    into a universe differing from nominal in two knobs."""
+    """§4.11-1.
+
+    `vary(x, "jes", btag_up=…)` and `vary(y, "jes_btag", up=…)` render ONE label out of two
+    different (name, tag) pairs; today neither call raises and combination silently merges them
+    into a universe differing from nominal in two knobs.
+    """
     _session, record = source()
     x = record["pt"]
     y = record["eta"]
@@ -44,15 +48,16 @@ def test_one_label_under_two_points_is_refused_naming_both() -> None:
 
 
 def test_one_point_under_two_labels_maps_each_universe_to_exactly_one_label() -> None:
-    """§4.11-2. Two labels for one universe means two slots, two StrCategory bins and two content
-    hashes. Under m53 the auto-fanout enforces this by construction: across the whole grid — joints
-    included — the label↔point map is injective, so no universe wears two names."""
+    """§4.11-2.
+
+    Two labels for one universe means two slots, two StrCategory bins and two content hashes. Under
+    m53 the auto-fanout enforces this by construction: across the whole grid — joints included —
+    the label↔point map is injective, so no universe wears two names.
+    """
     _session, ctx = two_axis_context()
     weight = ctx["pt"] * 0.5  # jes-dependent → the corr family fans out over jes
 
-    registered = graphed.vary(
-        ctx, "btag", weight, is_weight=True, points={"only": weight * 3.0}
-    )
+    registered = graphed.vary(ctx, "btag", weight, is_weight=True, points={"only": weight * 3.0})
 
     points = graphed.points(graphed.weight(registered))
     assert "btag_only__jes_up" in points  # the grid is present (a joint was minted)
@@ -61,9 +66,12 @@ def test_one_point_under_two_labels_maps_each_universe_to_exactly_one_label() ->
 
 
 def test_a_points_coordinate_that_is_not_a_tag_of_this_call_is_refused() -> None:
-    """§4.11-5, and the canonicalizing matcher it needs. A point's OWN-family coordinate is matched
-    AFTER `canonical_tag`, so `"0.5"` and `"5em1"` are one tag while `"0p5"` and `"0.5"` are two — a
-    matcher comparing `numeric_value` instead admits the second pair, both being `Fraction(1, 2)`."""
+    """§4.11-5, and the canonicalizing matcher it needs.
+
+    A point's OWN-family coordinate is matched AFTER `canonical_tag`, so `"0.5"` and `"5em1"` are
+    one tag while `"0p5"` and `"0.5"` are two — a matcher comparing `numeric_value` instead admits
+    the second pair, both being `Fraction(1, 2)`.
+    """
     _s1, ctx = two_axis_context()
     weight = ctx["pt"] * 0.5  # jes-dependent
     with pytest.raises(GraphedError) as caught:
@@ -72,7 +80,10 @@ def test_a_points_coordinate_that_is_not_a_tag_of_this_call_is_refused() -> None
             "corr",
             weight,
             is_weight=True,
-            points=[("up", weight * 3.0), {"corr": "down", "jes": "up"}],  # 'down' is not a corr tag
+            points=[
+                ("up", weight * 3.0),
+                {"corr": "down", "jes": "up"},
+            ],  # 'down' is not a corr tag
         )
     message = str(caught.value)
     assert "down" in message
@@ -111,8 +122,11 @@ def test_a_points_coordinate_that_is_not_a_tag_of_this_call_is_refused() -> None
 
 
 def test_an_origin_points_entry_is_refused_while_a_zero_tag_still_mints() -> None:
-    """§4.11-3 and §4.2's zero asymmetry at the API: an EXPLICIT coordinate at 0 says "central" and
-    drops; a registered TAG `0` names a real universe."""
+    """§4.11-3 and §4.2's zero asymmetry at the API.
+
+    An EXPLICIT coordinate at 0 says "central" and drops; a registered TAG `0` names a real
+    universe.
+    """
     _s1, record = source()
     x = record["pt"]
     # the admitted member: the zero TAG, never zero-dropped (independent, no points=)
@@ -152,8 +166,11 @@ def test_an_origin_points_entry_is_refused_while_a_zero_tag_still_mints() -> Non
 
 
 def test_a_failed_vary_leaves_the_registry_untouched_and_the_label_reregistrable() -> None:
-    """§4.5's transactional mint. Without it one failed call poisons a label for the life of the
-    Session, on exactly the notebook surface these spellings are iterated on."""
+    """§4.5's transactional mint.
+
+    Without it one failed call poisons a label for the life of the Session, on exactly the notebook
+    surface these spellings are iterated on.
+    """
     _session, ctx = two_axis_context()
 
     before = graphed.points(ctx)

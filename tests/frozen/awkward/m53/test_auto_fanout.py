@@ -1,5 +1,7 @@
-"""vary-m53 §2: a plain `vary` over dependent members mints the full grid, and every joint resolves
-to the real cross node the graph holds — never the nominal one the pre-m53 collapse produced.
+"""vary-m53 §2: a plain `vary` over dependent members mints the full grid.
+
+And every joint resolves to the real cross node the graph holds — never the nominal one the pre-m53
+collapse produced.
 
 The three assertions separate the three ways the fanout could be wrong: the SET (a missing or extra
 universe), the RESOLUTION (a joint pointing at nominal, the silent drop this arc exists to remove),

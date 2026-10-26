@@ -1,14 +1,15 @@
 """§5.4 spelled through `gak.join`, the awkward-idiom representative of the boundary refusal.
 
 The m39/m40 plan builders are single-boundary: they take one output and pick one join/exchange node
-out of the store, so a variation crossing a boundary compiles to a silent miscompilation. v1 refuses
-the `Varied` OPERAND instead. What m49 freezes is the MESSAGE shape, worded over what the site knows
-— the refusing VERB and the offending container's labels; there is no boundary node at an operand
-check, and the container carries N labels, not one.
+out of the store, so a variation crossing a boundary compiles to a silent miscompilation. v1
+refuses the `Varied` OPERAND instead. What m49 freezes is the MESSAGE shape, worded over what the
+site knows — the refusing VERB and the offending container's labels; there is no boundary node at
+an operand check, and the container carries N labels, not one.
 
 The positive control is what keeps this from freezing a blanket "a Varied near a Join raises": a
-variation entirely DOWNSTREAM of the join compiles and produces correct results per universe, routed
-through `Session.materialize` per universe (the m40 join fixtures' house route, not a plan builder).
+variation entirely DOWNSTREAM of the join compiles and produces correct results per universe,
+routed through `Session.materialize` per universe (the m40 join fixtures' house route, not a plan
+builder).
 """
 
 from __future__ import annotations
@@ -29,16 +30,22 @@ def _sources(session: Session) -> tuple[object, object]:
     left = from_awkward(
         session,
         "left",
-        ak.Array({"run": [1, 1, 1], "lumi": [1, 1, 1], "event": [1, 2, 2], "lv": [10.0, 20.0, 21.0]}),
+        ak.Array(
+            {"run": [1, 1, 1], "lumi": [1, 1, 1], "event": [1, 2, 2], "lv": [10.0, 20.0, 21.0]}
+        ),
     )
     right = from_awkward(
-        session, "right", ak.Array({"run": [1, 1], "lumi": [1, 1], "event": [2, 2], "rv": [200.0, 201.0]})
+        session,
+        "right",
+        ak.Array({"run": [1, 1], "lumi": [1, 1], "event": [2, 2], "rv": [200.0, 201.0]}),
     )
     return left, right
 
 
 @pytest.mark.parametrize("grouped", [False, True])
-def test_a_varied_operand_is_refused_naming_the_verb_and_the_containers_labels(grouped: bool) -> None:
+def test_a_varied_operand_is_refused_naming_the_verb_and_the_containers_labels(
+    grouped: bool,
+) -> None:
     session = Session(AwkwardBackend())
     left, right = _sources(session)
     varied = graphed.vary(left, "jes", up=left, down=left)

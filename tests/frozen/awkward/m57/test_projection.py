@@ -52,8 +52,11 @@ def _members_at(members: Any, ctx: Any) -> dict[str, Any]:
 
 
 def test_naming_a_factor_that_does_not_own_the_label_joins_it_and_keeps_the_universe() -> None:
-    """`pu` named inside `hf_up` joins the `pu` factor: the projected nominal is still the universe
-    the projection selected, and the new family's universe multiplies it once."""
+    """`pu` named inside `hf_up` joins the `pu` factor.
+
+    The projected nominal is still the universe the projection selected, and the new family's
+    universe multiplies it once.
+    """
     base = m57_two_factors()
     projected = graphed.universe(base.ctx, "hf_up")
     adopted = graphed.weight(projected)
@@ -73,9 +76,11 @@ def test_naming_a_factor_that_does_not_own_the_label_joins_it_and_keeps_the_univ
 
 
 def test_naming_the_factor_that_owns_the_label_is_refused() -> None:
-    """The owner's member at `L` IS the universe projected into; naming it there would replace the
-    selected variation, so it is refused — before and after an unrelated join at the projection, and
-    after an expansion at a masked child."""
+    """The owner's member at `L` IS the universe projected into.
+
+    Naming it there would replace the selected variation, so it is refused — before and after an
+    unrelated join at the projection, and after an expansion at a masked child.
+    """
     for expanded in (False, True):
         base = m57_two_factors()
         source = base.ctx
@@ -109,8 +114,11 @@ def test_naming_the_factor_that_owns_the_label_is_refused() -> None:
 
 
 def test_at_a_placed_label_both_owners_are_refused_and_a_third_factor_joins() -> None:
-    """A placed label's point carries two families' coordinates, so it has two owners; ownership is
-    decided from the riders' families against the point, never from the label's name."""
+    """A placed label's point carries two families' coordinates.
+
+    So it has two owners; ownership is decided from the riders' families against the point, never
+    from the label's name.
+    """
     _session, ctx = m57_base()
     jets = ctx["Jet"]
     pu = m57_pu(jets)
@@ -140,14 +148,21 @@ def test_at_a_placed_label_both_owners_are_refused_and_a_third_factor_joins() ->
                 _members_at(m57_table_members(jets, MF_TABLE), projected),
             )
     assert m57_node(graphed.weight(projected)) == before
-    joined = m57_weight(projected, "pu2", _at(pu, projected), _members_at(m57_scaled(pu, NU), projected))
+    joined = m57_weight(
+        projected, "pu2", _at(pu, projected), _members_at(m57_scaled(pu, NU), projected)
+    )
     assert m57_node(graphed.weight(joined)) == before
 
 
-def test_a_central_equal_to_the_owners_member_is_refused_while_a_re_derivation_below_a_mask_is_not() -> None:
-    """The owner's RECORDED member at `L` is refused however the central was built — at the parent as
-    the `up=` node, or at the projection — in either order with an unrelated family and across a mask;
-    a member RE-DERIVED below the mask is a different node and stays a new factor."""
+def test_a_central_equal_to_the_owners_member_is_refused_while_a_re_derivation_below_a_mask_is_not() -> (  # noqa: E501
+    None
+):
+    """The owner's RECORDED member at `L` is refused however the central was built.
+
+    At the parent as the `up=` node, or at the projection — in either order with an unrelated
+    family and across a mask; a member RE-DERIVED below the mask is a different node and stays a
+    new factor.
+    """
     base = m57_two_factors()
     owner_member = base.hf_members["up"]
     probe = m57_table_members(base.jets, MF_TABLE)
@@ -185,14 +200,18 @@ def test_a_central_equal_to_the_owners_member_is_refused_while_a_re_derivation_b
 
 
 def test_below_a_second_projection_the_owner_of_each_universe_is_refused() -> None:
-    """The context is inside every universe it projected into, so ownership is tested against all of
-    them: the outer owner named by its recorded member is refused as by its nominal, and so is the
-    inner one."""
+    """The context is inside every universe it projected into.
+
+    So ownership is tested against all of them: the outer owner named by its recorded member is
+    refused as by its nominal, and so is the inner one.
+    """
     base = m57_two_factors()
     outer = graphed.universe(base.ctx, "hf_up")
     inner_central = m57_sf(base.jets, 0.5) * 1.0
     inner_members = m57_table_members(base.jets, MF_TABLE)
-    with_inner = m57_weight(outer, "mf", _at(inner_central, outer), _members_at(inner_members, outer))
+    with_inner = m57_weight(
+        outer, "mf", _at(inner_central, outer), _members_at(inner_members, outer)
+    )
     inner = graphed.universe(with_inner, "mf_up")
     before = m57_node(graphed.weight(inner))
     probe = m57_table_members(base.jets, NF_TABLE)
@@ -203,13 +222,18 @@ def test_below_a_second_projection_the_owner_of_each_universe_is_refused() -> No
     assert m57_node(graphed.weight(inner)) == before
     # the live control: a factor neither universe owns still joins, so the refusals above are
     # decisions rather than a blanket refusal of every central at a stacked projection
-    joined = m57_weight(inner, "pu2", _at(base.pu, inner), _members_at(m57_scaled(base.pu, NU), inner))
+    joined = m57_weight(
+        inner, "pu2", _at(base.pu, inner), _members_at(m57_scaled(base.pu, NU), inner)
+    )
     assert m57_node(graphed.weight(joined)) == before
 
 
 def test_a_node_that_is_both_a_nominal_and_the_owners_member_joins_that_factor() -> None:
-    """A node that is a live factor's nominal in the central's own row space AND another entry's
-    recorded member is decided by the nominal first — a join, in either registration order."""
+    """A node that is a live factor's nominal AND another entry's member joins that factor.
+
+    The node is the nominal in the central's own row space and another entry's recorded member; the
+    nominal is decided first — a join, in either registration order.
+    """
     for hf_first in (True, False):
         _session, ctx = m57_base()
         jets = ctx["Jet"]
@@ -239,8 +263,11 @@ def test_a_node_that_is_both_a_nominal_and_the_owners_member_joins_that_factor()
 
 
 def test_at_a_shift_label_the_re_derived_sf_joins_the_shift_dependent_factor() -> None:
-    """Inside `jes_up` the SF re-derived over this context's shifted jets IS the jes-dependent
-    factor's recorded member there, and that factor does not own the label: it joins."""
+    """Inside `jes_up` the SF re-derived over the shifted jets IS the jes factor's member.
+
+    It is the jes-dependent factor's recorded member there, and that factor does not own the label:
+    it joins.
+    """
     session, ctx = m57_base()
     shifted = m57_shifted(ctx, "jes", JES)
     sjets = shifted["Jet"]
@@ -259,13 +286,19 @@ def test_at_a_shift_label_the_re_derived_sf_joins_the_shift_dependent_factor() -
     ops = [m57_factor("pu", _at(pu, projected), {}), m57_factor("mf", recorded, probe)]
 
     assert m57_node(weight) == adopted.node_id
-    assert m57_ambient_values(session, weight) == m57_oracle_values(session, ops, graphed.labels(weight))
+    assert m57_ambient_values(session, weight) == m57_oracle_values(
+        session, ops, graphed.labels(weight)
+    )
 
 
-def test_at_a_shift_label_a_join_without_that_coordinate_keeps_the_other_factors_dependence() -> None:
-    """Joining a factor that has no coordinate on the shift must not flatten the OTHER factor: the
-    projected nominal still reads the SF at the shifted jets, beside the jes-dependent join as the
-    positive control."""
+def test_at_a_shift_label_a_join_without_that_coordinate_keeps_the_other_factors_dependence() -> (
+    None
+):
+    """Joining a factor that has no coordinate on the shift must not flatten the OTHER factor.
+
+    The projected nominal still reads the SF at the shifted jets, beside the jes-dependent join as
+    the positive control.
+    """
     session, ctx = m57_base()
     shifted = m57_shifted(ctx, "jes", JES)
     sjets = shifted["Jet"]
@@ -277,7 +310,9 @@ def test_at_a_shift_label_a_join_without_that_coordinate_keeps_the_other_factors
     adopted = graphed.weight(projected)
     shifted_sf = m57_sf(projected["Jet"])
 
-    joined = m57_weight(projected, "pu2", _at(pu, projected), _members_at(m57_scaled(pu, NU), projected))
+    joined = m57_weight(
+        projected, "pu2", _at(pu, projected), _members_at(m57_scaled(pu, NU), projected)
+    )
     weight = graphed.weight(joined)
     ops = [
         m57_factor("pu2", _at(pu, projected), _members_at(m57_scaled(pu, NU), projected)),
@@ -285,16 +320,24 @@ def test_at_a_shift_label_a_join_without_that_coordinate_keeps_the_other_factors
     ]
 
     assert m57_node(weight) == adopted.node_id
-    assert m57_ambient_values(session, weight) == m57_oracle_values(session, ops, graphed.labels(weight))
+    assert m57_ambient_values(session, weight) == m57_oracle_values(
+        session, ops, graphed.labels(weight)
+    )
     # positive control on the same list: the jes-dependent factor joins too, keeping the universe
-    control = m57_weight(projected, "mf", shifted_sf, m57_table_members(projected["Jet"], MF_TABLE))
+    control = m57_weight(
+        projected, "mf", shifted_sf, m57_table_members(projected["Jet"], MF_TABLE)
+    )
     assert m57_node(graphed.weight(control)) == adopted.node_id
 
 
-def test_inside_an_overlays_universe_a_post_overlay_join_multiplies_and_a_covered_one_is_refused() -> None:
-    """Inside the overlay's own universe every value is that universe, so an operation that would
-    land INSIDE the factors it covers is refused; one registered after it multiplies its result, and
-    a handle over the whole head anchors behind it."""
+def test_inside_an_overlays_universe_a_post_overlay_join_multiplies_and_a_covered_one_is_refused() -> (  # noqa: E501
+    None
+):
+    """Inside the overlay's own universe every value is that universe.
+
+    So an operation that would land INSIDE the factors it covers is refused; one registered after
+    it multiplies its result, and a handle over the whole head anchors behind it.
+    """
     session, ctx = m57_base()
     jets, met = ctx["Jet"], ctx["MET"]
     sf, pu, trig = m57_sf(jets), m57_pu(jets), m57_trig(met)
@@ -326,16 +369,20 @@ def test_inside_an_overlays_universe_a_post_overlay_join_multiplies_and_a_covere
     anchored = m57_delta(projected, "mu2", adopted, NU)
     weight = graphed.weight(anchored)
     assert m57_node(weight) == adopted.node_id
-    assert m57_values(session, graphed.member_of(weight, "mu2_up")) == m57_values(session, adopted * NU["up"])
+    assert m57_values(session, graphed.member_of(weight, "mu2_up")) == m57_values(
+        session, adopted * NU["up"]
+    )
     # a handle read AT the projection is the same overlay
     read_here = m57_delta(projected, "mu3", graphed.weight(projected), NU)
     assert m57_node(graphed.weight(read_here)) == adopted.node_id
 
 
 def test_below_a_further_projection_the_post_overlay_join_keeps_the_overlays_factor() -> None:
-    """The overlay stays fixed through every further row-space link: the post-overlay join still
-    keeps its factor, the covered join is still refused, and the refusal names the universe that
-    FIXED the overlay, not the last link taken."""
+    """The overlay stays fixed through every further row-space link.
+
+    The post-overlay join still keeps its factor, the covered join is still refused, and the
+    refusal names the universe that FIXED the overlay, not the last link taken.
+    """
     _session, ctx = m57_base()
     jets, met = ctx["Jet"], ctx["MET"]
     sf, pu, trig = m57_sf(jets), m57_pu(jets), m57_trig(met)
@@ -355,15 +402,19 @@ def test_below_a_further_projection_the_post_overlay_join_keeps_the_overlays_fac
     assert m57_node(graphed.weight(joined)) == adopted.node_id
 
     with pytest.raises(GraphedError) as caught:
-        m57_weight(inner, "probe", _at(sf, inner), _members_at(m57_table_members(jets, NF_TABLE), inner))
+        m57_weight(
+            inner, "probe", _at(sf, inner), _members_at(m57_table_members(jets, NF_TABLE), inner)
+        )
     assert "mu_up" in str(caught.value)
     assert m57_node(graphed.weight(inner)) == adopted.node_id
 
 
 def test_a_fixed_overlay_stays_fixed_through_a_further_row_space_link() -> None:
-    """An overlay a projection fixed is never re-tested against its re-indexed member: after an
-    expansion at its own universe and a further link carrying a registration, its universe is still
-    its member over the projected value."""
+    """An overlay a projection fixed is never re-tested against its re-indexed member.
+
+    After an expansion at its own universe and a further link carrying a registration, its universe
+    is still its member over the projected value.
+    """
     session, ctx = m57_base()
     jets, met = ctx["Jet"], ctx["MET"]
     sf, pu, trig = m57_sf(jets), m57_pu(jets), m57_trig(met)
@@ -384,15 +435,21 @@ def test_a_fixed_overlay_stays_fixed_through_a_further_row_space_link() -> None:
     weight = graphed.weight(registered)
     head = _at(adopted, child)  # the projected value, masked: it carries the overlay's rescaling
 
-    assert m57_values(session, graphed.member_of(weight, "nominal")) == m57_values(session, head * child_sf)
-    assert m57_values(session, graphed.member_of(weight, "mf_up")) == m57_values(session, head * probe["up"])
+    assert m57_values(session, graphed.member_of(weight, "nominal")) == m57_values(
+        session, head * child_sf
+    )
+    assert m57_values(session, graphed.member_of(weight, "mf_up")) == m57_values(
+        session, head * probe["up"]
+    )
 
 
 def test_a_parent_built_projected_nominal_is_an_overlay_after_the_head() -> None:
-    """`universe(weight(ctx), L)` built at the parent IS the node the projection adopted, so a family
-    whose nominal is that expression is an overlay behind the head — with or without a read in
-    between; built above a mask that lies between, it is a member of another ambient and stays a
-    factor."""
+    """`universe(weight(ctx), L)` built at the parent IS the node the projection adopted.
+
+    So a family whose nominal is that expression is an overlay behind the head — with or without a
+    read in between; built above a mask that lies between, it is a member of another ambient and
+    stays a factor.
+    """
     base = m57_two_factors()
     parent_member = graphed.universe(graphed.weight(base.ctx), "hf_up")
 
@@ -410,7 +467,9 @@ def test_a_parent_built_projected_nominal_is_an_overlay_after_the_head() -> None
 
     # the control: the same expression built ABOVE a mask that lies between is a new factor
     child = base.ctx[base.met.pt > MET_CUT]
-    extra = m57_pu(child["Jet"]) * 0.5  # a factor the child registers, so its ambient is NOT the parent's
+    extra = (
+        m57_pu(child["Jet"]) * 0.5
+    )  # a factor the child registers, so its ambient is NOT the parent's
     child = m57_weight(child, "nf", extra, m57_scaled(extra, NF_TABLE))
     below = graphed.universe(child, "hf_up")
     crossed = _at(parent_member, below)
@@ -424,10 +483,15 @@ def test_a_parent_built_projected_nominal_is_an_overlay_after_the_head() -> None
     )
 
 
-def test_at_the_nominal_projection_a_re_derived_central_joins_while_a_weight_label_stays_a_factor() -> None:
-    """A projection to the NOMINAL universe keeps the entries' identity, so a central re-derived from
-    the projected collections interns to the parent's node and joins; at a WEIGHT label the same
-    registration is a new factor and the variation projected into survives."""
+def test_at_the_nominal_projection_a_re_derived_central_joins_while_a_weight_label_stays_a_factor() -> (  # noqa: E501
+    None
+):
+    """A projection to the NOMINAL universe keeps the entries' identity.
+
+    So a central re-derived from the projected collections interns to the parent's node and joins;
+    at a WEIGHT label the same registration is a new factor and the variation projected into
+    survives.
+    """
     base = m57_two_factors()
     flat = graphed.nominal(base.ctx)
     re_derived = m57_sf(flat["Jet"])

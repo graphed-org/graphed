@@ -1,4 +1,6 @@
-"""M9 — stress the ExternalPlugin API against real ML-inference frameworks (not just the lambda/toys).
+"""M9 — stress the ExternalPlugin API against real ML-inference frameworks.
+
+Not just the lambda/toys.
 
 The ``sha256_bytes`` + correctionlib/onnx plugins could be flattering the API. These tests build
 plugins around **PyTorch** (TorchScript; hash of weights; single- AND multi-input), **XGBoost**
@@ -33,7 +35,8 @@ from graphed.preserve import (
 )
 
 # NOTE: torch + xgboost vendor conflicting OpenMP runtimes; conftest.py sets KMP_DUPLICATE_LIB_OK /
-# OMP_NUM_THREADS before any OpenMP library loads so this suite runs both frameworks in one process.
+# OMP_NUM_THREADS before any OpenMP library loads so this suite runs both frameworks in one
+# process.
 
 _HIST = {"name": "met", "bins": 20, "lo": 0.0, "hi": 200.0}
 
@@ -42,7 +45,9 @@ _HIST = {"name": "met", "bins": 20, "lo": 0.0, "hi": 200.0}
 def _hist(value: Any, weight: Any) -> np.ndarray:
     v = np.asarray(ak.to_numpy(ak.Array(value)), dtype="float64")
     w = np.asarray(ak.to_numpy(ak.Array(weight)), dtype="float64")
-    return np.histogram(v, bins=_HIST["bins"], range=(_HIST["lo"], _HIST["hi"]), weights=w)[0].round(6)
+    return np.histogram(v, bins=_HIST["bins"], range=(_HIST["lo"], _HIST["hi"]), weights=w)[
+        0
+    ].round(6)
 
 
 def _record(plugin: ExternalPlugin, payload: bytes, *, two_inputs: bool = False):  # type: ignore[no-untyped-def]
@@ -56,7 +61,9 @@ def _record(plugin: ExternalPlugin, payload: bytes, *, two_inputs: bool = False)
     return s, ev.MET.pt, weight
 
 
-def _check_roundtrip(tmp_path, plugin: ExternalPlugin, payload: bytes, *, two_inputs: bool = False) -> Bundle:  # type: ignore[no-untyped-def]
+def _check_roundtrip(
+    tmp_path, plugin: ExternalPlugin, payload: bytes, *, two_inputs: bool = False
+) -> Bundle:
     register_plugin(plugin)  # validates the hash: cross-process determinism + non-vacuity
     s, value, weight = _record(plugin, payload, two_inputs=two_inputs)
     reference = _hist(s.materialize(value), s.materialize(weight))  # build-time, originals present
@@ -70,7 +77,9 @@ def _check_roundtrip(tmp_path, plugin: ExternalPlugin, payload: bytes, *, two_in
         histogram=_HIST,
     )
     assert np.array_equal(reproduce(bundle), reference), "from-bundle reproduce != build-time"
-    assert bundle.manifest["opaque_nodes"] == [], "a real ML model External must be preserved, not opaque"
+    assert bundle.manifest["opaque_nodes"] == [], (
+        "a real ML model External must be preserved, not opaque"
+    )
     return bundle
 
 
@@ -84,7 +93,9 @@ def _torch_model_bytes(*, weight: float, bias: float, two_inputs: bool = False) 
         model[0].weight.fill_(weight)
         model[0].bias.fill_(bias)
     model.eval()
-    traced = torch.jit.trace(model, torch.zeros(1, n_in))  # self-contained: loadable with no user class
+    traced = torch.jit.trace(
+        model, torch.zeros(1, n_in)
+    )  # self-contained: loadable with no user class
     buf = io.BytesIO()
     torch.jit.save(traced, buf)
     return buf.getvalue()
@@ -131,10 +142,20 @@ def _torch_samples_2d() -> list[bytes]:
 
 
 TORCH_PLUGIN = ExternalPlugin(
-    "torch_module", _torch_weight_hash, _torch_eval, _torch_samples, load=_torch_load, framework="torch"
+    "torch_module",
+    _torch_weight_hash,
+    _torch_eval,
+    _torch_samples,
+    load=_torch_load,
+    framework="torch",
 )
 TORCH2_PLUGIN = ExternalPlugin(
-    "torch_module_2d", _torch_weight_hash, _torch_eval, _torch_samples_2d, load=_torch_load, framework="torch"
+    "torch_module_2d",
+    _torch_weight_hash,
+    _torch_eval,
+    _torch_samples_2d,
+    load=_torch_load,
+    framework="torch",
 )
 
 
@@ -158,7 +179,10 @@ def test_torch_multi_input_model_reproduces(tmp_path) -> None:  # type: ignore[n
     # two per-event features -> one external (the API must not assume single-input models)
     pytest.importorskip("torch")
     _check_roundtrip(
-        tmp_path, TORCH2_PLUGIN, _torch_model_bytes(weight=0.25, bias=0.0, two_inputs=True), two_inputs=True
+        tmp_path,
+        TORCH2_PLUGIN,
+        _torch_model_bytes(weight=0.25, bias=0.0, two_inputs=True),
+        two_inputs=True,
     )
 
 
@@ -203,14 +227,17 @@ XGB_PLUGIN = ExternalPlugin(
 
 def test_xgboost_plugin_validates_and_reproduces(tmp_path) -> None:  # type: ignore[no-untyped-def]
     pytest.importorskip("xgboost")
-    validate_plugin(XGB_PLUGIN)  # the booster bytes ARE the content -> sha256_bytes template suffices
+    validate_plugin(
+        XGB_PLUGIN
+    )  # the booster bytes ARE the content -> sha256_bytes template suffices
     _check_roundtrip(tmp_path, XGB_PLUGIN, _xgb_model_bytes(seed=3))
 
 
 # ============================ NVIDIA Triton (remote inference pattern) ===========================
 # Triton serves a model REMOTELY: inference is a client.infer() call, and the client/connection is
-# part of the *environment*, not the payload. The plugin resolves a client from params (a url) — this
-# is the case that probes whether the API is overconfident about externals being pure local bytes.
+# part of the *environment*, not the payload. The plugin resolves a client from params (a url) —
+# this is the case that probes whether the API is overconfident about externals being pure local
+# bytes.
 _TRITON_SERVERS: dict[str, Any] = {}
 
 
@@ -221,7 +248,9 @@ class _FakeTritonClient:
         self.weight, self.bias = weight, bias
         self.closed = False
 
-    def infer(self, model_name: str, x: np.ndarray, real_inputs: Any, real_outputs: Any) -> np.ndarray:
+    def infer(
+        self, model_name: str, x: np.ndarray, real_inputs: Any, real_outputs: Any
+    ) -> np.ndarray:
         # real_inputs/real_outputs are genuine tritonclient request objects (built below); a live
         # server would consume them. Offline we compute the served model directly.
         return 1.0 / (1.0 + np.exp(-(self.weight * x[:, 0] + self.bias)))
@@ -235,8 +264,8 @@ def _triton_served_weights(*, weight: float, bias: float) -> bytes:
 
 
 def _triton_connect(payload: bytes, params: Any) -> Any:
-    # a live plugin: tritonclient.http.InferenceServerClient(params["url"]); here the env supplies it.
-    # Opened ONCE per worker (a connection is exactly the kind of resource `load` exists for).
+    # a live plugin: tritonclient.http.InferenceServerClient(params["url"]); here the env supplies
+    # it. Opened ONCE per worker (a connection is exactly the kind of resource `load` exists for).
     return _TRITON_SERVERS[str(params["url"])]
 
 
@@ -258,7 +287,10 @@ def _triton_eval(client: Any, params: Any, inputs: list[Any]) -> Any:
 
 
 def _triton_samples() -> list[bytes]:
-    return [_triton_served_weights(weight=0.5, bias=0.0), _triton_served_weights(weight=0.8, bias=0.2)]
+    return [
+        _triton_served_weights(weight=0.5, bias=0.0),
+        _triton_served_weights(weight=0.8, bias=0.2),
+    ]
 
 
 TRITON_PLUGIN = ExternalPlugin(
@@ -274,10 +306,14 @@ TRITON_PLUGIN = ExternalPlugin(
 
 def test_triton_remote_inference_pattern(tmp_path) -> None:  # type: ignore[no-untyped-def]
     pytest.importorskip("tritonclient.http")
-    validate_plugin(TRITON_PLUGIN)  # hash of the served model's weights is deterministic + non-vacuous
+    validate_plugin(
+        TRITON_PLUGIN
+    )  # hash of the served model's weights is deterministic + non-vacuous
 
     weight, bias, url = 0.45, -0.1, "triton://localhost:8000"
-    _TRITON_SERVERS[url] = _FakeTritonClient(weight, bias)  # the connection is part of the environment
+    _TRITON_SERVERS[url] = _FakeTritonClient(
+        weight, bias
+    )  # the connection is part of the environment
     payload = _triton_served_weights(weight=weight, bias=bias)
     register_plugin(TRITON_PLUGIN)
 
@@ -286,7 +322,9 @@ def test_triton_remote_inference_pattern(tmp_path) -> None:  # type: ignore[no-u
     s = Session(AwkwardBackend())
     ev = from_awkward(s, "events", make_events(n_events=1200, seed=11))
     njet = gak.num(ev.Jet, axis=1)
-    weight_arr = record_external(s, TRITON_PLUGIN, payload, [njet], params={"url": url, "model": "scorer"})
+    weight_arr = record_external(
+        s, TRITON_PLUGIN, payload, [njet], params={"url": url, "model": "scorer"}
+    )
     value = ev.MET.pt
     reference = _hist(s.materialize(value), s.materialize(weight_arr))
 

@@ -1,5 +1,7 @@
-"""m53 / design §2, §3: every minted label carries a point, and `points=` PRUNES the auto-fanned
-grid on all three `vary` overloads.
+"""m53 / design §2, §3.
+
+Every minted label carries a point, and `points=` PRUNES the auto-fanned grid on all three `vary`
+overloads.
 
 `graphed.points` and the `points=` keyword are touched only inside bodies, so this file COLLECTS
 against a tree with no m53 implementation (TEST_SANITY §5-1).
@@ -24,8 +26,10 @@ import graphed
 
 @pytest.mark.parametrize("shape", EXISTING_SHAPES)
 def test_every_existing_shape_reports_its_default_points(shape: str) -> None:
-    """§4.5 mints a point for EVERY label, which is the premise §4.7's theorem stands on. An
-    implementation that mints only on a `points=` call answers `{}` here."""
+    """§4.5 mints a point for EVERY label, which is the premise §4.7's theorem stands on.
+
+    An implementation that mints only on a `points=` call answers `{}` here.
+    """
     _session, obj = build(shape)
 
     reported = graphed.points(obj)
@@ -35,9 +39,11 @@ def test_every_existing_shape_reports_its_default_points(shape: str) -> None:
 
 
 def test_the_ambient_weights_axes_include_the_inherited_shift_family() -> None:
-    """§8-g: the ambient weight of a shift-then-weight program CARRIES `jes_up` while its `_tags`
-    has no `jes` key at all. A `_tags`-derived axis set resolves every JES universe of every
-    existing program to the nominal weight."""
+    """§8-g: the ambient weight of a shift-then-weight program CARRIES `jes_up`.
+
+    Its `_tags` has no `jes` key at all. A `_tags`-derived axis set resolves every JES universe of
+    every existing program to the nominal weight.
+    """
     _session, ctx = shift_then_weight_context()
     ambient = graphed.weight(ctx)
 
@@ -50,15 +56,16 @@ def test_the_ambient_weights_axes_include_the_inherited_shift_family() -> None:
 
 
 def test_points_prunes_on_the_loose_overload() -> None:
-    """The loose form auto-fans-out a jes-dependent member; `points=` keeps only the named joint."""
+    """The loose form auto-fans-out a jes-dependent member.
+
+    `points=` keeps only the named joint.
+    """
     _session, record = source()
     pt = record["pt"]
     jes = graphed.vary(pt, "jes", up=pt * JES_UP, down=pt * JES_DOWN)
     dependent = jes * 3.0  # jes-dependent, so the corr family fans out over jes
 
-    registered = graphed.vary(
-        jes, "corr", points=[("a", dependent), {"corr": "a", "jes": "up"}]
-    )
+    registered = graphed.vary(jes, "corr", points=[("a", dependent), {"corr": "a", "jes": "up"}])
 
     labels = graphed.labels(registered)
     assert "corr_a__jes_up" in labels  # the selected joint
@@ -87,8 +94,11 @@ def test_points_prunes_on_the_weight_overload() -> None:
 
 
 def test_points_prunes_on_the_shift_overload() -> None:
-    """In the shift form the joint is minted on the varied COLLECTION; an implementation that threads
-    the keyword only through the weight form silently ignores a shift joint point."""
+    """In the shift form the joint is minted on the varied COLLECTION.
+
+    An implementation that threads the keyword only through the weight form silently ignores a
+    shift joint point.
+    """
     _session, ctx = two_axis_context()
     pt = ctx["pt"]  # jes-varied
 
@@ -103,8 +113,11 @@ def test_points_prunes_on_the_shift_overload() -> None:
 
 
 def test_a_variation_tagged_points_still_registers_through_variations() -> None:
-    """`points` is freed as a legal tag name by the unification: a declare tuple `("points", array)`
-    registers the member and a placement selecting it prunes the grid, side by side in one list."""
+    """`points` is freed as a legal tag name by the unification.
+
+    A declare tuple `("points", array)` registers the member and a placement selecting it prunes
+    the grid, side by side in one list.
+    """
     _session, record = source()
     pt = record["pt"]
     jes = graphed.vary(pt, "jes", up=pt * JES_UP, down=pt * JES_DOWN)

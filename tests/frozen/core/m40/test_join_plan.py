@@ -1,4 +1,6 @@
-"""M40 — a two-producer join staged in the additive ``DurablePlanV2`` (plan §4.4, §7.2; contract E1).
+"""M40 — a two-producer join staged in the additive ``DurablePlanV2``.
+
+Plan §4.4, §7.2; contract E1.
 
 A distributed join needs TWO map-write producer stages (build side, probe side) feeding ONE gather
 stage that depends on BOTH — ``inputs=(0, 1)`` — unlike a shuffle's single-producer gather
@@ -39,7 +41,13 @@ def _map_write_stage(side: str, backend_id: str = "graphed-awkward/0") -> StageS
         kind="map_write",
         inputs=(),
         process=OpSpec.from_ref("operator:add"),
-        routing={"scheme": "hash", "key": "event", "parts": 4, "side": side, "backend_id": backend_id},
+        routing={
+            "scheme": "hash",
+            "key": "event",
+            "parts": 4,
+            "side": side,
+            "backend_id": backend_id,
+        },
         tasks=(Task(0, Partition(f"{side}.root", "Events", 0, 100)),),
     )
 
@@ -81,7 +89,8 @@ def test_join_plan_roundtrips_both_producer_edges() -> None:
 
 
 def test_join_ir_survives_the_plan_roundtrip() -> None:
-    # the embedded IR (which carries the Join node) must round-trip byte-identically inside the plan.
+    # the embedded IR (which carries the Join node) must round-trip byte-identically inside the
+    # plan.
     p = _join_plan()
     q = DurablePlanV2.from_bytes(p.to_bytes())
     assert q.ir == _join_ir()
@@ -95,4 +104,6 @@ def test_join_plan_task_ids_are_deterministic_and_backend_folded() -> None:
     p = _join_plan()
     t0 = p.stages[0].tasks[0]
     assert p.task_id(0, t0) == p.task_id(0, t0)
-    assert p.task_id(0, t0) != _join_plan("graphed-numpy/0").task_id(0, t0), "backend_id must fold in"
+    assert p.task_id(0, t0) != _join_plan("graphed-numpy/0").task_id(0, t0), (
+        "backend_id must fold in"
+    )

@@ -72,7 +72,7 @@ class Topology:
 
 
 def shared_prefix(session: Session, *, depth: int = PREFIX_OPS) -> tuple[Array, list[int]]:
-    """The source plus `depth` chained ops every universe consumes."""
+    """Return the source plus `depth` chained ops every universe consumes."""
     x = from_array(session, "x", VECTOR)
     value, ids = x, []
     for step in range(depth):
@@ -93,7 +93,9 @@ def vary_topology(
     source = session.source_ids()[0]
     forks = {label: prefix_value * factor for label, factor in FORK_FACTORS.items()}
     varied = graphed.vary(
-        forks["nominal"], "jes", **{_tag(label): forks[label] for label in FORK_FACTORS if label != "nominal"}
+        forks["nominal"],
+        "jes",
+        **{_tag(label): forks[label] for label in FORK_FACTORS if label != "nominal"},
     )
     chains: dict[str, list[int]] = {label: [] for label in FORK_FACTORS}
     token = token_input = None
@@ -125,9 +127,12 @@ def vary_topology(
 
 
 def shared_node_topology(session: Session, *, chain: int = CHAIN_OPS) -> Topology:
-    """§3.4's shape: a derived node UPSTREAM of the fork that both varied members consume and the
-    nominal member does not. Interning keys on input ids, so no node downstream of the fork can be
-    shared by two labels carrying distinct members — the sharing has to sit above it."""
+    """§3.4's shape: a derived node UPSTREAM of the fork that both varied members consume.
+
+    The nominal member does not consume it. Interning keys on input ids, so no node downstream of
+    the fork can be shared by two labels carrying distinct members — the sharing has to sit above
+    it.
+    """
     prefix_value, prefix_ids = shared_prefix(session)
     source = session.source_ids()[0]
     shared = prefix_value * 2.0
@@ -157,8 +162,13 @@ def shared_node_topology(session: Session, *, chain: int = CHAIN_OPS) -> Topolog
     )
 
 
-def raw_topology(session: Session, labels: tuple[str, ...], *, chain: int = CHAIN_OPS) -> list[Array]:
-    """The ORACLE for §5.2: the same topology hand-built WITHOUT `vary`, in its own Session."""
+def raw_topology(
+    session: Session, labels: tuple[str, ...], *, chain: int = CHAIN_OPS
+) -> list[Array]:
+    """Return the ORACLE for §5.2: the same topology hand-built WITHOUT `vary`.
+
+    It is built in its own Session.
+    """
     prefix_value, _ = shared_prefix(session)
     outputs = []
     for label in labels:
@@ -169,9 +179,13 @@ def raw_topology(session: Session, labels: tuple[str, ...], *, chain: int = CHAI
     return outputs
 
 
-def copied_topology(session: Session, labels: tuple[str, ...], *, chain: int = CHAIN_OPS) -> list[Array]:
-    """The COUNTERFACTUAL §5.2 exists to exclude: a per-universe COPY of the shared prefix. Each
-    universe's prefix constants differ, so nothing interns and no prefix work is shared."""
+def copied_topology(
+    session: Session, labels: tuple[str, ...], *, chain: int = CHAIN_OPS
+) -> list[Array]:
+    """Return the COUNTERFACTUAL §5.2 exists to exclude: a per-universe COPY of the shared prefix.
+
+    Each universe's prefix constants differ, so nothing interns and no prefix work is shared.
+    """
     x = from_array(session, "x", VECTOR)
     outputs = []
     for universe, label in enumerate(labels):
@@ -186,9 +200,12 @@ def copied_topology(session: Session, labels: tuple[str, ...], *, chain: int = C
 
 
 def arena_program(session: Session, labels: tuple[str, ...]) -> list[Array]:
-    """§5.2a's SPAN builder at `ARENA_CHAIN_OPS` chain length. `labels` names the NON-nominal
-    universes; the N=1 program has none, so it is `vary`-free by construction. Every universe ends
-    in a terminating reduction — without it the expected delta would be `CHAIN + 1`."""
+    """§5.2a's SPAN builder at `ARENA_CHAIN_OPS` chain length.
+
+    `labels` names the NON-nominal universes; the N=1 program has none, so it is `vary`-free by
+    construction. Every universe ends in a terminating reduction — without it the expected delta
+    would be `CHAIN + 1`.
+    """
     prefix_value, _ = shared_prefix(session)
     value = prefix_value * FORK_FACTORS["nominal"]
     if labels:
@@ -204,8 +221,10 @@ def arena_program(session: Session, labels: tuple[str, ...]) -> list[Array]:
 
 
 def raw_arena_program(session: Session, labels: tuple[str, ...]) -> list[Array]:
-    """§5.2a's ORACLE: the same universes hand-built WITHOUT `vary`. Its own node-count delta is
-    where the expected integer comes from."""
+    """§5.2a's ORACLE: the same universes hand-built WITHOUT `vary`.
+
+    Its own node-count delta is where the expected integer comes from.
+    """
     return raw_topology(session, ("nominal", *labels), chain=ARENA_CHAIN_OPS)
 
 
@@ -231,10 +250,12 @@ class FlatProgram:
 
 
 def flat_projection_program() -> FlatProgram:
-    """A flat record whose shift reads one extra TOP-LEVEL column, plus a whole-record consumer.
+    """Return a flat record whose shift reads one extra TOP-LEVEL column.
 
-    `read_columns` reports only fields read directly off the source node, so the extra column has to
-    be a sibling branch (`Jet_eta`), never a nested field. The conservative member is spelled
+    Also return a whole-record consumer.
+
+    `read_columns` reports only fields read directly off the source node, so the extra column has
+    to be a sibling branch (`Jet_eta`), never a nested field. The conservative member is spelled
     `ev.map(f)` — the elementwise spelling is ill-typed against the shipping backends on a record.
     """
     session = Session(NumpyBackend())
@@ -287,7 +308,9 @@ def join_program() -> JoinProgram:
     session = Session(NumpyBackend())
     left = from_record(session, "L", key=LEFT_KEY, pt=LEFT_PT)
     right = from_record(session, "R", key=RIGHT_KEY, sf=RIGHT_SF)
-    return JoinProgram(session=session, left=left, right=right, joined=graphed.join(left, right, on=["key"]))
+    return JoinProgram(
+        session=session, left=left, right=right, joined=graphed.join(left, right, on=["key"])
+    )
 
 
 # ---- the §2.6 context program the `_align` path needs ------------------------------------------
@@ -307,9 +330,10 @@ BTAG_SCALE = 1.2
 
 
 def varied_mask_context_program() -> ContextProgram:
-    """A `vary` whose INHERITED members were read through the parent context while the container's
-    handle is the mask-derived child — the one shape `vary._align` acts on. The mask is itself
-    `Varied`, so each inherited member is re-indexed label-aligned per §2.4.
+    """Return a `vary` whose INHERITED members were read through the parent context.
+
+    The container's handle is the mask-derived child — the one shape `vary._align` acts on. The
+    mask is itself `Varied`, so each inherited member is re-indexed label-aligned per §2.4.
     """
     session = Session(NumpyBackend())
     record = from_record(session, "ev", pt=VECTOR)

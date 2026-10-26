@@ -2,16 +2,16 @@
 
 When the written rows pass through a varied selection, the writer materializes the SUPERSET: the
 rows passing ANY universe's selection (level-0 OR). This anchor pins that against a reference taken
-OUTSIDE graphed — per §5.2a a reference derived from the same varied graph would be self-derived and
-prove nothing — computed with plain awkward from the same input events:
+OUTSIDE graphed — per §5.2a a reference derived from the same varied graph would be self-derived
+and prove nothing — computed with plain awkward from the same input events:
 
   * the WRITTEN row set (the union of every universe's reconstructed rows) equals the eager union;
   * each universe's reconstructed rows equal that universe's eager row set;
   * the superset is strictly larger than the smallest universe (so it is a union of universes whose
     row sets genuinely differ) — the JES shift migrates events across the level-0 predicate.
 
-`met_pt` is unvaried and distinct per event, so it is the identity that ties a reconstructed row back
-to the input event without asking the graph under test which rows it kept.
+`met_pt` is unvaried and distinct per event, so it is the identity that ties a reconstructed row
+back to the input event without asking the graph under test which rows it kept.
 """
 
 from __future__ import annotations

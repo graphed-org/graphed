@@ -1,5 +1,7 @@
-"""M30 — the producer seams meet preservation: gak- and graphed-histogram-recorded Externals
-preserve, pass bundle integrity, and replay bit-for-bit.
+"""M30 — the producer seams meet preservation.
+
+gak- and graphed-histogram-recorded Externals preserve, pass bundle integrity, and replay
+bit-for-bit.
 
 M27 widened replay; M28 (graphed-awkward) and M29 (graphed-histogram) aligned the producers.
 This suite is the cross-repo acceptance: nodes recorded through the REAL user-facing surfaces —
@@ -61,7 +63,12 @@ CSET = json.dumps(
 
 EVENTS = ak.Array(
     {
-        "Jet": [[{"pt": 30.0, "eta": 0.5}, {"pt": 50.0, "eta": 1.0}], [], [{"pt": 80.0, "eta": 2.0}]] * 60,
+        "Jet": [
+            [{"pt": 30.0, "eta": 0.5}, {"pt": 50.0, "eta": 1.0}],
+            [],
+            [{"pt": 80.0, "eta": 2.0}],
+        ]
+        * 60,
         "MET": [12.0, 45.0, 8.0] * 60,
         "w1": [0.5, 1.0, 2.0] * 60,
         "w2": [1.0, 0.5, 1.5] * 60,
@@ -72,7 +79,9 @@ EVENTS = ak.Array(
 def _hist(value: Any, weight: Any) -> np.ndarray:
     v = np.asarray(ak.to_numpy(ak.Array(value)), dtype="float64")
     w = np.asarray(ak.to_numpy(ak.Array(weight)), dtype="float64")
-    return np.histogram(v, bins=HIST["bins"], range=(HIST["lo"], HIST["hi"]), weights=w)[0].round(6)
+    return np.histogram(v, bins=HIST["bins"], range=(HIST["lo"], HIST["hi"]), weights=w)[0].round(
+        6
+    )
 
 
 def test_gak_recorded_correction_passes_integrity_and_replays(tmp_path) -> None:  # type: ignore[no-untyped-def]
@@ -84,7 +93,11 @@ def test_gak_recorded_correction_passes_integrity_and_replays(tmp_path) -> None:
 
     # the REAL user surface: jagged multi-input correction with a positional systematic constant
     sf = gak.apply_correction(
-        CSET, "jetsf", [ev.Jet.pt, ev.Jet.eta], cset["jetsf"].evaluate, args=["nominal", "$0", "$1"]
+        CSET,
+        "jetsf",
+        [ev.Jet.pt, ev.Jet.eta],
+        cset["jetsf"].evaluate,
+        args=["nominal", "$0", "$1"],
     )
     weight = gak.prod(sf, axis=1)
     value = ev.MET
@@ -161,7 +174,11 @@ def test_gh_multi_weight_fill_replays_through_a_bundle(tmp_path) -> None:  # typ
 
     reference = s.materialize(h.fill_nodes()[0])
     bundle = build_bundle(
-        tmp_path / "b", session=s, value=h.fill_nodes()[0], datasets={"events": EVENTS}, payloads={}
+        tmp_path / "b",
+        session=s,
+        value=h.fill_nodes()[0],
+        datasets={"events": EVENTS},
+        payloads={},
     )
     got = reproduce(bundle)
     assert np.array_equal(got.view(flow=True)["value"], reference.view(flow=True)["value"])

@@ -19,7 +19,9 @@ from graphed.preserve import JAX_PLUGIN, ONNX_PLUGIN, PYTORCH_PLUGIN, TENSORFLOW
 X0 = np.array([1.0, 2.0, -1.0, 4.0], dtype="float64")
 X1 = np.array([0.5, 0.0, 2.0, 1.0], dtype="float64")
 MASK = np.array([1.0, 0.0, 1.0, 1.0], dtype="float64")
-ARGS2 = {"args": [["$0", "$1"], ["$2"]]}  # arg0 = (n,2) matrix of inputs 0+1; arg1 = (n,1) of input 2
+ARGS2 = {
+    "args": [["$0", "$1"], ["$2"]]
+}  # arg0 = (n,2) matrix of inputs 0+1; arg1 = (n,1) of input 2
 
 
 def _eval(plugin: Any, payload: bytes, params: dict[str, Any], inputs: list[Any]) -> np.ndarray:
@@ -60,7 +62,11 @@ def test_pytorch_default_remains_single_stacked_matrix() -> None:
     torch.jit.save(torch.jit.trace(model.eval(), torch.zeros(1, 2)), buf)
     got = _eval(PYTORCH_PLUGIN, buf.getvalue(), {}, [X0, X1])  # no args: m26 convention
     with torch.no_grad():
-        want = model(torch.from_numpy(np.stack([X0, X1], axis=1).astype("float32"))).numpy().reshape(-1)
+        want = (
+            model(torch.from_numpy(np.stack([X0, X1], axis=1).astype("float32")))
+            .numpy()
+            .reshape(-1)
+        )
     assert np.array_equal(got, want.astype("float64"))
 
 
@@ -80,7 +86,9 @@ def test_tensorflow_two_input_functional_model() -> None:
 
     got = _eval(TENSORFLOW_PLUGIN, path.read_bytes(), ARGS2, [X0, X1, MASK])
     want = np.asarray(
-        model([np.stack([X0, X1], axis=1).astype("float32"), MASK.astype("float32").reshape(-1, 1)])
+        model(
+            [np.stack([X0, X1], axis=1).astype("float32"), MASK.astype("float32").reshape(-1, 1)]
+        )
     ).reshape(-1)
     assert np.array_equal(got, want.astype("float64"))
 
@@ -98,7 +106,9 @@ def test_jax_two_aval_export() -> None:
     payload = bytes(export.export(jax.jit(f))(spec_kin, spec_mask).serialize())
 
     got = _eval(JAX_PLUGIN, payload, ARGS2, [X0, X1, MASK])
-    want = np.asarray(f(np.stack([X0, X1], axis=1).astype("float32"), MASK.astype("float32").reshape(-1, 1)))
+    want = np.asarray(
+        f(np.stack([X0, X1], axis=1).astype("float32"), MASK.astype("float32").reshape(-1, 1))
+    )
     assert np.array_equal(got, want.astype("float64"))
 
 
@@ -111,7 +121,10 @@ def test_onnx_multiple_named_feeds() -> None:
     mask = helper.make_tensor_value_info("mask", TensorProto.FLOAT, [None, 1])
     y = helper.make_tensor_value_info("y", TensorProto.FLOAT, [None, 1])
     graph = helper.make_graph(
-        [helper.make_node("MatMul", ["kin", "W"], ["z"]), helper.make_node("Mul", ["z", "mask"], ["y"])],
+        [
+            helper.make_node("MatMul", ["kin", "W"], ["z"]),
+            helper.make_node("Mul", ["z", "mask"], ["y"]),
+        ],
         "m",
         [kin, mask],
         [y],
@@ -143,7 +156,8 @@ def test_onnx_legacy_default_is_unchanged() -> None:
     assert np.array_equal(out, (X0 * 2.0))
 
 
-# ---------------------------------- keyword arguments ----------------------------------------------
+# ---------------------------------- keyword
+# arguments ----------------------------------------------
 def test_pytorch_keyword_arguments() -> None:
     torch = pytest.importorskip("torch")
 
@@ -151,7 +165,9 @@ def test_pytorch_keyword_arguments() -> None:
         def forward(self, kin: Any, mask: Any, scale: Any) -> Any:
             return (kin * 2.0).sum(dim=1) * mask[:, 0] * scale[:, 0]
 
-    traced = torch.jit.trace(KwModel().eval(), (torch.zeros(1, 2), torch.zeros(1, 1), torch.zeros(1, 1)))
+    traced = torch.jit.trace(
+        KwModel().eval(), (torch.zeros(1, 2), torch.zeros(1, 1), torch.zeros(1, 1))
+    )
     buf = io.BytesIO()
     torch.jit.save(traced, buf)
 

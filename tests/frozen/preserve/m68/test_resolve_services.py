@@ -1,6 +1,9 @@
-"""m68 §3.2 resolve walk — ``resolve_services(plan, value)`` hands a run's value to the plan's process
-when it is ``Resolvable``; ``_PartitionReduce`` forwards it to its ``reduce`` and ``_Collated`` per
-name over ``{name: value}``, so a hook anywhere binding reaches is handed its own sub-value."""
+"""m68 §3.2 resolve walk.
+
+``resolve_services(plan, value)`` hands a run's value to the plan's process when it is
+``Resolvable``; ``_PartitionReduce`` forwards it to its ``reduce`` and ``_Collated`` per name over
+``{name: value}``, so a hook anywhere binding reaches is handed its own sub-value.
+"""
 
 from __future__ import annotations
 
@@ -15,7 +18,10 @@ from graphed.services import ServiceSpec
 
 
 class _Spy:
-    """A ``Resolvable`` part: a process (``inner`` given) or a ``reduce``; records what it resolves."""
+    """A ``Resolvable`` part: a process (``inner`` given) or a ``reduce``.
+
+    It records what it resolves.
+    """
 
     def __init__(self, inner: Any = None) -> None:
         self.inner = inner
@@ -41,7 +47,10 @@ def _spied(plan: Plan[Any]) -> tuple[Plan[Any], _Spy]:
 
 
 def _elsewhere() -> Plan[Any]:
-    """An aggregate plan over its own ``(uri, tree)``, so it collates beside the fixtures' source."""
+    """Return an aggregate plan over its own ``(uri, tree)``.
+
+    So it collates beside the fixtures' source.
+    """
     ev = new_events()
     parts = (Partition.blind("mem://elsewhere", "", 0, 1),)
     return aggregate_plan(ev.x, reduce=_rows, combine=_cat, empty=list, partitions=parts)

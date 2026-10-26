@@ -49,11 +49,16 @@ def test_parquet_write_reproduces_a_dump_to_parquet_part(tmp_path: Path) -> None
     ev = source(write_input(tmp_path / "in.parquet"), steps=2)
     rec = option_record(ev, gak.zip, gak.mask)
     write = ga.parquet_write(
-        rec[sorted(rec.fields)], str(tmp_path / "out"), name=by_step,
-        metadata={"sum_w": gak.sum(ev.w), "kind": "MC"}, arrow_options={"extensionarray": False},
+        rec[sorted(rec.fields)],
+        str(tmp_path / "out"),
+        name=by_step,
+        metadata={"sum_w": gak.sum(ev.w), "kind": "MC"},
+        arrow_options={"extensionarray": False},
     )
     assert isinstance(write, graphed.write.PartWrite)
-    plan = graphed.aggregate_plan(reduce=paths_only, combine=add, empty=no_paths, steps_per_file=2, writes=[write])
+    plan = graphed.aggregate_plan(
+        reduce=paths_only, combine=add, empty=no_paths, steps_per_file=2, writes=[write]
+    )
     paths = SequentialRunner().run(plan).value
     for task, path in zip(sorted(plan.tasks, key=lambda t: t.key), paths, strict=True):
         chunk = resolved_chunk(EVENTS, task.partition)
@@ -97,7 +102,9 @@ def test_parquet_write_defaults_are_the_libraries_defaults(tmp_path: Path) -> No
         wrapped = str(tmp_path / f"oracle_flat_{step}.parquet")
         pq.write_table(ak.to_arrow_table(ak.Array({"data": chunk.w * 2})), wrapped)
         assert pq.read_schema(flat_paths[step]).names == ["data"]
-        assert pq.read_schema(flat_paths[step]).equals(pq.read_schema(wrapped), check_metadata=True)
+        assert pq.read_schema(flat_paths[step]).equals(
+            pq.read_schema(wrapped), check_metadata=True
+        )
         assert pq.read_table(flat_paths[step]).equals(pq.read_table(wrapped))
         assert pq.read_schema(col_paths[step]).names == ["val"]
         assert ak.from_parquet(col_paths[step]).val.to_list() == (chunk.w * 2).to_list()
@@ -111,5 +118,8 @@ def test_parquet_write_refuses_a_varied(tmp_path: Path) -> None:
         ga.parquet_write(varied, str(tmp_path / "v"), name=by_step)
     with pytest.raises(GraphedError, match="does not accept a Varied"):
         ga.parquet_write(ev.w, str(tmp_path / "v"), name=by_step, metadata={"s": varied})
-    assert isinstance(ga.parquet_write(ev.w, str(tmp_path / "v"), name=by_step, metadata={"s": "x"}), graphed.write.PartWrite)
+    assert isinstance(
+        ga.parquet_write(ev.w, str(tmp_path / "v"), name=by_step, metadata={"s": "x"}),
+        graphed.write.PartWrite,
+    )
     assert not (tmp_path / "v").exists()

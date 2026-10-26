@@ -66,7 +66,9 @@ def test_expand_dims_inner_axes_only() -> None:
     out = np.expand_dims(d2, 1)
     np.testing.assert_array_equal(np.asarray(s.materialize(out)), np.expand_dims(D2, 1))
     assert out.shape == (None, 1, 3)
-    np.testing.assert_array_equal(np.asarray(s.materialize(np.expand_dims(d2, -1))), np.expand_dims(D2, -1))
+    np.testing.assert_array_equal(
+        np.asarray(s.materialize(np.expand_dims(d2, -1))), np.expand_dims(D2, -1)
+    )
     with pytest.raises(GraphedTypeError):
         np.expand_dims(d2, 0)  # would displace the partitioned axis
 
@@ -129,7 +131,9 @@ def test_where_with_arrays_and_scalars_matches_numpy() -> None:
     a = from_array(s, "a", V)
     b = from_array(s, "b", W)
     cond = a > 4.0
-    np.testing.assert_array_equal(np.asarray(s.materialize(np.where(cond, a, b))), np.where(V > 4.0, V, W))
+    np.testing.assert_array_equal(
+        np.asarray(s.materialize(np.where(cond, a, b))), np.where(V > 4.0, V, W)
+    )
     np.testing.assert_array_equal(
         np.asarray(s.materialize(np.where(cond, a, 0.0))), np.where(V > 4.0, V, 0.0)
     )
@@ -148,7 +152,9 @@ def test_diff_isin_searchsorted_match_numpy() -> None:
     d2 = from_array(s, "d2", D2)
     np.testing.assert_array_equal(np.asarray(s.materialize(np.diff(a))), np.diff(V))
     np.testing.assert_array_equal(np.asarray(s.materialize(np.diff(a, 2))), np.diff(V, 2))
-    np.testing.assert_array_equal(np.asarray(s.materialize(np.diff(d2, axis=0))), np.diff(D2, axis=0))
+    np.testing.assert_array_equal(
+        np.asarray(s.materialize(np.diff(d2, axis=0))), np.diff(D2, axis=0)
+    )
     np.testing.assert_array_equal(np.asarray(s.materialize(np.isin(a, b))), np.isin(V, W))
     srt = from_array(s, "srt", np.sort(V))
     np.testing.assert_array_equal(
@@ -161,7 +167,8 @@ def test_diff_isin_searchsorted_match_numpy() -> None:
 
 
 def test_stack_and_vstack_are_refused_in_the_partitioned_mvp() -> None:
-    # both would create an inner unknown-length dimension — unrepresentable until Phase 2 N-D chunks
+    # both would create an inner unknown-length dimension — unrepresentable until Phase 2 N-D
+    # chunks
     s = _s()
     a = from_array(s, "a", V)
     b = from_array(s, "b", W)

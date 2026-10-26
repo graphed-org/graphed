@@ -15,7 +15,9 @@ from m52_corpus_fixtures import HF_JOINTS, joint_program
 import graphed
 
 
-def test_the_four_joint_members_are_the_same_expression_objects_as_the_two_one_at_a_time_ones() -> None:
+def test_the_four_joint_members_are_the_same_expression_objects_as_the_two_one_at_a_time_ones() -> (  # noqa: E501
+    None
+):
     program = joint_program()
     weight = program.weight
     sources = {"hf_up": program.sf_hf_up, "hf_down": program.sf_hf_down}
@@ -29,8 +31,7 @@ def test_the_four_joint_members_are_the_same_expression_objects_as_the_two_one_a
     # a one-at-a-time b-tag label projects to the origin on the SF container's `jes` axis: nominal
     for flavour, source in sources.items():
         assert (
-            graphed.member_of(weight, f"btag_{flavour}").node_id
-            == graphed.nominal(source).node_id
+            graphed.member_of(weight, f"btag_{flavour}").node_id == graphed.nominal(source).node_id
         )
 
     # each auto-minted joint label reads that same container's inner JES universe — no second SF

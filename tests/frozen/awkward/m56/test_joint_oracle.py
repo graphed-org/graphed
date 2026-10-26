@@ -1,7 +1,9 @@
-"""m56 §2 item 3 / §4 oracle: the joint's ambient weight is the product, in registration order, of
-each factor's member at that point — the name-identity factor's own tag and the second family's
-cross member, both on the jets that point shifts. The one-at-a-time universe takes the same product
-at the point `{jes: u}`, where the second family contributes its central, not 1.
+"""m56 §2 item 3 / §4 oracle.
+
+The joint's ambient weight is the product, in registration order, of each factor's member at that
+point — the name-identity factor's own tag and the second family's cross member, both on the jets
+that point shifts. The one-at-a-time universe takes the same product at the point `{jes: u}`, where
+the second family contributes its central, not 1.
 """
 
 from __future__ import annotations

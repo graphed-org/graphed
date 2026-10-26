@@ -1,5 +1,6 @@
-"""m53 / design §3, §4.11-4, §8-i, §8-b and R2: a typed coordinate reaches a real MEMBER universe or
-the call fails naming what IS registered.
+"""m53 / design §3, §4.11-4, §8-i, §8-b and R2.
+
+A typed coordinate reaches a real MEMBER universe or the call fails naming what IS registered.
 
 Every `points=` entry here carries at least two coordinates — the own-family tag plus one foreign
 coordinate. A one-coordinate explicit point is unregistrable by construction: §4.11-4 requires its
@@ -27,8 +28,11 @@ from graphed.varied import rebuild
 
 
 def test_r2_verbatim_against_numerically_tagged_families() -> None:
-    """R2 as the request spells it: a universe named by a sparse `{nuisance: coordinate}` map of
-    NUMBERS. Under m53 the numeric coordinate is a precision point pruned from the numeric fanout."""
+    """R2 as the request spells it.
+
+    A universe named by a sparse `{nuisance: coordinate}` map of NUMBERS. Under m53 the numeric
+    coordinate is a precision point pruned from the numeric fanout.
+    """
     session, ctx = numeric_families()
     factor = ctx["pt"] * 0.5  # jes-dependent, carrying the numeric jes universes '1' / '-1'
 
@@ -54,8 +58,11 @@ def test_r2_verbatim_against_numerically_tagged_families() -> None:
 
 
 def test_a_typed_coordinate_naming_no_registered_tag_is_refused_naming_what_is() -> None:
-    """§8-i: the refusal fires on the analyst's own spelling — `1` typed against a family the
-    analyst registered `up` / `down`. Without it R2's own example returns nominal kinematics."""
+    """§8-i: the refusal fires on the analyst's own spelling.
+
+    `1` typed against a family the analyst registered `up` / `down`. Without it R2's own example
+    returns nominal kinematics.
+    """
     _s1, admitted = identifier_families()
     admitted_weight = admitted["pt"] * 0.5  # jes-dependent
     registered = graphed.vary(
@@ -65,7 +72,10 @@ def test_a_typed_coordinate_naming_no_registered_tag_is_refused_naming_what_is()
         is_weight=True,
         points=[("a", admitted_weight * 3.0), {"corr": "a", "jes": "up"}],
     )
-    assert graphed.points(graphed.weight(registered))["corr_a__jes_up"] == {"corr": "a", "jes": "up"}
+    assert graphed.points(graphed.weight(registered))["corr_a__jes_up"] == {
+        "corr": "a",
+        "jes": "up",
+    }
 
     _s2, ctx = identifier_families()
     weight = ctx["pt"] * 0.5
@@ -140,12 +150,18 @@ def test_a_joint_point_registered_before_its_axis_exists_is_refused() -> None:
         is_weight=True,
         points=[("a", later_weight * 3.0), {"corr": "a", "jes": "up"}],
     )
-    assert graphed.points(graphed.weight(registered))["corr_a__jes_up"] == {"corr": "a", "jes": "up"}
+    assert graphed.points(graphed.weight(registered))["corr_a__jes_up"] == {
+        "corr": "a",
+        "jes": "up",
+    }
 
 
 def _ambient_carrier() -> tuple[EventContext, object]:
-    """A context whose ambient WEIGHT carries `jes` while its `_tags` is EMPTY (§8-g). The corr
-    member is read off that weight, so it CARRIES the jes universes a `_tags` walk cannot see."""
+    """Return a context whose ambient WEIGHT carries `jes` while its `_tags` is EMPTY (§8-g).
+
+    The corr member is read off that weight, so it CARRIES the jes universes a `_tags` walk cannot
+    see.
+    """
     session, record = source()
     pt = record["pt"]
     base = pt * 0.5
@@ -156,7 +172,7 @@ def _ambient_carrier() -> tuple[EventContext, object]:
 
 
 def _collection_carrier() -> tuple[EventContext, object]:
-    """A context whose Varied COLLECTION carries `jer`; the corr member is read off it."""
+    """Return a context whose Varied COLLECTION carries `jer`; the corr member is read off it."""
     session, record = source()
     pt = record["pt"]
     collection = graphed.vary(pt, "jer", up=pt * 1.2, down=pt * 0.8)
@@ -169,8 +185,11 @@ def _collection_carrier() -> tuple[EventContext, object]:
     [(_ambient_carrier, "jes"), (_collection_carrier, "jer")],
 )
 def test_the_reachability_walk_reads_carried_labels_not_tags(builder, nuisance: str) -> None:
-    """§8-g / §4.11-4: a coordinate is reachable when the MEMBER carries that universe, even when the
-    carrier's `_tags` is empty (the ambient-weight case). A `_tags`-derived walk refuses it."""
+    """§8-g / §4.11-4.
+
+    A coordinate is reachable when the MEMBER carries that universe, even when the carrier's
+    `_tags` is empty (the ambient-weight case). A `_tags`-derived walk refuses it.
+    """
     ctx, factor = builder()
     registered = graphed.vary(
         ctx,
@@ -198,8 +217,10 @@ def test_a_nuisance_on_none_of_the_carriers_is_refused() -> None:
 
 
 def test_the_loose_forms_carrier_is_the_targets_own_tag_map() -> None:
-    """The loose form's carrier is `target._tags`: a coordinate the jes-dependent member carries is
-    reachable, one no family registers is refused."""
+    """The loose form's carrier is `target._tags`.
+
+    A coordinate the jes-dependent member carries is reachable, one no family registers is refused.
+    """
     _session, record = source()
     pt = record["pt"]
     jes = graphed.vary(pt, "jes", up=pt * 1.1, down=pt * 0.9)
@@ -209,15 +230,16 @@ def test_the_loose_forms_carrier_is_the_targets_own_tag_map() -> None:
     assert graphed.points(registered)["corr_a__jes_up"] == {"corr": "a", "jes": "up"}
 
     with pytest.raises(GraphedError) as caught:
-        graphed.vary(
-            jes, "corr2", points=[("a", dependent), {"corr2": "a", "nosuch": "up"}]
-        )
+        graphed.vary(jes, "corr2", points=[("a", dependent), {"corr2": "a", "nosuch": "up"}])
     assert "nosuch" in str(caught.value)
 
 
 def test_an_inherited_label_with_partial_coverage_still_falls_back_silently() -> None:
-    """§4.11-4's last clause and §4.7: partial coverage across two containers of ONE family is a
-    legitimate pattern, and turning it into an error would break it."""
+    """§4.11-4's last clause and §4.7.
+
+    Partial coverage across two containers of ONE family is a legitimate pattern, and turning it
+    into an error would break it.
+    """
     session, record = source()
     x = record["pt"]
     left = graphed.vary(x, "jes", up=x * 10.0)
@@ -235,9 +257,7 @@ def test_an_inherited_label_with_partial_coverage_still_falls_back_silently() ->
 
     assert universes["nominal"] == _product(left_universes["nominal"], right_universes["nominal"])
     assert universes["jes_up"] == _product(left_universes["jes_up"], right_universes["nominal"])
-    assert universes["jes_up2"] == _product(
-        left_universes["nominal"], right_universes["jes_up2"]
-    )
+    assert universes["jes_up2"] == _product(left_universes["nominal"], right_universes["jes_up2"])
 
     # the positive control §8-b names: if the family guard is dead, the null result above is void
     with pytest.raises(GraphedError) as caught:

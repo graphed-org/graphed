@@ -30,7 +30,7 @@ bodies, so the tree COLLECTS against a pre-m57 tree and fails at RUN time.
 * `m57_two_factors()` is the two-live-factor base (`pu`, then `hf` over the SF central); `m57_tour()`
   is §1's chain — `pu`, `hf` on `sf`, the overlay `mu` read over both, `lf` on the same central behind
   the overlay, and `lf`'s diagonal placement at `{hf: up, mu: up}`.
-* Instruments: `m57_node_count` (the store's node count), `m57_OpSpy` (calls to `Session.record_op`,
+* Instruments: `m57_node_count` (the store's node count), `M57OpSpy` (calls to `Session.record_op`,
   the cost-class leg's live counter), `m57_ir` (the serialized IR of every universe),
   `m57_ambient_nodes` / `m57_ambient_values`.
 * `m57_explain(ctx)` and `m57_entries(ctx)` import `graphed.systematics` INSIDE the call, so the legs

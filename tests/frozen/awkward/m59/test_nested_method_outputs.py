@@ -47,9 +47,16 @@ def test_single_and_flat_returns_record_exactly_as_before() -> None:
     for index, leaf in enumerate(flat):
         leaf_node = recorded(session, leaf)
         assert (leaf_node["kind"], leaf_node["name"]) == ("op", "method")
-        assert leaf_node["params"] == {"args": "[]", "index": index, "kwargs": "{}", "method": "flat"}
+        assert leaf_node["params"] == {
+            "args": "[]",
+            "index": index,
+            "kwargs": "{}",
+            "method": "flat",
+        }
     assert ak.to_list(session.materialize(one)) == ak.to_list(eager.one())
-    assert [ak.to_list(session.materialize(x)) for x in flat] == [ak.to_list(v) for v in eager.flat()]
+    assert [ak.to_list(session.materialize(x)) for x in flat] == [
+        ak.to_list(v) for v in eager.flat()
+    ]
 
     other, elsewhere = pair_session()
     assert session.serialized_ir(one) == other.serialized_ir(elsewhere.one())

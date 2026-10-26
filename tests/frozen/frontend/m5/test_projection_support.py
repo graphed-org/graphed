@@ -22,7 +22,9 @@ class _Backend:
     def op_form(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> str:
         return op
 
-    def eval_stage(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> object:
+    def eval_stage(
+        self, op: str, inputs: Sequence[object], params: Mapping[str, object]
+    ) -> object:
         if op == "add":
             return inputs[0] + inputs[1]  # type: ignore[operator]
         if op == "inc":
@@ -37,7 +39,12 @@ class _Backend:
 
     def external_payload(self, op: str, params: Mapping[str, object]) -> PayloadDescriptor | None:
         return PayloadDescriptor(
-            kind="x", content_hash="h", framework="f", version="v", io_schema="s", preprocessing_ref=None
+            kind="x",
+            content_hash="h",
+            framework="f",
+            version="v",
+            io_schema="s",
+            preprocessing_ref=None,
         )
 
 

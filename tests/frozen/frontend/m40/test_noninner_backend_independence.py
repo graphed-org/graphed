@@ -1,9 +1,11 @@
-"""M40 iter-2 — NON-INNER ``graphed.join`` (left/outer) is backend-independent AND relationally
-correct against a NULL-preserving, KEY-COALESCING pandas oracle (contract F3/F4; plan §3.3).
+"""M40 iter-2 — NON-INNER ``graphed.join`` (left/outer) is backend-independent.
+
+It is also relationally correct against a NULL-preserving, KEY-COALESCING pandas oracle (contract
+F3/F4; plan §3.3).
 
 The iteration-1 frozen suite (``test_relational_join.py``) only pins ``how="inner"``, so every
-non-inner code path — unmatched-row survival, absent-side nulls, and (the sharp one) SQL COALESCE of
-the ``on`` key columns on an orphan row — is UNCOVERED. This file extends the M2 two-backend
+non-inner code path — unmatched-row survival, absent-side nulls, and (the sharp one) SQL COALESCE
+of the ``on`` key columns on an orphan row — is UNCOVERED. This file extends the M2 two-backend
 discipline (``shuffle_backends.REAL_BACKENDS`` = {AwkwardBackend, NumpyBackend}) to ``how`` ∈
 {left, outer}: the SAME recorded ``graphed.join`` is materialized on each backend and normalized to
 the SAME canonical relational rows, then asserted bit-for-bit against ``pandas.merge(how=...)``.
@@ -47,8 +49,11 @@ _KEYIDX = tuple(COLUMNS.index(k) for k in ON)
 
 
 def _cell(v: Any) -> int | None:
-    """A single relational cell, null-normalized: awkward option ``None``, a numpy masked element, or
-    a pandas float ``NaN`` all collapse to the ``None`` sentinel; everything else is an ``int``."""
+    """Return a single relational cell, null-normalized.
+
+    awkward option ``None``, a numpy masked element, or a pandas float ``NaN`` all collapse to the
+    ``None`` sentinel; everything else is an ``int``.
+    """
     if v is None or v is np.ma.masked or np.ma.is_masked(v):
         return None
     if isinstance(v, float) and math.isnan(v):
@@ -64,9 +69,11 @@ def _srt(rows: list[tuple[int | None, ...]]) -> list[tuple[int | None, ...]]:
 def _rows(name: str, block: Any) -> list[tuple[int | None, ...]]:
     """Materialized join block -> sorted multiset of relational rows over ``COLUMNS``, nulls kept.
 
-    The numpy block is a column ``Mapping`` OR a (possibly masked) structured array; both are indexed
-    field-then-row DIRECTLY (``block[c][i]``), never via ``np.asarray`` — that would strip a
-    ``MaskedArray``'s mask and resurrect the gathered ``take(-1)`` leftover, hiding a genuine null."""
+    The numpy block is a column ``Mapping`` OR a (possibly masked) structured array; both are
+    indexed field-then-row DIRECTLY (``block[c][i]``), never via ``np.asarray`` — that would strip
+    a ``MaskedArray``'s mask and resurrect the gathered ``take(-1)`` leftover, hiding a genuine
+    null.
+    """
     if name == "awkward":
         return _srt([tuple(_cell(r[c]) for c in COLUMNS) for r in ak.to_list(block)])
     n = len(block[COLUMNS[0]])
@@ -76,11 +83,17 @@ def _rows(name: str, block: Any) -> list[tuple[int | None, ...]]:
 def _oracle(
     left: Mapping[str, np.ndarray], right: Mapping[str, np.ndarray], *, how: str
 ) -> list[tuple[int | None, ...]]:
-    """The DUPLICATING, NULL-preserving, KEY-COALESCING reference: ``pandas.merge(how=...)``. A
-    missing non-key cell is ``NaN`` -> ``None``; the ``on`` keys are coalesced by pandas (never null)."""
+    """Return the DUPLICATING, NULL-preserving, KEY-COALESCING reference.
+
+    ``pandas.merge(how=...)``. A missing non-key cell is ``NaN`` -> ``None``; the ``on`` keys are
+    coalesced by pandas (never null).
+    """
     ref = pd.merge(pd.DataFrame(dict(left)), pd.DataFrame(dict(right)), on=list(ON), how=how)
     return _srt(
-        [tuple(None if pd.isna(ref[c].iloc[i]) else int(ref[c].iloc[i]) for c in COLUMNS) for i in range(len(ref))]
+        [
+            tuple(None if pd.isna(ref[c].iloc[i]) else int(ref[c].iloc[i]) for c in COLUMNS)
+            for i in range(len(ref))
+        ]
     )
 
 
@@ -94,9 +107,9 @@ def _join_rows(case: BackendCase, *, how: str) -> list[tuple[int | None, ...]]:
 
 @pytest.mark.parametrize("case", REAL_BACKENDS, ids=_IDS)
 def test_noninner_join_equals_null_preserving_key_coalescing_pandas(case: BackendCase) -> None:
-    # F3/F4: the SAME left+outer suite must be bit-for-bit the pandas oracle on BOTH backends. Fails
-    # now on the `outer` leg: the right-only orphan key (event=99) comes back run=lumi=event=None
-    # instead of the coalesced (1, 1, 99).
+    # F3/F4: the SAME left+outer suite must be bit-for-bit the pandas oracle on BOTH backends.
+    # Fails now on the `outer` leg: the right-only orphan key (event=99) comes back
+    # run=lumi=event=None instead of the coalesced (1, 1, 99).
     left_cols, right_cols = skim_tables()
     for how in ("left", "outer"):
         got = _join_rows(case, how=how)
@@ -110,12 +123,14 @@ def test_noninner_join_equals_null_preserving_key_coalescing_pandas(case: Backen
 @pytest.mark.parametrize("case", REAL_BACKENDS, ids=_IDS)
 def test_outer_orphan_key_columns_are_coalesced_not_null(case: BackendCase) -> None:
     # F3 sharp witness: on a build-absent (right-only) orphan the user's `on` key columns take the
-    # PRESENT side's value (SQL COALESCE) — NEVER null. Only the absent side's NON-key field (njet) is
-    # null. Fails now: current impl nulls the whole key triple on the orphan.
+    # PRESENT side's value (SQL COALESCE) — NEVER null. Only the absent side's NON-key field (njet)
+    # is null. Fails now: current impl nulls the whole key triple on the orphan.
     rows = _join_rows(case, how="outer")
     orphans = [r for r in rows if r[COLUMNS.index("event")] == 99]
     if not orphans:  # the orphan key is dropped/nulled -> it can't be found by event=99 at all
-        keys_seen = sorted({r[COLUMNS.index("event")] for r in rows}, key=lambda e: (e is None, e or -1))
+        keys_seen = sorted(
+            {r[COLUMNS.index("event")] for r in rows}, key=lambda e: (e is None, e or -1)
+        )
         raise AssertionError(
             f"{case.name}: right-only orphan event=99 absent from outer join (key not coalesced); "
             f"events seen={keys_seen}"
@@ -123,6 +138,9 @@ def test_outer_orphan_key_columns_are_coalesced_not_null(case: BackendCase) -> N
     (row,) = orphans
     for k in ON:
         assert row[COLUMNS.index(k)] is not None, (
-            f"{case.name}: outer orphan key column {k!r} is null — must be coalesced from the present side"
+            f"{case.name}: outer orphan key column {k!r} is null — must be coalesced from the "
+            "present side"
         )
-    assert row == (1, 1, 99, None, 0), f"{case.name}: outer orphan row must coalesce keys, null only njet: {row}"
+    assert row == (1, 1, 99, None, 0), (
+        f"{case.name}: outer orphan row must coalesce keys, null only njet: {row}"
+    )

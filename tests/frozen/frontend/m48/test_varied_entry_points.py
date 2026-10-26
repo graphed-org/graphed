@@ -34,12 +34,17 @@ def test_filter_with_a_varied_mask_returns_a_varied_carrying_the_masks_labels() 
     assert isinstance(filtered, graphed.Varied)
     assert list(graphed.labels(filtered)) == list(graphed.labels(mask))
     for label in graphed.labels(mask):
-        assert graphed.universe(filtered, label).node_id == x.filter(graphed.universe(mask, label)).node_id
+        assert (
+            graphed.universe(filtered, label).node_id
+            == x.filter(graphed.universe(mask, label)).node_id
+        )
 
 
 def test_the_varied_branch_is_not_a_blanket_except() -> None:
-    """One `__getitem__` must both accept the container and keep refusing a genuinely unsupported
-    index — a `try: delegate except: raise` rewrite satisfies only half of this."""
+    """One `__getitem__` must accept the container and keep refusing an unsupported index.
+
+    A `try: delegate except: raise` rewrite satisfies only half of this.
+    """
     _s, x, mask = _varied_mask()
     assert isinstance(x[mask], graphed.Varied)
     with pytest.raises(TypeError, match="unsupported index"):

@@ -1,6 +1,8 @@
-"""Over-touch protection (plan M5 / A.3): projection must read EXACTLY the necessary columns and
-NEVER more — the dask-awkward bug this milestone exists to avoid. Every assertion below pins the
-*exact* read set and explicitly checks that unused sibling columns / collections are absent.
+"""Over-touch protection (plan M5 / A.3).
+
+Projection must read EXACTLY the necessary columns and NEVER more — the dask-awkward bug this
+milestone exists to avoid. Every assertion below pins the *exact* read set and explicitly checks
+that unused sibling columns / collections are absent.
 """
 
 from __future__ import annotations
@@ -41,7 +43,8 @@ def test_single_column_reads_exactly_that_column() -> None:
 
 
 def test_filter_does_not_overtouch_sibling_jet_columns() -> None:
-    # jets[jets.pt > 30].eta needs ONLY Jet.pt (the mask) and Jet.eta (the result) — NOT phi/mass/btag
+    # jets[jets.pt > 30].eta needs ONLY Jet.pt (the mask) and Jet.eta (the result) — NOT
+    # phi/mass/btag
     read = _read(lambda e: e.Jet[e.Jet.pt > 30].eta)
     assert read == frozenset({"Jet.pt", "Jet.eta"})
     assert "Jet.phi" not in read and "Jet.mass" not in read and "Jet.btag" not in read
@@ -78,7 +81,10 @@ def test_dimuon_does_not_touch_unused_muon_mass_or_other_collections() -> None:
     [
         (lambda e: e.Muon.pt + e.Muon.eta, {"Muon.pt", "Muon.eta"}),
         (lambda e: e.Jet.btag, {"Jet.btag"}),
-        (lambda e: gak.num(e.Electron, axis=1), set()),  # multiplicity touches structure, not leaf data
+        (
+            lambda e: gak.num(e.Electron, axis=1),
+            set(),
+        ),  # multiplicity touches structure, not leaf data
     ],
 )
 def test_read_set_is_minimal(build, expected: set[str]) -> None:

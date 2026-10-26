@@ -68,7 +68,9 @@ def test_concurrent_identical_puts_never_fail(tmp_path) -> None:
         data = random.Random(trial).randbytes(1 << 20)
         barrier = threading.Barrier(8)
 
-        def put(_: int, s: Store = s, data: bytes = data, barrier: threading.Barrier = barrier) -> str:
+        def put(
+            _: int, s: Store = s, data: bytes = data, barrier: threading.Barrier = barrier
+        ) -> str:
             barrier.wait()
             return s.put(data)
 
@@ -81,7 +83,9 @@ def test_concurrent_identical_puts_never_fail(tmp_path) -> None:
 
 
 @pytest.mark.parametrize("copy_present", [True, False], ids=["present-copy", "no-copy"])
-def test_put_survives_losing_the_rename_race_to_a_present_copy(tmp_path, monkeypatch, copy_present) -> None:
+def test_put_survives_losing_the_rename_race_to_a_present_copy(
+    tmp_path, monkeypatch, copy_present
+) -> None:
     data = b"the committed partial"
     h = Store.content_hash(data)
     s = Store(tmp_path)

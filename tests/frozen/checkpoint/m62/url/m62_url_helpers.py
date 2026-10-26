@@ -13,7 +13,7 @@ import analyses
 
 
 def record_objects(store: Any, prefix: str) -> list[bytes]:
-    """The bytes of every object under ``prefix``, in name order."""
+    """Return the bytes of every object under ``prefix``, in name order."""
     return [store.fs.cat_file(p) for p in sorted(store.fs.find(prefix))]
 
 

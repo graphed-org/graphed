@@ -1,5 +1,8 @@
-"""M65 A1 browser test (graphed-debug slice): the dashboard page's control bar drives a
-``RunControl`` in headless Chromium. Runs in the ``dashboard-smoke`` CI job."""
+"""M65 A1 browser test (graphed-debug slice).
+
+The dashboard page's control bar drives a ``RunControl`` in headless Chromium. Runs in the
+``dashboard-smoke`` CI job.
+"""
 
 from __future__ import annotations
 
@@ -19,7 +22,8 @@ from graphed.debug import Dashboard
 
 def _state_text_contains(page: Any, word: str) -> None:
     page.wait_for_function(
-        f"(document.querySelector('#ctl-state')?.innerText || '').toLowerCase().includes('{word}')",
+        "(document.querySelector('#ctl-state')?.innerText || '')"
+        f".toLowerCase().includes('{word}')",
         timeout=10000,
     )
 
@@ -37,7 +41,10 @@ def test_control_buttons_drive_the_run_control() -> None:
             with Dashboard(control=True) as dash:
                 until(lambda: dash.server.snapshot()["control_listeners"] == 1)
                 page = browser.new_page()
-                page.on("console", lambda m: console_errors.append(m.text) if m.type == "error" else None)
+                page.on(
+                    "console",
+                    lambda m: console_errors.append(m.text) if m.type == "error" else None,
+                )
                 page.on("pageerror", lambda e: page_errors.append(str(e)))
                 page.goto(dash.url, wait_until="load")
                 page.wait_for_selector("#ctl-pause", state="visible", timeout=30000)

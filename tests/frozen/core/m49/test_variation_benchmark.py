@@ -1,6 +1,9 @@
-"""The anti-quadratic guard on the variation topology: a shared prefix feeding N per-universe
-chains, each terminating in its own separately-marked reduction, must reduce to an exactly pinned
-shape in time that grows linearly with N (plan §3.3). The m4 files are frozen and untouched."""
+"""The anti-quadratic guard on the variation topology.
+
+A shared prefix feeding N per-universe chains, each terminating in its own separately-marked
+reduction, must reduce to an exactly pinned shape in time that grows linearly with N (plan §3.3).
+The m4 files are frozen and untouched.
+"""
 
 from __future__ import annotations
 
@@ -15,8 +18,10 @@ UNIVERSE_COUNTS = [16, 32, 64, 128]  # N, counting nominal
 
 
 def _build(n_universes: int) -> tuple[gc.GraphStore, list[int]]:
-    """source -> D shared-prefix ops -> per universe {one varied fork op, K chain ops, exactly one
-    terminating reduction}, every universe's reduction separately marked as an output.
+    """Build source -> D shared-prefix ops -> one fork per universe.
+
+    Each universe has one varied fork op, K chain ops and exactly one terminating reduction, every
+    universe's reduction separately marked as an output.
 
     Funnelling the universes into one output (m4's `_systematics` shape) or dropping the
     terminating reduction both change the correct answer; the shape assertion pins this builder.
@@ -66,4 +71,6 @@ def test_reduction_time_grows_linearly_in_the_universe_count() -> None:
     base = max(times[UNIVERSE_COUNTS[0]], 1e-4)  # floor to avoid divide-by-noise on tiny times
     growth = times[UNIVERSE_COUNTS[-1]] / base
     # node count grows 5.37x while N grows 8x, so a node-quadratic reducer lands near 29x.
-    assert growth < 16.0, f"reduction scaling looks super-linear: 8x N -> {growth:.1f}x time {times}"
+    assert growth < 16.0, (
+        f"reduction scaling looks super-linear: 8x N -> {growth:.1f}x time {times}"
+    )

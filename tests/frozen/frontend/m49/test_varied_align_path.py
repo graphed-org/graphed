@@ -39,8 +39,10 @@ def test_inherited_members_are_re_indexed_into_the_containers_row_space() -> Non
 
 
 def test_the_new_member_keeps_the_row_space_it_was_read_in() -> None:
-    """The member supplied AT the child context is already in its row space; §2.1 reduces a
-    `Varied` member as supplied, so it stays flat over the mask's central universe."""
+    """The member supplied AT the child context is already in its row space.
+
+    §2.1 reduces a `Varied` member as supplied, so it stays flat over the mask's central universe.
+    """
     program = varied_mask_context_program()
     added = graphed.universe(program.varied, "btag_up")
 

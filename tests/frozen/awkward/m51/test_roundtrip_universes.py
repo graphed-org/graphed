@@ -15,8 +15,8 @@ Coverage items (the plan allows separate fixtures; each states the record shape 
     per-level channel that a single row mask cannot express;
   * WEIGHT-ONLY μR/μF labels whose stored factor is `graphed.weight(c)` in the RECORD'S OWN row
     space (§6.4b) — carrying the e-canonical `murf_5em1` label verbatim AND the all-zero-delta
-    REPLICATION discriminator (`murf_1` interns to nominal's node id, so `mark_output` de-dups and a
-    POSITIONAL unpack in `_WritePart` would misassign every label after the collapse; §7.2 binds
+    REPLICATION discriminator (`murf_1` interns to nominal's node id, so `mark_output` de-dups and
+    a POSITIONAL unpack in `_WritePart` would misassign every label after the collapse; §7.2 binds
     resolution BY NODE ID with replication).
 """
 
@@ -81,11 +81,11 @@ def test_weight_only_labels_replicate_the_collapsed_output_and_roundtrip(tmp_pat
     _session, events = events_context()
     record, evt_mask = weight_skim_inputs(events)
 
-    # WITNESS the collapse the anchor turns on: `murf_1`'s stored factor interns to nominal's node id,
-    # and it is NOT the last label — so `mark_output` de-dups it away and the value list is SHORTER
-    # than the marked-output list, the exact condition under which a positional unpack diverges from
-    # node-id resolution (§7.2). A suite run against a record where nothing collapsed would not test
-    # replication at all, so this assertion keeps the fixture honest.
+    # WITNESS the collapse the anchor turns on: `murf_1`'s stored factor interns to nominal's node
+    # id, and it is NOT the last label — so `mark_output` de-dups it away and the value list is
+    # SHORTER than the marked-output list, the exact condition under which a positional unpack
+    # diverges from node-id resolution (§7.2). A suite run against a record where nothing collapsed
+    # would not test replication at all, so this assertion keeps the fixture honest.
     node_ids = _w_node_ids(record)
     assert node_ids[ROW_LABELS.index("murf_1")] == node_ids[ROW_LABELS.index("nominal")]
     assert len(set(node_ids)) < len(node_ids)  # a real de-dup: fewer distinct outputs than labels
@@ -95,8 +95,9 @@ def test_weight_only_labels_replicate_the_collapsed_output_and_roundtrip(tmp_pat
     got = ga.read_varied(_one_part(paths))  # type: ignore[attr-defined]
 
     assert tuple(got) == ROW_LABELS  # e-canonical `murf_5em1` label survives verbatim
-    # the collapsed label reconstructs to nominal (all-zero delta) AND the labels AFTER it reconstruct
-    # to their OWN scaled values — a positional unpack gives `murf_5em1`/`murf_2` the wrong universe.
+    # the collapsed label reconstructs to nominal (all-zero delta) AND the labels AFTER it
+    # reconstruct to their OWN scaled values — a positional unpack gives `murf_5em1`/`murf_2` the
+    # wrong universe.
     for label in ROW_LABELS:
         assert as_list(got[label]) == as_list(eager_row_universe(label)), label
     assert as_list(got["murf_1"].w) == as_list(got["nominal"].w)  # the replication, explicitly

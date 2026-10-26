@@ -27,7 +27,9 @@ def test_reference_exists(name: str) -> None:
 
 
 @pytest.mark.parametrize("name", FIXTURE_NAMES)
-def test_fixture_reproduces_reference(name: str, events: ak.Array, registry: dict[str, object]) -> None:
+def test_fixture_reproduces_reference(
+    name: str, events: ak.Array, registry: dict[str, object]
+) -> None:
     fn = all_fixtures()[name]
     h: Hist = fn(events)
     ref = load_reference(REF_DIR / f"{name}.json")

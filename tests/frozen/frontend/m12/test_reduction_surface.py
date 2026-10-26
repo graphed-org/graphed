@@ -19,7 +19,17 @@ from m12_toy import ToyBackend, meta_source, recorded, source
 from graphed import Array, Session
 
 KINDS = ["sum", "prod", "mean", "std", "var", "min", "max", "any", "all", "argmin", "argmax"]
-NAN_KINDS = ["nansum", "nanprod", "nanmean", "nanstd", "nanvar", "nanmin", "nanmax", "nanargmin", "nanargmax"]
+NAN_KINDS = [
+    "nansum",
+    "nanprod",
+    "nanmean",
+    "nanstd",
+    "nanvar",
+    "nanmin",
+    "nanmax",
+    "nanargmin",
+    "nanargmax",
+]
 
 
 @pytest.mark.parametrize("kind", KINDS + NAN_KINDS)

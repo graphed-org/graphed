@@ -15,7 +15,9 @@ from graphed.numpy import NumpyBackend, from_array
 
 D2 = np.array([[3.0, 1.0, 4.0], [1.0, 5.0, 9.0], [2.0, 6.0, 5.0], [3.0, 5.0, 8.0]])
 DN = np.array([[3.0, np.nan, 4.0], [np.nan, 5.0, 9.0], [2.0, 6.0, np.nan], [3.0, 5.0, 8.0]])
-DB = np.array([[True, False, True], [False, False, True], [True, True, True], [False, False, False]])
+DB = np.array(
+    [[True, False, True], [False, False, True], [True, True, True], [False, False, False]]
+)
 
 KINDS = ["sum", "prod", "mean", "std", "var", "min", "max", "argmin", "argmax"]
 NAN_FUNCS = [np.nansum, np.nanprod, np.nanmean, np.nanstd, np.nanvar, np.nanmin, np.nanmax]
@@ -60,8 +62,12 @@ def test_any_all_on_booleans_match_numpy() -> None:
     s = Session(NumpyBackend())
     b = from_array(s, "b", DB)
     for axis in (None, 0, 1):
-        np.testing.assert_array_equal(np.asarray(s.materialize(b.any(axis=axis))), DB.any(axis=axis))
-        np.testing.assert_array_equal(np.asarray(s.materialize(b.all(axis=axis))), DB.all(axis=axis))
+        np.testing.assert_array_equal(
+            np.asarray(s.materialize(b.any(axis=axis))), DB.any(axis=axis)
+        )
+        np.testing.assert_array_equal(
+            np.asarray(s.materialize(b.all(axis=axis))), DB.all(axis=axis)
+        )
 
 
 @pytest.mark.parametrize(

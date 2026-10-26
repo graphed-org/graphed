@@ -1,15 +1,15 @@
 """§8.1 and §8.2(ii)/(iii): the worker-side wrap around ``evaluate_ir`` and what it attributes to.
 
 The wrap has TWO arms and both are law: at a failing key with a §8.2(i) frame a worker failure
-becomes a ``StageError`` at the user's line — carrying the key's label when the label channel has an
-entry, an empty variation otherwise (owner ruling 2026-09-22: an unvaried program attributes too);
-at a key with NO frame it re-raises the original exception untouched — not a ``StageError``, and not
-the ``IndexError`` an unconditional wrap would produce out of empty frames.
+becomes a ``StageError`` at the user's line — carrying the key's label when the label channel has
+an entry, an empty variation otherwise (owner ruling 2026-09-22: an unvaried program attributes
+too); at a key with NO frame it re-raises the original exception untouched — not a ``StageError``,
+and not the ``IndexError`` an unconditional wrap would produce out of empty frames.
 
 These tests supply their own (β) hook. §5.2a's self-derivation ban is worded over the LABEL
-association (whose only bound producer lives in ``graphed-histogram``); what is asserted here is the
-wrap, the keying and the frame tie-break, none of which the hook computes — the frames are COPIED
-off the ``CompiledGraph`` ``compile_ir`` built.
+association (whose only bound producer lives in ``graphed-histogram``); what is asserted here is
+the wrap, the keying and the frame tie-break, none of which the hook computes — the frames are
+COPIED off the ``CompiledGraph`` ``compile_ir`` built.
 """
 
 from __future__ import annotations

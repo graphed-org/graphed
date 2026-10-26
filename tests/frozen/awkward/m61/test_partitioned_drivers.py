@@ -1,5 +1,6 @@
-"""m61 — a partition-wise driver replays the compiled IR once per chunk, so it must refuse what
-per-chunk replay cannot compute, and ship what per-chunk replay needs.
+"""m61 — a partition-wise driver replays the compiled IR once per chunk.
+
+So it must refuse what per-chunk replay cannot compute, and ship what per-chunk replay needs.
 
 Three shapes, one operation (`refuse_chunk_partials` / `external_evaluators` / `file_bases`):
 a reduction node inside a partitioned plan is a per-chunk PARTIAL — sound only as an output the
@@ -49,7 +50,11 @@ def _total(plan: graphed.core.execution.Plan[float]) -> float:
 
 def _sum_plan(out: graphed.Array, steps: int) -> graphed.core.execution.Plan[float]:
     return graphed.aggregate_plan(
-        out, reduce=lambda v: float(v[0]), combine=lambda a, b: a + b, empty=lambda: 0.0, steps_per_file=steps
+        out,
+        reduce=lambda v: float(v[0]),
+        combine=lambda a, b: a + b,
+        empty=lambda: 0.0,
+        steps_per_file=steps,
     )
 
 
@@ -67,21 +72,29 @@ def test_refusal_reads_the_compiled_ir(parquet_path: str) -> None:
 
 def test_aggregate_plan_refuses_an_interior_reduction(parquet_path: str) -> None:
     ev = _ak_source(parquet_path)
-    with pytest.raises(GraphedError, match="'slice' reduces the partitioned axis and feeds another node"):
+    with pytest.raises(
+        GraphedError, match="'slice' reduces the partitioned axis and feeds another node"
+    ):
         _sum_plan(gak.sum(ev.x[2:8]), steps=2)
 
 
 def test_aggregate_plan_still_folds_an_output_reduction(parquet_path: str) -> None:
     ev = _ak_source(parquet_path)
     assert _total(_sum_plan(gak.sum(ev.x), steps=2)) == float(X.sum())
-    assert _total(_sum_plan(gak.sum(ev.x[ev.x > 4]), steps=3)) == float(X[X > 4].sum())  # a mask is row-local
+    assert _total(_sum_plan(gak.sum(ev.x[ev.x > 4]), steps=3)) == float(
+        X[X > 4].sum()
+    )  # a mask is row-local
 
 
 @pytest.mark.parametrize("backend", ["awkward", "numpy"])
-def test_writers_refuse_a_reduction_output(parquet_path: str, tmp_path: Path, backend: str) -> None:
+def test_writers_refuse_a_reduction_output(
+    parquet_path: str, tmp_path: Path, backend: str
+) -> None:
     ev = _ak_source(parquet_path) if backend == "awkward" else _np_source(parquet_path)
     write = to_parquet if backend == "awkward" else npio.to_parquet
-    with pytest.raises(GraphedError, match="'slice' reduces the partitioned axis: a partitioned write"):
+    with pytest.raises(
+        GraphedError, match="'slice' reduces the partitioned axis: a partitioned write"
+    ):
         write(ev.x[2:8], str(tmp_path / "out"), steps_per_file=2)
     assert not (tmp_path / "out").exists()
 
@@ -93,7 +106,9 @@ def _double(x: object) -> object:
 
 def test_awkward_writer_wires_externals(parquet_path: str, tmp_path: Path) -> None:
     ev = _ak_source(parquet_path)
-    paths = to_parquet(gak.zip({"a": graphed.apply(_double, ev.x)}), str(tmp_path / "out"), steps_per_file=2)
+    paths = to_parquet(
+        gak.zip({"a": graphed.apply(_double, ev.x)}), str(tmp_path / "out"), steps_per_file=2
+    )
     back = ak.concatenate([ak.from_parquet(p) for p in paths])
     assert back.a.tolist() == (X * 2).tolist()
 
@@ -107,7 +122,9 @@ def test_numpy_writer_wires_externals(parquet_path: str, tmp_path: Path) -> None
 
 # ---- a duplicated input is refused, not silently overwritten ---------------------------------
 @pytest.mark.parametrize("backend", ["awkward", "numpy"])
-def test_writers_refuse_a_duplicated_input(parquet_path: str, tmp_path: Path, backend: str) -> None:
+def test_writers_refuse_a_duplicated_input(
+    parquet_path: str, tmp_path: Path, backend: str
+) -> None:
     ev = (
         _ak_source([parquet_path, parquet_path])
         if backend == "awkward"

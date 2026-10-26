@@ -1,5 +1,8 @@
-"""m74 T2, cross-interpreter: each leg is ``python m74_xleg.py`` subprocesses against one store, the first
-filling it, the next ones under another ``PYTHONHASHSEED`` (plan §4.1 T2 (i)-(xv))."""
+"""m74 T2, cross-interpreter.
+
+Each leg is ``python m74_xleg.py`` subprocesses against one store, the first filling it, the next
+ones under another ``PYTHONHASHSEED`` (plan §4.1 T2 (i)-(xv)).
+"""
 
 from __future__ import annotations
 
@@ -60,8 +63,12 @@ def test_aggregate_plan_under_two_cell_filenames(tmp_path: Path, data: str) -> N
 @pytest.mark.parametrize("variant", ["class", "def"])
 def test_shuffle_plan_main_reduce_under_two_cells(tmp_path: Path, data: str, variant: str) -> None:
     # (iv)
-    first = leg("shuffle_cell", tmp_path / "s", data, CELL_A, variant, str(tmp_path / "a.pkl"), seed="1")
-    second = leg("shuffle_cell", tmp_path / "s", data, CELL_B, variant, str(tmp_path / "b.pkl"), seed="2")
+    first = leg(
+        "shuffle_cell", tmp_path / "s", data, CELL_A, variant, str(tmp_path / "a.pkl"), seed="1"
+    )
+    second = leg(
+        "shuffle_cell", tmp_path / "s", data, CELL_B, variant, str(tmp_path / "b.pkl"), seed="2"
+    )
     assert first["reused"] == [0, 0, 0]
     assert second["reused"] == second["tasks"]
     assert second["value"] == first["value"]
@@ -151,9 +158,14 @@ def test_mixin_edit_reaches_shuffle_stages(tmp_path: Path, data: str, layout: st
     assert edited["value"] == edited["fresh"] != same["value"]
 
 
-@pytest.mark.parametrize(("variant", "kind"), [("parquet", "_WritePart"), ("varied", "_VariedWritePart")])
-def test_mixin_edit_rewrites_parquet_parts(tmp_path: Path, data: str, variant: str, kind: str) -> None:
-    # (xiii): to_parquet(behavior="module:attr"), plain and varied with select=, one fixed destination
+@pytest.mark.parametrize(
+    ("variant", "kind"), [("parquet", "_WritePart"), ("varied", "_VariedWritePart")]
+)
+def test_mixin_edit_rewrites_parquet_parts(
+    tmp_path: Path, data: str, variant: str, kind: str
+) -> None:
+    # (xiii): to_parquet(behavior="module:attr"), plain and varied with select=, one fixed
+    # destination
     store, dest = tmp_path / "s", str(tmp_path / "out")
     first = leg("mixin", store, data, variant, "2", dest, seed="1")
     same = leg("mixin", store, data, variant, "2", dest, seed="2")
@@ -176,8 +188,11 @@ def test_importable_object_with_a_uuid_reduce(tmp_path: Path, data: str) -> None
     ("variant", "kept"),
     [("gather", ["map_write"]), ("reader", []), ("join", ["map_write"])],
 )
-def test_upstream_edit_reaches_every_downstream_stage(tmp_path: Path, data: str, variant: str, kept: list[str]) -> None:
-    # (xv): a __main__ gather reduce; a __main__ reader; a join whose second side's reader is __main__
+def test_upstream_edit_reaches_every_downstream_stage(
+    tmp_path: Path, data: str, variant: str, kept: list[str]
+) -> None:
+    # (xv): a __main__ gather reduce; a __main__ reader; a join whose second side's reader is
+    # __main__
     store = tmp_path / "s"
     first = leg("upstream", store, data, variant, "2", seed="1")
     same = leg("upstream", store, data, variant, "2", seed="2")

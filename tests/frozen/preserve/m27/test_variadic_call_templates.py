@@ -45,10 +45,13 @@ HIST = {"name": "met", "bins": 20, "lo": 0.0, "hi": 200.0}
 def _hist(value: Any, weight: Any) -> np.ndarray:
     v = np.asarray(ak.to_numpy(ak.Array(value)), dtype="float64")
     w = np.asarray(ak.to_numpy(ak.Array(weight)), dtype="float64")
-    return np.histogram(v, bins=HIST["bins"], range=(HIST["lo"], HIST["hi"]), weights=w)[0].round(6)
+    return np.histogram(v, bins=HIST["bins"], range=(HIST["lo"], HIST["hi"]), weights=w)[0].round(
+        6
+    )
 
 
-# ---------------------------------- correctionlib --------------------------------------------------
+# ----------------------------------
+# correctionlib --------------------------------------------------
 JETSF = json.dumps(
     {
         "schema_version": 2,
@@ -107,7 +110,9 @@ def test_correctionlib_jagged_awkward_passes_through_natively() -> None:
     eta = ak.Array([[0.5, 1.0], [], [2.0]])
     params = {"name": "jetsf", "args": ["nominal", "$0", "$1"]}
     got = _eval(CORRECTIONLIB_PLUGIN, JETSF, params, [pt, eta])
-    want = correctionlib.CorrectionSet.from_string(JETSF.decode())["jetsf"].evaluate("nominal", pt, eta)
+    want = correctionlib.CorrectionSet.from_string(JETSF.decode())["jetsf"].evaluate(
+        "nominal", pt, eta
+    )
     assert ak.num(got, axis=1).tolist() == [2, 0, 1]  # JAGGED STRUCTURE PRESERVED
     assert ak.all(got == want)
 
@@ -116,10 +121,17 @@ def test_correctionlib_constants_route_systematics_at_any_position() -> None:
     pt = np.array([30.0, 50.0])
     eta = np.array([0.5, 1.0])
     nominal = np.asarray(
-        _eval(CORRECTIONLIB_PLUGIN, JETSF, {"name": "jetsf", "args": ["nominal", "$0", "$1"]}, [pt, eta])
+        _eval(
+            CORRECTIONLIB_PLUGIN,
+            JETSF,
+            {"name": "jetsf", "args": ["nominal", "$0", "$1"]},
+            [pt, eta],
+        )
     )
     up = np.asarray(
-        _eval(CORRECTIONLIB_PLUGIN, JETSF, {"name": "jetsf", "args": ["up", "$0", "$1"]}, [pt, eta])
+        _eval(
+            CORRECTIONLIB_PLUGIN, JETSF, {"name": "jetsf", "args": ["up", "$0", "$1"]}, [pt, eta]
+        )
     )
     assert np.allclose(up - nominal, 0.1)  # the constant ARGUMENT selected a different variation
 
@@ -133,7 +145,10 @@ def test_correctionlib_legacy_default_is_unchanged() -> None:
                 {
                     "name": "sf",
                     "version": 1,
-                    "inputs": [{"name": "systematic", "type": "string"}, {"name": "x", "type": "real"}],
+                    "inputs": [
+                        {"name": "systematic", "type": "string"},
+                        {"name": "x", "type": "real"},
+                    ],
                     "output": {"name": "sf", "type": "real"},
                     "data": {
                         "nodetype": "category",
@@ -145,7 +160,10 @@ def test_correctionlib_legacy_default_is_unchanged() -> None:
         }
     ).encode()
     out = _eval(
-        CORRECTIONLIB_PLUGIN, flat_sf, {"name": "sf", "systematic": "nominal"}, [np.array([1.0, 2.0])]
+        CORRECTIONLIB_PLUGIN,
+        flat_sf,
+        {"name": "sf", "systematic": "nominal"},
+        [np.array([1.0, 2.0])],
     )
     assert np.asarray(out).tolist() == [1.5, 1.5]
 
@@ -172,10 +190,12 @@ def test_correctionlib_jagged_replay_through_a_bundle(tmp_path) -> None:  # type
         histogram=HIST,
     )
     assert np.array_equal(np.asarray(reproduce(bundle), dtype="float64"), reference)
-    # the call template is PRESERVED NODE CONTENT: it rode the IR into the bundle and replay obeyed it
+    # the call template is PRESERVED NODE CONTENT: it rode the IR into the bundle and replay obeyed
+    # it
 
 
-# ---------------------------------- histogram: multi-axis + multi-weight ---------------------------
+# ---------------------------------- histogram: multi-axis +
+# multi-weight ---------------------------
 def test_histogram_multi_axis_fill_replays_through_a_bundle(tmp_path) -> None:  # type: ignore[no-untyped-def]
     import boost_histogram as bh  # noqa: PLC0415
     import pytest  # noqa: PLC0415
@@ -184,17 +204,27 @@ def test_histogram_multi_axis_fill_replays_through_a_bundle(tmp_path) -> None:  
 
     gh = pytest.importorskip("graphed_histogram")  # separate optional package
 
-    events = ak.Array({"x": [[1.0, 4.0], [], [7.0, 2.5]] * 40, "y": [[0.1, 0.4], [], [0.7, 0.2]] * 40})
+    events = ak.Array(
+        {"x": [[1.0, 4.0], [], [7.0, 2.5]] * 40, "y": [[0.1, 0.4], [], [0.7, 0.2]] * 40}
+    )
     s = Session(AwkwardBackend())
     g = from_awkward(s, "events", events)
-    h = gh.boost.Histogram(bh.axis.Regular(4, 0, 8), bh.axis.Regular(4, 0, 1), storage=bh.storage.Int64())
+    h = gh.boost.Histogram(
+        bh.axis.Regular(4, 0, 8), bh.axis.Regular(4, 0, 1), storage=bh.storage.Int64()
+    )
     h.fill(gak.flatten(g.x, axis=1), gak.flatten(g.y, axis=1))
 
-    eager = bh.Histogram(bh.axis.Regular(4, 0, 8), bh.axis.Regular(4, 0, 1), storage=bh.storage.Int64())
+    eager = bh.Histogram(
+        bh.axis.Regular(4, 0, 8), bh.axis.Regular(4, 0, 1), storage=bh.storage.Int64()
+    )
     eager.fill(ak.flatten(events.x, axis=None), ak.flatten(events.y, axis=None))
 
     bundle = build_bundle(
-        tmp_path / "b", session=s, value=h.fill_nodes()[0], datasets={"events": events}, payloads={}
+        tmp_path / "b",
+        session=s,
+        value=h.fill_nodes()[0],
+        datasets={"events": events},
+        payloads={},
     )
     got = reproduce(bundle)
     assert np.array_equal(got.values(flow=True), eager.values(flow=True))
@@ -207,7 +237,11 @@ def test_histogram_multiple_weights_multiply_on_replay(tmp_path) -> None:  # typ
     gh = pytest.importorskip("graphed_histogram")  # separate optional package
 
     events = ak.Array(
-        {"x": [1.0, 4.0, 7.0, 2.5] * 30, "w1": [0.5, 1.0, 2.0, 1.5] * 30, "w2": [1.0, 0.5, 1.0, 2.0] * 30}
+        {
+            "x": [1.0, 4.0, 7.0, 2.5] * 30,
+            "w1": [0.5, 1.0, 2.0, 1.5] * 30,
+            "w2": [1.0, 0.5, 1.0, 2.0] * 30,
+        }
     )
     s = Session(AwkwardBackend())
     g = from_awkward(s, "events", events)
@@ -219,13 +253,16 @@ def test_histogram_multiple_weights_multiply_on_replay(tmp_path) -> None:  # typ
     eager = bh.Histogram(bh.axis.Regular(4, 0, 8), storage=bh.storage.Weight())
     eager.fill(np.asarray(events.x), weight=np.asarray(events.w1) * np.asarray(events.w2))
 
-    bundle = build_bundle(tmp_path / "b", session=s, value=fill, datasets={"events": events}, payloads={})
+    bundle = build_bundle(
+        tmp_path / "b", session=s, value=fill, datasets={"events": events}, payloads={}
+    )
     got = reproduce(bundle)
     assert np.array_equal(got.view(flow=True)["value"], eager.view(flow=True)["value"])
     assert np.array_equal(got.view(flow=True)["variance"], eager.view(flow=True)["variance"])
 
 
-# ---------------------------------- Triton: multiple NAMED inputs ----------------------------------
+# ---------------------------------- Triton: multiple NAMED
+# inputs ----------------------------------
 DESCRIPTOR = json.dumps(
     {"model": "scorer2", "version": "1", "weights": {"kin": [0.5, 0.25], "mask": [2.0]}}
 ).encode()
@@ -263,7 +300,9 @@ def test_triton_multiple_named_inputs_replay_through_a_bundle(tmp_path) -> None:
     )
     assert np.array_equal(np.asarray(reproduce(bundle), dtype="float64"), reference)
     # every named input genuinely reached the server, on BOTH executions (materialize + reproduce)
-    assert client.seen_input_names and all(seen == ["kin", "mask"] for seen in client.seen_input_names)
+    assert client.seen_input_names and all(
+        seen == ["kin", "mask"] for seen in client.seen_input_names
+    )
 
 
 def test_triton_legacy_default_still_builds_one_input() -> None:
@@ -283,10 +322,13 @@ def test_triton_legacy_default_still_builds_one_input() -> None:
     assert np.allclose(np.asarray(out), want, atol=1e-6)
 
 
-# ---------------------------------- xgboost: tabular-only, loudly ----------------------------------
+# ---------------------------------- xgboost: tabular-only,
+# loudly ----------------------------------
 def test_xgboost_rejects_multi_argument_templates_loudly() -> None:
     with pytest.raises(PreserveError, match="single"):
-        XGBOOST_PLUGIN.evaluate(None, {"args": [["$0"], ["$1"]]}, [np.array([1.0]), np.array([2.0])])
+        XGBOOST_PLUGIN.evaluate(
+            None, {"args": [["$0"], ["$1"]]}, [np.array([1.0]), np.array([2.0])]
+        )
 
 
 def test_correctionlib_rejects_keyword_arguments_loudly() -> None:

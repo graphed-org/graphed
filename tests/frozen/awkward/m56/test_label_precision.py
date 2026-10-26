@@ -1,6 +1,8 @@
-"""m56 §2 item 1, the two precisions the label set alone does not pin: the member is judged by its
-node AT the label, not by every universe it carries, and the factor is resolved by the two-level,
-point-restricted read at that label, not by a one-level read of the container.
+"""m56 §2 item 1, the two precisions the label set alone does not pin.
+
+The member is judged by its node AT the label, not by every universe it carries, and the factor is
+resolved by the two-level, point-restricted read at that label, not by a one-level read of the
+container.
 """
 
 from __future__ import annotations
@@ -22,9 +24,11 @@ import graphed
 
 
 def m56_per_universe_member(tainted: str) -> tuple[object, object, object]:
-    """A `jes`-varied member whose universes are built one at a time, so a factor read can be placed
-    in ONE of them. `tainted` picks which universe reads a `jes` weight member the design does not
-    resolve at that label: the member's `"nominal"`, or its `jes_up` reading the factor's `jes_down`.
+    """Return a `jes`-varied member whose universes are built one at a time.
+
+    So a factor read can be placed in ONE of them. `tainted` picks which universe reads a `jes`
+    weight member the design does not resolve at that label: the member's `"nominal"`, or its
+    `jes_up` reading the factor's `jes_down`.
 
     Returns the registered context, the member, and the factor node the taint reads.
     """

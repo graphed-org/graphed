@@ -41,8 +41,11 @@ VARIED_COLUMNS = ("y", "z")
 
 
 class PlainSource:
-    """A `graphed.write.PartitionedSource` over an in-memory awkward array that RECORDS the
-    `columns` argument of every `read_partition` call — the witness for what the plan shipped."""
+    """A `graphed.write.PartitionedSource` over an in-memory awkward array.
+
+    It RECORDS the `columns` argument of every `read_partition` call — the witness for what the
+    plan shipped.
+    """
 
     def __init__(self, data: ak.Array = DATA) -> None:
         self.data = data
@@ -53,7 +56,8 @@ class PlainSource:
 
     def partitions(self, steps_per_file: int = 1) -> tuple[Partition, ...]:
         return tuple(
-            Partition.blind("mem://m58", "", step, steps_per_file) for step in range(steps_per_file)
+            Partition.blind("mem://m58", "", step, steps_per_file)
+            for step in range(steps_per_file)
         )
 
     def read_partition(self, partition: Partition, columns: Any, resources: Any) -> ak.Array:
@@ -66,10 +70,15 @@ class PlainSource:
 
 
 class DeclaringSource(PlainSource):
-    """A source that DECLARES its own read list. Counts the calls and keeps the exact `outputs` it
-    was handed; `max_calls` makes any further call loud, which is the worker-side witness."""
+    """A source that DECLARES its own read list.
 
-    def __init__(self, data: ak.Array = DATA, answer: Any = DECLARED, max_calls: int | None = None) -> None:
+    Counts the calls and keeps the exact `outputs` it was handed; `max_calls` makes any further
+    call loud, which is the worker-side witness.
+    """
+
+    def __init__(
+        self, data: ak.Array = DATA, answer: Any = DECLARED, max_calls: int | None = None
+    ) -> None:
         super().__init__(data)
         self.answer = answer
         self.calls = 0
@@ -93,7 +102,10 @@ class DeclaringSource(PlainSource):
 
 
 def partitioned(source: PlainSource) -> tuple[Session, Array]:
-    """A session whose single source is `source`, recorded with the dataset's metadata-only form."""
+    """Return a session whose single source is `source`.
+
+    It is recorded with the dataset's metadata-only form.
+    """
     session = Session(AwkwardBackend())
     tracer = ak.Array(DATA.layout.to_typetracer(forget_length=True))
     root = session.source("events", form=AwkwardForm(tracer), data=source, uri="mem://m58")
@@ -177,8 +189,11 @@ def never_runs(*inputs: Any) -> Any:
 
 
 def declared_external(session: Session, inputs: list[Array], form: AwkwardForm, tag: str) -> Array:
-    """The M23 seam: a package recording its OWN External family supplies descriptor AND form, so
-    the node's recorded form is the caller's declaration, not the backend's input-shaped guess."""
+    """Return the M23 seam.
+
+    A package recording its OWN External family supplies descriptor AND form, so the node's
+    recorded form is the caller's declaration, not the backend's input-shaped guess.
+    """
     return session.record_external(
         "external",
         never_runs,

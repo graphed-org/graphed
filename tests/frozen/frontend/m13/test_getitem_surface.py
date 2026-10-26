@@ -67,5 +67,15 @@ def test_idiom_specific_keys_are_refused_on_the_base_proxy() -> None:
 
 def test_no_manipulation_methods_leak_onto_the_base_array() -> None:
     # the factorization pin extends to M13
-    for name in ("reshape", "ravel", "squeeze", "transpose", "T", "take", "clip", "round", "astype"):
+    for name in (
+        "reshape",
+        "ravel",
+        "squeeze",
+        "transpose",
+        "T",
+        "take",
+        "clip",
+        "round",
+        "astype",
+    ):
         assert name not in vars(Array), f"numpy-idiomatic {name!r} leaked onto graphed.Array"

@@ -1,6 +1,9 @@
-"""M65 C frozen suite (graphed-debug slice): ``RunRecorder`` folds a run's events into a ``RunReport``
-(plan-C C-1..C-4, C-8's ``complete_events`` helper, the report JSON). New API is read through module
-attributes so each test fails on its own line before the implementation exists."""
+"""M65 C frozen suite (graphed-debug slice).
+
+``RunRecorder`` folds a run's events into a ``RunReport`` (plan-C C-1..C-4, C-8's
+``complete_events`` helper, the report JSON). New API is read through module attributes so each
+test fails on its own line before the implementation exists.
+"""
 
 from __future__ import annotations
 
@@ -20,7 +23,16 @@ import graphed.preserve as gp
 from graphed import Session
 from graphed.aggregate import aggregate_plan
 from graphed.awkward import AwkwardBackend, from_parquet, gak
-from graphed.core import ExecResult, Partition, Plan, RunControl, StopReason, Task, TaskEvent, TaskPhase
+from graphed.core import (
+    ExecResult,
+    Partition,
+    Plan,
+    RunControl,
+    StopReason,
+    Task,
+    TaskEvent,
+    TaskPhase,
+)
 from graphed.debug import SourceFrame, StageError
 
 REPORT_ARGS = "RunRecorder.report needs exactly one of result= or error="
@@ -115,7 +127,13 @@ def _states(report: Any) -> list[str]:
 
 
 def _ev(
-    phase: TaskPhase, key: int, t: float, *, worker: str = "w0", label: str = "", error: str | None = None
+    phase: TaskPhase,
+    key: int,
+    t: float,
+    *,
+    worker: str = "w0",
+    label: str = "",
+    error: str | None = None,
 ) -> TaskEvent:
     return TaskEvent(phase, key, worker, t, label, 1, error=error)
 
@@ -132,7 +150,9 @@ def test_failed_run_keeps_its_stage_error(tmp_path: Path) -> None:
     ak.to_parquet(ak.Array({"x": np.arange(1000.0)}), path)
     s = Session(AwkwardBackend())
     y = gak.sum(from_parquet(s, "events", path).x.map(_bad_chunk, name="bad"), axis=None)
-    plan = aggregate_plan(y, reduce=lambda v: float(v[0]), combine=_add, empty=_zero, steps_per_file=4)
+    plan = aggregate_plan(
+        y, reduce=lambda v: float(v[0]), combine=_add, empty=_zero, steps_per_file=4
+    )
     rec = gd.RunRecorder()
     with pytest.raises(StageError) as info:
         gc.SequentialRunner(monitor=rec).run(plan)
@@ -172,7 +192,12 @@ def test_durations_are_per_task_worker_clock() -> None:
     res = gc.SequentialRunner(monitor=rec, control=control).run(_plan(sleepy))
     r = rec.report(result=res)
     by_key = {t.key: t for t in r.tasks}
-    assert [by_key[k].state for k in range(4)] == ["finished", "finished", "submitted", "submitted"]
+    assert [by_key[k].state for k in range(4)] == [
+        "finished",
+        "finished",
+        "submitted",
+        "submitted",
+    ]
     assert by_key[0].duration_s >= 0.05 and by_key[1].duration_s >= 0.05
     assert by_key[2].duration_s is None and by_key[3].duration_s is None
     assert r.wall_s >= by_key[0].duration_s + by_key[1].duration_s
@@ -269,7 +294,9 @@ def test_recorder_forwards_and_forces_the_full_stream() -> None:
     ]
     assert inner.combines == [3]
     assert inner.profiles == [("w", b"x")]
-    assert _states(rec.report(result=ExecResult(4.0, 4, 3, StopReason.EXHAUSTED))) == ["finished"] * 4
+    assert (
+        _states(rec.report(result=ExecResult(4.0, 4, 3, StopReason.EXHAUSTED))) == ["finished"] * 4
+    )
 
     lean = LeanPushInner()
     rec = gd.RunRecorder(inner=lean)

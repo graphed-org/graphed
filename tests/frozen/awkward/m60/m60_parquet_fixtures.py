@@ -71,21 +71,19 @@ def awkward_dataset(tmp_path: Path, parts: int = 1) -> tuple[str, ...]:
 
 
 def pyarrow_dataset(tmp_path: Path) -> str:
-    """The no-metadata control: one file written through bare pyarrow."""
+    """Return the no-metadata control: one file written through bare pyarrow."""
     path = str(tmp_path / "foreign.parquet")
-    pq.write_table(
-        pa.table({"x": pa.array([[1.0, 2.0], [4.0]]), "n": pa.array([1, None])}), path
-    )
+    pq.write_table(pa.table({"x": pa.array([[1.0, 2.0], [4.0]]), "n": pa.array([1, None])}), path)
     return path
 
 
 def eager(path: str) -> ak.Array:
-    """What awkward's own reader gives the whole file — the oracle for form AND values."""
+    """Return What awkward's own reader gives the whole file — the oracle for form AND values."""
     return ak.from_parquet(path)
 
 
 def tracer(array: ak.Array, behavior: Any = None) -> ak.Array:
-    """The metadata-only counterpart of `array`: what a recorded form is inferred on."""
+    """Return the metadata-only counterpart of `array`: what a recorded form is inferred on."""
     return ak.Array(array.layout.to_typetracer(forget_length=True), behavior=behavior)
 
 

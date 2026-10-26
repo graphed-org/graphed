@@ -1,7 +1,9 @@
-"""Column projection through complex topologies (plan M5) — diamond / star / nested shapes where a
-column feeds re-converging branches. Touch-tracking must report each column EXACTLY once and never
-over-touch a sibling, regardless of how the branches fan out and re-join (these re-convergence cases
-were dask-awkward failure points)."""
+"""Column projection through complex topologies (plan M5).
+
+Diamond / star / nested shapes where a column feeds re-converging branches. Touch-tracking must
+report each column EXACTLY once and never over-touch a sibling, regardless of how the branches fan
+out and re-join (these re-convergence cases were dask-awkward failure points).
+"""
 
 from __future__ import annotations
 
@@ -25,7 +27,9 @@ def test_diamond_reads_each_column_exactly_once() -> None:
     right = a - ev.Muon.phi
     out = left + right
     read = project(out).columns_for("events")
-    assert read == frozenset({"Muon.pt", "Muon.eta", "Muon.phi"})  # no charge/mass, no other collection
+    assert read == frozenset(
+        {"Muon.pt", "Muon.eta", "Muon.phi"}
+    )  # no charge/mass, no other collection
 
 
 def test_star_one_column_feeds_many_branches() -> None:

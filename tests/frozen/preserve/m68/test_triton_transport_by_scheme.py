@@ -1,9 +1,11 @@
-"""m68 D7 — with no ``params["transport"]`` a bound endpoint's scheme picks the client module: ``http(s)`` →
-``tritonclient.http``, ``grpc(s)`` → ``tritonclient.grpc``, given the bare ``host:port`` with ``ssl`` on the
-``s`` schemes, and the requests are built from that module; ``params["transport"]`` still wins over any
-scheme. The per-process resource cache keys on the endpoint and the params ``load`` reads, so nodes
-differing only in evaluate-time params share one resource. Fake ``tritonclient`` modules sit in ``sys.modules``
-(the m26 extra-test idiom)."""
+"""m68 D7 — with no ``params["transport"]`` a bound endpoint's scheme picks the client module.
+
+``http(s)`` → ``tritonclient.http``, ``grpc(s)`` → ``tritonclient.grpc``, given the bare
+``host:port`` with ``ssl`` on the ``s`` schemes, and the requests are built from that module;
+``params["transport"]`` still wins over any scheme. The per-process resource cache keys on the
+endpoint and the params ``load`` reads, so nodes differing only in evaluate-time params share one
+resource. Fake ``tritonclient`` modules sit in ``sys.modules`` (the m26 extra-test idiom).
+"""
 
 from __future__ import annotations
 
@@ -28,7 +30,10 @@ PARAMS = {"model": "scorer", "input_name": "x", "output_name": "y"}
 
 
 def _module(wire: str, log: list[Any]) -> types.ModuleType:
-    """A ``tritonclient.<wire>`` stand-in logging connects as ``(url, ssl)`` and each request class built."""
+    """Return a ``tritonclient.<wire>`` stand-in.
+
+    It logs connects as ``(url, ssl)`` and each request class built.
+    """
 
     class InferenceServerClient(fake.FakeTritonClient):
         def __init__(self, url: str, *args: Any, ssl: bool = False, **kwargs: Any) -> None:
@@ -68,7 +73,9 @@ def _served(tag: str) -> Plan[Any]:
     ev = new_events()
     ev.session.declare_service(ServiceSpec("scorer-svc", "triton"))
     params = {**PARAMS, "service": "scorer-svc"}
-    return values_plan(record_external(ev.session, TRITON_PLUGIN, descriptor(tag), [ev.x], params=params))
+    return values_plan(
+        record_external(ev.session, TRITON_PLUGIN, descriptor(tag), [ev.x], params=params)
+    )
 
 
 @pytest.mark.parametrize(
@@ -122,21 +129,29 @@ def test_the_transport_param_wins_over_any_scheme(seen: dict[str, list[Any]]) ->
         score(ev, descriptor("transport-literal", 0.45, -0.1), url=literal),
         score(ev, descriptor("transport-served", 0.8, 0.2), service="scorer-svc"),
     )
-    row_literal, row_served = SequentialRunner().run(bind_services(plan, {"scorer-svc": served})).value
+    row_literal, row_served = (
+        SequentialRunner().run(bind_services(plan, {"scorer-svc": served})).value
+    )
     assert np.allclose(row_literal, expected(0.45, -0.1), rtol=1e-6)
     assert np.allclose(row_served, expected(0.8, 0.2), rtol=1e-6)
     assert fake.SERVERS[literal].infer_calls > 0 and fake.SERVERS[served].infer_calls > 0
     assert seen == {"http": [], "grpc": []}
 
 
-def test_the_connection_key_is_the_endpoint_and_the_params_load_reads(seen: dict[str, list[Any]]) -> None:
+def test_the_connection_key_is_the_endpoint_and_the_params_load_reads(
+    seen: dict[str, list[Any]],
+) -> None:
     fake.serve("http://tr-key-a:8000", descriptor("key-load-params"))
     ev = new_events()
     for name in ("svc-a", "svc-b"):
         ev.session.declare_service(ServiceSpec(name, "triton"))
     nodes = [
         record_external(
-            ev.session, TRITON_PLUGIN, descriptor("key-load-params"), [ev.x], params={**PARAMS, **extra}
+            ev.session,
+            TRITON_PLUGIN,
+            descriptor("key-load-params"),
+            [ev.x],
+            params={**PARAMS, **extra},
         )
         for extra in (
             {"service": "svc-a"},
@@ -168,7 +183,10 @@ def test_correctionlib_universes_off_one_payload_load_once() -> None:
             {
                 "name": "sf",
                 "version": 1,
-                "inputs": [{"name": "systematic", "type": "string"}, {"name": "x", "type": "real"}],
+                "inputs": [
+                    {"name": "systematic", "type": "string"},
+                    {"name": "x", "type": "real"},
+                ],
                 "output": {"name": "sf", "type": "real"},
                 "data": {
                     "nodetype": "category",
@@ -181,7 +199,11 @@ def test_correctionlib_universes_off_one_payload_load_once() -> None:
     ev = new_events()
     nodes = [
         record_external(
-            ev.session, plugin, json.dumps(cset).encode(), [ev.x], params={"name": "sf", "systematic": u}
+            ev.session,
+            plugin,
+            json.dumps(cset).encode(),
+            [ev.x],
+            params={"name": "sf", "systematic": u},
         )
         for u in ("up", "down")
     ]
@@ -190,11 +212,17 @@ def test_correctionlib_universes_off_one_payload_load_once() -> None:
     assert len(loads) == 1
 
 
-def test_equal_node_params_in_any_key_order_share_one_connection(seen: dict[str, list[Any]]) -> None:
+def test_equal_node_params_in_any_key_order_share_one_connection(
+    seen: dict[str, list[Any]],
+) -> None:
     params = {**PARAMS, "service": "scorer-svc"}
     for order in (params, dict(reversed(params.items()))):  # two sessions, so two evaluators
         ev = new_events()
         ev.session.declare_service(ServiceSpec("scorer-svc", "triton"))
-        node = record_external(ev.session, TRITON_PLUGIN, descriptor("key-order"), [ev.x], params=order)
-        SequentialRunner().run(bind_services(values_plan(node), {"scorer-svc": "http://tr-order:8000"}))
+        node = record_external(
+            ev.session, TRITON_PLUGIN, descriptor("key-order"), [ev.x], params=order
+        )
+        SequentialRunner().run(
+            bind_services(values_plan(node), {"scorer-svc": "http://tr-order:8000"})
+        )
     assert [e for e in seen["http"] if isinstance(e, tuple)] == [("tr-order:8000", False)]

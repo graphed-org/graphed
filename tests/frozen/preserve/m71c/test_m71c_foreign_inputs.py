@@ -1,5 +1,8 @@
-"""m71c C-C8: an input from another Session is refused at the calling line on every External route
-(the plugin route and both gak templates), before any form is computed."""
+"""m71c C-C8: an input from another Session is refused at the calling line.
+
+It is refused on every External route (the plugin route and both gak templates), before any form is
+computed.
+"""
 
 from __future__ import annotations
 
@@ -21,8 +24,10 @@ def test_a_plugin_external_refuses_a_foreign_input() -> None:
 def test_the_correction_template_refuses_a_foreign_input() -> None:
     _s, ev = recorded()
     _s2, ev2 = recorded()
-    line = here()
-    exc = refusal(lambda: gak.apply_correction(CSET, "sf", [ev.x, ev2.x], _evaluator, args=["nominal", "$1"]))
+    line = here() + 1
+    exc = refusal(
+        lambda: gak.apply_correction(CSET, "sf", [ev.x, ev2.x], _evaluator, args=["nominal", "$1"])
+    )
     assert (exc.provenance.filename, exc.provenance.lineno) == (__file__, line)
     assert "different Session" in str(exc)
 

@@ -1,5 +1,8 @@
-"""m68 D1 — a plan or bundle that references no service is byte-identical to 0.0.6: ``services`` is
-written only when the IR references a declared spec. The pins below were measured on 0.0.6."""
+"""m68 D1 — a plan or bundle that references no service is byte-identical to 0.0.6.
+
+``services`` is written only when the IR references a declared spec. The pins below were measured
+on 0.0.6.
+"""
 
 from __future__ import annotations
 
@@ -64,7 +67,10 @@ def _durable() -> DurablePlan:
         process=OpSpec.from_ref("builtins:list"),
         combine=OpSpec.from_ref("operator:add"),
         empty=OpSpec.from_ref("builtins:list"),
-        partitions=(Partition("mem://events", "Events", 0, 4), Partition("mem://events", "Events", 4, 8)),
+        partitions=(
+            Partition("mem://events", "Events", 0, 4),
+            Partition("mem://events", "Events", 4, 8),
+        ),
         read_columns=("x",),
     )
 
@@ -72,7 +78,8 @@ def _durable() -> DurablePlan:
 def _bundle(root: Any, *, declare: bool, service: bool) -> Bundle:
     ev = new_events()
     if declare:
-        from graphed.services import ServiceSpec  # noqa: PLC0415  (the 0.0.6 pins collect without it)
+        # the 0.0.6 pins collect without it
+        from graphed.services import ServiceSpec  # noqa: PLC0415
 
         ev.session.declare_service(ServiceSpec("scorer-svc", "triton"))
     payload = descriptor("unchanged")
@@ -117,12 +124,17 @@ def test_one_referenced_spec_adds_exactly_the_services_key(tmp_path: Any) -> Non
 def test_a_declared_but_unreferenced_spec_is_not_written(tmp_path: Any) -> None:
     plain = _bundle(tmp_path / "plain", declare=False, service=False)
     declared = _bundle(tmp_path / "declared", declare=True, service=False)
-    assert (declared.root / "manifest.json").read_bytes() == (plain.root / "manifest.json").read_bytes()
+    assert (declared.root / "manifest.json").read_bytes() == (
+        plain.root / "manifest.json"
+    ).read_bytes()
     ev = new_events()
     from graphed.services import ServiceSpec  # noqa: PLC0415
 
     ev.session.declare_service(ServiceSpec("scorer-svc", "triton"))
-    assert values_plan(score(ev, descriptor("unreferenced"), url="triton://unchanged:8000")).services == ()
+    assert (
+        values_plan(score(ev, descriptor("unreferenced"), url="triton://unchanged:8000")).services
+        == ()
+    )
     assert Plan(process=list, combine=list, empty=list).services == ()
 
 

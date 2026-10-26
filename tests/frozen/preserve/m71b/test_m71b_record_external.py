@@ -55,7 +55,9 @@ def test_a_declared_jagged_selection_indexes_its_jets() -> None:
 
 def test_a_scalar_input_records_the_declared_scalar() -> None:
     s, ev = recorded()
-    assert describe(s, record_external(s, LUMI, b"g", [gak.sum(ev.x)], output_type="bool")) == "bool"
+    assert (
+        describe(s, record_external(s, LUMI, b"g", [gak.sum(ev.x)], output_type="bool")) == "bool"
+    )
 
 
 def test_a_declared_named_record_resolves_its_behavior() -> None:
@@ -88,7 +90,10 @@ def test_spellings_of_one_declared_type_are_one_node() -> None:
         for spec in ("bool", bool, np.bool_)
     }
     assert len(flat) == 1
-    assert params_of(s, record_external(s, LUMI, b"g", [ev.run], output_type=bool))["output_type"] == "bool"
+    assert (
+        params_of(s, record_external(s, LUMI, b"g", [ev.run], output_type=bool))["output_type"]
+        == "bool"
+    )
 
     jagged = {
         record_external(s, JSEL, b"j", [ev.Jet.pt], output_type=spec).node_id
@@ -97,9 +102,12 @@ def test_spellings_of_one_declared_type_are_one_node() -> None:
     assert len(jagged) == 1
 
     f32 = NumpyType("float32")
-    photon_type = ListType(RecordType([f32, f32], ["pt", "eta"], parameters={"__record__": "Photon"}))
+    photon_type = ListType(
+        RecordType([f32, f32], ["pt", "eta"], parameters={"__record__": "Photon"})
+    )
     named = {
-        record_external(s, PHO, b"p", [ev.Jet.pt], output_type=spec).node_id for spec in (PHOTON, photon_type)
+        record_external(s, PHO, b"p", [ev.Jet.pt], output_type=spec).node_id
+        for spec in (PHOTON, photon_type)
     }
     assert len(named) == 1
 

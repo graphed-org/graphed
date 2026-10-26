@@ -1,12 +1,14 @@
 """M39 — the multi-source / multi-stage plan builder ``graphed.shuffle_plan`` (plan §3.2, §4.4).
 
-The single-source ``aggregate_plan`` raises on >1 partitioned source, so it cannot express a shuffle.
-``shuffle_plan`` emits a **multi-stage ``DurablePlanV2``**: a stage-1 map-write (route+coalesce) that
-a stage-2 gather depends on. This test witnesses the plan SHAPE (kinds + dependency edge); the actual
-cross-process execution is witnessed in graphed-exec-local. The single-source builder is UNCHANGED.
+The single-source ``aggregate_plan`` raises on >1 partitioned source, so it cannot express a
+shuffle. ``shuffle_plan`` emits a **multi-stage ``DurablePlanV2``**: a stage-1 map-write
+(route+coalesce) that a stage-2 gather depends on. This test witnesses the plan SHAPE (kinds +
+dependency edge); the actual cross-process execution is witnessed in graphed-exec-local. The
+single-source builder is UNCHANGED.
 
-Pinned surface (test-author decision, mirroring ``aggregate_plan``): ``graphed.shuffle_plan(output, *,
-reduce, combine, empty, backend=None, steps_per_file=1) -> DurablePlanV2``.
+Pinned surface (test-author decision, mirroring ``aggregate_plan``):
+``graphed.shuffle_plan(output, *, reduce, combine, empty, backend=None, steps_per_file=1) ->
+DurablePlanV2``.
 """
 
 from __future__ import annotations
@@ -52,11 +54,14 @@ def test_gather_stage_depends_on_the_map_write_stage() -> None:
     )
     map_idx = next(i for i, st in enumerate(plan.stages) if st.kind == "map_write")
     downstream = [st for st in plan.stages if map_idx in st.inputs]
-    assert downstream, "at least one later stage must depend on the map-write stage (a real barrier edge)"
+    assert downstream, (
+        "at least one later stage must depend on the map-write stage (a real barrier edge)"
+    )
 
 
 def test_single_source_aggregate_plan_is_unchanged() -> None:
-    # control: the single-source builder still rejects two partitioned sources (not silently widened).
+    # control: the single-source builder still rejects two partitioned sources (not silently
+    # widened).
     s = Session(ToyBackend())
     a = s.source("a", form="f", data=ListSource([{"__joinkey__": 1}]))
     b = s.source("b", form="f", data=ListSource([{"__joinkey__": 2}]))

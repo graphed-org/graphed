@@ -39,7 +39,7 @@ from graphed.awkward.payloads import (
 
 
 def _node(s: Session, arr: Any) -> dict[str, Any]:
-    """The interned node behind ``arr`` (via the session's core store)."""
+    """Return the interned node behind ``arr`` (via the session's core store)."""
     return next(n for n in s._store.nodes() if n["id"] == arr.node_id)
 
 
@@ -100,7 +100,11 @@ def test_correctionlib_contents_hash_ignores_formatting_but_not_content() -> Non
 
 
 def test_onnx_weights_hash_is_content_identity() -> None:
-    a, b_weights, c_structure = _onnx_bytes(0.5), _onnx_bytes(0.9), _onnx_bytes(0.5, extra_node=True)
+    a, b_weights, c_structure = (
+        _onnx_bytes(0.5),
+        _onnx_bytes(0.9),
+        _onnx_bytes(0.5, extra_node=True),
+    )
     assert onnx_weights_hash(a) == onnx_weights_hash(_onnx_bytes(0.5))
     assert onnx_weights_hash(a) != onnx_weights_hash(b_weights)  # weights are content
     assert onnx_weights_hash(a) != onnx_weights_hash(c_structure)  # graph structure is content
@@ -116,10 +120,17 @@ def test_descriptors_carry_the_aligned_hash_and_metadata() -> None:
     assert m.content_hash == onnx_weights_hash(_onnx_bytes(0.5))
 
 
-# ---------------------------------- the template-bearing recorders --------------------------------
+# ---------------------------------- the template-bearing
+# recorders --------------------------------
 def _session() -> tuple[Session, Any]:
     events = ak.Array(
-        {"Jet": [[{"pt": 30.0, "eta": 0.5}, {"pt": 50.0, "eta": 1.0}], [], [{"pt": 80.0, "eta": 2.0}]]}
+        {
+            "Jet": [
+                [{"pt": 30.0, "eta": 0.5}, {"pt": 50.0, "eta": 1.0}],
+                [],
+                [{"pt": 80.0, "eta": 2.0}],
+            ]
+        }
     )
     s = Session(AwkwardBackend())
     return s, from_awkward(s, "events", events)
@@ -128,20 +139,27 @@ def _session() -> tuple[Session, Any]:
 def test_apply_correction_with_a_template_records_path_free_and_obeys_it() -> None:
     # The template path evaluates through the correctionlib plugin on every backend, in-process
     # included: the caller's callable is not consulted at all, and `unusable` says so loudly if it
-    # ever is. The values are the payload's own, over inputs that stayed jagged through the routing.
+    # ever is. The values are the payload's own, over inputs that stayed jagged through the
+    # routing.
     s, ev = _session()
 
     def unusable(*call: Any) -> Any:
         raise AssertionError("the template path evaluated through the caller's callable")
 
-    sf = gak.apply_correction(CSET, "jetsf", [ev.Jet.pt, ev.Jet.eta], unusable, args=["nominal", "$0", "$1"])
+    sf = gak.apply_correction(
+        CSET, "jetsf", [ev.Jet.pt, ev.Jet.eta], unusable, args=["nominal", "$0", "$1"]
+    )
     out = ak.Array(s.materialize(sf))
     assert ak.num(out, axis=1).tolist() == [2, 0, 1]  # jagged structure all the way through
     assert ak.to_list(out) == [[1.5, 1.5], [], [1.5]]  # the payload's own SF, not a stand-in's
 
     node = _node(s, sf)
     assert "path" not in node["params"]  # no filesystem leakage into the IR
-    assert json.loads(str(node["params"]["args"])) == ["nominal", "$0", "$1"]  # the preserved template
+    assert json.loads(str(node["params"]["args"])) == [
+        "nominal",
+        "$0",
+        "$1",
+    ]  # the preserved template
     assert node["descriptor"]["content_hash"] == correctionlib_contents_hash(CSET)
 
 
@@ -150,9 +168,13 @@ def test_apply_correction_accepts_payload_bytes_or_a_path(tmp_path) -> None:  # 
     p = tmp_path / "cset.json"
     p.write_bytes(CSET)
     a = gak.apply_correction(CSET, "jetsf", [ev.Jet.pt], lambda *c: c[-1], args=["nominal", "$0"])
-    b = gak.apply_correction(str(p), "jetsf", [ev.Jet.pt], lambda *c: c[-1], args=["nominal", "$0"])
+    b = gak.apply_correction(
+        str(p), "jetsf", [ev.Jet.pt], lambda *c: c[-1], args=["nominal", "$0"]
+    )
     na, nb = _node(s, a), _node(s, b)
-    assert na["descriptor"]["content_hash"] == nb["descriptor"]["content_hash"]  # identity is content
+    assert (
+        na["descriptor"]["content_hash"] == nb["descriptor"]["content_hash"]
+    )  # identity is content
 
 
 def test_onnx_inference_with_a_group_template_stacks_features() -> None:

@@ -1,5 +1,8 @@
-"""m71b B-C7: a declared External preserves — its bundle reproduces the in-process histogram, the
-reproduce run evaluates with the declared type in its params, and the evaluator survives cloudpickle."""
+"""m71b B-C7: a declared External preserves.
+
+Its bundle reproduces the in-process histogram, the reproduce run evaluates with the declared type
+in its params, and the evaluator survives cloudpickle.
+"""
 
 from __future__ import annotations
 
@@ -68,4 +71,6 @@ def test_the_recorded_evaluator_survives_cloudpickle(registered: None) -> None:
     evaluator = s._externals[mask.node_id][0]
     clone = cloudpickle.loads(cloudpickle.dumps(evaluator))
 
-    assert ak.to_list(clone(EVENTS.x)) == ak.to_list(evaluator(EVENTS.x)) == [False, True, True, True]
+    assert (
+        ak.to_list(clone(EVENTS.x)) == ak.to_list(evaluator(EVENTS.x)) == [False, True, True, True]
+    )

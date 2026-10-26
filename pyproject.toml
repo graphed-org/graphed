@@ -123,16 +123,8 @@ convention = "pep257"
 # PEP 257 asks for docstrings on public API; test modules and functions are not API.
 "tests/**" = ["D100", "D101", "D102", "D103", "D104", "D105", "D106", "D107"]
 "conftest.py" = ["D100", "D101", "D102", "D103", "D104", "D105", "D106", "D107"]
-# The frozen suites are restyled in their own refreeze commit.
-"tests/frozen/**" = ["I001", "RUF100", "E501", "D", "N"]
-
-[tool.ruff.format]
-# Immutable frozen suites (tests/frozen/**) are read-only under the §A.7 integrity rule, so they
-# cannot be reformatted. `ruff format` is a pure auto-formatting pass (no correctness check on the
-# code under test), so the frozen tree is exempted from it here — every src file and every non-frozen
-# test stays fully format-enforced, and `ruff check` (real lint) still covers the frozen files.
-# See `.graphed/m41/disputes/frozen_format.md`. Remove once the frozen files are re-tagged format-clean.
-exclude = ["tests/frozen/**"]
+# Frozen m48 test names capitalize words for emphasis; renaming them would change their test ids.
+"tests/frozen/awkward/m48/test_*.py" = ["N802"]
 
 [tool.mypy]
 # 3.12 pin: numpy 2.5.0 (py>=3.12) ships PEP695 stubs that require mypy on 3.12+.

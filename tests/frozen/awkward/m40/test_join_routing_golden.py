@@ -1,21 +1,23 @@
-"""M40 GAP-2 — join routing must satisfy the FROZEN M39 golden vectors (spec INVARIANTS: "Golden
-vectors in tests/frozen/{numpy,awkward}/m39/golden_route.py are the pin — join routing must satisfy
-them too.").
+"""M40 GAP-2 — join routing must satisfy the FROZEN M39 golden vectors.
+
+Spec INVARIANTS: "Golden vectors in tests/frozen/{numpy,awkward}/m39/golden_route.py are the pin —
+join routing must satisfy them too."
 
 M40 introduces no separate routing function for joins: the co-partitioning step (join_plan's two
-``map_write`` stages routing onto the shared ``gather_join``) calls the SAME ``ShuffleBackend.partition``
-primitive M39's exchange half already uses and already pins against ``golden_route.GOLDEN`` in
-``test_exchange_primitives.py``. This is the join-side half of that invariant, driven end-to-end from
-``graphed.pack_key`` rather than a hand-typed ``__joinkey__`` literal:
+``map_write`` stages routing onto the shared ``gather_join``) calls the SAME
+``ShuffleBackend.partition`` primitive M39's exchange half already uses and already pins against
+``golden_route.GOLDEN`` in ``test_exchange_primitives.py``. This is the join-side half of that
+invariant, driven end-to-end from ``graphed.pack_key`` rather than a hand-typed ``__joinkey__``
+literal:
 
-  1. For (run=0, lumi=0, event=e), a big-endian, most-significant-field-first packing MUST reproduce
-     ``e`` EXACTLY as the u64 ``__joinkey__`` — zero high fields contribute zero bits, independent of
-     the implementer's exact bit-width split (holds for any split as long as ``e`` fits its field,
-     true for every small ``e`` used here). This also fails now (``graphed.pack_key`` is unimplemented)
-     for the right reason.
-  2. Those pack_key-produced keys are then routed with ``AwkwardBackend.partition`` and must land in
-     the dest tabulated by the frozen M39 ``GOLDEN`` table — proving the join path hasn't grown its own
-     (potentially non-conformant) routing.
+  1. For (run=0, lumi=0, event=e), a big-endian, most-significant-field-first packing MUST
+     reproduce ``e`` EXACTLY as the u64 ``__joinkey__`` — zero high fields contribute zero bits,
+     independent of the implementer's exact bit-width split (holds for any split as long as ``e``
+     fits its field, true for every small ``e`` used here). This also fails now
+     (``graphed.pack_key`` is unimplemented) for the right reason.
+  2. Those pack_key-produced keys are then routed with ``AwkwardBackend.partition`` and must land
+     in the dest tabulated by the frozen M39 ``GOLDEN`` table — proving the join path hasn't grown
+     its own (potentially non-conformant) routing.
 
 Reads (never modifies) ``tests/frozen/awkward/m39/golden_route.py::GOLDEN``.
 """
@@ -54,7 +56,11 @@ def test_pack_key_zero_high_fields_routes_per_the_m39_golden_vectors() -> None:
         s,
         "x",
         ak.Array(
-            {"run": [0] * len(_SMALL_EVENTS), "lumi": [0] * len(_SMALL_EVENTS), "event": list(_SMALL_EVENTS)}
+            {
+                "run": [0] * len(_SMALL_EVENTS),
+                "lumi": [0] * len(_SMALL_EVENTS),
+                "event": list(_SMALL_EVENTS),
+            }
         ),
     )
     packed = graphed.pack_key(src, on=("run", "lumi", "event"))
@@ -72,5 +78,7 @@ def test_pack_key_zero_high_fields_routes_per_the_m39_golden_vectors() -> None:
     be = AwkwardBackend()
     for key, parts, dest in _GOLDEN_SMALL:
         subs = be.partition(_single_key_block(key), "__joinkey__", parts)
-        assert len(subs[dest]) == 3, f"join routing: key {key:#x} into {parts} parts must fill dest {dest}"
+        assert len(subs[dest]) == 3, (
+            f"join routing: key {key:#x} into {parts} parts must fill dest {dest}"
+        )
         assert sum(len(sub) for i, sub in enumerate(subs) if i != dest) == 0

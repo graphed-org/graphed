@@ -1,6 +1,9 @@
-"""vary-m53 §4: the loud guard. An un-selected default grid larger than `max_universes` raises,
-naming the count and the families; at or below the budget it is silent; and neither an explicit
-`points=` selection nor `composes_as_union=True` is ever guarded."""
+"""vary-m53 §4: the loud guard.
+
+An un-selected default grid larger than `max_universes` raises, naming the count and the families;
+at or below the budget it is silent; and neither an explicit `points=` selection nor
+`composes_as_union=True` is ever guarded.
+"""
 
 from __future__ import annotations
 
@@ -39,7 +42,8 @@ def test_the_default_budget_admits_the_benchmark_grid() -> None:
 
 
 def test_a_selection_and_a_union_collapse_are_never_guarded() -> None:
-    # an explicit points= selection is the analyst's own enumeration — a tiny budget cannot block it
+    # an explicit points= selection is the analyst's own enumeration — a tiny budget cannot block
+    # it
     _s1, _r1, pruned = fanout_weight(max_universes=1, points=[{"btag": "hf_up", "jes": "up"}])
     assert "btag_hf_up__jes_up" in graphed.labels(pruned)
 

@@ -48,7 +48,9 @@ def test_kill_then_resume_reuses_blocks_and_is_bit_for_bit(tmp_path) -> None:  #
     assert res.report.skipped == 3, "the journaled map-write blocks must be REUSED, not recomputed"
     assert res.report.executed == _TOTAL - 3, "only the unfinished (gather) blocks run"
     assert res.report.did_less_work
-    assert res.value == ref, "the resumed shuffle result is byte-identical to the uninterrupted run"
+    assert res.value == ref, (
+        "the resumed shuffle result is byte-identical to the uninterrupted run"
+    )
 
 
 def test_resume_after_completion_redoes_nothing(tmp_path) -> None:  # type: ignore[no-untyped-def]

@@ -42,7 +42,9 @@ class ReduceArray(Array):
 
     __slots__ = ()
 
-    def red(self, kind: str, axis: int | None = None, *, keepdims: bool = False, ddof: int = 0) -> Array:
+    def red(
+        self, kind: str, axis: int | None = None, *, keepdims: bool = False, ddof: int = 0
+    ) -> Array:
         return self._reduction(kind, axis, keepdims=keepdims, ddof=ddof)
 
     def scan(self, kind: str, axis: int | None = None) -> Array:
@@ -56,7 +58,9 @@ class ToyBackend:
     def op_form(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> ToyForm:
         return ToyForm(op)
 
-    def eval_stage(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> object:
+    def eval_stage(
+        self, op: str, inputs: Sequence[object], params: Mapping[str, object]
+    ) -> object:
         return (op, list(inputs), dict(params))
 
     def boundary_ops(self) -> frozenset[str]:
@@ -67,7 +71,12 @@ class ToyBackend:
 
     def external_payload(self, op: str, params: Mapping[str, object]) -> PayloadDescriptor | None:
         return PayloadDescriptor(
-            kind="toy", content_hash="h", framework="f", version="v", io_schema="s", preprocessing_ref=None
+            kind="toy",
+            content_hash="h",
+            framework="f",
+            version="v",
+            io_schema="s",
+            preprocessing_ref=None,
         )
 
 
@@ -85,7 +94,7 @@ def meta_source(s: Session, name: str, *, ndim: int = 2) -> ReduceArray:
 
 
 def recorded(s: Session, arr: Array) -> dict[str, object]:
-    """The (kind, name, params) of the node ``arr`` denotes, read back from the serialized IR."""
+    """Return the (kind, name, params) of ``arr``'s node, read back from the serialized IR."""
     g = graphed.core.GraphStore.deserialize(s.serialized_ir(arr, optimize=False))
     (node,) = [n for n in g.nodes() if n["id"] == arr.node_id]
     return node

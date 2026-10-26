@@ -18,21 +18,29 @@ are env-gated (routable address + spawn), but the CONTRACT fails on HEAD everywh
 ## Pinned seam (test-author decisions — the implementer adds these to `graphed.core.execution`)
 
 ```python
-@dataclass                      # data-only, like Partition / StageSpec
+@dataclass  # data-only, like Partition / StageSpec
 class AddressTable:
     # node_id -> routable (host, port), populated BY a launcher; each entry tagged with provenance.
     def register(self, node_id, host: str, port: int, *, registered_by) -> None: ...
     def lookup(self, node_id) -> tuple[str, int]: ...
-    def registered_by(self, node_id): ...     # the CHILD that registered it (not the driver)
+    def registered_by(self, node_id): ...  # the CHILD that registered it (not the driver)
+
 
 @runtime_checkable
-class NodeStore(Protocol):       # per-node Store handle; the concrete _HttpCluster/_IpcCluster satisfy it
-    def fetch(self, digest: str) -> object: ...   # THE fetch() endpoint contract — idempotent,
-                                                  # byte-backpressured/spillable (the BODY is exec/T1)
+class NodeStore(
+    Protocol
+):  # per-node Store handle; the concrete _HttpCluster/_IpcCluster satisfy it
+    def fetch(self, digest: str) -> object:
+        ...  # THE fetch() endpoint contract — idempotent,
+        # byte-backpressured/spillable (the BODY is exec/T1)
+
     # ... (has / put_blob / get_blob as apt)
 
+
 @runtime_checkable
-class ClusterExecutor(Protocol): # an Executor-shaped launch seam (address table + Store handles + fetch)
+class ClusterExecutor(
+    Protocol
+):  # an Executor-shaped launch seam (address table + Store handles + fetch)
     def run(self, plan) -> ExecResult: ...
 ```
 

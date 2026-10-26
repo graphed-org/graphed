@@ -70,7 +70,12 @@ def test_url_concurrent_identical_puts_never_fail(store_url) -> None:
         data = random.Random(trial).randbytes(1 << 20)
         barrier = threading.Barrier(8)
 
-        def put(_: int, store: FsspecStore = store, data: bytes = data, barrier: threading.Barrier = barrier) -> str:
+        def put(
+            _: int,
+            store: FsspecStore = store,
+            data: bytes = data,
+            barrier: threading.Barrier = barrier,
+        ) -> str:
             barrier.wait()
             return store.put(data)
 
@@ -115,7 +120,9 @@ def _records_survive_glob_metacharacters(root_a, root_b) -> None:
 
 def test_root_with_glob_metacharacters_keeps_its_records(store_url) -> None:
     root = f"{store_url}/run[x]"
-    _records_survive_glob_metacharacters(lambda: FsspecStore(root), lambda: FsspecStore(root, node="B"))
+    _records_survive_glob_metacharacters(
+        lambda: FsspecStore(root), lambda: FsspecStore(root, node="B")
+    )
 
 
 def test_local_root_with_glob_metacharacters_keeps_its_records(tmp_path) -> None:

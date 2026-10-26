@@ -1,4 +1,6 @@
-"""M11: the backend-idiom factorization (dask.array parity P0.1/P0.3, re-factored by design review).
+"""M11: the backend-idiom factorization.
+
+dask.array parity P0.1/P0.3, re-factored by design review.
 
 ``graphed.Array`` carries ONLY what is common to the backend idioms — operators, ufunc dispatch,
 field access, and protected infrastructure (``_form_meta``). Idiomatic surfaces (numpy's
@@ -34,7 +36,18 @@ def test_backends_without_a_factory_get_the_base_array() -> None:
 def test_base_array_has_no_numpy_idiomatic_surface() -> None:
     # the factorization pin: numpy's member-function/property idiom must NOT exist on the shared
     # proxy (awkward's design applies operations as functions over arrays, never methods)
-    for name in ("sum", "mean", "std", "var", "prod", "argmin", "argmax", "shape", "dtype", "ndim"):
+    for name in (
+        "sum",
+        "mean",
+        "std",
+        "var",
+        "prod",
+        "argmin",
+        "argmax",
+        "shape",
+        "dtype",
+        "ndim",
+    ):
         assert name not in vars(Array), f"numpy-idiomatic {name!r} leaked onto graphed.Array"
     assert "__array_function__" not in vars(Array)
 

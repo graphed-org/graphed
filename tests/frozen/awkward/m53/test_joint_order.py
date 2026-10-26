@@ -1,9 +1,11 @@
-"""vary-m53 §2 ordering: the one-at-a-time labels come first, the joints follow, and the sequence is
-a deterministic function of registration order.
+"""vary-m53 §2 ordering.
+
+The one-at-a-time labels come first, the joints follow, and the sequence is a deterministic
+function of registration order.
 
 Byte-determinism across two FRESH interpreters is the re-authored `awkward/m52`
-`test_the_joint_program_is_byte_deterministic_across_two_runs`; this pins the human-readable ordering
-RULE that hash cannot see — every joint after every one-at-a-time label.
+`test_the_joint_program_is_byte_deterministic_across_two_runs`; this pins the human-readable
+ordering RULE that hash cannot see — every joint after every one-at-a-time label.
 """
 
 from __future__ import annotations

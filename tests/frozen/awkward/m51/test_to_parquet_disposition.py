@@ -1,15 +1,15 @@
 """m51 anchor J — `to_parquet`'s §2.3d table entry becomes *accepting* (plan §10, §2.3d).
 
-Until m51 `to_parquet` carries no disposition; with §6.4's `select=` landed it enters the §2.3d table
-as *accepting*: a `Varied` RECORD and/or a `Varied` `select=` is consumed INTERNALLY and NO per-label
-result is returned to the caller (unlike a *broadcasting* verb, which answers with a `Varied`, or a
-*refusing* one, which raises). The write returns its ordinary list of part paths.
+Until m51 `to_parquet` carries no disposition; with §6.4's `select=` landed it enters the §2.3d
+table as *accepting*: a `Varied` RECORD and/or a `Varied` `select=` is consumed INTERNALLY and NO
+per-label result is returned to the caller (unlike a *broadcasting* verb, which answers with a
+`Varied`, or a *refusing* one, which raises). The write returns its ordinary list of part paths.
 
 The disposition is BEHAVIORAL, not table-registered: the frozen m48 gate
 (`tests/frozen/awkward/m48/test_module_verb_dispositions.py::test_to_parquet_carries_no_disposition_until_m51`)
 hard-asserts `to_parquet` stays out of `VERB_DISPOSITIONS` and out of the discovered surface (its
-first parameter is annotated `Any`), so the accepting behaviour must be proven by CALLING it, never by
-adding a table row — which is exactly what this anchor does.
+first parameter is annotated `Any`), so the accepting behaviour must be proven by CALLING it, never
+by adding a table row — which is exactly what this anchor does.
 """
 
 from __future__ import annotations

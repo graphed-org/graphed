@@ -8,7 +8,7 @@ returned (§7.3), because `run_resumable` takes a `DurablePlan` and `aggregate_p
 
 from __future__ import annotations
 
-import m49_analyses as A
+import m49_analyses
 import pytest
 
 from graphed.checkpoint import Store, run_resumable
@@ -17,8 +17,8 @@ from graphed.core import GraphStore
 
 
 def _durable():
-    plan, compiled, tags = A.build_plan()
-    return A.durable(plan, compiled), tags
+    plan, compiled, tags = m49_analyses.build_plan()
+    return m49_analyses.durable(plan, compiled), tags
 
 
 def test_the_journal_unit_is_the_whole_variation_composite(tmp_path) -> None:
@@ -29,11 +29,13 @@ def test_the_journal_unit_is_the_whole_variation_composite(tmp_path) -> None:
     """
     dp, tags = _durable()
     assert len(GraphStore.deserialize(dp.ir).outputs()) == len(tags)
-    A.READS.clear()
+    m49_analyses.READS.clear()
     value = run_resumable(dp, Store(tmp_path)).value
     assert value.shape == (len(tags),)
     assert len(set(value.tolist())) == len(tags), "the universes must not coincide"
-    assert len(A.READS) == len(dp.partitions), "one read per partition, not one per universe"
+    assert len(m49_analyses.READS) == len(dp.partitions), (
+        "one read per partition, not one per universe"
+    )
 
 
 def test_kill_then_resume_is_byte_identical_and_does_less_work(tmp_path) -> None:
@@ -69,8 +71,8 @@ def test_resume_after_completion_recomputes_no_universe(tmp_path) -> None:
     dp, _tags = _durable()
     store = Store(tmp_path)
     first = run_resumable(dp, store)
-    A.READS.clear()
+    m49_analyses.READS.clear()
     again = run_resumable(dp, store)
     assert again.report.executed == 0 and again.report.skipped == len(dp.partitions)
-    assert A.READS == [], "a skipped composite must not re-read its partition"
+    assert m49_analyses.READS == [], "a skipped composite must not re-read its partition"
     assert again.value.tobytes() == first.value.tobytes()

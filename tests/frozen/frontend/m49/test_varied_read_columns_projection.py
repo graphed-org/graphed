@@ -11,12 +11,18 @@ EXTRA_COLUMN = "Jet_eta"
 
 
 def test_a_shift_grows_the_union_by_exactly_its_extra_column() -> None:
-    """The plain-union half rides its own OUTPUT SET: in the full varied program the conservative
-    member collapses the union to `None` (§2.3d) and this assertion would go vacuous."""
+    """The plain-union half rides its own OUTPUT SET.
+
+    In the full varied program the conservative member collapses the union to `None` (§2.3d) and
+    this assertion would go vacuous.
+    """
     program = flat_projection_program()
 
     assert read_columns([program.nominal], program.source_nid) == ("Jet_pt",)
-    assert read_columns([program.nominal, program.shifted], program.source_nid) == ("Jet_eta", "Jet_pt")
+    assert read_columns([program.nominal, program.shifted], program.source_nid) == (
+        "Jet_eta",
+        "Jet_pt",
+    )
 
 
 def test_one_conservative_member_collapses_the_plain_union() -> None:

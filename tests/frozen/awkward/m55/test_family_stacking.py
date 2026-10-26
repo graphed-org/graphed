@@ -24,7 +24,9 @@ def test_a_new_tag_on_the_nominal_stacks_onto_the_registered_family() -> None:
     varied, hand = equivalence(stacking_program, "Jet", "MET")
 
     labels = ("nominal", "jes_up", "jes_down", "jes_flat")
-    assert set(varied) == {(collection, label) for collection in ("Jet", "MET") for label in labels}
+    assert set(varied) == {
+        (collection, label) for collection in ("Jet", "MET") for label in labels
+    }
     assert varied == hand
     assert len(set(varied.values())) == len(varied)
 

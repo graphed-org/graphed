@@ -82,14 +82,18 @@ def test_shared_parameter_defaults_match_awkward() -> None:
         for p, spec in gak_params.items():
             if p in ak_params and p not in deliberate:
                 ak_default = ak_params[p].default
-                if ak_default is inspect.Parameter.empty or spec.default is inspect.Parameter.empty:
+                if (
+                    ak_default is inspect.Parameter.empty
+                    or spec.default is inspect.Parameter.empty
+                ):
                     continue
                 assert spec.default == ak_default, (
                     f"gak.{name}({p}={spec.default!r}) diverges from ak default {ak_default!r}"
                 )
 
 
-# ---- default-axis behavior (the divergences fixed by M24) ----------------------------------------
+# ---- default-axis behavior (the divergences fixed by
+# M24) ----------------------------------------
 def test_concatenate_default_is_the_event_axis() -> None:
     s, (a, b) = _session(JAGGED, JAGGED * 10.0)
     got = _mat(s, gak.concatenate([a, b]))  # ak default axis=0
@@ -109,7 +113,8 @@ def test_argmin_argmax_and_count_default_to_axis_none() -> None:
     assert int(s.materialize(gak.count(a))) == int(ak.count(JAGGED))
 
 
-# ---- zip parity -----------------------------------------------------------------------------------
+# ---- zip
+# parity -----------------------------------------------------------------------------------
 def test_zip_accepts_sequences_as_tuple_records() -> None:
     s, (a, b) = _session(JAGGED, JAGGED * 2.0)
     rec = gak.zip([a, b])
@@ -121,7 +126,9 @@ def test_zip_depth_limit_builds_an_events_record_of_collections() -> None:
     jets = ak.Array([[{"pt": 50.0}], [], [{"pt": 70.0}, {"pt": 20.0}]])
     muons = ak.Array([[{"q": 1}, {"q": -1}], [{"q": 1}], []])  # DIFFERENT jaggedness
     s, (j, m) = _session(jets, muons)
-    events = gak.zip({"Jet": j, "Muon": m}, depth_limit=1)  # no deep broadcast: collections coexist
+    events = gak.zip(
+        {"Jet": j, "Muon": m}, depth_limit=1
+    )  # no deep broadcast: collections coexist
     got = _mat(s, gak.num(events.Muon, axis=1))
     assert got.to_list() == [2, 1, 0]
     ref = ak.zip({"Jet": jets, "Muon": muons}, depth_limit=1)
@@ -136,7 +143,8 @@ def test_zip_with_name_and_parameters_inline() -> None:
     assert out.layout.content.parameter("origin") == "m24"
 
 
-# ---- combinatorics parity --------------------------------------------------------------------------
+# ---- combinatorics
+# parity --------------------------------------------------------------------------
 def test_combinations_replacement_and_axis() -> None:
     s, (a,) = _session(JAGGED)
     got = _mat(s, gak.combinations(a, 2, replacement=True, fields=["p", "q"]))
@@ -154,7 +162,8 @@ def test_cartesian_nested_list_and_with_name() -> None:
     assert got.layout.minmax_depth == ref.layout.minmax_depth
 
 
-# ---- reducer parity --------------------------------------------------------------------------------
+# ---- reducer
+# parity --------------------------------------------------------------------------------
 def test_reducers_keepdims_and_mask_identity() -> None:
     s, (a,) = _session(JAGGED)
     got = _mat(s, gak.sum(a, axis=1, keepdims=True))
@@ -179,12 +188,16 @@ def test_weighted_moments_match_eager() -> None:
         got = _mat(s, g_fn(a, axis=1, weight=gw))
         ref = a_fn(JAGGED, axis=1, weight=w)
         assert np.allclose(
-            ak.to_numpy(ak.fill_none(got, np.nan)), ak.to_numpy(ak.fill_none(ref, np.nan)), equal_nan=True
+            ak.to_numpy(ak.fill_none(got, np.nan)),
+            ak.to_numpy(ak.fill_none(ref, np.nan)),
+            equal_nan=True,
         )
     got_m = _mat(s, gak.moment(a, 2, axis=1, weight=gw))
     ref_m = ak.moment(JAGGED, 2, axis=1, weight=w)
     assert np.allclose(
-        ak.to_numpy(ak.fill_none(got_m, np.nan)), ak.to_numpy(ak.fill_none(ref_m, np.nan)), equal_nan=True
+        ak.to_numpy(ak.fill_none(got_m, np.nan)),
+        ak.to_numpy(ak.fill_none(ref_m, np.nan)),
+        equal_nan=True,
     )
 
 
@@ -194,7 +207,8 @@ def test_sort_stability_parameter_is_recorded_and_runs() -> None:
     assert ak.array_equal(got, ak.sort(FLAT, axis=0, stable=False))
 
 
-# ---- the long tail ---------------------------------------------------------------------------------
+# ---- the long
+# tail ---------------------------------------------------------------------------------
 def test_drop_none_axis() -> None:
     arr = ak.Array([[1.0, None, 2.0], [None], [3.0]])
     s, (a,) = _session(arr)

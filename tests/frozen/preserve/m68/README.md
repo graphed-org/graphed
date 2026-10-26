@@ -22,9 +22,9 @@ in the one-process preserve run. Plans run on `SequentialRunner`. Byte pins were
 | · `one_referenced_spec_adds_exactly…` | D1 | the manifest's key set is the plain one plus `services`; the plan document differs from the plain one by value in `services` only | any other manifest key added or dropped; any other plan-document key or value moved |
 | · `declared_but_unreferenced_spec_is_not_written` | D1 | a declared, unreferenced spec leaves `manifest.json` byte-identical and `Plan.services == ()` | declared specs written instead of referenced ones |
 | · `0_0_6_pickles_load_without_services` | §3.2 `core/execution.py`, `_base.py` (old pickles valid) | a `Plan` and a `_PluginEvaluator` pickled by 0.0.6 load with `services == ()` and `endpoint is None` | a field with no class-level default (`default_factory`) |
-| `test_bind_services` · `bound_plan_carries_the_endpoint…` | D2 hook, §3.2 `_base.py` | the bound copy's evaluator has `endpoint` and serves from it; the original stays unbound and raises `UnboundService` | an in-place bind; a bind that never reaches the evaluator; a bind that changes any `Plan` field but `process` |
+| `test_bind_services` · `bound_plan_carries_the_endpoint…` | D2 hook, §3.2 `_base.py` | the bound copy's evaluator has `endpoint` and serves from it; the original stays unbound and raises `UnboundServiceError` | an in-place bind; a bind that never reaches the evaluator; a bind that changes any `Plan` field but `process` |
 | · `any_external_kind_is_bound` | D1, §3.2 `_base.py` | a `GENERIC` node's evaluator is bound too | a Triton-only bind |
-| · `missing_endpoint_raises…` | §3.2 `_base.py` | binding without the node's service, with another name or an empty map, raises `UnboundService` naming it | a silent `None` endpoint; an empty map returned unbound |
+| · `missing_endpoint_raises…` | §3.2 `_base.py` | binding without the node's service, with another name or an empty map, raises `UnboundServiceError` naming it | a silent `None` endpoint; an empty map returned unbound |
 | · `reduce_with_the_hook_is_bound_too` | §3.2 `aggregate.py` | `reduce` with `bind_services` is bound | externals-only binding |
 | · `reduce_only_service_is_bound` | §3.2 `aggregate.py`, D8 | a `services=`-named spec no External names: the reduce is bound | a bind that skips the reduce unless an External names a service |
 | · `plan_without_services_binds_to_an_equal_process` | §3.2 `services.py` | no service nodes: an equal process; no hook: the same plan | a rebuilt or altered process |
@@ -75,7 +75,7 @@ Clause ends (each end's test, and the sanity mutant it kills):
 
 Readings of the plan:
 - `url=`/`service=` exclusivity is refused when the node is recorded.
-- Evaluating an unbound `service=` node raises `UnboundService` naming the service.
+- Evaluating an unbound `service=` node raises `UnboundServiceError` naming the service.
 - Endpoints are written `scheme://host:port` everywhere they are bound or reported (`grpc://…`, `http://…`); a literal `url=` keeps whatever it recorded (`triton://…` with `transport`, as frozen m26/m27 do).
 - The `tcp://` refusal happens when the connection is opened, so a run surfaces it as the 0.0.6 `StageError` with `cause_type == "PreserveError"` (`aggregate.py` passes only a `GraphedError` through untouched).
 - `split_endpoint` refusals are `ValueError` (§3.2), and naming the schemes is asserted as `tcp`, `https`, `grpcs` all appearing.

@@ -1,5 +1,8 @@
-"""The acceptance-contract analysis: an out-of-range index in a dimuon mass calc yields a formatted
-traceback whose top user frame is the exact mass-calc line, at both opt levels (plan M6)."""
+"""The acceptance-contract analysis.
+
+An out-of-range index in a dimuon mass calc yields a formatted traceback whose top user frame is
+the exact mass-calc line, at both opt levels (plan M6).
+"""
 
 from __future__ import annotations
 

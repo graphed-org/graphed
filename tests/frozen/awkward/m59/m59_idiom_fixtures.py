@@ -82,23 +82,25 @@ PY_SCALARS: dict[str, Any] = {"int": 2, "float": 0.5, "bool": True}
 
 
 def tracer(array: ak.Array) -> ak.Array:
-    """The metadata-only view of `array` — what a recorded form is inferred on."""
+    """Return the metadata-only view of `array` — what a recorded form is inferred on."""
     return ak.Array(array.layout.to_typetracer(forget_length=True))
 
 
 def eager_form(value: Any) -> str:
-    """The form description eager awkward gives for a typetracer expression."""
+    """Return the form description eager awkward gives for a typetracer expression."""
     return str(ak.Array(value).type)
 
 
 def dtype_of(value: Any) -> str:
-    """A value's leaf dtype name — the half of the type that a scalar operand decides."""
+    """Return a value's leaf dtype name — the half of the type that a scalar operand decides."""
     return str(ak.Array(value).type).rsplit("* ", 1)[-1]
 
 
 def recorded(session: Session, array: Array) -> dict[str, Any]:
-    """The (kind, name, params) of the node `array` denotes, read back from the serialized IR: the
-    house route to the boundary flag (`kind`), as m13 uses it."""
+    """Return the (kind, name, params) of `array`'s node, read back from the serialized IR.
+
+    This is the house route to the boundary flag (`kind`), as m13 uses it.
+    """
     graph = graphed.core.GraphStore.deserialize(session.serialized_ir(array, optimize=False))
     return next(node for node in graph.nodes() if node["id"] == array.node_id)
 
@@ -121,7 +123,8 @@ class PlainSource:
 
     def partitions(self, steps_per_file: int = 1) -> tuple[Partition, ...]:
         return tuple(
-            Partition.blind("mem://m59", "", step, steps_per_file) for step in range(steps_per_file)
+            Partition.blind("mem://m59", "", step, steps_per_file)
+            for step in range(steps_per_file)
         )
 
     def read_partition(self, partition: Partition, columns: Any, resources: Any) -> ak.Array:
@@ -134,14 +137,17 @@ class PlainSource:
 
 
 def partitioned(source: PlainSource) -> tuple[Session, Array]:
-    """A session whose single source is `source`, recorded with the dataset's metadata-only form."""
+    """Return a session whose single source is `source`.
+
+    It is recorded with the dataset's metadata-only form.
+    """
     session = Session(AwkwardBackend())
     root = session.source("events", form=AwkwardForm(tracer(DATA)), data=source, uri="mem://m59")
     return session, root
 
 
-# the plan's reduce/combine/empty (module level, so the closure ships through pickle): one entry per
-# partition carrying that partition's own type AND rows, so a partitioned run is compared to an
+# the plan's reduce/combine/empty (module level, so the closure ships through pickle): one entry
+# per partition carrying that partition's own type AND rows, so a partitioned run is compared to an
 # unpartitioned one on structure as well as values.
 def rows(values: list[Any]) -> list[Any]:
     value = ak.Array(values[0])
@@ -190,7 +196,7 @@ def pair_session() -> tuple[Session, Array]:
 
 
 def eager_pairs() -> ak.Array:
-    """The eager, behavior-carrying counterpart of the `pair_session` source."""
+    """Return the eager, behavior-carrying counterpart of the `pair_session` source."""
     return ak.Array(PAIRS.layout, behavior=BEHAVIOR)
 
 

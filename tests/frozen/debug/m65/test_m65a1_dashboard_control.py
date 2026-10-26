@@ -1,5 +1,8 @@
-"""M65 A1 frozen suite (graphed-debug slice): browser-to-run control over the dashboard's
-``POST /api/control`` route and the ``/ingest`` websocket, into a ``RunControl``."""
+"""M65 A1 frozen suite (graphed-debug slice).
+
+browser-to-run control over the dashboard's ``POST /api/control`` route and the ``/ingest``
+websocket, into a ``RunControl``.
+"""
 
 from __future__ import annotations
 
@@ -37,7 +40,11 @@ def test_post_control_reaches_a_listening_monitor() -> None:
         try:
             until(lambda: _listeners(server) == 1)
             assert all(t.daemon for t in set(threading.enumerate()) - before)
-            for cmd, state in (("pause", gc.RunState.PAUSED), ("resume", gc.RunState.RUNNING), ("cancel", gc.RunState.CANCELLED)):
+            for cmd, state in (
+                ("pause", gc.RunState.PAUSED),
+                ("resume", gc.RunState.RUNNING),
+                ("cancel", gc.RunState.CANCELLED),
+            ):
                 assert post_cmd(server.url, cmd) == (200, {"cmd": cmd, "delivered": 1})
                 until(lambda state=state: ctl.state is state)
                 assert server.snapshot()["control"] == STATE_WORD[cmd]
@@ -187,7 +194,12 @@ def test_dashboard_steers_a_sequential_run() -> None:
         assert res.value == (1,) * n
         assert res.stopped is None
         dash.wait_for(finished=n, timeout=10)
-        (t_start_4,) = [t["t_start"] for w in dash.server.progress()["workers"] for t in w["tasks"] if t["key"] == 4]
+        (t_start_4,) = [
+            t["t_start"]
+            for w in dash.server.progress()["workers"]
+            for t in w["tasks"]
+            if t["key"] == 4
+        ]
         assert len(resumed_at) == 1
         assert t_start_4 > resumed_at[0]
 

@@ -1,13 +1,14 @@
 """m51 anchor G — the parquet-KV manifest key set, levels list, and the two round-trips (§6.4e/g).
 
-The manifest travels in parquet key-value file metadata (greenfield — graphed writes none today). Its
-top-level KEY SET is every label PLUS the reserved `"levels"` entry; `"levels"` is a LIST in §6.4e's
-bound order `(depth, field_path or "")`, spelled literally (never a Python set — the levels entry
-needs its own assertion because the round-trip supplies both levels itself and cannot discriminate a
-reader that never consults it). The augmented file round-trips through `ak.from_parquet` (the arrow
-write path must reproduce awkward's own KV entries), and an UNVARIED write keeps the `ak.to_parquet`
-path, carries NO manifest, and is byte-identical to today — asserted SAME-PROCESS, never as a
-committed `.parquet` fixture (§6.4g: a parquet footer embeds its writer version — R0.10a).
+The manifest travels in parquet key-value file metadata (greenfield — graphed writes none today).
+Its top-level KEY SET is every label PLUS the reserved `"levels"` entry; `"levels"` is a LIST in
+§6.4e's bound order `(depth, field_path or "")`, spelled literally (never a Python set — the levels
+entry needs its own assertion because the round-trip supplies both levels itself and cannot
+discriminate a reader that never consults it). The augmented file round-trips through
+`ak.from_parquet` (the arrow write path must reproduce awkward's own KV entries), and an UNVARIED
+write keeps the `ak.to_parquet` path, carries NO manifest, and is byte-identical to today —
+asserted SAME-PROCESS, never as a committed `.parquet` fixture (§6.4g: a parquet footer embeds its
+writer version — R0.10a).
 """
 
 from __future__ import annotations
@@ -52,14 +53,18 @@ def test_augmented_file_roundtrips_through_ak_from_parquet(tmp_path) -> None:  #
     _s, events = events_context()
     record, evt_mask, jet_mask = multifield_skim_inputs(events)
     paths = ga.to_parquet(record, str(tmp_path / "rt"), select={0: evt_mask, ("Jet", 1): jet_mask})  # type: ignore[call-arg]
-    table = ak.from_parquet(paths[0])  # the arrow-write path must preserve awkward's own KV entries
+    table = ak.from_parquet(
+        paths[0]
+    )  # the arrow-write path must preserve awkward's own KV entries
     assert {"Jet", "MET"}.issubset(set(table.fields))
 
 
 def test_unvaried_write_keeps_ak_to_parquet_bytes_and_writes_no_manifest(tmp_path) -> None:  # type: ignore[no-untyped-def]
     session, events = events_context()
     jets = events.Jet
-    paths = ga.to_parquet(jets, str(tmp_path / "plain"))  # unvaried: no select=, feature-present path
+    paths = ga.to_parquet(
+        jets, str(tmp_path / "plain")
+    )  # unvaried: no select=, feature-present path
     reference = str(tmp_path / "ref.parquet")
     ak.to_parquet(session.materialize(jets), reference)
 

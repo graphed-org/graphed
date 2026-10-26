@@ -1,9 +1,11 @@
-"""C4 / design §4.10: `variations()` keeps its m50-frozen `{name: {tag: (kind, value|None)}}` shape
-and gains a third kind word.
+"""C4 / design §4.10.
 
-Today a family registered as both a shift and a weight reports only `"shift"` — the collections pass
-`update()`s over the weight pass — so the verb lies about exactly the mechanism §4.8 tells analysts
-to use for R1-b.
+`variations()` keeps its m50-frozen `{name: {tag: (kind, value|None)}}` shape and gains a third
+kind word.
+
+Today a family registered as both a shift and a weight reports only `"shift"` — the collections
+pass `update()`s over the weight pass — so the verb lies about exactly the mechanism §4.8 tells
+analysts to use for R1-b.
 """
 
 from __future__ import annotations
@@ -19,7 +21,10 @@ from graphed import Kind
 def test_a_family_registered_as_both_shift_and_weight_reports_both() -> None:
     _session, ctx = dual_registered_family()
 
-    assert graphed.variations(ctx)["jes"] == {"up": (Kind.WEIGHT | Kind.SHIFT, None), "down": (Kind.SHIFT, None)}
+    assert graphed.variations(ctx)["jes"] == {
+        "up": (Kind.WEIGHT | Kind.SHIFT, None),
+        "down": (Kind.SHIFT, None),
+    }
 
 
 def test_the_dual_kind_keeps_the_frozen_value_half() -> None:
@@ -33,8 +38,11 @@ def test_the_dual_kind_keeps_the_frozen_value_half() -> None:
 
 
 def test_disjoint_families_report_exactly_the_two_m50_kinds() -> None:
-    """The m50 anchor guard: on a program with no dual registration the kind vocabulary is
-    unchanged, so an implementation reporting `"both"` for a whole family fails here."""
+    """The m50 anchor guard.
+
+    On a program with no dual registration the kind vocabulary is unchanged, so an implementation
+    reporting `"both"` for a whole family fails here.
+    """
     _session, ctx = shift_then_weight_context()
 
     reported = graphed.variations(ctx)

@@ -5,10 +5,12 @@ The numpy-backend half of the awkward witness (see
 collision). The packer lays out ``run<<40 | lumi<<20 | event`` with 20-bit fields and masks each
 field to width, so a value ``>= 2**20`` wraps and silently collides. Measured (commit 4bc452e)::
 
-    pack(run=1, lumi=1, event=2**20) == pack(run=1, lumi=1, event=0) == 1099512676352   # SILENT COLLIDE
+    pack(run=1, lumi=1, event=2**20) == pack(run=1, lumi=1, event=0) == 1099512676352
+    # SILENT COLLIDE
 
 Pins the GUARD only (raise a LOUD ``ValueError`` at/above the field width) — not a wider key space,
-which stays Phase-2. Boundary-discriminating: ``event = 2**20 - 1`` packs cleanly, ``2**20`` raises.
+which stays Phase-2. Boundary-discriminating: ``event = 2**20 - 1`` packs cleanly, ``2**20``
+raises.
 """
 
 from __future__ import annotations
@@ -39,12 +41,15 @@ def _pack(events: list[int]) -> Any:
 
 
 def test_pack_key_raises_on_event_field_at_packing_width() -> None:
-    # F8: event = 2**20 overflows the 20-bit field -> must raise ValueError (currently masks to 0 and
-    # silently collides with event=0, no raise). Discriminating boundary: 2**20-1 packs cleanly and
-    # does NOT collide with 0, so a ValueError from the 2**20 case can only be the overflow guard.
+    # F8: event = 2**20 overflows the 20-bit field -> must raise ValueError (currently masks to 0
+    # and silently collides with event=0, no raise). Discriminating boundary: 2**20-1 packs cleanly
+    # and does NOT collide with 0, so a ValueError from the 2**20 case can only be the overflow
+    # guard.
     ok = _pack([_WIDTH - 1, 0])
     vals = [int(v) for v in np.asarray(ok["__joinkey__"])]
-    assert vals[0] != vals[1], "sanity: event=2**20-1 fits the field and must not collide with event=0"
+    assert vals[0] != vals[1], (
+        "sanity: event=2**20-1 fits the field and must not collide with event=0"
+    )
 
     with pytest.raises(ValueError):
         _pack([_WIDTH, 0])

@@ -2,7 +2,8 @@
 
 `PhotonArray` is registered ONLY in `BEHAVIOR` (never global `ak.behavior`), so a declared
 `Photon` record resolves `pt2`/`scaled` through the backend alone. Every m71a-new surface (the
-`output_type=` keyword) is reached inside test bodies only, so the tree collects on a base without it.
+`output_type=` keyword) is reached inside test bodies only, so the tree collects on a base without
+it.
 """
 
 from __future__ import annotations
@@ -45,7 +46,8 @@ EVENTS = ak.zip(
 
 PHOTON = "Photon[pt: float32, eta: float32]"
 
-#: every numpy numerical dtype (``np.typecodes`` "AllInteger" + "AllFloat" + bool, fixed-width only)
+#: every numpy numerical dtype (``np.typecodes`` "AllInteger" + "AllFloat" + bool, fixed-width
+#: only)
 NUMERIC = (
     "bool",
     "int8",
@@ -74,7 +76,7 @@ def recorded() -> tuple[Session, Any]:
 
 
 def eager() -> Any:
-    """The eager, behavior-carrying counterpart of the recorded `events`."""
+    """Return the eager, behavior-carrying counterpart of the recorded `events`."""
     return ak.Array(EVENTS.layout, behavior=BEHAVIOR)
 
 
@@ -88,14 +90,16 @@ def describe(session: Session, array: Any) -> str:
 
 
 def params_of(session: Session, array: Any) -> dict[str, Any]:
-    """The record-time store params behind `array` (the house route)."""
+    """Return the record-time store params behind `array` (the house route)."""
     node = next(n for n in session._store.nodes() if n["id"] == array.node_id)
     return dict(node["params"])
 
 
 def same(value: Any, expected: Any) -> bool:
     """Equal values AND equal types, so a right-valued wrong-typed result fails."""
-    return bool(ak.to_list(value) == ak.to_list(expected) and str(ak.type(value)) == str(ak.type(expected)))
+    return bool(
+        ak.to_list(value) == ak.to_list(expected) and str(ak.type(value)) == str(ak.type(expected))
+    )
 
 
 # ---- callables whose values have the declared type --------------------------------------------
@@ -143,5 +147,5 @@ def refusal(call: Callable[[], object]) -> GraphedTypeError:
 
 
 def here() -> int:
-    """The caller's NEXT line: the line a one-line refused call sits on."""
+    """Return the caller's NEXT line: the line a one-line refused call sits on."""
     return sys._getframe(1).f_lineno + 1

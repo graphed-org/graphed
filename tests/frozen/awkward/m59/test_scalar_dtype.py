@@ -59,7 +59,8 @@ ids = {name: (a * value).node_id for name, value in
        (("uint64", np.uint64(1)), ("int32", np.int32(1)), ("python", 1))}
 assert len(set(ids.values())) == 3, ids
 
-graph = graphed.core.GraphStore.deserialize(session.serialized_ir(a * np.uint64(1), optimize=False))
+ir = session.serialized_ir(a * np.uint64(1), optimize=False)
+graph = graphed.core.GraphStore.deserialize(ir)
 values = [v for node in graph.nodes() for v in node["params"].values()]
 assert values and all(isinstance(v, bool | int | float | str) for v in values), values
 """
@@ -116,12 +117,18 @@ def test_a_scalar_value_wider_than_a_float_round_trips_exactly() -> None:
         out = arr * value
         assert session.form(out).describe() == eager_form(tracer(BOOLS) * value)
         assert dtype_of(session.materialize(out)) == "uint64"
-        assert ak.to_list(session.materialize(out)) == [[expected, 0], [expected], [0, expected, expected]]
+        assert ak.to_list(session.materialize(out)) == [
+            [expected, 0],
+            [expected],
+            [0, expected, expected],
+        ]
 
     inexact, floats = session_over(FLOATS)
     widened = inexact.materialize(floats * np.float32(0.1))
     assert ak.to_list(widened) == ak.to_list(FLOATS * np.float32(0.1))
-    assert ak.to_list(widened)[0][0] == 0.10000000149011612  # float32(0.1) widened, not float64 0.1
+    assert (
+        ak.to_list(widened)[0][0] == 0.10000000149011612
+    )  # float32(0.1) widened, not float64 0.1
 
 
 def test_python_scalars_record_exactly_as_before() -> None:
@@ -133,7 +140,9 @@ def test_python_scalars_record_exactly_as_before() -> None:
     ):
         node = recorded(session, arr * PY_SCALARS[name])
         assert (node["kind"], node["name"], node["params"]) == ("op", "mul", params)
-        assert session.form(arr * PY_SCALARS[name]).describe() == eager_form(tracer(INTS) * PY_SCALARS[name])
+        assert session.form(arr * PY_SCALARS[name]).describe() == eager_form(
+            tracer(INTS) * PY_SCALARS[name]
+        )
     assert recorded(session, 2 - arr)["params"] == {"scalar": 2, "side": "l"}
 
     other, elsewhere = session_over(INTS)

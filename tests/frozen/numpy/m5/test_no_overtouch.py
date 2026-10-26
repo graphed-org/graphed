@@ -1,5 +1,8 @@
-"""Over-touch protection for the numpy backend (plan M5 / A.3): the projection must read EXACTLY the
-necessary columns and NEVER more — the dask-awkward over-touching bug this milestone avoids."""
+"""Over-touch protection for the numpy backend (plan M5 / A.3).
+
+The projection must read EXACTLY the necessary columns and NEVER more — the dask-awkward
+over-touching bug this milestone avoids.
+"""
 
 from __future__ import annotations
 

@@ -1,5 +1,8 @@
-"""The systematics-graph headline: a bloated graph with heavy shared substructure reduces to a
-concise stage-graph whose size scales with stages, not with op/systematics count (plan M4)."""
+"""The systematics-graph headline.
+
+A bloated graph with heavy shared substructure reduces to a concise stage-graph whose size scales
+with stages, not with op/systematics count (plan M4).
+"""
 
 from __future__ import annotations
 
@@ -9,8 +12,11 @@ import graphed.core as gc
 
 
 def _systematics(n_variations: int, selection_depth: int) -> tuple[gc.GraphStore, int]:
-    """A shared selection chain feeding many per-variation observable+weight tails that combine
-    into one output — the structure the AGC systematics graph has (heavy shared substructure)."""
+    """Return a shared selection chain feeding many per-variation observable+weight tails.
+
+    The tails combine into one output — the structure the AGC systematics graph has (heavy shared
+    substructure).
+    """
     s = gc.GraphStore()
     src = s.add_source("events", {"uri": "f.root"})
     sel = src

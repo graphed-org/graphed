@@ -47,7 +47,9 @@ def test_the_aggregate_driver_ships_the_sources_declared_read_list() -> None:
 
     assert source.calls == 1  # driver-side, once per driver call
     assert len(source.outputs) == 2
-    assert source.outputs[0] is outputs[0] and source.outputs[1] is outputs[1]  # identity AND order
+    assert (
+        source.outputs[0] is outputs[0] and source.outputs[1] is outputs[1]
+    )  # identity AND order
     assert plan.process.columns == DECLARED  # the hook's list, as a tuple
     assert SequentialRunner().run(plan).value == AGGREGATE_VALUE
     assert source.seen == [DECLARED, DECLARED]  # every read_partition of that plan

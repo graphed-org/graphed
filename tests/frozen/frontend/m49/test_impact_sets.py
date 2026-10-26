@@ -1,5 +1,7 @@
-"""§3.4's impact API, §9.1's `graphed.member_of` export, and the two-form operand rejection both
-m49 verbs share (§3.4, §12.4(1))."""
+"""§3.4's impact API, §9.1's `graphed.member_of` export.
+
+And the two-form operand rejection both m49 verbs share (§3.4, §12.4(1)).
+"""
 
 from __future__ import annotations
 
@@ -20,8 +22,11 @@ VERBS = ("impact_by_label", "read_columns_by_label")
 
 
 def _call(verb: str, operand: object) -> object:
-    """Both m49 verbs over one operand; the stats verb additionally takes `read_columns`' own
-    `source_nid`, which the rejection must reach before it is used."""
+    """Both m49 verbs over one operand.
+
+    The stats verb additionally takes `read_columns`' own `source_nid`, which the rejection must
+    reach before it is used.
+    """
     if verb == "impact_by_label":
         return graphed.impact_by_label(operand)
     return graphed.read_columns_by_label(operand, 0)
@@ -110,8 +115,11 @@ def test_a_varied_member_must_not_itself_be_varied(verb: str) -> None:
 
 @pytest.mark.parametrize("verb", VERBS)
 def test_an_operand_of_neither_form_is_refused(verb: str) -> None:
-    """A bare container is neither a `Sequence[Varied]` nor a mapping — today an unchecked operand
-    reaches for `.session` on it and dies with an `AttributeError` instead."""
+    """A bare container is neither a `Sequence[Varied]` nor a mapping.
+
+    Today an unchecked operand reaches for `.session` on it and dies with an `AttributeError`
+    instead.
+    """
     container = flat_projection_program().varied
 
     with pytest.raises(GraphedError):

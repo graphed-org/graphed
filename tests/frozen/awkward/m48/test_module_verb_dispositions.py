@@ -45,9 +45,11 @@ UNION_FLOOR = 19
 
 
 def _mentions_array(fn: object) -> bool:
-    """§2.3d's bound filter: ANY parameter annotation mentioning `Array` — not the first parameter,
-    which misses `compile_ir` and `apply` (Array operand not first) and `read_columns`
-    (`Sequence[Array]`)."""
+    """§2.3d's bound filter.
+
+    ANY parameter annotation mentioning `Array` — not the first parameter, which misses
+    `compile_ir` and `apply` (Array operand not first) and `read_columns` (`Sequence[Array]`).
+    """
     try:
         signature = inspect.signature(fn)  # type: ignore[arg-type]
     except (TypeError, ValueError):
@@ -65,8 +67,11 @@ def _enumerate(module: Any, package: str) -> set[tuple[str, str]]:
 
 
 def _discovered() -> set[tuple[str, str]]:
-    """`graphed.vary` is excluded BY NAME: it PRODUCES containers rather than consuming them, so no
-    disposition class exists for it, yet its annotations mention `Array`."""
+    """`graphed.vary` is excluded BY NAME.
+
+    It PRODUCES containers rather than consuming them, so no disposition class exists for it, yet
+    its annotations mention `Array`.
+    """
     core = _enumerate(graphed, "graphed") - {("graphed", "vary")}
     return core | FLOOR | _enumerate(gnp, "graphed.numpy") | _enumerate(ga, "graphed.awkward")
 
@@ -89,8 +94,11 @@ def test_every_discovered_verb_carries_a_disposition() -> None:
 
 
 def test_the_floor_is_asserted_over_the_union_of_the_three_enumerations() -> None:
-    """Never per enumeration: neither idiom package hosts a floor member, so a per-enumeration
-    floor is unsatisfiable against a correct implementation."""
+    """Never per enumeration.
+
+    Neither idiom package hosts a floor member, so a per-enumeration floor is unsatisfiable against
+    a correct implementation.
+    """
     discovered = _discovered()
     dispositions = _dispositions()
     assert discovered >= FLOOR
@@ -108,8 +116,11 @@ def test_evaluate_ir_is_outside_the_array_consuming_surface() -> None:
 
 
 def test_to_parquet_carries_no_disposition_until_m51() -> None:
-    """Freezing an m48 entry whose VALUE m51 must change is a freeze-order trap: it is outside
-    `graphed.numpy.__all__` and `graphed.awkward.to_parquet` annotates its first parameter `Any`."""
+    """Freezing an m48 entry whose VALUE m51 must change is a freeze-order trap.
+
+    It is outside `graphed.numpy.__all__` and `graphed.awkward.to_parquet` annotates its first
+    parameter `Any`.
+    """
     dispositions = _dispositions()
     for package in ("graphed.numpy", "graphed.awkward"):
         assert (package, "to_parquet") not in _discovered()
@@ -127,8 +138,11 @@ def test_the_idiom_packages_classifications_are_bound_per_verb() -> None:
 
 
 def test_the_boundary_and_plan_verbs_refuse_without_silently_compiling() -> None:
-    """Contract one. m48 asserts only that they raise; §5.4's exact message shape is m49's. The
-    positive control is what makes it a REFUSAL rather than a broken signature."""
+    """Contract one.
+
+    m48 asserts only that they raise; §5.4's exact message shape is m49's. The positive control is
+    what makes it a REFUSAL rather than a broken signature.
+    """
     _s, root = awkward_session()
     plain = root.MET.pt
     varied = graphed.vary(plain, "sig", up=plain * 1.1)
@@ -148,12 +162,17 @@ def test_the_boundary_and_plan_verbs_refuse_without_silently_compiling() -> None
         except Exception as exc:
             raised = exc
         assert raised is not None, f"graphed.{verb} silently accepted a Varied"
-    assert graphed.repartition(plain, n=2).node_id != plain.node_id  # the control: plain still works
+    assert (
+        graphed.repartition(plain, n=2).node_id != plain.node_id
+    )  # the control: plain still works
 
 
 def test_the_compile_and_aggregate_verbs_refuse_naming_graphed_universe() -> None:
-    """Contract two. They consume `arr.node_id`/`arr.session` directly, and §2.2's reserved-name
-    rule makes that a clean seam — the varied route to a plan is §6.1c's group API."""
+    """Contract two.
+
+    They consume `arr.node_id`/`arr.session` directly, and §2.2's reserved-name rule makes that a
+    clean seam — the varied route to a plan is §6.1c's group API.
+    """
     session, x = partitioned_vector_source()
     varied = loose_varied(x)
     reducer = {"reduce": lambda values: values, "combine": lambda a, b: a, "empty": list}
@@ -166,8 +185,10 @@ def test_the_compile_and_aggregate_verbs_refuse_naming_graphed_universe() -> Non
 
 
 def test_the_expanding_verbs_are_asserted_PER_VERB() -> None:
-    """A blanket per-label-shape wording is false for `read_columns`, which answers with ONE
-    union read set, not a mapping."""
+    """A blanket per-label-shape wording is false for `read_columns`.
+
+    Which answers with ONE union read set, not a mapping.
+    """
     _s, root = awkward_session()
     varied = graphed.vary(root.MET.pt, "sig", up=root.MET.pt * 1.1)
     expanded = graphed.apply(lambda member: member, varied, name="identity")
@@ -180,7 +201,9 @@ def test_the_expanding_verbs_are_asserted_PER_VERB() -> None:
     opaque = root.map(lambda events: events).MET.pt
     conservative = graphed.vary(root.MET.pt, "sig", up=opaque)
     assert read_columns([conservative], root.node_id) is None
-    assert read_columns([opaque], root.node_id) is None  # the member really is the conservative one
+    assert (
+        read_columns([opaque], root.node_id) is None
+    )  # the member really is the conservative one
 
 
 def test_the_idiom_expanding_verbs_return_their_own_type_per_label() -> None:
@@ -194,8 +217,10 @@ def test_the_idiom_expanding_verbs_return_their_own_type_per_label() -> None:
 
 
 def test_reindex_to_broadcasts_and_unify_contexts_carries_no_disposition() -> None:
-    """Both m48 verbs are disposed here so the gate does not discover `reindex_to` unclassified;
-    `unify_contexts` takes context HANDLES rather than `Array`s, like `evaluate_ir`."""
+    """Both m48 verbs are disposed here so the gate does not discover `reindex_to` unclassified.
+
+    `unify_contexts` takes context HANDLES rather than `Array`s, like `evaluate_ir`.
+    """
     assert _dispositions()[("graphed", "reindex_to")] == "broadcasting"
     assert ("graphed", "unify_contexts") not in _dispositions()
     assert ("graphed", "unify_contexts") not in _discovered()
@@ -215,10 +240,13 @@ def test_node_id_and_session_raise_while_the_field_of_that_name_still_reads() ->
 
 
 def test_the_property_half_is_classified_by_measurement() -> None:
-    """`dtype`/`ndim`/`shape` are `_form_meta`-backed and record NOTHING; `T` is a plain alias for
-    the recorded `transpose` op. A blanket "delta 0 for every property" reds a correct
-    implementation on `T`. The fixture is a 1-D VECTOR source by necessity: `NumpyArray.T` raises
-    on a >=2-D partitioned form and on any record form, so the measurement itself would raise."""
+    """`dtype`/`ndim`/`shape` are `_form_meta`-backed and record NOTHING.
+
+    `T` is a plain alias for the recorded `transpose` op. A blanket "delta 0 for every property"
+    reds a correct implementation on `T`. The fixture is a 1-D VECTOR source by necessity:
+    `NumpyArray.T` raises on a >=2-D partitioned form and on any record form, so the measurement
+    itself would raise.
+    """
     session, x = vector_source()
     varied = loose_varied(x)
 
@@ -238,12 +266,16 @@ def test_the_property_half_is_classified_by_measurement() -> None:
 
 
 def test_context_of_on_a_container_answers_with_the_MOST_DERIVED_handle() -> None:
-    """§2.3e: `vary` accepts members whose handles differ along one ancestry chain, so the
-    most-derived handle may belong to a NON-nominal member — which is what §6.4a(2a)'s
+    """§2.3e: `vary` accepts members whose handles differ along one ancestry chain.
+
+    So the most-derived handle may belong to a NON-nominal member — which is what §6.4a(2a)'s
     `context_of(mask) is context_of(record)` predicate reads. The fixture is a `vary` IDENTITY
-    link, which keeps the row space fixed."""
+    link, which keeps the row space fixed.
+    """
     _s, events = events_context()
-    events2 = graphed.vary(events, "pu", pu_weight(events, 1.0), is_weight=True, up=pu_weight(events, 1.1))
+    events2 = graphed.vary(
+        events, "pu", pu_weight(events, 1.0), is_weight=True, up=pu_weight(events, 1.1)
+    )
     container = graphed.vary(events.Jet, "jes", up=events2.Jet)
     assert graphed.context_of(container) is events2
     assert graphed.context_of(graphed.nominal(container)) is events

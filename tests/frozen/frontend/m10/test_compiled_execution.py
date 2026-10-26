@@ -18,7 +18,10 @@ from graphed import Array, CompiledGraph, GraphedError, Session, compile_ir, eva
 
 
 def _record(session: Session) -> Array:
-    """a + b twice over (commuted), through an identity, summed — reduction collapses all of it."""
+    """Record a + b twice over (commuted), through an identity, summed.
+
+    Reduction collapses all of it.
+    """
     a = from_list(session, "a", [1.0, 2.0, 3.0])
     b = from_list(session, "b", [10.0, 20.0, 30.0])
     ab = a + b
@@ -32,7 +35,9 @@ def test_compiled_evaluation_matches_materialize() -> None:
     out = _record(s)
     expect = s.materialize(out)  # the M2 reference evaluator (un-reduced walk)
     compiled = compile_ir(s, out)
-    got = evaluate_ir(compiled, CountingListBackend(), {"a": [1.0, 2.0, 3.0], "b": [10.0, 20.0, 30.0]})
+    got = evaluate_ir(
+        compiled, CountingListBackend(), {"a": [1.0, 2.0, 3.0], "b": [10.0, 20.0, 30.0]}
+    )
     assert got == [expect] == [132.0]
 
 

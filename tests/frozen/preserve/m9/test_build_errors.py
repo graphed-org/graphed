@@ -12,7 +12,10 @@ from graphed.preserve.externals import evaluate_external
 def test_build_requires_payload_bytes_for_non_opaque_externals(tmp_path) -> None:  # type: ignore[no-untyped-def]
     events = agc.make_events_for()
     s, value, weight = agc.record(
-        events, config=agc._DEFAULT_CONFIG, corr_bytes=agc.correctionlib_json(), model_bytes=agc.onnx_model()
+        events,
+        config=agc._DEFAULT_CONFIG,
+        corr_bytes=agc.correctionlib_json(),
+        model_bytes=agc.onnx_model(),
     )
     # a correctionlib/ONNX external whose bytes were not supplied must not silently vanish
     with pytest.raises(PreserveError, match="no payload bytes"):
@@ -32,10 +35,14 @@ def test_build_rejects_payload_that_does_not_match_its_hash(tmp_path) -> None:  
 
     events = agc.make_events_for()
     corr, model = agc.correctionlib_json(), agc.onnx_model()
-    s, value, weight = agc.record(events, config=agc._DEFAULT_CONFIG, corr_bytes=corr, model_bytes=model)
+    s, value, weight = agc.record(
+        events, config=agc._DEFAULT_CONFIG, corr_bytes=corr, model_bytes=model
+    )
     # supply the RIGHT keys but WRONG bytes for the correction -> hash mismatch is caught
     poisoned = {
-        CORRECTIONLIB_PLUGIN.content_hash(corr): agc.correctionlib_json(scale=9.9),  # bytes != recorded hash
+        CORRECTIONLIB_PLUGIN.content_hash(corr): agc.correctionlib_json(
+            scale=9.9
+        ),  # bytes != recorded hash
         ONNX_PLUGIN.content_hash(model): model,
     }
     with pytest.raises(PreserveError, match="hashes to"):

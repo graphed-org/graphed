@@ -1,5 +1,7 @@
-"""m68 D7 — a Triton node names a service (``service=``) or a literal ``url=``, never both; the endpoint
-leaves graph identity, and the per-process connection cache keys on it."""
+"""m68 D7 — a Triton node names a service (``service=``) or a literal ``url=``, never both.
+
+The endpoint leaves graph identity, and the per-process connection cache keys on it.
+"""
 
 from __future__ import annotations
 
@@ -18,7 +20,9 @@ URL_IR_SHA256 = "02c61c847ce7d966070e1383069601aefd2481872a7ed6708133a56326f97d5
 
 
 def _externals(ir: bytes) -> list[dict[str, object]]:
-    return [dict(n["params"]) for n in GraphStore.deserialize(ir).nodes() if n["kind"] == "external"]
+    return [
+        dict(n["params"]) for n in GraphStore.deserialize(ir).nodes() if n["kind"] == "external"
+    ]
 
 
 def test_the_endpoint_never_enters_the_ir() -> None:
@@ -61,8 +65,12 @@ def test_rebinding_connects_to_the_new_endpoint() -> None:
     ev = new_events()
     ev.session.declare_service(ServiceSpec("scorer-svc", "triton"))
     plan = values_plan(score(ev, descriptor("re"), service="scorer-svc"))
-    (row_x,) = SequentialRunner().run(bind_services(plan, {"scorer-svc": "http://re-x:8000"})).value
-    (row_y,) = SequentialRunner().run(bind_services(plan, {"scorer-svc": "grpcs://re-y:443"})).value
+    (row_x,) = (
+        SequentialRunner().run(bind_services(plan, {"scorer-svc": "http://re-x:8000"})).value
+    )
+    (row_y,) = (
+        SequentialRunner().run(bind_services(plan, {"scorer-svc": "grpcs://re-y:443"})).value
+    )
     assert np.allclose(row_x, expected(0.45, -0.1), rtol=1e-6)
     assert np.allclose(row_y, expected(0.8, 0.2), rtol=1e-6)
     assert fake.SERVERS["grpcs://re-y:443"].infer_calls > 0

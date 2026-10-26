@@ -36,9 +36,11 @@ def test_a_placement_beside_a_varied_member_is_refused_pointing_at_the_hand_form
 
 
 def test_the_declaring_points_channel_stays_refused_in_the_shift_form() -> None:
-    """Regression control: `points=` as a mapping declares tags, which the shift form takes from the
-    collection values instead. Passes on the pre-m55 tree, so a run in which it also failed would
-    prove the harness dead rather than the feature absent."""
+    """Regression control: `points=` as a mapping declares tags.
+
+    Which the shift form takes from the collection values instead. Passes on the pre-m55 tree, so a
+    run in which it also failed would prove the harness dead rather than the feature absent.
+    """
     toy = base_toy()
     containers = jes_containers(toy.ctx)
 

@@ -2,7 +2,8 @@
 
 Every case materializes the deferred reduction and compares against the same ak.* call on the
 raw array — no hand-written expectations to drift. Typetracer form inference must succeed at
-record time for every kind (metadata only)."""
+record time for every kind (metadata only).
+"""
 
 from __future__ import annotations
 
@@ -13,7 +14,20 @@ from m16_helpers import session_events
 
 from graphed.awkward import gak, project
 
-ONE_INPUT = ["sum", "any", "all", "count", "count_nonzero", "min", "max", "prod", "mean", "std", "var", "ptp"]
+ONE_INPUT = [
+    "sum",
+    "any",
+    "all",
+    "count",
+    "count_nonzero",
+    "min",
+    "max",
+    "prod",
+    "mean",
+    "std",
+    "var",
+    "ptp",
+]
 
 
 @pytest.mark.parametrize("kind", ONE_INPUT)

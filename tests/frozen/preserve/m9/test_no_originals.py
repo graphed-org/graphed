@@ -21,20 +21,21 @@ import numpy as np
 def test_reproduce_with_no_original_code_or_inputs(tmp_path) -> None:  # type: ignore[no-untyped-def]
     bundle, reference = agc.build_agc(tmp_path / "build")
 
-    # nothing original exists on disk besides the bundle itself: payloads were never written to files
-    # (they live only in the bundle's content-addressed store), and the analysis source is unreachable.
+    # nothing original exists on disk besides the bundle itself: payloads were never written to
+    # files (they live only in the bundle's content-addressed store), and the analysis source is
+    # unreachable.
     elsewhere = tmp_path / "machine_b"
     elsewhere.mkdir()
 
     child = (
         "import sys, json; from graphed.preserve import Bundle, reproduce;"
-        "assert __import__('importlib.util', fromlist=['x']).find_spec('agc') is None;"  # originals unreachable
-        "out = reproduce(Bundle.open(sys.argv[1]));"
-        "print(json.dumps([float(x) for x in out]))"
+        # originals unreachable
+        "assert __import__('importlib.util', fromlist=['x']).find_spec('agc') is None;out = "
+        "reproduce(Bundle.open(sys.argv[1]));print(json.dumps([float(x) for x in out]))"
     )
-    # inherit the OS env (so the interpreter starts on every platform) but drop the import-path vars,
-    # so the analysis source (agc.py, only ever on sys.path via the test runner) is unreachable —
-    # the child can resolve nothing but installed packages + the bundle's own store.
+    # inherit the OS env (so the interpreter starts on every platform) but drop the import-path
+    # vars, so the analysis source (agc.py, only ever on sys.path via the test runner) is
+    # unreachable — the child can resolve nothing but installed packages + the bundle's own store.
     env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "PYTHONHOME")}
     proc = subprocess.run(
         [sys.executable, "-c", child, str(bundle.root)],

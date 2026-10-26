@@ -3,7 +3,7 @@
 Plan: `graphed-workdir/lanes/ckpt-resume/plan.md` (r14b) §2, §4.1 T1–T10; interface addendum (`resumable(plan,
 store, *, storage_options=None, codec=None, salt="", accept_environment=False)`). **Frozen — read-only after
 `freeze-m74`.** On main every test fails at import: four modules import `resumable`/`check_resumable`/
-`StoreUnavailable`/`EnvironmentChanged` from `graphed.checkpoint`, and every cross-interpreter test fails on
+`StoreUnavailableError`/`EnvironmentChangedError` from `graphed.checkpoint`, and every cross-interpreter test fails on
 the same `ImportError` inside its subprocess.
 
 ## Files
@@ -76,6 +76,6 @@ the same `ImportError` inside its subprocess.
 | `test_three_live_threads_write_three_journals[dir/memory/file]` | T6; `Barrier(3, timeout=10)` | one writer per process; a lock around `inner` (fails on the barrier timeout) |
 | `test_durable_plan_becomes_a_runtime_plan_keyed_by_task_id` | T7 `DurablePlan` | no conversion; keys not journaled |
 | `test_shuffle_plan_interrupted_resumes_with_identical_gather_payloads` | T7 `DurablePlanV2` | payload changed by the stage wrapper; no V2 resume |
-| `test_store_unavailable_wraps_store_calls_only` | T8 | a broad `except` turning inner errors into `StoreUnavailable` |
+| `test_store_unavailable_wraps_store_calls_only` | T8 | a broad `except` turning inner errors into `StoreUnavailableError` |
 | `test_resumable_decodes_nothing_and_workers_decode` | T9 | decoding stored partials on the driver |
 | `test_run_resumable_folds_partials_as_they_come` | T10 order, 1e16 bits, peak live partials ≤ 3 | holding every partial (main: T+2) |

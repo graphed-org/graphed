@@ -1,5 +1,7 @@
-"""m71a A-C5/A-C8 (awkward) and A-C4's awkward-object legs on numpy: a type the backend cannot build
-is refused at the calling line, naming the spelling it was given."""
+"""m71a A-C5/A-C8 (awkward) and A-C4's awkward-object legs on numpy.
+
+A type the backend cannot build is refused at the calling line, naming the spelling it was given.
+"""
 
 from __future__ import annotations
 
@@ -45,7 +47,9 @@ def test_numpy_reads_an_awkward_primitive_as_its_dtype() -> None:
     by_name = x.map(lambda a: a, name="o", output_type="float32")
 
     assert describe(sn, by_name) == "vector[float32]"
-    assert x.map(lambda a: a, name="o", output_type=NumpyType("float32")).node_id == by_name.node_id
+    assert (
+        x.map(lambda a: a, name="o", output_type=NumpyType("float32")).node_id == by_name.node_id
+    )
     as_form = ak.forms.from_type(NumpyType("float32"))
     assert x.map(lambda a: a, name="o", output_type=as_form).node_id == by_name.node_id
 

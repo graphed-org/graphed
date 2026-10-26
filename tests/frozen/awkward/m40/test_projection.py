@@ -1,9 +1,9 @@
 """M40 — (d) column projection through a JOIN (plan §3.4; extends the M5 over-touch guard).
 
 A join must read EXACTLY ``{key | used}`` on EACH side and never more — the two-source form of the
-dask-awkward over-touch bug M5 exists to prevent. Here the key is ``(run, lumi, event)`` (packed per
-side) and the downstream expression uses only ``lv`` (left) and ``rv`` (right). The unused columns
-``lx``/``rx`` must be absent from both read sets.
+dask-awkward over-touch bug M5 exists to prevent. Here the key is ``(run, lumi, event)`` (packed
+per side) and the downstream expression uses only ``lv`` (left) and ``rv`` (right). The unused
+columns ``lx``/``rx`` must be absent from both read sets.
 
 Discrimination: an impl whose Join arm gathers the FULL merged record on the reporting typetracer
 (carrying ``lx``/``rx`` through) over-touches -> ``lx``/``rx`` appear in the read set -> FAILS. An

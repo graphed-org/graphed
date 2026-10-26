@@ -1,9 +1,10 @@
 """Fixtures for the m49 awkward-idiom anchors.
 
-Every anchor here imports `graphed.awkward`, so none of them can live in `tests/frozen/frontend/m49`
-(a required free-threaded job collects that tree under `pytest hypothesis numpy` alone). The helper
-carries an `m49_` prefix even though `run-tests.sh` gives `tests/frozen/awkward/m49` its own process:
-prepend import mode binds a bare top-level helper name to whichever sibling directory imported first.
+Every anchor here imports `graphed.awkward`, so none of them can live in
+`tests/frozen/frontend/m49` (a required free-threaded job collects that tree under
+`pytest hypothesis numpy` alone). The helper carries an `m49_` prefix even though `run-tests.sh`
+gives `tests/frozen/awkward/m49` its own process: prepend import mode binds a bare top-level helper
+name to whichever sibling directory imported first.
 """
 
 from __future__ import annotations
@@ -40,39 +41,57 @@ def awkward_session() -> tuple[Session, Array]:
 
 
 def events_context() -> tuple[Session, Any]:
-    """The §2.6 event context over the corpus events."""
+    """Return the §2.6 event context over the corpus events."""
     session, root = awkward_session()
     return session, ga.gnano.events(root)
 
 
 def jes_collections(source: Any) -> dict[str, dict[str, Array]]:
-    """The lockstep shift form's mappings: Jet and MET move together under one tag set (§2.6a)."""
+    """Return the lockstep shift form's mappings.
+
+    Jet and MET move together under one tag set (§2.6a).
+    """
     jets, met = source.Jet, source.MET
     return {
-        "Jet": {"up": gak.with_field(jets, jets.pt * 1.05, "pt"), "down": gak.with_field(jets, jets.pt * 0.95, "pt")},
-        "MET": {"up": gak.with_field(met, met.pt * 1.02, "pt"), "down": gak.with_field(met, met.pt * 0.98, "pt")},
+        "Jet": {
+            "up": gak.with_field(jets, jets.pt * 1.05, "pt"),
+            "down": gak.with_field(jets, jets.pt * 0.95, "pt"),
+        },
+        "MET": {
+            "up": gak.with_field(met, met.pt * 1.02, "pt"),
+            "down": gak.with_field(met, met.pt * 0.98, "pt"),
+        },
     }
 
 
 def jet_weight(source: Any, scale: float = 1.0) -> Array:
-    """A per-event weight factor whose cone reaches the JET collection (the corpus b-tag shape)."""
+    """Return a per-event weight factor whose cone reaches the JET collection.
+
+    That is the corpus b-tag shape.
+    """
     return gak.prod(1.0 + source.Jet.btag * scale, axis=1)
 
 
 def met_weight(source: Any, scale: float = 1.0) -> Array:
-    """A per-event weight factor whose cone reaches the MET collection and nothing else."""
+    """Return a per-event weight factor whose cone reaches the MET collection and nothing else."""
     return source.MET.pt * scale
 
 
 def weight_universes(ctx: Any) -> list[Array]:
-    """The ambient registry's members, one marked output per label (`compile_ir` refuses a Varied)."""
+    """Return the ambient registry's members, one marked output per label.
+
+    `compile_ir` refuses a Varied.
+    """
     ambient = graphed.weight(ctx)
     return [graphed.universe(ambient, label) for label in graphed.labels(ambient)]
 
 
 def inner_type(data: Any) -> str:
-    """A structure's type below its outer length — the part a typetracer form and a materialized
-    partition render identically, so a blame message can be checked against it on either path."""
+    """Return a structure's type below its outer length.
+
+    The part a typetracer form and a materialized partition render identically, so a blame message
+    can be checked against it on either path.
+    """
     return str(ak.Array(data).type).split(" * ", 1)[1]
 
 

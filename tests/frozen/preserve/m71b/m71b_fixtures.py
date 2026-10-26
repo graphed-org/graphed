@@ -61,9 +61,15 @@ def photons(resource: Any, params: Mapping[str, Any], inputs: Sequence[Any]) -> 
     return ak.zip({"pt": pt, "eta": pt * 0.01}, with_name="Photon")
 
 
-LUMI = ExternalPlugin(kind="m71b_lumimask", content_hash=sha256_bytes, evaluate=lumi, samples=_samples)
-JSEL = ExternalPlugin(kind="m71b_jetsel", content_hash=sha256_bytes, evaluate=jet_select, samples=_samples)
-PHO = ExternalPlugin(kind="m71b_photons", content_hash=sha256_bytes, evaluate=photons, samples=_samples)
+LUMI = ExternalPlugin(
+    kind="m71b_lumimask", content_hash=sha256_bytes, evaluate=lumi, samples=_samples
+)
+JSEL = ExternalPlugin(
+    kind="m71b_jetsel", content_hash=sha256_bytes, evaluate=jet_select, samples=_samples
+)
+PHO = ExternalPlugin(
+    kind="m71b_photons", content_hash=sha256_bytes, evaluate=photons, samples=_samples
+)
 
 #: every `params` mapping `MASK` was evaluated with, in call order
 SEEN: list[dict[str, Any]] = []
@@ -74,7 +80,9 @@ def mask(resource: Any, params: Mapping[str, Any], inputs: Sequence[Any]) -> Any
     return inputs[0] > 1.0
 
 
-MASK = ExternalPlugin(kind="m71b_roundtrip_mask", content_hash=sha256_bytes, evaluate=mask, samples=_samples)
+MASK = ExternalPlugin(
+    kind="m71b_roundtrip_mask", content_hash=sha256_bytes, evaluate=mask, samples=_samples
+)
 
 
 def recorded() -> tuple[Session, Any]:
@@ -102,7 +110,9 @@ def params_of(session: Session, array: Any) -> dict[str, Any]:
 
 def same(value: Any, expected: Any) -> bool:
     """Equal values AND equal types."""
-    return bool(ak.to_list(value) == ak.to_list(expected) and str(ak.type(value)) == str(ak.type(expected)))
+    return bool(
+        ak.to_list(value) == ak.to_list(expected) and str(ak.type(value)) == str(ak.type(expected))
+    )
 
 
 def refusal(call: Callable[[], object]) -> GraphedTypeError:
@@ -114,5 +124,5 @@ def refusal(call: Callable[[], object]) -> GraphedTypeError:
 
 
 def here() -> int:
-    """The caller's NEXT line: the line a one-line refused call sits on."""
+    """Return the caller's NEXT line: the line a one-line refused call sits on."""
     return sys._getframe(1).f_lineno + 1

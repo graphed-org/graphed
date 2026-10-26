@@ -13,7 +13,7 @@ from graphed.core import GraphStore, IncrementalReducer
 
 
 def _chain_with_twins(n: int) -> tuple[GraphStore, int]:
-    """A realistic build: a chain plus commuted duplicate work and an identity op."""
+    """Return a realistic build: a chain plus commuted duplicate work and an identity op."""
     s = GraphStore()
     a = s.add_source("a")
     b = s.add_source("b")
@@ -88,7 +88,10 @@ def test_finalize_after_many_small_steps_matches_one_big_step() -> None:
         cur = b.add_op("inc", [cur], {"i": i})
         rb.step(b)
 
-    assert ra.finalize(a, outputs=[out_a])[0].serialize() == rb.finalize(b, outputs=[cur])[0].serialize()
+    assert (
+        ra.finalize(a, outputs=[out_a])[0].serialize()
+        == rb.finalize(b, outputs=[cur])[0].serialize()
+    )
 
 
 def test_incremental_reduction_is_deterministic() -> None:

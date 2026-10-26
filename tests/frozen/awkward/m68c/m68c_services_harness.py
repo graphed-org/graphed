@@ -1,8 +1,11 @@
-"""Shared builders for the frozen m68c awkward suite: in-memory partitioned sources, a local HTTP
-stand-in for a scale-factor service, and the External that calls it on every evaluation.
+"""Shared builders for the frozen m68c awkward suite.
+
+in-memory partitioned sources, a local HTTP stand-in for a scale-factor service, and the External
+that calls it on every evaluation.
 
 Stage processes reach a runner as cloudpickle copies, so the spies are module state (classes and
-functions here pickle by reference) rather than instance state."""
+functions here pickle by reference) rather than instance state.
+"""
 
 from __future__ import annotations
 
@@ -35,8 +38,11 @@ RESOLVED: list[Any] = []
 
 
 class Chunks:
-    """A ``PartitionedSource`` over in-memory "files"; each file splits into ``steps_per_file``
-    blind partitions. ``columns`` is honoured, so a map stage that reads too few columns fails."""
+    """A ``PartitionedSource`` over in-memory "files".
+
+    Each file splits into ``steps_per_file`` blind partitions. ``columns`` is honoured, so a map
+    stage that reads too few columns fails.
+    """
 
     def __init__(self, name: str, *files: ak.Array) -> None:
         self.name = name
@@ -49,7 +55,9 @@ class Chunks:
             for s in range(steps_per_file)
         )
 
-    def read_partition(self, partition: Partition, columns: Sequence[str] | None, resources: WorkerResources) -> Any:
+    def read_partition(
+        self, partition: Partition, columns: Sequence[str] | None, resources: WorkerResources
+    ) -> Any:
         READS.append((self.name, partition.uri))
         data = self.files[int(partition.uri.rsplit("/", 1)[1])]
         part = partition.resolve(len(data))
@@ -60,7 +68,10 @@ class Chunks:
         return ak.concatenate(self.files)
 
     def __call__(self) -> ak.Array:
-        """The whole dataset, for ``Session.materialize`` (a lazy loader, as a parquet dataset is)."""
+        """Return the whole dataset, for ``Session.materialize``.
+
+        It is a lazy loader, as a parquet dataset is.
+        """
         return self.whole()
 
 
@@ -71,8 +82,11 @@ def source(session: Session, name: str, *files: ak.Array) -> Any:
 
 
 def events_files() -> tuple[ak.Array, ...]:
-    """One file; its first half has x < 25 only, so ``x > 25`` empties that partition. Every run
-    routes to dest 0 of 2, so dest 1 of a two-dest join gets rows from the right side only."""
+    """One file; its first half has x < 25 only, so ``x > 25`` empties that partition.
+
+    Every run routes to dest 0 of 2, so dest 1 of a two-dest join gets rows from the right side
+    only.
+    """
     return (
         ak.Array(
             {
@@ -107,10 +121,13 @@ def one_source() -> Any:
     return source(new_session(), "events", *events_files())
 
 
-# ---- the scale-factor service and the External that calls it -------------------------------------
+# ---- the scale-factor service and the External that calls
+# it -------------------------------------
 class _LookupFreeHTTPServer(ThreadingHTTPServer):
-    """Binds without ``HTTPServer.server_bind``'s ``socket.getfqdn``, which stalls for tens of seconds on
-    macOS CI runners."""
+    """Binds without ``HTTPServer.server_bind``'s ``socket.getfqdn``.
+
+    Which stalls for tens of seconds on macOS CI runners.
+    """
 
     def server_bind(self) -> None:
         socketserver.TCPServer.server_bind(self)
@@ -181,7 +198,9 @@ def _samples() -> list[bytes]:
     return [b"sf-v1"]
 
 
-SF_PLUGIN = ExternalPlugin(kind="m68c_sf", content_hash=sha256_bytes, load=_load, evaluate=_scale, samples=_samples)
+SF_PLUGIN = ExternalPlugin(
+    kind="m68c_sf", content_hash=sha256_bytes, load=_load, evaluate=_scale, samples=_samples
+)
 
 
 def scaled(array: Any) -> Any:
@@ -195,11 +214,12 @@ def corrected(events: Any) -> Any:
 
 
 def by_hand(events: Any) -> Any:
-    """What :func:`corrected` computes, with no service."""
+    """Return What :func:`corrected` computes, with no service."""
     return gak.zip({"run": events.run, "x": events.x * SF}, depth_limit=1)
 
 
-# ---- reduce/combine/empty that keep every gathered block ------------------------------------------
+# ---- reduce/combine/empty that keep every gathered
+# block ------------------------------------------
 def keep(values: list[Any]) -> list[Any]:
     return [values[0]]
 
@@ -226,15 +246,18 @@ class ResolvingReduce:
         return ("resolved", value)
 
 
-# ---- comparisons ---------------------------------------------------------------------------------
+# ----
+# comparisons ---------------------------------------------------------------------------------
 def rows(array: Any) -> list[str]:
-    """The row multiset of ``array``: each row canonicalized, sorted."""
+    """Return the row multiset of ``array``: each row canonicalized, sorted."""
     return sorted(json.dumps(r, sort_keys=True) for r in ak.to_list(array))
 
 
 def sublists(array: Any) -> list[str]:
-    """The multiset of a grouped result's sublists, each sublist's rows sorted."""
-    return sorted(json.dumps(sorted(json.dumps(r, sort_keys=True) for r in sub)) for sub in ak.to_list(array))
+    """Return the multiset of a grouped result's sublists, each sublist's rows sorted."""
+    return sorted(
+        json.dumps(sorted(json.dumps(r, sort_keys=True) for r in sub)) for sub in ak.to_list(array)
+    )
 
 
 def joined(blocks: Sequence[Any]) -> ak.Array:

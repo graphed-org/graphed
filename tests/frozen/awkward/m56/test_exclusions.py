@@ -1,7 +1,8 @@
-"""m56 §2 item 4 / §4 exclusions: what composition still is. A member that reads a registered
-factor's VARIED member at a label carries that label through the composition the weight form already
-performed, so it does not fan out; a spectator coordinate still collapses. Each leg's live instrument
-is a sibling registration in the same program that DOES mint.
+"""m56 §2 item 4 / §4 exclusions: what composition still is.
+
+A member that reads a registered factor's VARIED member at a label carries that label through the
+composition the weight form already performed, so it does not fan out; a spectator coordinate still
+collapses. Each leg's live instrument is a sibling registration in the same program that DOES mint.
 """
 
 from __future__ import annotations

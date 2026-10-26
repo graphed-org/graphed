@@ -1,5 +1,7 @@
-"""C3 / design §4.6, §7.1-2, §8-j: registration resolves by the same projection, and where it
-differs from `vary.central_universe` projection wins.
+"""C3 / design §4.6, §7.1-2, §8-j.
+
+Registration resolves by the same projection, and where it differs from `vary.central_universe`
+projection wins.
 
 3.5 and 3.6 are the design's stated discriminating pair — an implementation that keeps the member's
 own nominal unconditionally fails 3.5, one that prefers any non-nominal member fails 3.6. Neither
@@ -23,9 +25,12 @@ from graphed.errors import GraphedError
 
 
 def test_a_shift_shift_joint_is_auto_fanned_and_reaches_the_inner_jes_universe() -> None:
-    """JES ⊗ JER. The supplied `jer` member is itself jes-`Varied`, so the shift fanout mints the
-    joint `jer_up__jes_up` that reaches the inner JES universe the one-at-a-time `jer_up` restricts
-    away — no `points=` and no silent drop."""
+    """JES ⊗ JER.
+
+    The supplied `jer` member is itself jes-`Varied`, so the shift fanout mints the joint
+    `jer_up__jes_up` that reaches the inner JES universe the one-at-a-time `jer_up` restricts away
+    — no `points=` and no silent drop.
+    """
     _session, shifted = jes_shifted_context()
     jets = shifted.Jet
     supplied = gak.with_field(jets, jets.pt * JER_UP, "pt")  # itself `Varied` over `jes`
@@ -45,9 +50,12 @@ def test_a_shift_shift_joint_is_auto_fanned_and_reaches_the_inner_jes_universe()
 
 
 def test_a_default_point_registration_keeps_the_members_own_label_when_it_carries_it() -> None:
-    """§8-j. The outer call is renaming a universe the member already carries; the reduction answer
+    """§8-j.
+
+    The outer call is renaming a universe the member already carries; the reduction answer
     assembles a `jes_up` universe out of the member's `jes`-NOMINAL template, physically
-    inconsistent in exactly the way R1-c exists to fix."""
+    inconsistent in exactly the way R1-c exists to fix.
+    """
     _session, ctx = events_context()
     x = ctx.MET.pt
 
@@ -63,10 +71,13 @@ def test_a_default_point_registration_keeps_the_members_own_label_when_it_carrie
 
 
 def test_a_default_point_registration_reduces_same_family_but_fans_out_a_foreign_one() -> None:
-    """The same-family boundary half is unchanged: a member holding a DIFFERENT tag of that family
-    still restricts to nominal, not "prefer the newest label". The cross-family half is what m53
-    changes — a foreign-varied member no longer silently drops its foreign coordinate; the
-    one-at-a-time label stays the diagonal while the joint is minted alongside it."""
+    """The same-family boundary half is unchanged.
+
+    A member holding a DIFFERENT tag of that family still restricts to nominal, not "prefer the
+    newest label". The cross-family half is what m53 changes — a foreign-varied member no longer
+    silently drops its foreign coordinate; the one-at-a-time label stays the diagonal while the
+    joint is minted alongside it.
+    """
     _session, ctx = events_context()
     x = ctx.MET.pt
 

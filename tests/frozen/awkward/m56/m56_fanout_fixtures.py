@@ -2,13 +2,13 @@
 
 The toy is the tour capstone in miniature: `jes` MOVES the jets (a shift of the `Jet`/`MET`
 collections) and SWAPS the b-tag SF table by name identity (a weight factor), so
-`graphed.variations(ctx)["jes"]` reports `Kind.WEIGHT | Kind.SHIFT`. A second family registered over
-those jets reaches `jes_up` through the shifted jets, never through the ambient weight, so its
+`graphed.variations(ctx)["jes"]` reports `Kind.WEIGHT | Kind.SHIFT`. A second family registered
+over those jets reaches `jes_up` through the shifted jets, never through the ambient weight, so its
 `jes` coordinate is a dependency and not weight composition.
 
-Every m56-new outcome — the `jes` joints, the placement that names one, the guard's wider bound — is
-reached only inside the functions the tests call, never at import, so the tree COLLECTS against a
-pre-m56 tree and fails at RUN time (TEST_SANITY). The `m56_` prefix is load-bearing: the pytest
+Every m56-new outcome — the `jes` joints, the placement that names one, the guard's wider bound —
+is reached only inside the functions the tests call, never at import, so the tree COLLECTS against
+a pre-m56 tree and fails at RUN time (TEST_SANITY). The `m56_` prefix is load-bearing: the pytest
 `pythonpath` publishes cross-dir helpers under a global name.
 """
 
@@ -58,43 +58,52 @@ DESIGN_BOUND = 27
 
 
 def m56_scale(record: Any, factor: float) -> Any:
-    """A record whose `pt` is scaled — the toy's one shift, for jets and MET alike."""
+    """Return a record whose `pt` is scaled — the toy's one shift, for jets and MET alike."""
     return gak.with_field(record, record.pt * factor, "pt")
 
 
 def m56_met_of(jets: Any, raw: Any) -> Any:
-    """The toy Type-1 MET: the raw MET recoiling against the jets' pT sum, phi untouched."""
+    """Return the toy Type-1 MET: the raw MET recoiling against the jets' pT sum, phi untouched."""
     return gak.with_field(raw, raw.pt - MET_COUPLING * gak.sum(jets.pt, axis=1), "pt")
 
 
 def m56_sf(jets: Any, table: float) -> Any:
-    """A per-event b-tag scale factor off `jets`; `table` selects the systematic table."""
+    """Return a per-event b-tag scale factor off `jets`; `table` selects the systematic table."""
     return gak.prod(0.95 + 0.1 * jets.btag * table, axis=1)
 
 
 def m56_joints(name: str, foreign: str) -> set[str]:
-    """The four joint labels `name`(up/down) x `foreign`(up/down)."""
+    """Return the four joint labels `name`(up/down) x `foreign`(up/down)."""
     return {f"{name}_{tag}__{foreign}_{other}" for tag in TAGS for other in TAGS}
 
 
 def m56_minted(weight: Any, name: str) -> set[str]:
-    """The joint labels `name`'s registration minted — the family's own name comes first."""
-    return {label for label in graphed.labels(weight) if label.startswith(f"{name}_") and "__" in label}
+    """Return the joint labels `name`'s registration minted — the family's own name comes first."""
+    return {
+        label for label in graphed.labels(weight) if label.startswith(f"{name}_") and "__" in label
+    }
 
 
 def m56_base(*, seed: bool = False) -> tuple[Session, Any, Any]:
-    """A fresh Session and a context carrying `Jet` and `MET`, with an optional seed event weight
-    (`EventContext(..., weight=...)`) — a factor whose member is its nominal at every label."""
+    """Return a fresh Session and a context carrying `Jet` and `MET`.
+
+    An optional seed event weight (`EventContext(..., weight=...)`) is a factor whose member is its
+    nominal at every label.
+    """
     session = Session(AwkwardBackend())
     root = from_awkward(session, "events", EVENTS)
     genweight = 1.0 + 0.001 * root.MET.pt if seed else None
-    ctx = EventContext(session, root, collections={"Jet": root.Jet, "MET": root.MET}, weight=genweight)
+    ctx = EventContext(
+        session, root, collections={"Jet": root.Jet, "MET": root.MET}, weight=genweight
+    )
     return session, ctx, genweight
 
 
 def m56_weight_family(ctx: Any, name: str, member: Any, **vary_kwargs: Any) -> Any:
-    """Register `name` as a weight family whose three members scale `member` by the `PROBE_SF`
-    table. Extra keywords pass straight through to `graphed.vary`."""
+    """Register `name` as a weight family whose three members scale `member` by `PROBE_SF`.
+
+    Extra keywords pass straight through to `graphed.vary`.
+    """
     return graphed.vary(
         ctx,
         name,
@@ -106,10 +115,14 @@ def m56_weight_family(ctx: Any, name: str, member: Any, **vary_kwargs: Any) -> A
 
 
 def m56_both_kind(ctx: Any) -> tuple[Any, Any]:
-    """`jes` registered as a SHIFT of the jets and as a WEIGHT by name identity; returns the
-    context and the varied jets the weight factor's members are computed on."""
+    """`jes` registered as a SHIFT of the jets and as a WEIGHT by name identity.
+
+    Returns the context and the varied jets the weight factor's members are computed on.
+    """
     jets = ctx.Jet
-    shifted = graphed.vary(ctx, "jes", collections={"Jet": {tag: m56_scale(jets, JES[tag]) for tag in TAGS}})
+    shifted = graphed.vary(
+        ctx, "jes", collections={"Jet": {tag: m56_scale(jets, JES[tag]) for tag in TAGS}}
+    )
     sjets = shifted["Jet"]
     registered = graphed.vary(
         shifted,
@@ -148,9 +161,11 @@ def m56_capstone(
     placements: Iterable[Mapping[str, Any]] | None = None,
     **vary_kwargs: Any,
 ) -> Capstone:
-    """The headline program: `jes` shifts `Jet`/`MET` AND swaps the SF table by name identity;
-    `jer` shifts them too, its members built on the NOMINAL jets so it stays shift-only; `hf` is a
-    weight family over the jets both families vary.
+    """Return the headline program.
+
+    `jes` shifts `Jet`/`MET` AND swaps the SF table by name identity; `jer` shifts them too, its
+    members built on the NOMINAL jets so it stays shift-only; `hf` is a weight family over the jets
+    both families vary.
 
     `weight_first` picks the registration order of the two weight families (§2 item 2);
     `placements` and the extra keywords land on the `hf` registration.
@@ -182,7 +197,12 @@ def m56_capstone(
         declares = {tag: m56_sf(sjets, HF_SF[tag]) for tag in TAGS}
         points: Any = declares if placements is None else [*declares.items(), *placements]
         return graphed.vary(
-            target, "hf", m56_sf(sjets, HF_SF["nominal"]), is_weight=True, points=points, **vary_kwargs
+            target,
+            "hf",
+            m56_sf(sjets, HF_SF["nominal"]),
+            is_weight=True,
+            points=points,
+            **vary_kwargs,
         )
 
     steps = (jes_weight, hf_weight) if weight_first else (hf_weight, jes_weight)
@@ -192,10 +212,13 @@ def m56_capstone(
 
 
 def m56_incidental(leg: str) -> tuple[Session, Any]:
-    """§2 item 4's INCLUSION legs: the probe family's member also reads a factor whose member at the
-    label is its NOMINAL node — the context's seed weight (`"seed"`), or an unrelated weight
-    family's central member computed from the unshifted jets (`"central"`) — beside a bare
-    `SF(varied jets)` sibling registered in the same program."""
+    """§2 item 4's INCLUSION legs.
+
+    The probe family's member also reads a factor whose member at the label is its NOMINAL node —
+    the context's seed weight (`"seed"`), or an unrelated weight family's central member computed
+    from the unshifted jets (`"central"`) — beside a bare `SF(varied jets)` sibling registered in
+    the same program.
+    """
     session, ctx, seed = m56_base(seed=True)
     context, sjets = m56_both_kind(ctx)
     context = m56_weight_family(context, "bare", m56_sf(sjets, 1.0))
@@ -207,9 +230,11 @@ def m56_incidental(leg: str) -> tuple[Session, Any]:
 
 
 def m56_cut_child(cut: str) -> tuple[Session, Any]:
-    """A family registered on a mask-derived child: the mask reads the SEED weight (`"seed"`) or the
-    varied jets (`"kinematic"`, the control). Both masks read a factor whose member at every label
-    is its nominal, or no factor at all."""
+    """Return a family registered on a mask-derived child.
+
+    The mask reads the SEED weight (`"seed"`) or the varied jets (`"kinematic"`, the control). Both
+    masks read a factor whose member at every label is its nominal, or no factor at all.
+    """
     session, ctx, seed = m56_base(seed=True)
     context, sjets = m56_both_kind(ctx)
     mask = seed > SEED_CUT if cut == "seed" else gak.sum(sjets.pt, axis=1) > HT_CUT
@@ -218,9 +243,11 @@ def m56_cut_child(cut: str) -> tuple[Session, Any]:
 
 
 def m56_two_both_kind() -> tuple[Session, Any, Any]:
-    """`jes` and `jer` BOTH registered as a shift and a weight, so every coordinate the ambient
-    carries is composition. `jer`'s weight members read the jes-varied jets, so the ambient itself
-    carries joint labels."""
+    """`jes` and `jer` BOTH registered as a shift and a weight.
+
+    So every coordinate the ambient carries is composition. `jer`'s weight members read the
+    jes-varied jets, so the ambient itself carries joint labels.
+    """
     session, ctx, _seed = m56_base()
     jets = ctx.Jet
     after_jes = graphed.vary(
@@ -249,18 +276,24 @@ def m56_two_both_kind() -> tuple[Session, Any, Any]:
 
 
 def m56_pure_weight() -> tuple[Session, Any, Any]:
-    """A PURE-weight `pu` whose members are computed from the unshifted jets, beside a PLAIN `jes`
-    shift: at a `jes` label no factor's member differs from its nominal."""
+    """Return a PURE-weight `pu` computed from the unshifted jets, beside a PLAIN `jes` shift.
+
+    At a `jes` label no factor's member differs from its nominal.
+    """
     session, ctx, _seed = m56_base()
     jets = ctx.Jet
-    context = graphed.vary(ctx, "jes", collections={"Jet": {tag: m56_scale(jets, JES[tag]) for tag in TAGS}})
+    context = graphed.vary(
+        ctx, "jes", collections={"Jet": {tag: m56_scale(jets, JES[tag]) for tag in TAGS}}
+    )
     sjets = context["Jet"]
     return session, m56_weight_family(context, "pu", 1.0 + 0.002 * gak.num(jets)), sjets
 
 
 def m56_masked_child() -> tuple[Session, Any, Any]:
-    """A both-kind `jes`, the PARENT's ambient weight captured before the row-space change, and the
-    mask-derived child the probe family registers on."""
+    """Return a both-kind `jes`, the PARENT's ambient weight captured before the row-space change.
+
+    And the mask-derived child the probe family registers on.
+    """
     session, ctx, _seed = m56_base()
     context, _sjets = m56_both_kind(ctx)
     parent_ambient = graphed.weight(context)
@@ -268,8 +301,10 @@ def m56_masked_child() -> tuple[Session, Any, Any]:
 
 
 def m56_spectator() -> tuple[Session, Any, Any, Any]:
-    """A both-kind `jes` and a LOOSE `inner` family the ambient carrier does not carry — a spectator
-    coordinate on any member that reads it."""
+    """Return a both-kind `jes` and a LOOSE `inner` family the ambient carrier does not carry.
+
+    A spectator coordinate on any member that reads it.
+    """
     session, ctx, _seed = m56_base()
     context, sjets = m56_both_kind(ctx)
     loose = m56_sf(graphed.nominal(sjets), 1.0)

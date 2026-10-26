@@ -39,15 +39,20 @@ class ToyForm:
 
 
 class ToyBackend:
-    """A backend that types everything and carries data through, so a node's IDENTITY and its
-    evaluated VALUE are both observable. `external_payload` derives the content hash from the `fn`
-    param exactly as the shipping backends do, so an opaque callable's identity travels in the
-    param — which is what makes two colliding callables one node."""
+    """A backend that types everything and carries data through.
+
+    So a node's IDENTITY and its evaluated VALUE are both observable. `external_payload` derives
+    the content hash from the `fn` param exactly as the shipping backends do, so an opaque
+    callable's identity travels in the param — which is what makes two colliding callables one
+    node.
+    """
 
     def op_form(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> ToyForm:
         return ToyForm(op)
 
-    def eval_stage(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> object:
+    def eval_stage(
+        self, op: str, inputs: Sequence[object], params: Mapping[str, object]
+    ) -> object:
         return (op, list(inputs), dict(params))
 
     def boundary_ops(self) -> frozenset[str]:
@@ -83,15 +88,22 @@ def nodes_of(session: Session, *outputs: Array) -> list[dict[str, Any]]:
 
 
 def fn_params(session: Session, *outputs: Array) -> list[str]:
-    """The `fn` param of every External node reaching `outputs`, in record order."""
-    return [str(node["params"]["fn"]) for node in nodes_of(session, *outputs) if node["kind"] == "external"]
+    """Return the `fn` param of every External node reaching `outputs`, in record order."""
+    return [
+        str(node["params"]["fn"])
+        for node in nodes_of(session, *outputs)
+        if node["kind"] == "external"
+    ]
 
 
 # ---- X: two sessions whose node ids COLLIDE ---------------------------------------------------
 def colliding_sessions() -> tuple[Session, Array, Session, Array]:
-    """Two sessions built to the same SHAPE and different content: `beta.node_id == alpha.node_id`,
-    so handing `beta` to `alpha`'s session addresses a real node of it — a silent answer, not a
-    KeyError. The op names differ, so which store answered is observable."""
+    """Two sessions built to the same SHAPE and different content.
+
+    `beta.node_id == alpha.node_id`, so handing `beta` to `alpha`'s session addresses a real node
+    of it — a silent answer, not a KeyError. The op names differ, so which store answered is
+    observable.
+    """
     own, x = toy_session("x")
     alpha = own.record_op("alpha", [x])
     other, y = toy_session("y", DATUM * 10)
@@ -100,8 +112,10 @@ def colliding_sessions() -> tuple[Session, Array, Session, Array]:
 
 
 def walk_handlers() -> dict[str, Callable[..., object]]:
-    """`Session.walk`'s three required handlers, each loud: a guarded walk must refuse before any
-    of them is reached."""
+    """`Session.walk`'s three required handlers, each loud.
+
+    A guarded walk must refuse before any of them is reached.
+    """
 
     def never(*_args: object, **_kwargs: object) -> object:
         raise AssertionError("a walk of a foreign array must refuse before evaluating a node")
@@ -128,7 +142,10 @@ def times_hundred(value: Any) -> Any:
 
 
 def numpy_session() -> tuple[Session, Any]:
-    """The `apply_gufunc` surface's operand: one 1-D column, so `"()->()"` binds no core dim."""
+    """Return the `apply_gufunc` surface's operand.
+
+    One 1-D column, so `"()->()"` binds no core dim.
+    """
     session = Session(NumpyBackend())
     return session, graphed.numpy.from_array(session, "x", VECTOR)
 
@@ -149,10 +166,15 @@ def _tenfold(value: Any) -> Any:
 
 
 def third_party_verb(array: Array) -> Array:
-    """The M23 seam (`descriptor=` + `form=`), so this verb records on ANY backend."""
+    """Return the M23 seam (`descriptor=` + `form=`), so this verb records on ANY backend."""
     session = array.session
     return session.record_external(
-        "m60tag", _tenfold, [array], {"fn": "m60tag"}, descriptor=THIRD_PARTY, form=session.form(array)
+        "m60tag",
+        _tenfold,
+        [array],
+        {"fn": "m60tag"},
+        descriptor=THIRD_PARTY,
+        form=session.form(array),
     )
 
 
@@ -163,7 +185,7 @@ VARIED_LABELS = ("nominal", "jes_up", "jes_down")
 
 
 def varied_vector() -> tuple[Session, Any, Array]:
-    """A three-universe `Varied` over one numpy-backed column, plus the unvaried column itself."""
+    """Return a three-universe `Varied` over one numpy-backed column and the unvaried column."""
     session = Session(NumpyBackend())
     record = from_record(session, "ev", pt=VECTOR)
     pt = record["pt"]

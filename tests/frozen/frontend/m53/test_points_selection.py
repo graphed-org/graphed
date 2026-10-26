@@ -1,5 +1,8 @@
-"""vary-m53 §3: `points=` PRUNES the auto grid to a named subset and is a PRECISION knob for custom
-coordinates — validated by reachability, so an unreachable point is refused loudly."""
+"""vary-m53 §3: `points=` PRUNES the auto grid to a named subset.
+
+It is a PRECISION knob for custom coordinates — validated by reachability, so an unreachable point
+is refused loudly.
+"""
 
 from __future__ import annotations
 

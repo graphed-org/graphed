@@ -1,7 +1,9 @@
-"""Fixtures for the m71a numpy suite: a numpy-only session with two float32 vectors and a 2-D array.
+"""Fixtures for the m71a numpy suite.
 
-Every m71a-new surface (the `output_type=` keyword) is reached inside test bodies only, so this tree
-collects on a base without it and fails at run time.
+A numpy-only session with two float32 vectors and a 2-D array.
+
+Every m71a-new surface (the `output_type=` keyword) is reached inside test bodies only, so this
+tree collects on a base without it and fails at run time.
 """
 
 from __future__ import annotations
@@ -21,7 +23,8 @@ M2 = np.arange(6, dtype=np.float32).reshape(2, 3)
 RA = np.array([0.5, 2.0])
 RB = np.array([1, 2])
 
-#: every numpy numerical dtype (``np.typecodes`` "AllInteger" + "AllFloat" + bool, fixed-width only)
+#: every numpy numerical dtype (``np.typecodes`` "AllInteger" + "AllFloat" + bool, fixed-width
+#: only)
 NUMERIC = (
     "bool",
     "int8",
@@ -45,7 +48,7 @@ def f(a: Any) -> Any:
 
 
 def recorded() -> tuple[Session, Any, Any, Any]:
-    """A numpy session with `x`, `y` (float32 vectors) and the 2-D `m2`."""
+    """Return a numpy session with `x`, `y` (float32 vectors) and the 2-D `m2`."""
     sn = Session(NumpyBackend())
     return sn, from_array(sn, "x", X), from_array(sn, "y", Y), from_array(sn, "m2", M2)
 
@@ -59,7 +62,7 @@ def describe(session: Session, array: Any) -> str:
 
 
 def params_of(session: Session, array: Any) -> dict[str, Any]:
-    """The record-time store params behind `array` (the house route)."""
+    """Return the record-time store params behind `array` (the house route)."""
     node = next(n for n in session._store.nodes() if n["id"] == array.node_id)
     return dict(node["params"])
 
@@ -73,5 +76,5 @@ def refusal(call: Callable[[], object]) -> GraphedTypeError:
 
 
 def here() -> int:
-    """The caller's NEXT line: the line a one-line refused call sits on."""
+    """Return the caller's NEXT line: the line a one-line refused call sits on."""
     return sys._getframe(1).f_lineno + 1

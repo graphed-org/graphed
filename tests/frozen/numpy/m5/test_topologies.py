@@ -1,6 +1,9 @@
-"""Field projection through complex topologies (plan M5) — diamond / star / nested shapes where a
-record field feeds re-converging branches. Each field must be reported EXACTLY once and no sibling
-field may be over-touched, however the branches fan out and re-join (a dask failure mode)."""
+"""Field projection through complex topologies (plan M5).
+
+Diamond / star / nested shapes where a record field feeds re-converging branches. Each field must
+be reported EXACTLY once and no sibling field may be over-touched, however the branches fan out and
+re-join (a dask failure mode).
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,7 @@
-"""m62 unit B — kill a run on a URL store, resume with a new instance, match the uninterrupted run."""
+"""m62 unit B — kill a run on a URL store and resume it with a new instance.
+
+The resumed run matches the uninterrupted run.
+"""
 
 from __future__ import annotations
 

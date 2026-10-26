@@ -1,9 +1,11 @@
-"""M5 column projection for plans (``read_columns``): the minimal source columns a recorded graph
-reads — the dask-awkward ``necessary_columns`` analogue a partition-wise plan passes to its reader.
-A NEW frozen file (test-authoring deliverable); the existing m5 suite is unchanged.
+"""M5 column projection for plans (``read_columns``).
 
-The bug this guards: a plan that does not project reads EVERY branch of a wide file (e.g. all 86 of a
-NanoAOD) for a query that needs one, an order-of-magnitude I/O blowup on a real dataset.
+The minimal source columns a recorded graph reads — the dask-awkward ``necessary_columns`` analogue
+a partition-wise plan passes to its reader. A NEW frozen file (test-authoring deliverable); the
+existing m5 suite is unchanged.
+
+The bug this guards: a plan that does not project reads EVERY branch of a wide file (e.g. all 86 of
+a NanoAOD) for a query that needs one, an order-of-magnitude I/O blowup on a real dataset.
 """
 
 from __future__ import annotations
@@ -17,7 +19,9 @@ class _Backend:
     def op_form(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> str:
         return op
 
-    def eval_stage(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> object:
+    def eval_stage(
+        self, op: str, inputs: Sequence[object], params: Mapping[str, object]
+    ) -> object:
         return inputs[0]
 
     def boundary_ops(self) -> frozenset[str]:
@@ -67,5 +71,6 @@ def test_nonfield_op_on_source_widens_to_all() -> None:
 def test_any_conservative_fill_widens_the_whole_read() -> None:
     s = Session(_Backend())
     ev = _events(s)
-    # one fill projects cleanly, another consumes the whole record -> the union must read everything
+    # one fill projects cleanly, another consumes the whole record -> the union must read
+    # everything
     assert read_columns([ev["pt"], ev + 1], ev.node_id) is None

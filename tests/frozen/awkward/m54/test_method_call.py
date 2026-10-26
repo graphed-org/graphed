@@ -1,8 +1,8 @@
 """m54 §2.2 — calling a method records one op whose value is the eager call's.
 
-Four argument shapes, because each reaches the encoder differently: a positional constant, a keyword
-constant, an array passed positionally, and the same array passed by KEYWORD (an array operand that
-is not in `args`, which a positional-only encoder would drop or mis-order).
+Four argument shapes, because each reaches the encoder differently: a positional constant, a
+keyword constant, an array passed positionally, and the same array passed by KEYWORD (an array
+operand that is not in `args`, which a positional-only encoder would drop or mis-order).
 """
 
 from __future__ import annotations
@@ -62,7 +62,9 @@ def test_a_numpy_scalar_constant_keeps_its_dtype_as_a_distinct_node() -> None:
     typed = jets.scaled(np.float64(2.0))
     plain = jets.scaled(2.0)
 
-    assert typed.node_id != plain.node_id  # NEP 50: a numpy scalar's dtype promotes, a float's does not
+    assert (
+        typed.node_id != plain.node_id
+    )  # NEP 50: a numpy scalar's dtype promotes, a float's does not
     assert ak.array_equal(
         ak.Array(session.materialize(typed)), eager("Jet").scaled(np.float64(2.0))
     )

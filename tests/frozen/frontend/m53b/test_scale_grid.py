@@ -1,13 +1,15 @@
-"""vary-m53b §5, plan §7.2 (tour cell 32): the μRxμF 7-point scale grid, spelled in the unified LIST
-form. Four axis-aligned universes come from the independent ``muR`` / ``muF`` one-at-a-time families;
-the two correlated DIAGONALS are additive off-grid points re-pointing an independent ``scale`` member
-to a two-coordinate ``{muR, muF}`` point (own ``scale`` axis dropped). Numeric coordinates
-canonicalize: ``2`` → ``"2"`` and ``0.5`` → ``"5em1"`` (probed on the working prune path).
+"""vary-m53b §5, plan §7.2 (tour cell 32).
+
+The μRxμF 7-point scale grid, spelled in the unified LIST form. Four axis-aligned universes come
+from the independent ``muR`` / ``muF`` one-at-a-time families; the two correlated DIAGONALS are
+additive off-grid points re-pointing an independent ``scale`` member to a two-coordinate
+``{muR, muF}`` point (own ``scale`` axis dropped). Numeric coordinates canonicalize: ``2`` →
+``"2"`` and ``0.5`` → ``"5em1"`` (probed on the working prune path).
 
 Non-vacuity: the diagonal entries are refused today ("names no joint the fanout of 'scale' derives;
 the derived joints are []"), so the ``vary`` call fails for feature-absence. The witness is that
-``scale_dndn`` reports ``{muR: 5em1, muF: 5em1}`` — a two-coordinate off-grid point — not the default
-``{scale: dndn}`` a bare mint leaves.
+``scale_dndn`` reports ``{muR: 5em1, muF: 5em1}`` — a two-coordinate off-grid point — not the
+default ``{scale: dndn}`` a bare mint leaves.
 """
 
 from __future__ import annotations

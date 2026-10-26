@@ -2,11 +2,12 @@
 
 Pins the plan-level guarantees of plan M8:
 - versioned deterministic serialization, **byte-identical for identical plans**;
-- content-addressed ``task_id`` that is cache-poisoning-safe (changes iff computation/input changes,
-  distinct computations never collide);
-- the canonical durable form is the IR; cloudpickle is used **only** for genuinely-opaque callables,
-  which are flagged ``opaque=True`` (a preservation risk, plan A.3.1);
-- a serialized plan reconstructs and its callables resolve **on a process with no user source files**.
+- content-addressed ``task_id`` that is cache-poisoning-safe (changes iff computation/input
+  changes, distinct computations never collide);
+- the canonical durable form is the IR; cloudpickle is used **only** for genuinely-opaque
+  callables, which are flagged ``opaque=True`` (a preservation risk, plan A.3.1);
+- a serialized plan reconstructs and its callables resolve **on a process with no user source
+  files**.
 """
 
 from __future__ import annotations
@@ -34,7 +35,10 @@ def _plan(ir: bytes | None = None) -> DurablePlan:
         process=OpSpec.from_ref("math:hypot"),
         combine=OpSpec.from_ref("operator:add"),
         empty=OpSpec.from_ref("builtins:float"),
-        partitions=(Partition("data.root", "Events", 0, 100), Partition("data.root", "Events", 100, 200)),
+        partitions=(
+            Partition("data.root", "Events", 0, 100),
+            Partition("data.root", "Events", 100, 200),
+        ),
         read_columns=("Jet_pt", "MET_pt"),
         stopping={"error_budget": 3},
         file_locality={"data.root": "node-a"},

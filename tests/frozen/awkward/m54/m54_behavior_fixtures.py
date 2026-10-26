@@ -1,9 +1,10 @@
 """Fixtures for the m54 behavior-methods suite (awkward backend).
 
 `JetArray` is registered ONLY in this module's behavior dict, never in global `ak.behavior`, so the
-backend is the sole route to it; vector's own `deltaR`/`rotateZ` cover the globally registered half.
-Every m54-new surface (`graphed.BoundMethod`, a method CALL) is reached inside test bodies only, so
-the tree COLLECTS against a tree with no m54 implementation and fails at RUN time (TEST_SANITY).
+backend is the sole route to it; vector's own `deltaR`/`rotateZ` cover the globally registered
+half. Every m54-new surface (`graphed.BoundMethod`, a method CALL) is reached inside test bodies
+only, so the tree COLLECTS against a tree with no m54 implementation and fails at RUN time
+(TEST_SANITY).
 """
 
 from __future__ import annotations
@@ -29,7 +30,7 @@ class JetArray(vector.backends.awkward.MomentumArray4D):  # type: ignore[misc,na
     """A four-vector whose extra methods take arguments; known to `BEHAVIOR` only."""
 
     def scaled(self, k: float, *, offset: float = 0.0, gain: float = 1.0) -> Any:
-        """A positional constant and TWO keyword constants, so keyword ORDER is testable."""
+        """Return a positional constant and TWO keyword constants, so keyword ORDER is testable."""
         return (self.pt * k + offset) * gain
 
     def near(self, other: Any, *, threshold: float | None = None) -> Any:
@@ -38,29 +39,35 @@ class JetArray(vector.backends.awkward.MomentumArray4D):  # type: ignore[misc,na
         return delta if threshold is None else delta < threshold
 
     def combo(self, coeffs: Any) -> Any:
-        """A sequence constant, read by index — list and tuple are the same call."""
+        """Return a sequence constant, read by index — list and tuple are the same call."""
         return self.pt * coeffs[0] + self.eta * coeffs[1]
 
     def blend(self, *, x: Any, y: Any) -> Any:
-        """TWO array arguments, keyword-only and ASYMMETRIC, so swapping them is a different call."""
+        """TWO array arguments, keyword-only and ASYMMETRIC.
+
+        So swapping them is a different call.
+        """
         return self.deltaR(x) + 2.0 * self.deltaR(y)
 
     def weighted(self, weights: Any) -> Any:
-        """A str-keyed dict constant: the accepted collection the refusals are contrasted with."""
+        """Return a str-keyed dict constant.
+
+        The accepted collection the refusals are contrasted with.
+        """
         return self.pt * weights["pt"] + self.eta * weights["eta"]
 
     def mixed(self, parts: Any) -> Any:
-        """A dict CONSTANT holding arrays, asymmetric in its keys."""
+        """Return a dict CONSTANT holding arrays, asymmetric in its keys."""
         return self.deltaR(parts["x"]) + 2.0 * self.deltaR(parts["y"])
 
     @staticmethod
     def combine(x: Any, y: Any) -> Any:
-        """A staticmethod: callable, so a method."""
+        """Return a staticmethod: callable, so a method."""
         return x.deltaR(y)
 
     @classmethod
     def spread(cls, x: Any, y: Any) -> Any:
-        """A classmethod: not callable, but a descriptor, so a method."""
+        """Return a classmethod: not callable, but a descriptor, so a method."""
         return x.deltaR(y)
 
     #: a bare class constant: not a descriptor, so it is read like a field
@@ -74,7 +81,7 @@ class JetArray(vector.backends.awkward.MomentumArray4D):  # type: ignore[misc,na
 
     @functools.singledispatchmethod
     def widen(self, k: Any) -> Any:
-        """A `singledispatchmethod`: not callable, a descriptor, so a method."""
+        """Return a `singledispatchmethod`: not callable, a descriptor, so a method."""
         raise NotImplementedError
 
     @widen.register(float)
@@ -156,7 +163,7 @@ EVENTS = ak.Array(
 
 
 def recorded() -> tuple[Session, Any, Any]:
-    """A session carrying `BEHAVIOR`, plus the two named jet collections."""
+    """Return a session carrying `BEHAVIOR`, plus the two named jet collections."""
     session = Session(AwkwardBackend(behavior=BEHAVIOR))
     events = from_awkward(session, "events", EVENTS)
     return (
@@ -167,13 +174,13 @@ def recorded() -> tuple[Session, Any, Any]:
 
 
 def collection(session: Session, name: str) -> Any:
-    """A third named collection of the same session, by name."""
+    """Return a third named collection of the same session, by name."""
     events = from_awkward(session, "events", EVENTS)
     return gak.with_name(events[name], "Jet")
 
 
 def eager(name: str) -> ak.Array:
-    """The eager, behavior-carrying counterpart of collection `name`."""
+    """Return the eager, behavior-carrying counterpart of collection `name`."""
     return ak.Array(EVENTS[name].layout, behavior=BEHAVIOR)
 
 
@@ -199,8 +206,11 @@ def varied_jets(jets: Any) -> Any:
 def touched_columns(
     expression: Callable[[ak.Array], Any], source: ak.Array | None = None
 ) -> set[str]:
-    """The leaves `expression` reads, measured by an EAGER reporting typetracer over `source`
-    (default `EVENTS`) — the independent oracle graphed's own projection is compared against."""
+    """Return the leaves `expression` reads, measured by an EAGER reporting typetracer.
+
+    The typetracer runs over `source` (default `EVENTS`) — the independent oracle graphed's own
+    projection is compared against.
+    """
     form = (EVENTS if source is None else source).layout.form_with_key()
     paths: dict[str, str] = {}
 
@@ -220,7 +230,7 @@ def touched_columns(
 
 
 def node_of(session: Session, array: Any) -> dict[str, Any]:
-    """The record-time store entry behind `array` (the house route, as m28/m48 use)."""
+    """Return the record-time store entry behind `array` (the house route, as m28/m48 use)."""
     return next(n for n in session._store.nodes() if n["id"] == array.node_id)
 
 
@@ -229,7 +239,10 @@ def op_count(session: Session) -> int:
 
 
 def jets_source() -> tuple[Session, Any, int]:
-    """A session whose SOURCE record is itself Jet-named, so a method applies directly to it."""
+    """Return a session whose SOURCE record is itself Jet-named.
+
+    So a method applies directly to it.
+    """
     session = Session(AwkwardBackend(behavior=BEHAVIOR))
     source = from_awkward(session, "jets", EVENTS.Jet)
     return session, source, source_id(session)
@@ -249,7 +262,7 @@ CALIB = 2.0
 
 
 def attrs_sources() -> tuple[ak.Array, ak.Array]:
-    """A Jet-named array and an events record, both carrying `attrs={"calib": CALIB}`."""
+    """Return a Jet-named array and an events record, both carrying `attrs={"calib": CALIB}`."""
     return (
         ak.Array(EVENTS.Jet.layout, behavior=BEHAVIOR, attrs={"calib": CALIB}),
         ak.Array(EVENTS.layout, behavior=BEHAVIOR, attrs={"calib": CALIB}),

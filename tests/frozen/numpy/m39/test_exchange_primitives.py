@@ -2,9 +2,9 @@
 
 A SECOND exchange backend ships in M39 (not M40) so the generic engine's backend-agnosticism is
 witnessed by execution, not just the §A.4 import lint. numpy's rectilinear primitives are trivial —
-``partition``/``concat``/``slice_rows``/``estimated_bytes``/``to_wire``/``from_wire`` over structured
-(record) arrays — but they must obey the SAME pinned §4 routing rule, proven by the golden vectors
-(a numpy impl using any other hash fails them exactly as the awkward one would).
+``partition``/``concat``/``slice_rows``/``estimated_bytes``/``to_wire``/``from_wire`` over
+structured (record) arrays — but they must obey the SAME pinned §4 routing rule, proven by the
+golden vectors (a numpy impl using any other hash fails them exactly as the awkward one would).
 """
 
 from __future__ import annotations
