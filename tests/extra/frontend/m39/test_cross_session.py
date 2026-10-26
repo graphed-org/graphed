@@ -137,6 +137,45 @@ def test_materialize_evaluates_arrays_nested_in_collections() -> None:
     assert type(result["a"][1]) is tuple
 
 
+_X, _Y = [1, 2], [10, 20]
+
+
+@pytest.mark.parametrize(
+    ("build", "expected"),
+    [
+        (lambda x, y: x, _X),
+        (lambda x, y: None, None),
+        (lambda x, y: [], []),
+        (lambda x, y: (), ()),
+        (lambda x, y: {}, {}),
+        (lambda x, y: [x], [_X]),
+        (lambda x, y: (y,), (_Y,)),
+        (lambda x, y: [[[[x]]]], [[[[_X]]]]),
+        (lambda x, y: [(x, y), [y, x]], [(_X, _Y), [_Y, _X]]),
+        (lambda x, y: {1: x, (2, 3): y}, {1: _X, (2, 3): _Y}),
+        (lambda x, y: {"x": x, "y": [y], "z": {"w": (x, 3)}}, {"x": _X, "y": [_Y], "z": {"w": (_X, 3)}}),
+    ],
+    ids=[
+        "array",
+        "none",
+        "empty-list",
+        "empty-tuple",
+        "empty-dict",
+        "list-of-one",
+        "tuple-of-one",
+        "deep-list",
+        "tuple-and-list",
+        "non-str-keys",
+        "mixed-depths",
+    ],
+)
+def test_materialize_returns_the_structure_it_was_given(build: Any, expected: Any) -> None:
+    s1, s2 = Session(SumBackend()), Session(SumBackend())
+    x = s1.source("x", form=_form(), data=Loader(tuple(_X)))
+    y = s2.source("y", form=_form(), data=Loader(tuple(_Y)))
+    assert graphed.materialize(build(x, y)) == expected
+
+
 def test_materialize_evaluates_a_sessions_shared_nodes_once() -> None:
     s = Session(SumBackend())
     x = s.source("x", form=_form(), data=Loader((1, 2)))
