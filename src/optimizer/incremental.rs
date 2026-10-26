@@ -82,20 +82,25 @@ impl IncrementalReducer {
             inputs,
         } = &key
         {
-            // identity elimination — the engine's identity rules, applied at record time.
-            if IDENTITY_TOKENS.contains(&key.token().as_str()) {
-                return inputs[0];
+            // identity elimination — the engine's identity rules (arity one, as their `(tok ?x)`
+            // patterns are), applied at record time.
+            if let [only] = inputs.as_slice() {
+                if IDENTITY_TOKENS.contains(&key.token().as_str()) {
+                    return *only;
+                }
             }
             // commutativity — the engine's commute rules: both orientations of a symmetric op are
             // ONE canonical node; the first-recorded orientation is the representative (matching
             // the engine's earliest-member extraction).
-            if inputs.len() == 2 && params.is_empty() && SYMMETRIC_OPS.contains(&name.as_str()) {
-                if let Some(&id) = self.canon_table.get(&key) {
-                    return id;
-                }
-                let swapped = key.with_inputs(vec![inputs[1], inputs[0]]);
-                if let Some(&id) = self.canon_table.get(&swapped) {
-                    return id;
+            if let [a, b] = inputs.as_slice() {
+                if params.is_empty() && SYMMETRIC_OPS.contains(&name.as_str()) {
+                    if let Some(&id) = self.canon_table.get(&key) {
+                        return id;
+                    }
+                    let swapped = key.with_inputs(vec![*b, *a]);
+                    if let Some(&id) = self.canon_table.get(&swapped) {
+                        return id;
+                    }
                 }
             }
         }
@@ -189,6 +194,33 @@ mod tests {
         assert_eq!(inc.node_map.len(), s.node_count());
         assert_eq!(inc.node_map, full.node_map);
         assert_eq!(inc.node_map[one as usize], inc.node_map[ab as usize]);
+    }
+
+    #[test]
+    fn identity_tokens_collapse_only_at_arity_one_like_the_engine() {
+        let zero = ParamMap::new(vec![
+            ("scalar".into(), ParamValue::Float(0.0)),
+            ("side".into(), ParamValue::Str("r".into())),
+        ]);
+        for arity in [0, 2] {
+            let s = GraphStore::new();
+            let a = s.add_source("a".into(), empty());
+            let b = s.add_source("b".into(), empty());
+            let inputs = [a, b][..arity].to_vec();
+            let out = s.add_op("add".into(), inputs, zero.clone()).unwrap();
+            let engine = EggEngine::default();
+            let inc = reduce_incrementally(&s)
+                .finalize(&[out], &engine, FusionMode::SingleUse)
+                .unwrap();
+            let full = crate::optimizer::reduce_with_mode(
+                &s.snapshot().0,
+                &[out],
+                &engine,
+                FusionMode::SingleUse,
+            );
+            assert_eq!(inc.nodes, full.nodes, "arity {arity}");
+            assert_eq!(inc.outputs, full.outputs, "arity {arity}");
+        }
     }
 
     #[test]
