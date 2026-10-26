@@ -16,9 +16,9 @@ Several datasets in one Session
 * ``Session.source`` refuses a name reused with another form or another data object: the second
   binding was silently dropped, so ``from_awkward(s, "x", B)`` after ``from_awkward(s, "x", A)``
   evaluated ``A`` (#103).
-* ``graphed.materialize(arrays)`` evaluates an Array, or a list, tuple or dict of them, from any
-  number of Sessions in this process. A plan over several Sessions is ``graphed.collate``, which
-  ``aggregate_plan``'s refusal now names (#103).
+* ``graphed.materialize(arrays)`` evaluates Arrays from any number of Sessions in this process,
+  alone or nested in lists, tuples and dicts, as ``dask.compute`` takes them. A plan over several
+  Sessions is ``graphed.collate``, which ``aggregate_plan``'s refusal now names (#103).
 
 0.0.9
 -----

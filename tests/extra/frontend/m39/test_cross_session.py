@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, ClassVar, cast
+from typing import Any, ClassVar, NamedTuple, cast
 
 import pytest
 
@@ -121,11 +121,29 @@ def test_materialize_evaluates_arrays_of_several_sessions_in_their_shape() -> No
     assert graphed.materialize({"x": x, "y": doubled}) == {"x": [1, 2], "y": [20, 40]}
 
 
+class _Pair(NamedTuple):
+    first: Any
+    second: Any
+
+
+def test_materialize_evaluates_arrays_nested_in_collections() -> None:
+    s1, s2 = Session(SumBackend()), Session(SumBackend())
+    x = s1.source("x", form=_form(), data=Loader((1, 2)))
+    y = s2.source("y", form=_form(), data=Loader((10, 20)))
+    nested = {"a": [x, (y, {"b": _Pair(x, "kept")})]}
+    result = graphed.materialize(nested)
+    assert result == {"a": [[1, 2], ([10, 20], {"b": _Pair([1, 2], "kept")})]}
+    assert type(result["a"][1][1]["b"]) is _Pair
+    assert type(result["a"][1]) is tuple
+
+
 def test_materialize_evaluates_a_sessions_shared_nodes_once() -> None:
     s = Session(SumBackend())
     x = s.source("x", form=_form(), data=Loader((1, 2)))
     shared = s.record_op("add", [x, x])
-    graphed.materialize([s.record_op("add", [shared, x]), s.record_op("add", [shared, shared])])
+    graphed.materialize(
+        [s.record_op("add", [shared, x]), {"deeper": (s.record_op("add", [shared, shared]),)}]
+    )
     assert SumBackend.calls.count("add") == 3
     assert Loader.loads == [(1, 2)]
 

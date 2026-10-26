@@ -579,20 +579,23 @@ class Session:
 
 
 def materialize(arrays: Any) -> Any:
-    """Evaluate ``arrays`` in this process: an :class:`Array`, or a list, tuple or dict of them (other
-    items pass through), recorded in any number of Sessions. Returns the same shape with each Array
-    replaced by its value; the Arrays of one Session evaluate every node they share once. Evaluation
-    only: running on an executor is a plan's job (:func:`graphed.aggregate_plan`, :func:`graphed.collate`)."""
-    if isinstance(arrays, Array):
-        return materialize([arrays])[0]
-    items = list(arrays.values()) if isinstance(arrays, Mapping) else list(arrays)
+    """Evaluate ``arrays`` in this process: an :class:`Array`, or any nesting of lists, tuples
+    (named ones keep their type) and mappings holding them (other items pass through), recorded in
+    any number of Sessions. Returns the same structure with each Array replaced by its value; the
+    Arrays of one Session evaluate every node they share once. Evaluation only: running on an
+    executor is a plan's job (:func:`graphed.aggregate_plan`, :func:`graphed.collate`)."""
     memos: dict[Session, dict[int, object]] = {}
-    values = [
-        item.session.materialize(item, memo=memos.setdefault(item.session, {}))
-        if isinstance(item, Array)
-        else item
-        for item in items
-    ]
-    if isinstance(arrays, Mapping):
-        return dict(zip(arrays, values, strict=True))
-    return tuple(values) if isinstance(arrays, tuple) else values
+
+    def value(item: Any) -> Any:
+        if isinstance(item, Array):
+            return item.session.materialize(item, memo=memos.setdefault(item.session, {}))
+        if isinstance(item, Mapping):
+            return {key: value(v) for key, v in item.items()}
+        if isinstance(item, list):
+            return [value(v) for v in item]
+        if isinstance(item, tuple):
+            values = [value(v) for v in item]
+            return type(item)(*values) if hasattr(item, "_fields") else tuple(values)
+        return item
+
+    return value(arrays)
