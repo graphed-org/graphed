@@ -69,6 +69,7 @@ class Session:
         self._forms: dict[int, Form] = {}
         self._sources: dict[int, object] = {}
         self._source_names: dict[int, str] = {}
+        self._slots: dict[str, tuple[object, object]] = {}  # source name -> (form description, data)
         self._ops: dict[int, tuple[str, dict[str, ParamValue], list[int]]] = {}
         self._externals: dict[int, tuple[Callable[[object], object], list[int]]] = {}
         self._services: dict[str, ServiceSpec] = {}
@@ -332,6 +333,17 @@ class Session:
 
     # ---- builders --------------------------------------------------------------
     def source(self, name: str, *, form: Form, data: object, **params: ParamValue) -> Array:
+        # a name is a slot of one form bound to one data object; the store interns (name, params),
+        # so a name reused for other data would silently keep its first binding
+        described = getattr(form, "describe", None)
+        key = described() if callable(described) else form
+        held = self._slots.setdefault(name, (key, data))
+        if held[0] != key:
+            raise ValueError(
+                f"source {name!r} is already a slot of another form in this Session; name this one"
+            )
+        if held[1] is not data:
+            raise ValueError(f"source {name!r} is already bound to other data in this Session; name this one")
         node_id = self._store.add_source(name, dict(params))
         self._forms.setdefault(node_id, form)
         self._sources.setdefault(node_id, data)
@@ -550,7 +562,9 @@ class Session:
         return cache[root]
 
     # ---- evaluation (reference, node-by-node; the real executor is M7) ----------
-    def materialize(self, array: Array) -> object:
+    def materialize(self, array: Array, *, memo: dict[int, object] | None = None) -> object:
+        """``array``'s value; walks sharing ``memo`` evaluate each shared node once."""
+
         def source(node_id: int) -> object:
             value = self._sources[node_id]
             return value() if callable(value) else value  # lazy loader (e.g. parquet)
@@ -560,4 +574,63 @@ class Session:
             source=source,
             op=lambda _nid, name, ins, params: self._backend.eval_stage(name, ins, params),
             external=lambda _nid, fn, ins: fn(*ins),
+            memo=memo,
         )
+
+
+def _replace_arrays(item: Any, leaf: Callable[[Array], Any]) -> Any:
+    """``item`` with each Array replaced by ``leaf(array)``, through lists, tuples (named ones keep
+    their type) and mappings; other items pass through."""
+    if isinstance(item, Array):
+        return leaf(item)
+    if isinstance(item, Mapping):
+        return {key: _replace_arrays(v, leaf) for key, v in item.items()}
+    if isinstance(item, list):
+        return [_replace_arrays(v, leaf) for v in item]
+    if isinstance(item, tuple):
+        values = [_replace_arrays(v, leaf) for v in item]
+        return type(item)(*values) if hasattr(item, "_fields") else tuple(values)
+    return item
+
+
+def _projected_reads(session: Session, arrays: Sequence[Array]) -> dict[int, object]:
+    """Each partitioned source ``arrays`` read, read with the columns a plan over them would read.
+    A source whose read list is every column, or whose partitions the backend cannot concatenate,
+    is left to its lazy loader."""
+    from .core.execution import LocalResources  # noqa: PLC0415  (import cycle)
+    from .projection import read_columns  # noqa: PLC0415
+    from .write import PartitionedSource, declared_columns, sources_read  # noqa: PLC0415
+
+    concat = getattr(session.backend, "concat", None)
+    reads: dict[int, object] = {}
+    resources = LocalResources()
+    try:
+        for nid, data in sources_read(arrays).items():
+            if not isinstance(data, PartitionedSource):
+                continue
+            columns = declared_columns(data, arrays)
+            if columns is None:
+                columns = read_columns(arrays, nid)
+            if columns is None:
+                continue
+            partitions = data.partitions(1)
+            if len(partitions) == 1:
+                reads[nid] = data.read_partition(partitions[0], columns, resources)
+            elif concat is not None:
+                reads[nid] = concat([data.read_partition(p, columns, resources) for p in partitions])
+    finally:
+        resources.close()
+    return reads
+
+
+def materialize(arrays: Any) -> Any:
+    """Evaluate ``arrays`` in this process: an :class:`Array`, or any nesting of lists, tuples
+    (named ones keep their type) and mappings holding them (other items pass through), recorded in
+    any number of Sessions. Returns the same structure with each Array replaced by its value; the
+    Arrays of one Session evaluate every node they share once, and read only the source columns
+    they use, as a plan over them would. Evaluation only: running on an executor is a plan's job
+    (:func:`graphed.aggregate_plan`, :func:`graphed.collate`)."""
+    found: dict[Session, list[Array]] = {}
+    _replace_arrays(arrays, lambda a: found.setdefault(a.session, []).append(a))
+    memos = {session: _projected_reads(session, outs) for session, outs in found.items()}
+    return _replace_arrays(arrays, lambda a: a.session.materialize(a, memo=memos[a.session]))

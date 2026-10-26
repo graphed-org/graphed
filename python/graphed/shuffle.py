@@ -45,7 +45,7 @@ from .projection import read_columns
 from .services import Bindable, Resolvable, bind_externals
 from .session import Session
 from .varied import refuse_boundary
-from .write import PartitionedSource, declared_columns
+from .write import PartitionedSource, declared_columns, sources_read
 
 V = TypeVar("V")
 #: a plan's ``(reduce, combine, empty)``
@@ -100,7 +100,9 @@ def join(left: Array, right: Array, *, on: Sequence[str], how: str = "inner") ->
     side's key, never null). ``how`` ∈ {inner, left, right, outer} (SQL/pandas relational semantics)."""
     refuse_boundary("graphed.join", left, right)
     if left.session is not right.session:
-        raise GraphedError("join: left and right must belong to the same Session")
+        raise GraphedError(
+            "join: left and right must belong to the same Session; record both into one (a reader's session=)"
+        )
     session = left.session
     lk = pack_key(left, on=on)
     rk = pack_key(right, on=on)
@@ -327,11 +329,11 @@ def _build(
             if is_join
             else "shuffle_plan needs a repartition Exchange in the graph (use graphed.repartition)"
         )
-    partitioned = {nid: d for nid, d in session.sources().items() if isinstance(d, PartitionedSource)}
+    partitioned = {nid: d for nid, d in sources_read([output]).items() if isinstance(d, PartitionedSource)}
     if len(partitioned) != (2 if is_join else 1):
         raise TypeError(
             f"{builder} needs exactly {'two' if is_join else 'one'} partitioned source"
-            f"{'s' if is_join else ''}; this session has {len(partitioned)}"
+            f"{'s' if is_join else ''}; the output reads {len(partitioned)}"
         )
     barrier = barriers[0]
     params = dict(nodes[barrier]["params"])

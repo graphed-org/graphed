@@ -225,7 +225,7 @@ def to_parquet(
             "column — write varied skims through the awkward backend (graphed.awkward.to_parquet)"
         )
     session: Session = array.session
-    sources = session.sources()
+    sources = gw.sources_read([array])
     if len(sources) != 1:
         raise TypeError(f"to_parquet needs an array recorded over exactly one source, got {len(sources)}")
     ((node_id, data),) = sources.items()

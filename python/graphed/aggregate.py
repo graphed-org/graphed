@@ -41,7 +41,7 @@ from .projection import read_columns
 from .services import Bindable, Resolvable, ServiceSpec, bind_externals, referenced_services
 from .session import Session
 from .varied import refuse_container
-from .write import PartitionedSource, PartWrite, declared_columns, join_part, prepare_part
+from .write import PartitionedSource, PartWrite, declared_columns, join_part, prepare_part, sources_read
 
 T = TypeVar("T")
 V = TypeVar("V")
@@ -407,11 +407,14 @@ def aggregate_plan(
     arrays = [*outputs, *(w.array for w in writes), *(v for v in metadata if isinstance(v, Array))]
     session = arrays[0].session
     if any(a.session is not session for a in arrays):
-        raise TypeError("all outputs of one plan must record into one session")
-    partitioned = {nid: d for nid, d in session.sources().items() if isinstance(d, PartitionedSource)}
+        raise TypeError(
+            "all outputs of one plan must record into one session; collate one plan per Session"
+            " (graphed.collate)"
+        )
+    partitioned = {nid: d for nid, d in sources_read(arrays).items() if isinstance(d, PartitionedSource)}
     if len(partitioned) != 1:
         raise TypeError(
-            f"aggregate_plan needs exactly one partitioned source; this session has {len(partitioned)}"
+            f"aggregate_plan needs exactly one partitioned source; the outputs read {len(partitioned)}"
         )
     ((nid, data),) = partitioned.items()
     compiled = _compile_at(opt_level, session, arrays)

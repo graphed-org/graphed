@@ -4,6 +4,23 @@ What changed
 Newest release first. Numbers in parentheses are the pull requests on
 `graphed-org/graphed <https://github.com/graphed-org/graphed>`_.
 
+0.0.10 (unreleased)
+-------------------
+
+Several datasets in one Session
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``aggregate_plan``, ``shuffle_plan``, ``join_plan``, the awkward and numpy ``to_parquet`` and
+  the varied write count only the sources their outputs read, so one Session can record several
+  datasets (a reader's ``session=``) and join them (#103).
+* ``Session.source`` refuses a name reused with another form or another data object: the second
+  binding was silently dropped, so ``from_awkward(s, "x", B)`` after ``from_awkward(s, "x", A)``
+  evaluated ``A`` (#103).
+* ``graphed.materialize(arrays)`` evaluates Arrays from any number of Sessions in this process,
+  alone or nested in lists, tuples and dicts, as ``dask.compute`` takes them. It reads only the
+  source columns those Arrays use, as a plan over them would. A plan over several Sessions is
+  ``graphed.collate``, which ``aggregate_plan``'s refusal now names (#103).
+
 0.0.9
 -----
 
