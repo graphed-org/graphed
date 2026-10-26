@@ -29,3 +29,10 @@ opt-level = 3
 # `loom` is a custom cfg enabled only when model-checking the locking discipline.
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }
+
+# Each site judged safe from a lint below carries a scoped #[allow] stating why.
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+expect_used = "warn"
+indexing_slicing = "warn"

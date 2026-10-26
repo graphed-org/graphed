@@ -52,7 +52,7 @@ pub(crate) type Landing = (NodeId, Option<usize>);
 /// dropped the node.
 pub(crate) type NodeMap = Vec<Option<Landing>>;
 
-/// The reduced graph: interned NodeKeys (topological), remapped outputs, and the report.
+/// The reduced graph: interned `NodeKey`s (topological), remapped outputs, and the report.
 pub(crate) struct Reduced {
     pub nodes: Vec<NodeKey>,
     pub outputs: Vec<NodeId>,
@@ -62,7 +62,7 @@ pub(crate) struct Reduced {
 }
 
 /// Run the full reduction with an explicit fusion mode (see [`FusionMode`]). `nodes` is the
-/// interned arena (topological by id); `outputs` are marked output ids. Returns reduced NodeKeys
+/// interned arena (topological by id); `outputs` are marked output ids. Returns reduced `NodeKey`s
 /// whose inputs reference indices *within the returned list*.
 #[allow(
     clippy::indexing_slicing,
@@ -112,7 +112,7 @@ pub(crate) const DROPPED: usize = usize::MAX;
 /// and the `remap` vector itself (`DROPPED` for a node this pass dropped).
 #[allow(
     clippy::indexing_slicing,
-    reason = "callers pass outputs below nodes.len(), and the store keeps every input below its node"
+    reason = "callers bound the outputs, and the store keeps each input below its node"
 )]
 pub(crate) fn dead_code_elimination(
     nodes: &[NodeKey],
@@ -234,7 +234,7 @@ impl Dsu {
 /// its index in that stage's sorted member list. Both are already computed to build the stages.
 #[allow(
     clippy::indexing_slicing,
-    reason = "components are reduced in topological order, so every input's component is already mapped"
+    reason = "components reduce in topological order, so each input's component is mapped"
 )]
 fn stage_fusion(
     graph: &EngineGraph,
@@ -436,7 +436,12 @@ fn fuse_stage(
     }
 }
 
-#[cfg(all(test, not(loom)))]
+#[cfg(test)]
+#[cfg(not(loom))]
+#[allow(
+    clippy::many_single_char_names,
+    reason = "test graphs name their nodes a, b, c as the plan's examples do"
+)]
 mod tests {
     use super::*;
     use crate::node::StageRef;
@@ -749,7 +754,7 @@ mod tests {
         let (reduced, _) = s.reduce(&EggEngine::default());
         let (rn, ro) = reduced.snapshot();
         // hub = x+1 = 3; each leaf = hub + 1 = 4; out = sum = n*4
-        let expect = vec![(n as i64) * 4];
+        let expect = vec![i64::try_from(n).unwrap() * 4];
         assert_eq!(eval(&nodes, &outs, &sd), expect);
         assert_eq!(eval(&rn, &ro, &sd), expect);
         // the hub is a single shared node feeding all N leaves

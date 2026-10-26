@@ -143,7 +143,7 @@ impl GraphStore {
         })
     }
 
-    /// Record an `Exchange` boundary (plan M39): its `scheme` ParamMap is its identity, its one
+    /// Record an `Exchange` boundary (plan M39): its `scheme` `ParamMap` is its identity, its one
     /// logical `input` is the partition it repartitions.
     pub(crate) fn add_exchange(
         &self,
@@ -210,7 +210,7 @@ impl GraphStore {
     #[allow(
         clippy::expect_used,
         clippy::indexing_slicing,
-        reason = "a Reduced graph is topological, so map holds every input, output and landing it names"
+        reason = "a Reduced graph is topological, so map holds every id it names"
     )]
     pub(crate) fn from_reduced(red: optimizer::Reduced) -> (Self, ReductionReport) {
         let store = Self::new();
@@ -269,8 +269,9 @@ impl GraphStore {
         )))
     }
 
-    /// opt_level=0 (M6): the 1:1 cone of `outputs` — M4's DCE without the rewrites — rebuilt into a
-    /// fresh store marked with `outputs`, whose `node_map` sends each kept id to `(cone id, None)`.
+    /// `opt_level=0` (M6): the 1:1 cone of `outputs` — M4's DCE without the rewrites — rebuilt into
+    /// a fresh store marked with `outputs`, whose `node_map` sends each kept id to
+    /// `(cone id, None)`.
     pub(crate) fn cone(&self, outputs: &[NodeId]) -> Result<Self, BadNodeId> {
         let nodes = self.arena_holding(outputs)?;
         let (kept, outs, remap) = optimizer::dead_code_elimination(&nodes, outputs);
@@ -330,7 +331,12 @@ fn escape(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
-#[cfg(all(test, not(loom)))]
+#[cfg(test)]
+#[cfg(not(loom))]
+#[allow(
+    clippy::many_single_char_names,
+    reason = "test graphs name their nodes a, b, c as the plan's examples do"
+)]
 mod tests {
     use super::*;
 
@@ -394,7 +400,7 @@ mod tests {
                 optimizer::FusionMode::SingleUse,
             )
             .unwrap();
-        let (reference, _) = {
+        let (reference, ()) = {
             let (s2, _a2, b2) = build();
             s2.mark_output(b2).unwrap();
             (s2.reduce(&EggEngine::default()).0, ())

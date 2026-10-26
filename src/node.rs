@@ -76,7 +76,7 @@ pub(crate) enum NodeKey {
     },
     /// A pure data-movement boundary (plan M39 §2.1): its one logical input's rows are
     /// repartitioned according to `scheme` (hash|range|coalesce|split, key, parts, seed, …). Its
-    /// identity IS its `scheme` ParamMap — it is NOT an `Op`, so it interns/CSEs like every node,
+    /// identity IS its `scheme` `ParamMap` — it is NOT an `Op`, so it interns/CSEs like every node,
     /// ends a stage (fusion never crosses it), and survives reduction as itself.
     Exchange {
         scheme: ParamMap,
@@ -318,7 +318,7 @@ mod tests {
         assert_eq!(rejoined.inputs(), &[3, 4]);
         match rejoined {
             NodeKey::Join { scheme, .. } => {
-                assert_eq!(scheme, pm(vec![("how", ParamValue::Str("inner".into()))]))
+                assert_eq!(scheme, pm(vec![("how", ParamValue::Str("inner".into()))]));
             }
             _ => panic!("with_inputs must not change the variant"),
         }

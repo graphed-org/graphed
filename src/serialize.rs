@@ -273,7 +273,7 @@ impl<'a> Reader<'a> {
         let n = self.u32()? as usize;
         let b = self.take(n)?;
         std::str::from_utf8(b)
-            .map(|s| s.to_string())
+            .map(std::string::ToString::to_string)
             .map_err(|_| DecodeError::BadUtf8)
     }
     fn params(&mut self) -> Result<ParamMap, DecodeError> {
@@ -434,7 +434,8 @@ pub(crate) fn deserialize(data: &[u8]) -> Result<GraphStore, DecodeError> {
     Ok(store)
 }
 
-#[cfg(all(test, not(loom)))]
+#[cfg(test)]
+#[cfg(not(loom))]
 mod tests {
     use super::*;
     use crate::param::ParamValue::{Float, Int, Str};

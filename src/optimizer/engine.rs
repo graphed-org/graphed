@@ -99,7 +99,7 @@ impl Default for EggEngine {
 impl RewriteEngine for EggEngine {
     #[allow(
         clippy::indexing_slicing,
-        reason = "inputs precede their node, so each input's e-class and class representative already exist"
+        reason = "inputs precede their node, so each input's e-class and representative exist"
     )]
     fn canonicalize(&self, graph: &EngineGraph) -> (EngineGraph, Vec<usize>) {
         // 1. load the DAG into an e-graph, recording each node's eclass (topo order).

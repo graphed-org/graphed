@@ -221,7 +221,7 @@ impl PyGraphStore {
     }
 
     /// Record an `Exchange` boundary (plan M39 §2.1). No `name` — an Exchange's identity is its
-    /// `scheme` ParamMap (`params`) + its one logical input; `nodes()[i]["kind"] == "exchange"`.
+    /// `scheme` `ParamMap` (`params`) + its one logical input; `nodes()[i]["kind"] == "exchange"`.
     #[pyo3(signature = (inputs, params=None))]
     fn add_exchange(
         &self,
@@ -233,7 +233,7 @@ impl PyGraphStore {
     }
 
     /// Record a `Join` boundary (plan M40 §2.1). Two inputs `[left, right]`; identity is its
-    /// `scheme` ParamMap (`params`) + its ordered inputs; `nodes()[i]["kind"] == "join"`.
+    /// `scheme` `ParamMap` (`params`) + its ordered inputs; `nodes()[i]["kind"] == "join"`.
     #[pyo3(signature = (inputs, params=None))]
     fn add_join(&self, inputs: Vec<NodeId>, params: Option<&Bound<'_, PyAny>>) -> PyResult<NodeId> {
         let p = params_from_py(params)?;
@@ -377,16 +377,20 @@ impl PyGraphStore {
         self.store.node_map()
     }
 
-    /// opt_level=0 (M6): the 1:1 cone of `outputs` — DCE without the rewrites — as a fresh store
+    /// `opt_level=0` (M6): the 1:1 cone of `outputs` — DCE without the rewrites — as a fresh store
     /// marked with `outputs`; its `node_map` sends each kept id to `(cone id, None)`.
     #[pyo3(signature = (*, outputs))]
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "pyo3 extracts a Python sequence only into an owned Vec"
+    )]
     fn cone(&self, outputs: Vec<NodeId>) -> PyResult<Self> {
         let store = self.store.cone(&outputs)?;
         Ok(Self { store })
     }
 
     /// Reduce via the M4 optimizer (DCE + CSE + equality-saturation stage fusion behind
-    /// RewriteEngine). Returns the reduced store and a report dict. `maximal_fusion=True` opts in
+    /// `RewriteEngine`). Returns the reduced store and a report dict. `maximal_fusion=True` opts in
     /// to fusing fan-out ops whose consumers all land in one stage (the default single-use rule is
     /// pinned by the frozen M4 suite).
     #[pyo3(signature = (*, maximal_fusion=false, outputs=None))]
@@ -489,7 +493,7 @@ fn report_to_map(r: &ReductionReport) -> std::collections::HashMap<String, usize
 
 /// Genuinely incremental reduction (plan §A.1): feed it a store as the graph is being built; each
 /// `step` canonicalizes ONLY the nodes recorded since the last step (identity elimination,
-/// commutativity dedup, hash-consing — the same sound rules the EggEngine runs), so a concise
+/// commutativity dedup, hash-consing — the same sound rules the `EggEngine` runs), so a concise
 /// canonical form is maintained while building and `finalize` does one linear pass instead of a
 /// whole-history optimization. `total_work()` counts nodes processed across all steps — it equals
 /// the node count of the store, no matter how many steps fed it (the incrementality witness).

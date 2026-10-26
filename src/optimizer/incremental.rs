@@ -140,7 +140,12 @@ impl IncrementalReducer {
     }
 }
 
-#[cfg(all(test, not(loom)))]
+#[cfg(test)]
+#[cfg(not(loom))]
+#[allow(
+    clippy::many_single_char_names,
+    reason = "test graphs name their nodes a, b, c as the plan's examples do"
+)]
 mod tests {
     use super::*;
     use crate::optimizer::EggEngine;
