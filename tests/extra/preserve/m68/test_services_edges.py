@@ -1,7 +1,7 @@
 """Service-surface edges the frozen m68 suite leaves untaken.
 
-Pickling (specs ride a stdlib-pickled ``Plan`` to a driver job; ``UnboundService`` crosses back
-from a worker), two more refused endpoint forms, a literal Triton url whose scheme no client
+Pickling (specs ride a stdlib-pickled ``Plan`` to a driver job; ``UnboundServiceError`` crosses
+back from a worker), two more refused endpoint forms, a literal Triton url whose scheme no client
 speaks, a hashable spec with a recipe, and a ``RunReport`` pickled before it had ``endpoints``.
 """
 
@@ -15,7 +15,7 @@ import pytest
 from graphed.core import Partition, Plan, WorkerResources
 from graphed.preserve import PreserveError
 from graphed.preserve.externals.triton_external import load_triton
-from graphed.services import Launch, ServiceSpec, UnboundService, split_endpoint
+from graphed.services import Launch, ServiceSpec, UnboundServiceError, split_endpoint
 
 
 def _process(partition: Partition, resources: WorkerResources) -> list[int]:
@@ -40,9 +40,9 @@ def test_a_plan_with_a_recipe_pickles() -> None:
 
 
 def test_unbound_service_pickles_with_its_name() -> None:
-    err = pickle.loads(pickle.dumps(UnboundService("svc")))
+    err = pickle.loads(pickle.dumps(UnboundServiceError("svc")))
     assert err.name == "svc"
-    assert str(err) == str(UnboundService("svc"))
+    assert str(err) == str(UnboundServiceError("svc"))
 
 
 @pytest.mark.parametrize(

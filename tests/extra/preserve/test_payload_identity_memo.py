@@ -56,12 +56,12 @@ def _count_parses(
 
 def _onnx_model(weight: float) -> bytes:
     onnx = pytest.importorskip("onnx")
-    helper, numpy_helper, TensorProto = onnx.helper, onnx.numpy_helper, onnx.TensorProto
+    helper, numpy_helper = onnx.helper, onnx.numpy_helper
 
     w = numpy_helper.from_array(np.array([[weight]], dtype=np.float32), name="W")
     b = numpy_helper.from_array(np.array([0.0], dtype=np.float32), name="B")
-    x = helper.make_tensor_value_info("x", TensorProto.FLOAT, [None, 1])
-    y = helper.make_tensor_value_info("y", TensorProto.FLOAT, [None, 1])
+    x = helper.make_tensor_value_info("x", onnx.TensorProto.FLOAT, [None, 1])
+    y = helper.make_tensor_value_info("y", onnx.TensorProto.FLOAT, [None, 1])
     graph = helper.make_graph(
         [helper.make_node("Gemm", ["x", "W", "B"], ["y"])], "m", [x], [y], initializer=[w, b]
     )

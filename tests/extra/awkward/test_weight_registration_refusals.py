@@ -162,7 +162,7 @@ def _colliding_shapes() -> tuple[tuple[int, ...], tuple[int, ...]]:
     pytest.fail("awkward's type repr no longer abbreviates; the memo-key collision is unreachable")
 
 
-def test_a_factor_whose_form_only_LOOKS_like_a_memoised_one_is_still_refused() -> None:
+def test_a_factor_whose_form_only_looks_like_a_memoised_one_is_still_refused() -> None:
     """The running-form memo keys on the `Form` protocol's `describe()`, never on `str(form)`.
 
     An abbreviating repr makes two forms that multiply DIFFERENTLY render alike, so a `str` key
@@ -218,7 +218,7 @@ def test_a_factor_whose_form_only_LOOKS_like_a_memoised_one_is_still_refused() -
     assert "C_up" in graphed.labels(graphed.weight(ok))
 
 
-def test_a_variation_member_whose_form_only_LOOKS_like_the_central_one_is_refused() -> None:
+def test_a_variation_member_whose_form_only_looks_like_the_central_one_is_refused() -> None:
     """A member whose form only RENDERS like the central universe's is still checked.
 
     `check_members`' compatibility fast path is the same class as the memo key, one registration
@@ -308,7 +308,7 @@ def test_a_rolled_back_mint_leaves_no_resolution_the_restored_registry_no_longer
     assert restricted.node_id != _two_level(factor, "nominal").node_id, "the two answers coincide"
 
 
-def test_a_valid_pair_that_only_LOOKS_clashing_through_the_running_nominal_still_registers() -> (
+def test_a_valid_pair_that_only_looks_clashing_through_the_running_nominal_still_registers() -> (
     None
 ):
     """The other end of the same class.

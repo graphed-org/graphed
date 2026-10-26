@@ -169,9 +169,9 @@ def test_the_plan_ships_to_a_process_pool() -> None:
 
     The pre-fix local closure raised ``Can't get local object`` on plan submission.
     """
-    ProcessPoolExecutor = pytest.importorskip("graphed_exec_local").ProcessPoolExecutor
+    local = pytest.importorskip("graphed_exec_local")
     seq = _totals(SequentialRunner())
-    par = _totals(ProcessPoolExecutor(max_workers=2))
+    par = _totals(local.ProcessPoolExecutor(max_workers=2))
     assert np.allclose(par, seq, rtol=1e-12, atol=0)
 
 

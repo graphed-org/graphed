@@ -65,7 +65,7 @@ def test_a_bare_histogram_reads_as_the_single_label_nominal() -> None:
         graphed.universe(hist, "jes_up")
 
 
-def test_a_plain_Array_is_refused_by_both_verbs_rather_than_read_as_one_universe() -> None:
+def test_a_plain_array_is_refused_by_both_verbs_rather_than_read_as_one_universe() -> None:
     """Answering `("nominal",)` here would let a DROPPED container read as a legal single universe.
 
     The §2.5 silent drop this refusal exists to prevent.

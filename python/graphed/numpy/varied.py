@@ -50,7 +50,7 @@ class NumpyVaried(Varied):
         return nominal(self).ndim
 
     @property
-    def T(self) -> Any:
+    def T(self) -> Any:  # noqa: N802 - numpy parity name
         """Each member's transpose."""
         return expand(lambda member: member.T, (self,), {})
 

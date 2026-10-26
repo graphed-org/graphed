@@ -150,7 +150,7 @@ class NumpyArray(Array):
         return self._session.record_op("transpose", [self], params)
 
     @property
-    def T(self) -> Array:  # numpy parity name
+    def T(self) -> Array:  # noqa: N802 - numpy parity name
         """The transpose, as numpy's ``.T``."""
         return self.transpose()
 

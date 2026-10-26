@@ -26,7 +26,7 @@ def test_an_external_over_the_whole_record_makes_one_graph_conservative() -> Non
     assert read_columns([mixed], record.node_id) is None
 
 
-def test_an_external_over_FIELDS_alone_still_narrows() -> None:
+def test_an_external_over_fields_alone_still_narrows() -> None:
     """The control that keeps the fix from degenerating into "any External reads everything".
 
     Projection must still flow through an External to its declared field inputs.

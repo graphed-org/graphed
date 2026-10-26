@@ -60,12 +60,17 @@ _TASK_DOMAIN = b"graphed-exec-task-v1"
 _ENV_DOMAIN = "graphed-env"
 
 
-class StoreUnavailable(RuntimeError):
+class StoreUnavailableError(RuntimeError):
     """A worker could not open, read or write the checkpoint store."""
 
 
-class EnvironmentChanged(ValueError):
+class EnvironmentChangedError(ValueError):
     """The store's environment record for this salt differs from the running environment."""
+
+
+# The pre-0.0.10 names, kept for graphed-executors, which still imports them.
+StoreUnavailable = StoreUnavailableError
+EnvironmentChanged = EnvironmentChangedError
 
 
 # ---- the task key -----------------------------------------------------------------------------
@@ -471,7 +476,7 @@ def _guarded(root: str, call: Callable[[], _T]) -> _T:
     try:
         return call()
     except Exception as exc:
-        raise StoreUnavailable(
+        raise StoreUnavailableError(
             f"checkpoint store {root} is unavailable: {type(exc).__name__}: {exc}"
         ) from exc
 
@@ -597,7 +602,7 @@ def check_environment(
     """Hold ``store``'s environment record for ``salt`` against this environment.
 
     The record comes from the ``completed()`` mapping ``done``: none is written as record 1; one
-    equal to the record in force passes; any other raises :class:`EnvironmentChanged`, unless
+    equal to the record in force passes; any other raises :class:`EnvironmentChangedError`, unless
     ``accept`` writes this one next.
     """
     mine = _environment()
@@ -619,7 +624,7 @@ def check_environment(
             for blob in sorted(in_force - {digest})
             for change in _changes(json.loads(store.get(blob) or b"{}"), new)
         ]
-        raise EnvironmentChanged(
+        raise EnvironmentChangedError(
             "this environment differs from the one the checkpoint store recorded "
             f"({'; '.join(changes)}); pass accept_environment=True to resume in this one, or use "
             "a new salt or store"
@@ -795,7 +800,7 @@ def resumable(
     The returned process (each stage's) has ``reused``, the tasks the store held. A plan without a
     fixed task set, an already-resumable one, one with ``services`` whose process does not declare
     ``checkpointable``, and a process that cannot be keyed are refused with ``TypeError`` before
-    any store I/O. A store whose environment record differs raises :class:`EnvironmentChanged`
+    any store I/O. A store whose environment record differs raises :class:`EnvironmentChangedError`
     unless ``accept_environment``.
     """
     codec = PickleCodec() if codec is None else codec

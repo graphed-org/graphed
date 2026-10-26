@@ -22,7 +22,7 @@ from .bundle import (
     inspect,
     reproduce,
 )
-from .errors import PreserveError, UnresolvedPayload
+from .errors import PreserveError, UnresolvedPayloadError
 from .externals import (
     CORRECTIONLIB_PLUGIN,
     HISTOGRAM_PLUGIN,
@@ -57,7 +57,7 @@ __all__ = [
     "ExternalPlugin",
     "PreserveError",
     "ResourceCache",
-    "UnresolvedPayload",
+    "UnresolvedPayloadError",
     "attach_run_report",
     "build_bundle",
     "canonical_bytes",

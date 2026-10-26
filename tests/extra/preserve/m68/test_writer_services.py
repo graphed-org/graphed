@@ -18,7 +18,7 @@ from graphed import Session
 from graphed.awkward import AwkwardBackend, from_awkward, gak
 from graphed.core import Plan, SequentialRunner
 from graphed.preserve import ExternalPlugin, record_external, sha256_bytes
-from graphed.services import ServiceSpec, UnboundService, bind_services
+from graphed.services import ServiceSpec, UnboundServiceError, bind_services
 
 pytest.importorskip("pyarrow")
 
@@ -60,7 +60,7 @@ def test_a_write_plan_carries_and_binds_its_services(
 ) -> None:
     plan: Plan[list[str]] = write(str(tmp_path / "out"))
     assert plan.services == (SPEC,)
-    with pytest.raises(UnboundService, match="svc"):
+    with pytest.raises(UnboundServiceError, match="svc"):
         SequentialRunner().run(plan)
     bound = bind_services(plan, {"svc": "http://h:8000"})
     process: Any = bound.process

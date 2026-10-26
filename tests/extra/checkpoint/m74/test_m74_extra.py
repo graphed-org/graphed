@@ -23,7 +23,7 @@ from typing import Any
 import cloudpickle
 import pytest
 
-from graphed.checkpoint import EnvironmentChanged, Store, check_resumable, resumable
+from graphed.checkpoint import EnvironmentChangedError, Store, check_resumable, resumable
 from graphed.checkpoint import resume as rs
 from graphed.core import (
     DurablePlanV2,
@@ -163,7 +163,7 @@ def test_the_environment_record_in_process(
     before = _files(root)
     monkeypatch.syspath_prepend(str(_dist(dists, "zzfake", "1.0")))
     monkeypatch.setattr(sys.implementation, "cache_tag", "cpython-00")
-    with pytest.raises(EnvironmentChanged) as info:
+    with pytest.raises(EnvironmentChangedError) as info:
         resumable(_plan(lambda p, r: 2.0), str(root))
     assert "zzfake 1.0 added" in str(info.value)
     assert "-> cpython-00" in str(info.value)

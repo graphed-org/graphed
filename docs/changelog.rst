@@ -21,6 +21,13 @@ Several datasets in one Session
   source columns those Arrays use, as a plan over them would. A plan over several Sessions is
   ``graphed.collate``, which ``aggregate_plan``'s refusal now names (#103).
 
+Exceptions are named ``…Error``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* PEP 8 names: ``StoreUnavailableError``, ``EnvironmentChangedError`` (``graphed.checkpoint``),
+  ``UnboundServiceError`` (``graphed.services``) and ``UnresolvedPayloadError``
+  (``graphed.preserve``). The first three keep their old names as aliases.
+
 0.0.9
 -----
 

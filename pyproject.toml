@@ -114,7 +114,7 @@ src = ["python", "tests"]
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM", "C4", "RUF", "PLC0415", "D"]
+select = ["E", "F", "I", "UP", "B", "SIM", "C4", "RUF", "PLC0415", "N", "D"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "pep257"
@@ -124,7 +124,7 @@ convention = "pep257"
 "tests/**" = ["D100", "D101", "D102", "D103", "D104", "D105", "D106", "D107"]
 "conftest.py" = ["D100", "D101", "D102", "D103", "D104", "D105", "D106", "D107"]
 # The frozen suites are restyled in their own refreeze commit.
-"tests/frozen/**" = ["I001", "RUF100", "E501", "D"]
+"tests/frozen/**" = ["I001", "RUF100", "E501", "D", "N"]
 
 [tool.ruff.format]
 # Immutable frozen suites (tests/frozen/**) are read-only under the §A.7 integrity rule, so they

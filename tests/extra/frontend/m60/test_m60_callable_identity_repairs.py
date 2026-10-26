@@ -355,7 +355,7 @@ def test_two_callables_their_class_calls_equal_are_still_two_nodes(
     assert (session.materialize(first), session.materialize(second)) == (a(DATUM), b(DATUM))
 
 
-def test_a_method_wrapper_recorded_twice_is_never_a_WRONG_answer() -> None:
+def test_a_method_wrapper_recorded_twice_is_never_a_wrong_answer() -> None:
     """The accepted ceiling.
 
     A method-wrapper is not a `types.MethodType`, so a re-access may mint a second node. However

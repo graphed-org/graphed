@@ -28,7 +28,7 @@ from graphed.provenance import Provenance
 from graphed.services import referenced_services
 from graphed.session import CheckedExternal
 
-from .errors import PreserveError, UnresolvedPayload
+from .errors import PreserveError, UnresolvedPayloadError
 from .externals import ResourceCache, evaluate_external, get_plugin
 from .interpreter import run_ir
 from .manifest import FORMAT_VERSION, canonical_bytes, fingerprint
@@ -186,7 +186,7 @@ def _render_services(specs: Sequence[Mapping[str, Any]]) -> list[str]:
 def _resolve(store: Store, content_hash: str, *, what: str) -> bytes:
     blob = store.get(content_hash)
     if blob is None:
-        raise UnresolvedPayload(content_hash, what=what)
+        raise UnresolvedPayloadError(content_hash, what=what)
     return blob
 
 
@@ -342,8 +342,8 @@ def reproduce(bundle: Bundle) -> Any:
     """Re-instantiate and run the preserved analysis from references alone; return its histogram.
 
     Resolves the IR, datasets, and correction/model payloads from the bundle's content-addressed
-    store (raising :class:`UnresolvedPayload` for anything missing), interprets the IR through the
-    awkward backend + payload-backed external evaluators, and applies the histogram spec.
+    store (raising :class:`UnresolvedPayloadError` for anything missing), interprets the IR through
+    the awkward backend + payload-backed external evaluators, and applies the histogram spec.
     """
     from graphed.awkward import AwkwardBackend  # noqa: PLC0415
     from graphed.awkward.backend import canonical_output_type  # noqa: PLC0415
@@ -360,7 +360,7 @@ def reproduce(bundle: Bundle) -> Any:
         name = node["name"]
         h = m["sources"].get(name)
         if h is None:
-            raise UnresolvedPayload(name, what="dataset for source")
+            raise UnresolvedPayloadError(name, what="dataset for source")
         if name not in data_cache:
             data_cache[name] = _unpack_array(_resolve(store, h, what="dataset"))
         return data_cache[name]

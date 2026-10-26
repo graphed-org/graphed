@@ -37,7 +37,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Any
 
-from ...services import UnboundService
+from ...services import UnboundServiceError
 from ..errors import PreserveError
 
 ContentHash = Callable[[bytes], str]
@@ -344,14 +344,14 @@ class _PluginEvaluator:
             return self
         endpoint = endpoints.get(name, self.endpoint)  # binding adds endpoints, never drops one
         if endpoint is None:
-            raise UnboundService(str(name))
+            raise UnboundServiceError(str(name))
         return replace(self, endpoint=endpoint)
 
     def __call__(self, *values: Any) -> Any:
         params = self.node_params
         if "service" in params:
             if self.endpoint is None:
-                raise UnboundService(str(params["service"]))
+                raise UnboundServiceError(str(params["service"]))
             params = {**params, "url": self.endpoint}
         key = (
             self.plugin.kind,

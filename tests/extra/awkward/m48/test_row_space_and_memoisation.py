@@ -121,7 +121,7 @@ def test_a_vary_identity_link_leaves_the_target_and_its_handle_alone() -> None:
 
 
 # ---- F2: the weight form's duplicate-label check --------------------------------------------
-def test_a_weight_label_colliding_with_the_ambient_registry_under_ANOTHER_name_is_refused() -> (
+def test_a_weight_label_colliding_with_the_ambient_registry_under_another_name_is_refused() -> (
     None
 ):
     """The cross-name prefix collision.
@@ -151,7 +151,7 @@ def test_the_same_name_family_check_still_fires_and_a_fresh_label_still_register
 
 
 # ---- F3: the derivation memo must separate two masks that share a nominal --------------------
-def test_two_varied_masks_sharing_a_nominal_derive_DIFFERENT_contexts() -> None:
+def test_two_varied_masks_sharing_a_nominal_derive_different_contexts() -> None:
     """The memo key covers every member's node id.
 
     Keyed on the nominal alone, `ctx[mask_b]` silently answers with `ctx[mask_a]`'s child and every
@@ -191,7 +191,7 @@ def test_a_shift_varied_context_whose_universes_are_all_filled_reports_nothing()
     assert compiled.unreached_labels == ()
 
 
-def test_a_context_borne_label_that_reaches_no_output_IS_reported() -> None:
+def test_a_context_borne_label_that_reaches_no_output_is_reported() -> None:
     """The other direction, on the same channel: registered through a context, never filled."""
     session, events = events_context()
     shifted = graphed.vary(events, "jes", **jes_kwargs(events))
@@ -200,7 +200,7 @@ def test_a_context_borne_label_that_reaches_no_output_IS_reported() -> None:
 
 
 # ---- A-1/D3-1: the weight form's duplicate check keys on family NAME, over all three carriers -
-def test_a_correlated_weight_after_a_shift_is_accepted_in_BOTH_registration_orders() -> None:
+def test_a_correlated_weight_after_a_shift_is_accepted_in_both_registration_orders() -> None:
     """The ambient container's members are the §2.4 union.
 
     Shift and selection labels included — so a check keyed on them refuses `vary(ctx, "jes", up=…)`
@@ -219,7 +219,7 @@ def test_a_correlated_weight_after_a_shift_is_accepted_in_BOTH_registration_orde
     assert set(graphed.labels(graphed.weight(swapped))) >= {"nominal", "pu_up", "jes_up"}
 
 
-def test_a_weight_duplicate_under_another_name_is_STILL_refused_with_a_shift_present() -> None:
+def test_a_weight_duplicate_under_another_name_is_still_refused_with_a_shift_present() -> None:
     """The WEIGHT arm of the population.
 
     Narrowing the check must not disable it; the shift on the context is what makes this see the
@@ -233,7 +233,7 @@ def test_a_weight_duplicate_under_another_name_is_STILL_refused_with_a_shift_pre
         graphed.vary(first, "sf", weight, is_weight=True, up_x=weight * 3.0)
 
 
-def test_a_SHIFT_carried_label_colliding_under_another_family_is_refused() -> None:
+def test_a_shift_carried_label_colliding_under_another_family_is_refused() -> None:
     """Keyed by carrier KIND, an `sf_up` SHIFT and an `sf` weight compose silently.
 
     Both spell `sf_up_x`: that universe then differs from nominal in the shift's Jet.pt AND the
@@ -247,7 +247,7 @@ def test_a_SHIFT_carried_label_colliding_under_another_family_is_refused() -> No
         graphed.vary(shifted, "sf", weight, is_weight=True, up_x=weight * 3.0)
 
 
-def test_a_SELECTION_carried_label_colliding_under_another_family_is_refused() -> None:
+def test_a_selection_carried_label_colliding_under_another_family_is_refused() -> None:
     """The third carrier.
 
     The label reaches the context through a `Varied` MASK alone, registered on neither the ambient
@@ -262,7 +262,7 @@ def test_a_SELECTION_carried_label_colliding_under_another_family_is_refused() -
         graphed.vary(sel, "sf", weight, is_weight=True, up_x=weight * 3.0)
 
 
-def test_align_re_indexes_an_ancestor_member_across_a_VARIED_mask_link() -> None:
+def test_align_re_indexes_an_ancestor_member_across_a_varied_mask_link() -> None:
     """The F1 witness drives `_align` across an unvaried mask.
 
     This drives the varied-mask path, where each label is re-indexed by THAT label's own mask.
@@ -283,7 +283,7 @@ def test_align_re_indexes_an_ancestor_member_across_a_VARIED_mask_link() -> None
 
 
 # ---- A-2: the duplicate guard must fire before the row-space maps ----------------------------
-def test_a_duplicate_label_shadowing_a_contexted_member_raises_the_DESIGNED_error() -> None:
+def test_a_duplicate_label_shadowing_a_contexted_member_raises_the_designed_error() -> None:
     """Run after `_align`, the collision hides its member's handle from `check_members`.
 
     The container is then left with no handle at all and `_align` dies on an internal

@@ -34,7 +34,7 @@ from graphed.awkward import AwkwardBackend, AwkwardForm, gak
 from graphed.core import Plan
 from graphed.core.execution import SequentialRunner
 from graphed.preserve import ExternalPlugin, record_external, sha256_bytes
-from graphed.services import ServiceSpec, UnboundService, bind_services, require_bound
+from graphed.services import ServiceSpec, UnboundServiceError, bind_services, require_bound
 from graphed.write import PartWrite
 
 SVC = ServiceSpec("svc", "http")
@@ -76,7 +76,7 @@ def _served(files: dict[str, Any], tree: str, spec: ServiceSpec) -> Any:
 
 def _run_bound(plan: Plan[Any], services: tuple[ServiceSpec, ...]) -> Any:
     assert plan.services == services
-    with pytest.raises(UnboundService):
+    with pytest.raises(UnboundServiceError):
         SequentialRunner().run(plan)
     return SequentialRunner().run(bind_services(plan, ENDPOINTS)).value
 
@@ -154,7 +154,7 @@ def test_an_unbound_collated_plan_writes_nothing_and_names_every_missing_service
 ) -> None:
     data, mc = _two_sources(tmp_path)
     plan = graphed.collate({"data": data, "mc": mc})
-    with pytest.raises(UnboundService) as err:
+    with pytest.raises(UnboundServiceError) as err:
         SequentialRunner().run(plan)
     assert _written(tmp_path) == []
     assert err.value.names == ("other", "svc")
@@ -167,7 +167,7 @@ def test_a_partly_bound_plan_names_only_the_missing_service(tmp_path: Path) -> N
     plan = graphed.collate(
         {"mc": bind_services(mc, ENDPOINTS), "data": _writes(data_y, tmp_path, "data")}
     )
-    with pytest.raises(UnboundService) as err:
+    with pytest.raises(UnboundServiceError) as err:
         SequentialRunner().run(plan)
     assert _written(tmp_path) == []
     assert err.value.names == ("alt",)
@@ -202,7 +202,7 @@ class _HistReduce:
     def bind_services(self, endpoints: Any) -> _HistReduce:
         endpoint = endpoints.get("hist-svc", self.endpoint)
         if endpoint is None:
-            raise UnboundService("hist-svc")
+            raise UnboundServiceError("hist-svc")
         return _HistReduce(endpoint)
 
 
@@ -212,7 +212,7 @@ def test_a_reduce_only_service_is_refused_before_any_part_is_written(tmp_path: P
     plan = graphed.aggregate_plan(
         reduce=_HistReduce(), combine=add, empty=no_paths, writes=[write], services=["hist-svc"]
     )
-    with pytest.raises(UnboundService) as err:
+    with pytest.raises(UnboundServiceError) as err:
         SequentialRunner().run(plan)
     assert _written(tmp_path) == []
     assert err.value.names == ("hist-svc",)
@@ -225,13 +225,13 @@ class _RefusesItsOwnName:
         return []
 
     def bind_services(self, endpoints: Any) -> Any:
-        raise UnboundService("x")
+        raise UnboundServiceError("x")
 
 
 def test_a_part_refusing_a_name_it_was_handed_raises_instead_of_looping() -> None:
     plan: Plan[list[str]] = Plan(
         process=_RefusesItsOwnName(), combine=add, empty=no_paths, services=(SVC,)
     )
-    with pytest.raises(UnboundService) as err:
+    with pytest.raises(UnboundServiceError) as err:
         require_bound(plan)
     assert err.value.names == ("x",)

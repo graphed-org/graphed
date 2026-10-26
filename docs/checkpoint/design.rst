@@ -577,7 +577,7 @@ runner equals the uninterrupted run bit for bit.
 ``store`` is the root every worker opens, not a store object: a directory, which must be on a
 filesystem every worker mounts, or an fsspec URL with ``storage_options``. Each worker thread
 writes its own journal under it. A worker that cannot reach it raises
-``graphed.checkpoint.StoreUnavailable`` naming the root; errors from your own code pass through
+``graphed.checkpoint.StoreUnavailableError`` naming the root; errors from your own code pass through
 unchanged. ``reused`` on the returned process (on each stage's, for a ``DurablePlanV2``) counts the
 tasks the store held, and the same count is logged at INFO on ``graphed.checkpoint``.
 
@@ -616,7 +616,7 @@ builds (with a behavior dict an import reference names) are in the key too, so e
 **The environment record.** Installed distributions and the interpreter's cache tag are not in
 the key; they are kept in the store, one record per ``salt``. The first run writes it. A later run
 in the same environment resumes; a run in a different one raises
-``graphed.checkpoint.EnvironmentChanged`` naming each distribution added, removed, or changed
+``graphed.checkpoint.EnvironmentChangedError`` naming each distribution added, removed, or changed
 ``old -> new``, before any task runs and without writing anything. ``accept_environment=True``
 records the new environment and resumes, and a new ``salt`` starts its own record. Two first runs
 in two environments on one store leave two records, and both refuse until one is accepted.

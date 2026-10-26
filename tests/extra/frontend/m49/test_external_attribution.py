@@ -32,12 +32,12 @@ REFUSAL = "weight[0] is not at this fill's row space"
 FRAME = ("analysis.py", 42, "run", "h.fill(ev.x, weight=w)")
 
 
-class Boom(RuntimeError):
+class BoomError(RuntimeError):
     pass
 
 
 def _boom(*ins: object) -> object:
-    raise Boom("the payload failed")
+    raise BoomError("the payload failed")
 
 
 def _refuse(*ins: object) -> object:
@@ -114,7 +114,7 @@ def test_a_raw_external_failure_reaches_the_attribution_hook_keyed_by_its_node()
 
 
 def test_an_external_failure_the_hook_declines_re_raises_untouched() -> None:
-    with pytest.raises(Boom):
+    with pytest.raises(BoomError):
         _run(_boom, lambda *_: None)
 
 
@@ -148,7 +148,7 @@ def test_an_unvaried_raw_failure_becomes_a_stage_error_at_the_users_line() -> No
     with pytest.raises(StageError) as excinfo:
         _run(_boom, _worker_hook(None, compiled.correspondence.frames))
     assert excinfo.value.variation == ""
-    assert excinfo.value.cause_type == "Boom"
+    assert excinfo.value.cause_type == "BoomError"
     assert excinfo.value.cause_message == "the payload failed"
     assert excinfo.value.user_frame.lineno == frames[output, None][1]
     assert excinfo.value.partition == "toy://list:0"
@@ -158,7 +158,7 @@ def test_a_frameless_key_still_re_raises_the_original() -> None:
     compiled, output = _compiled()
     others = tuple(e for e in compiled.correspondence.frames if e[0] != (output, None))
     assert others  # the channel is live, it just lacks the failing key
-    with pytest.raises(Boom):
+    with pytest.raises(BoomError):
         _run(_boom, _worker_hook(None, others))
 
 

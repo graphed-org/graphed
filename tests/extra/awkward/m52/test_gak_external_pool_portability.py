@@ -284,13 +284,13 @@ def _plan(build: Any) -> Any:
 # portability -------------------------------------------
 def test_apply_correction_plan_pickles_and_runs_in_a_process_pool() -> None:
     pytest.importorskip("correctionlib")
-    ProcessPoolExecutor = pytest.importorskip("graphed_executors.local").ProcessPoolExecutor
+    local = pytest.importorskip("graphed_executors.local")
 
     pickle.dumps(
         _plan(_correction_universes).process
     )  # pre-fix: AttributeError on the local closure
     seq = SequentialRunner().run(_plan(_correction_universes)).value
-    par = ProcessPoolExecutor(max_workers=2).run(_plan(_correction_universes)).value
+    par = local.ProcessPoolExecutor(max_workers=2).run(_plan(_correction_universes)).value
     assert np.array_equal(par, seq)  # bit-for-bit, not merely close
     assert par.tolist() == GOLDEN_SF_SUMS
 
@@ -301,11 +301,11 @@ def test_legacy_untemplated_apply_correction_plan_pickles_and_runs_in_a_process_
     `args=None` recorded a wrapping lambda pre-fix and would not pickle; now a picklable evaluator
     yields a picklable, pool-runnable plan.
     """
-    ProcessPoolExecutor = pytest.importorskip("graphed_executors.local").ProcessPoolExecutor
+    local = pytest.importorskip("graphed_executors.local")
 
     pickle.dumps(_plan(_legacy_correction).process)  # pre-fix: Can't pickle <locals>.<lambda>
     seq = SequentialRunner().run(_plan(_legacy_correction)).value
-    par = ProcessPoolExecutor(max_workers=2).run(_plan(_legacy_correction)).value
+    par = local.ProcessPoolExecutor(max_workers=2).run(_plan(_legacy_correction)).value
     # allclose, not array_equal: seq and pool combine the per-partition partials in different
     # orders, so a float sum differs by ~1 ULP across executors (measured 4.5e-13) — expected, not
     # a defect.
@@ -329,11 +329,11 @@ def test_a_recorded_kind_with_no_plugin_fails_with_a_clear_message() -> None:
 
 
 def test_onnx_inference_plan_pickles_and_runs_in_a_process_pool() -> None:
-    ProcessPoolExecutor = pytest.importorskip("graphed_executors.local").ProcessPoolExecutor
+    local = pytest.importorskip("graphed_executors.local")
 
     pickle.dumps(_plan(_onnx_score).process)
     seq = SequentialRunner().run(_plan(_onnx_score)).value
-    par = ProcessPoolExecutor(max_workers=2).run(_plan(_onnx_score)).value
+    par = local.ProcessPoolExecutor(max_workers=2).run(_plan(_onnx_score)).value
     assert np.array_equal(par, seq)
     assert float(seq[0]) != 0.0  # the model actually scored something
 

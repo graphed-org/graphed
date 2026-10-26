@@ -587,7 +587,7 @@ Running it again on new data
 reproducibility guarantee, and it does the plainest possible thing: resolve the graph, bind
 each source to its stored dataset, resolve each correction and model through its plugin, and
 walk the operations in order. Anything missing raises
-:class:`~graphed.preserve.errors.UnresolvedPayload` and the run stops.
+:class:`~graphed.preserve.errors.UnresolvedPayloadError` and the run stops.
 
 Re-*targeting* is the more interesting move, and the bundle supports it because the preserved
 graph still carries its output marks. Feed that graph back through the optimizer and it reduces

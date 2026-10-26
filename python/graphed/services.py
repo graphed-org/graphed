@@ -128,7 +128,7 @@ class ServiceSpec:
         return cls(**{**doc, "launch": None if launch is None else Launch.from_json(launch)})
 
 
-class UnboundService(GraphedError):
+class UnboundServiceError(GraphedError):
     """Nodes name services no endpoint was bound for.
 
     ``names`` lists them, ``name`` is the first.
@@ -148,7 +148,11 @@ class UnboundService(GraphedError):
 
     def __reduce__(self) -> tuple[Any, ...]:
         """Pickle by the service names."""
-        return (UnboundService, self.names)
+        return (UnboundServiceError, self.names)
+
+
+# The pre-0.0.10 name, kept for graphed-executors and graphed-histogram, which still import it.
+UnboundService = UnboundServiceError
 
 
 def split_endpoint(endpoint: str) -> tuple[str, str]:
@@ -179,9 +183,9 @@ def split_endpoint(endpoint: str) -> tuple[str, str]:
 class Bindable(Protocol):
     """A plan part that takes run endpoints: returns a bound copy, never binds in place.
 
-    A part that calls a service raises :class:`UnboundService` naming it when ``endpoints`` lacks
-    the name and the part holds no endpoint of its own, so :func:`require_bound` sees every service
-    a part needs.
+    A part that calls a service raises :class:`UnboundServiceError` naming it when ``endpoints``
+    lacks the name and the part holds no endpoint of its own, so :func:`require_bound` sees every
+    service a part needs.
     """
 
     def bind_services(self, endpoints: Mapping[str, str]) -> Any:
@@ -234,7 +238,7 @@ def _stage_processes(plan: DurablePlanV2) -> tuple[Any, ...]:
 
 
 def require_bound(plan: Plan[Any] | DurablePlanV2) -> None:
-    """Raise :class:`UnboundService` naming every service ``plan`` has no endpoint for.
+    """Raise :class:`UnboundServiceError` naming every service ``plan`` has no endpoint for.
 
     The plan's process (a ``DurablePlanV2``'s stage processes) names them; a runner calls it before
     its first task. A plan without ``services`` returns at once.
@@ -253,7 +257,7 @@ def _require_parts(parts: Sequence[Bindable]) -> None:
         try:
             for part in parts:
                 part.bind_services(missing)
-        except UnboundService as err:
+        except UnboundServiceError as err:
             if (
                 err.name in missing
             ):  # a part refusing a name it was handed breaks the Bindable contract
@@ -261,7 +265,7 @@ def _require_parts(parts: Sequence[Bindable]) -> None:
             missing[err.name] = "tcp://unbound:0"
             continue
         if missing:
-            raise UnboundService(*sorted(missing))
+            raise UnboundServiceError(*sorted(missing))
         return
 
 
@@ -325,7 +329,7 @@ __all__ = [
     "Launch",
     "Resolvable",
     "ServiceSpec",
-    "UnboundService",
+    "UnboundServiceError",
     "bind_externals",
     "bind_services",
     "referenced_services",
