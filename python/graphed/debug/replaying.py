@@ -95,6 +95,7 @@ class Replay:
         outputs: tuple[Array, ...],
         compiled: CompiledGraph | None = None,
     ) -> None:
+        """Prepare ``task`` of a run for replay over ``outputs``."""
         self.task = task
         self._process = process
         self._session = outputs[0].session

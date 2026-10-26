@@ -13,9 +13,12 @@ import enum
 
 class Kind(enum.Flag):
     #: registered by the weight form: a per-event factor in the context's ambient weight
+    """The kinds of carrier a variation registers on."""
+
     WEIGHT = enum.auto()
     #: registered by the shift form: a collection replaced by its varied members
     SHIFT = enum.auto()
 
     def __repr__(self) -> str:
+        """Show the kind by name."""
         return f"Kind.{self.name}"

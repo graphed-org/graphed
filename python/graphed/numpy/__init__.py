@@ -394,6 +394,7 @@ class NumpyBackend:
     def op_form(
         self, op: str, inputs: Sequence[object], params: Mapping[str, object]
     ) -> NumpyForm:
+        """Infer the form ``op`` gives ``inputs``."""
         forms = [f for f in inputs if isinstance(f, NumpyForm)]
         if op == "exchange":
             return forms[
@@ -519,6 +520,7 @@ class NumpyBackend:
     def eval_stage(
         self, op: str, inputs: Sequence[object], params: Mapping[str, object]
     ) -> object:
+        """Evaluate ``op`` over real numpy ``inputs``."""
         if op == "exchange":
             return inputs[
                 0
@@ -547,13 +549,16 @@ class NumpyBackend:
         return self._apply(op, [np.asarray(x) for x in inputs], params)
 
     def boundary_ops(self) -> frozenset[str]:
+        """Return the op names that end a fused stage."""
         return frozenset({"source", "map", "gufunc", *_REDUCERS})
 
     def project(self, op: str, used: object, params: Mapping[str, object]) -> object:
         # Vestigial M2 per-op stub; the real projection is the module-level `project` (M5).
+        """Return ``used`` unchanged; the module-level ``project`` projects (M5)."""
         return used
 
     def external_payload(self, op: str, params: Mapping[str, object]) -> PayloadDescriptor | None:
+        """Return the payload descriptor a ``map`` or ``gufunc`` op carries."""
         if op not in ("map", "gufunc"):
             return None
         fn_name = str(params.get("fn", "lambda"))
@@ -579,33 +584,42 @@ class NumpyBackend:
         salt: int = 0,
         boundaries: object = None,
     ) -> tuple[Any, ...]:
+        """Route each row of ``block`` to one of ``parts`` sub-blocks by ``key_field``."""
         return shuffle.partition(block, key_field, parts, salt=salt, boundaries=boundaries)
 
     def concat(self, blocks: Sequence[Any]) -> Any:
+        """Concatenate ``blocks`` row-wise."""
         return shuffle.concat(blocks)
 
     def slice_rows(self, block: Any, start: int, stop: int) -> Any:
+        """Return rows ``[start, stop)`` of ``block``."""
         return shuffle.slice_rows(block, start, stop)
 
     def estimated_bytes(self, block_or_form: object) -> int:
+        """Estimate the bytes of a block or form."""
         return shuffle.estimated_bytes(block_or_form)
 
     def to_wire(self, block: Any) -> bytes:
+        """Serialize ``block`` deterministically."""
         return shuffle.to_wire(block)
 
     def from_wire(self, data: bytes) -> Any:
+        """Deserialize a block :meth:`to_wire` wrote."""
         return shuffle.from_wire(data)
 
     # ---- JoinBackend join half (M40 §3.3) — thin delegates to the pure `shuffle` module ----
     def match_indices(
         self, build: Any, probe: Any, *, on: Sequence[str], how: str = "inner"
     ) -> tuple[Any, Any]:
+        """Match ``build`` and ``probe`` rows on ``on`` as aligned index arrays."""
         return shuffle.match_indices(build, probe, on=on, how=how)
 
     def take(self, block: Any, index: Any) -> Any:
+        """Gather ``block``'s rows at ``index``; ``-1`` gives a missing row."""
         return shuffle.take(block, index)
 
     def merge_records(self, left: Any, right: Any, *, on: Sequence[str]) -> Any:
+        """Merge two aligned record blocks, keeping the ``on`` fields once."""
         return shuffle.merge_records(left, right, on=on)
 
 

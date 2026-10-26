@@ -64,21 +64,26 @@ class RunReport:
     endpoints: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))
 
     def __post_init__(self) -> None:
+        """Freeze ``endpoints`` into a read-only mapping."""
         object.__setattr__(self, "endpoints", MappingProxyType(dict(self.endpoints)))
 
     def __reduce__(self) -> tuple[Any, ...]:
         # a mappingproxy does not pickle; the constructor re-wraps the plain dict
+        """Pickle with ``endpoints`` as a plain dict."""
         values = {f.name: getattr(self, f.name) for f in fields(self)}
         return (_report, (values | {"endpoints": dict(self.endpoints)},))
 
     def __setstate__(self, state: dict[str, Any]) -> None:  # a 0.0.6 pickle carries no endpoints
+        """Restore pickled state, defaulting ``endpoints`` for a 0.0.6 pickle."""
         self.__dict__.update({"endpoints": MappingProxyType({})} | state)
 
     @property
     def failed_keys(self) -> tuple[int, ...]:
+        """Return the keys of the tasks that errored."""
         return tuple(t.key for t in self.tasks if t.state == "errored")
 
     def to_json(self) -> dict[str, Any]:
+        """Return the report as a JSON-ready dict."""
         f = self.failure
         failure = None
         if f is not None:
@@ -99,6 +104,7 @@ class RunReport:
 
     @classmethod
     def from_json(cls, data: Mapping[str, Any]) -> RunReport:
+        """Read a report :meth:`to_json` wrote."""
         if data["version"] != _VERSION:
             raise ValueError(f"unsupported run report version {data['version']}")
         f = data["failure"]
@@ -155,23 +161,28 @@ class RunRecorder:
     complete_events = True
 
     def __init__(self, inner: Monitor | None = None) -> None:
+        """Record a run's events, forwarding each to ``inner``."""
         self._inner = inner
         self._calls: list[tuple[TaskEvent, float]] = []
 
     def on_task(self, event: TaskEvent) -> None:
+        """Record a task event, then forward it."""
         self._calls.append((event, time.perf_counter()))  # before forwarding: inner may raise
         if self._inner is not None:
             self._inner.on_task(event)
 
     def on_profile(self, worker: str, payload: bytes) -> None:
+        """Forward a profile payload."""
         if self._inner is not None:
             self._inner.on_profile(worker, payload)
 
     def on_combine(self, leaves_done: int) -> None:
+        """Forward the reduction's progress."""
         if self._inner is not None:
             self._inner.on_combine(leaves_done)
 
     def worker_profiler_factory(self) -> Callable[[], WorkerProfiler] | None:
+        """Return the inner monitor's profiler factory, if any."""
         return self._inner.worker_profiler_factory() if self._inner is not None else None
 
     def report(

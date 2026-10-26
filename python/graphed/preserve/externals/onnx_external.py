@@ -14,6 +14,7 @@ _ORT_DTYPES = {"tensor(float)": "float32", "tensor(double)": "float64"}
 
 
 def onnx_content_hash(payload: bytes) -> str:
+    """Return the content hash of an ONNX payload."""
     return memoized_model_hash("onnx", payload, _onnx_content_hash_impl)
 
 
@@ -40,6 +41,7 @@ def load_onnx(payload: bytes, params: Mapping[str, Any]) -> Any:
 
 
 def eval_onnx(session: Any, params: Mapping[str, Any], inputs: list[Any]) -> Any:
+    """Run the ONNX session on ``inputs``, one value per event."""
     import awkward as ak  # noqa: PLC0415
     import numpy as np  # noqa: PLC0415
 

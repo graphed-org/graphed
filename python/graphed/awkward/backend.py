@@ -93,11 +93,13 @@ class AwkwardForm:
 
     def describe(self) -> str:
         # a whole-array reduction's form is a scalar typetracer, which has a dtype but no `.type`
+        """Return the awkward type string of this form."""
         tt_type = getattr(self.tt, "type", None)
         return str(self.tt.dtype if tt_type is None else tt_type)
 
     @property
     def is_typetracer(self) -> bool:
+        """Return whether this form is backed by a typetracer."""
         return ak.backend(self.tt) == "typetracer"
 
 
@@ -283,6 +285,8 @@ def check_output_type(
 
 class AwkwardBackend:
     #: the backend's versioned shuffle-format token (folded into the V2 task ids, §7.2)
+    """The awkward backend: typetracer forms at record time, awkward arrays in eval."""
+
     identity = "graphed-awkward/0"
 
     #: M59: this backend evaluates the shared inner-axis tuple key (`subscript`)
@@ -291,6 +295,7 @@ class AwkwardBackend:
     def __init__(self, behavior: Mapping[str, object] | None = None) -> None:
         # M18: a registered behavior dict (e.g. vector's) makes behavior PROPERTIES work through
         # plain attribute access — on the typetracer at record time and on real arrays in eval.
+        """Use ``behavior``, when given, for behavior properties and methods."""
         self._behavior = dict(behavior) if behavior else None
 
     def array_type(self) -> type[Array]:
@@ -310,6 +315,7 @@ class AwkwardBackend:
         # parameter would make AwkwardBackend structurally incompatible with `graphed.Backend`
         # (contravariance), so `Session(AwkwardBackend())` would not type-check. A session only
         # ever feeds a backend the forms that same backend produced.
+        """Infer the form ``op`` gives ``inputs`` from their typetracers."""
         forms = cast("Sequence[AwkwardForm]", inputs)
         if op == "exchange":
             return forms[
@@ -336,6 +342,7 @@ class AwkwardBackend:
     def eval_stage(
         self, op: str, inputs: Sequence[object], params: Mapping[str, object]
     ) -> object:
+        """Evaluate ``op`` over real awkward ``inputs``."""
         if op == "join":  # needs `self` (the shared kernel routes through JoinBackend primitives)
             return self._eval_join(inputs, params)
         return self.adopt(apply(op, inputs, params, behavior=self._behavior))
@@ -457,9 +464,11 @@ class AwkwardBackend:
         return join_blocks(self, left, right, on=on, how=how)
 
     def boundary_ops(self) -> frozenset[str]:
+        """Return the op names that end a fused stage."""
         return _BOUNDARY
 
     def project(self, op: str, used: object, params: Mapping[str, object]) -> object:
+        """Return ``used`` unchanged (M5)."""
         return used  # M5
 
     def broadcast_like(self, value: object, factor: object) -> object:
@@ -473,6 +482,7 @@ class AwkwardBackend:
         return broadcast_arrays(value, factor)[1]  # type: ignore[arg-type]
 
     def external_payload(self, op: str, params: Mapping[str, object]) -> PayloadDescriptor | None:
+        """Return the payload descriptor an External ``op`` carries, if any."""
         if op == "correction":
             return payloads.correctionlib_descriptor(str(params["path"]), str(params["name"]))
         if op == "onnx":
@@ -503,33 +513,42 @@ class AwkwardBackend:
         salt: int = 0,
         boundaries: object = None,
     ) -> tuple[Any, ...]:
+        """Route each row of ``block`` to one of ``parts`` sub-blocks by ``key_field``."""
         return shuffle.partition(block, key_field, parts, salt=salt, boundaries=boundaries)
 
     def concat(self, blocks: Sequence[Any]) -> Any:
+        """Concatenate ``blocks`` row-wise."""
         return shuffle.concat(blocks)
 
     def slice_rows(self, block: Any, start: int, stop: int) -> Any:
+        """Return rows ``[start, stop)`` of ``block`` at event boundaries."""
         return shuffle.slice_rows(block, start, stop)
 
     def estimated_bytes(self, block_or_form: object) -> int:
+        """Estimate the bytes of a block or form."""
         return shuffle.estimated_bytes(block_or_form)
 
     def to_wire(self, block: Any) -> bytes:
+        """Serialize ``block`` deterministically."""
         return shuffle.to_wire(block)
 
     def from_wire(self, data: bytes) -> Any:
+        """Deserialize a block :meth:`to_wire` wrote."""
         return shuffle.from_wire(data)
 
     # ---- JoinBackend join half (M40 §3.3) — thin delegates to the pure `join` module ----
     def match_indices(
         self, build: Any, probe: Any, *, on: Sequence[str], how: str = "inner"
     ) -> tuple[Any, Any]:
+        """Match ``build`` and ``probe`` rows on ``on`` as aligned index arrays."""
         return join.match_indices(build, probe, on=on, how=how)
 
     def take(self, block: Any, index: Any) -> Any:
+        """Gather ``block``'s rows at ``index``; ``-1`` gives a missing row."""
         return join.take(block, index)
 
     def merge_records(self, left: Any, right: Any, *, on: Sequence[str]) -> Any:
+        """Merge two aligned record blocks, keeping the ``on`` fields once."""
         return join.merge_records(left, right, on=on)
 
 

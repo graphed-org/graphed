@@ -35,6 +35,7 @@ class Point(tuple[tuple[str, str], ...]):
     __slots__ = ()
 
     def __new__(cls, mapping: Mapping[str, object]) -> Point:
+        """Build a point from ``mapping``, dropping its zero coordinates."""
         pairs = ((_nuisance(name), coordinate(value)) for name, value in mapping.items())
         return _build(pair for pair in pairs if numeric_value(pair[1]) != 0)
 

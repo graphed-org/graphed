@@ -132,6 +132,7 @@ def _correctionlib_identity(payload: bytes) -> tuple[str, str]:
 
 
 def correctionlib_contents_descriptor(payload: bytes, correction_name: str) -> PayloadDescriptor:
+    """Describe correction ``correction_name`` of a correctionlib payload's bytes."""
     from graphed.preserve.externals._helpers import memoized_model_hash  # noqa: PLC0415
 
     # one set is recorded once per call (e.g. per systematic universe): parse it once
@@ -149,6 +150,7 @@ def correctionlib_contents_descriptor(payload: bytes, correction_name: str) -> P
 
 
 def onnx_weights_descriptor(payload: bytes) -> PayloadDescriptor:
+    """Describe an ONNX model payload's bytes."""
     from graphed.preserve.externals._helpers import memoized_model_hash  # noqa: PLC0415
 
     content_hash, opset, io_schema = memoized_model_hash(

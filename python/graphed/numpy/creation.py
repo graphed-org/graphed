@@ -38,6 +38,7 @@ def _source(session: Session, name: str | None, content: str, arr: Any) -> Array
 def zeros(
     session: Session, shape: ShapeLike, dtype: Any = float, *, name: str | None = None
 ) -> Array:
+    """Create a source array of zeros."""
     arr = np.zeros(_norm_shape(shape), dtype)
     return _source(session, name, f"zeros[{arr.shape},{arr.dtype}]", arr)
 
@@ -45,6 +46,7 @@ def zeros(
 def ones(
     session: Session, shape: ShapeLike, dtype: Any = float, *, name: str | None = None
 ) -> Array:
+    """Create a source array of ones."""
     arr = np.ones(_norm_shape(shape), dtype)
     return _source(session, name, f"ones[{arr.shape},{arr.dtype}]", arr)
 
@@ -57,6 +59,7 @@ def full(
     *,
     name: str | None = None,
 ) -> Array:
+    """Create a source array filled with ``fill_value``."""
     arr = np.full(_norm_shape(shape), fill_value, dtype)
     return _source(session, name, f"full[{arr.shape},{arr.dtype},{fill_value!r}]", arr)
 
@@ -84,6 +87,7 @@ def arange(
     *,
     name: str | None = None,
 ) -> Array:
+    """Create a source array of evenly spaced values, as ``numpy.arange``."""
     arr = (
         _np_arange(start, stop, step, dtype)
         if stop is not None
@@ -101,17 +105,20 @@ def linspace(
     *,
     name: str | None = None,
 ) -> Array:
+    """Create a source array of ``num`` evenly spaced values, as ``numpy.linspace``."""
     arr = np.linspace(start, stop, num, dtype=dtype)
     return _source(session, name, f"linspace[{start},{stop},{num},{arr.dtype}]", arr)
 
 
 @broadcasting
 def zeros_like(array: Array) -> Array:
+    """Record zeros shaped like ``array``."""
     return array.session.record_op("zeros_like", [array])
 
 
 @broadcasting
 def ones_like(array: Array) -> Array:
+    """Record ones shaped like ``array``."""
     return array.session.record_op("ones_like", [array])
 
 
@@ -123,6 +130,7 @@ def empty_like(array: Array) -> Array:
 
 @broadcasting
 def full_like(array: Array, fill_value: object) -> Array:
+    """Record ``fill_value`` shaped like ``array``."""
     return array.session.record_op(
         "full_like", [array], _scalar_params(fill_value, "fill", "fill_dtype")
     )

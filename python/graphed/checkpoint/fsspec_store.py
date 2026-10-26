@@ -55,6 +55,7 @@ class FsspecStore:
     """
 
     def __init__(self, url: str, node: str | None = None, **storage_options: Any) -> None:
+        """Open the store at ``url``; ``node`` names this writer's own journal."""
         self.url = url
         self.node = node
         # a caching backend (s3) would serve a listing taken before another process wrote
@@ -113,6 +114,7 @@ class FsspecStore:
         stage: str = "",
         deps: tuple[str, ...] = (),
     ) -> None:
+        """Journal ``task_id`` as done with its result blob."""
         self._append(self.journal_path, _done_record(task_id, partition, blob, stage, deps))
 
     def record_environment(self, task_id: str, blob: str) -> None:
@@ -130,9 +132,11 @@ class FsspecStore:
 
     # ---- dead-letter set ------------------------------------------------------------------------
     def record_dead(self, descriptor: Mapping[str, object]) -> None:
+        """Append ``descriptor`` to the dead-letter log."""
         self._append(self.dead_letter_path, dict(descriptor))
 
     def dead_letters(self) -> list[dict[str, object]]:
+        """Return every dead-letter record."""
         return copy.deepcopy(self._records(f"{glob.escape(self.dead_letter_path)}/*"))
 
     # ---- internals ------------------------------------------------------------------------------

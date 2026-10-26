@@ -109,6 +109,7 @@ class EventContext:
         collections: Mapping[str, Any] | None = None,
         weight: Varied | None = None,
     ) -> None:
+        """Wrap ``record`` as an event context, derived from ``parent`` by ``link``."""
         self._session = session
         self._record = record
         self._is_data = is_data
@@ -198,15 +199,18 @@ class EventContext:
         self._projected: dict[str, EventContext] = {}
 
     def __repr__(self) -> str:
+        """Show the context's serial and where it was made."""
         return f"EventContext(#{self._serial} from {self._provenance})"
 
     # ---- tree content (§2.6a: the context reserves NO names) --------------------
     def __getattr__(self, name: str) -> Any:
+        """Read field ``name`` of the event record."""
         if name.startswith("_"):
             raise AttributeError(name)
         return self._read(name)
 
     def __getitem__(self, key: object) -> Any:
+        """Read a field or field list, or derive the context a mask selects."""
         if isinstance(key, str):
             return self._read(key)
         if isinstance(key, list) and key and all(isinstance(field, str) for field in key):
@@ -219,6 +223,7 @@ class EventContext:
         )
 
     def __iter__(self) -> Any:
+        """Refuse iteration over an event context."""
         raise TypeError(
             "an event context is not iterable; subscript it with a mask or a field name"
         )
@@ -539,6 +544,7 @@ def vary_context(
     max_universes: int,
     tags: Mapping[str, Any],
 ) -> EventContext:
+    """Register variation ``name`` on ``ctx`` and return the context it derives."""
     if ctx._is_data:
         raise GraphedError(
             f"variation {name!r} cannot be registered on a data context: data fills nominal-only, "

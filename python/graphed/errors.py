@@ -21,6 +21,7 @@ class PointError(GraphedError):
     """
 
     def __init__(self, situation: str, entry: Any, *, valid: Any = None, detail: str = "") -> None:
+        """Name the ``situation``, the offending ``entry`` and what would be ``valid``."""
         self.situation = situation
         self.entry = entry
         self.valid = valid
@@ -32,6 +33,7 @@ class GraphedTypeError(GraphedError):
     """An ill-typed op, raised at the user's source line (plan M2)."""
 
     def __init__(self, op: str, provenance: Provenance, detail: str = "") -> None:
+        """Name the ill-typed ``op`` and the user line that recorded it."""
         self.op = op
         self.provenance = provenance
         self.detail = detail
@@ -48,6 +50,7 @@ class OutputTypeError(GraphedTypeError):
     """
 
     def __reduce__(self) -> tuple[Any, ...]:
+        """Pickle by constructor arguments."""
         return (type(self), (self.op, self.provenance, self.detail))
 
 
@@ -58,4 +61,5 @@ class MissingFieldError(GraphedTypeError, AttributeError):
     """
 
     def __reduce__(self) -> tuple[Any, ...]:
+        """Pickle by constructor arguments."""
         return (type(self), (self.op, self.provenance, self.detail))

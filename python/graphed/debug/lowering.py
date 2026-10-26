@@ -27,6 +27,8 @@ from .errors import SourceFrame
 
 @dataclass(frozen=True)
 class LoweredOp:
+    """One lowered op with the user frame that recorded it."""
+
     node_id: int
     op: str
     kind: str  # "source" | "op" | "external"
@@ -38,37 +40,47 @@ class LoweredOp:
 
 @dataclass(frozen=True)
 class LoweredStage:
+    """One stage of a lowered graph: its ordered ops."""
+
     index: int
     members: tuple[LoweredOp, ...]  # ordered; exactly one for opt_level=0
 
     @property
     def head(self) -> LoweredOp:
+        """The stage's last op, which produces its value."""
         return self.members[-1]
 
     @property
     def boundary(self) -> bool:
+        """Whether the stage ends at a boundary op."""
         return self.head.boundary
 
     @property
     def node_id(self) -> int:
+        """The node id of the stage's head op."""
         return self.head.node_id
 
 
 @dataclass(frozen=True)
 class LoweredGraph:
+    """A graph lowered at one ``opt_level``."""
+
     opt_level: int
     stages: tuple[LoweredStage, ...]
     output_id: int
 
     @property
     def ops(self) -> tuple[LoweredOp, ...]:
+        """Every op of every stage, in order."""
         return tuple(m for s in self.stages for m in s.members)
 
     @property
     def one_to_one(self) -> bool:
+        """Whether every stage holds exactly one op."""
         return all(len(s.members) == 1 for s in self.stages)
 
     def op_for(self, node_id: int) -> LoweredOp:
+        """Return the lowered op of node ``node_id``."""
         for op in self.ops:
             if op.node_id == node_id:
                 return op

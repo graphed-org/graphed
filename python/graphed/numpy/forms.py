@@ -27,9 +27,11 @@ class NumpyForm:
 
     @property
     def ndim(self) -> int:
+        """The number of dimensions."""
         return len(self.shape)
 
     def describe(self) -> str:
+        """Return the form as a short type string."""
         if self.fields is not None:
             return f"record[{','.join(f for f, _ in self.fields)}]"
         if len(self.shape) > 1:
@@ -38,6 +40,7 @@ class NumpyForm:
 
 
 def is_numeric(form: NumpyForm) -> bool:
+    """Return whether ``form`` is a numeric non-record array."""
     return form.fields is None and np.issubdtype(form.dtype, np.number)
 
 
@@ -66,6 +69,7 @@ def unit_meta(form: NumpyForm) -> Any:
 
 
 def form_from_meta(result: object, leading_none: bool) -> NumpyForm:
+    """Return the form of a metadata result; ``leading_none`` keeps axis 0 unknown."""
     arr = np.asarray(result)
     if arr.ndim == 0:
         return NumpyForm(arr.dtype, kind="scalar", shape=())

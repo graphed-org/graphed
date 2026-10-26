@@ -94,13 +94,16 @@ class Bundle:
 
     @property
     def store(self) -> Store:
+        """The bundle's content-addressed store."""
         return Store(self.root / "store")
 
     def fingerprint(self) -> str:
+        """Return the fingerprint of the bundle's manifest."""
         return fingerprint(self.manifest)
 
     @classmethod
     def open(cls, root: str | os.PathLike[str]) -> Bundle:
+        """Open the bundle written at ``root``."""
         root = Path(root)
         manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
         return cls(root=root, manifest=manifest)

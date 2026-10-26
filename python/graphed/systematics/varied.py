@@ -43,6 +43,7 @@ class Varied:
         tags: Mapping[str, tuple[str, ...]] | None = None,
         context: object = None,
     ) -> None:
+        """Hold ``members`` by label; a ``nominal`` member is required."""
         if "nominal" not in members:
             raise GraphedError("a Varied must carry a 'nominal' universe")
         self._members: dict[str, Member] = dict(members)
@@ -112,6 +113,7 @@ class Varied:
 
     # ---- structural access -----------------------------------------------------
     def __getattr__(self, name: str) -> Any:
+        """Map an attribute read over every member."""
         if name in RESERVED:
             raise AttributeError(
                 f"{name!r} is not defined on a Varied; read one universe first, with "
@@ -136,18 +138,22 @@ class Varied:
         return expand(lambda member: getattr(member, name), (self,), {})
 
     def __iter__(self) -> Iterator[Any]:
+        """Refuse iteration: a deferred value has no known length."""
         raise TypeError(
             "deferred graphed arrays are not iterable (unknown partitioned length); materialize "
             "first"
         )
 
     def __bool__(self) -> bool:
+        """Refuse a truth value: a deferred value has none."""
         raise no_eager_value("bool(...)", "truth value")
 
     def __array__(self, dtype: object = None, copy: object = None) -> Any:
+        """Refuse an eager numpy value: a deferred value has none."""
         raise no_eager_value("np.asarray(...)", "numpy value")
 
     def __repr__(self) -> str:
+        """Show the labels this container carries."""
         return f"Varied(labels={list(self._members)})"
 
 
@@ -182,6 +188,7 @@ def registered_points(container: Varied) -> dict[str, Point]:
 
 # ---- the §2.4 combination rule ------------------------------------------------------------
 def labels_of(value: object) -> tuple[str, ...]:
+    """Return the labels ``value`` carries, or ``()`` for a non-container."""
     return tuple(value._members) if isinstance(value, Varied) else ()
 
 
@@ -225,6 +232,7 @@ def narrow(value: object, label: str) -> Any:
 
 
 def containers_in(*values: object) -> list[Varied]:
+    """Return every `Varied` in ``values``, inside containers too."""
     found: list[Varied] = []
     for value in values:
         _collect(value, found)
@@ -421,10 +429,12 @@ _VARIED_CLASSES: dict[type, type[Varied]] = {}
 
 
 def register_varied(array_cls: type[Array], varied_cls: type[Varied]) -> None:
+    """Register ``varied_cls`` as the container class of ``array_cls``."""
     _VARIED_CLASSES[array_cls] = varied_cls
 
 
 def varied_class_for(array_cls: type) -> type[Varied]:
+    """Return the container class registered for ``array_cls``."""
     for cls in array_cls.__mro__:
         registered = _VARIED_CLASSES.get(cls)
         if registered is not None:

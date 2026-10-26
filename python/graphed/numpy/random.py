@@ -20,6 +20,8 @@ from .creation import ShapeLike, _norm_shape, _source
 
 @dataclass
 class GraphedRNG:
+    """A deterministic generator of random source arrays for ``session``."""
+
     session: Session
     seed: int
     _draws: int = field(default=0, init=False)
@@ -32,18 +34,22 @@ class GraphedRNG:
         return _source(self.session, None, name, arr)
 
     def normal(self, size: ShapeLike, loc: float = 0.0, scale: float = 1.0) -> Array:
+        """Create a source array of normal draws."""
         shape = _norm_shape(size)
         return self._draw("normal", lambda r: r.normal(loc, scale, shape))
 
     def standard_normal(self, size: ShapeLike) -> Array:
+        """Create a source array of standard-normal draws."""
         shape = _norm_shape(size)
         return self._draw("standard_normal", lambda r: r.standard_normal(shape))
 
     def uniform(self, size: ShapeLike, low: float = 0.0, high: float = 1.0) -> Array:
+        """Create a source array of uniform draws in ``[low, high)``."""
         shape = _norm_shape(size)
         return self._draw("uniform", lambda r: r.uniform(low, high, shape))
 
     def integers(self, size: ShapeLike, low: int, high: int) -> Array:
+        """Create a source array of integer draws in ``[low, high)``."""
         shape = _norm_shape(size)
         return self._draw("integers", lambda r: r.integers(low, high, shape))
 

@@ -266,12 +266,15 @@ class Array:
     # performed through, `_labels` the variation labels flowing into this expression. Both are
     # underscore-prefixed so `__getattr__`'s guard keeps them out of field access, and NEITHER
     # reaches NodeKey params/tokens/hashes — interning and §1.2 stay intact.
+    """A deferred array: a proxy for one node of a Session's recorded graph."""
+
     __slots__ = ("_context", "_labels", "_node_id", "_session")
 
     # let numpy defer to us for ufuncs (np.cos(array), np.hypot(a, b), ...)
     __array_priority__ = 1000.0
 
     def __init__(self, session: Session, node_id: int) -> None:
+        """Wrap node ``node_id`` of ``session``."""
         self._session = session
         self._node_id = node_id
         self._context: object = None
@@ -279,10 +282,12 @@ class Array:
 
     @property
     def node_id(self) -> int:
+        """The id of the node this proxy stands for."""
         return self._node_id
 
     @property
     def session(self) -> Session:
+        """The Session this array records into."""
         return self._session
 
     # ---- elementwise recording -------------------------------------------------
@@ -304,6 +309,7 @@ class Array:
         return self._session.record_op(op, [self])
 
     def __array_ufunc__(self, ufunc: Any, method: str, *inputs: object, **kwargs: object) -> Any:
+        """Record a supported numpy ufunc call over this array as its graph op."""
         if method != "__call__" or kwargs:
             return NotImplemented
         op = _UFUNC_TO_OP.get(getattr(ufunc, "__name__", ""))
@@ -320,109 +326,143 @@ class Array:
 
     # arithmetic
     def __add__(self, other: object) -> Array:
+        """Record ``self + other`` as a ``add`` node."""
         return self._binary("add", other)
 
     def __radd__(self, other: object) -> Array:
+        """Record ``other + self`` as a ``add`` node."""
         return self._binary("add", other, reflected=True)
 
     def __sub__(self, other: object) -> Array:
+        """Record ``self - other`` as a ``sub`` node."""
         return self._binary("sub", other)
 
     def __rsub__(self, other: object) -> Array:
+        """Record ``other - self`` as a ``sub`` node."""
         return self._binary("sub", other, reflected=True)
 
     def __mul__(self, other: object) -> Array:
+        """Record ``self * other`` as a ``mul`` node."""
         return self._binary("mul", other)
 
     def __rmul__(self, other: object) -> Array:
+        """Record ``other * self`` as a ``mul`` node."""
         return self._binary("mul", other, reflected=True)
 
     def __truediv__(self, other: object) -> Array:
+        """Record ``self / other`` as a ``div`` node."""
         return self._binary("div", other)
 
     def __rtruediv__(self, other: object) -> Array:
+        """Record ``other / self`` as a ``div`` node."""
         return self._binary("div", other, reflected=True)
 
     def __pow__(self, other: object) -> Array:
+        """Record ``self ** other`` as a ``power`` node."""
         return self._binary("power", other)
 
     def __rpow__(self, other: object) -> Array:
+        """Record ``other ** self`` as a ``power`` node."""
         return self._binary("power", other, reflected=True)
 
     def __floordiv__(self, other: object) -> Array:
+        """Record ``self // other`` as a ``floordiv`` node."""
         return self._binary("floordiv", other)
 
     def __rfloordiv__(self, other: object) -> Array:
+        """Record ``other // self`` as a ``floordiv`` node."""
         return self._binary("floordiv", other, reflected=True)
 
     def __mod__(self, other: object) -> Array:
+        """Record ``self % other`` as a ``mod`` node."""
         return self._binary("mod", other)
 
     def __rmod__(self, other: object) -> Array:
+        """Record ``other % self`` as a ``mod`` node."""
         return self._binary("mod", other, reflected=True)
 
     def __abs__(self) -> Array:
+        """Record ``abs(self)``."""
         return self._unary("abs")
 
     def __neg__(self) -> Array:
+        """Record ``-self``."""
         return self._unary("neg")
 
     def __pos__(self) -> Array:
+        """Record ``+self``."""
         return self._unary("pos")
 
     # comparisons (deferred -> Array, not bool)
     def __gt__(self, other: object) -> Array:
+        """Record ``self > other`` as a ``gt`` node."""
         return self._binary("gt", other)
 
     def __lt__(self, other: object) -> Array:
+        """Record ``self < other`` as a ``lt`` node."""
         return self._binary("lt", other)
 
     def __ge__(self, other: object) -> Array:
+        """Record ``self >= other`` as a ``ge`` node."""
         return self._binary("ge", other)
 
     def __le__(self, other: object) -> Array:
+        """Record ``self <= other`` as a ``le`` node."""
         return self._binary("le", other)
 
     def __eq__(self, other: object) -> Array:  # type: ignore[override]
+        """Record ``self == other`` as a ``eq`` node."""
         return self._binary("eq", other)
 
     def __ne__(self, other: object) -> Array:  # type: ignore[override]
+        """Record ``self != other`` as a ``ne`` node."""
         return self._binary("ne", other)
 
     __hash__ = None  # type: ignore[assignment]  # deferred __eq__ makes Array unhashable
 
     # boolean / bitwise combination
     def __and__(self, other: object) -> Array:
+        """Record ``self & other`` as a ``and`` node."""
         return self._binary("and", other)
 
     def __rand__(self, other: object) -> Array:
+        """Record ``other & self`` as a ``and`` node."""
         return self._binary("and", other, reflected=True)
 
     def __or__(self, other: object) -> Array:
+        """Record ``self | other`` as a ``or`` node."""
         return self._binary("or", other)
 
     def __ror__(self, other: object) -> Array:
+        """Record ``other | self`` as a ``or`` node."""
         return self._binary("or", other, reflected=True)
 
     def __xor__(self, other: object) -> Array:
+        """Record ``self ^ other`` as a ``xor`` node."""
         return self._binary("xor", other)
 
     def __rxor__(self, other: object) -> Array:
+        """Record ``other ^ self`` as a ``xor`` node."""
         return self._binary("xor", other, reflected=True)
 
     def __lshift__(self, other: object) -> Array:
+        """Record ``self << other`` as a ``lshift`` node."""
         return self._binary("lshift", other)
 
     def __rlshift__(self, other: object) -> Array:
+        """Record ``other << self`` as a ``lshift`` node."""
         return self._binary("lshift", other, reflected=True)
 
     def __rshift__(self, other: object) -> Array:
+        """Record ``self >> other`` as a ``rshift`` node."""
         return self._binary("rshift", other)
 
     def __rrshift__(self, other: object) -> Array:
+        """Record ``other >> self`` as a ``rshift`` node."""
         return self._binary("rshift", other, reflected=True)
 
     def __invert__(self) -> Array:
+        """Record ``~self``."""
         return self._unary("invert")
 
     # ---- shared backend-proxy infrastructure (M11/M12, dask.array parity P0/P1) -
@@ -487,6 +527,7 @@ class Array:
 
     # ---- structural access -----------------------------------------------------
     def __getattr__(self, name: str) -> Any:
+        """Record a field read, or hand back the behavior method the backend names."""
         if name.startswith("_"):
             raise AttributeError(name)
         # M54: a backend that can tell a behavior METHOD from a field or property answers here;
@@ -515,18 +556,22 @@ class Array:
     def __iter__(self) -> Any:
         # int __getitem__ (M13) would otherwise make Array INFINITELY iterable through Python's
         # legacy iteration protocol (a[0], a[1], ... never raises IndexError on a deferred graph)
+        """Refuse iteration: a deferred array has no known length."""
         raise TypeError(
             "deferred graphed arrays are not iterable (unknown partitioned length); materialize "
             "first"
         )
 
     def __bool__(self) -> bool:
+        """Refuse a truth value: a deferred value has none."""
         raise no_eager_value("bool(...)", "truth value")
 
     def __array__(self, dtype: object = None, copy: object = None) -> Any:
+        """Refuse an eager numpy value: a deferred value has none."""
         raise no_eager_value("np.asarray(...)", "numpy value")
 
     def __getitem__(self, key: object) -> Array:
+        """Record a subscript: a mask, a field name, a field list or a tuple key."""
         if getattr(key, "_varied_container", False):  # a Varied mask selects PER UNIVERSE
             from .varied import expand  # noqa: PLC0415  (`varied` imports `Array`)
 
@@ -568,6 +613,7 @@ class Array:
 
     # ---- M2 methods (kept) -----------------------------------------------------
     def filter(self, mask: Array) -> Array:
+        """Record the selection of this array's rows where ``mask`` is true."""
         if getattr(mask, "_varied_container", False):
             from .varied import expand  # noqa: PLC0415  (`varied` imports `Array`)
 
@@ -600,6 +646,7 @@ class Array:
         )
 
     def reduce(self, kind: str = "sum") -> Array:
+        """Record a ``kind`` reduction of this array."""
         return self._session.record_op(kind, [self], reduction=True)
 
     def repartition(self, *, n: int | None = None, target_bytes: int | None = None) -> Array:
@@ -615,6 +662,7 @@ class Array:
         return _repartition(self, n=n, target_bytes=target_bytes)
 
     def __repr__(self) -> str:
+        """Show the node id this proxy stands for."""
         return f"Array(node_id={self._node_id})"
 
 
@@ -664,13 +712,16 @@ class BoundMethod:
     __slots__ = ("_name", "_receiver")
 
     def __init__(self, receiver: Any, name: str) -> None:
+        """Bind behavior method ``name`` to ``receiver``."""
         self._receiver = receiver
         self._name = name
 
     def __repr__(self) -> str:
+        """Show the method name and its receiver."""
         return f"BoundMethod({self._name!r} of {self._receiver!r})"
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        """Record the method call, mapped over the label union when an operand is varied."""
         from .varied import containers_in, expand, expand_tuple, narrow  # noqa: PLC0415  (cycle)
 
         if containers_in(self._receiver, *args, *kwargs.values()):

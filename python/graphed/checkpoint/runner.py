@@ -51,11 +51,14 @@ class ResumeReport:
 
     @property
     def did_less_work(self) -> bool:
+        """Return whether the resumed run skipped any task."""
         return self.skipped > 0
 
 
 @dataclass
 class ResumeResult:
+    """A resumable run's value and its report."""
+
     value: Any
     report: ResumeReport
 

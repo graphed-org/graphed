@@ -52,6 +52,7 @@ class Launch:
     resources: Mapping[str, float] = field(default_factory=lambda: MappingProxyType({}))
 
     def __post_init__(self) -> None:
+        """Freeze the argument and mapping fields."""
         object.__setattr__(self, "argv", tuple(self.argv))
         object.__setattr__(self, "inputs", tuple(self.inputs))
         object.__setattr__(self, "env", _read_only(self.env))
@@ -59,9 +60,11 @@ class Launch:
 
     def __reduce__(self) -> tuple[Any, ...]:
         # a mappingproxy does not pickle; the constructor re-wraps the plain dicts
+        """Pickle with the mappings as plain dicts."""
         return (Launch, (self.argv, self.image, self.inputs, dict(self.env), dict(self.resources)))
 
     def __hash__(self) -> int:  # a mappingproxy does not hash
+        """Hash the fields, the mappings by their items."""
         return hash(
             (
                 self.argv,
@@ -73,6 +76,7 @@ class Launch:
         )
 
     def to_json(self) -> dict[str, Any]:
+        """Return the launch as a JSON-ready dict."""
         return {
             "argv": list(self.argv),
             "env": dict(sorted(self.env.items())),
@@ -83,6 +87,7 @@ class Launch:
 
     @classmethod
     def from_json(cls, doc: Mapping[str, Any]) -> Launch:
+        """Read a launch :meth:`to_json` wrote."""
         return cls(**doc)
 
 
@@ -101,10 +106,12 @@ class ServiceSpec:
     timeout_s: float = 600.0
 
     def __post_init__(self) -> None:
+        """Normalize ``ports`` to a pair of ints."""
         low, high = self.ports
         object.__setattr__(self, "ports", (int(low), int(high)))
 
     def to_json(self) -> dict[str, Any]:
+        """Return the spec as a JSON-ready dict."""
         return {
             "check": self.check,
             "kind": self.kind,
@@ -116,6 +123,7 @@ class ServiceSpec:
 
     @classmethod
     def from_json(cls, doc: Mapping[str, Any]) -> ServiceSpec:
+        """Read a spec :meth:`to_json` wrote."""
         launch = doc["launch"]
         return cls(**{**doc, "launch": None if launch is None else Launch.from_json(launch)})
 
@@ -127,6 +135,7 @@ class UnboundService(GraphedError):
     """
 
     def __init__(self, *names: str) -> None:
+        """Name the services that have no endpoint, with how to bind them."""
         self.names = names
         self.name = names[0]
         listed = ", ".join(map(repr, names))
@@ -138,6 +147,7 @@ class UnboundService(GraphedError):
         )
 
     def __reduce__(self) -> tuple[Any, ...]:
+        """Pickle by the service names."""
         return (UnboundService, self.names)
 
 
@@ -174,7 +184,9 @@ class Bindable(Protocol):
     a part needs.
     """
 
-    def bind_services(self, endpoints: Mapping[str, str]) -> Any: ...
+    def bind_services(self, endpoints: Mapping[str, str]) -> Any:
+        """Return this part with ``endpoints`` bound in."""
+        ...
 
 
 @runtime_checkable
@@ -184,7 +196,9 @@ class Resolvable(Protocol):
     A receipt into a snapshot, say; it returns the resolved value, never resolves in place.
     """
 
-    def resolve_services(self, value: Any) -> Any: ...
+    def resolve_services(self, value: Any) -> Any:
+        """Return ``value`` in its final form."""
+        ...
 
 
 def referenced_services(

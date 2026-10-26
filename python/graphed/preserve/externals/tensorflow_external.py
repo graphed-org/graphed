@@ -22,6 +22,7 @@ from ._helpers import (
 
 
 def tensorflow_content_hash(payload: bytes) -> str:
+    """Return the content hash of a ``.keras`` payload."""
     return memoized_model_hash("tensorflow", payload, _tensorflow_content_hash_impl)
 
 
@@ -52,10 +53,12 @@ def _keras_load_from_bytes(payload: bytes) -> Any:
 
 
 def load_tensorflow(payload: bytes, params: Mapping[str, Any]) -> Any:
+    """Load a ``.keras`` payload."""
     return _keras_load_from_bytes(payload)
 
 
 def eval_tensorflow(model: Any, params: Mapping[str, Any], inputs: list[Any]) -> Any:
+    """Run the Keras model on ``inputs``, one value per event."""
     template = parse_call_template(params, len(inputs))
     if template is None:  # legacy: one stacked feature matrix
         out = model(_stack_feature_columns(inputs))

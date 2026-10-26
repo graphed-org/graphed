@@ -13,6 +13,7 @@ from ._helpers import json_bytes, memoized_model_hash, parse_call_template
 
 
 def correctionlib_content_hash(payload: bytes) -> str:
+    """Return the content hash of a correctionlib payload."""
     return memoized_model_hash("correctionlib", payload, _correctionlib_content_hash_impl)
 
 
@@ -139,6 +140,7 @@ def _resolve(cset: Any, name: str, compound: bool) -> Any:
 
 
 def eval_correctionlib(cset: Any, params: Mapping[str, Any], inputs: list[Any]) -> Any:
+    """Evaluate the named correction over ``inputs``."""
     import awkward as ak  # noqa: PLC0415
     import numpy as np  # noqa: PLC0415
 

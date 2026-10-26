@@ -89,6 +89,7 @@ def combinations(
     with_name: str | None = None,
     parameters: Mapping[str, ParamValue] | None = None,
 ) -> Array:
+    """Record ``ak.combinations`` of ``n`` items per list."""
     return arr.session.record_op(
         "ak.combinations", [arr], _comb_params(n, replacement, axis, fields, with_name, parameters)
     )
@@ -126,6 +127,7 @@ def cartesian(
     with_name: str | None = None,
     parameters: Mapping[str, ParamValue] | None = None,
 ) -> Array:
+    """Record ``ak.cartesian`` over ``arrays``."""
     inputs = list(arrays.values() if isinstance(arrays, Mapping) else arrays)
     return inputs[0].session.record_op(
         "ak.cartesian", inputs, _cartesian_params(arrays, axis, nested, with_name, parameters)
@@ -172,6 +174,7 @@ def zip(
 
 
 def with_field(arr: Array, value: object, where: str) -> Array:
+    """Record ``ak.with_field``, setting field ``where`` to ``value``."""
     if isinstance(value, Array):
         return arr.session.record_op("ak.with_field", [arr, value], {"field": where})
     try:
@@ -189,12 +192,14 @@ def with_field(arr: Array, value: object, where: str) -> Array:
 
 def num(arr: Array, axis: int = 1) -> Array:
     # axis 0 counts the partitioned axis: a per-chunk partial, like any axis-0 reduction
+    """Record ``ak.num`` along ``axis``."""
     return arr.session.record_op("ak.num", [arr], {"axis": axis}, reduction=axis == 0)
 
 
 def count(
     arr: Array, axis: int | None = None, *, keepdims: bool = False, mask_identity: bool = False
 ) -> Array:
+    """Record ``ak.count`` along ``axis``."""
     return _reduce("ak.count", arr, axis, keepdims=keepdims, mask_identity=mask_identity or None)
 
 
@@ -235,24 +240,28 @@ def _reduce(
 def sum(
     arr: Array, axis: int | None = None, *, keepdims: bool = False, mask_identity: bool = False
 ) -> Array:
+    """Record ``ak.sum`` along ``axis``."""
     return _reduce("ak.sum", arr, axis, keepdims=keepdims, mask_identity=mask_identity or None)
 
 
 def any(
     arr: Array, axis: int | None = None, *, keepdims: bool = False, mask_identity: bool = False
 ) -> Array:
+    """Record ``ak.any`` along ``axis``."""
     return _reduce("ak.any", arr, axis, keepdims=keepdims, mask_identity=mask_identity or None)
 
 
 def all(
     arr: Array, axis: int | None = None, *, keepdims: bool = False, mask_identity: bool = False
 ) -> Array:
+    """Record ``ak.all`` along ``axis``."""
     return _reduce("ak.all", arr, axis, keepdims=keepdims, mask_identity=mask_identity or None)
 
 
 def count_nonzero(
     arr: Array, axis: int | None = None, *, keepdims: bool = False, mask_identity: bool = False
 ) -> Array:
+    """Record ``ak.count_nonzero`` along ``axis``."""
     return _reduce(
         "ak.count_nonzero", arr, axis, keepdims=keepdims, mask_identity=mask_identity or None
     )
@@ -266,6 +275,7 @@ def min(
     initial: float | None = None,
     mask_identity: bool = True,
 ) -> Array:
+    """Record ``ak.min`` along ``axis``."""
     return _reduce(
         "ak.min",
         arr,
@@ -284,6 +294,7 @@ def max(
     initial: float | None = None,
     mask_identity: bool = True,
 ) -> Array:
+    """Record ``ak.max`` along ``axis``."""
     return _reduce(
         "ak.max",
         arr,
@@ -297,6 +308,7 @@ def max(
 def prod(
     arr: Array, axis: int | None = None, *, keepdims: bool = False, mask_identity: bool = False
 ) -> Array:
+    """Record ``ak.prod`` along ``axis``."""
     return _reduce("ak.prod", arr, axis, keepdims=keepdims, mask_identity=mask_identity or None)
 
 
@@ -308,6 +320,7 @@ def mean(
     keepdims: bool = False,
     mask_identity: bool = False,
 ) -> Array:
+    """Record ``ak.mean`` along ``axis``, optionally weighted."""
     return _reduce(
         "ak.mean",
         arr,
@@ -321,6 +334,7 @@ def mean(
 def ptp(
     arr: Array, axis: int | None = None, *, keepdims: bool = False, mask_identity: bool = True
 ) -> Array:
+    """Record ``ak.ptp`` along ``axis``."""
     return _reduce(
         "ak.ptp", arr, axis, keepdims=keepdims, mask_identity=None if mask_identity else False
     )
@@ -335,6 +349,7 @@ def std(
     keepdims: bool = False,
     mask_identity: bool = False,
 ) -> Array:
+    """Record ``ak.std`` along ``axis``, optionally weighted."""
     return _reduce(
         "ak.std",
         arr,
@@ -355,6 +370,7 @@ def var(
     keepdims: bool = False,
     mask_identity: bool = False,
 ) -> Array:
+    """Record ``ak.var`` along ``axis``, optionally weighted."""
     return _reduce(
         "ak.var",
         arr,
@@ -375,6 +391,7 @@ def moment(
     keepdims: bool = False,
     mask_identity: bool = False,
 ) -> Array:
+    """Record ``ak.moment`` of order ``n`` along ``axis``, optionally weighted."""
     return _reduce(
         "ak.moment",
         arr,
@@ -399,24 +416,29 @@ def _reduce2(name: str, x: Array, y: Array, axis: int | None) -> Array:
 
 
 def corr(x: Array, y: Array, axis: int | None = None) -> Array:
+    """Record ``ak.corr`` of ``x`` and ``y`` along ``axis``."""
     return _reduce2("ak.corr", x, y, axis)
 
 
 def covar(x: Array, y: Array, axis: int | None = None) -> Array:
+    """Record ``ak.covar`` of ``x`` and ``y`` along ``axis``."""
     return _reduce2("ak.covar", x, y, axis)
 
 
 def linear_fit(x: Array, y: Array, axis: int | None = None) -> Array:
+    """Record ``ak.linear_fit`` of ``y`` against ``x`` along ``axis``."""
     return _reduce2("ak.linear_fit", x, y, axis)
 
 
 def firsts(arr: Array, axis: int = 1) -> Array:
+    """Record ``ak.firsts`` along ``axis``."""
     return arr.session.record_op("ak.firsts", [arr], {"axis": axis})
 
 
 def argmin(
     arr: Array, axis: int | None = None, *, keepdims: bool = False, mask_identity: bool = True
 ) -> Array:
+    """Record ``ak.argmin`` along ``axis``."""
     params: dict[str, ParamValue] = {
         "axis": "none" if axis is None else axis,
         "keepdims": keepdims,
@@ -429,6 +451,7 @@ def argmin(
 def argmax(
     arr: Array, axis: int | None = None, *, keepdims: bool = False, mask_identity: bool = True
 ) -> Array:
+    """Record ``ak.argmax`` along ``axis``."""
     params: dict[str, ParamValue] = {
         "axis": "none" if axis is None else axis,
         "keepdims": keepdims,
@@ -439,6 +462,7 @@ def argmax(
 
 
 def argsort(arr: Array, axis: int = -1, *, ascending: bool = True, stable: bool = True) -> Array:
+    """Record ``ak.argsort`` along ``axis``."""
     params: dict[str, ParamValue] = {"axis": axis, "ascending": ascending}
     if not stable:
         params["stable"] = False
@@ -446,28 +470,34 @@ def argsort(arr: Array, axis: int = -1, *, ascending: bool = True, stable: bool 
 
 
 def local_index(arr: Array, axis: int = -1) -> Array:
+    """Record ``ak.local_index`` along ``axis``."""
     return arr.session.record_op("ak.local_index", [arr], {"axis": axis})
 
 
 def concatenate(arrays: Sequence[Array], axis: int = 0) -> Array:
+    """Record ``ak.concatenate`` of ``arrays`` along ``axis``."""
     return arrays[0].session.record_op("ak.concatenate", list(arrays), {"axis": axis})
 
 
 def flatten(arr: Array, axis: int | None = 1) -> Array:
+    """Record ``ak.flatten`` along ``axis`` (``None`` flattens fully)."""
     return arr.session.record_op("ak.flatten", [arr], {"axis": "none" if axis is None else axis})
 
 
 def fill_none(arr: Array, value: object, axis: int = -1) -> Array:
+    """Record ``ak.fill_none``, replacing missing values with ``value``."""
     params = {**_scalar_params(value, "value", "value_dtype"), "axis": axis}
     return arr.session.record_op("ak.fill_none", [arr], params)
 
 
 def drop_none(arr: Array, axis: int | None = None) -> Array:
+    """Record ``ak.drop_none`` along ``axis``."""
     params: dict[str, ParamValue] = {} if axis is None else {"axis": axis}
     return arr.session.record_op("ak.drop_none", [arr], params)
 
 
 def where(cond: Array, a: object, b: object) -> Array:
+    """Record ``ak.where``; a scalar ``a`` or ``b`` travels as a param."""
     inputs: list[Array] = []
     params: dict[str, ParamValue] = {}
     for i, operand in enumerate((cond, a, b)):
@@ -490,6 +520,7 @@ def zeros_like(arr: Array, *, dtype: npt.DTypeLike = None) -> Array:
 
 
 def ones_like(arr: Array, *, dtype: npt.DTypeLike = None) -> Array:
+    """Record ``ak.ones_like``, optionally as ``dtype``."""
     params: dict[str, ParamValue] = {} if dtype is None else {"dtype": _dtype_name(dtype)}
     return arr.session.record_op("ak.ones_like", [arr], params)
 
@@ -716,6 +747,7 @@ dataset_descriptor = payloads.dataset_descriptor
 
 # ---- M17: structure-op parity (dask-awkward parity plan P1) ---------------------------------
 def sort(arr: Array, axis: int = -1, *, ascending: bool = True, stable: bool = True) -> Array:
+    """Record ``ak.sort`` along ``axis``."""
     params: dict[str, ParamValue] = {"axis": axis, "ascending": ascending}
     if not stable:
         params["stable"] = False
@@ -723,26 +755,32 @@ def sort(arr: Array, axis: int = -1, *, ascending: bool = True, stable: bool = T
 
 
 def ravel(arr: Array) -> Array:
+    """Record ``ak.ravel``."""
     return arr.session.record_op("ak.ravel", [arr])
 
 
 def run_lengths(arr: Array) -> Array:
+    """Record ``ak.run_lengths``."""
     return arr.session.record_op("ak.run_lengths", [arr])
 
 
 def mask(arr: Array, condition: Array, *, valid_when: bool = True) -> Array:
+    """Record ``ak.mask`` of ``arr`` by ``condition``."""
     return arr.session.record_op("ak.mask", [arr, condition], {"valid_when": valid_when})
 
 
 def is_none(arr: Array, axis: int = 0) -> Array:
+    """Record ``ak.is_none`` along ``axis``."""
     return arr.session.record_op("ak.is_none", [arr], {"axis": axis})
 
 
 def singletons(arr: Array, axis: int = 0) -> Array:
+    """Record ``ak.singletons`` along ``axis``."""
     return arr.session.record_op("ak.singletons", [arr], {"axis": axis})
 
 
 def pad_none(arr: Array, target: int, axis: int = 1, *, clip: bool = False) -> Array:
+    """Record ``ak.pad_none`` to length ``target`` along ``axis``."""
     return arr.session.record_op(
         "ak.pad_none", [arr], {"target": target, "axis": axis, "clip": clip}
     )
@@ -759,14 +797,17 @@ def unflatten(arr: Array, counts: Array | int, axis: int = 0) -> Array:
 
 
 def to_regular(arr: Array, axis: int = 1) -> Array:
+    """Record ``ak.to_regular`` along ``axis``."""
     return arr.session.record_op("ak.to_regular", [arr], {"axis": axis})
 
 
 def from_regular(arr: Array, axis: int = 1) -> Array:
+    """Record ``ak.from_regular`` along ``axis``."""
     return arr.session.record_op("ak.from_regular", [arr], {"axis": axis})
 
 
 def full_like(arr: Array, value: float, *, dtype: npt.DTypeLike = None) -> Array:
+    """Record ``ak.full_like`` filled with ``value``, optionally as ``dtype``."""
     params = _scalar_params(value, "value", "value_dtype")
     if dtype is not None:
         params["dtype"] = _dtype_name(dtype)
@@ -780,6 +821,7 @@ def nan_to_num(
     posinf: float | None = None,
     neginf: float | None = None,
 ) -> Array:
+    """Record ``ak.nan_to_num``; ``copy`` is accepted and ignored."""
     params: dict[str, ParamValue] = {}
     if nan != 0.0:
         params["nan"] = nan
@@ -793,6 +835,7 @@ def nan_to_num(
 def isclose(
     x: Array, y: Array, *, rtol: float = 1e-05, atol: float = 1e-08, equal_nan: bool = False
 ) -> Array:
+    """Record ``ak.isclose`` of ``x`` and ``y``."""
     params: dict[str, ParamValue] = {"rtol": rtol, "atol": atol}
     if equal_nan:
         params["equal_nan"] = True
@@ -809,6 +852,7 @@ def argcombinations(
     with_name: str | None = None,
     parameters: Mapping[str, ParamValue] | None = None,
 ) -> Array:
+    """Record ``ak.argcombinations`` of ``n`` items per list."""
     return arr.session.record_op(
         "ak.argcombinations",
         [arr],
@@ -824,6 +868,7 @@ def argcartesian(
     with_name: str | None = None,
     parameters: Mapping[str, ParamValue] | None = None,
 ) -> Array:
+    """Record ``ak.argcartesian`` over ``arrays``."""
     inputs = list(arrays.values() if isinstance(arrays, Mapping) else arrays)
     return inputs[0].session.record_op(
         "ak.argcartesian", inputs, _cartesian_params(arrays, axis, nested, with_name, parameters)
@@ -831,10 +876,12 @@ def argcartesian(
 
 
 def without_field(arr: Array, field: str) -> Array:
+    """Record ``ak.without_field``, dropping ``field``."""
     return arr.session.record_op("ak.without_field", [arr], {"field": field})
 
 
 def values_astype(arr: Array, dtype: npt.DTypeLike) -> Array:
+    """Record ``ak.values_astype`` to ``dtype``."""
     return arr.session.record_op("ak.values_astype", [arr], {"dtype": _dtype_name(dtype)})
 
 
@@ -873,10 +920,12 @@ def with_name(arr: Array, name: str) -> Array:
 
 
 def with_parameter(arr: Array, key: str, value: str | int | float | bool) -> Array:
+    """Record ``ak.with_parameter`` setting ``key`` to ``value``."""
     return arr.session.record_op("ak.with_parameter", [arr], {"key": key, "value": value})
 
 
 def without_parameters(arr: Array) -> Array:
+    """Record ``ak.without_parameters``."""
     return arr.session.record_op("ak.without_parameters", [arr])
 
 

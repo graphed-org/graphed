@@ -73,6 +73,7 @@ class OpSpec:
 
     @property
     def opaque(self) -> bool:
+        """Whether the callable is embedded by value rather than referenced."""
         return self.kind == "opaque"
 
     def identity(self) -> bytes:
@@ -82,6 +83,7 @@ class OpSpec:
         return b"opaque\0" + base64.b64decode(self.blob_b64)
 
     def resolve(self) -> Callable[..., Any]:
+        """Return the callable this spec names."""
         if self.live is not None:
             return self.live
         if self.kind == "ref":
@@ -99,6 +101,7 @@ class OpSpec:
 
     @classmethod
     def from_ref(cls, ref: str) -> OpSpec:
+        """Refer to the callable at ``ref`` (``"module:qualname"``)."""
         return cls(kind="ref", ref=ref)
 
     @classmethod
@@ -230,6 +233,7 @@ class DurablePlan:
 
     @classmethod
     def from_bytes(cls, data: bytes) -> DurablePlan:
+        """Read a plan :meth:`to_bytes` wrote."""
         doc = json.loads(data)
         return cls(
             ir=base64.b64decode(doc["ir_b64"]),
@@ -312,6 +316,7 @@ class DurablePlanV2:
         return GraphStore.deserialize(self.ir)
 
     def ir_fingerprint(self) -> str:
+        """Return the SHA-256 hex digest of the plan's IR."""
         return _sha256_hex(self.ir)
 
     def task_id(self, stage_index: int, task: Task) -> str:
@@ -349,6 +354,7 @@ class DurablePlanV2:
 
     @classmethod
     def from_bytes(cls, data: bytes) -> DurablePlanV2:
+        """Read a V2 plan :meth:`to_bytes` wrote, refusing any other format."""
         doc = json.loads(data)
         if doc.get("format_version") != FORMAT_VERSION_V2:
             raise ValueError(

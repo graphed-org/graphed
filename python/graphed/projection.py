@@ -24,6 +24,8 @@ if TYPE_CHECKING:
 
 
 class OnFail(StrEnum):
+    """What a projection check does when a read column goes unused."""
+
     PASS = "pass"
     WARN = "warn"
     RAISE = "raise"
@@ -43,9 +45,11 @@ class Projection:
     read_columns: Mapping[str, frozenset[str]]
 
     def columns_for(self, source: str) -> frozenset[str]:
+        """Return the columns ``source`` must read."""
         return frozenset(self.read_columns.get(source, frozenset()))
 
     def total_columns(self) -> int:
+        """Return the number of columns read across all sources."""
         return sum(len(cols) for cols in self.read_columns.values())
 
 
@@ -74,6 +78,7 @@ class BufferProjection:
     read_buffers: Mapping[str, Mapping[str, BufferNeed]]
 
     def buffers_for(self, source: str) -> dict[str, BufferNeed]:
+        """Return the buffer needs of ``source``, by buffer key."""
         return dict(self.read_buffers.get(source, {}))
 
     def columns_for(self, source: str) -> frozenset[str]:

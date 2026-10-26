@@ -220,11 +220,15 @@ class PartitionedSource(Protocol):
     :func:`declared_columns`.
     """
 
-    def partitions(self, steps_per_file: int) -> tuple[Partition, ...]: ...
+    def partitions(self, steps_per_file: int) -> tuple[Partition, ...]:
+        """Return the partitions of the source, ``steps_per_file`` per file."""
+        ...
 
     def read_partition(
         self, partition: Partition, columns: Sequence[str] | None, resources: WorkerResources
-    ) -> object: ...
+    ) -> object:
+        """Read ``partition``'s ``columns`` (every column when ``None``)."""
+        ...
 
 
 def sources_read(outputs: Sequence[Any]) -> dict[int, object]:

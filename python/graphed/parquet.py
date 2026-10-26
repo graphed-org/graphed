@@ -134,6 +134,7 @@ def derive_part_index(
 
 
 def part_path(destination: str, index: int, *, prefix: str = "part") -> str:
+    """Return the path of part ``index`` under ``destination``."""
     return _base_part_path(destination, index, prefix=prefix, suffix=".parquet")
 
 

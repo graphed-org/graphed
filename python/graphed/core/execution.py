@@ -167,6 +167,7 @@ class Partition:
 
     @property
     def is_blind(self) -> bool:
+        """Whether this partition's entry range is not resolved yet."""
         return self.blind_step is not None
 
     def resolve(self, num_entries: int) -> Partition:
@@ -183,6 +184,7 @@ class Partition:
 
     @property
     def n_entries(self) -> int:
+        """The number of entries this partition covers."""
         return max(0, self.entry_stop - self.entry_start)
 
 
@@ -206,10 +208,14 @@ class WorkerResources(Protocol):
     worker's chunks (file-locality directive).
     """
 
-    def open_once(self, uri: str, opener: Callable[[str], object]) -> object: ...
+    def open_once(self, uri: str, opener: Callable[[str], object]) -> object:
+        """Open ``uri`` with ``opener`` once, and reuse the handle afterwards."""
+        ...
 
 
 class StopReason(StrEnum):
+    """Why a run stopped."""
+
     EXHAUSTED = "exhausted"  # all data processed (the normal end)
     TARGET_EVENTS = "target_events"
     PRECISION = "precision"
@@ -238,6 +244,7 @@ class StopCondition:
     max_errors: int | None = None
 
     def reason(self, ctx: ExecContext) -> StopReason | None:
+        """Return why ``ctx`` should stop the run, or ``None`` to go on."""
         if self.target_events is not None and ctx.events_done >= self.target_events:
             return StopReason.TARGET_EVENTS
         if self.max_wall_s is not None and ctx.elapsed_s >= self.max_wall_s:
@@ -266,6 +273,8 @@ class Plan(Generic[R]):
 
 @dataclass(frozen=True)
 class ExecResult(Generic[R]):
+    """A run's value, with how many partitions and combines produced it."""
+
     value: R
     n_partitions: int
     n_combines: int
@@ -280,7 +289,9 @@ class Executor(Protocol):
     surface a worker failure to the driver intact (picklable) — never as an opaque string.
     """
 
-    def run(self, plan: Plan[R]) -> ExecResult[R]: ...
+    def run(self, plan: Plan[R]) -> ExecResult[R]:
+        """Run ``plan`` to its result."""
+        ...
 
 
 # ---- M38: the inter-worker comms seam (peer reduction + work-stealing) ----------------------
@@ -313,12 +324,29 @@ class WorkerTransport(Protocol):
 
     address: str
 
-    def peers(self) -> tuple[str, ...]: ...
-    def send(self, dest: str, message: object) -> bool: ...
-    def broadcast(self, message: object) -> None: ...
-    def poll(self) -> list[tuple[str, object]]: ...
-    def recv(self, timeout: float | None = None) -> tuple[str, object] | None: ...
-    def close(self) -> None: ...
+    def peers(self) -> tuple[str, ...]:
+        """Return the addresses of the other endpoints."""
+        ...
+
+    def send(self, dest: str, message: object) -> bool:
+        """Send ``message`` to ``dest``; return whether it was accepted."""
+        ...
+
+    def broadcast(self, message: object) -> None:
+        """Send ``message`` to every peer."""
+        ...
+
+    def poll(self) -> list[tuple[str, object]]:
+        """Return every message waiting, without blocking."""
+        ...
+
+    def recv(self, timeout: float | None = None) -> tuple[str, object] | None:
+        """Return the next message, waiting up to ``timeout``, or ``None``."""
+        ...
+
+    def close(self) -> None:
+        """Release the channel."""
+        ...
 
 
 # ---- M41: the Phase-2 ClusterExecutor launch seam (plan
@@ -376,7 +404,9 @@ class NodeStore(Protocol):
     of the same shape).
     """
 
-    def fetch(self, digest: str) -> object: ...
+    def fetch(self, digest: str) -> object:
+        """Return the object stored under ``digest``."""
+        ...
 
 
 @runtime_checkable
@@ -389,13 +419,17 @@ class ClusterExecutor(Protocol):
     unchanged when the topology grows.
     """
 
-    def run(self, plan: Plan[R]) -> ExecResult[R]: ...
+    def run(self, plan: Plan[R]) -> ExecResult[R]:
+        """Run ``plan`` across the cluster to its result."""
+        ...
 
 
 # ---- M37: the passive live-dashboard seam (data-only; no web, no profiler dep) --------------
 
 
 class TaskPhase(StrEnum):
+    """A task's lifecycle phase, as a monitor sees it."""
+
     SUBMITTED = "submitted"
     STARTED = "started"
     FINISHED = "finished"
@@ -434,9 +468,17 @@ class WorkerProfiler(Protocol):
     driver merges, or ``None``.
     """
 
-    def start(self) -> None: ...
-    def flush(self) -> bytes | None: ...
-    def stop(self) -> bytes | None: ...
+    def start(self) -> None:
+        """Start sampling."""
+        ...
+
+    def flush(self) -> bytes | None:
+        """Return the samples since the last flush, or ``None``."""
+        ...
+
+    def stop(self) -> bytes | None:
+        """Stop sampling and return the remaining samples, or ``None``."""
+        ...
 
 
 @runtime_checkable
@@ -450,13 +492,26 @@ class Monitor(Protocol):
     is its non-passive counterpart: the object a runner reads to pause or cancel.
     """
 
-    def on_task(self, event: TaskEvent) -> None: ...
-    def on_profile(self, worker: str, payload: bytes) -> None: ...
-    def on_combine(self, leaves_done: int) -> None: ...
-    def worker_profiler_factory(self) -> Callable[[], WorkerProfiler] | None: ...
+    def on_task(self, event: TaskEvent) -> None:
+        """Observe a task event."""
+        ...
+
+    def on_profile(self, worker: str, payload: bytes) -> None:
+        """Observe a worker's profile payload."""
+        ...
+
+    def on_combine(self, leaves_done: int) -> None:
+        """Observe the reduction's progress."""
+        ...
+
+    def worker_profiler_factory(self) -> Callable[[], WorkerProfiler] | None:
+        """Return the factory workers build their profiler with, or ``None``."""
+        ...
 
 
 class RunState(StrEnum):
+    """A run's control state."""
+
     RUNNING = "running"
     PAUSED = "paused"
     CANCELLED = "cancelled"
@@ -473,11 +528,13 @@ class RunControl:
     """
 
     def __init__(self) -> None:
+        """Start in the running state."""
         self._cond = threading.Condition()
         self._state = RunState.RUNNING
 
     @property
     def state(self) -> RunState:
+        """The current control state."""
         return self._state
 
     def _move(self, to: RunState, *, only_from: RunState | None = None) -> None:
@@ -487,15 +544,19 @@ class RunControl:
             self._cond.notify_all()
 
     def pause(self) -> None:
+        """Pause a running run."""
         self._move(RunState.PAUSED, only_from=RunState.RUNNING)
 
     def resume(self) -> None:
+        """Resume a paused run."""
         self._move(RunState.RUNNING, only_from=RunState.PAUSED)
 
     def cancel(self) -> None:
+        """Cancel the run."""
         self._move(RunState.CANCELLED)
 
     def reset(self) -> None:
+        """Return to the running state."""
         self._move(RunState.RUNNING)
 
     def apply(self, cmd: str) -> None:
@@ -581,11 +642,13 @@ class LocalResources:
     """
 
     def __init__(self, max_open: int = 128) -> None:
+        """Keep at most ``max_open`` handles open at once."""
         self._handles: OrderedDict[str, object] = OrderedDict()
         self._max_open = max_open
         self.open_count = 0  # real opens performed (test/diagnostic introspection)
 
     def open_once(self, uri: str, opener: Callable[[str], object]) -> object:
+        """Open ``uri`` once and reuse the handle, evicting the least recently used."""
         if uri in self._handles:
             self._handles.move_to_end(uri)  # mark most-recently-used
             return self._handles[uri]
@@ -598,6 +661,7 @@ class LocalResources:
         return handle
 
     def close(self) -> None:
+        """Close every open handle."""
         for handle in self._handles.values():
             _close_handle(handle)
         self._handles.clear()
@@ -625,6 +689,7 @@ class SequentialRunner:
     """
 
     def __init__(self, monitor: Monitor | None = None, control: RunControl | None = None) -> None:
+        """Run in-process, reporting to ``monitor`` and obeying ``control``."""
         self.monitor = monitor
         self.control = control
 
@@ -633,6 +698,7 @@ class SequentialRunner:
     @overload
     def run(self, plan: DurablePlanV2) -> ExecResult[Any]: ...
     def run(self, plan: Plan[R] | DurablePlanV2) -> ExecResult[R] | ExecResult[Any]:
+        """Run ``plan`` one task at a time in this process."""
         require_bound(plan)
         if not isinstance(plan, Plan):
             return self._run_stages(plan)

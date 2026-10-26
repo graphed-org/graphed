@@ -35,7 +35,9 @@ class RetryPolicy(Protocol):
         process: Process,
         combine: Combine,
         resources: Any,
-    ) -> Any: ...
+    ) -> Any:
+        """Recover ``partition`` after ``error``, or raise."""
+        ...
 
 
 @dataclass(frozen=True)
@@ -51,6 +53,7 @@ class Quarantine:
         combine: Combine,
         resources: Any,
     ) -> Any:
+        """Re-raise ``error``: the partition is quarantined."""
         raise error
 
 
@@ -69,6 +72,7 @@ class RetryN:
         combine: Combine,
         resources: Any,
     ) -> Any:
+        """Retry ``partition`` up to ``n`` times, re-raising the last error."""
         last = error
         for _ in range(self.n):
             try:
@@ -97,6 +101,7 @@ class RetryElsewhere:
         combine: Combine,
         resources: Any,
     ) -> Any:
+        """Retry ``partition`` on fresh resources, re-raising the last error."""
         last = error
         for _ in range(self.attempts):
             res = self.new_resources() if self.new_resources is not None else resources
@@ -127,6 +132,7 @@ class RetrySmallerChunk:
         combine: Combine,
         resources: Any,
     ) -> Any:
+        """Process ``partition`` in smaller pieces and combine their results."""
         return self._process_split(
             partition, error, process=process, combine=combine, resources=resources
         )

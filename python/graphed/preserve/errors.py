@@ -15,5 +15,6 @@ class UnresolvedPayload(PreserveError):
     """
 
     def __init__(self, content_hash: str, *, what: str = "payload") -> None:
+        """Name the content hash that resolved to nothing."""
         self.content_hash = content_hash
         super().__init__(f"unresolved {what} {content_hash}")

@@ -29,6 +29,7 @@ CoreDims = tuple[str, ...]
 
 
 def parse_signature(signature: str) -> tuple[list[CoreDims], CoreDims]:
+    """Parse a gufunc ``signature`` into its input core dims and output core dims."""
     lhs, arrow, rhs = signature.partition("->")
     if not arrow:
         raise TypeError(f"gufunc signature needs '->': {signature!r}")

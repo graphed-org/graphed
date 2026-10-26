@@ -107,6 +107,7 @@ class CompiledGraph:
         *,
         externals: Mapping[str, Callable[..., object]] | None = None,
     ) -> list[object]:
+        """Evaluate this graph on ``backend`` over ``sources``."""
         return evaluate_ir(self, backend, sources, externals=externals)
 
 

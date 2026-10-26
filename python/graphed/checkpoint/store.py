@@ -125,9 +125,13 @@ class CheckpointStore(Protocol):
     bytes never fails.
     """
 
-    def put(self, data: bytes) -> str: ...
+    def put(self, data: bytes) -> str:
+        """Store ``data`` and return its digest."""
+        ...
 
-    def get(self, digest: str) -> bytes | None: ...
+    def get(self, digest: str) -> bytes | None:
+        """Return the blob named ``digest``, or ``None``."""
+        ...
 
     def record_done(
         self,
@@ -137,13 +141,21 @@ class CheckpointStore(Protocol):
         *,
         stage: str = "",
         deps: tuple[str, ...] = (),
-    ) -> None: ...
+    ) -> None:
+        """Journal ``task_id`` as done with its result blob."""
+        ...
 
-    def completed(self) -> dict[str, JournalEntry]: ...
+    def completed(self) -> dict[str, JournalEntry]:
+        """Return every done task's journal entry."""
+        ...
 
-    def record_dead(self, descriptor: Mapping[str, object]) -> None: ...
+    def record_dead(self, descriptor: Mapping[str, object]) -> None:
+        """Append ``descriptor`` to the dead-letter log."""
+        ...
 
-    def dead_letters(self) -> list[dict[str, object]]: ...
+    def dead_letters(self) -> list[dict[str, object]]:
+        """Return every dead-letter record."""
+        ...
 
 
 class Store:
@@ -156,6 +168,7 @@ class Store:
     """
 
     def __init__(self, root: str | os.PathLike[str], node: str | None = None) -> None:
+        """Open the store at ``root``; ``node`` names this writer's own journal."""
         self.root = Path(root)
         self.node = node
         self.objects = self.root / "objects"
@@ -168,6 +181,7 @@ class Store:
     # ---- content-addressed blobs ----------------------------------------------------------------
     @staticmethod
     def content_hash(data: bytes) -> str:
+        """Return the SHA-256 hex digest of ``data``."""
         return hashlib.sha256(data).hexdigest()
 
     def put(self, data: bytes) -> str:
@@ -189,6 +203,7 @@ class Store:
             return None
 
     def has_blob(self, digest: str) -> bool:
+        """Return whether the blob named ``digest`` is stored."""
         return (self.objects / digest).exists()
 
     def get(self, digest: str) -> bytes | None:
@@ -226,6 +241,7 @@ class Store:
         stage: str = "",
         deps: tuple[str, ...] = (),
     ) -> None:
+        """Journal ``task_id`` as done with its result blob."""
         self._append(self.journal_path, _done_record(task_id, partition, blob, stage, deps))
 
     def record_environment(self, task_id: str, blob: str) -> None:
@@ -246,9 +262,11 @@ class Store:
 
     # ---- dead-letter set ------------------------------------------------------------------------
     def record_dead(self, descriptor: Mapping[str, object]) -> None:
+        """Append ``descriptor`` to the dead-letter log."""
         self._append(self.dead_letter_path, dict(descriptor))
 
     def dead_letters(self) -> list[dict[str, object]]:
+        """Return every dead-letter record, oldest first."""
         return list(self._read_lines(self.dead_letter_path))
 
     # ---- internals ------------------------------------------------------------------------------

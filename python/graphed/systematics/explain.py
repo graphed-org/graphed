@@ -34,6 +34,7 @@ class Entry:
     collections: tuple[str, ...] = ()
 
     def __str__(self) -> str:
+        """Describe the entry in words."""
         if self.kind == "shift":
             return f"shifts {', '.join(self.collections)}"
         if self.kind == "join":
@@ -79,6 +80,7 @@ class Family:
     independent_of: frozenset[str]
 
     def __str__(self) -> str:
+        """Describe the family and its relations in words."""
         placed = "".join(
             f", placing a universe at {_render_point(point)}" for point in self.placements
         )
@@ -123,6 +125,7 @@ class Operation:
     fixed_at: str | None = None
 
     def __str__(self) -> str:
+        """Describe the operation and where it came from in words."""
         carries = ", ".join(f"{name}{list(tags)}" for name, tags in self.families.items())
         # An entry the registering context still holds has crossed no row space, which is a fact
         # about it, not a missing field — so it is said rather than left as a placeholder.
@@ -144,6 +147,7 @@ class Variation:
     point: tuple[tuple[str, str], ...]
 
     def __str__(self) -> str:
+        """Show the label and its origin."""
         return f"{self.label}: {self.origin}"
 
 
@@ -161,6 +165,7 @@ class Explanation:
     variations: Mapping[str, Variation]
 
     def __str__(self) -> str:
+        """Render the whole explanation, one fact per line."""
         lines = [
             f"graphed.explain: {len(self.families)} registrations, "
             f"{len(self.operations)} ambient operations, {len(self.variations)} universes",

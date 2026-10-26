@@ -47,6 +47,7 @@ class CheckedExternal:
     node: str
 
     def __call__(self, *inputs: object) -> object:
+        """Evaluate, then refuse a value that disagrees with the declared type."""
         value = self.fn(*inputs)
         actual = self.check(value, inputs, self.key, self.declared)
         if actual is not None:
@@ -55,6 +56,7 @@ class CheckedExternal:
         return value
 
     def bind_services(self, endpoints: Mapping[str, str]) -> CheckedExternal:
+        """Return this check around the evaluator with ``endpoints`` bound."""
         return (
             replace(self, fn=self.fn.bind_services(endpoints))
             if isinstance(self.fn, Bindable)
@@ -64,13 +66,17 @@ class CheckedExternal:
     def __getattr__(self, name: str) -> Any:
         # the wrapped evaluator's own attributes (a plugin evaluator's `endpoint`) read through;
         # dunders and a half-unpickled instance must not recurse into `fn`
+        """Read an attribute through to the wrapped evaluator."""
         if name.startswith("__") or "fn" not in self.__dict__:
             raise AttributeError(name)
         return getattr(self.__dict__["fn"], name)
 
 
 class Session:
+    """A recording session: the interned graph of every array recorded on ``backend``."""
+
     def __init__(self, backend: Backend, *, incremental: bool = False) -> None:
+        """Record on ``backend``; ``incremental`` reduces the graph as it is recorded."""
         self._store = graphed.core.GraphStore()
         self._backend = backend
         self._forms: dict[int, Form] = {}
@@ -239,12 +245,15 @@ class Session:
     # ---- introspection ---------------------------------------------------------
     @property
     def backend(self) -> Backend:
+        """The backend this session records on."""
         return self._backend
 
     def node_count(self) -> int:
+        """Return the number of interned nodes."""
         return self._store.node_count()
 
     def to_dot(self) -> str:
+        """Return the graph in Graphviz dot format."""
         return self._store.to_dot()
 
     def serialized_ir(self, *outputs: Array, optimize: bool = True) -> bytes:
@@ -275,10 +284,12 @@ class Session:
         return bytes(self._store.reduce(outputs=ids)[0].serialize())
 
     def form(self, array: Array) -> Form:
+        """Return the form of ``array``."""
         self._mine([array])
         return self._forms[array.node_id]
 
     def provenance(self, array: Array) -> Provenance:
+        """Return the user source location that recorded ``array``."""
         self._mine([array])
         return self._provenance[array.node_id]
 
@@ -336,9 +347,11 @@ class Session:
         }
 
     def source_name(self, node_id: int) -> str:
+        """Return the name of source node ``node_id``."""
         return self._source_names[node_id]
 
     def form_of(self, node_id: int) -> Form:
+        """Return the form of node ``node_id``."""
         return self._forms[node_id]
 
     def sourcemap(self) -> dict[int, dict[str, object]]:
@@ -369,6 +382,7 @@ class Session:
     def source(self, name: str, *, form: Form, data: object, **params: ParamValue) -> Array:
         # a name is a slot of one form bound to one data object; the store interns (name, params),
         # so a name reused for other data would silently keep its first binding
+        """Record a source called ``name`` of ``form``, bound to ``data``."""
         described = getattr(form, "describe", None)
         key = described() if callable(described) else form
         held = self._slots.setdefault(name, (key, data))
@@ -396,6 +410,7 @@ class Session:
         *,
         reduction: bool = False,
     ) -> Array:
+        """Record ``op`` over ``inputs`` and return its array."""
         params_d: dict[str, ParamValue] = dict(params or {})
         prov = capture()
         self._mine(inputs, (op, prov))

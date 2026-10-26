@@ -45,12 +45,15 @@ _INSTALLED: tuple[str, ...] = tuple(
 
 @dataclass(frozen=True)
 class Provenance:
+    """A user source location: file, line, function and source text."""
+
     filename: str
     lineno: int
     function: str = ""
     source: str = ""
 
     def __str__(self) -> str:
+        """Show the location as ``filename:lineno``."""
         return f"{self.filename}:{self.lineno}"
 
 
@@ -65,6 +68,7 @@ def set_enabled(value: bool) -> None:
 
 
 def is_enabled() -> bool:
+    """Return whether provenance capture is on."""
     return _enabled
 
 

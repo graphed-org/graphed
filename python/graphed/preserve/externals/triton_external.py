@@ -35,6 +35,7 @@ _WIRES = {"http": "http", "https": "http", "grpc": "grpc", "grpcs": "grpc"}
 
 
 def triton_content_hash(payload: bytes) -> str:
+    """Return the content hash of a Triton descriptor payload."""
     return _canonical_json_hash(b"triton-descriptor-v1", payload)
 
 
@@ -95,11 +96,13 @@ class _TritonResource:
 
 
 def load_triton(payload: bytes, params: Mapping[str, Any]) -> Any:
+    """Open a Triton client for the server ``params`` names."""
     module, factory = _transport_module_and_factory(params)
     return _TritonResource(factory(params), module)
 
 
 def eval_triton(resource: Any, params: Mapping[str, Any], inputs: list[Any]) -> Any:
+    """Infer on the Triton server over ``inputs``, one value per event."""
     output_name = str(params.get("output_name", "y"))
     template = parse_call_template(params, len(inputs), allow_kwargs=False)
     if template is None:  # legacy: one named input
@@ -121,6 +124,7 @@ def eval_triton(resource: Any, params: Mapping[str, Any], inputs: list[Any]) -> 
 
 
 def close_triton(resource: Any) -> None:
+    """Close the Triton client's connection."""
     resource.client.close()  # release the connection at end of run
 
 
