@@ -20,10 +20,10 @@ pub enum ParamValue {
 impl ParamValue {
     fn tag(&self) -> u8 {
         match self {
-            ParamValue::Int(_) => 0,
-            ParamValue::Float(_) => 1,
-            ParamValue::Bool(_) => 2,
-            ParamValue::Str(_) => 3,
+            Self::Int(_) => 0,
+            Self::Float(_) => 1,
+            Self::Bool(_) => 2,
+            Self::Str(_) => 3,
         }
     }
 
@@ -41,27 +41,27 @@ impl ParamValue {
     /// escaped so the encoding is injective even when a value contains a separator character.
     pub fn token(&self) -> String {
         match self {
-            ParamValue::Int(a) => format!("i{a}"),
-            ParamValue::Float(a) => format!("f{:016x}", Self::float_key(*a)),
-            ParamValue::Bool(a) => format!("b{a}"),
-            ParamValue::Str(a) => format!("s{}", escape_token(a)),
+            Self::Int(a) => format!("i{a}"),
+            Self::Float(a) => format!("f{:016x}", Self::float_key(*a)),
+            Self::Bool(a) => format!("b{a}"),
+            Self::Str(a) => format!("s{}", escape_token(a)),
         }
     }
 
     /// Decode one tagged value token (the inverse of `token`).
-    pub fn from_token(tok: &str) -> Option<ParamValue> {
+    pub fn from_token(tok: &str) -> Option<Self> {
         let (tag, rest) = tok.split_at(tok.char_indices().nth(1).map_or(tok.len(), |(i, _)| i));
         match tag {
             "i" => rest.parse::<i64>().ok().map(ParamValue::Int),
             "f" => u64::from_str_radix(rest, 16)
                 .ok()
-                .map(|bits| ParamValue::Float(f64::from_bits(bits))),
+                .map(|bits| Self::Float(f64::from_bits(bits))),
             "b" => match rest {
-                "true" => Some(ParamValue::Bool(true)),
-                "false" => Some(ParamValue::Bool(false)),
+                "true" => Some(Self::Bool(true)),
+                "false" => Some(Self::Bool(false)),
                 _ => None,
             },
-            "s" => Some(ParamValue::Str(unescape_token(rest))),
+            "s" => Some(Self::Str(unescape_token(rest))),
             _ => None,
         }
     }
@@ -87,12 +87,10 @@ pub fn unescape_token(s: &str) -> String {
 impl PartialEq for ParamValue {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (ParamValue::Int(a), ParamValue::Int(b)) => a == b,
-            (ParamValue::Float(a), ParamValue::Float(b)) => {
-                Self::float_key(*a) == Self::float_key(*b)
-            }
-            (ParamValue::Bool(a), ParamValue::Bool(b)) => a == b,
-            (ParamValue::Str(a), ParamValue::Str(b)) => a == b,
+            (Self::Int(a), Self::Int(b)) => a == b,
+            (Self::Float(a), Self::Float(b)) => Self::float_key(*a) == Self::float_key(*b),
+            (Self::Bool(a), Self::Bool(b)) => a == b,
+            (Self::Str(a), Self::Str(b)) => a == b,
             _ => false,
         }
     }
@@ -104,10 +102,10 @@ impl Hash for ParamValue {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.tag().hash(state);
         match self {
-            ParamValue::Int(a) => a.hash(state),
-            ParamValue::Float(a) => Self::float_key(*a).hash(state),
-            ParamValue::Bool(a) => a.hash(state),
-            ParamValue::Str(a) => a.hash(state),
+            Self::Int(a) => a.hash(state),
+            Self::Float(a) => Self::float_key(*a).hash(state),
+            Self::Bool(a) => a.hash(state),
+            Self::Str(a) => a.hash(state),
         }
     }
 }
@@ -115,10 +113,10 @@ impl Hash for ParamValue {
 impl fmt::Display for ParamValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ParamValue::Int(a) => write!(f, "{a}"),
-            ParamValue::Float(a) => write!(f, "{a}"),
-            ParamValue::Bool(a) => write!(f, "{a}"),
-            ParamValue::Str(a) => write!(f, "{a:?}"),
+            Self::Int(a) => write!(f, "{a}"),
+            Self::Float(a) => write!(f, "{a}"),
+            Self::Bool(a) => write!(f, "{a}"),
+            Self::Str(a) => write!(f, "{a:?}"),
         }
     }
 }
@@ -130,7 +128,7 @@ pub struct ParamMap(Vec<(String, ParamValue)>);
 impl ParamMap {
     pub fn new(mut entries: Vec<(String, ParamValue)>) -> Self {
         entries.sort_by(|a, b| a.0.cmp(&b.0));
-        ParamMap(entries)
+        Self(entries)
     }
 
     pub fn is_empty(&self) -> bool {
@@ -156,16 +154,16 @@ impl ParamMap {
 
     /// Decode a `token()` string back into a `ParamMap` (used by `GraphStore.nodes()` to expose
     /// fused stage members for IR-driven execution). Returns `None` on a malformed token.
-    pub fn from_token(s: &str) -> Option<ParamMap> {
+    pub fn from_token(s: &str) -> Option<Self> {
         if s.is_empty() {
-            return Some(ParamMap::new(vec![]));
+            return Some(Self::new(vec![]));
         }
         let mut entries = Vec::new();
         for part in s.split(';') {
             let (k, v) = part.split_once('=')?;
             entries.push((unescape_token(k), ParamValue::from_token(v)?));
         }
-        Some(ParamMap::new(entries))
+        Some(Self::new(entries))
     }
 }
 

@@ -111,7 +111,7 @@ impl PyPayloadDescriptor {
         io_schema: String,
         preprocessing_ref: Option<String>,
     ) -> Self {
-        PyPayloadDescriptor {
+        Self {
             inner: PayloadDescriptor {
                 kind,
                 content_hash,
@@ -160,7 +160,7 @@ struct PyGraphStore {
 impl PyGraphStore {
     #[new]
     fn new() -> Self {
-        PyGraphStore {
+        Self {
             store: GraphStore::new(),
         }
     }
@@ -261,10 +261,10 @@ impl PyGraphStore {
     /// Rebuild a store from canonical bytes. A round trip reproduces the same node ids, so
     /// `serialize` of the result is byte-identical to the input (plan M8 determinism gate).
     #[staticmethod]
-    fn deserialize(data: &[u8]) -> PyResult<PyGraphStore> {
+    fn deserialize(data: &[u8]) -> PyResult<Self> {
         let store =
             serialize::deserialize(data).map_err(|e| PyValueError::new_err(e.to_string()))?;
-        Ok(PyGraphStore { store })
+        Ok(Self { store })
     }
 
     /// Structured, read-only view of every node in id order (plan M9: `inspect` renders the IR and
@@ -367,9 +367,9 @@ impl PyGraphStore {
     /// opt_level=0 (M6): the 1:1 cone of `outputs` — DCE without the rewrites — as a fresh store
     /// marked with `outputs`; its `node_map` sends each kept id to `(cone id, None)`.
     #[pyo3(signature = (*, outputs))]
-    fn cone(&self, outputs: Vec<NodeId>) -> PyResult<PyGraphStore> {
+    fn cone(&self, outputs: Vec<NodeId>) -> PyResult<Self> {
         let store = self.store.cone(&outputs).map_err(map_err)?;
-        Ok(PyGraphStore { store })
+        Ok(Self { store })
     }
 
     /// Reduce via the M4 optimizer (DCE + CSE + equality-saturation stage fusion behind
@@ -381,7 +381,7 @@ impl PyGraphStore {
         &self,
         maximal_fusion: bool,
         outputs: Option<Vec<NodeId>>,
-    ) -> PyResult<(PyGraphStore, std::collections::HashMap<String, usize>)> {
+    ) -> PyResult<(Self, std::collections::HashMap<String, usize>)> {
         let (reduced, report) = match outputs {
             // M22: an explicit output set scopes the reduction to the compile request, ignoring
             // stored marks — compiling is read-only and sequential compiles never cross-talk
@@ -393,7 +393,7 @@ impl PyGraphStore {
                 .store
                 .reduce_with(&EggEngine::default(), fusion_mode(maximal_fusion)),
         };
-        Ok((PyGraphStore { store: reduced }, report_to_map(&report)))
+        Ok((Self { store: reduced }, report_to_map(&report)))
     }
 
     /// One-shot incremental reduction of the current graph (same result as `reduce`). For genuine
@@ -402,7 +402,7 @@ impl PyGraphStore {
     fn reduce_incremental(
         &self,
         outputs: Option<Vec<NodeId>>,
-    ) -> PyResult<(PyGraphStore, std::collections::HashMap<String, usize>)> {
+    ) -> PyResult<(Self, std::collections::HashMap<String, usize>)> {
         let (reduced, report) = match outputs {
             Some(outs) => self
                 .store
@@ -410,7 +410,7 @@ impl PyGraphStore {
                 .map_err(map_err)?,
             None => self.store.reduce_incremental(&EggEngine::default()),
         };
-        Ok((PyGraphStore { store: reduced }, report_to_map(&report)))
+        Ok((Self { store: reduced }, report_to_map(&report)))
     }
 
     /// The reduction report for the current graph, without keeping the reduced store.
@@ -486,7 +486,7 @@ struct PyIncrementalReducer {
 impl PyIncrementalReducer {
     #[new]
     fn new() -> Self {
-        PyIncrementalReducer {
+        Self {
             inner: Mutex::new(IncrementalReducer::new()),
         }
     }

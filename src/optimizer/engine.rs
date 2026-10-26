@@ -84,7 +84,7 @@ impl Default for EggEngine {
             let rhs: Pattern<SymbolLang> = "?x".parse().unwrap();
             rules.push(Rewrite::new(format!("identity-{i}"), lhs, rhs).unwrap());
         }
-        EggEngine {
+        Self {
             rules,
             iter_limit: 12,
         }

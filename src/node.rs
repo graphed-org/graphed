@@ -87,20 +87,20 @@ pub enum NodeKey {
 impl NodeKey {
     pub fn inputs(&self) -> &[NodeId] {
         match self {
-            NodeKey::Source { .. } => &[],
-            NodeKey::Op { inputs, .. }
-            | NodeKey::Reduction { inputs, .. }
-            | NodeKey::External { inputs, .. }
-            | NodeKey::Stage { inputs, .. }
-            | NodeKey::Exchange { inputs, .. }
-            | NodeKey::Join { inputs, .. } => inputs,
+            Self::Source { .. } => &[],
+            Self::Op { inputs, .. }
+            | Self::Reduction { inputs, .. }
+            | Self::External { inputs, .. }
+            | Self::Stage { inputs, .. }
+            | Self::Exchange { inputs, .. }
+            | Self::Join { inputs, .. } => inputs,
         }
     }
 
     /// True for boundary nodes (source / reduction / external / stage) — fusion never merges
     /// across these (plan A.6 boundary op).
     pub fn is_boundary(&self) -> bool {
-        !matches!(self, NodeKey::Op { .. })
+        !matches!(self, Self::Op { .. })
     }
 
     /// The "operator" identity of a node, excluding inputs — the egg symbol and the key into the
@@ -109,12 +109,12 @@ impl NodeKey {
     pub fn token(&self) -> String {
         use crate::param::escape_token as esc;
         match self {
-            NodeKey::Source { name, params } => with_params(format!("src|{}", esc(name)), params),
-            NodeKey::Op { name, params, .. } => with_params(format!("op|{}", esc(name)), params),
-            NodeKey::Reduction { name, params, .. } => {
+            Self::Source { name, params } => with_params(format!("src|{}", esc(name)), params),
+            Self::Op { name, params, .. } => with_params(format!("op|{}", esc(name)), params),
+            Self::Reduction { name, params, .. } => {
                 with_params(format!("red|{}", esc(name)), params)
             }
-            NodeKey::External {
+            Self::External {
                 descriptor, params, ..
             } => with_params(
                 format!(
@@ -128,51 +128,51 @@ impl NodeKey {
                 ),
                 params,
             ),
-            NodeKey::Stage { members, .. } => format!("stage|{}", members.len()),
+            Self::Stage { members, .. } => format!("stage|{}", members.len()),
             // a non-`op|` prefix, so the optimizer's `boundary_from_token` treats it as a boundary;
             // the scheme is in the token so distinct schemes are distinct templates on reconstruction.
-            NodeKey::Exchange { scheme, .. } => with_params("exch".to_string(), scheme),
+            Self::Exchange { scheme, .. } => with_params("exch".to_string(), scheme),
             // a non-`op|` prefix so `boundary_from_token` treats it as a boundary; the two ordered
             // inputs are e-graph children (build vs probe asymmetry preserved), the scheme is in the
             // token so distinct join types/keys are distinct templates on reconstruction.
-            NodeKey::Join { scheme, .. } => with_params("join".to_string(), scheme),
+            Self::Join { scheme, .. } => with_params("join".to_string(), scheme),
         }
     }
 
     /// Clone this node's operator identity with a fresh input list (used when rebuilding the
     /// reduced graph). Sources ignore inputs.
-    pub fn with_inputs(&self, new_inputs: Vec<NodeId>) -> NodeKey {
+    pub fn with_inputs(&self, new_inputs: Vec<NodeId>) -> Self {
         match self {
-            NodeKey::Source { name, params } => NodeKey::Source {
+            Self::Source { name, params } => Self::Source {
                 name: name.clone(),
                 params: params.clone(),
             },
-            NodeKey::Op { name, params, .. } => NodeKey::Op {
-                name: name.clone(),
-                params: params.clone(),
-                inputs: new_inputs,
-            },
-            NodeKey::Reduction { name, params, .. } => NodeKey::Reduction {
+            Self::Op { name, params, .. } => Self::Op {
                 name: name.clone(),
                 params: params.clone(),
                 inputs: new_inputs,
             },
-            NodeKey::External {
+            Self::Reduction { name, params, .. } => Self::Reduction {
+                name: name.clone(),
+                params: params.clone(),
+                inputs: new_inputs,
+            },
+            Self::External {
                 descriptor, params, ..
-            } => NodeKey::External {
+            } => Self::External {
                 descriptor: descriptor.clone(),
                 params: params.clone(),
                 inputs: new_inputs,
             },
-            NodeKey::Stage { members, .. } => NodeKey::Stage {
+            Self::Stage { members, .. } => Self::Stage {
                 inputs: new_inputs,
                 members: members.clone(),
             },
-            NodeKey::Exchange { scheme, .. } => NodeKey::Exchange {
+            Self::Exchange { scheme, .. } => Self::Exchange {
                 scheme: scheme.clone(),
                 inputs: new_inputs,
             },
-            NodeKey::Join { scheme, .. } => NodeKey::Join {
+            Self::Join { scheme, .. } => Self::Join {
                 scheme: scheme.clone(),
                 inputs: new_inputs,
             },
@@ -182,10 +182,10 @@ impl NodeKey {
     /// Deterministic graphviz label (used by `to_dot`).
     pub fn label(&self) -> String {
         match self {
-            NodeKey::Source { name, params } => fmt_label("Source", name, params),
-            NodeKey::Op { name, params, .. } => fmt_label("Op", name, params),
-            NodeKey::Reduction { name, params, .. } => fmt_label("Reduction", name, params),
-            NodeKey::External {
+            Self::Source { name, params } => fmt_label("Source", name, params),
+            Self::Op { name, params, .. } => fmt_label("Op", name, params),
+            Self::Reduction { name, params, .. } => fmt_label("Reduction", name, params),
+            Self::External {
                 descriptor, params, ..
             } => {
                 let base = format!(
@@ -201,15 +201,15 @@ impl NodeKey {
                     format!("{base} {params}")
                 }
             }
-            NodeKey::Stage { members, .. } => format!("Stage[{} members]", members.len()),
-            NodeKey::Exchange { scheme, .. } => {
+            Self::Stage { members, .. } => format!("Stage[{} members]", members.len()),
+            Self::Exchange { scheme, .. } => {
                 if scheme.is_empty() {
                     "Exchange".to_string()
                 } else {
                     format!("Exchange {scheme}")
                 }
             }
-            NodeKey::Join { scheme, .. } => {
+            Self::Join { scheme, .. } => {
                 if scheme.is_empty() {
                     "Join".to_string()
                 } else {

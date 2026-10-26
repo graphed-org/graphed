@@ -52,11 +52,11 @@ pub enum DecodeError {
 impl std::fmt::Display for DecodeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DecodeError::BadMagic => write!(f, "not a graphed IR blob (bad magic/version)"),
-            DecodeError::Truncated => write!(f, "truncated graphed IR blob"),
-            DecodeError::BadTag(what, t) => write!(f, "invalid {what} tag {t}"),
-            DecodeError::BadUtf8 => write!(f, "invalid utf-8 in graphed IR blob"),
-            DecodeError::BadNodeRef(i) => write!(f, "node reference {i} out of range"),
+            Self::BadMagic => write!(f, "not a graphed IR blob (bad magic/version)"),
+            Self::Truncated => write!(f, "truncated graphed IR blob"),
+            Self::BadTag(what, t) => write!(f, "invalid {what} tag {t}"),
+            Self::BadUtf8 => write!(f, "invalid utf-8 in graphed IR blob"),
+            Self::BadNodeRef(i) => write!(f, "node reference {i} out of range"),
         }
     }
 }

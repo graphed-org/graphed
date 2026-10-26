@@ -57,7 +57,7 @@ impl Default for GraphStore {
 
 impl GraphStore {
     pub fn new() -> Self {
-        GraphStore {
+        Self {
             inner: Mutex::new(Inner {
                 nodes: Vec::new(),
                 intern: HashMap::new(),
@@ -193,8 +193,8 @@ impl GraphStore {
     }
 
     /// Rebuild a `Reduced` form into a fresh interned store.
-    pub(crate) fn from_reduced(red: optimizer::Reduced) -> (GraphStore, ReductionReport) {
-        let store = GraphStore::new();
+    pub(crate) fn from_reduced(red: optimizer::Reduced) -> (Self, ReductionReport) {
+        let store = Self::new();
         let mut map: Vec<NodeId> = Vec::with_capacity(red.nodes.len());
         for key in &red.nodes {
             let remapped: Vec<NodeId> = key.inputs().iter().map(|&i| map[i as usize]).collect();
@@ -221,7 +221,7 @@ impl GraphStore {
 
     /// Reduce the graph via the M4 pipeline (DCE + CSE + equality-saturation stage fusion) into a
     /// fresh interned store. Returns the reduced store and the reduction report.
-    pub fn reduce(&self, engine: &dyn RewriteEngine) -> (GraphStore, ReductionReport) {
+    pub fn reduce(&self, engine: &dyn RewriteEngine) -> (Self, ReductionReport) {
         self.reduce_with(engine, optimizer::FusionMode::SingleUse)
     }
 
@@ -230,9 +230,9 @@ impl GraphStore {
         &self,
         engine: &dyn RewriteEngine,
         mode: optimizer::FusionMode,
-    ) -> (GraphStore, ReductionReport) {
+    ) -> (Self, ReductionReport) {
         let (nodes, outputs) = self.snapshot();
-        GraphStore::from_reduced(optimizer::reduce_with_mode(&nodes, &outputs, engine, mode))
+        Self::from_reduced(optimizer::reduce_with_mode(&nodes, &outputs, engine, mode))
     }
 
     /// `reduce_with` against an EXPLICIT output set — the compile request's — ignoring stored
@@ -243,16 +243,16 @@ impl GraphStore {
         outputs: &[NodeId],
         engine: &dyn RewriteEngine,
         mode: optimizer::FusionMode,
-    ) -> Result<(GraphStore, ReductionReport), BadNodeId> {
+    ) -> Result<(Self, ReductionReport), BadNodeId> {
         let nodes = self.arena_holding(outputs)?;
-        Ok(GraphStore::from_reduced(optimizer::reduce_with_mode(
+        Ok(Self::from_reduced(optimizer::reduce_with_mode(
             &nodes, outputs, engine, mode,
         )))
     }
 
     /// opt_level=0 (M6): the 1:1 cone of `outputs` — M4's DCE without the rewrites — rebuilt into a
     /// fresh store marked with `outputs`, whose `node_map` sends each kept id to `(cone id, None)`.
-    pub fn cone(&self, outputs: &[NodeId]) -> Result<GraphStore, BadNodeId> {
+    pub fn cone(&self, outputs: &[NodeId]) -> Result<Self, BadNodeId> {
         let nodes = self.arena_holding(outputs)?;
         let (kept, outs, remap) = optimizer::dead_code_elimination(&nodes, outputs);
         let reduced = optimizer::Reduced {
@@ -264,7 +264,7 @@ impl GraphStore {
                 .map(|r| (r != optimizer::DROPPED).then_some((r as NodeId, None)))
                 .collect(),
         };
-        Ok(GraphStore::from_reduced(reduced).0)
+        Ok(Self::from_reduced(reduced).0)
     }
 
     /// The arena, refusing an output id it does not hold (the DCE pass indexes it unchecked).
@@ -279,7 +279,7 @@ impl GraphStore {
     /// One-shot incremental reduction of the current graph — same result as `reduce`. For genuine
     /// step-by-step reduction while building, use `optimizer::IncrementalReducer`, which processes
     /// only the delta per step (and whose work counter proves it).
-    pub fn reduce_incremental(&self, engine: &dyn RewriteEngine) -> (GraphStore, ReductionReport) {
+    pub fn reduce_incremental(&self, engine: &dyn RewriteEngine) -> (Self, ReductionReport) {
         self.reduce(engine)
     }
 

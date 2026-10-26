@@ -183,7 +183,7 @@ struct Dsu {
 }
 impl Dsu {
     fn new(n: usize) -> Self {
-        Dsu {
+        Self {
             parent: (0..n).collect(),
         }
     }
