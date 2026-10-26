@@ -69,6 +69,10 @@ pub(crate) struct EggEngine {
 }
 
 impl Default for EggEngine {
+    #[allow(
+        clippy::unwrap_used,
+        reason = "the patterns are built from constant op lists and parse on every construction"
+    )]
     fn default() -> Self {
         // Only provably-sound rewrites: commutativity of every symmetric op in the vocabulary, and
         // the additive/multiplicative identities. Domain-dependent rules (mask-fusion,
@@ -93,6 +97,10 @@ impl Default for EggEngine {
 }
 
 impl RewriteEngine for EggEngine {
+    #[allow(
+        clippy::indexing_slicing,
+        reason = "inputs precede their node, so each input's e-class and class representative already exist"
+    )]
     fn canonicalize(&self, graph: &EngineGraph) -> (EngineGraph, Vec<usize>) {
         // 1. load the DAG into an e-graph, recording each node's eclass (topo order).
         let mut egraph: EGraph<SymbolLang, ()> = EGraph::default();

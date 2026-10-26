@@ -67,8 +67,11 @@ impl GraphStore {
         }
     }
 
+    #[allow(
+        clippy::expect_used,
+        reason = "poisoning needs a panic mid-update, and the critical sections do not panic"
+    )]
     fn lock(&self) -> MutexGuard<'_, Inner> {
-        // Poisoning only happens if a thread panics mid-update; our critical sections do not panic.
         self.inner
             .lock()
             .expect("graphed-core store mutex poisoned")
@@ -92,8 +95,11 @@ impl GraphStore {
         Ok(id)
     }
 
+    #[allow(
+        clippy::expect_used,
+        reason = "a source has no inputs, so interning it cannot fail"
+    )]
     pub(crate) fn add_source(&self, name: String, params: ParamMap) -> NodeId {
-        // sources have no inputs -> interning cannot fail
         self.intern(NodeKey::Source { name, params })
             .expect("source has no inputs")
     }
@@ -192,7 +198,7 @@ impl GraphStore {
     /// Snapshot only the nodes with id >= `start` (the delta an `IncrementalReducer` consumes).
     pub(crate) fn snapshot_from(&self, start: usize) -> Vec<NodeKey> {
         let g = self.lock();
-        g.nodes[start.min(g.nodes.len())..].to_vec()
+        g.nodes.get(start..).unwrap_or_default().to_vec()
     }
 
     /// The marked output ids, in mark order.
@@ -201,6 +207,11 @@ impl GraphStore {
     }
 
     /// Rebuild a `Reduced` form into a fresh interned store.
+    #[allow(
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        reason = "a Reduced graph is topological, so map holds every input, output and landing it names"
+    )]
     pub(crate) fn from_reduced(red: optimizer::Reduced) -> (Self, ReductionReport) {
         let store = Self::new();
         let mut map: Vec<NodeId> = Vec::with_capacity(red.nodes.len());

@@ -116,6 +116,10 @@ impl IncrementalReducer {
     /// Finish the reduction for the given original-arena outputs: translate them into the
     /// canonical arena and run the standard pipeline (DCE + engine + CSE + stage fusion) over the
     /// *canonical* nodes. Cost is O(canonical size) once — independent of how many steps fed it.
+    #[allow(
+        clippy::indexing_slicing,
+        reason = "the reduction's node_map covers the canonical arena that self.map points into"
+    )]
     pub(crate) fn finalize(
         &self,
         outputs: &[NodeId],

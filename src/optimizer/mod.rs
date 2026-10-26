@@ -64,6 +64,10 @@ pub(crate) struct Reduced {
 /// Run the full reduction with an explicit fusion mode (see [`FusionMode`]). `nodes` is the
 /// interned arena (topological by id); `outputs` are marked output ids. Returns reduced NodeKeys
 /// whose inputs reference indices *within the returned list*.
+#[allow(
+    clippy::indexing_slicing,
+    reason = "each pass's remap is total over the graph the previous pass produced"
+)]
 pub(crate) fn reduce_with_mode(
     nodes: &[NodeKey],
     outputs: &[NodeId],
@@ -106,6 +110,10 @@ pub(crate) const DROPPED: usize = usize::MAX;
 /// Reachability from the outputs (plan M4: DCE = reachability; never drops a node on a path to an
 /// output). Returns the reachable nodes compacted into topological order, the remapped outputs,
 /// and the `remap` vector itself (`DROPPED` for a node this pass dropped).
+#[allow(
+    clippy::indexing_slicing,
+    reason = "callers pass outputs below nodes.len(), and the store keeps every input below its node"
+)]
 pub(crate) fn dead_code_elimination(
     nodes: &[NodeKey],
     outputs: &[NodeId],
@@ -156,6 +164,10 @@ fn to_engine_graph(keys: &[NodeKey], outputs: &[usize]) -> EngineGraph {
 
 /// Hash-cons identical (token, inputs) nodes — CSE as a plain pass. Returns the deduped graph and
 /// the `remap` it already builds (input index -> deduped index).
+#[allow(
+    clippy::indexing_slicing,
+    reason = "an EngineGraph's inputs and outputs index its own nodes, inputs before consumers"
+)]
 fn cse(graph: &EngineGraph) -> (EngineGraph, Vec<usize>) {
     let mut remap = vec![0usize; graph.nodes.len()];
     let mut seen: HashMap<(String, Vec<usize>), usize> = HashMap::new();
@@ -181,6 +193,10 @@ fn cse(graph: &EngineGraph) -> (EngineGraph, Vec<usize>) {
 struct Dsu {
     parent: Vec<usize>,
 }
+#[allow(
+    clippy::indexing_slicing,
+    reason = "parent holds positions in 0..n from new"
+)]
 impl Dsu {
     fn new(n: usize) -> Self {
         Self {
@@ -216,6 +232,10 @@ impl Dsu {
 ///
 /// Also returns each input node's [`Landing`] — the component's reduced id plus, for a fused op,
 /// its index in that stage's sorted member list. Both are already computed to build the stages.
+#[allow(
+    clippy::indexing_slicing,
+    reason = "components are reduced in topological order, so every input's component is already mapped"
+)]
 fn stage_fusion(
     graph: &EngineGraph,
     templates: &HashMap<String, NodeKey>,
@@ -293,6 +313,10 @@ fn stage_fusion(
 }
 
 /// Each node's consumers, and whether it is an output.
+#[allow(
+    clippy::indexing_slicing,
+    reason = "an EngineGraph's inputs and outputs index its own nodes, inputs before consumers"
+)]
 fn uses(graph: &EngineGraph) -> (Vec<Vec<usize>>, Vec<bool>) {
     let n = graph.nodes.len();
     let mut consumers: Vec<Vec<usize>> = vec![Vec::new(); n];
@@ -310,6 +334,10 @@ fn uses(graph: &EngineGraph) -> (Vec<Vec<usize>>, Vec<bool>) {
 
 /// `FusionMode::SingleUse` components: ops whose single use is another op share a union-find
 /// root; a boundary is its own component.
+#[allow(
+    clippy::indexing_slicing,
+    reason = "an EngineGraph's inputs and outputs index its own nodes, inputs before consumers"
+)]
 fn single_use_components(graph: &EngineGraph) -> Vec<usize> {
     let (consumers, is_output) = uses(graph);
     let mut dsu = Dsu::new(graph.nodes.len());
@@ -341,6 +369,10 @@ fn single_use_components(graph: &EngineGraph) -> Vec<usize> {
 /// joins its consumers' stage iff every consumer is an op AND they all sit in one component;
 /// otherwise (an output, a boundary consumer, or consumers in different stages) it heads its own
 /// stage. Deterministic: a pure function of the (ordered) graph.
+#[allow(
+    clippy::indexing_slicing,
+    reason = "an EngineGraph's inputs and outputs index its own nodes, inputs before consumers"
+)]
 fn maximal_components(graph: &EngineGraph) -> Vec<usize> {
     let (consumers, is_output) = uses(graph);
     let n = graph.nodes.len();
@@ -362,6 +394,10 @@ fn maximal_components(graph: &EngineGraph) -> Vec<usize> {
 
 /// The `Stage` for one op component; `ops` ascends, so an op's position in it is its member
 /// index, and inputs from other components become the stage's input slots in first-seen order.
+#[allow(
+    clippy::indexing_slicing,
+    reason = "inputs precede their consumers, so every outside input's component is already mapped"
+)]
 fn fuse_stage(
     graph: &EngineGraph,
     ops: &[usize],
