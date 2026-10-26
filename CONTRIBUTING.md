@@ -2,7 +2,7 @@
 
 `graphed` is a mixed Rust/Python package: a compiled Rust core (the graph store and
 optimizer) underneath a pure-Python frontend. Building it from source therefore needs a
-**Rust toolchain** (rustc ≥ 1.74, via [rustup](https://rustup.rs)) in addition to
+**Rust toolchain** (rustc ≥ 1.83, via [rustup](https://rustup.rs)) in addition to
 Python ≥ 3.11.
 
 ## Layout

@@ -105,6 +105,25 @@ jobs:
       - name: loom model of the locking discipline
         run: RUSTFLAGS="--cfg loom" cargo test --lib loom_model
 
+  # The declared minimum Rust version (Cargo.toml `rust-version`) is tested, not just stated (§A.5).
+  rust-msrv:
+    name: rust MSRV (cargo test on rust-version)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Read rust-version
+        id: msrv
+        run: echo "version=$(grep -m1 '^rust-version' Cargo.toml | cut -d'"' -f2)" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.msrv.outputs.version }}
+      - name: Link libpython for the test binary
+        run: echo "LD_LIBRARY_PATH=$(python -c 'import sysconfig; print(sysconfig.get_config_var(\"LIBDIR\"))')" >> "$GITHUB_ENV"
+      - run: cargo test --locked
+
   coverage-rust:
     name: rust coverage (per-file >=90%, PR delta >=98%)
     runs-on: ubuntu-latest
@@ -284,7 +303,7 @@ jobs:
   ci-required:
     name: ci required
     if: always()
-    needs: [test, coverage, rust, coverage-rust, test-freethreaded, dashboard-smoke, docs, triton]
+    needs: [test, coverage, rust, rust-msrv, coverage-rust, test-freethreaded, dashboard-smoke, docs, triton]
     runs-on: ubuntu-latest
     steps:
       - name: every needed job succeeded
