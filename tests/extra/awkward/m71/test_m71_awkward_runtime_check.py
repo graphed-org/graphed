@@ -240,10 +240,8 @@ def test_the_correction_template_checks_its_float64_leaves(
     )
     s, ev = _events()
     cset = CORRECTIONLIB_PLUGIN.samples()[0]
-    sf, line = (
-        gak.apply_correction(cset, "sf", [ev.x], fx.score, args=["nominal", "$0"]),
-        fx.here(),
-    )
+    line = fx.here() + 1
+    sf = gak.apply_correction(cset, "sf", [ev.x], fx.score, args=["nominal", "$0"])
     err = _refused(lambda: s.materialize(sf), line)
     assert "declares output_dtype 'float64'; its value is 'float32'" in err.detail
 
@@ -259,10 +257,8 @@ def test_the_correction_template_checks_its_float64_leaves(
 def test_an_output_dtype_is_checked_on_every_leaf(value: Any, fits: bool) -> None:
     s, ev = _events()
     fn, leaf = _value(value), {"output_dtype": "float64"}
-    out, line = (
-        s.record_external("map", fn, [ev.x], {"fn": f"leaves {fits}"}, form_params=leaf),
-        fx.here(),
-    )
+    line = fx.here() + 1
+    out = s.record_external("map", fn, [ev.x], {"fn": f"leaves {fits}"}, form_params=leaf)
     if fits:
         assert s.materialize(out) is value
     else:

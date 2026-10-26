@@ -58,10 +58,8 @@ def test_a_served_mask_declared_bool_is_refused_at_its_line(
     s.declare_service(ServiceSpec("scorer", "http"))
     params = {"model": "scorer", "transport": "m71_triton_fixtures:transport", "service": "scorer"}
     payload = b'{"model": "scorer"}'
-    mask, line = (
-        record_external(s, TRITON_PLUGIN, payload, [ev.x], output_type="bool", params=params),
-        here(),
-    )
+    line = here() + 1
+    mask = record_external(s, TRITON_PLUGIN, payload, [ev.x], output_type="bool", params=params)
     plan = graphed.aggregate_plan(
         gak.sum(ev.x[mask]), reduce=fx.total, combine=fx.add, empty=fx.zero
     )
