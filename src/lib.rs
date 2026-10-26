@@ -243,19 +243,18 @@ impl PyGraphStore {
         py: Python<'py>,
         outputs: Option<Vec<NodeId>>,
     ) -> PyResult<Bound<'py, PyBytes>> {
-        match outputs {
-            None => Ok(PyBytes::new(py, &serialize::serialize(&self.store))),
+        let bytes = match outputs {
+            None => serialize::serialize(&self.store),
             Some(outs) => {
                 let n = self.store.node_count() as NodeId;
                 if let Some(&bad) = outs.iter().find(|&&o| o >= n) {
                     return Err(map_err(BadNodeId(bad)));
                 }
-                Ok(PyBytes::new(
-                    py,
-                    &serialize::serialize_with(&self.store, &outs),
-                ))
+                serialize::serialize_with(&self.store, &outs)
             }
         }
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(PyBytes::new(py, &bytes))
     }
 
     /// Rebuild a store from canonical bytes. A round trip reproduces the same node ids, so

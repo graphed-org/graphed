@@ -61,6 +61,20 @@ impl std::fmt::Display for DecodeError {
     }
 }
 
+/// Error from encoding a length or index that does not fit the format's `u32` field.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct EncodeError(pub(crate) usize);
+
+impl std::fmt::Display for EncodeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} does not fit the graphed IR format's u32 field",
+            self.0
+        )
+    }
+}
+
 // ---- writer -------------------------------------------------------------------------------------
 
 fn put_u32(out: &mut Vec<u8>, v: u32) {
@@ -69,20 +83,25 @@ fn put_u32(out: &mut Vec<u8>, v: u32) {
 fn put_u64(out: &mut Vec<u8>, v: u64) {
     out.extend_from_slice(&v.to_le_bytes());
 }
-fn put_str(out: &mut Vec<u8>, s: &str) {
-    put_u32(out, s.len() as u32);
+fn put_len(out: &mut Vec<u8>, n: usize) -> Result<(), EncodeError> {
+    put_u32(out, u32::try_from(n).map_err(|_| EncodeError(n))?);
+    Ok(())
+}
+fn put_str(out: &mut Vec<u8>, s: &str) -> Result<(), EncodeError> {
+    put_len(out, s.len())?;
     out.extend_from_slice(s.as_bytes());
+    Ok(())
 }
 
-fn put_params(out: &mut Vec<u8>, p: &ParamMap) {
+fn put_params(out: &mut Vec<u8>, p: &ParamMap) -> Result<(), EncodeError> {
     let entries = p.entries();
-    put_u32(out, entries.len() as u32);
+    put_len(out, entries.len())?;
     for (k, v) in entries {
-        put_str(out, k);
+        put_str(out, k)?;
         match v {
             ParamValue::Int(i) => {
                 out.push(P_INT);
-                put_u64(out, *i as u64);
+                out.extend_from_slice(&i.to_le_bytes());
             }
             ParamValue::Float(x) => {
                 out.push(P_FLOAT);
@@ -96,21 +115,23 @@ fn put_params(out: &mut Vec<u8>, p: &ParamMap) {
             }
             ParamValue::Str(s) => {
                 out.push(P_STR);
-                put_str(out, s);
+                put_str(out, s)?;
             }
         }
     }
+    Ok(())
 }
 
-fn put_inputs(out: &mut Vec<u8>, inputs: &[u64]) {
-    put_u32(out, inputs.len() as u32);
+fn put_inputs(out: &mut Vec<u8>, inputs: &[u64]) -> Result<(), EncodeError> {
+    put_len(out, inputs.len())?;
     for &i in inputs {
         put_u64(out, i);
     }
+    Ok(())
 }
 
 /// Serialize the store's nodes (in id order) + its MARKED outputs into the canonical byte form.
-pub(crate) fn serialize(store: &GraphStore) -> Vec<u8> {
+pub(crate) fn serialize(store: &GraphStore) -> Result<Vec<u8>, EncodeError> {
     let outputs = store.outputs();
     serialize_with(store, &outputs)
 }
@@ -118,17 +139,20 @@ pub(crate) fn serialize(store: &GraphStore) -> Vec<u8> {
 /// `serialize` against an EXPLICIT output set (M22): the bytes flag exactly the requested
 /// outputs, ignoring stored marks. The byte FORMAT is identical — `serialize` is this with the
 /// marked set.
-pub(crate) fn serialize_with(store: &GraphStore, outputs: &[NodeId]) -> Vec<u8> {
+pub(crate) fn serialize_with(
+    store: &GraphStore,
+    outputs: &[NodeId],
+) -> Result<Vec<u8>, EncodeError> {
     let (nodes, _) = store.snapshot();
     let mut out = Vec::new();
     out.extend_from_slice(MAGIC);
-    put_u32(&mut out, nodes.len() as u32);
+    put_len(&mut out, nodes.len())?;
     for node in &nodes {
         match node {
             NodeKey::Source { name, params } => {
                 out.push(T_SOURCE);
-                put_str(&mut out, name);
-                put_params(&mut out, params);
+                put_str(&mut out, name)?;
+                put_params(&mut out, params)?;
             }
             NodeKey::Op {
                 name,
@@ -136,9 +160,9 @@ pub(crate) fn serialize_with(store: &GraphStore, outputs: &[NodeId]) -> Vec<u8> 
                 inputs,
             } => {
                 out.push(T_OP);
-                put_str(&mut out, name);
-                put_params(&mut out, params);
-                put_inputs(&mut out, inputs);
+                put_str(&mut out, name)?;
+                put_params(&mut out, params)?;
+                put_inputs(&mut out, inputs)?;
             }
             NodeKey::Reduction {
                 name,
@@ -146,9 +170,9 @@ pub(crate) fn serialize_with(store: &GraphStore, outputs: &[NodeId]) -> Vec<u8> 
                 inputs,
             } => {
                 out.push(T_REDUCTION);
-                put_str(&mut out, name);
-                put_params(&mut out, params);
-                put_inputs(&mut out, inputs);
+                put_str(&mut out, name)?;
+                put_params(&mut out, params)?;
+                put_inputs(&mut out, inputs)?;
             }
             NodeKey::External {
                 descriptor,
@@ -156,47 +180,47 @@ pub(crate) fn serialize_with(store: &GraphStore, outputs: &[NodeId]) -> Vec<u8> 
                 inputs,
             } => {
                 out.push(T_EXTERNAL);
-                put_str(&mut out, &descriptor.kind);
-                put_str(&mut out, &descriptor.content_hash);
-                put_str(&mut out, &descriptor.framework);
-                put_str(&mut out, &descriptor.version);
-                put_str(&mut out, &descriptor.io_schema);
+                put_str(&mut out, &descriptor.kind)?;
+                put_str(&mut out, &descriptor.content_hash)?;
+                put_str(&mut out, &descriptor.framework)?;
+                put_str(&mut out, &descriptor.version)?;
+                put_str(&mut out, &descriptor.io_schema)?;
                 match &descriptor.preprocessing_ref {
                     Some(s) => {
                         out.push(1);
-                        put_str(&mut out, s);
+                        put_str(&mut out, s)?;
                     }
                     None => out.push(0),
                 }
-                put_params(&mut out, params);
-                put_inputs(&mut out, inputs);
+                put_params(&mut out, params)?;
+                put_inputs(&mut out, inputs)?;
             }
             NodeKey::Exchange { scheme, inputs } => {
                 out.push(T_EXCHANGE);
-                put_params(&mut out, scheme);
-                put_inputs(&mut out, inputs);
+                put_params(&mut out, scheme)?;
+                put_inputs(&mut out, inputs)?;
             }
             NodeKey::Join { scheme, inputs } => {
                 out.push(T_JOIN);
-                put_params(&mut out, scheme);
-                put_inputs(&mut out, inputs);
+                put_params(&mut out, scheme)?;
+                put_inputs(&mut out, inputs)?;
             }
             NodeKey::Stage { inputs, members } => {
                 out.push(T_STAGE);
-                put_inputs(&mut out, inputs);
-                put_u32(&mut out, members.len() as u32);
+                put_inputs(&mut out, inputs)?;
+                put_len(&mut out, members.len())?;
                 for m in members {
-                    put_str(&mut out, &m.token);
-                    put_u32(&mut out, m.inputs.len() as u32);
+                    put_str(&mut out, &m.token)?;
+                    put_len(&mut out, m.inputs.len())?;
                     for r in &m.inputs {
                         match r {
                             StageRef::Input(i) => {
                                 out.push(R_INPUT);
-                                put_u32(&mut out, *i as u32);
+                                put_len(&mut out, *i)?;
                             }
                             StageRef::Member(i) => {
                                 out.push(R_MEMBER);
-                                put_u32(&mut out, *i as u32);
+                                put_len(&mut out, *i)?;
                             }
                         }
                     }
@@ -204,11 +228,11 @@ pub(crate) fn serialize_with(store: &GraphStore, outputs: &[NodeId]) -> Vec<u8> 
             }
         }
     }
-    put_u32(&mut out, outputs.len() as u32);
+    put_len(&mut out, outputs.len())?;
     for &o in outputs {
         put_u64(&mut out, o);
     }
-    out
+    Ok(out)
 }
 
 // ---- reader -------------------------------------------------------------------------------------
@@ -224,25 +248,26 @@ impl<'a> Reader<'a> {
     }
     fn take(&mut self, n: usize) -> Result<&'a [u8], DecodeError> {
         let end = self.pos.checked_add(n).ok_or(DecodeError::Truncated)?;
-        if end > self.buf.len() {
-            return Err(DecodeError::Truncated);
-        }
-        let s = &self.buf[self.pos..end];
+        let s = self.buf.get(self.pos..end).ok_or(DecodeError::Truncated)?;
         self.pos = end;
         Ok(s)
     }
+    fn array<const N: usize>(&mut self) -> Result<[u8; N], DecodeError> {
+        self.take(N)?.try_into().map_err(|_| DecodeError::Truncated)
+    }
+    /// An empty `Vec` for a decoded count, reserving no more than the bytes left: every element
+    /// consumes at least one byte, and a hostile count must not size an allocation.
+    fn vec_for<T>(&self, n: usize) -> Vec<T> {
+        Vec::with_capacity(n.min(self.buf.len().saturating_sub(self.pos)))
+    }
     fn u8(&mut self) -> Result<u8, DecodeError> {
-        Ok(self.take(1)?[0])
+        Ok(u8::from_le_bytes(self.array()?))
     }
     fn u32(&mut self) -> Result<u32, DecodeError> {
-        let b = self.take(4)?;
-        Ok(u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+        Ok(u32::from_le_bytes(self.array()?))
     }
     fn u64(&mut self) -> Result<u64, DecodeError> {
-        let b = self.take(8)?;
-        Ok(u64::from_le_bytes([
-            b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7],
-        ]))
+        Ok(u64::from_le_bytes(self.array()?))
     }
     fn string(&mut self) -> Result<String, DecodeError> {
         let n = self.u32()? as usize;
@@ -253,12 +278,12 @@ impl<'a> Reader<'a> {
     }
     fn params(&mut self) -> Result<ParamMap, DecodeError> {
         let n = self.u32()? as usize;
-        let mut entries = Vec::with_capacity(n);
+        let mut entries = self.vec_for(n);
         for _ in 0..n {
             let k = self.string()?;
             let tag = self.u8()?;
             let v = match tag {
-                P_INT => ParamValue::Int(self.u64()? as i64),
+                P_INT => ParamValue::Int(i64::from_le_bytes(self.array()?)),
                 P_FLOAT => ParamValue::Float(f64::from_bits(self.u64()?)),
                 P_BOOL => ParamValue::Bool(self.u8()? != 0),
                 P_STR => ParamValue::Str(self.string()?),
@@ -270,7 +295,7 @@ impl<'a> Reader<'a> {
     }
     fn inputs(&mut self, max: u64) -> Result<Vec<u64>, DecodeError> {
         let n = self.u32()? as usize;
-        let mut v = Vec::with_capacity(n);
+        let mut v = self.vec_for(n);
         for _ in 0..n {
             let i = self.u64()?;
             if i >= max {
@@ -290,7 +315,7 @@ pub(crate) fn deserialize(data: &[u8]) -> Result<GraphStore, DecodeError> {
     if r.take(4)? != MAGIC {
         return Err(DecodeError::BadMagic);
     }
-    let n_nodes = r.u32()? as u64;
+    let n_nodes = u64::from(r.u32()?);
     let store = GraphStore::new();
     for idx in 0..n_nodes {
         let tag = r.u8()?;
@@ -359,11 +384,11 @@ pub(crate) fn deserialize(data: &[u8]) -> Result<GraphStore, DecodeError> {
             T_STAGE => {
                 let inputs = r.inputs(idx)?;
                 let n_members = r.u32()? as usize;
-                let mut members = Vec::with_capacity(n_members);
+                let mut members = r.vec_for(n_members);
                 for m_idx in 0..n_members {
                     let token = r.string()?;
                     let n_refs = r.u32()? as usize;
-                    let mut refs = Vec::with_capacity(n_refs);
+                    let mut refs = r.vec_for(n_refs);
                     for _ in 0..n_refs {
                         let rtag = r.u8()?;
                         let v = r.u32()? as usize;
@@ -441,16 +466,20 @@ mod tests {
     #[test]
     fn roundtrip_is_byte_identical() {
         let g = sample();
-        let bytes = serialize(&g);
+        let bytes = serialize(&g).unwrap();
         let g2 = deserialize(&bytes).unwrap();
         assert_eq!(g.node_count(), g2.node_count());
         assert_eq!(g.to_dot(), g2.to_dot());
-        assert_eq!(bytes, serialize(&g2), "re-serialize must be byte-identical");
+        assert_eq!(
+            bytes,
+            serialize(&g2).unwrap(),
+            "re-serialize must be byte-identical"
+        );
     }
 
     #[test]
     fn identical_graphs_serialize_identically() {
-        assert_eq!(serialize(&sample()), serialize(&sample()));
+        assert_eq!(serialize(&sample()).unwrap(), serialize(&sample()).unwrap());
     }
 
     #[test]
@@ -458,16 +487,16 @@ mod tests {
         // a reduced graph carries Stage nodes; they must survive the codec too.
         let g = sample();
         let (reduced, _) = g.reduce(&crate::optimizer::EggEngine::default());
-        let bytes = serialize(&reduced);
+        let bytes = serialize(&reduced).unwrap();
         let back = deserialize(&bytes).unwrap();
         assert_eq!(reduced.to_dot(), back.to_dot());
-        assert_eq!(bytes, serialize(&back));
+        assert_eq!(bytes, serialize(&back).unwrap());
     }
 
     #[test]
     fn rejects_bad_magic_and_truncation() {
         assert_eq!(deserialize(b"XXXX").err(), Some(DecodeError::BadMagic));
-        let mut bytes = serialize(&sample());
+        let mut bytes = serialize(&sample()).unwrap();
         bytes.truncate(bytes.len() - 1);
         assert_eq!(deserialize(&bytes).err(), Some(DecodeError::Truncated));
     }
@@ -527,12 +556,12 @@ mod tests {
     #[test]
     fn boundary_and_stage_member_ref_nodes_roundtrip() {
         let g = sample_with_boundaries();
-        let bytes = serialize(&g);
+        let bytes = serialize(&g).unwrap();
         let back = deserialize(&bytes).unwrap();
         assert_eq!(g.to_dot(), back.to_dot());
         assert_eq!(
             bytes,
-            serialize(&back),
+            serialize(&back).unwrap(),
             "re-serialize must be byte-identical"
         );
     }
@@ -579,9 +608,9 @@ mod tests {
         bytes.extend_from_slice(MAGIC);
         put_u32(&mut bytes, 1);
         bytes.push(T_SOURCE);
-        put_str(&mut bytes, "src");
+        put_str(&mut bytes, "src").unwrap();
         put_u32(&mut bytes, 1); // one param
-        put_str(&mut bytes, "k");
+        put_str(&mut bytes, "k").unwrap();
         bytes.push(99); // not any known P_* tag
         assert_eq!(
             deserialize(&bytes).err(),
@@ -595,9 +624,9 @@ mod tests {
         bytes.extend_from_slice(MAGIC);
         put_u32(&mut bytes, 1); // one node: an Op referencing input 0, but it's node index 0
         bytes.push(T_OP);
-        put_str(&mut bytes, "f");
+        put_str(&mut bytes, "f").unwrap();
         put_u32(&mut bytes, 0); // no params
-        put_inputs(&mut bytes, &[0]);
+        put_inputs(&mut bytes, &[0]).unwrap();
         assert_eq!(deserialize(&bytes).err(), Some(DecodeError::BadNodeRef(0)));
     }
 
@@ -607,9 +636,9 @@ mod tests {
         bytes.extend_from_slice(MAGIC);
         put_u32(&mut bytes, 1);
         bytes.push(T_STAGE);
-        put_inputs(&mut bytes, &[]);
+        put_inputs(&mut bytes, &[]).unwrap();
         put_u32(&mut bytes, 1); // one member
-        put_str(&mut bytes, "op|a");
+        put_str(&mut bytes, "op|a").unwrap();
         put_u32(&mut bytes, 1); // one ref
         bytes.push(99); // not R_INPUT/R_MEMBER
         put_u32(&mut bytes, 0);
@@ -625,9 +654,9 @@ mod tests {
         bytes.extend_from_slice(MAGIC);
         put_u32(&mut bytes, 1);
         bytes.push(T_STAGE);
-        put_inputs(&mut bytes, &[]);
+        put_inputs(&mut bytes, &[]).unwrap();
         put_u32(&mut bytes, 1); // one member, referring to itself
-        put_str(&mut bytes, "op|a");
+        put_str(&mut bytes, "op|a").unwrap();
         put_u32(&mut bytes, 1);
         bytes.push(R_MEMBER);
         put_u32(&mut bytes, 0);
@@ -642,6 +671,34 @@ mod tests {
         put_u32(&mut bytes, 1); // one output, referencing a node that doesn't exist
         put_u64(&mut bytes, 5);
         assert_eq!(deserialize(&bytes).err(), Some(DecodeError::BadNodeRef(5)));
+    }
+
+    #[test]
+    fn negative_ints_roundtrip_bit_exactly() {
+        let s = GraphStore::new();
+        let src = s.add_source("e".into(), pm(vec![("lo", Int(i64::MIN)), ("m", Int(-7))]));
+        s.mark_output(src).unwrap();
+        let back = deserialize(&serialize(&s).unwrap()).unwrap();
+        assert_eq!(back.snapshot(), s.snapshot());
+    }
+
+    #[test]
+    fn a_length_beyond_u32_is_an_encode_error() {
+        let too_long = usize::try_from(u64::from(u32::MAX) + 1).unwrap();
+        let mut out = Vec::new();
+        assert_eq!(put_len(&mut out, too_long), Err(EncodeError(too_long)));
+        assert!(out.is_empty());
+        assert_eq!(
+            EncodeError(too_long).to_string(),
+            "4294967296 does not fit the graphed IR format's u32 field"
+        );
+    }
+
+    #[test]
+    fn a_hostile_count_reserves_at_most_the_remaining_bytes() {
+        let buf = [0u8; 16];
+        let r = Reader::new(&buf);
+        assert!(r.vec_for::<u8>(u32::MAX as usize).capacity() <= buf.len());
     }
 
     #[test]

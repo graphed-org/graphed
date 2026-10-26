@@ -389,8 +389,8 @@ mod tests {
             (s2.reduce(&EggEngine::default()).0, ())
         };
         assert_eq!(
-            crate::serialize::serialize(&scoped),
-            crate::serialize::serialize(&reference),
+            crate::serialize::serialize(&scoped).unwrap(),
+            crate::serialize::serialize(&reference).unwrap(),
             "explicit-outputs reduce is byte-identical to a fresh single-mark store"
         );
         assert_eq!(s.outputs(), vec![a], "compiling wrote no store state");
@@ -411,11 +411,12 @@ mod tests {
         let a = s.add_op("pt".into(), vec![src], pm(vec![])).unwrap();
         let b = s.add_op("eta".into(), vec![src], pm(vec![])).unwrap();
         s.mark_output(a).unwrap();
-        let scoped = crate::serialize::deserialize(&crate::serialize::serialize_with(&s, &[b]))
-            .expect("round trip");
+        let scoped =
+            crate::serialize::deserialize(&crate::serialize::serialize_with(&s, &[b]).unwrap())
+                .expect("round trip");
         assert_eq!(scoped.outputs(), vec![b], "exactly the requested set");
-        let legacy =
-            crate::serialize::deserialize(&crate::serialize::serialize(&s)).expect("round trip");
+        let legacy = crate::serialize::deserialize(&crate::serialize::serialize(&s).unwrap())
+            .expect("round trip");
         assert_eq!(
             legacy.outputs(),
             vec![a],
@@ -442,8 +443,8 @@ mod tests {
         reference.mark_output(rneg).unwrap();
         reference.mark_output(rpt).unwrap();
         assert_eq!(
-            crate::serialize::serialize(&cone),
-            crate::serialize::serialize(&reference)
+            crate::serialize::serialize(&cone).unwrap(),
+            crate::serialize::serialize(&reference).unwrap()
         );
         assert_eq!(
             cone.node_map(),
