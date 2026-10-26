@@ -947,7 +947,7 @@ def _write_varied(
     rank = {node_id: i for i, node_id in enumerate(dict.fromkeys(out.node_id for out in outputs))}
     wrapped = _tt(session, nominal_record).ndim > 1
 
-    ((source_id, data),) = session.sources().items()
+    ((source_id, data),) = gw.sources_read(outputs).items()
     source_name = session.source_name(source_id)
     source_form = session.form_of(source_id)
     assert isinstance(source_form, AwkwardForm)
@@ -1051,7 +1051,7 @@ def to_parquet(
             behavior=behavior,
         )
     session: Session = array.session
-    sources = session.sources()
+    sources = gw.sources_read([array])
     if len(sources) != 1:
         raise TypeError(f"to_parquet needs an array recorded over exactly one source, got {len(sources)}")
     ((node_id, data),) = sources.items()

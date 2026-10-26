@@ -463,7 +463,7 @@ def _typetracer(array: ak.Array) -> ak.Array:
 def from_awkward(session: Session, name: str, array: object, **descriptor: object) -> Any:
     """Create a metadata-only source from an in-memory awkward array (form via typetracer; the real
     array is retained only for evaluation)."""
-    real = ak.Array(array)
+    real = array if isinstance(array, ak.Array) else ak.Array(array)
     return session.source(name, form=AwkwardForm(_typetracer(real)), data=real)
 
 

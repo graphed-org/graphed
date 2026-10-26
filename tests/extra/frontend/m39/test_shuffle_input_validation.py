@@ -23,6 +23,7 @@ import graphed
 from graphed import Session
 from graphed.backend import Form
 from graphed.core import Partition, PayloadDescriptor
+from graphed.core.execution import SequentialRunner
 from graphed.errors import GraphedError
 
 Row = dict[str, int]
@@ -152,16 +153,27 @@ def test_shuffle_plan_without_an_exchange_raises_type_error() -> None:
 # ---- shuffle_plan: needs exactly one partitioned source ----------------------------------------
 
 
-def test_shuffle_plan_with_two_partitioned_sources_raises_type_error() -> None:
+def test_shuffle_plan_reading_two_partitioned_sources_raises_type_error() -> None:
     s = Session(ToyBackend())
-    s.source("unused", form=_ToyForm("f"), data=ListSource(_rows(2)))  # 2nd, unreferenced source
-    output = graphed.repartition(
-        s.source("x", form=_ToyForm("f"), data=ListSource(_rows(4))), by="__joinkey__"
-    ).reduce("sum")
-    with pytest.raises(TypeError, match=r"exactly one partitioned source; this session has 2"):
+    x = s.source("x", form=_ToyForm("f"), data=ListSource(_rows(4)))
+    y = s.source("y", form=_ToyForm("f"), data=ListSource(_rows(2)))
+    output = graphed.repartition(s.record_op("add", [x, y]), by="__joinkey__").reduce("sum")
+    with pytest.raises(TypeError, match=r"exactly one partitioned source; the output reads 2"):
         graphed.shuffle_plan(
             output, reduce=lambda vs: vs[0], combine=lambda a, b: a, empty=lambda: None, backend=ToyBackend
         )
+
+
+def test_shuffle_plan_ignores_a_source_its_output_does_not_read() -> None:
+    s = Session(ToyBackend())
+    unused = ListSource(_rows(2))
+    s.source("unused", form=_ToyForm("f"), data=unused)
+    read = ListSource(_rows(4))
+    output = graphed.repartition(s.source("x", form=_ToyForm("f"), data=read), by="__joinkey__").reduce("sum")
+    plan = graphed.shuffle_plan(
+        output, reduce=lambda vs: len(vs[0]), combine=lambda a, b: a + b, empty=lambda: 0, backend=ToyBackend
+    )
+    assert SequentialRunner().run(plan).value == 4
 
 
 # ---- join_plan: needs a Join boundary in the graph ----------------------------------------------
@@ -183,5 +195,29 @@ def test_join_plan_self_join_has_one_partitioned_source_raises_type_error() -> N
     s = Session(ToyBackend())
     a = s.source("a", form=_ToyForm("f"), data=ListSource(_rows(4)))
     joined = graphed.join(a, a, on=["__joinkey__"])
-    with pytest.raises(TypeError, match=r"exactly two partitioned sources; this session has 1"):
+    with pytest.raises(TypeError, match=r"exactly two partitioned sources; the output reads 1"):
         graphed.join_plan(joined, backend=ToyBackend)
+
+
+def test_join_plan_ignores_a_source_the_join_does_not_read() -> None:
+    s = Session(ToyBackend())
+    unused = ListSource(_rows(2))
+    s.source("unused", form=_ToyForm("f"), data=unused)
+    left, right = ListSource(_rows(4)), ListSource(_rows(3))
+    joined = graphed.join(
+        s.source("left", form=_ToyForm("f"), data=left),
+        s.source("right", form=_ToyForm("f"), data=right),
+        on=["__joinkey__"],
+    )
+    assert [st.kind for st in graphed.join_plan(joined, backend=ToyBackend).stages].count("map_write") == 2
+
+
+def test_aggregate_plan_ignores_a_source_its_output_does_not_read() -> None:
+    s = Session(ToyBackend())
+    s.source("unused", form=_ToyForm("f"), data=ListSource(_rows(2)))
+    read = ListSource(_rows(4))
+    x = s.source("x", form=_ToyForm("f"), data=read)
+    plan = graphed.aggregate_plan(
+        x, reduce=lambda vs: len(vs[0]), combine=lambda a, b: a + b, empty=lambda: 0
+    )
+    assert SequentialRunner().run(plan).value == 4

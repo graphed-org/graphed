@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "fr
 from m68c_services_harness import FOLD, two_sources
 
 import graphed
-from graphed.awkward import AwkwardForm
+from graphed.awkward import AwkwardForm, gak
 from graphed.core import SequentialRunner
 from graphed.shuffle import pick, split
 
@@ -48,8 +48,11 @@ def test_a_join_side_reading_no_partitioned_source_is_refused() -> None:
         "table", form=AwkwardForm(ak.Array(data.layout.to_typetracer(forget_length=True))), data=data
     )
     graphed.join_plan(graphed.join(ev, lu, on=["run"]))
-    with pytest.raises(TypeError, match="exactly one partitioned source; one reads \\['table'\\]"):
+    with pytest.raises(TypeError, match="exactly two partitioned sources; the output reads 1"):
         graphed.join_plan(graphed.join(ev, table, on=["run"]))
+    both = gak.zip({"run": ev.run + lu.run})
+    with pytest.raises(TypeError, match="exactly one partitioned source; one reads \\['events', 'lumi'\\]"):
+        graphed.join_plan(graphed.join(both, table, on=["run"]))
 
 
 def _main_rows(values: list[Any]) -> list[str]:

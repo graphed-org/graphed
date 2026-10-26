@@ -38,7 +38,9 @@ def join(left: Array, right: Array, *, on: Sequence[str], how: str = "inner", gr
     if not grouped:
         return graphed.join(left, right, on=on, how=how)
     if left.session is not right.session:
-        raise GraphedError("gak.join: left and right must belong to the same Session")
+        raise GraphedError(
+            "gak.join: left and right must belong to the same Session; record both into one (a reader's session=)"
+        )
     session = left.session
     lk = graphed.pack_key(left, on=on)
     rk = graphed.pack_key(right, on=on)

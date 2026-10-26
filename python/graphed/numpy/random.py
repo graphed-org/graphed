@@ -29,7 +29,7 @@ class GraphedRNG:
         rng = np.random.default_rng([self.seed, self._draws])
         arr = np.asarray(sampler(rng))
         name = f"random[{kind},seed={self.seed},draw={self._draws}]"
-        return _source(self.session, name, arr)
+        return _source(self.session, None, name, arr)
 
     def normal(self, size: ShapeLike, loc: float = 0.0, scale: float = 1.0) -> Array:
         shape = _norm_shape(size)

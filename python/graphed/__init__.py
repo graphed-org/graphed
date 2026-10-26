@@ -39,7 +39,7 @@ from .projection import (
     read_columns,
 )
 from .provenance import Provenance, capture, is_enabled, set_enabled
-from .session import Session
+from .session import Session, materialize
 from .shuffle import join, join_plan, pack_key, repartition, shuffle_plan
 from .varied import SURFACE_DISPOSITIONS, Varied, broadcasting, expand, expanding, member_of
 from .vary import vary
@@ -107,6 +107,7 @@ __all__ = [
     "join",
     "join_plan",
     "labels",
+    "materialize",
     "member_of",
     "nominal",
     "pack_key",

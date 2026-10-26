@@ -69,6 +69,7 @@ class Session:
         self._forms: dict[int, Form] = {}
         self._sources: dict[int, object] = {}
         self._source_names: dict[int, str] = {}
+        self._slots: dict[str, tuple[object, object]] = {}  # source name -> (form description, data)
         self._ops: dict[int, tuple[str, dict[str, ParamValue], list[int]]] = {}
         self._externals: dict[int, tuple[Callable[[object], object], list[int]]] = {}
         self._services: dict[str, ServiceSpec] = {}
@@ -332,6 +333,17 @@ class Session:
 
     # ---- builders --------------------------------------------------------------
     def source(self, name: str, *, form: Form, data: object, **params: ParamValue) -> Array:
+        # a name is a slot of one form bound to one data object; the store interns (name, params),
+        # so a name reused for other data would silently keep its first binding
+        described = getattr(form, "describe", None)
+        key = described() if callable(described) else form
+        held = self._slots.setdefault(name, (key, data))
+        if held[0] != key:
+            raise ValueError(
+                f"source {name!r} is already a slot of another form in this Session; name this one"
+            )
+        if held[1] is not data:
+            raise ValueError(f"source {name!r} is already bound to other data in this Session; name this one")
         node_id = self._store.add_source(name, dict(params))
         self._forms.setdefault(node_id, form)
         self._sources.setdefault(node_id, data)
@@ -550,7 +562,9 @@ class Session:
         return cache[root]
 
     # ---- evaluation (reference, node-by-node; the real executor is M7) ----------
-    def materialize(self, array: Array) -> object:
+    def materialize(self, array: Array, *, memo: dict[int, object] | None = None) -> object:
+        """``array``'s value; walks sharing ``memo`` evaluate each shared node once."""
+
         def source(node_id: int) -> object:
             value = self._sources[node_id]
             return value() if callable(value) else value  # lazy loader (e.g. parquet)
@@ -560,4 +574,25 @@ class Session:
             source=source,
             op=lambda _nid, name, ins, params: self._backend.eval_stage(name, ins, params),
             external=lambda _nid, fn, ins: fn(*ins),
+            memo=memo,
         )
+
+
+def materialize(arrays: Any) -> Any:
+    """Evaluate ``arrays`` in this process: an :class:`Array`, or a list, tuple or dict of them (other
+    items pass through), recorded in any number of Sessions. Returns the same shape with each Array
+    replaced by its value; the Arrays of one Session evaluate every node they share once. Evaluation
+    only: running on an executor is a plan's job (:func:`graphed.aggregate_plan`, :func:`graphed.collate`)."""
+    if isinstance(arrays, Array):
+        return materialize([arrays])[0]
+    items = list(arrays.values()) if isinstance(arrays, Mapping) else list(arrays)
+    memos: dict[Session, dict[int, object]] = {}
+    values = [
+        item.session.materialize(item, memo=memos.setdefault(item.session, {}))
+        if isinstance(item, Array)
+        else item
+        for item in items
+    ]
+    if isinstance(arrays, Mapping):
+        return dict(zip(arrays, values, strict=True))
+    return tuple(values) if isinstance(arrays, tuple) else values

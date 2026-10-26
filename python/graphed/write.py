@@ -196,6 +196,15 @@ class PartitionedSource(Protocol):
     ) -> object: ...
 
 
+def sources_read(outputs: Sequence[Any]) -> dict[int, object]:
+    """The sources ``outputs`` read, by node id: their one Session may record several datasets."""
+    from .systematics.registration import _source_ids  # noqa: PLC0415  (import cycle)
+
+    session = outputs[0].session
+    reached = frozenset[int]().union(*(_source_ids(session, a) for a in outputs))
+    return {nid: data for nid, data in session.sources().items() if nid in reached}
+
+
 def declared_columns(source: object, outputs: Sequence[object]) -> tuple[str, ...] | None:
     """The read list a source DECLARES for ``outputs``, or ``None`` when it declares none.
 
