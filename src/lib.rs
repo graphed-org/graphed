@@ -14,11 +14,12 @@ use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyDict};
 
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 
 use crate::node::{parse_op_token, NodeId, PayloadDescriptor};
 use crate::optimizer::{EggEngine, FusionMode, IncrementalReducer, ReductionReport};
 use crate::param::{ParamMap, ParamValue};
+use crate::serialize::{DecodeError, EncodeError};
 use crate::store::{BadNodeId, GraphStore};
 
 fn fusion_mode(maximal_fusion: bool) -> FusionMode {
@@ -29,8 +30,22 @@ fn fusion_mode(maximal_fusion: bool) -> FusionMode {
     }
 }
 
-fn map_err(e: BadNodeId) -> PyErr {
-    PyValueError::new_err(e.to_string())
+impl From<BadNodeId> for PyErr {
+    fn from(e: BadNodeId) -> Self {
+        PyValueError::new_err(e.to_string())
+    }
+}
+
+impl From<DecodeError> for PyErr {
+    fn from(e: DecodeError) -> Self {
+        PyValueError::new_err(e.to_string())
+    }
+}
+
+impl From<EncodeError> for PyErr {
+    fn from(e: EncodeError) -> Self {
+        PyValueError::new_err(e.to_string())
+    }
 }
 
 fn paramvalue_from_py(v: &Bound<'_, PyAny>) -> PyResult<ParamValue> {
@@ -166,8 +181,8 @@ impl PyGraphStore {
     }
 
     #[pyo3(signature = (name, params=None))]
-    fn add_source(&self, name: String, params: Option<Bound<'_, PyAny>>) -> PyResult<NodeId> {
-        let p = params_from_py(params.as_ref())?;
+    fn add_source(&self, name: String, params: Option<&Bound<'_, PyAny>>) -> PyResult<NodeId> {
+        let p = params_from_py(params)?;
         Ok(self.store.add_source(name, p))
     }
 
@@ -176,10 +191,10 @@ impl PyGraphStore {
         &self,
         name: String,
         inputs: Vec<NodeId>,
-        params: Option<Bound<'_, PyAny>>,
+        params: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<NodeId> {
-        let p = params_from_py(params.as_ref())?;
-        self.store.add_op(name, inputs, p).map_err(map_err)
+        let p = params_from_py(params)?;
+        Ok(self.store.add_op(name, inputs, p)?)
     }
 
     #[pyo3(signature = (name, inputs, params=None))]
@@ -187,22 +202,22 @@ impl PyGraphStore {
         &self,
         name: String,
         inputs: Vec<NodeId>,
-        params: Option<Bound<'_, PyAny>>,
+        params: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<NodeId> {
-        let p = params_from_py(params.as_ref())?;
-        self.store.add_reduction(name, inputs, p).map_err(map_err)
+        let p = params_from_py(params)?;
+        Ok(self.store.add_reduction(name, inputs, p)?)
     }
 
     #[pyo3(signature = (descriptor, inputs, params=None))]
     fn add_external(
         &self,
-        descriptor: Bound<'_, PyAny>,
+        descriptor: &Bound<'_, PyAny>,
         inputs: Vec<NodeId>,
-        params: Option<Bound<'_, PyAny>>,
+        params: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<NodeId> {
-        let d = descriptor_from_py(&descriptor)?;
-        let p = params_from_py(params.as_ref())?;
-        self.store.add_external(d, inputs, p).map_err(map_err)
+        let d = descriptor_from_py(descriptor)?;
+        let p = params_from_py(params)?;
+        Ok(self.store.add_external(d, inputs, p)?)
     }
 
     /// Record an `Exchange` boundary (plan M39 §2.1). No `name` — an Exchange's identity is its
@@ -211,18 +226,18 @@ impl PyGraphStore {
     fn add_exchange(
         &self,
         inputs: Vec<NodeId>,
-        params: Option<Bound<'_, PyAny>>,
+        params: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<NodeId> {
-        let p = params_from_py(params.as_ref())?;
-        self.store.add_exchange(inputs, p).map_err(map_err)
+        let p = params_from_py(params)?;
+        Ok(self.store.add_exchange(inputs, p)?)
     }
 
     /// Record a `Join` boundary (plan M40 §2.1). Two inputs `[left, right]`; identity is its
     /// `scheme` ParamMap (`params`) + its ordered inputs; `nodes()[i]["kind"] == "join"`.
     #[pyo3(signature = (inputs, params=None))]
-    fn add_join(&self, inputs: Vec<NodeId>, params: Option<Bound<'_, PyAny>>) -> PyResult<NodeId> {
-        let p = params_from_py(params.as_ref())?;
-        self.store.add_join(inputs, p).map_err(map_err)
+    fn add_join(&self, inputs: Vec<NodeId>, params: Option<&Bound<'_, PyAny>>) -> PyResult<NodeId> {
+        let p = params_from_py(params)?;
+        Ok(self.store.add_join(inputs, p)?)
     }
 
     fn node_count(&self) -> usize {
@@ -248,12 +263,11 @@ impl PyGraphStore {
             Some(outs) => {
                 let n = self.store.node_count() as NodeId;
                 if let Some(&bad) = outs.iter().find(|&&o| o >= n) {
-                    return Err(map_err(BadNodeId(bad)));
+                    return Err(BadNodeId(bad).into());
                 }
                 serialize::serialize_with(&self.store, &outs)
             }
-        }
-        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        }?;
         Ok(PyBytes::new(py, &bytes))
     }
 
@@ -261,9 +275,9 @@ impl PyGraphStore {
     /// `serialize` of the result is byte-identical to the input (plan M8 determinism gate).
     #[staticmethod]
     fn deserialize(data: &[u8]) -> PyResult<Self> {
-        let store =
-            serialize::deserialize(data).map_err(|e| PyValueError::new_err(e.to_string()))?;
-        Ok(Self { store })
+        Ok(Self {
+            store: serialize::deserialize(data)?,
+        })
     }
 
     /// Structured, read-only view of every node in id order (plan M9: `inspect` renders the IR and
@@ -367,7 +381,7 @@ impl PyGraphStore {
     /// marked with `outputs`; its `node_map` sends each kept id to `(cone id, None)`.
     #[pyo3(signature = (*, outputs))]
     fn cone(&self, outputs: Vec<NodeId>) -> PyResult<Self> {
-        let store = self.store.cone(&outputs).map_err(map_err)?;
+        let store = self.store.cone(&outputs)?;
         Ok(Self { store })
     }
 
@@ -384,10 +398,11 @@ impl PyGraphStore {
         let (reduced, report) = match outputs {
             // M22: an explicit output set scopes the reduction to the compile request, ignoring
             // stored marks — compiling is read-only and sequential compiles never cross-talk
-            Some(outs) => self
-                .store
-                .reduce_with_outputs(&outs, &EggEngine::default(), fusion_mode(maximal_fusion))
-                .map_err(map_err)?,
+            Some(outs) => self.store.reduce_with_outputs(
+                &outs,
+                &EggEngine::default(),
+                fusion_mode(maximal_fusion),
+            )?,
             None => self
                 .store
                 .reduce_with(&EggEngine::default(), fusion_mode(maximal_fusion)),
@@ -403,10 +418,11 @@ impl PyGraphStore {
         outputs: Option<Vec<NodeId>>,
     ) -> PyResult<(Self, std::collections::HashMap<String, usize>)> {
         let (reduced, report) = match outputs {
-            Some(outs) => self
-                .store
-                .reduce_with_outputs(&outs, &EggEngine::default(), FusionMode::SingleUse)
-                .map_err(map_err)?,
+            Some(outs) => self.store.reduce_with_outputs(
+                &outs,
+                &EggEngine::default(),
+                FusionMode::SingleUse,
+            )?,
             None => self.store.reduce_incremental(&EggEngine::default()),
         };
         Ok((Self { store: reduced }, report_to_map(&report)))
@@ -419,10 +435,11 @@ impl PyGraphStore {
         outputs: Option<Vec<NodeId>>,
     ) -> PyResult<std::collections::HashMap<String, usize>> {
         let (_, report) = match outputs {
-            Some(outs) => self
-                .store
-                .reduce_with_outputs(&outs, &EggEngine::default(), FusionMode::SingleUse)
-                .map_err(map_err)?,
+            Some(outs) => self.store.reduce_with_outputs(
+                &outs,
+                &EggEngine::default(),
+                FusionMode::SingleUse,
+            )?,
             None => self.store.reduce(&EggEngine::default()),
         };
         Ok(report_to_map(&report))
@@ -481,6 +498,16 @@ struct PyIncrementalReducer {
     inner: Mutex<IncrementalReducer>,
 }
 
+impl PyIncrementalReducer {
+    #[allow(
+        clippy::expect_used,
+        reason = "nothing panics while the lock is held, so it is never poisoned"
+    )]
+    fn reducer(&self) -> MutexGuard<'_, IncrementalReducer> {
+        self.inner.lock().expect("incremental reducer poisoned")
+    }
+}
+
 #[pymethods]
 impl PyIncrementalReducer {
     #[new]
@@ -493,33 +520,24 @@ impl PyIncrementalReducer {
     /// Consume the nodes recorded in `store` since the last step. Returns how many were processed
     /// (the delta size). The reducer must always be fed the same store.
     fn step(&self, store: &PyGraphStore) -> PyResult<usize> {
-        let mut r = self.inner.lock().expect("incremental reducer poisoned");
+        let mut r = self.reducer();
         let delta = store.store.snapshot_from(r.watermark());
-        r.step(&delta).map_err(map_err)
+        Ok(r.step(&delta)?)
     }
 
     /// How many of the store's nodes have been consumed so far.
     fn watermark(&self) -> usize {
-        self.inner
-            .lock()
-            .expect("incremental reducer poisoned")
-            .watermark()
+        self.reducer().watermark()
     }
 
     /// Cumulative nodes processed across all steps (== watermark: each node touched once).
     fn total_work(&self) -> usize {
-        self.inner
-            .lock()
-            .expect("incremental reducer poisoned")
-            .total_work()
+        self.reducer().total_work()
     }
 
     /// Size of the maintained canonical form.
     fn canonical_count(&self) -> usize {
-        self.inner
-            .lock()
-            .expect("incremental reducer poisoned")
-            .canonical_count()
+        self.reducer().canonical_count()
     }
 
     /// Finish: consume any remaining delta, then reduce the maintained canonical form against the
@@ -536,18 +554,16 @@ impl PyIncrementalReducer {
             Some(outs) => {
                 let n = store.store.node_count() as NodeId;
                 if let Some(&bad) = outs.iter().find(|&&o| o >= n) {
-                    return Err(map_err(BadNodeId(bad)));
+                    return Err(BadNodeId(bad).into());
                 }
                 outs
             }
             None => store.store.outputs(),
         };
-        let mut r = self.inner.lock().expect("incremental reducer poisoned");
+        let mut r = self.reducer();
         let delta = store.store.snapshot_from(r.watermark());
-        r.step(&delta).map_err(map_err)?;
-        let red = r
-            .finalize(&outs, &EggEngine::default(), fusion_mode(maximal_fusion))
-            .map_err(map_err)?;
+        r.step(&delta)?;
+        let red = r.finalize(&outs, &EggEngine::default(), fusion_mode(maximal_fusion))?;
         let (reduced, report) = GraphStore::from_reduced(red);
         Ok((PyGraphStore { store: reduced }, report_to_map(&report)))
     }
