@@ -142,12 +142,12 @@ jobs:
         run: echo "LD_LIBRARY_PATH=$(python -c 'import sysconfig; print(sysconfig.get_config_var(\"LIBDIR\"))')" >> "$GITHUB_ENV"
       - name: Run tests, collect profile data once
         run: cargo llvm-cov --no-report
-      - name: Combined coverage (fail under 90% lines, bindings excluded)
-        run: cargo llvm-cov report --ignore-filename-regex 'lib\.rs' --fail-under-lines 90
+      - name: Combined coverage (fail under 90% lines)
+        run: cargo llvm-cov report --fail-under-lines 90
       - name: Per-file coverage gate
         run: |
-          cargo llvm-cov report --json --output-path llvm-cov.json --ignore-filename-regex 'lib\.rs'
-          python3 scripts/coverage_gate.py llvm-cov.json --rust --exclude lib.rs
+          cargo llvm-cov report --json --output-path llvm-cov.json
+          python3 scripts/coverage_gate.py llvm-cov.json --rust
       - name: PR diff coverage (>=98% of added/changed lines)
         # The gate applies once main itself carries the policy; a PR that lands the policy has
         # no prior baseline to diff coverage against, so this step is informational for it.
@@ -155,7 +155,7 @@ jobs:
         run: |
           python3 -m pip install diff_cover
           git fetch origin main
-          cargo llvm-cov report --lcov --output-path lcov.info --ignore-filename-regex 'lib\.rs'
+          cargo llvm-cov report --lcov --output-path lcov.info
           if git cat-file -e origin/main:scripts/coverage_gate.py 2>/dev/null; then
             diff-cover lcov.info --compare-branch=origin/main --fail-under=98
           else

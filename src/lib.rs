@@ -582,3 +582,172 @@ fn graphed_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(version, m)?)?;
     Ok(())
 }
+
+#[cfg(test)]
+#[cfg(not(loom))]
+mod tests {
+    use super::*;
+    use std::ffi::CStr;
+
+    /// Run Python `code` with a freshly initialized `graphed_core` module bound to `gc`.
+    fn run(code: &CStr) {
+        Python::initialize();
+        Python::attach(|py| {
+            let m = PyModule::new(py, "graphed_core")?;
+            graphed_core(&m)?;
+            let globals = PyDict::new(py);
+            globals.set_item("gc", m)?;
+            py.run(code, Some(&globals), None)
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn an_encode_error_raises_value_error() {
+        Python::initialize();
+        Python::attach(|py| {
+            let err = PyErr::from(EncodeError(1));
+            assert!(err.is_instance_of::<PyValueError>(py));
+            assert!(err.to_string().contains("does not fit"));
+        });
+    }
+
+    #[test]
+    fn records_every_node_kind_and_validates_arguments() {
+        run(c"
+def raises(exc, f, *a, **k):
+    try:
+        f(*a, **k)
+    except exc as e:
+        return str(e)
+    raise AssertionError(f'{f} did not raise {exc}')
+
+assert gc.version()
+s = gc.GraphStore()
+src = s.add_source('events', {'i': 1, 'f': 2.5, 'b': True, 's': 'x'})
+assert s.add_source('events', {'b': True, 'i': 1, 's': 'x', 'f': 2.5}) == src
+pt = s.add_op('pt', [src])
+red = s.add_reduction('sum', [pt], None)
+pd = gc.PayloadDescriptor(kind='onnx', content_hash='h', framework='ort', version='1',
+                          io_schema='f->f', preprocessing_ref='pre')
+assert (pd.kind, pd.content_hash, pd.framework, pd.version, pd.io_schema,
+        pd.preprocessing_ref) == ('onnx', 'h', 'ort', '1', 'f->f', 'pre')
+ext = s.add_external(pd, [pt], {'k': 1})
+as_dict = {'kind': 'onnx', 'content_hash': 'h', 'framework': 'ort', 'version': '1',
+           'io_schema': 'f->f', 'preprocessing_ref': 'pre'}
+assert s.add_external(as_dict, [pt], {'k': 1}) == ext
+ext2 = s.add_external({**as_dict, 'preprocessing_ref': None}, [pt])
+assert ext2 != ext
+exch = s.add_exchange([pt], {'parts': 2})
+join = s.add_join([exch, exch], {'how': 'inner'})
+assert s.node_count() == 7
+assert s.to_dot().startswith('digraph')
+
+assert 'no node with id 99' in raises(ValueError, s.add_op, 'x', [99])
+raises(ValueError, s.add_reduction, 'x', [99])
+raises(ValueError, s.add_external, pd, [99])
+raises(ValueError, s.add_exchange, [99])
+raises(ValueError, s.add_join, [99])
+assert 'int, float, bool, or str' in raises(TypeError, s.add_source, 'e', {'v': [1]})
+assert 'dict or None' in raises(TypeError, s.add_source, 'e', [1])
+assert 'PayloadDescriptor or dict' in raises(TypeError, s.add_external, 1, [pt])
+assert \"'version'\" in raises(ValueError, s.add_external, {'kind': 'onnx', 'content_hash': 'h',
+                                            'framework': 'ort', 'io_schema': 's'}, [pt])
+
+kinds = [n['kind'] for n in s.nodes()]
+assert kinds == ['source', 'op', 'reduction', 'external', 'external', 'exchange', 'join'], kinds
+by_kind = {n['kind']: n for n in s.nodes()}
+assert by_kind['source']['params'] == {'i': 1, 'f': 2.5, 'b': True, 's': 'x'}
+assert by_kind['external']['descriptor']['kind'] == 'onnx'
+assert by_kind['exchange']['params'] == {'parts': 2} and by_kind['exchange']['name'] == ''
+assert by_kind['join']['inputs'] == [exch, exch]
+");
+    }
+
+    #[test]
+    fn serializes_reduces_and_reports_through_python() {
+        run(c"
+import struct
+
+def raises(exc, f, *a, **k):
+    try:
+        f(*a, **k)
+    except exc as e:
+        return str(e)
+    raise AssertionError(f'{f} did not raise {exc}')
+
+s = gc.GraphStore()
+src = s.add_source('events')
+pt = s.add_op('pt', [src])
+neg = s.add_op('neg', [pt])
+dead = s.add_op('eta', [src])
+out = s.add_reduction('sum', [neg])
+
+assert s.outputs() == [] and s.node_map() == []
+blob = s.serialize(outputs=[out])
+back = gc.GraphStore.deserialize(blob)
+assert back.outputs() == [out] and back.serialize() == blob
+assert s.serialize() != blob
+raises(ValueError, s.serialize, outputs=[99])
+assert 'bad magic' in raises(ValueError, gc.GraphStore.deserialize, b'XXXX')
+
+cone = s.cone(outputs=[out])
+assert cone.outputs() == [3] and cone.node_map()[dead] is None
+raises(ValueError, s.cone, outputs=[99])
+
+for kw in ({}, {'maximal_fusion': True}):
+    red, rep = s.reduce(outputs=[out], **kw)
+    assert rep['input_nodes'] == 5 and rep['reachable_nodes'] == 4, rep
+    stage = [n for n in red.nodes() if n['kind'] == 'stage'][0]
+    assert stage['n_members'] == 2 and stage['params'] == {}
+    assert [m['name'] for m in stage['members']] == ['pt', 'neg']
+    assert stage['members'][0]['inputs'] == [('input', 0)]
+    assert stage['members'][1]['inputs'] == [('member', 0)]
+    assert red.node_map()[dead] is None
+raises(ValueError, s.reduce, outputs=[99])
+
+red2, rep2 = back.reduce()
+assert rep2 == rep
+assert back.reduce_incremental()[1] == rep
+assert s.reduce_incremental(outputs=[out])[1] == rep
+raises(ValueError, s.reduce_incremental, outputs=[99])
+assert back.reduction_report() == rep and s.reduction_report(outputs=[out]) == rep
+raises(ValueError, s.reduction_report, outputs=[99])
+
+bad_member = (b'GIR1' + struct.pack('<IBII', 1, 4, 0, 1) + struct.pack('<I', 5) + b'src|x'
+              + struct.pack('<II', 0, 0))
+assert 'unparseable stage member' in raises(ValueError, gc.GraphStore.deserialize(bad_member).nodes)
+");
+    }
+
+    #[test]
+    fn incremental_reducer_matches_one_shot_reduce() {
+        run(c"
+def raises(exc, f, *a, **k):
+    try:
+        f(*a, **k)
+    except exc as e:
+        return str(e)
+    raise AssertionError(f'{f} did not raise {exc}')
+
+s = gc.GraphStore()
+a = s.add_source('a')
+b = s.add_source('b')
+r = gc.IncrementalReducer()
+assert r.step(s) == 2 and r.watermark() == 2
+ab = s.add_op('add', [a, b])
+ba = s.add_op('add', [b, a])
+out = s.add_op('mul', [ab, ba])
+assert r.step(s) == 3
+assert r.watermark() == r.total_work() == s.node_count() == 5
+assert r.canonical_count() == 4
+for kw in ({}, {'maximal_fusion': True}):
+    inc, rep = r.finalize(s, outputs=[out], **kw)
+    one_shot, one_rep = s.reduce(outputs=[out], **kw)
+    assert inc.serialize() == one_shot.serialize()
+    assert rep['input_nodes'] == 4 and one_rep['input_nodes'] == 5
+assert r.finalize(s)[0].nodes() == []
+raises(ValueError, r.finalize, s, outputs=[99])
+");
+    }
+}

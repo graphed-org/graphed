@@ -224,6 +224,25 @@ mod tests {
     }
 
     #[test]
+    fn nodes_equal_after_canonicalizing_their_inputs_share_one_canonical_node() {
+        let s = GraphStore::new();
+        let a = s.add_source("a".into(), empty());
+        let b = s.add_source("b".into(), empty());
+        s.add_op("add".into(), vec![a, b], empty()).unwrap();
+        let zero = ParamMap::new(vec![
+            ("scalar".into(), ParamValue::Float(0.0)),
+            ("side".into(), ParamValue::Str("r".into())),
+        ]);
+        let x = s.add_op("add".into(), vec![a], zero).unwrap(); // identity: x is a
+        s.add_op("add".into(), vec![x, b], empty()).unwrap(); // the symmetric add(a, b) again
+        s.add_op("neg".into(), vec![a], empty()).unwrap();
+        s.add_op("neg".into(), vec![x], empty()).unwrap(); // the plain neg(a) again
+        let r = reduce_incrementally(&s);
+        assert_eq!(r.total_work(), 7);
+        assert_eq!(r.canonical_count(), 4, "a, b, add(a, b), neg(a)");
+    }
+
+    #[test]
     fn per_step_work_is_the_delta_not_the_history() {
         let s = GraphStore::new();
         let src = s.add_source("x".into(), empty());
