@@ -18,7 +18,13 @@ from graphed import Array
 from graphed.aggregate import _compile_at, _PartitionReduce, _slot_of, resolve_backend
 from graphed.core import GraphStore, LocalResources
 from graphed.core.execution import Plan, Task
-from graphed.execute import CompiledGraph, _unbound_external, _unbound_source, compile_ir, external_key
+from graphed.execute import (
+    CompiledGraph,
+    _unbound_external,
+    _unbound_source,
+    compile_ir,
+    external_key,
+)
 
 from .lowering import LoweredOp, lower
 from .runner import _stage_error
@@ -88,7 +94,9 @@ class Replay:
         cone = {op.node_id: op for o in outputs for op in lower(self._session, o, opt_level=0).ops}
         self._cone = [cone[i] for i in sorted(cone)]
         # the unfused IR keeps record ids; it is the whole arena, so only the cone is evaluated
-        arena = GraphStore.deserialize(bytes(compile_ir(self._session, *outputs, optimize=False).ir))
+        arena = GraphStore.deserialize(
+            bytes(compile_ir(self._session, *outputs, optimize=False).ir)
+        )
         self._nodes = [n for n in arena.nodes() if n["id"] in cone]
         self._store: Any = None
         self._captured: dict[str, str] = {}
@@ -96,7 +104,9 @@ class Replay:
             self._store = process._open_store()
             cid = process._capture_id(task.partition)
             done = self._store.completed()
-            self._captured = {k: done[f"{cid}:{k}"].blob for k in ("input", "output") if f"{cid}:{k}" in done}
+            self._captured = {
+                k: done[f"{cid}:{k}"].blob for k in ("input", "output") if f"{cid}:{k}" in done
+            }
         self.input_source = "store" if "input" in self._captured else "re-read"
 
     @cached_property
@@ -110,7 +120,8 @@ class Replay:
     def steps(self) -> Iterator[Step]:
         """Evaluate the task's opt_level=0 cone node by node, yielding each :class:`Step`. The input is
         read before the first step, and a failed read raises as the run's own read would."""
-        from graphed.preserve.interpreter import iter_ir  # noqa: PLC0415  (workers import graphed.debug)
+        # workers import graphed.debug
+        from graphed.preserve.interpreter import iter_ir  # noqa: PLC0415
 
         chunk = self._chunk
         source_name = self._process.source_name
@@ -148,7 +159,9 @@ class Replay:
     def value(self) -> Any:
         """The replayed partial: the plan's ``reduce`` over one replayed value per output of the plan's
         IR, as the run's ``reduce`` receives them."""
-        out = {s.node.node_id: s.value for s in self.steps() if s.node.node_id in self._reduced_ids}
+        out = {
+            s.node.node_id: s.value for s in self.steps() if s.node.node_id in self._reduced_ids
+        }
         return self._process.reduce([out[i] for i in self._reduced_ids])
 
     def diff(self) -> ReplayDiff:
@@ -169,9 +182,13 @@ def replay(plan: Plan[Any], key: int, *outputs: Array) -> Replay:
     to the plan's IR."""
     process = plan.process
     if not isinstance(process, _PartitionReduce):
-        raise TypeError(f"replay needs a plan built by aggregate_plan, not one whose process is {process!r}")
+        raise TypeError(
+            f"replay needs a plan built by aggregate_plan, not one whose process is {process!r}"
+        )
     if process.writes:
-        raise TypeError("replay does not re-run a plan's writes; replay a plan built without writes=")
+        raise TypeError(
+            "replay does not re-run a plan's writes; replay a plan built without writes="
+        )
     task = next((t for t in plan.tasks if t.key == key), None)
     if task is None:
         raise ValueError(f"the plan has no task with key {key!r}")

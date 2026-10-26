@@ -74,7 +74,11 @@ def _deep_rows(session: Any, value: Any, label: str) -> int:
     """`label`'s rows through a NESTED container (§2.1's two-level shape), falling back to a
     level's central universe when it does not carry the label."""
     while isinstance(value, graphed.Varied):
-        value = graphed.universe(value, label) if label in graphed.labels(value) else graphed.nominal(value)
+        value = (
+            graphed.universe(value, label)
+            if label in graphed.labels(value)
+            else graphed.nominal(value)
+        )
     return len(ak.to_list(session.materialize(value)))
 
 
@@ -100,7 +104,9 @@ def test_a_vary_identity_link_leaves_the_target_and_its_handle_alone() -> None:
     """The negative control. A `vary` link keeps the row space fixed, so re-indexing across it
     would re-stamp nominal's handle and lose the parent identity §2.3e pins."""
     _s, events = events_context()
-    weighted = graphed.vary(events, "pu", pu_weight(events, 1.0), is_weight=True, up=pu_weight(events, 1.1))
+    weighted = graphed.vary(
+        events, "pu", pu_weight(events, 1.0), is_weight=True, up=pu_weight(events, 1.1)
+    )
     varied = graphed.vary(events.MET.pt, "sf", up=weighted.MET.pt * 1.1)
 
     assert graphed.context_of(varied) is weighted
@@ -109,7 +115,9 @@ def test_a_vary_identity_link_leaves_the_target_and_its_handle_alone() -> None:
 
 
 # ---- F2: the weight form's duplicate-label check --------------------------------------------
-def test_a_weight_label_colliding_with_the_ambient_registry_under_ANOTHER_name_is_refused() -> None:
+def test_a_weight_label_colliding_with_the_ambient_registry_under_ANOTHER_name_is_refused() -> (
+    None
+):
     """The cross-name prefix collision: `vary(ctx, "jes_up", x=…)` and `vary(ctx, "jes", up_x=…)`
     both spell `jes_up_x`. Composing them silently would make one universe differ from nominal in
     TWO knobs, which §2.1's one-at-a-time rule forbids."""
@@ -163,7 +171,9 @@ def test_a_shift_varied_context_whose_universes_are_all_filled_reports_nothing()
     reports labels that DO reach a marked output."""
     session, events = events_context()
     shifted = graphed.vary(events, "jes", **jes_kwargs(events))
-    outputs = [gak.sum(graphed.universe(shifted, label).MET.pt) for label in graphed.labels(shifted)]
+    outputs = [
+        gak.sum(graphed.universe(shifted, label).MET.pt) for label in graphed.labels(shifted)
+    ]
     compiled = compile_ir(session, *outputs)
     assert compiled.unreached_labels == ()
 

@@ -31,7 +31,10 @@ def test_a_fresh_carrier_fans_out_a_foreign_member() -> None:
     other = graphed.vary(x, "jer", up=x * 5.0)  # jer-varied member
     z = graphed.vary(x * 4.0, "jes", up=other)  # fresh (plain) target → fanout
     assert "jes_up__jer_up" in graphed.labels(z)
-    assert graphed.member_of(z, "jes_up__jer_up").node_id == graphed.member_of(other, "jer_up").node_id
+    assert (
+        graphed.member_of(z, "jes_up__jer_up").node_id
+        == graphed.member_of(other, "jer_up").node_id
+    )
 
 
 def test_a_spectator_foreign_nuisance_stays_the_union() -> None:
@@ -82,5 +85,7 @@ def test_a_stacked_weight_stays_the_union() -> None:
     ambient: Any = graphed.weight(first)  # its _tags carries btag → a stacked weight nuisance
     second = graphed.vary(first, "mu", ambient, is_weight=True, points={"up": ambient * 1.05})
     labels = graphed.labels(graphed.weight(second))
-    assert not [label for label in labels if "__" in label]  # mu does NOT fan out over stacked btag
+    assert not [
+        label for label in labels if "__" in label
+    ]  # mu does NOT fan out over stacked btag
     assert set(labels) == {"nominal", "btag_up", "mu_up"}

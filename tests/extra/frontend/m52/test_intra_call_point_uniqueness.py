@@ -18,7 +18,9 @@ import pytest
 
 # the two-axis fixture lives with the frozen m52 anchors; this extra subtree runs as its own pytest
 # process (scripts/run-tests.sh) without that dir on `pythonpath`, so seat it here.
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "frozen", "frontend", "m52"))
+sys.path.insert(
+    0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "frozen", "frontend", "m52")
+)
 
 from m52_point_fixtures import two_axis_context
 

@@ -32,7 +32,9 @@ def _parser_rebuilds_parameterised_float16() -> bool:
 
 
 @pytest.mark.parametrize(("field", "spec"), [("x", HALF), ("Jet", ListType(HALF))])
-def test_a_parameterised_float16_records_its_eager_type_or_is_refused(field: str, spec: Any) -> None:
+def test_a_parameterised_float16_records_its_eager_type_or_is_refused(
+    field: str, spec: Any
+) -> None:
     session = Session(AwkwardBackend())
     ev = from_awkward(session, "events", EVENTS)
     column = ev.x if field == "x" else ev.Jet.pt

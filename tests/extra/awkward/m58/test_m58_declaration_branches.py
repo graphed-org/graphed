@@ -75,7 +75,9 @@ def test_a_declaration_short_circuits_the_varied_write_drivers_own_computation(
     plain_record, plain_mask = varied_record(plain_root)
 
     with pytest.raises(AssertionError):
-        ga.to_parquet(plain_record, str(tmp_path / "control"), select={0: plain_mask}, steps_per_file=2)
+        ga.to_parquet(
+            plain_record, str(tmp_path / "control"), select={0: plain_mask}, steps_per_file=2
+        )
 
     source = DeclaringSource()
     _session, root = partitioned(source)

@@ -120,7 +120,9 @@ class Varied:
         probe = getattr(self._members["nominal"], name)
         if isinstance(probe, BoundMethod):
             return BoundMethod(self, name)
-        if not isinstance(probe, Array | Varied):  # a form answer, e.g. `.fields`: one for all universes
+        if not isinstance(
+            probe, Array | Varied
+        ):  # a form answer, e.g. `.fields`: one for all universes
             if any(getattr(member, name) != probe for member in self._members.values()):
                 raise GraphedError(
                     f"the universes disagree on {name!r}; read one universe first, with "
@@ -284,7 +286,9 @@ def expand(fn: Callable[..., Any], args: Sequence[object], kwargs: Mapping[str, 
     return rebuild(results, tags=union_tags(*operands), context=most_derived_context(*operands))
 
 
-def expand_tuple(fn: Callable[..., Any], args: Sequence[object], kwargs: Mapping[str, object]) -> Any:
+def expand_tuple(
+    fn: Callable[..., Any], args: Sequence[object], kwargs: Mapping[str, object]
+) -> Any:
     """The *tuple-returning* shape: one `Varied` per tuple position (§2.3c)."""
     operands = (*args, *kwargs.values())
     if not containers_in(*operands):
@@ -382,7 +386,11 @@ def install_surface(varied_cls: type[Varied], dispositions: Mapping[str, str]) -
     for name, kind in dispositions.items():
         if name in varied_cls.__dict__:  # a hand-written override wins (`__getattr__`, properties)
             continue
-        setattr(varied_cls, name, _broadcast_method(name) if kind == "broadcast" else _refusing_method(name))
+        setattr(
+            varied_cls,
+            name,
+            _broadcast_method(name) if kind == "broadcast" else _refusing_method(name),
+        )
 
 
 install_surface(Varied, SURFACE_DISPOSITIONS)

@@ -68,7 +68,9 @@ _ARROW_TO_NUMPY = {
 }
 
 
-def _rectilinear_fields(paths: Sequence[str], columns: Sequence[str] | None) -> tuple[tuple[str, str], ...]:
+def _rectilinear_fields(
+    paths: Sequence[str], columns: Sequence[str] | None
+) -> tuple[tuple[str, str], ...]:
     """(column, numpy dtype str) for every selected schema column; REFUSES non-primitives."""
     pa = _pa()
     schema = gpq.schema_of(paths)
@@ -138,7 +140,10 @@ def read_parquet_partition(
 
     part = gpq.resolve_partition(partition)
     table = pq.read_table(part.uri, columns=list(columns) if columns else None)
-    return {n: _column_to_numpy(table, n)[part.entry_start : part.entry_stop] for n in table.column_names}
+    return {
+        n: _column_to_numpy(table, n)[part.entry_start : part.entry_stop]
+        for n in table.column_names
+    }
 
 
 # ---- deferred writing ------------------------------------------------------------------------
@@ -170,7 +175,9 @@ class _WritePart:
     def __call__(self, partition: Partition, resources: WorkerResources) -> list[str]:
         chunk: object
         if self.memory_data is not None:
-            sliced = {k: v[partition.entry_start : partition.entry_stop] for k, v in self.memory_data}
+            sliced = {
+                k: v[partition.entry_start : partition.entry_stop] for k, v in self.memory_data
+            }
             # a single unnamed entry is a FLAT source: the chunk IS the array, not a record
             chunk = sliced[""] if set(sliced) == {""} else sliced
         else:
@@ -183,7 +190,9 @@ class _WritePart:
         )
         result = np.asarray(out)
         if result.ndim != 1:
-            raise TypeError(f"to_parquet writes 1-D rectilinear columns; the result has shape {result.shape}")
+            raise TypeError(
+                f"to_parquet writes 1-D rectilinear columns; the result has shape {result.shape}"
+            )
         pa = _pa()
         import pyarrow.parquet as pq  # noqa: PLC0415
 
@@ -195,7 +204,10 @@ class _WritePart:
 
 def _memory_step(partition: Partition, n: int, steps: int) -> int:
     for s in range(steps):
-        if ((s * n) // steps, ((s + 1) * n) // steps) == (partition.entry_start, partition.entry_stop):
+        if ((s * n) // steps, ((s + 1) * n) // steps) == (
+            partition.entry_start,
+            partition.entry_stop,
+        ):
             return s
     raise ValueError(f"{partition} does not match any of {steps} steps over {n} rows")
 
@@ -227,7 +239,9 @@ def to_parquet(
     session: Session = array.session
     sources = gw.sources_read([array])
     if len(sources) != 1:
-        raise TypeError(f"to_parquet needs an array recorded over exactly one source, got {len(sources)}")
+        raise TypeError(
+            f"to_parquet needs an array recorded over exactly one source, got {len(sources)}"
+        )
     ((node_id, data),) = sources.items()
     source_name = session.source_name(node_id)
     columns = tuple(sorted(project(array, on_fail="pass").columns_for(source_name)))
@@ -245,8 +259,13 @@ def to_parquet(
         "steps_per_file": steps_per_file,
     }
     if isinstance(data, _DatasetLoader):
-        partitions = gpq.make_partitions(data.paths, steps_per_file=steps_per_file, open_files=False)
-        writer = _WritePart(bases=tuple(gpq.file_bases(data.paths, steps_per_file).items()), **common)  # type: ignore[arg-type]
+        partitions = gpq.make_partitions(
+            data.paths, steps_per_file=steps_per_file, open_files=False
+        )
+        writer = _WritePart(
+            bases=tuple(gpq.file_bases(data.paths, steps_per_file).items()),  # type: ignore[arg-type]
+            **common,  # type: ignore[arg-type]
+        )
     else:
         resolved = data() if callable(data) else data
         if isinstance(resolved, dict):
@@ -257,7 +276,10 @@ def to_parquet(
             n = len(mem[0][1])
         partitions = tuple(
             Partition(
-                f"memory://{source_name}", "", (s * n) // steps_per_file, ((s + 1) * n) // steps_per_file
+                f"memory://{source_name}",
+                "",
+                (s * n) // steps_per_file,
+                ((s + 1) * n) // steps_per_file,
             )
             for s in range(steps_per_file)
         )

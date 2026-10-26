@@ -81,10 +81,15 @@ def test_a_compound_correction_sharing_a_regular_name_evaluates_the_compound() -
 
     assert regular.node_id != compound.node_id  # the kind is node identity, so CSE keeps both
     assert (
-        ak.Array(session.materialize(compound)).tolist() == EAGER.compound["X"].evaluate(EVENTS.pt).tolist()
+        ak.Array(session.materialize(compound)).tolist()
+        == EAGER.compound["X"].evaluate(EVENTS.pt).tolist()
     )
-    assert ak.Array(session.materialize(regular)).tolist() == EAGER["X"].evaluate(EVENTS.pt).tolist()
-    assert EAGER.compound["X"].evaluate(EVENTS.pt).tolist() != EAGER["X"].evaluate(EVENTS.pt).tolist()
+    assert (
+        ak.Array(session.materialize(regular)).tolist() == EAGER["X"].evaluate(EVENTS.pt).tolist()
+    )
+    assert (
+        EAGER.compound["X"].evaluate(EVENTS.pt).tolist() != EAGER["X"].evaluate(EVENTS.pt).tolist()
+    )
 
 
 def test_a_plugin_recorded_compound_correction_evaluates_the_compound() -> None:
@@ -92,9 +97,14 @@ def test_a_plugin_recorded_compound_correction_evaluates_the_compound() -> None:
     pt = from_awkward(session, "events", EVENTS).pt
     plugin = get_plugin("correctionlib")
     assert plugin is not None
-    out = record_external(session, plugin, CSET, [pt], params={"name": "X", "args": ["$0"], "compound": True})
+    out = record_external(
+        session, plugin, CSET, [pt], params={"name": "X", "args": ["$0"], "compound": True}
+    )
 
-    assert ak.Array(session.materialize(out)).tolist() == EAGER.compound["X"].evaluate(EVENTS.pt).tolist()
+    assert (
+        ak.Array(session.materialize(out)).tolist()
+        == EAGER.compound["X"].evaluate(EVENTS.pt).tolist()
+    )
 
 
 def test_a_compound_only_name_without_the_flag_falls_back_to_the_compound_list() -> None:
@@ -102,7 +112,10 @@ def test_a_compound_only_name_without_the_flag_falls_back_to_the_compound_list()
     pt = from_awkward(session, "events", EVENTS).pt
     out = gak.apply_correction(CSET, "Y", [pt], _unusable, args=["$0"])
 
-    assert ak.Array(session.materialize(out)).tolist() == EAGER.compound["Y"].evaluate(EVENTS.pt).tolist()
+    assert (
+        ak.Array(session.materialize(out)).tolist()
+        == EAGER.compound["Y"].evaluate(EVENTS.pt).tolist()
+    )
 
 
 def test_the_compound_flag_on_a_regular_only_name_is_refused() -> None:
@@ -127,8 +140,12 @@ def _plugin(rho: Array, pt: Array) -> Array:
     return out
 
 
-@pytest.mark.parametrize("record", [_template, _plugin], ids=["apply_correction", "record_external"])
-def test_a_flat_then_jagged_call_records_the_broadcast_type(record: Callable[[Array, Array], Array]) -> None:
+@pytest.mark.parametrize(
+    "record", [_template, _plugin], ids=["apply_correction", "record_external"]
+)
+def test_a_flat_then_jagged_call_records_the_broadcast_type(
+    record: Callable[[Array, Array], Array],
+) -> None:
     session = Session(AwkwardBackend())
     events = from_awkward(session, "events", EVENTS)
     out = record(events.rho, events.pt)
@@ -137,6 +154,12 @@ def test_a_flat_then_jagged_call_records_the_broadcast_type(record: Callable[[Ar
     form = session.form(out)
     assert isinstance(form, AwkwardForm)
     assert str(form.tt.type.content) == str(eager.type.content) == "var * float64"
-    assert ak.Array(session.materialize(gak.sum(out, axis=1))).tolist() == ak.sum(eager, axis=1).tolist()
-    assert ak.Array(session.materialize(gak.num(out, axis=1))).tolist() == ak.num(eager, axis=1).tolist()
+    assert (
+        ak.Array(session.materialize(gak.sum(out, axis=1))).tolist()
+        == ak.sum(eager, axis=1).tolist()
+    )
+    assert (
+        ak.Array(session.materialize(gak.num(out, axis=1))).tolist()
+        == ak.num(eager, axis=1).tolist()
+    )
     assert ak.Array(session.materialize(gak.flatten(out))).tolist() == ak.flatten(eager).tolist()

@@ -40,7 +40,15 @@ from .aggregate import attribute_failures, external_evaluators, plan_services, r
 from .array import Array
 from .backend import ParamValue
 from .errors import GraphedError
-from .execute import Frame, Key, compile_ir, evaluate_ir, external_key, ir_cone, refuse_chunk_partials
+from .execute import (
+    Frame,
+    Key,
+    compile_ir,
+    evaluate_ir,
+    external_key,
+    ir_cone,
+    refuse_chunk_partials,
+)
 from .projection import read_columns
 from .services import Bindable, Resolvable, bind_externals
 from .session import Session
@@ -52,7 +60,9 @@ V = TypeVar("V")
 _Monoid = tuple[Callable[[list[Any]], Any], Callable[[Any, Any], Any], Callable[[], Any]]
 
 
-def _scheme_params(*, by: str | None, n: int | None, target_bytes: int | None) -> dict[str, ParamValue]:
+def _scheme_params(
+    *, by: str | None, n: int | None, target_bytes: int | None
+) -> dict[str, ParamValue]:
     """Map the user's intent to an ``Exchange`` scheme (its structural identity): a key -> hash route,
     a byte target -> coalesce, a partition count -> count."""
     if by is not None:
@@ -75,7 +85,9 @@ def repartition(
     field (the join/keyed-shuffle case — a neutral module verb, NOT an ``Array`` method);
     ``target_bytes=`` coalesces by measured size; ``n=`` sets a target partition count."""
     refuse_boundary("graphed.repartition", array)
-    return array.session.record_exchange(array, _scheme_params(by=by, n=n, target_bytes=target_bytes))
+    return array.session.record_exchange(
+        array, _scheme_params(by=by, n=n, target_bytes=target_bytes)
+    )
 
 
 JOINKEY = "__joinkey__"
@@ -124,7 +136,9 @@ def join_blocks(
     no awkward/numpy leaks into ``graphed``. Used by the reference ``eval_stage("join")`` and by the
     two-phase executor's gather-join."""
     build_idx, probe_idx = backend.match_indices(left, right, on=list(on), how=how)
-    return backend.merge_records(backend.take(left, build_idx), backend.take(right, probe_idx), on=list(on))
+    return backend.merge_records(
+        backend.take(left, build_idx), backend.take(right, probe_idx), on=list(on)
+    )
 
 
 def _backend_identity(session: Session, backend: Callable[[], Any] | str | None) -> str:
@@ -155,7 +169,9 @@ class _MapWrite:
 
     checkpointable: ClassVar[bool] = True
     checkpoint_ignore: ClassVar[tuple[str, ...]] = ("frames",)
-    checkpoint_resolve: ClassVar[Mapping[str, Callable[[Any], Any]]] = {"backend_factory": resolve_backend}
+    checkpoint_resolve: ClassVar[Mapping[str, Callable[[Any], Any]]] = {
+        "backend_factory": resolve_backend
+    }
 
     ir: bytes
     target: int
@@ -199,7 +215,9 @@ class _Gather:
 
     checkpointable: ClassVar[bool] = True
     checkpoint_ignore: ClassVar[tuple[str, ...]] = ("frames",)
-    checkpoint_resolve: ClassVar[Mapping[str, Callable[[Any], Any]]] = {"backend_factory": resolve_backend}
+    checkpoint_resolve: ClassVar[Mapping[str, Callable[[Any], Any]]] = {
+        "backend_factory": resolve_backend
+    }
 
     ir: bytes
     barrier_inputs: tuple[int, ...]
@@ -219,16 +237,25 @@ class _Gather:
             {},
             externals=dict(self.externals),
             on_failure=attribute_failures(self.frames, f"dest {task.key}"),
-            given={nid: backend.concat(side) for nid, side in zip(self.barrier_inputs, sides, strict=True)},
+            given={
+                nid: backend.concat(side)
+                for nid, side in zip(self.barrier_inputs, sides, strict=True)
+            },
         )
         return pickle.dumps(values[0] if self.reduce is None else self.reduce(values), protocol=5)
 
     def bind_services(self, endpoints: Mapping[str, str]) -> _Gather:
-        reduce = self.reduce.bind_services(endpoints) if isinstance(self.reduce, Bindable) else self.reduce
+        reduce = (
+            self.reduce.bind_services(endpoints)
+            if isinstance(self.reduce, Bindable)
+            else self.reduce
+        )
         return replace(self, externals=bind_externals(self.externals, endpoints), reduce=reduce)
 
     def resolve_services(self, value: Any) -> Any:
-        return self.reduce.resolve_services(value) if isinstance(self.reduce, Resolvable) else value
+        return (
+            self.reduce.resolve_services(value) if isinstance(self.reduce, Resolvable) else value
+        )
 
 
 @dataclass(frozen=True)
@@ -265,7 +292,12 @@ def shuffle_plan(
     refuse_boundary("graphed.shuffle_plan", output)
     fold = (reduce, combine, empty)
     return _build(
-        "shuffle_plan", output, fold, backend=backend, steps_per_file=steps_per_file, names=services
+        "shuffle_plan",
+        output,
+        fold,
+        backend=backend,
+        steps_per_file=steps_per_file,
+        names=services,
     )
 
 
@@ -304,7 +336,9 @@ def join_plan(
         fold = (reduce, combine, empty)
     elif reduce is not None or combine is not None or empty is not None:
         raise TypeError("join_plan takes reduce, combine and empty together, or none of them")
-    return _build("join_plan", output, fold, backend=backend, steps_per_file=steps_per_file, names=services)
+    return _build(
+        "join_plan", output, fold, backend=backend, steps_per_file=steps_per_file, names=services
+    )
 
 
 def _build(
@@ -329,7 +363,9 @@ def _build(
             if is_join
             else "shuffle_plan needs a repartition Exchange in the graph (use graphed.repartition)"
         )
-    partitioned = {nid: d for nid, d in sources_read([output]).items() if isinstance(d, PartitionedSource)}
+    partitioned = {
+        nid: d for nid, d in sources_read([output]).items() if isinstance(d, PartitionedSource)
+    }
     if len(partitioned) != (2 if is_join else 1):
         raise TypeError(
             f"{builder} needs exactly {'two' if is_join else 'one'} partitioned source"
@@ -358,7 +394,9 @@ def _build(
     targets = tuple(nodes[barrier]["inputs"])
     sides: list[tuple[str, int, PartitionedSource]] = []
     for target in targets:
-        read = [nodes[i]["name"] for i in ir_cone(nodes, (target,)) if nodes[i]["kind"] == "source"]
+        read = [
+            nodes[i]["name"] for i in ir_cone(nodes, (target,)) if nodes[i]["kind"] == "source"
+        ]
         if len(read) != 1 or read[0] not in by_name:
             raise TypeError(
                 f"{builder}: each side of the {nodes[barrier]['kind']} must read exactly one partitioned"
@@ -374,10 +412,17 @@ def _build(
     if is_join:
         exchanges = [n for n in nodes if n["kind"] == "exchange"]
         parts = (
-            int(dict(exchanges[0]["params"]).get("parts", steps_per_file)) if exchanges else steps_per_file
+            int(dict(exchanges[0]["params"]).get("parts", steps_per_file))
+            if exchanges
+            else steps_per_file
         )
         route = ("hash", JOINKEY, parts)
-        routing: dict[str, Any] = {"scheme": "hash", "key": JOINKEY, "parts": parts, "backend_id": backend_id}
+        routing: dict[str, Any] = {
+            "scheme": "hash",
+            "key": JOINKEY,
+            "parts": parts,
+            "backend_id": backend_id,
+        }
     else:
         parts = int(params.get("parts", steps_per_file))
         route = (str(params["scheme"]), str(params.get("key", "")), parts)
@@ -399,7 +444,12 @@ def _build(
         )
         tasks = tuple(Task(i, p) for i, p in enumerate(data.partitions(steps_per_file)))
         map_stages.append(
-            StageSpec(kind="map_write", process=OpSpec.from_callable(process), routing=routing, tasks=tasks)
+            StageSpec(
+                kind="map_write",
+                process=OpSpec.from_callable(process),
+                routing=routing,
+                tasks=tasks,
+            )
         )
     gather = _Gather(
         ir=ir,
@@ -414,7 +464,9 @@ def _build(
     if is_join:
         # E5/F6: the broadcast-vs-shuffle choice is a PLAN property, keyed on each side's partition
         # count (typetracer forms carry no row count, R7.9) — never the runtime worker pool.
-        broadcast = broadcast_join_choice(len(map_stages[0].tasks), len(map_stages[1].tasks), parts)
+        broadcast = broadcast_join_choice(
+            len(map_stages[0].tasks), len(map_stages[1].tasks), parts
+        )
         gather_routing.update(how=how, broadcast=broadcast)
     stages = [
         *map_stages,
@@ -436,7 +488,9 @@ def _build(
                 tasks=(Task(0, Partition("reduce", "", 0, 1)),),
             )
         )
-    return DurablePlanV2(ir=ir, stages=tuple(stages), services=plan_services(session, compiled, names))
+    return DurablePlanV2(
+        ir=ir, stages=tuple(stages), services=plan_services(session, compiled, names)
+    )
 
 
 def _cone_externals(

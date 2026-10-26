@@ -16,7 +16,9 @@ from graphed.core.execution import SequentialRunner
 pytest.importorskip("pyarrow")
 
 
-def _write_plan(src: Path, rows: list[float], destination: Path) -> graphed.core.execution.Plan[list[str]]:
+def _write_plan(
+    src: Path, rows: list[float], destination: Path
+) -> graphed.core.execution.Plan[list[str]]:
     ak.to_parquet(ak.Array({"x": rows}), src)
     ev = from_parquet(Session(AwkwardBackend()), "events", str(src))
     plan = to_parquet(ev.x * 2.0, str(destination), compute=False)

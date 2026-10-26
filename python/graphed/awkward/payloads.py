@@ -151,7 +151,9 @@ def correctionlib_contents_descriptor(payload: bytes, correction_name: str) -> P
 def onnx_weights_descriptor(payload: bytes) -> PayloadDescriptor:
     from graphed.preserve.externals._helpers import memoized_model_hash  # noqa: PLC0415
 
-    content_hash, opset, io_schema = memoized_model_hash("onnx-descriptor", payload, _onnx_identity)
+    content_hash, opset, io_schema = memoized_model_hash(
+        "onnx-descriptor", payload, _onnx_identity
+    )
     return PayloadDescriptor(
         kind="onnx_model",
         content_hash=content_hash,

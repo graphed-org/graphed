@@ -23,7 +23,9 @@ class Boom(RuntimeError):
 
 
 class PoisonedSum(ListBackend):  # type: ignore[misc]  # `backends` is off mypy's path (see pyproject)
-    def eval_stage(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> object:
+    def eval_stage(
+        self, op: str, inputs: Sequence[object], params: Mapping[str, object]
+    ) -> object:
         if op == "sum":
             raise Boom("the reduction failed")
         return super().eval_stage(op, inputs, params)

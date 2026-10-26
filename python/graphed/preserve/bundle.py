@@ -165,7 +165,9 @@ def _render_services(specs: Sequence[Mapping[str, Any]]) -> list[str]:
             if launch["image"] is not None:
                 recipe = f"image={launch['image']} {recipe}"
             if launch["resources"]:
-                recipe += " resources=" + ",".join(f"{k}={v:g}" for k, v in launch["resources"].items())
+                recipe += " resources=" + ",".join(
+                    f"{k}={v:g}" for k, v in launch["resources"].items()
+                )
         lines.append(f"    {s['name']} kind={s['kind']} check={s['check']} {recipe}")
     return lines
 
@@ -220,7 +222,10 @@ def build_bundle(
         for label in union_labels(value, weight):
             v_member, w_member = member_of(value, label), member_of(weight, label)
             outputs_arrays.extend((v_member, w_member))
-            label_outputs[label] = {"value": int(v_member.node_id), "weight": int(w_member.node_id)}
+            label_outputs[label] = {
+                "value": int(v_member.node_id),
+                "weight": int(w_member.node_id),
+            }
     else:
         outputs_arrays = [value] if weight is None else [value, weight]
     ir = session.serialized_ir(*outputs_arrays, optimize=False)
@@ -251,7 +256,9 @@ def build_bundle(
             raise PreserveError(f"no payload bytes supplied for external {ch} (node {node['id']})")
         blob = payloads[ch]
         actual = plugin.content_hash(blob)
-        if actual != ch:  # integrity: the bytes must hash to the recorded id (cache-poisoning-safe)
+        if (
+            actual != ch
+        ):  # integrity: the bytes must hash to the recorded id (cache-poisoning-safe)
             raise PreserveError(
                 f"payload for node {node['id']} hashes to {actual}, not the recorded {ch} (mismatched/poisoned)"
             )
@@ -304,7 +311,9 @@ def build_bundle(
         "config": dict(config or {}),
         "seed": int(seed),
     }
-    if services_manifest:  # omitted when empty, like "variations": a bundle without services keeps its bytes
+    if (
+        services_manifest
+    ):  # omitted when empty, like "variations": a bundle without services keeps its bytes
         manifest["services"] = services_manifest
     (root / "manifest.json").write_bytes(canonical_bytes(manifest))
     return Bundle(root=root, manifest=manifest)
@@ -343,7 +352,9 @@ def reproduce(bundle: Bundle) -> Any:
     def external(node: dict[str, Any], inputs: list[Any]) -> Any:
         entry = ext_by_node.get(node["id"])
         if entry is None:
-            raise PreserveError(f"external node {node['id']} is not in the manifest (opaque/unpreserved?)")
+            raise PreserveError(
+                f"external node {node['id']} is not in the manifest (opaque/unpreserved?)"
+            )
         if "service" in node["params"]:  # the endpoint is run environment; the bundle keeps none
             raise PreserveError(
                 f"external node {node['id']} calls service {node['params']['service']!r}, which "
@@ -355,7 +366,9 @@ def reproduce(bundle: Bundle) -> Any:
         if declared is None:  # a plugin's static leaf dtype, as `record_external` checked it
             key, dtype = "output_dtype", getattr(get_plugin(entry["kind"]), "output_dtype", None)
             declared = None if dtype is None else canonical_output_type(dtype)
-        actual = None if declared is None else backend.check_output_type(value, inputs, key, declared)
+        actual = (
+            None if declared is None else backend.check_output_type(value, inputs, key, declared)
+        )
         if actual is not None:
             prov = Provenance(**sourcemap[str(node["id"])])
             detail = f"external node {node['id']} ({entry['kind']!r}) declares {key} {declared!r}; its value is {actual!r}"
@@ -392,7 +405,9 @@ def _histogram(value: Any, weight: Any, spec: dict[str, Any]) -> Any:
 
     v = np.asarray(ak.to_numpy(ak.Array(value)), dtype="float64")
     w = np.asarray(ak.to_numpy(ak.Array(weight)), dtype="float64")
-    counts, _edges = np.histogram(v, bins=int(spec["bins"]), range=(spec["lo"], spec["hi"]), weights=w)
+    counts, _edges = np.histogram(
+        v, bins=int(spec["bins"]), range=(spec["lo"], spec["hi"]), weights=w
+    )
     return np.round(counts, _STABLE_DECIMALS)
 
 

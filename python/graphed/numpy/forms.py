@@ -41,14 +41,18 @@ def is_numeric(form: NumpyForm) -> bool:
 def meta(form: NumpyForm) -> Any:
     """A zero-length stand-in carrying the form's dtype/shape: numpy itself infers the result."""
     if form.fields is not None:
-        raise TypeError(f"elementwise ops need array operands, got {form.describe()}; access a field first")
+        raise TypeError(
+            f"elementwise ops need array operands, got {form.describe()}; access a field first"
+        )
     return np.empty(tuple(0 if d is None else d for d in form.shape), dtype=form.dtype)
 
 
 def unit_meta(form: NumpyForm) -> Any:
     """A LENGTH-ONE stand-in for reduction inference (argmin/mean reject zero-length input)."""
     if form.fields is not None:
-        raise TypeError(f"reductions need array operands, got {form.describe()}; access a field first")
+        raise TypeError(
+            f"reductions need array operands, got {form.describe()}; access a field first"
+        )
     return np.zeros(tuple(1 if d is None else d for d in form.shape), dtype=form.dtype)
 
 
@@ -78,7 +82,9 @@ def canonical_output_type(spec: object) -> str:
     if isinstance(s, type) and s in PYTHON_TYPES:
         return PYTHON_TYPES[s]
     if type(s).__module__.startswith("awkward."):  # the object exists, so awkward is loaded
-        from graphed.awkward.backend import canonical_output_type as awkward_canonical  # noqa: PLC0415
+        from graphed.awkward.backend import (  # noqa: PLC0415
+            canonical_output_type as awkward_canonical,
+        )
 
         s = awkward_canonical(s)
     try:
@@ -99,12 +105,18 @@ def declared_form(forms: Sequence[NumpyForm], canonical: str) -> NumpyForm:
     if d.names is not None:
         if any(d[n].names is not None or d[n].subdtype is not None for n in d.names):
             raise TypeError(f"output_type {canonical!r}: numpy record columns are plain dtypes")
-        return NumpyForm(np.dtype(object), kind="record", fields=tuple((n, d[n].str) for n in d.names))
-    kind = "scalar" if first.kind == "scalar" else "vector"  # a record input's kind does not carry over
+        return NumpyForm(
+            np.dtype(object), kind="record", fields=tuple((n, d[n].str) for n in d.names)
+        )
+    kind = (
+        "scalar" if first.kind == "scalar" else "vector"
+    )  # a record input's kind does not carry over
     return NumpyForm(d.base, kind=kind, shape=first.shape[:1] + d.shape)
 
 
-def check_output_type(value: object, inputs: Sequence[object], key: str, declared: str) -> str | None:
+def check_output_type(
+    value: object, inputs: Sequence[object], key: str, declared: str
+) -> str | None:
     """``None`` when a `map`'s ``value`` has its declared type, else the value's description.
 
     The dtype must be equal, an unsized string (``str``, ``<U0``) matching any length of its kind;
@@ -114,7 +126,9 @@ def check_output_type(value: object, inputs: Sequence[object], key: str, declare
     if key != "output_type":
         return None
     d = _dtype(declared)
-    lead = int(any(np.ndim(x) > 0 or isinstance(x, Mapping) for x in inputs))  # a record source is a dict
+    lead = int(
+        any(np.ndim(x) > 0 or isinstance(x, Mapping) for x in inputs)
+    )  # a record source is a dict
     if isinstance(value, Mapping):
         cols = tuple((str(k), np.asarray(v).dtype) for k, v in value.items())
         ok = d.names is not None and cols == tuple((n, d[n]) for n in d.names)
@@ -124,6 +138,8 @@ def check_output_type(value: object, inputs: Sequence[object], key: str, declare
         same = arr.dtype.names == d.names and all(arr.dtype[n] == d[n] for n in d.names)
     else:
         want = d.base
-        same = arr.dtype == want or (want.itemsize == 0 and want.kind in "SU" and arr.dtype.kind == want.kind)
+        same = arr.dtype == want or (
+            want.itemsize == 0 and want.kind in "SU" and arr.dtype.kind == want.kind
+        )
     shape = arr.ndim == lead + len(d.shape) and arr.shape[lead:] == d.shape
     return None if same and shape else form_from_meta(arr, lead == 1).describe()

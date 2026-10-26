@@ -36,7 +36,12 @@ class Dashboard:
     """
 
     def __init__(
-        self, port: int = 0, host: str = "127.0.0.1", *, profile: bool = False, control: bool = False
+        self,
+        port: int = 0,
+        host: str = "127.0.0.1",
+        *,
+        profile: bool = False,
+        control: bool = False,
     ) -> None:
         self._server = DashboardServer(host, port, control=control)
         self._control = RunControl() if control else None
@@ -91,7 +96,9 @@ class Dashboard:
             if snap["stats"]["finished"] >= finished:
                 return snap
             time.sleep(0.02)
-        raise TimeoutError(f"only {self._server.snapshot()['stats']['finished']}/{finished} finished")
+        raise TimeoutError(
+            f"only {self._server.snapshot()['stats']['finished']}/{finished} finished"
+        )
 
     def attach(self, executor: Executor) -> Executor:
         """Set ``executor.monitor`` (and ``executor.control`` with ``control=True``). Refuses an

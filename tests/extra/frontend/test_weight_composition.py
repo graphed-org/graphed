@@ -51,7 +51,9 @@ def _ambient(ctx: Any) -> Array | Varied:
 
 
 def _shift(ctx: Any, name: str, pt: Any, scale: float = 1e-3) -> Any:
-    return graphed.vary(ctx, name, collections={"pt": {"up": pt * (1 + scale), "down": pt * (1 - scale)}})
+    return graphed.vary(
+        ctx, name, collections={"pt": {"up": pt * (1 + scale), "down": pt * (1 - scale)}}
+    )
 
 
 def _program(count: int, kind: str, *, shift: bool, read_every: bool, register: bool) -> int:
@@ -93,7 +95,9 @@ def _program(count: int, kind: str, *, shift: bool, read_every: bool, register: 
     return _ops(session, "mul") - base
 
 
-def _composition_muls(count: int, kind: str, *, shift: bool = False, read_every: bool = False) -> int:
+def _composition_muls(
+    count: int, kind: str, *, shift: bool = False, read_every: bool = False
+) -> int:
     """The multiplies the COMPOSITION records: the program minus the identical unregistered one."""
     return _program(count, kind, shift=shift, read_every=read_every, register=True) - _program(
         count, kind, shift=shift, read_every=read_every, register=False
@@ -111,7 +115,9 @@ def test_composing_independent_weight_families_is_linear_in_the_family_count(cou
 
 @pytest.mark.parametrize("kind", ["shared", "joint", "mixed"])
 @pytest.mark.parametrize("count", [4, 8, 16])
-def test_a_label_that_several_factors_vary_at_composes_below_the_left_fold(kind: str, count: int) -> None:
+def test_a_label_that_several_factors_vary_at_composes_below_the_left_fold(
+    kind: str, count: int
+) -> None:
     """The tree-walk leg, in three forms: without any minted joint label (weight factors read
     through a shift), with them (the m53 fanout's joints), and with only half the factors varying at
     the shared label, which is where the walk folds whole nominal subtrees into the product.
@@ -125,7 +131,8 @@ def test_a_label_that_several_factors_vary_at_composes_below_the_left_fold(kind:
     # the shape that makes this the tree-walk leg: every registered factor is non-nominal at `jes_up`
     families = [shifted["pt"] * (1.0 + 1e-3 * (index + 1)) for index in range(count)]
     assert all(
-        graphed.universe(family, "jes_up").node_id != graphed.nominal(family).node_id for family in families
+        graphed.universe(family, "jes_up").node_id != graphed.nominal(family).node_id
+        for family in families
     ), "this program does not put two varying factors at one label"
 
     once = _composition_muls(count, kind, shift=True)
@@ -168,7 +175,9 @@ def _derived(weights: int, shifts: int, *, with_weights: bool = True) -> tuple[i
 def _register_context(ctx: Any, record: Any, count: int) -> Any:
     for index in range(count):
         central = record["w"] * (1.0 + 1e-3 * (index + 1))
-        ctx = graphed.vary(ctx, f"f{index}", central, is_weight=True, up=central * 1.1, down=central * 0.9)
+        ctx = graphed.vary(
+            ctx, f"f{index}", central, is_weight=True, up=central * 1.1, down=central * 0.9
+        )
     return ctx
 
 
@@ -187,7 +196,9 @@ def test_one_derivation_re_indexes_the_ambient_once_per_label(weights: int, shif
 
 
 @pytest.mark.parametrize(("weights", "shifts"), [(4, 0), (4, 8), (16, 8)])
-def test_a_derivation_forces_only_the_multiplies_a_read_would_have_forced(weights: int, shifts: int) -> None:
+def test_a_derivation_forces_only_the_multiplies_a_read_would_have_forced(
+    weights: int, shifts: int
+) -> None:
     # Composing at the parent before re-indexing is what bounds the derivation: the nodes it forces
     # are the ones the parent's own `graphed.weight` builds, hash-consed with them.
     _getitems, muls, _labels = _derived(weights, shifts)
@@ -315,7 +326,9 @@ def _walk_resolutions(calls: list[int], count: int) -> tuple[int, int, Any]:
     session, ctx, record = _context()
     for index in range(count):
         central = record["w"] * (1.0 + 1e-3 * (index + 1))
-        ctx = graphed.vary(ctx, f"f{index}", central, is_weight=True, up=central * 1.1, down=central * 0.9)
+        ctx = graphed.vary(
+            ctx, f"f{index}", central, is_weight=True, up=central * 1.1, down=central * 0.9
+        )
     return len(calls), len(ctx._factors) * len(ctx._recorded), session
 
 
@@ -385,7 +398,11 @@ def _minted_by_a_later_loose_vary(*, read_first: bool) -> tuple[Session, Any]:
     shifted._collections = _hand_built_joint(shifted, record)
     for name in ("a", "b_weight"):
         factor: Any = rebuild(
-            {"nominal": record["w"] * 1.0, "jes_up": record["w"] * 1.01, "jes_down": record["w"] * 1.0},
+            {
+                "nominal": record["w"] * 1.0,
+                "jes_up": record["w"] * 1.01,
+                "jes_down": record["w"] * 1.0,
+            },
             context=shifted,
         )
         shifted = graphed.vary(shifted, name, factor, is_weight=True, up=factor * 1.1)
@@ -397,7 +414,9 @@ def _minted_by_a_later_loose_vary(*, read_first: bool) -> tuple[Session, Any]:
     return session, shifted
 
 
-@pytest.mark.parametrize("program", [_minted_by_the_second_registration, _minted_by_a_later_loose_vary])
+@pytest.mark.parametrize(
+    "program", [_minted_by_the_second_registration, _minted_by_a_later_loose_vary]
+)
 def test_a_mint_after_the_walk_first_asked_about_a_label_moves_what_the_ambient_resolves_there(
     program: Any,
 ) -> None:
@@ -442,7 +461,9 @@ def test_an_unsettled_ambient_leaves_the_record_time_check_walking_the_original_
     left = graphed.vary(shifted, "a", shifted["pt"] * 0.5, is_weight=True, up=shifted["pt"] * 0.6)
     graphed.weight(left)
     memo = left._memo
-    assert memo is not None and not memo[3], "this shape must leave the ambient composed and unsettled"
+    assert memo is not None and not memo[3], (
+        "this shape must leave the ambient composed and unsettled"
+    )
     del session
 
     walked: list[list[Any]] = []
@@ -459,7 +480,9 @@ def test_an_unsettled_ambient_leaves_the_record_time_check_walking_the_original_
     assert all(operand is not memo[2] for operand in walked[-1]), "the check walked the fold"
 
 
-def test_an_unrelated_mint_after_the_last_registration_costs_the_next_read_no_new_multiplies() -> None:
+def test_an_unrelated_mint_after_the_last_registration_costs_the_next_read_no_new_multiplies() -> (
+    None
+):
     """The remake is a re-walk, not a rebuild: M1 interns every node, so recomposing from the same
     factors after a mint that moved nothing the ambient reads records no node at all. This is what
     keeps §3 clause 1's read-time resolution affordable — the cost of a mint is a dict walk.
@@ -491,7 +514,9 @@ def test_a_projection_leaves_a_bare_factor_the_walk_still_multiplies() -> None:
     hold the array for the Session and buy nothing."""
     session, ctx, record = _context()
     weight = record["w"]
-    projected = graphed.universe(graphed.vary(ctx, "pu", weight, is_weight=True, up=weight * 1.1), "pu_up")
+    projected = graphed.universe(
+        graphed.vary(ctx, "pu", weight, is_weight=True, up=weight * 1.1), "pu_up"
+    )
     assert not isinstance(projected._factors[0], Varied)
 
     later = graphed.vary(projected, "sf", weight * 2.0, is_weight=True, up=weight * 2.1)
@@ -510,7 +535,9 @@ def test_a_projected_weight_stays_the_member_across_a_later_mint() -> None:
     registered = graphed.vary(ctx, "pu", weight, is_weight=True, up=weight * 1.1)
     projected = graphed.universe(registered, "pu_up")
     before = graphed.weight(projected)
-    graphed.vary(registered, "sf", weight * 2.0, is_weight=True, up=weight * 2.1)  # a mint, elsewhere
+    graphed.vary(
+        registered, "sf", weight * 2.0, is_weight=True, up=weight * 2.1
+    )  # a mint, elsewhere
     after = graphed.weight(projected)
     assert before is not None and after is not None
     assert not isinstance(before, Varied)

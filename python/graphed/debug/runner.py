@@ -31,7 +31,9 @@ def _chain(lowered: LoweredGraph, node_id: int) -> tuple[SourceFrame, ...]:
     return tuple(frames)
 
 
-def _stage_error(lowered: LoweredGraph, node_id: int, partition: str, exc: BaseException) -> StageError:
+def _stage_error(
+    lowered: LoweredGraph, node_id: int, partition: str, exc: BaseException
+) -> StageError:
     failing = lowered.op_for(node_id)
     input_forms = tuple(lowered.op_for(i).form for i in failing.input_ids)
     return StageError(
@@ -50,11 +52,16 @@ def _assert_consistent(lowered: LoweredGraph, node_id: int, value: object, parti
     contracts are a tracked improvement)."""
     if value is None:
         raise _stage_error(
-            lowered, node_id, partition, AssertionError("op produced None (inter-op consistency check)")
+            lowered,
+            node_id,
+            partition,
+            AssertionError("op produced None (inter-op consistency check)"),
         )
 
 
-def run(session: Session, array: Array, *, opt_level: int = 1, partition: str = "sample") -> object:
+def run(
+    session: Session, array: Array, *, opt_level: int = 1, partition: str = "sample"
+) -> object:
     """Execute the analysis reaching ``array`` on the session's source data, raising a `StageError`
     (mapped to the user's analysis line) on the first failing op."""
     lowered = lower(session, array, opt_level=opt_level)

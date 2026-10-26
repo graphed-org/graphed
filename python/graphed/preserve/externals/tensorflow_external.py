@@ -28,7 +28,9 @@ def _tensorflow_content_hash_impl(payload: bytes) -> str:
     import numpy as np  # noqa: PLC0415
 
     h = hashlib.sha256(b"keras-config-weights-v1")
-    h.update(json.dumps(_strip_config_names(model.get_config()), sort_keys=True, default=str).encode())
+    h.update(
+        json.dumps(_strip_config_names(model.get_config()), sort_keys=True, default=str).encode()
+    )
     for weights in model.get_weights():
         h.update(np.ascontiguousarray(weights).tobytes())
     return "sha256:" + h.hexdigest()
@@ -72,8 +74,12 @@ def _tensorflow_samples() -> list[bytes]:
     import numpy as np  # noqa: PLC0415
 
     def _model(weight: float) -> bytes:
-        m = keras.Sequential([keras.layers.Input(shape=(1,)), keras.layers.Dense(1, activation="sigmoid")])
-        m.layers[0].set_weights([np.array([[weight]], dtype="float32"), np.array([0.0], dtype="float32")])
+        m = keras.Sequential(
+            [keras.layers.Input(shape=(1,)), keras.layers.Dense(1, activation="sigmoid")]
+        )
+        m.layers[0].set_weights(
+            [np.array([[weight]], dtype="float32"), np.array([0.0], dtype="float32")]
+        )
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "model.keras"
             m.save(path)

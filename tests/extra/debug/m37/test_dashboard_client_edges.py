@@ -38,7 +38,9 @@ def test_start_is_idempotent() -> None:
     mon.close()
 
 
-def test_close_waits_out_the_flush_deadline_on_a_stalled_buffer(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_close_waits_out_the_flush_deadline_on_a_stalled_buffer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     mon = NetworkMonitor("ws://127.0.0.1:9/ingest")  # never started -> nothing drains the buffer
     mon._buf.append((1, 1))
 

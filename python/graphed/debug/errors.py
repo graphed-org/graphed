@@ -85,5 +85,12 @@ class StageError(Exception):
 
     def __hash__(self) -> int:
         return hash(
-            (self.op, self.frames, self.partition, self.cause_type, self.cause_message, self.variation)
+            (
+                self.op,
+                self.frames,
+                self.partition,
+                self.cause_type,
+                self.cause_message,
+                self.variation,
+            )
         )

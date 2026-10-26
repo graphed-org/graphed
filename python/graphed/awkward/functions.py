@@ -24,7 +24,9 @@ from . import payloads
 from .backend import AwkwardForm, astype_form, broadcast_form
 
 
-def join(left: Array, right: Array, *, on: Sequence[str], how: str = "inner", grouped: bool = False) -> Array:
+def join(
+    left: Array, right: Array, *, on: Sequence[str], how: str = "inner", grouped: bool = False
+) -> Array:
     """The awkward-only ``gak.join`` verb (plan §3.1, a4). ``grouped=False`` is a thin alias to the
     neutral :func:`graphed.join` (relational, SQL-*duplicating*). ``grouped=True`` adds the awkward-only
     convenience: the relational result regrouped by a deterministic ``ak.unflatten`` — one sublist per
@@ -47,7 +49,9 @@ def join(left: Array, right: Array, *, on: Sequence[str], how: str = "inner", gr
     le = session.record_exchange(lk, {"scheme": "hash", "key": JOINKEY})
     re = session.record_exchange(rk, {"scheme": "hash", "key": JOINKEY})
     # same co-partitioning + full-key coalescing as graphed.join; grouped flips the Join to the regroup post-op.
-    return session.record_join(le, re, {"on": ",".join([*on, JOINKEY]), "how": how, "grouped": True})
+    return session.record_join(
+        le, re, {"on": ",".join([*on, JOINKEY]), "how": how, "grouped": True}
+    )
 
 
 def _comb_params(
@@ -99,7 +103,9 @@ def _cartesian_params(
         params["nested"] = nested
     elif nested is not None:
         # a dict's slots nest by key, as ak.cartesian's do; the record keeps their positions
-        params["nested_axes"] = ",".join(str(keys.index(str(i)) if keys else int(i)) for i in nested)
+        params["nested_axes"] = ",".join(
+            str(keys.index(str(i)) if keys else int(i)) for i in nested
+        )
     if axis != 1:
         params["axis"] = axis
     params.update(_structure_params(with_name=with_name, parameters=parameters))
@@ -213,22 +219,30 @@ def _reduce(
     return arr.session.record_op(name, inputs, params, reduction=boundary)  # type: ignore[arg-type]
 
 
-def sum(arr: Array, axis: int | None = None, *, keepdims: bool = False, mask_identity: bool = False) -> Array:
+def sum(
+    arr: Array, axis: int | None = None, *, keepdims: bool = False, mask_identity: bool = False
+) -> Array:
     return _reduce("ak.sum", arr, axis, keepdims=keepdims, mask_identity=mask_identity or None)
 
 
-def any(arr: Array, axis: int | None = None, *, keepdims: bool = False, mask_identity: bool = False) -> Array:
+def any(
+    arr: Array, axis: int | None = None, *, keepdims: bool = False, mask_identity: bool = False
+) -> Array:
     return _reduce("ak.any", arr, axis, keepdims=keepdims, mask_identity=mask_identity or None)
 
 
-def all(arr: Array, axis: int | None = None, *, keepdims: bool = False, mask_identity: bool = False) -> Array:
+def all(
+    arr: Array, axis: int | None = None, *, keepdims: bool = False, mask_identity: bool = False
+) -> Array:
     return _reduce("ak.all", arr, axis, keepdims=keepdims, mask_identity=mask_identity or None)
 
 
 def count_nonzero(
     arr: Array, axis: int | None = None, *, keepdims: bool = False, mask_identity: bool = False
 ) -> Array:
-    return _reduce("ak.count_nonzero", arr, axis, keepdims=keepdims, mask_identity=mask_identity or None)
+    return _reduce(
+        "ak.count_nonzero", arr, axis, keepdims=keepdims, mask_identity=mask_identity or None
+    )
 
 
 def min(
@@ -291,8 +305,12 @@ def mean(
     )
 
 
-def ptp(arr: Array, axis: int | None = None, *, keepdims: bool = False, mask_identity: bool = True) -> Array:
-    return _reduce("ak.ptp", arr, axis, keepdims=keepdims, mask_identity=None if mask_identity else False)
+def ptp(
+    arr: Array, axis: int | None = None, *, keepdims: bool = False, mask_identity: bool = True
+) -> Array:
+    return _reduce(
+        "ak.ptp", arr, axis, keepdims=keepdims, mask_identity=None if mask_identity else False
+    )
 
 
 def std(
@@ -362,7 +380,9 @@ def softmax(arr: Array, axis: int = 1) -> Array:
 
 def _reduce2(name: str, x: Array, y: Array, axis: int | None) -> Array:
     boundary = axis is None or axis == 0
-    return x.session.record_op(name, [x, y], {"axis": "none" if axis is None else axis}, reduction=boundary)
+    return x.session.record_op(
+        name, [x, y], {"axis": "none" if axis is None else axis}, reduction=boundary
+    )
 
 
 def corr(x: Array, y: Array, axis: int | None = None) -> Array:
@@ -384,7 +404,10 @@ def firsts(arr: Array, axis: int = 1) -> Array:
 def argmin(
     arr: Array, axis: int | None = None, *, keepdims: bool = False, mask_identity: bool = True
 ) -> Array:
-    params: dict[str, ParamValue] = {"axis": "none" if axis is None else axis, "keepdims": keepdims}
+    params: dict[str, ParamValue] = {
+        "axis": "none" if axis is None else axis,
+        "keepdims": keepdims,
+    }
     if not mask_identity:
         params["mask_identity"] = False
     return arr.session.record_op("ak.argmin", [arr], params)
@@ -393,7 +416,10 @@ def argmin(
 def argmax(
     arr: Array, axis: int | None = None, *, keepdims: bool = False, mask_identity: bool = True
 ) -> Array:
-    params: dict[str, ParamValue] = {"axis": "none" if axis is None else axis, "keepdims": keepdims}
+    params: dict[str, ParamValue] = {
+        "axis": "none" if axis is None else axis,
+        "keepdims": keepdims,
+    }
     if not mask_identity:
         params["mask_identity"] = False
     return arr.session.record_op("ak.argmax", [arr], params)
@@ -474,7 +500,9 @@ def _payload_bytes(payload: str | bytes) -> bytes:
 _TemplateEntry = tuple[str, Any]  # ("slot", i) | ("group", [i, ...]) | ("const", value)
 
 
-def _parse_template(spec: object, n_inputs: int, *, constants: bool, groups: bool) -> list[_TemplateEntry]:
+def _parse_template(
+    spec: object, n_inputs: int, *, constants: bool, groups: bool
+) -> list[_TemplateEntry]:
     if not isinstance(spec, list):
         raise TypeError("a call template's args must be a list (use kwargs= for keywords)")
     entries: list[_TemplateEntry] = []
@@ -491,7 +519,9 @@ def _parse_template(spec: object, n_inputs: int, *, constants: bool, groups: boo
         elif constants and isinstance(entry, (str, int, float, bool)):
             entries.append(("const", entry))
         else:
-            raise TypeError(f"call template entry {entry!r} is not a slot, group, or allowed constant")
+            raise TypeError(
+                f"call template entry {entry!r} is not a slot, group, or allowed constant"
+            )
     return entries
 
 
@@ -582,16 +612,24 @@ def apply_correction(
     session = inputs[0].session
     session._mine(list(inputs), ("correction", capture()))  # before `session.form` reads an input
     descriptor = payloads.correctionlib_contents_descriptor(blob, name)
-    params: dict[str, ParamValue] = {"name": name, "args": json.dumps(args, sort_keys=False), **which}
+    params: dict[str, ParamValue] = {
+        "name": name,
+        "args": json.dumps(args, sort_keys=False),
+        **which,
+    }
     return session.record_external(
         "correction",
         # call=None: the plugin owns evaluation on every backend (see _TemplateExternal)
-        _TemplateExternal(descriptor.kind, blob, {**params, "content_hash": descriptor.content_hash}, None),
+        _TemplateExternal(
+            descriptor.kind, blob, {**params, "content_hash": descriptor.content_hash}, None
+        ),
         list(inputs),
         params,
         descriptor=descriptor,
         # the correctionlib plugin's value is float64 (its outputs are `real`), checked at run time
-        form=astype_form(broadcast_form([cast("AwkwardForm", session.form(a)) for a in slots]), "float64"),
+        form=astype_form(
+            broadcast_form([cast("AwkwardForm", session.form(a)) for a in slots]), "float64"
+        ),
         form_params={"output_dtype": "float64"},
     )
 
@@ -614,7 +652,9 @@ def onnx_inference(
     Out-of-process backends re-run the model canonically from the payload; ``runner`` is only the
     in-process eager path, so it must be the plugin's own inference (a wrapper diverges by backend)."""
     if args is None and kwargs is None:
-        return inputs[0].session.record_external("onnx", runner, list(inputs), {"path": str(payload)})
+        return inputs[0].session.record_external(
+            "onnx", runner, list(inputs), {"path": str(payload)}
+        )
     blob = _payload_bytes(payload)
     arg_entries = _parse_template(args or [], len(inputs), constants=False, groups=True)
     kw_entries = {
@@ -640,7 +680,9 @@ def onnx_inference(
     descriptor = payloads.onnx_weights_descriptor(blob)
     return session.record_external(
         "onnx",
-        _TemplateExternal(descriptor.kind, blob, {**params, "content_hash": descriptor.content_hash}, _fn),
+        _TemplateExternal(
+            descriptor.kind, blob, {**params, "content_hash": descriptor.content_hash}, _fn
+        ),
         list(inputs),
         params,
         descriptor=descriptor,
@@ -683,7 +725,9 @@ def singletons(arr: Array, axis: int = 0) -> Array:
 
 
 def pad_none(arr: Array, target: int, axis: int = 1, *, clip: bool = False) -> Array:
-    return arr.session.record_op("ak.pad_none", [arr], {"target": target, "axis": axis, "clip": clip})
+    return arr.session.record_op(
+        "ak.pad_none", [arr], {"target": target, "axis": axis, "clip": clip}
+    )
 
 
 def unflatten(arr: Array, counts: Array | int, axis: int = 0) -> Array:
@@ -746,7 +790,9 @@ def argcombinations(
     parameters: Mapping[str, ParamValue] | None = None,
 ) -> Array:
     return arr.session.record_op(
-        "ak.argcombinations", [arr], _comb_params(n, replacement, axis, fields, with_name, parameters)
+        "ak.argcombinations",
+        [arr],
+        _comb_params(n, replacement, axis, fields, with_name, parameters),
     )
 
 

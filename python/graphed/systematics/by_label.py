@@ -90,7 +90,9 @@ def _is_sequence(value: object) -> bool:
     return isinstance(value, Sequence) and not isinstance(value, str | bytes)
 
 
-def impact_by_label(outputs: Sequence[Varied] | Mapping[str, Sequence[Array]]) -> dict[str, tuple[int, ...]]:
+def impact_by_label(
+    outputs: Sequence[Varied] | Mapping[str, Sequence[Array]],
+) -> dict[str, tuple[int, ...]]:
     """§3.4: per label, the record node ids that label reaches and `"nominal"` does not, sorted.
 
     The reachability DIFFERENCE, not an id watermark: interleaved broadcast recording makes

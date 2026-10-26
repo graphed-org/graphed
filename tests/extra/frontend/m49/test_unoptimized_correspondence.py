@@ -19,13 +19,17 @@ def _program() -> tuple[Session, object]:
     return session, (x * x) + x
 
 
-def test_the_unoptimized_artifact_carries_the_identity_correspondence_and_still_evaluates() -> None:
+def test_the_unoptimized_artifact_carries_the_identity_correspondence_and_still_evaluates() -> (
+    None
+):
     session, out = _program()
     compiled = compile_ir(session, out, optimize=False)
 
     nodes = session._store.node_count()
     assert compiled.correspondence.node_map == {n: (n, None) for n in range(nodes)}
-    assert [key for key, _frame in compiled.correspondence.frames] == [(n, None) for n in range(nodes)]
+    assert [key for key, _frame in compiled.correspondence.frames] == [
+        (n, None) for n in range(nodes)
+    ]
     assert evaluate_ir(compiled, ListBackend(), {"x": [1.0, 2.0]}) == [[2.0, 6.0]]
 
 

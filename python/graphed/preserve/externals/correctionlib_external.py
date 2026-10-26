@@ -163,7 +163,10 @@ def _correctionlib_samples() -> list[bytes]:
                 {
                     "name": "sf",
                     "version": 1,
-                    "inputs": [{"name": "systematic", "type": "string"}, {"name": "x", "type": "real"}],
+                    "inputs": [
+                        {"name": "systematic", "type": "string"},
+                        {"name": "x", "type": "real"},
+                    ],
                     "output": {"name": "sf", "type": "real"},
                     "data": {
                         "nodetype": "category",

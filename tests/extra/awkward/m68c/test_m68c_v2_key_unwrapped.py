@@ -10,7 +10,9 @@ from typing import Any
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "frozen", "awkward", "m68c"))
+sys.path.insert(
+    0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "frozen", "awkward", "m68c")
+)
 from m68c_services_harness import two_sources
 
 import graphed
@@ -34,8 +36,12 @@ def double(x: Any) -> Any:
 
 def _task_ids(fn: Callable[[Any], Any]) -> list[str]:
     ev, lumi = two_sources()
-    x = ev.session.record_external("v2key", fn, [ev.x], descriptor=DESC, form=ev.session.form(ev.x))
-    plan = graphed.join_plan(graphed.join(gak.zip({"run": ev.run, "x": x}, depth_limit=1), lumi, on=["run"]))
+    x = ev.session.record_external(
+        "v2key", fn, [ev.x], descriptor=DESC, form=ev.session.form(ev.x)
+    )
+    plan = graphed.join_plan(
+        graphed.join(gak.zip({"run": ev.run, "x": x}, depth_limit=1), lumi, on=["run"])
+    )
     return [plan.task_id(i, task) for i, stage in enumerate(plan.stages) for task in stage.tasks]
 
 

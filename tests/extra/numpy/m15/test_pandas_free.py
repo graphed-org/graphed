@@ -44,7 +44,9 @@ def test_full_parquet_path_without_pandas(no_pandas, tmp_path) -> None:  # type:
     s = Session(NumpyBackend())
     g = gio.from_parquet(s, "events", str(tmp_path))  # schema translation
     np.testing.assert_array_equal(np.asarray(s.materialize(g["x"] + g["n"])), [2.0, 4.0, 6.0])
-    part = gpq.make_partitions([os.path.join(tmp_path, "a.parquet")], steps_per_file=2, open_files=False)[0]
+    part = gpq.make_partitions(
+        [os.path.join(tmp_path, "a.parquet")], steps_per_file=2, open_files=False
+    )[0]
     chunk = gio.read_parquet_partition(part)
     assert set(chunk) == {"x", "n", "f"}
     paths = gio.to_parquet(g["x"] * 2.0, os.path.join(tmp_path, "out"), steps_per_file=2)

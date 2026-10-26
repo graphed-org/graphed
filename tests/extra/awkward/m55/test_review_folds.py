@@ -77,7 +77,8 @@ def test_a_hand_form_refusal_on_the_second_collection_rolls_the_diagnostic_back(
 def test_the_declaring_points_message_names_both_collection_value_shapes() -> None:
     toy = base_toy()
     with pytest.raises(
-        GraphedError, match=r"collections=\{Name: \{tag: record\}\} or collections=\{Name: varied\}"
+        GraphedError,
+        match=r"collections=\{Name: \{tag: record\}\} or collections=\{Name: varied\}",
     ):
         graphed.vary(toy.ctx, "jes", collections=jes_containers(toy.ctx), points={"jes": 1.0})
 
@@ -85,5 +86,7 @@ def test_the_declaring_points_message_names_both_collection_value_shapes() -> No
 def test_the_lockstep_message_names_a_varied_as_the_second_accepted_shape() -> None:
     toy = base_toy()
     not_a_shape: Any = {"Jet": 1.0}
-    with pytest.raises(GraphedError, match=r"needs a \{tag: record\} mapping or a Varied, got float"):
+    with pytest.raises(
+        GraphedError, match=r"needs a \{tag: record\} mapping or a Varied, got float"
+    ):
         graphed.vary(toy.ctx, "jes", collections=not_a_shape)

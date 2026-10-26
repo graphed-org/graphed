@@ -94,7 +94,9 @@ def _replay(records: Iterable[Any], present: Callable[[str], bool]) -> Completed
             tid = str(rec.get("task_id", ""))
             raw_deps = rec.get("deps", [])
             deps = tuple(str(d) for d in raw_deps) if isinstance(raw_deps, list) else ()
-            entry = JournalEntry(tid, str(rec.get("partition", "")), blob, str(rec.get("stage", "")), deps)
+            entry = JournalEntry(
+                tid, str(rec.get("partition", "")), blob, str(rec.get("stage", "")), deps
+            )
             if entry.stage == "environment":
                 environments.append(entry)
             else:
@@ -211,7 +213,9 @@ class Store:
 
     def record_environment(self, task_id: str, blob: str) -> None:
         """Append an environment record to its own journal, ``journal.environment.log``."""
-        self._append(self.root / ENVIRONMENT_JOURNAL, _done_record(task_id, "", blob, "environment", ()))
+        self._append(
+            self.root / ENVIRONMENT_JOURNAL, _done_record(task_id, "", blob, "environment", ())
+        )
 
     def completed(self) -> Completed:
         """Replay the UNION of every writer's journal (``journal.log`` + ``journal.<node>.log``) into

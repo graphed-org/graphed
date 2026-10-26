@@ -18,7 +18,12 @@ ParamValue = int | float | bool | str
 
 # numpy's name for each Python scalar type an External's ``output_type`` may be; not `np.dtype(int)`,
 # which is int32 on Windows under numpy 1.x
-PYTHON_TYPES: dict[type, str] = {bool: "bool", int: "int64", float: "float64", complex: "complex128"}
+PYTHON_TYPES: dict[type, str] = {
+    bool: "bool",
+    int: "int64",
+    float: "float64",
+    complex: "complex128",
+}
 
 
 @runtime_checkable
@@ -38,7 +43,9 @@ class Backend(Protocol):
         """Infer the result form of `op`. Raise a TypeError-like error if the op is ill-typed."""
         ...
 
-    def eval_stage(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> object:
+    def eval_stage(
+        self, op: str, inputs: Sequence[object], params: Mapping[str, object]
+    ) -> object:
         """Evaluate one stage. M2 has no fusion, so a stage is a single op."""
         ...
 

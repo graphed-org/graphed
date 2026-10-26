@@ -94,7 +94,12 @@ class ResourceCache:
         self._items: dict[tuple[str, str, str], tuple[ExternalPlugin, Any]] = {}
 
     def resource(
-        self, plugin: ExternalPlugin, payload: bytes, params: Mapping[str, Any], *, content_hash: str
+        self,
+        plugin: ExternalPlugin,
+        payload: bytes,
+        params: Mapping[str, Any],
+        *,
+        content_hash: str,
     ) -> Any:
         key = (plugin.kind, content_hash, json.dumps(dict(params), sort_keys=True, default=str))
         if key not in self._items:
@@ -143,7 +148,9 @@ def validate_plugin(plugin: ExternalPlugin) -> None:
     if not isinstance(first, str) or not first:
         raise PreserveError(f"plugin {plugin.kind!r}: content_hash must return a non-empty string")
     if plugin.content_hash(samples[0]) != first:
-        raise PreserveError(f"plugin {plugin.kind!r}: content_hash is not deterministic within a process")
+        raise PreserveError(
+            f"plugin {plugin.kind!r}: content_hash is not deterministic within a process"
+        )
 
     # non-vacuity: distinct payloads must not collide onto one hash (catches a constant/trivial hash)
     hashes = [plugin.content_hash(s) for s in samples]
@@ -196,7 +203,9 @@ def _hash_in_subprocess(content_hash: ContentHash, sample: bytes, *, seed: str) 
         env=env,
     )
     if proc.returncode != 0:
-        raise PreserveError(f"content_hash failed in a subprocess: {proc.stderr.decode(errors='replace')}")
+        raise PreserveError(
+            f"content_hash failed in a subprocess: {proc.stderr.decode(errors='replace')}"
+        )
     out: str = proc.stdout.decode()
     return out
 
@@ -211,10 +220,14 @@ def evaluate_external(
     kind = node["descriptor"]["kind"]
     plugin = get_plugin(kind)
     if plugin is None:
-        raise PreserveError(f"no plugin registered for external kind {kind!r} (a preservation risk)")
+        raise PreserveError(
+            f"no plugin registered for external kind {kind!r} (a preservation risk)"
+        )
     params = node["params"]
     if cache is not None:
-        resource = cache.resource(plugin, payload, params, content_hash=node["descriptor"]["content_hash"])
+        resource = cache.resource(
+            plugin, payload, params, content_hash=node["descriptor"]["content_hash"]
+        )
         return plugin.evaluate(resource, params, inputs)
     resource = plugin.load(payload, params)
     try:
@@ -319,7 +332,9 @@ class _PluginEvaluator:
             str(params.get("content_hash", "")),
             self.endpoint,
             json.dumps(
-                {p: params[p] for p in self.plugin.load_params if p in params}, sort_keys=True, default=str
+                {p: params[p] for p in self.plugin.load_params if p in params},
+                sort_keys=True,
+                default=str,
             ),
         )
         resource = _RESOURCE_CACHE.get(key)

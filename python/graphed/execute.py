@@ -132,7 +132,9 @@ def compile_ir(
         landings: list[Key | None] = [(nid, None) for nid in range(session._store.node_count())]
     else:
         reduced = (
-            session._reducer.finalize(session._store, maximal_fusion=maximal_fusion, outputs=ids)[0]
+            session._reducer.finalize(session._store, maximal_fusion=maximal_fusion, outputs=ids)[
+                0
+            ]
             if session._reducer is not None
             else session._store.reduce(maximal_fusion=maximal_fusion, outputs=ids)[0]
         )
@@ -168,7 +170,9 @@ def _compiled(
         # artifact. Without the filter a sound program reports a sibling program's violation.
         shift_after_weight=tuple(
             sorted(
-                pair for pair, nodes in session._shift_after_weight.items() if not nodes.isdisjoint(node_map)
+                pair
+                for pair, nodes in session._shift_after_weight.items()
+                if not nodes.isdisjoint(node_map)
             )
         ),
     )
@@ -188,7 +192,9 @@ def _frames_by_key(session: Session, node_map: dict[int, Key]) -> tuple[tuple[Ke
         if prov is None or node_map[nid] in chosen:
             continue
         chosen[node_map[nid]] = (prov.filename, prov.lineno, prov.function, prov.source)
-    return tuple(sorted(chosen.items(), key=lambda e: (e[0][0], -1 if e[0][1] is None else e[0][1])))
+    return tuple(
+        sorted(chosen.items(), key=lambda e: (e[0][0], -1 if e[0][1] is None else e[0][1]))
+    )
 
 
 def _dispatch(
@@ -261,7 +267,9 @@ def evaluate_ir(
     cone = None if outputs is None and given is None else ir_cone(nodes, wanted, stop=given or ())
     # a value is dropped once its last consumer has run, so a task holds only live intermediates
     skipped = (
-        set() if cone is None else {nid for nid in range(len(nodes)) if nid not in cone} | set(given or ())
+        set()
+        if cone is None
+        else {nid for nid in range(len(nodes)) if nid not in cone} | set(given or ())
     )
     release = _last_consumers(
         [() if nid in skipped else nd["inputs"] for nid, nd in enumerate(nodes)], keep=set(wanted)
@@ -307,7 +315,11 @@ def evaluate_ir(
             # Fall back to the bare `content_hash` so a direct `evaluate_ir` caller may key by it
             # (the single-payload case, and the frozen attribution contract).
             chash = nd["descriptor"]["content_hash"]
-            fn = None if externals is None else (externals.get(external_key(nd)) or externals.get(chash))
+            fn = (
+                None
+                if externals is None
+                else (externals.get(external_key(nd)) or externals.get(chash))
+            )
             if fn is None:
                 raise _unbound_external(chash)
             # An External node carries no `name` — its identity is the descriptor — so an
@@ -364,7 +376,9 @@ def _unbound_external(chash: str) -> GraphedError:
     )
 
 
-def refuse_chunk_partials(compiled: CompiledGraph | bytes, *, as_outputs: bool | Collection[int]) -> None:
+def refuse_chunk_partials(
+    compiled: CompiledGraph | bytes, *, as_outputs: bool | Collection[int]
+) -> None:
     """A partition-wise driver evaluates ``compiled`` once per chunk, so a reduction node — an
     axis-0 slice or index, an ``axis=None`` reduce — yields a chunk PARTIAL. A partial is sound
     only as a plan output the driver's ``combine`` folds; consumed by another node it is silently

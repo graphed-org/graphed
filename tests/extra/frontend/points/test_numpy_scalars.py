@@ -81,5 +81,7 @@ def test_a_numpy_bool_is_refused_like_a_python_bool() -> None:
 def test_a_numpy_float_keeps_its_own_precision() -> None:
     """`np.float32(0.1)` is a different value from `0.1` and must not be silently read as one: the
     coordinate is that float32's widened decimal, which is what the declaring channel already did."""
-    assert graphed._points.coordinate(np.float32(0.1)) == graphed._tags.canonical_tag(np.float32(0.1))
+    assert graphed._points.coordinate(np.float32(0.1)) == graphed._tags.canonical_tag(
+        np.float32(0.1)
+    )
     assert graphed._points.coordinate(np.float32(0.1)) != graphed._points.coordinate(0.1)

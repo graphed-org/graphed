@@ -81,12 +81,16 @@ class _DatasetLoader:
     columns: tuple[str, ...] | None
 
     def __call__(self) -> ak.Array:
-        return ak.from_parquet(list(self.paths), columns=list(self.columns) if self.columns else None)
+        return ak.from_parquet(
+            list(self.paths), columns=list(self.columns) if self.columns else None
+        )
 
     def partitions(self, steps_per_file: int = 1) -> tuple[Partition, ...]:
         return gpq.make_partitions(self.paths, steps_per_file=steps_per_file, open_files=False)
 
-    def read_partition(self, partition: Partition, columns: Sequence[str] | None, resources: Any) -> ak.Array:
+    def read_partition(
+        self, partition: Partition, columns: Sequence[str] | None, resources: Any
+    ) -> ak.Array:
         return read_parquet_partition(partition, columns if columns else (self.columns or None))
 
 
@@ -109,7 +113,9 @@ def from_parquet(
     if steps_per_file < 1:
         raise ValueError(f"steps_per_file must be >= 1, got {steps_per_file}")
     if not open_files:
-        gpq.make_partitions(paths, steps_per_file=steps_per_file, open_files=False)  # validated blind
+        gpq.make_partitions(
+            paths, steps_per_file=steps_per_file, open_files=False
+        )  # validated blind
     loader = _DatasetLoader(paths, tuple(columns) if columns else None)
     return gpq.deferred_source(session, name, paths=paths, form=form, loader=loader)
 
@@ -138,7 +144,9 @@ class _WritePart:
     """The picklable per-partition write task: compiled IR in, one parquet part out."""
 
     checkpointable: ClassVar[bool] = True
-    checkpoint_resolve: ClassVar[Mapping[str, Callable[[Any], Any]]] = {"behavior": _resolve_behavior}
+    checkpoint_resolve: ClassVar[Mapping[str, Callable[[Any], Any]]] = {
+        "behavior": _resolve_behavior
+    }
 
     compiled: CompiledGraph
     source_name: str
@@ -172,7 +180,10 @@ class _WritePart:
             raise TypeError("write task has neither a partition reader nor in-memory data")
         backend = AwkwardBackend(behavior=_resolve_behavior(self.behavior))
         (out,) = evaluate_ir(
-            self.compiled, cast("Backend", backend), {self.source_name: chunk}, externals=dict(self.externals)
+            self.compiled,
+            cast("Backend", backend),
+            {self.source_name: chunk},
+            externals=dict(self.externals),
         )
         payload = _payload(out, self.column)
         (path,) = self.part_paths(partition)
@@ -237,7 +248,9 @@ def parquet_write(
     codec = _ArrowParquet(
         column, tuple((arrow_options or {}).items()), tuple((parquet_options or {}).items())
     )
-    return gw.PartWrite(array=array, destination=destination, name=name, codec=codec, metadata=metadata)
+    return gw.PartWrite(
+        array=array, destination=destination, name=name, codec=codec, metadata=metadata
+    )
 
 
 def _syntactic_fields(array: Any, source_node_id: int) -> set[str] | None:
@@ -252,7 +265,8 @@ def _syntactic_fields(array: Any, source_node_id: int) -> set[str] | None:
 
     def touches_source(ins: list[object]) -> bool:
         return any(
-            isinstance(x, tuple) and len(x) == 2 and x[0] is sentinel and x[1] == source_node_id for x in ins
+            isinstance(x, tuple) and len(x) == 2 and x[0] is sentinel and x[1] == source_node_id
+            for x in ins
         )
 
     def on_op(_nid: int, name: str, ins: list[object], params: Any) -> object:
@@ -296,7 +310,9 @@ def _evaluation_columns(
     out: set[str] = set()
     for f in sorted(accessed):
         data_paths = [
-            p for p, need in needs.items() if need.value == "data" and (p == f or p.startswith(f + "."))
+            p
+            for p, need in needs.items()
+            if need.value == "data" and (p == f or p.startswith(f + "."))
         ]
         if data_paths:
             for p in data_paths:
@@ -309,7 +325,10 @@ def _evaluation_columns(
 
 def _memory_step(partition: Partition, n: int, steps: int) -> int:
     for s in range(steps):
-        if ((s * n) // steps, ((s + 1) * n) // steps) == (partition.entry_start, partition.entry_stop):
+        if ((s * n) // steps, ((s + 1) * n) // steps) == (
+            partition.entry_start,
+            partition.entry_stop,
+        ):
             return s
     raise ValueError(f"{partition} does not match any of {steps} steps over {n} rows")
 
@@ -453,7 +472,9 @@ def _lineage_refusal(record_ctx: Any, select_ctx: Any) -> None:
     )
 
 
-def _resolve_field(nodes: list[dict[str, Any]], session: Session, node_id: int, name: str) -> int | str:
+def _resolve_field(
+    nodes: list[dict[str, Any]], session: Session, node_id: int, name: str
+) -> int | str:
     """The canonical value node for `field(node, name)`: the field is followed back to the node that
     produced it through every op that passes fields through unchanged (zip, with_field, with_name,
     with_parameter, without_field, a field selection, a field projection), and any other op ends the
@@ -479,15 +500,21 @@ def _resolve_field(nodes: list[dict[str, Any]], session: Session, node_id: int, 
             if len(nd["inputs"]) > 1:
                 return int(nd["inputs"][1])
             # a scalar field has no value node: its value and dtype are its identity
-            return json.dumps({k: v for k, v in nd["params"].items() if k != "field"}, sort_keys=True)
+            return json.dumps(
+                {k: v for k, v in nd["params"].items() if k != "field"}, sort_keys=True
+            )
         return _resolve_field(nodes, session, int(nd["inputs"][0]), name)
     return int(getattr(Array(session, node_id), name).node_id)
 
 
-def _canonical_leaf(nodes: list[dict[str, Any]], session: Session, member: Any, path: str) -> int | str:
+def _canonical_leaf(
+    nodes: list[dict[str, Any]], session: Session, member: Any, path: str
+) -> int | str:
     key: int | str = member.node_id
     for part in path.split("."):
-        key = _resolve_field(nodes, session, int(key), part)  # a scalar key is always a path's last
+        key = _resolve_field(
+            nodes, session, int(key), part
+        )  # a scalar key is always a path's last
     return key
 
 
@@ -498,7 +525,9 @@ def _varied_leaves(session: Session, record: Any, labels: tuple[str, ...]) -> li
     leaves = _tt(session, member_of(record, "nominal")).layout.form.columns()
     varied = []
     for path in leaves:
-        canon = {_canonical_leaf(nodes, session, member_of(record, label), path) for label in labels}
+        canon = {
+            _canonical_leaf(nodes, session, member_of(record, label), path) for label in labels
+        }
         if len(canon) > 1:
             varied.append(path)
     return varied
@@ -596,7 +625,9 @@ def _encode_mask(mask: ak.Array) -> ak.Array:
     mask packs one bit per row, a jagged level-k>=1 mask packs its row's objects)."""
     return ak.Array(
         [
-            list(np.packbits(np.asarray(row, dtype=bool) if isinstance(row, list) else [bool(row)]))
+            list(
+                np.packbits(np.asarray(row, dtype=bool) if isinstance(row, list) else [bool(row)])
+            )
             for row in ak.to_list(mask)
         ]
     )
@@ -636,7 +667,9 @@ class _VariedWritePart:
     packbits-encoded on the evaluated buffers, and written as one augmented row-level record."""
 
     checkpointable: ClassVar[bool] = True
-    checkpoint_resolve: ClassVar[Mapping[str, Callable[[Any], Any]]] = {"behavior": _resolve_behavior}
+    checkpoint_resolve: ClassVar[Mapping[str, Callable[[Any], Any]]] = {
+        "behavior": _resolve_behavior
+    }
 
     compiled: CompiledGraph
     source_name: str
@@ -658,7 +691,9 @@ class _VariedWritePart:
     behavior: Any = None
     memory_data: ak.Array | None = None
     memory_rows: int = 0
-    manifest: Mapping[str, Any] | None = None  # C4 fills the KV manifest; None writes plain parquet
+    manifest: Mapping[str, Any] | None = (
+        None  # C4 fills the KV manifest; None writes plain parquet
+    )
     externals: tuple[tuple[str, Callable[..., object]], ...] = ()
 
     def bind_services(self, endpoints: Mapping[str, str]) -> _VariedWritePart:
@@ -678,7 +713,10 @@ class _VariedWritePart:
         chunk = self._chunk(partition, resources)
         backend = AwkwardBackend(behavior=_resolve_behavior(self.behavior))
         values = evaluate_ir(
-            self.compiled, cast("Backend", backend), {self.source_name: chunk}, externals=dict(self.externals)
+            self.compiled,
+            cast("Backend", backend),
+            {self.source_name: chunk},
+            externals=dict(self.externals),
         )
         rank = dict(self.rank)
 
@@ -708,7 +746,9 @@ class _VariedWritePart:
                     continue
                 value = resolved(node_id)
                 cols[f"{_VARY_PREFIX}{label}__{spec.flat}"] = (
-                    value if label in spec.verbatim else _encode_delta(nominal_value, value, spec.jagged)
+                    value
+                    if label in spec.verbatim
+                    else _encode_delta(nominal_value, value, spec.jagged)
                 )
         for mask_spec in self.mask_specs:
             field_values = base if mask_spec.field_path is None else base[mask_spec.field_path]
@@ -841,7 +881,9 @@ def _write_varied(
 
     # --- record-time entry checks (raise at the call; `compute=False` still raises) ---
     level0 = entries.get(0)
-    _lineage_refusal(_record_context(record), _record_context(level0) if level0 is not None else None)
+    _lineage_refusal(
+        _record_context(record), _record_context(level0) if level0 is not None else None
+    )
     _check_depth(session, entries)
     _check_bare_key(session, record, tuple(entries))
     varied = _varied_leaves(session, record, labels)
@@ -852,7 +894,9 @@ def _write_varied(
         superset = functools.reduce(
             operator.or_,
             (
-                fill_none(m, True) if _is_option(session, m) else m  # a None row stays, as a None record
+                fill_none(m, True)
+                if _is_option(session, m)
+                else m  # a None row stays, as a None record
                 for m in (member_of(level0, label) for label in labels)
             ),
         )
@@ -883,7 +927,8 @@ def _write_varied(
             for label in labels
         ):  # a zip broadcast the leaf: encode what the reader's record holds
             leaves = {
-                label: functools.reduce(operator.getitem, parts, member_of(record, label)) for label in labels
+                label: functools.reduce(operator.getitem, parts, member_of(record, label))
+                for label in labels
             }
         nominal_type = _type_of(session, leaves["nominal"])
         members: list[tuple[str, int]] = []
@@ -941,7 +986,9 @@ def _write_varied(
             nominal_form.type, all_parameters=True
         )
     }
-    if nominal_form.is_record and nominal_form.parameters:  # its stored fields drop the record's own
+    if (
+        nominal_form.is_record and nominal_form.parameters
+    ):  # its stored fields drop the record's own
         record_types["nominal"] = nominal_form.to_dict()
     manifest = _build_manifest(labels, value_specs, mask_specs, record_types)
     rank = {node_id: i for i, node_id in enumerate(dict.fromkeys(out.node_id for out in outputs))}
@@ -984,7 +1031,10 @@ def _write_varied(
         n = len(whole)
         partitions = tuple(
             Partition(
-                f"memory://{source_name}", "", (s * n) // steps_per_file, ((s + 1) * n) // steps_per_file
+                f"memory://{source_name}",
+                "",
+                (s * n) // steps_per_file,
+                ((s + 1) * n) // steps_per_file,
             )
             for s in range(steps_per_file)
         )
@@ -997,7 +1047,9 @@ def _write_varied(
     return list(runner.run(plan).value)
 
 
-def _refuse_optimizer_merge(session: Session, outputs: Sequence[Any], compiled: CompiledGraph) -> None:
+def _refuse_optimizer_merge(
+    session: Session, outputs: Sequence[Any], compiled: CompiledGraph
+) -> None:
     """§6.4f binds §7.2's optimizer-merge shortfall onto the write path (record-time, at the call):
     the varied unpack resolves BY NODE ID, so the compiled output count must match the DISTINCT
     marked ids; a `w * 1.0` label merges two distinct record ids into one compiled output, and the
@@ -1053,7 +1105,9 @@ def to_parquet(
     session: Session = array.session
     sources = gw.sources_read([array])
     if len(sources) != 1:
-        raise TypeError(f"to_parquet needs an array recorded over exactly one source, got {len(sources)}")
+        raise TypeError(
+            f"to_parquet needs an array recorded over exactly one source, got {len(sources)}"
+        )
     ((node_id, data),) = sources.items()
     source_name = session.source_name(node_id)
     source_form = session.form_of(node_id)
@@ -1090,7 +1144,10 @@ def to_parquet(
         n = len(whole)
         partitions = tuple(
             Partition(
-                f"memory://{source_name}", "", (s * n) // steps_per_file, ((s + 1) * n) // steps_per_file
+                f"memory://{source_name}",
+                "",
+                (s * n) // steps_per_file,
+                ((s + 1) * n) // steps_per_file,
             )
             for s in range(steps_per_file)
         )
@@ -1157,7 +1214,10 @@ def _apply_xor(nominal_value: ak.Array, delta: ak.Array, jagged: bool) -> ak.Arr
 
 def _decode_level0(packed: ak.Array) -> np.ndarray:
     """A flat level-0 validity mask: one packbits byte per row → one bool per row."""
-    bits = [bool(np.unpackbits(np.asarray(row, dtype=np.uint8), count=1)[0]) for row in ak.to_list(packed)]
+    bits = [
+        bool(np.unpackbits(np.asarray(row, dtype=np.uint8), count=1)[0])
+        for row in ak.to_list(packed)
+    ]
     out: np.ndarray = np.array(bits, dtype=bool)
     return out
 
@@ -1229,8 +1289,12 @@ def _reconstruct_universe(
         else:
             rec = ak.with_field(rec, rec[field_path][inner], where=field_path.split("."))
     # the XOR rebuild carries no parameters: impose the universe's record type (nominal's, unless stored)
-    stored = columns.get(f"{_RECORD_TYPE}{label}") or manifest["nominal"].get(f"{_RECORD_TYPE}nominal")
-    option = isinstance(rec.type.content, ak.types.OptionType)  # an option level-0 mask gave None rows
+    stored = columns.get(f"{_RECORD_TYPE}{label}") or manifest["nominal"].get(
+        f"{_RECORD_TYPE}nominal"
+    )
+    option = isinstance(
+        rec.type.content, ak.types.OptionType
+    )  # an option level-0 mask gave None rows
     target = rec.type.content.content if option else rec.type.content
     if stored is not None:
         want = ak.forms.from_dict(stored["type"]).type
@@ -1251,7 +1315,9 @@ def read_varied(path: str) -> dict[str, ak.Array]:
     meta = pq.ParquetFile(path).metadata.metadata or {}
     blob = meta.get(_MANIFEST_KEY)
     if blob is None:
-        raise GraphedError(f"{path!r} carries no {_MANIFEST_KEY!r} manifest — not a variation-aware skim")
+        raise GraphedError(
+            f"{path!r} carries no {_MANIFEST_KEY!r} manifest — not a variation-aware skim"
+        )
     manifest = json.loads(blob)
 
     full = ak.from_parquet(path)
@@ -1260,4 +1326,7 @@ def read_varied(path: str) -> dict[str, ak.Array]:
     else:
         base_fields = [f for f in full.fields if not f.startswith(_VARY_PREFIX)]
         base = ak.zip({f: full[f] for f in base_fields}, depth_limit=1)
-    return {label: _reconstruct_universe(base, full, manifest, label) for label in _label_order(full.fields)}
+    return {
+        label: _reconstruct_universe(base, full, manifest, label)
+        for label in _label_order(full.fields)
+    }

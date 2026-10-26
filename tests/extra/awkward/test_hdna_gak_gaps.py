@@ -34,7 +34,9 @@ def _check(op: Op, *eager: ak.Array) -> None:
     assert ak.array_equal(got, want, equal_nan=True)
 
 
-@pytest.mark.parametrize("dtype", [np.float32, int, np.dtype("int16")], ids=["class", "builtin", "dtype"])
+@pytest.mark.parametrize(
+    "dtype", [np.float32, int, np.dtype("int16")], ids=["class", "builtin", "dtype"]
+)
 @pytest.mark.parametrize(
     "op",
     [
@@ -45,7 +47,9 @@ def _check(op: Op, *eager: ak.Array) -> None:
     ],
     ids=["values_astype", "zeros_like", "ones_like", "full_like"],
 )
-def test_a_dtype_given_as_a_type_is_read_as_numpy_reads_it(op: Callable[..., Any], dtype: Any) -> None:
+def test_a_dtype_given_as_a_type_is_read_as_numpy_reads_it(
+    op: Callable[..., Any], dtype: Any
+) -> None:
     _check(lambda m, x: op(m, x, dtype), F32)
 
 
@@ -80,7 +84,9 @@ def test_cartesian_names_its_slots_from_a_dict(op: Callable[[Any, Any, Any], Any
     ],
     ids=["clip", "clip_low", "clip_high_kw", "where", "nan_to_num"],
 )
-def test_a_numpy_function_on_a_deferred_array_records_as_awkward_answers_it(op: Op, arr: ak.Array) -> None:
+def test_a_numpy_function_on_a_deferred_array_records_as_awkward_answers_it(
+    op: Op, arr: ak.Array
+) -> None:
     _check(op, arr)
 
 
@@ -91,7 +97,9 @@ def test_a_numpy_function_awkward_lacks_in_gak_is_a_located_refusal() -> None:
 
 
 @pytest.mark.parametrize("fn", [np.unique, np.histogram], ids=lambda f: f.__name__)
-def test_a_numpy_function_awkward_does_not_implement_is_refused_at_the_call(fn: Callable[[Any], Any]) -> None:
+def test_a_numpy_function_awkward_does_not_implement_is_refused_at_the_call(
+    fn: Callable[[Any], Any],
+) -> None:
     x = from_awkward(Session(AwkwardBackend()), "x", FLAT)
     with pytest.raises(GraphedTypeError, match=f"np.{fn.__name__}") as info:
         line = sys._getframe().f_lineno + 1
@@ -159,11 +167,15 @@ SCALARS = [np.float32(0.5), np.float64(0.5), 0.5, 1, np.int8(1), np.int64(1), Tr
     ],
     ids=["where_right", "where_left", "fill_none", "full_like"],
 )
-def test_a_scalar_operand_keeps_its_numpy_dtype(op: Callable[..., Any], arr: ak.Array, scalar: Any) -> None:
+def test_a_scalar_operand_keeps_its_numpy_dtype(
+    op: Callable[..., Any], arr: ak.Array, scalar: Any
+) -> None:
     _check(lambda m, x: op(m, x, scalar), arr)
 
 
-@pytest.mark.parametrize("initial", [5, np.int8(5), np.int64(5)], ids=lambda s: f"{type(s).__name__}")
+@pytest.mark.parametrize(
+    "initial", [5, np.int8(5), np.int64(5)], ids=lambda s: f"{type(s).__name__}"
+)
 @pytest.mark.parametrize("reducer", ["max", "min"])
 def test_an_integer_initial_reduces_an_integer_array(reducer: str, initial: Any) -> None:
     _check(lambda m, x: getattr(m, reducer)(x, axis=1, initial=initial), I32)
@@ -202,5 +214,7 @@ def test_a_numpy_scalar_method_argument_keeps_its_dtype(pt: ak.Array, k: Any) ->
 def test_a_user_dict_of_the_typed_scalar_shape_is_refused() -> None:
     session = Session(AwkwardBackend(behavior=MOM_BEHAVIOR))
     moms = from_awkward(session, "moms", ak.zip({"pt": F32}, with_name="Mom"))
-    with pytest.raises(GraphedTypeError, match=r"scaled\(\): args\[0\] is a dict of the reserved shape"):
+    with pytest.raises(
+        GraphedTypeError, match=r"scaled\(\): args\[0\] is a dict of the reserved shape"
+    ):
         moms.scaled({"$dtype": "float64", "v": 2.0})

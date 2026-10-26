@@ -23,7 +23,9 @@ from ..errors import GraphedError
 #: on-disk name).
 MAX_TAG_CHARS = 32
 
-_FLOAT_SUGAR = re.compile(r"(?P<sign>-?)(?P<int>\d+)(?:\.(?P<frac>\d+))?(?:[eE](?P<exp>[+-]?\d+))?\Z")
+_FLOAT_SUGAR = re.compile(
+    r"(?P<sign>-?)(?P<int>\d+)(?:\.(?P<frac>\d+))?(?:[eE](?P<exp>[+-]?\d+))?\Z"
+)
 _CANONICAL = re.compile(r"(?P<sign>m?)(?P<int>\d+)(?:em(?P<exp>\d+))?\Z")
 _P_FORM = re.compile(r"(?P<sign>m?)(?P<int>\d+)(?:p(?P<frac>\d+))?\Z")
 _IDENTIFIER = re.compile(r"[A-Za-z0-9_]+\Z")

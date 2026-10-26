@@ -15,7 +15,9 @@ from graphed import Session
 from graphed.awkward import AwkwardBackend, from_awkward
 from graphed.errors import GraphedError
 
-EVENTS = ak.Array([{"Jet": [{"pt": 30.0}, {"pt": 12.0}], "w": 1.5}, {"Jet": [{"pt": 40.0}], "w": 0.5}])
+EVENTS = ak.Array(
+    [{"Jet": [{"pt": 30.0}, {"pt": 12.0}], "w": 1.5}, {"Jet": [{"pt": 40.0}], "w": 0.5}]
+)
 UNFLATTEN = "UNFLATTENED"
 
 

@@ -33,7 +33,12 @@ def _btag_weight(source: Any, scale: float = 1.0) -> Array:
 
 def _weighted(ctx: Any) -> Any:
     return graphed.vary(
-        ctx, "btag", _btag_weight(ctx), is_weight=True, up=_btag_weight(ctx, 1.1), down=_btag_weight(ctx, 0.9)
+        ctx,
+        "btag",
+        _btag_weight(ctx),
+        is_weight=True,
+        up=_btag_weight(ctx, 1.1),
+        down=_btag_weight(ctx, 0.9),
     )
 
 
@@ -63,7 +68,9 @@ def test_an_unrelated_program_on_the_same_session_does_not_inherit_the_violation
     weighted = _weighted(ctx)
     violating = graphed.vary(weighted, "jes", collections=_jes(weighted))
 
-    assert compile_ir(session, *_weight_universes(violating)).shift_after_weight == (("btag", "Jet"),)
+    assert compile_ir(session, *_weight_universes(violating)).shift_after_weight == (
+        ("btag", "Jet"),
+    )
     # the sibling program applies no weight, so the pair is not a fact about it
     assert compile_ir(session, *_jet_pt_universes(violating)).shift_after_weight == ()
 

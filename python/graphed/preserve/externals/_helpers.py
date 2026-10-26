@@ -20,7 +20,9 @@ def json_bytes(payload: bytes) -> bytes:
 
 def _canonical_json_hash(domain: bytes, payload: bytes) -> str:
     """sha256 over domain-separated, canonicalized JSON (key order + whitespace = formatting)."""
-    return memoized_model_hash(domain.decode(), payload, lambda p: _canonical_json_hash_impl(domain, p))
+    return memoized_model_hash(
+        domain.decode(), payload, lambda p: _canonical_json_hash_impl(domain, p)
+    )
 
 
 def _canonical_json_hash_impl(domain: bytes, payload: bytes) -> str:
@@ -80,18 +82,27 @@ def _decode_spec(value: Any) -> Any:
     return value
 
 
-def _parse_entry(entry: Any, n_inputs: int, *, allow_constants: bool, allow_groups: bool) -> TemplateEntry:
+def _parse_entry(
+    entry: Any, n_inputs: int, *, allow_constants: bool, allow_groups: bool
+) -> TemplateEntry:
     if isinstance(entry, str) and entry.startswith("$"):
         i = int(entry[1:])
         if not 0 <= i < n_inputs:
-            raise PreserveError(f"call template slot {entry} out of range (node has {n_inputs} inputs)")
+            raise PreserveError(
+                f"call template slot {entry} out of range (node has {n_inputs} inputs)"
+            )
         return ("slot", i)
     if isinstance(entry, list):
         if not allow_groups:
-            raise PreserveError("this plugin's callee takes scalar/array arguments, not stacked groups")
+            raise PreserveError(
+                "this plugin's callee takes scalar/array arguments, not stacked groups"
+            )
         return (
             "group",
-            [_parse_entry(e, n_inputs, allow_constants=False, allow_groups=False)[1] for e in entry],
+            [
+                _parse_entry(e, n_inputs, allow_constants=False, allow_groups=False)[1]
+                for e in entry
+            ],
         )
     if allow_constants and isinstance(entry, (str, int, float, bool)):
         return ("const", entry)
@@ -114,13 +125,17 @@ def parse_call_template(
     if raw_kwargs and not allow_kwargs:
         raise PreserveError("this plugin's callee does not take keyword arguments")
     kwargs: dict[str, TemplateEntry] = {
-        str(k): _parse_entry(v, n_inputs, allow_constants=allow_constants, allow_groups=allow_groups)
+        str(k): _parse_entry(
+            v, n_inputs, allow_constants=allow_constants, allow_groups=allow_groups
+        )
         for k, v in (raw_kwargs or {}).items()
     }
     if isinstance(raw_args, dict):
         # the NAMED form (onnx feeds, triton InferInputs): named protocol inputs, not python kwargs
         named = {
-            str(k): _parse_entry(v, n_inputs, allow_constants=allow_constants, allow_groups=allow_groups)
+            str(k): _parse_entry(
+                v, n_inputs, allow_constants=allow_constants, allow_groups=allow_groups
+            )
             for k, v in raw_args.items()
         }
         return ([("named", named)], kwargs)

@@ -12,11 +12,21 @@ import pytest
 
 import graphed
 from graphed import BufferNeed, BufferProjection, Session
-from graphed.awkward import AwkwardBackend, from_awkward, gak, project_buffers, project_buffers_many
+from graphed.awkward import (
+    AwkwardBackend,
+    from_awkward,
+    gak,
+    project_buffers,
+    project_buffers_many,
+)
 
 EVENTS = ak.Array(
     {
-        "Jet": [[{"pt": 50.0, "eta": 0.1}, {"pt": 30.0, "eta": 2.2}], [], [{"pt": 70.0, "eta": -0.5}]],
+        "Jet": [
+            [{"pt": 50.0, "eta": 0.1}, {"pt": 30.0, "eta": 2.2}],
+            [],
+            [{"pt": 70.0, "eta": -0.5}],
+        ],
         "MET": [12.0, 35.0, 8.0],
     }
 )
@@ -28,7 +38,12 @@ def _outputs(opaque: bool = False) -> tuple[Session, list[Any]]:
     events = from_awkward(session, "events", EVENTS)
     other = from_awkward(session, "other", OTHER)
     # a count-only need on Jet next to a DATA need under it: the union's covering rule is exercised
-    outputs = [events.MET * 2, gak.num(events.Jet, axis=1), events.Jet.pt + 1, other.x + events.MET]
+    outputs = [
+        events.MET * 2,
+        gak.num(events.Jet, axis=1),
+        events.Jet.pt + 1,
+        other.x + events.MET,
+    ]
     if opaque:
         outputs.append(other.y.map(lambda y: y))
     return session, outputs
@@ -89,7 +104,9 @@ def test_an_opaque_output_under_warn_makes_every_source_conservative() -> None:
     _, outputs = _outputs(opaque=True)
     with pytest.warns(UserWarning):
         many = project_buffers_many(outputs, on_fail="warn")
-    assert many.buffers_for("events") == dict.fromkeys(("Jet.pt", "Jet.eta", "MET"), BufferNeed.DATA)
+    assert many.buffers_for("events") == dict.fromkeys(
+        ("Jet.pt", "Jet.eta", "MET"), BufferNeed.DATA
+    )
     assert many.buffers_for("other") == dict.fromkeys(("x", "y"), BufferNeed.DATA)
 
 

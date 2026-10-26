@@ -93,7 +93,9 @@ def _collect(session: Session, array: Array) -> list[LoweredOp]:
 
     def on_source(nid: int) -> int:
         # a source's "op" is its name, so visualization/projection can key off it
-        ops.append(LoweredOp(nid, session.source_name(nid), "source", frame(nid), (), form(nid), True))
+        ops.append(
+            LoweredOp(nid, session.source_name(nid), "source", frame(nid), (), form(nid), True)
+        )
         return nid
 
     def on_op(nid: int, name: str, ins: list[object], _params: Mapping[str, object]) -> int:

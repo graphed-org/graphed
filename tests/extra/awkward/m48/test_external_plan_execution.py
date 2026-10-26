@@ -52,7 +52,13 @@ _SF_CONTENT = {
 
 def _correctionlib_json() -> bytes:
     content = {
-        syst: {"nodetype": "binning", "input": "x", "edges": _SF_EDGES, "content": vals, "flow": "clamp"}
+        syst: {
+            "nodetype": "binning",
+            "input": "x",
+            "edges": _SF_EDGES,
+            "content": vals,
+            "flow": "clamp",
+        }
         for syst, vals in _SF_CONTENT.items()
     }
     cset = {
@@ -61,7 +67,10 @@ def _correctionlib_json() -> bytes:
             {
                 "name": "btag_sf",
                 "version": 1,
-                "inputs": [{"name": "systematic", "type": "string"}, {"name": "x", "type": "real"}],
+                "inputs": [
+                    {"name": "systematic", "type": "string"},
+                    {"name": "x", "type": "real"},
+                ],
                 "output": {"name": "sf", "type": "real"},
                 "data": {
                     "nodetype": "category",
@@ -85,9 +94,14 @@ class CorpusEvents:
         return self.data
 
     def partitions(self, steps_per_file: int = 1) -> tuple[Partition, ...]:
-        return tuple(Partition.blind("corpus://events", "", s, steps_per_file) for s in range(steps_per_file))
+        return tuple(
+            Partition.blind("corpus://events", "", s, steps_per_file)
+            for s in range(steps_per_file)
+        )
 
-    def read_partition(self, partition: Partition, columns: Any, resources: WorkerResources) -> ak.Array:
+    def read_partition(
+        self, partition: Partition, columns: Any, resources: WorkerResources
+    ) -> ak.Array:
         part = partition.resolve(len(self.data))
         self.part_reads.append((part.entry_start, part.entry_stop))
         return self.data[part.entry_start : part.entry_stop]
@@ -103,7 +117,11 @@ def _universes() -> tuple[Session, list[Array]]:
     payload = _correctionlib_json()
     outs = [
         record_external(
-            session, CORRECTIONLIB_PLUGIN, payload, [njet], params={"name": "btag_sf", "systematic": syst}
+            session,
+            CORRECTIONLIB_PLUGIN,
+            payload,
+            [njet],
+            params={"name": "btag_sf", "systematic": syst},
         )
         for syst in SYSTEMATICS
     ]
@@ -127,7 +145,9 @@ def _zeros() -> np.ndarray:
 
 def _totals(executor: Any) -> np.ndarray:
     _session, outs = _universes()
-    plan = aggregate_plan(*outs, reduce=_sums, combine=_add, empty=_zeros, steps_per_file=N_PARTITIONS)
+    plan = aggregate_plan(
+        *outs, reduce=_sums, combine=_add, empty=_zeros, steps_per_file=N_PARTITIONS
+    )
     totals: np.ndarray = executor.run(plan).value
     return totals
 
@@ -154,7 +174,9 @@ def test_the_recorded_evaluator_is_a_picklable_object() -> None:
     and it round-trips through pickle and evaluates identically."""
     session, _outs = _universes()
     (fn, _inputs) = next(iter(session._externals.values()))
-    assert isinstance(fn, CheckedExternal) and isinstance(fn.fn, _PluginEvaluator)  # float64 leaves, checked
+    assert isinstance(fn, CheckedExternal) and isinstance(
+        fn.fn, _PluginEvaluator
+    )  # float64 leaves, checked
     restored = pickle.loads(pickle.dumps(fn))
     assert isinstance(restored, CheckedExternal) and isinstance(restored.fn, _PluginEvaluator)
     x = ak.Array([3, 5, 7])

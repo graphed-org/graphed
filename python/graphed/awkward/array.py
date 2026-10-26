@@ -69,8 +69,13 @@ def _awkward_function(
         target = param.name if param.name in gak_params else _RENAMED.get(param.name, param.name)
         if param.name in bound:
             value = bound[param.name]
-        elif target in gak_params and gak_params[target].default not in (param.default, param.empty):
-            value = param.default  # an omitted ak argument means ak's default (ak.softmax: axis=-1)
+        elif target in gak_params and gak_params[target].default not in (
+            param.default,
+            param.empty,
+        ):
+            value = (
+                param.default
+            )  # an omitted ak argument means ak's default (ak.softmax: axis=-1)
         else:
             continue
         if param.kind is inspect.Parameter.VAR_POSITIONAL:

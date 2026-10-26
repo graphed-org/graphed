@@ -114,7 +114,9 @@ def merge_records(left: ak.Array, right: ak.Array, *, on: Sequence[str]) -> ak.A
     lf, rf = ak.fields(left), ak.fields(right)
     shared_nonkey = sorted(f for f in rf if f in lf and f not in on_set)
     if shared_nonkey:
-        raise ValueError(f"merge_records: shared non-key column(s) {shared_nonkey} — rename or add to `on`")
+        raise ValueError(
+            f"merge_records: shared non-key column(s) {shared_nonkey} — rename or add to `on`"
+        )
     fields: dict[str, ak.Array] = {}
     for f in lf:
         if f in on_set and f in rf:  # coalesce the shared key: the present (non-None) side wins
@@ -144,7 +146,9 @@ def pack_key(rec: ak.Array, on: Sequence[str]) -> ak.Array:
     n = len(on)
     if n == 0:
         raise ValueError("pack_key needs at least one key field")
-    if n * _PACK_STRIDE > 64:  # the packing itself cannot fit u64 (overflow→fixed-width bytes is Phase-2)
+    if (
+        n * _PACK_STRIDE > 64
+    ):  # the packing itself cannot fit u64 (overflow→fixed-width bytes is Phase-2)
         raise ValueError(
             f"pack_key: {n} fields x {_PACK_STRIDE} bits exceeds u64 (overflow->bytes is Phase-2)"
         )
@@ -185,12 +189,16 @@ def join_form(inputs: Sequence[ak.Array], params: Mapping[str, Any]) -> ak.Array
     lf, rf = ak.fields(left), ak.fields(right)
     shared_nonkey = sorted(f for f in rf if f in lf and f not in on_set)
     if shared_nonkey:
-        raise ValueError(f"op_form(join): shared non-key column(s) {shared_nonkey} — rename or add to `on`")
+        raise ValueError(
+            f"op_form(join): shared non-key column(s) {shared_nonkey} — rename or add to `on`"
+        )
     left_opt = how in ("right", "outer")  # left's NON-key fields can be null on a right-only row
     right_opt = how in ("left", "outer")  # right's NON-key fields can be null on a left-only row
     fields: dict[str, ak.Array] = {}
     for f in lf:
-        if f in on_set and f in rf:  # coalesced shared key: OPTION iff EITHER input key is option — the
+        if (
+            f in on_set and f in rf
+        ):  # coalesced shared key: OPTION iff EITHER input key is option — the
             # surviving side of a right/outer join can carry a genuine null, so op_form must NOT
             # under-declare the key non-option vs the materialised block (§A.3.1 durable-form soundness).
             # A sound over-approximation: op_form ⊇ materialised (merge_records refines to the exact
@@ -205,7 +213,9 @@ def join_form(inputs: Sequence[ak.Array], params: Mapping[str, Any]) -> ak.Array
     return ak.zip(fields, depth_limit=1)
 
 
-def join_grouped(left: ak.Array, right: ak.Array, *, on: Sequence[str], how: str = "inner") -> ak.Array:
+def join_grouped(
+    left: ak.Array, right: ak.Array, *, on: Sequence[str], how: str = "inner"
+) -> ak.Array:
     """``gak.join(grouped=True)``: the relational result regrouped by a DETERMINISTIC ``ak.unflatten``
     whose run-lengths are the per-build-row match counts (``match_indices`` emits build-major, so the
     aligned build-index array run-lengths ARE those counts). Flattening it reproduces the relational

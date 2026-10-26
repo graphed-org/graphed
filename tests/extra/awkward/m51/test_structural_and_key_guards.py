@@ -69,7 +69,9 @@ def test_level1_mask_with_wrong_offsets_is_refused_at_execution_time(tmp_path) -
     record, evt_mask, _jet_mask, muon_mask = _multifield()
 
     # record-time (2c depth passes: the mask IS ndim-2) → a Plan, NOT a raise
-    plan = _write(record, str(tmp_path / "plan"), {0: evt_mask, ("Jet", 1): muon_mask}, compute=False)
+    plan = _write(
+        record, str(tmp_path / "plan"), {0: evt_mask, ("Jet", 1): muon_mask}, compute=False
+    )
     assert isinstance(plan, Plan)
 
     # execution-time: the Muon offsets diverge from Jet's → GraphedError naming the offsets
@@ -93,7 +95,9 @@ def test_malformed_select_key_is_refused(tmp_path) -> None:  # type: ignore[no-u
     is refused at the call. Positive control: the same record with a valid ``{0: mask}`` writes."""
     record, evt_mask, _jet_mask, _muon_mask = _multifield()
     with pytest.raises(GraphedError) as excinfo:
-        _write(record, str(tmp_path / "badkey"), {("Jet",): evt_mask}, compute=False)  # tuple w/o depth
+        _write(
+            record, str(tmp_path / "badkey"), {("Jet",): evt_mask}, compute=False
+        )  # tuple w/o depth
     # discriminates on _normalize_select's OWN early rejection (a downstream check also refuses the
     # key, but with a different message — this pins the trust-boundary guard, not the fallback)
     assert "bare depth" in str(excinfo.value)

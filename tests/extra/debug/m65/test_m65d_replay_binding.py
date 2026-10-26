@@ -88,7 +88,9 @@ def test_an_external_without_evaluator_fails_replay_as_in_the_run(tmp_path: Path
         io_schema="uhi",
         preprocessing_ref=None,
     )
-    h = s.record_external("histogram", _ext_sum, [ev.x], {"spec": "m65d"}, descriptor=desc, form=_ExtForm())
+    h = s.record_external(
+        "histogram", _ext_sum, [ev.x], {"spec": "m65d"}, descriptor=desc, form=_ExtForm()
+    )
     plan = _plan(h)
     assert isinstance(plan.process, _PartitionReduce)
     process = dataclasses.replace(plan.process, externals=())

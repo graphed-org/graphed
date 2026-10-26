@@ -31,7 +31,12 @@ from . import _wire
 
 _STATIC = Path(__file__).parent / "static"
 _SUBMITTED, _STARTED, _TERMINAL = 0, 1, 2  # phase classes, in lifecycle order
-_PHASE_CLASS = {"submitted": _SUBMITTED, "started": _STARTED, "finished": _TERMINAL, "errored": _TERMINAL}
+_PHASE_CLASS = {
+    "submitted": _SUBMITTED,
+    "started": _STARTED,
+    "finished": _TERMINAL,
+    "errored": _TERMINAL,
+}
 
 
 class _KeyState:
@@ -58,7 +63,9 @@ class DashboardServer:
         self._control = control
         self._control_state: str | None = RunState.RUNNING.value if control else None
         self._live: set[Any] = set()  # open /ingest handlers (IOLoop thread only)
-        self._listeners: set[Any] = set()  # those whose monitor sent a control hello; mirrored under _lock
+        self._listeners: set[Any] = (
+            set()
+        )  # those whose monitor sent a control hello; mirrored under _lock
         self._thread: threading.Thread | None = None
         self._loop: Any = None
         self._http: Any = None
@@ -68,7 +75,9 @@ class DashboardServer:
         self._stats_table: Any = None
         self._lock = threading.RLock()
         self._stats: dict[str, int] = dict.fromkeys(_wire.STATS_KEYS, 0)
-        self._workers: dict[str, dict[str, Any]] = {}  # worker -> per-worker progress (for the bars)
+        self._workers: dict[
+            str, dict[str, Any]
+        ] = {}  # worker -> per-worker progress (for the bars)
         # ingest-only state (IOLoop thread): lean derivation and per-key lifecycles
         self._lean = False  # set once any ingest connection says hello with lean: true
         self._keys: dict[Any, _KeyState] = {}
@@ -78,7 +87,9 @@ class DashboardServer:
         self._unlabelled: dict[Any, list[dict[str, Any]]] = {}  # key -> records awaiting a label
         self._n_connections = 0
         self._last_error: dict[str, Any] | None = None
-        self._profile_tree: dict[str, Any] = _sampler._new_node()  # merged sampled stacks -> flamegraph
+        self._profile_tree: dict[str, Any] = (
+            _sampler._new_node()
+        )  # merged sampled stacks -> flamegraph
         self._profile_samples = 0
         self._ready = threading.Event()
         self._error: BaseException | None = None
@@ -144,7 +155,9 @@ class DashboardServer:
             server = perspective.Server()
             self._client = server.new_local_client()
             self._tasks = self._client.table(_wire.TASKS_SCHEMA, index="key", name="tasks")
-            self._stats_table = self._client.table(_wire.STATS_SCHEMA, index="metric", name="stats")
+            self._stats_table = self._client.table(
+                _wire.STATS_SCHEMA, index="metric", name="stats"
+            )
             self._push_stats_table()
 
             owner = self
@@ -165,7 +178,9 @@ class DashboardServer:
                         owner._listeners.discard(self)
 
                 def on_message(self, message: str | bytes) -> None:
-                    owner._ingest(message if isinstance(message, str) else message.decode("utf-8"), self)
+                    owner._ingest(
+                        message if isinstance(message, str) else message.decode("utf-8"), self
+                    )
 
             class _Index(RequestHandler):  # type: ignore[misc]  # tornado base is untyped (Any)
                 def get(self) -> None:
@@ -314,7 +329,10 @@ class DashboardServer:
                 }
             if cls == _SUBMITTED:
                 for rec in self._unlabelled.pop(key, ()):
-                    rec["partition"], rec["n_entries"] = msg.get("partition", ""), msg.get("n_entries", 0)
+                    rec["partition"], rec["n_entries"] = (
+                        msg.get("partition", ""),
+                        msg.get("n_entries", 0),
+                    )
             # per-worker progress for the bars. SUBMITTED is driver-side, so only the worker-side
             # phases populate a worker row. We keep a per-task record (keyed by task key) so the UI
             # can render one hoverable cell PER TASK, not just an aggregate bar — a started task's
@@ -323,11 +341,25 @@ class DashboardServer:
                 self._ingest_worker(msg, ks, cls, worker, t, cid, derived)
 
     def _ingest_worker(
-        self, msg: dict[str, Any], ks: _KeyState, cls: int, worker: str, t: float, cid: int, derived: bool
+        self,
+        msg: dict[str, Any],
+        ks: _KeyState,
+        cls: int,
+        worker: str,
+        t: float,
+        cid: int,
+        derived: bool,
     ) -> None:
         w = self._workers.setdefault(
             worker,
-            {"worker": worker, "started": 0, "finished": 0, "errored": 0, "inflight": 0, "tasks": {}},
+            {
+                "worker": worker,
+                "started": 0,
+                "finished": 0,
+                "errored": 0,
+                "inflight": 0,
+                "tasks": {},
+            },
         )
         phase = msg["phase"]
         w[phase] += 1
@@ -339,7 +371,9 @@ class DashboardServer:
             w["inflight"] = max(0, w["inflight"] - 1)
         key = msg.get("key")
         rec = w["tasks"].get(key)
-        if rec is None:  # STARTED normally creates it; tolerate an out-of-order or lean finish/error
+        if (
+            rec is None
+        ):  # STARTED normally creates it; tolerate an out-of-order or lean finish/error
             rec = {
                 "key": key,
                 "partition": "",
@@ -360,7 +394,9 @@ class DashboardServer:
         if cls == _STARTED:
             rec["t_start"] = t
         else:
-            if derived:  # a lean start: this worker's previous end on this connection, else its own t
+            if (
+                derived
+            ):  # a lean start: this worker's previous end on this connection, else its own t
                 rec["t_start"] = self._last_end.get((cid, worker), t)
             rec["state"] = phase
             rec["t_end"] = t
@@ -415,7 +451,10 @@ class DashboardServer:
         key) so the UI can render a hoverable cell per task. Records are deep-copied under the lock so
         JSON encoding (outside the lock) never races a concurrent task update."""
         with self._lock:
-            overall = {k: self._stats[k] for k in ("submitted", "started", "finished", "errored", "inflight")}
+            overall = {
+                k: self._stats[k]
+                for k in ("submitted", "started", "finished", "errored", "inflight")
+            }
             workers = []
             for name in sorted(self._workers):
                 wd = self._workers[name]
@@ -427,7 +466,12 @@ class DashboardServer:
                     | {"tasks": tasks}
                 )
             control = self._control_state
-        return {"total": overall["submitted"], "overall": overall, "workers": workers, "control": control}
+        return {
+            "total": overall["submitted"],
+            "overall": overall,
+            "workers": workers,
+            "control": control,
+        }
 
     def progress_json(self) -> bytes:
         return json.dumps(self.progress()).encode("utf-8")

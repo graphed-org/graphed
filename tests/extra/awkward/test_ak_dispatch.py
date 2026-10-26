@@ -32,7 +32,10 @@ Call = Callable[[dict[str, Any]], Any]
 # (ak spelling, the gak call it must equal); the keyword/positional cases are where the signatures differ
 PAIRS: dict[str, tuple[Call, Call]] = {
     "sum": (lambda x: ak.sum(x["a"], axis=1), lambda x: gak.sum(x["a"], axis=1)),
-    "sum-array-keyword": (lambda x: ak.sum(array=x["a"], axis=1), lambda x: gak.sum(x["a"], axis=1)),
+    "sum-array-keyword": (
+        lambda x: ak.sum(array=x["a"], axis=1),
+        lambda x: gak.sum(x["a"], axis=1),
+    ),
     "mean-positional-weight": (
         lambda x: ak.mean(x["a"], x["w"], axis=1),
         lambda x: gak.mean(x["a"], axis=1, weight=x["w"]),
@@ -41,8 +44,14 @@ PAIRS: dict[str, tuple[Call, Call]] = {
         lambda x: ak.std(x["a"], x["w"], 1, axis=1),
         lambda x: gak.std(x["a"], axis=1, ddof=1, weight=x["w"]),
     ),
-    "mask-keyword": (lambda x: ak.mask(x["a"], mask=x["a"] > 1), lambda x: gak.mask(x["a"], x["a"] > 1)),
-    "full_like-keyword": (lambda x: ak.full_like(x["a"], fill_value=3), lambda x: gak.full_like(x["a"], 3)),
+    "mask-keyword": (
+        lambda x: ak.mask(x["a"], mask=x["a"] > 1),
+        lambda x: gak.mask(x["a"], x["a"] > 1),
+    ),
+    "full_like-keyword": (
+        lambda x: ak.full_like(x["a"], fill_value=3),
+        lambda x: gak.full_like(x["a"], 3),
+    ),
     "values_astype-keyword": (
         lambda x: ak.values_astype(x["a"], to="float32"),
         lambda x: gak.values_astype(x["a"], "float32"),
@@ -59,7 +68,10 @@ PAIRS: dict[str, tuple[Call, Call]] = {
         lambda x: ak.with_parameter(x["r"], parameter="k", value="v"),
         lambda x: gak.with_parameter(x["r"], "k", "v"),
     ),
-    "isclose-keyword": (lambda x: ak.isclose(x["a"], b=x["w"]), lambda x: gak.isclose(x["a"], x["w"])),
+    "isclose-keyword": (
+        lambda x: ak.isclose(x["a"], b=x["w"]),
+        lambda x: gak.isclose(x["a"], x["w"]),
+    ),
     "where-varargs": (
         lambda x: ak.where(x["a"] > 1, x["a"], -1.0),
         lambda x: gak.where(x["a"] > 1, x["a"], -1.0),
@@ -89,7 +101,9 @@ def test_ak_call_records_the_gak_node(arrays: dict[str, Any], name: str) -> None
 
 def test_tuple_returning_and_eager_metadata_match_gak(arrays: dict[str, Any]) -> None:
     pair = ak.broadcast_arrays(arrays["a"], arrays["w"])
-    assert [p.node_id for p in pair] == [p.node_id for p in gak.broadcast_arrays(arrays["a"], arrays["w"])]
+    assert [p.node_id for p in pair] == [
+        p.node_id for p in gak.broadcast_arrays(arrays["a"], arrays["w"])
+    ]
     assert ak.fields(arrays["r"]) == gak.fields(arrays["r"]) == ["pt", "eta"]
 
 
@@ -111,7 +125,10 @@ def test_options_gak_lacks_are_refused_like_gak(arrays: dict[str, Any]) -> None:
     [
         ("ak.to_numpy", lambda a: ak.to_numpy(a)),
         ("ak.to_arrow_table", lambda a: ak.to_arrow_table(a)),
-        ("ak.str.join", lambda a: ak.str.join(a, "-")),  # named "join" like gak.join, a different function
+        (
+            "ak.str.join",
+            lambda a: ak.str.join(a, "-"),
+        ),  # named "join" like gak.join, a different function
     ],
 )
 def test_functions_without_a_gak_equivalent_refuse(
@@ -119,7 +136,8 @@ def test_functions_without_a_gak_equivalent_refuse(
 ) -> None:
     count = arrays["s"].node_count()
     with pytest.raises(
-        GraphedError, match=rf"^graphed records no deferred {re.escape(spelled)}: .*gak has no equivalent"
+        GraphedError,
+        match=rf"^graphed records no deferred {re.escape(spelled)}: .*gak has no equivalent",
     ):
         call(arrays["a"])
     assert arrays["s"].node_count() == count

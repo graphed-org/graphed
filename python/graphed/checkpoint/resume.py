@@ -71,7 +71,15 @@ class EnvironmentChanged(ValueError):
 _IMMUTABLE = (str, bytes, int, float, complex, tuple, frozenset, type(None), bool)
 #: code attributes that say where the code is, not what it does
 _LOCATIONS = frozenset(
-    {"co_filename", "co_firstlineno", "co_linetable", "co_lnotab", "co_positions", "co_lines", "co_branches"}
+    {
+        "co_filename",
+        "co_firstlineno",
+        "co_linetable",
+        "co_lnotab",
+        "co_positions",
+        "co_lines",
+        "co_branches",
+    }
 )
 #: class-dict entries the interpreter fills, and source locations
 _CLASS_BLANKS = (
@@ -152,7 +160,9 @@ class _KeyPickler(pickle._Pickler):
     ``seen`` holds the classes pickled by value so far; a set element's sort key, pickled apart from
     the whole, names such a class instead of recursing into it."""
 
-    def __init__(self, file: io.BytesIO | _HashSink, seen: Mapping[int, type], rebound: set[int]) -> None:
+    def __init__(
+        self, file: io.BytesIO | _HashSink, seen: Mapping[int, type], rebound: set[int]
+    ) -> None:
         super().__init__(file, protocol=5)
         self._cp = _cloudpickle()
         self.globals_ref: dict[int, dict[str, Any]] = {}
@@ -173,8 +183,12 @@ class _KeyPickler(pickle._Pickler):
 
     def _module_reduce(self, module: types.ModuleType) -> tuple[Any, ...]:
         if module.__name__ == "__main__":
-            raise TypeError("the __main__ module cannot be keyed: a worker's __main__ is not the driver's")
-        if getattr(module, "__spec__", None) is None:  # made at run time, so no import finds it by name
+            raise TypeError(
+                "the __main__ module cannot be keyed: a worker's __main__ is not the driver's"
+            )
+        if (
+            getattr(module, "__spec__", None) is None
+        ):  # made at run time, so no import finds it by name
             return self._cp.dynamic_subimport, (
                 module.__name__,
                 {k: v for k, v in vars(module).items() if k != "__builtins__"},
@@ -194,7 +208,9 @@ class _KeyPickler(pickle._Pickler):
     def memoize(self, obj: Any) -> None:
         # interning would decide where memo references fall; a loaded closure shares no cell, and
         # sharing changes what runs only for a cell some function rebinds
-        if not isinstance(obj, _IMMUTABLE) and (type(obj) is not types.CellType or id(obj) in self._rebound):
+        if not isinstance(obj, _IMMUTABLE) and (
+            type(obj) is not types.CellType or id(obj) in self._rebound
+        ):
             _PURE._Pickler.memoize(self, obj)
 
     def save_global(self, obj: Any, name: str | None = None) -> None:
@@ -220,7 +236,10 @@ class _KeyPickler(pickle._Pickler):
         if ignore or resolve:
             fields: dict[str, Any] = dict.fromkeys(ignore)
             fields.update(
-                {name: (getattr(obj, name), fn(getattr(obj, name))) for name, fn in resolve.items()}
+                {
+                    name: (getattr(obj, name), fn(getattr(obj, name)))
+                    for name, fn in resolve.items()
+                }
             )
             return dataclasses.replace(cast("Any", obj), **fields).__reduce_ex__(5)
         if (
@@ -240,7 +259,8 @@ class _KeyPickler(pickle._Pickler):
         state = {
             "__annotations__" if k == "__annotations_cache__" else k: v
             for k, v in state.items()
-            if k not in _CLASS_BLANKS and not (k == "__annotations_cache__" and "__annotations__" in state)
+            if k not in _CLASS_BLANKS
+            and not (k == "__annotations_cache__" and "__annotations__" in state)
         }
         annotate = vars(obj).get("__annotate_func__")
         if callable(annotate) and "__annotations__" not in state:
@@ -251,9 +271,13 @@ class _KeyPickler(pickle._Pickler):
                 if isinstance(annotate, types.FunctionType)
                 else ()
             )
-            self._classdicts.update({id(c.cell_contents): obj for n, c in cells if n == "__classdict__"})
+            self._classdicts.update(
+                {id(c.cell_contents): obj for n, c in cells if n == "__classdict__"}
+            )
             state["<key-only annotate>"] = annotate
-        if isinstance(state.get("_abc_impl"), list):  # cloudpickle lists an ABC's registry from a set
+        if isinstance(
+            state.get("_abc_impl"), list
+        ):  # cloudpickle lists an ABC's registry from a set
             state["_abc_impl"] = self._sorted(state["_abc_impl"])
         return (func, args, (state, slotstate), *rest)
 
@@ -270,8 +294,16 @@ class _KeyPickler(pickle._Pickler):
             )
         make, args, (state, slotstate), *rest = self._cp.dynamic_function_reduce(self, func)
         # cloudpickle records only the globals LOAD_GLOBAL-family ops read, not class-scope reads
-        read = {n: func.__globals__[n] for n in _class_scope_reads(func.__code__) if n in func.__globals__}
-        slotstate = {**slotstate, "__doc__": None, "__globals__": {**slotstate["__globals__"], **read}}
+        read = {
+            n: func.__globals__[n]
+            for n in _class_scope_reads(func.__code__)
+            if n in func.__globals__
+        }
+        slotstate = {
+            **slotstate,
+            "__doc__": None,
+            "__globals__": {**slotstate["__globals__"], **read},
+        }
         return (make, args, (state, slotstate), *rest)
 
     def _function_getnewargs(self, func: types.FunctionType) -> tuple[Any, ...]:
@@ -355,7 +387,9 @@ def _key_digest(obj: object) -> bytes:
     rebound: set[int] = set()
     sink = _HashSink()
     _KeyPickler(sink, {}, rebound).dump(obj)
-    if rebound:  # the first pass wrote cells unmemoized before meeting the function that rebinds them
+    if (
+        rebound
+    ):  # the first pass wrote cells unmemoized before meeting the function that rebinds them
         sink = _HashSink()
         _KeyPickler(sink, {}, rebound).dump(obj)
     return sink.hash.digest()
@@ -384,7 +418,9 @@ _DIRLESS = frozenset({"s3", "s3a", "gcs", "gs", "abfs", "az", "adl", "memory"})
 _TOKEN: tuple[int, str] = (os.getpid(), uuid.uuid4().hex)
 
 
-def open_store(root: str, node: str | None = None, storage_options: Mapping[str, Any] | None = None) -> Any:
+def open_store(
+    root: str, node: str | None = None, storage_options: Mapping[str, Any] | None = None
+) -> Any:
     """``root`` as a checkpoint store: an :class:`FsspecStore` when it contains ``://``, else a
     directory :class:`Store`."""
     if is_url(root):
@@ -407,7 +443,9 @@ def task_store(root: str, storage_options: Sequence[tuple[str, Any]] = ()) -> An
         return cache[key]
     store = open_store(root, f"{_TOKEN[1]}-{threading.get_ident()}", dict(storage_options))
     protocols = getattr(getattr(store, "fs", None), "protocol", ())
-    if is_url(root) and _DIRLESS & set(protocols if isinstance(protocols, (tuple, list)) else (protocols,)):
+    if is_url(root) and _DIRLESS & set(
+        protocols if isinstance(protocols, (tuple, list)) else (protocols,)
+    ):
         cache[key] = store
     return store
 
@@ -438,7 +476,10 @@ def _served_or_run(
     plain = _plain(keyed)
     data = run(plain)
     _guarded(
-        root, lambda: store.record_done(keyed.task_id, _partition_tag(plain), store.put(data), stage=stage)
+        root,
+        lambda: store.record_done(
+            keyed.task_id, _partition_tag(plain), store.put(data), stage=stage
+        ),
     )
     return data
 
@@ -462,7 +503,9 @@ class _Resumable:
     def bind_services(self, endpoints: Mapping[str, str]) -> _Resumable:
         return replace(
             self,
-            inner=self.inner.bind_services(endpoints) if isinstance(self.inner, Bindable) else self.inner,
+            inner=self.inner.bind_services(endpoints)
+            if isinstance(self.inner, Bindable)
+            else self.inner,
         )
 
     def resolve_services(self, value: Any) -> Any:
@@ -492,7 +535,9 @@ class _ResumableStage:
     def bind_services(self, endpoints: Mapping[str, str]) -> _ResumableStage:
         return replace(
             self,
-            inner=self.inner.bind_services(endpoints) if isinstance(self.inner, Bindable) else self.inner,
+            inner=self.inner.bind_services(endpoints)
+            if isinstance(self.inner, Bindable)
+            else self.inner,
         )
 
     def resolve_services(self, value: Any) -> Any:
@@ -516,7 +561,9 @@ def _changes(old: Mapping[str, Any], new: Mapping[str, Any]) -> list[str]:
     was, now = old.get("distributions", {}), new["distributions"]
     out = [f"{n} {now[n]} added" for n in sorted(now.keys() - was.keys())]
     out += [f"{n} {was[n]} removed" for n in sorted(was.keys() - now.keys())]
-    out += [f"{n} {was[n]} -> {now[n]}" for n in sorted(was.keys() & now.keys()) if was[n] != now[n]]
+    out += [
+        f"{n} {was[n]} -> {now[n]}" for n in sorted(was.keys() & now.keys()) if was[n] != now[n]
+    ]
     if old.get("cache_tag") != new["cache_tag"]:
         out.append(f"interpreter {old.get('cache_tag')} -> {new['cache_tag']}")
     return out
@@ -592,7 +639,10 @@ def _behaviors() -> tuple[bytes, ...]:
         return ()
     entries = ak.behavior.items()
     return tuple(
-        sorted(_keyed(entry, functools.partial("ak.behavior[{!r}]".format, entry[0])) for entry in entries)
+        sorted(
+            _keyed(entry, functools.partial("ak.behavior[{!r}]".format, entry[0]))
+            for entry in entries
+        )
     )
 
 
@@ -604,7 +654,9 @@ def _keyed(obj: object, what: Callable[[], str]) -> bytes:
 
 
 def _of(process: object) -> Callable[[], str]:
-    return lambda: f"the process {reprlib.repr(process)}"  # a repr can be as large as the payloads it shows
+    return lambda: (
+        f"the process {reprlib.repr(process)}"
+    )  # a repr can be as large as the payloads it shows
 
 
 def _task_id(ident: str, salt: str, partition: Partition) -> str:
@@ -622,12 +674,16 @@ def _task_ids(
         ids: list[list[str]] = []
         for si, (stage, process) in enumerate(zip(plan.stages, processes, strict=True)):
             body = _keyed((process, behaviors), _of(process))
-            routing = json.dumps(dict(stage.routing), sort_keys=True, separators=(",", ":")).encode()
+            routing = json.dumps(
+                dict(stage.routing), sort_keys=True, separators=(",", ":")
+            ).encode()
             upstream = [tid.encode() for dep in stage.inputs for tid in ids[dep]]
             head = (plan.ir, str(si).encode(), stage.kind.encode(), routing)
             ids.append(
                 [
-                    _task_id(_sha256_hex(*head, str(t.key).encode(), body, *upstream), salt, t.partition)
+                    _task_id(
+                        _sha256_hex(*head, str(t.key).encode(), body, *upstream), salt, t.partition
+                    )
                     for t in stage.tasks
                 ]
             )
@@ -649,7 +705,11 @@ def _tagged(task: Task, task_id: str, done: Mapping[str, JournalEntry]) -> Task:
     entry = done.get(task_id)
     return Task(
         task.key,
-        _Keyed(**vars(_plain(task.partition)), task_id=task_id, blob="" if entry is None else entry.blob),
+        _Keyed(
+            **vars(_plain(task.partition)),
+            task_id=task_id,
+            blob="" if entry is None else entry.blob,
+        ),
     )
 
 
@@ -724,7 +784,10 @@ def resumable(
                 replace(
                     stage,
                     process=OpSpec(op.kind, op.ref, op.blob_b64, live=live),
-                    tasks=tuple(_tagged(t, tid, done) for t, tid in zip(stage.tasks, stage_ids, strict=True)),
+                    tasks=tuple(
+                        _tagged(t, tid, done)
+                        for t, tid in zip(stage.tasks, stage_ids, strict=True)
+                    ),
                 )
             )
         return replace(plan, stages=tuple(stages))
@@ -739,4 +802,6 @@ def resumable(
     else:
         tasks, base = plan.tasks, plan
     keyed = tuple(_tagged(t, tid, done) for t, tid in zip(tasks, ids[0], strict=True))
-    return replace(base, process=_Resumable(processes[0], store, options, codec, reused[0]), tasks=keyed)
+    return replace(
+        base, process=_Resumable(processes[0], store, options, codec, reused[0]), tasks=keyed
+    )

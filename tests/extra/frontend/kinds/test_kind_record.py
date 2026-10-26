@@ -16,7 +16,8 @@ from test_vary_stacking import _corpus_shaped_selection, pu_weight
 
 def _kinds(ctx: object) -> dict[str, dict[str, Kind]]:
     return {
-        name: {tag: kind for tag, (kind, _) in tags.items()} for name, tags in graphed.variations(ctx).items()
+        name: {tag: kind for tag, (kind, _) in tags.items()}
+        for name, tags in graphed.variations(ctx).items()
     }
 
 
@@ -40,6 +41,14 @@ def test_name_identity_is_accepted_at_a_masked_child_as_at_the_parent() -> None:
     _session, events, _mask, sel = _corpus_shaped_selection()
     for ctx in (events, sel):
         joined = graphed.vary(
-            ctx, "jes", pu_weight(ctx, 1.0), is_weight=True, up=pu_weight(ctx, 1.1), down=pu_weight(ctx, 0.9)
+            ctx,
+            "jes",
+            pu_weight(ctx, 1.0),
+            is_weight=True,
+            up=pu_weight(ctx, 1.1),
+            down=pu_weight(ctx, 0.9),
         )
-        assert _kinds(joined)["jes"] == {"up": Kind.WEIGHT | Kind.SHIFT, "down": Kind.WEIGHT | Kind.SHIFT}
+        assert _kinds(joined)["jes"] == {
+            "up": Kind.WEIGHT | Kind.SHIFT,
+            "down": Kind.WEIGHT | Kind.SHIFT,
+        }

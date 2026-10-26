@@ -48,7 +48,11 @@ def write_plan(
     process-pool executor unchanged. ``services`` is the plan's ``Plan.services``."""
     tasks = tuple(Task(i, p) for i, p in enumerate(partitions))
     return Plan(
-        process=write_part, combine=_concat_paths, empty=_no_paths, tasks=tasks, services=services or ()
+        process=write_part,
+        combine=_concat_paths,
+        empty=_no_paths,
+        tasks=tasks,
+        services=services or (),
     )
 
 

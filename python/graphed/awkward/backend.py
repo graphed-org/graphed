@@ -56,7 +56,8 @@ class _BehaviorByRef(dict[Any, Any]):
 
 
 def _behavior_from(ref: str) -> Any:
-    from graphed.aggregate import _resolved  # noqa: PLC0415  (aggregate imports this module's users)
+    # aggregate imports this module's users
+    from graphed.aggregate import _resolved  # noqa: PLC0415
 
     return _resolved(ref)._behavior
 
@@ -134,9 +135,13 @@ def _canonical_output_type(spec: object) -> str:
                 canonical = str(ak.types.from_datashape(s, highlevel=False))
         if canonical is None:
             # length one: a zero-length `U` array raises on the awkward 2.6 floor
-            canonical = str(ak.from_numpy(np.zeros(1, dtype=np.dtype(cast("Any", s)))).type.content)
+            canonical = str(
+                ak.from_numpy(np.zeros(1, dtype=np.dtype(cast("Any", s)))).type.content
+            )
         rebuilt = _type(canonical)
-        if str(rebuilt) != canonical:  # the installed grammar misreads it (2.14: `float16[parameters=`)
+        if (
+            str(rebuilt) != canonical
+        ):  # the installed grammar misreads it (2.14: `float16[parameters=`)
             raise TypeError(f"rebuilds as {str(rebuilt)!r}")
         ak.forms.from_type(rebuilt).length_one_array(highlevel=False)
     except (LarkError, TypeError, ValueError) as exc:
@@ -222,7 +227,9 @@ def _is_array(x: object) -> bool:
     return isinstance(x, (ak.Array, list, tuple)) or getattr(x, "ndim", 0) > 0
 
 
-def check_output_type(value: object, inputs: Sequence[object], key: str, declared: str) -> str | None:
+def check_output_type(
+    value: object, inputs: Sequence[object], key: str, declared: str
+) -> str | None:
     """``None`` when an External's ``value`` has its declared type, else the value's type string.
 
     ``output_type`` is the whole element type: the value's type string must equal it (option-ness,
@@ -261,18 +268,23 @@ class AwkwardBackend:
 
     def array_type(self) -> type[Array]:
         """The awkward-idiom proxy: Sessions return ``AwkwardArray``, so ``ak.<fn>`` records ``gak.<fn>``."""
-        from .array import AwkwardArray  # noqa: PLC0415  # array imports gak, which imports this module
+        # array imports gak, which imports this module
+        from .array import AwkwardArray  # noqa: PLC0415
 
         return AwkwardArray
 
-    def op_form(self, op: str, inputs: Sequence[Form], params: Mapping[str, object]) -> AwkwardForm:
+    def op_form(
+        self, op: str, inputs: Sequence[Form], params: Mapping[str, object]
+    ) -> AwkwardForm:
         # `inputs` is the protocol-wide `Sequence[Form]`, not `Sequence[AwkwardForm]`: narrowing a
         # parameter would make AwkwardBackend structurally incompatible with `graphed.Backend`
         # (contravariance), so `Session(AwkwardBackend())` would not type-check. A session only ever
         # feeds a backend the forms that same backend produced.
         forms = cast("Sequence[AwkwardForm]", inputs)
         if op == "exchange":
-            return forms[0]  # a pure data-movement boundary is identity on the payload form (§3.3a)
+            return forms[
+                0
+            ]  # a pure data-movement boundary is identity on the payload form (§3.3a)
         if op == "join":
             # M40 (§3.3): flat relational record-merge form; how=left/outer ⇒ missing side option-typed
             return AwkwardForm(join.join_form([f.tt for f in forms], params))
@@ -290,7 +302,9 @@ class AwkwardBackend:
         operands = [f.tt for f in forms]
         return AwkwardForm(apply(op, operands, params, behavior=self._behavior))
 
-    def eval_stage(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> object:
+    def eval_stage(
+        self, op: str, inputs: Sequence[object], params: Mapping[str, object]
+    ) -> object:
         if op == "join":  # needs `self` (the shared kernel routes through JoinBackend primitives)
             return self._eval_join(inputs, params)
         return self.adopt(apply(op, inputs, params, behavior=self._behavior))
@@ -314,7 +328,11 @@ class AwkwardBackend:
         # descriptor the stdlib adds later (partialmethod, singledispatchmethod, ...) still counts
         if hasattr(type(static), "__set__") or isinstance(static, functools.cached_property):
             # ak.Array's own descriptors describe the array, they are not per-element data
-            return "introspection" if static is inspect.getattr_static(ak.Array, name, None) else "property"
+            return (
+                "introspection"
+                if static is inspect.getattr_static(ak.Array, name, None)
+                else "property"
+            )
         return "method" if callable(static) or hasattr(static, "__get__") else "property"
 
     def introspect(self, form: AwkwardForm, name: str) -> object:
@@ -335,10 +353,14 @@ class AwkwardBackend:
         """Run the call on the typetracers BEFORE anything is recorded: `None` for one awkward
         array, and for a tuple of them the same NESTING with `None` at every leaf (M59 — the shape
         `metric_table(return_combinations=True)` answers in). Anything else raises."""
-        result = apply("method", [self._with_behavior(f.tt) for f in forms], params, behavior=self._behavior)
+        result = apply(
+            "method", [self._with_behavior(f.tt) for f in forms], params, behavior=self._behavior
+        )
         return self._output_shape(result, params)
 
-    def _output_shape(self, result: object, params: Mapping[str, object]) -> tuple[object, ...] | None:
+    def _output_shape(
+        self, result: object, params: Mapping[str, object]
+    ) -> tuple[object, ...] | None:
         if isinstance(result, ak.Array):
             return None
         if isinstance(result, tuple) and result:
@@ -366,15 +388,21 @@ class AwkwardBackend:
         return _AsRead(chunk)
 
     def _with_behavior(self, tt: ak.Array) -> ak.Array:
-        return ak.Array(tt.layout, behavior=self._behavior, attrs=tt.attrs) if self._behavior else tt
+        return (
+            ak.Array(tt.layout, behavior=self._behavior, attrs=tt.attrs) if self._behavior else tt
+        )
 
     def _eval_join(self, inputs: Sequence[object], params: Mapping[str, object]) -> object:
         left, right = inputs[0], inputs[1]
         on = join.on_from_params(params)
         how = str(params.get("how", "inner"))
-        if ak.backend(left) == "typetracer":  # projection replay: structural merge, no matching/data read
+        if (
+            ak.backend(left) == "typetracer"
+        ):  # projection replay: structural merge, no matching/data read
             return join.merge_records(left, right, on=on)
-        if bool(params.get("grouped", False)):  # gak.join(grouped=True): awkward-only regroup post-op
+        if bool(
+            params.get("grouped", False)
+        ):  # gak.join(grouped=True): awkward-only regroup post-op
             return join.join_grouped(left, right, on=on, how=how)
         # the shared radix-hash kernel (JoinBackend prims only); local import avoids an import cycle.
         from graphed.shuffle import join_blocks  # noqa: PLC0415

@@ -53,8 +53,12 @@ def _axis_spec() -> str:
     """The frontend-declared axis-mode spec: the value axes plus a non-growth ``"variation"``
     StrCategory (declared over the SORTED label set, §6.2(ii))."""
     var_ax = bh.axis.StrCategory(sorted(NODE_LABELS))
-    var_ax.__dict__["name"] = "variation"  # the kwarg form is a TypeError; the codec round-trips this
-    spec: str = gh.spec_of(bh.Histogram(bh.axis.Regular(4, 0.0, 8.0), var_ax, storage=bh.storage.Weight()))
+    var_ax.__dict__["name"] = (
+        "variation"  # the kwarg form is a TypeError; the codec round-trips this
+    )
+    spec: str = gh.spec_of(
+        bh.Histogram(bh.axis.Regular(4, 0.0, 8.0), var_ax, storage=bh.storage.Weight())
+    )
     return spec
 
 
@@ -84,25 +88,33 @@ def test_axis_mode_variation_fill_preserves_and_reproduces(tmp_path) -> None:  #
         "variation": json.dumps(list(NODE_LABELS)),
     }
     # inputs = [value, one weight block per label in NODE_LABELS order] (the axis-loop input layout)
-    fill = record_external(s, HISTOGRAM_PLUGIN, disc_payload.encode(), [g.x, g.wn, g.wd, g.wu], params=params)
+    fill = record_external(
+        s, HISTOGRAM_PLUGIN, disc_payload.encode(), [g.x, g.wn, g.wd, g.wu], params=params
+    )
     stored = next(n for n in s._store.nodes() if n["id"] == fill.node_id)
     assert stored["descriptor"]["content_hash"] == disc_hash  # recorded the DISCRIMINATED id
 
     reference: Any = s.materialize(fill)  # record-time eval through the real FillEvaluator
 
     # build_bundle would raise "hashes to X not recorded Y" if the plugin re-derived only sha256(spec)
-    bundle = build_bundle(tmp_path / "b", session=s, value=fill, datasets={"events": EVENTS}, payloads={})
+    bundle = build_bundle(
+        tmp_path / "b", session=s, value=fill, datasets={"events": EVENTS}, payloads={}
+    )
     entry = next(e for e in bundle.manifest["externals"] if e["kind"] == "histogram")
     payload = bundle.store.get(entry["store"])
     assert entry["content_hash"] == disc_hash
     assert payload is not None
     # the synthesized payload is the DISCRIMINATED canonical (carries the variation), not the bare spec
     assert payload.decode() != spec and "variation=" in payload.decode()
-    assert HISTOGRAM_PLUGIN.content_hash(payload) == entry["content_hash"]  # integrity, as build checks
+    assert (
+        HISTOGRAM_PLUGIN.content_hash(payload) == entry["content_hash"]
+    )  # integrity, as build checks
 
     got = reproduce(bundle)  # the eval-side half: reconstruct the axis loop from params
     assert isinstance(got, bh.Histogram)
-    assert any(a.__dict__.get("name") == "variation" for a in got.axes)  # the variation axis survived
+    assert any(
+        a.__dict__.get("name") == "variation" for a in got.axes
+    )  # the variation axis survived
     eager = _eager_axis_reference(spec)
     assert np.array_equal(got.view(flow=True)["value"], reference.view(flow=True)["value"])
     assert np.array_equal(got.view(flow=True)["value"], eager.view(flow=True)["value"])
@@ -118,7 +130,11 @@ def test_same_spec_pair_discriminated_and_bare_both_preserve(tmp_path) -> None: 
     spec = gh.spec_of(bh.Histogram(bh.axis.Regular(4, 0.0, 8.0), storage=bh.storage.Weight()))
     params = {"spec": spec, "n_axes": 1, "weighted": True, "n_weights": 2, "sampled": False}
     events = ak.Array(
-        {"x": [1.0, 4.0, 7.0, 2.5] * 20, "a": [0.5, 1.0, 2.0, 1.5] * 20, "b": [1.0, 0.5, 1.0, 2.0] * 20}
+        {
+            "x": [1.0, 4.0, 7.0, 2.5] * 20,
+            "a": [0.5, 1.0, 2.0, 1.5] * 20,
+            "b": [1.0, 0.5, 1.0, 2.0] * 20,
+        }
     )
 
     disc_payload = spec + "\x00" + "n_weights=2"

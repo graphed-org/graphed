@@ -30,7 +30,9 @@ class FileSource:
 
     def partitions(self, steps_per_file: int = 1) -> tuple[Partition, ...]:
         return tuple(
-            Partition.blind(u, "t", s, steps_per_file) for u in self.files for s in range(steps_per_file)
+            Partition.blind(u, "t", s, steps_per_file)
+            for u in self.files
+            for s in range(steps_per_file)
         )
 
     def read_partition(self, partition: Partition, columns: Any, resources: Any) -> np.ndarray:

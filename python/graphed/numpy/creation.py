@@ -28,28 +28,42 @@ def _norm_shape(shape: ShapeLike) -> tuple[int, ...]:
 def _source(session: Session, name: str | None, content: str, arr: Any) -> Array:
     if name is None:  # a content name binds one array: an identical creation reuses it
         name = content
-        arr = next((held for nid, held in session.sources().items() if session.source_name(nid) == name), arr)
+        arr = next(
+            (held for nid, held in session.sources().items() if session.source_name(nid) == name),
+            arr,
+        )
     return session.source(name, form=NumpyForm(arr.dtype, shape=(None, *arr.shape[1:])), data=arr)
 
 
-def zeros(session: Session, shape: ShapeLike, dtype: Any = float, *, name: str | None = None) -> Array:
+def zeros(
+    session: Session, shape: ShapeLike, dtype: Any = float, *, name: str | None = None
+) -> Array:
     arr = np.zeros(_norm_shape(shape), dtype)
     return _source(session, name, f"zeros[{arr.shape},{arr.dtype}]", arr)
 
 
-def ones(session: Session, shape: ShapeLike, dtype: Any = float, *, name: str | None = None) -> Array:
+def ones(
+    session: Session, shape: ShapeLike, dtype: Any = float, *, name: str | None = None
+) -> Array:
     arr = np.ones(_norm_shape(shape), dtype)
     return _source(session, name, f"ones[{arr.shape},{arr.dtype}]", arr)
 
 
 def full(
-    session: Session, shape: ShapeLike, fill_value: float, dtype: Any = None, *, name: str | None = None
+    session: Session,
+    shape: ShapeLike,
+    fill_value: float,
+    dtype: Any = None,
+    *,
+    name: str | None = None,
 ) -> Array:
     arr = np.full(_norm_shape(shape), fill_value, dtype)
     return _source(session, name, f"full[{arr.shape},{arr.dtype},{fill_value!r}]", arr)
 
 
-def empty(session: Session, shape: ShapeLike, dtype: Any = float, *, name: str | None = None) -> Array:
+def empty(
+    session: Session, shape: ShapeLike, dtype: Any = float, *, name: str | None = None
+) -> Array:
     """Deterministic ``empty``: ZEROS by design (the determinism gate forbids uninitialized data)."""
     arr = np.zeros(_norm_shape(shape), dtype)
     return _source(session, name, f"empty[{arr.shape},{arr.dtype}]", arr)
@@ -67,12 +81,22 @@ def arange(
     *,
     name: str | None = None,
 ) -> Array:
-    arr = _np_arange(start, stop, step, dtype) if stop is not None else _np_arange(start, dtype=dtype)
+    arr = (
+        _np_arange(start, stop, step, dtype)
+        if stop is not None
+        else _np_arange(start, dtype=dtype)
+    )
     return _source(session, name, f"arange[{start},{stop},{step},{arr.dtype}]", arr)
 
 
 def linspace(
-    session: Session, start: float, stop: float, num: int = 50, dtype: Any = None, *, name: str | None = None
+    session: Session,
+    start: float,
+    stop: float,
+    num: int = 50,
+    dtype: Any = None,
+    *,
+    name: str | None = None,
 ) -> Array:
     arr = np.linspace(start, stop, num, dtype=dtype)
     return _source(session, name, f"linspace[{start},{stop},{num},{arr.dtype}]", arr)
@@ -96,4 +120,6 @@ def empty_like(array: Array) -> Array:
 
 @broadcasting
 def full_like(array: Array, fill_value: object) -> Array:
-    return array.session.record_op("full_like", [array], _scalar_params(fill_value, "fill", "fill_dtype"))
+    return array.session.record_op(
+        "full_like", [array], _scalar_params(fill_value, "fill", "fill_dtype")
+    )

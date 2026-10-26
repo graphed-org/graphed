@@ -85,7 +85,9 @@ def coordinate(value: object) -> str:
         )
     # a float goes through its shortest round-tripping decimal (never its IEEE expansion); an int
     # and a Fraction are already exact
-    return _decimal(Fraction(repr(number)) if isinstance(number, float) else Fraction(number), value)
+    return _decimal(
+        Fraction(repr(number)) if isinstance(number, float) else Fraction(number), value
+    )
 
 
 def _decimal(value: Fraction, source: object) -> str:

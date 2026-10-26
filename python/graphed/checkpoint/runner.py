@@ -41,7 +41,9 @@ class ResumeReport:
     executed: int = 0  # partitions whose process actually ran this invocation
     skipped: int = 0  # partitions reused from the checkpoint store
     dead: int = 0  # partitions harvested into the dead-letter set
-    stopped: str | None = None  # a StopReason value if a stopping condition fired (e.g. error budget)
+    stopped: str | None = (
+        None  # a StopReason value if a stopping condition fired (e.g. error budget)
+    )
     dead_letters: list[dict[str, Any]] = field(default_factory=list)
 
     @property
@@ -111,7 +113,9 @@ def run_resumable(
                 continue
 
         try:
-            value = _run_one(part, process=process, combine=combine, resources=resources, retry=retry)
+            value = _run_one(
+                part, process=process, combine=combine, resources=resources, retry=retry
+            )
         except _SimulatedInterrupt:
             raise
         except BaseException as exc:
@@ -195,7 +199,9 @@ def run_shuffle_resumable(
     check_environment(store, completed, "", accept_environment)
     report = ResumeReport()
     committed = 0
-    stage_payloads: dict[int, list[bytes]] = {}  # stage index -> its blocks' payloads (in task order)
+    stage_payloads: dict[
+        int, list[bytes]
+    ] = {}  # stage index -> its blocks' payloads (in task order)
     stage_hashes: dict[int, list[str]] = {}  # stage index -> its blocks' content hashes
 
     for si, stage in enumerate(plan.stages):
@@ -221,7 +227,9 @@ def run_shuffle_resumable(
             if deps is None:
                 listing = json.dumps(upstream_hashes, separators=(",", ":")).encode()
                 deps = (store.put(listing),) if upstream_hashes else ()
-            store.record_done(tid, _partition_tag(task.partition), blob_hash, stage=stage.kind, deps=deps)
+            store.record_done(
+                tid, _partition_tag(task.partition), blob_hash, stage=stage.kind, deps=deps
+            )
             this_payloads.append(payload)
             this_hashes.append(blob_hash)
             report.executed += 1
@@ -232,5 +240,7 @@ def run_shuffle_resumable(
         stage_payloads[si] = this_payloads
         stage_hashes[si] = this_hashes
 
-    value = tuple(stage_hashes[len(plan.stages) - 1])  # the gather stage's content-addressed blocks
+    value = tuple(
+        stage_hashes[len(plan.stages) - 1]
+    )  # the gather stage's content-addressed blocks
     return ShuffleResumeResult(value=value, report=report)

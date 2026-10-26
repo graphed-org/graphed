@@ -263,7 +263,9 @@ def _pending(rider: Rider, ctx: EventContext) -> Rider:
     return rider if not links else replace(rider, links=(*rider.links, *links))
 
 
-def _row_links(ctx: EventContext, below: EventContext | None = None) -> tuple[tuple[str, str | None], ...]:
+def _row_links(
+    ctx: EventContext, below: EventContext | None = None
+) -> tuple[tuple[str, str | None], ...]:
     """The ROW-SPACE links from `below` (the root by default) down to `ctx`, as the `(kind, label)`
     pairs a rider carries: a mask has no label, a projection is its universe's, and a `vary` link is
     no row-space link at all. The mask ARRAY is deliberately not here — nothing decides from it, and
@@ -484,7 +486,11 @@ def _adopted_record(
     and its links are the ones the lineage took to get here — the head came through all of them.
     """
     families = {name: tags for slot in run for name, tags in riders[slot].families.items()}
-    return ctx._slots[0], Rider("factor", families, home=ctx, links=_row_links(ctx)), ctx._factors[0]
+    return (
+        ctx._slots[0],
+        Rider("factor", families, home=ctx, links=_row_links(ctx)),
+        ctx._factors[0],
+    )
 
 
 _Read = tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]
@@ -514,7 +520,9 @@ def _lineage_reads(ctx: EventContext) -> Iterator[tuple[EventContext, _Read]]:
         node = node._parent
 
 
-def _carried_up(ctx: EventContext, home: EventContext, central: Any) -> tuple[tuple[int, ...], ...]:
+def _carried_up(
+    ctx: EventContext, home: EventContext, central: Any
+) -> tuple[tuple[int, ...], ...]:
     """The node tuples `central` can present to a record written in `home`'s row space (§2.3).
 
     A handle read at an ancestor names that read's composition in either spelling: kept as it was
@@ -534,7 +542,11 @@ def _carried_up(ctx: EventContext, home: EventContext, central: Any) -> tuple[tu
         for mask in reversed(masks):
             recorded = ops.get(node)
             carried = member_of(mask, label)
-            if recorded is None or recorded[0] != "getitem" or tuple(recorded[2][1:]) != (carried.node_id,):
+            if (
+                recorded is None
+                or recorded[0] != "getitem"
+                or tuple(recorded[2][1:]) != (carried.node_id,)
+            ):
                 return None
             node = recorded[2][0]
         return node
@@ -586,7 +598,9 @@ def _extension(ctx: EventContext, central: Any) -> tuple[str, Any] | None:
             keys[id(home)] = _carried_up(ctx, home, central)
         if members not in keys[id(home)] or read != factors[: len(read)]:
             continue
-        moved = [slot for slot, was in zip(read, stamps, strict=True) if ctx._gens.get(slot, 0) != was]
+        moved = [
+            slot for slot, was in zip(read, stamps, strict=True) if ctx._gens.get(slot, 0) != was
+        ]
         if moved:  # a join has since ADDED universes under this handle (§2.1)
             stale = moved
             continue
@@ -629,7 +643,9 @@ def _extension(ctx: EventContext, central: Any) -> tuple[str, Any] | None:
     return None
 
 
-def _names_nominal(ctx: EventContext, rider: Rider, node: Any, slot: int) -> tuple[str, Any] | None:
+def _names_nominal(
+    ctx: EventContext, rider: Rider, node: Any, slot: int
+) -> tuple[str, Any] | None:
     """§2.3: whether a central names this entry's NOMINAL identity in the central's own row space —
     the entry itself (`("factor", slot)`), or the universe this context is projected into that the
     entry OWNS (`("owned", L)`, which `_vary_weight` refuses).
@@ -677,7 +693,11 @@ def _member_here(rider: Rider) -> tuple[str, Any] | None:
     no longer the entry's. `None` for an entry no projection has carried.
     """
     label = next(
-        (payload for kind, payload in reversed(rider.links) if kind == "project" and payload != "nominal"),
+        (
+            payload
+            for kind, payload in reversed(rider.links)
+            if kind == "project" and payload != "nominal"
+        ),
         None,
     )
     if label is None or label not in rider.projected:
@@ -894,7 +914,9 @@ def _extend(
     # AFTER the adoption keep their own places in the list behind it, and composing them into the
     # head as well would multiply each of them twice at the labels the join moved.
     behind = frozenset(_live_slots_behind(ctx, live_slots))
-    stood = [entry for entry, entry_slot in zip(live, live_slots, strict=True) if entry_slot in behind]
+    stood = [
+        entry for entry, entry_slot in zip(live, live_slots, strict=True) if entry_slot in behind
+    ]
     slots = [entry_slot for entry_slot in live_slots if entry_slot in behind]
     overlays = live_overlays & behind
     at = slots.index(slot)
@@ -982,12 +1004,18 @@ def _covering_overlay(ctx: EventContext, slot: int) -> str | None:
     )
 
 
-def _marks(entries: Sequence[Any], slots: Sequence[int], overlays: frozenset[int]) -> frozenset[int]:
+def _marks(
+    entries: Sequence[Any], slots: Sequence[int], overlays: frozenset[int]
+) -> frozenset[int]:
     """The overlay slots as the OBJECT ids `_compose` tests (see `EventContext._overlay_ids`)."""
-    return frozenset(id(entry) for entry, slot in zip(entries, slots, strict=True) if slot in overlays)
+    return frozenset(
+        id(entry) for entry, slot in zip(entries, slots, strict=True) if slot in overlays
+    )
 
 
-def _overlay(ctx: EventContext, members: Mapping[str, Any], name: str, family: tuple[str, ...]) -> Varied:
+def _overlay(
+    ctx: EventContext, members: Mapping[str, Any], name: str, family: tuple[str, ...]
+) -> Varied:
     """§2.1's relative-delta family as an ORDERED operation on the ambient.
 
     Its NOMINAL is the ambient's own nominal node, which is what makes it an overlay rather than a
@@ -1085,7 +1113,11 @@ def _union_nominal(
     left = carried._members if isinstance(carried, Varied) else {"nominal": carried}
     right = central._members if isinstance(central, Varied) else {"nominal": central}
     for label, member in right.items():
-        if label != "nominal" and label in left and _member_nodes(left[label]) != _member_nodes(member):
+        if (
+            label != "nominal"
+            and label in left
+            and _member_nodes(left[label]) != _member_nodes(member)
+        ):
             raise GraphedError(
                 f"graphed.vary({name!r}): its central names the weight factor already registered "
                 f"here, but the two disagree at coordinate {label!r} — the registered central "
@@ -1303,7 +1335,9 @@ def _vary_weight(
                 {
                     carried
                     for covered_slot in prefix
-                    for carried in (riders[covered_slot].families if covered_slot in riders else ())
+                    for carried in (
+                        riders[covered_slot].families if covered_slot in riders else ()
+                    )
                 }
             )
         )
@@ -1371,7 +1405,9 @@ def _vary_shift(
             raise GraphedError(f"collection {collection_name!r} was named twice")
         mapping[collection_name] = inner
     if not mapping:
-        raise GraphedError(f"the shift form of graphed.vary({name!r}) needs at least one collection")
+        raise GraphedError(
+            f"the shift form of graphed.vary({name!r}) needs at least one collection"
+        )
     for collection_name, inner in list(mapping.items()):
         if isinstance(inner, Varied):  # m55: lockstep by propagation, unpacked to the hand form
             mapping[collection_name] = _unpack_varied(ctx, name, collection_name, inner, points)
@@ -1400,7 +1436,10 @@ def _vary_shift(
         # §4.6: a supplied member is projected by the label's own point, not flattened to its
         # central universe — which is what makes a shift (x) shift joint point expressible; a
         # machine-minted joint is already the cross node, so `member_of` on it is the identity
-        resolved = {label: member_of(member, label) for label, member in {**one_at_a_time, **joints}.items()}
+        resolved = {
+            label: member_of(member, label)
+            for label, member in {**one_at_a_time, **joints}.items()
+        }
         check_members({**existing, **resolved})
         resolved = {label: accessors.reindex_to(member, ctx) for label, member in resolved.items()}
         for label in resolved:
@@ -1414,11 +1453,15 @@ def _vary_shift(
         )
         _report_shift_after_weight(ctx, collection_name, existing)
     child._collections = replaced
-    child._registration = _Registration(name, Kind.SHIFT, family, ctx, "shift", varies=tuple(mapping))
+    child._registration = _Registration(
+        name, Kind.SHIFT, family, ctx, "shift", varies=tuple(mapping)
+    )
     return child
 
 
-def _report_shift_after_weight(ctx: EventContext, collection: str, pre_shift: Mapping[str, Any]) -> None:
+def _report_shift_after_weight(
+    ctx: EventContext, collection: str, pre_shift: Mapping[str, Any]
+) -> None:
     """§2.5/§2.1: a weight factor registered BEFORE the collection it reads is varied fills every
     shift universe with its PRE-shift value, and the registry is not re-derived, so it is
     unfixable after the fact. Report each such family paired with the collection it reads.
@@ -1694,7 +1737,8 @@ def _compose_ordered(
         for index, overlay in enumerate(marks):
             applied = _two_level(overlay, label)
             spans = id(overlay) in fixed or (
-                _member_nodes(applied) != nominal_ids[index] and not _placed_elsewhere(overlay, label)
+                _member_nodes(applied) != nominal_ids[index]
+                and not _placed_elsewhere(overlay, label)
             )
             if running is None or spans:
                 running = project(applied, label)
@@ -1757,7 +1801,9 @@ def _product(parts: Sequence[Any], mul: Callable[[Any, Any, str], Any], label: s
     return product
 
 
-def _product_tree(centrals: Sequence[Any], mul: Callable[[Any, Any, str], Any]) -> dict[tuple[int, int], Any]:
+def _product_tree(
+    centrals: Sequence[Any], mul: Callable[[Any, Any, str], Any]
+) -> dict[tuple[int, int], Any]:
     """`(lo, hi)` -> the product of `centrals[lo:hi]`, split at the midpoint. `N-1` multiplies,
     shared by every label, and a pure function of the registration order."""
     tree: dict[tuple[int, int], Any] = {}

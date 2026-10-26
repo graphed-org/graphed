@@ -34,7 +34,9 @@ def _plan_events() -> tuple[Session, Any]:
 
 
 def _plan(selected: Any) -> Any:
-    return graphed.aggregate_plan(gak.sum(selected), reduce=fx.total, combine=fx.add, empty=fx.zero)
+    return graphed.aggregate_plan(
+        gak.sum(selected), reduce=fx.total, combine=fx.add, empty=fx.zero
+    )
 
 
 def _refused(call: Any, line: int) -> GraphedTypeError:
@@ -49,7 +51,10 @@ def test_a_map_value_of_another_type_raises_at_the_declaring_line() -> None:
     s, ev = _events()
     mask, line = ev.x.map(fx.score, output_type="bool"), fx.here()
     err = _refused(lambda: s.materialize(ev.x[mask]), line)
-    assert f"node {mask.node_id} ('score') declares output_type 'bool'; its value is 'float64'" in err.detail
+    assert (
+        f"node {mask.node_id} ('score') declares output_type 'bool'; its value is 'float64'"
+        in err.detail
+    )
 
 
 def test_an_apply_value_of_another_type_raises_at_the_declaring_line() -> None:
@@ -76,7 +81,10 @@ def test_a_scalar_value_for_an_array_declaration_is_refused() -> None:
 def test_an_array_value_for_a_scalar_declaration_is_refused() -> None:
     s, ev = _events()
     total = gak.sum(ev.x)
-    assert s.materialize(total.map(lambda t: np.multiply(t, 2), output_type="float64")) == 2 * fx.X.sum()
+    assert (
+        s.materialize(total.map(lambda t: np.multiply(t, 2), output_type="float64"))
+        == 2 * fx.X.sum()
+    )
     out, line = total.map(lambda t: np.array([t]), output_type="float64"), fx.here()
     assert "its value is '1 * float64'" in _refused(lambda: s.materialize(out), line).detail
 
@@ -161,13 +169,33 @@ def _value(v: Any) -> Any:
         ("?float64", ak.Array([1.0, None, 2.0, 3.0]), True),
         ("var * float64", np.zeros((4, 2)), False),  # regular is not var
         ("2 * float64", np.zeros((4, 2)), True),
-        ("{a: float64}", ak.zip({"a": fx.X}, with_name="Pt"), False),  # a record name is a parameter
+        (
+            "{a: float64}",
+            ak.zip({"a": fx.X}, with_name="Pt"),
+            False,
+        ),  # a record name is a parameter
         ("Pt[a: float64]", ak.zip({"a": fx.X}, with_name="Pt"), True),
         ("var * {a: float64, b: int64}", ak.Array([[], [], [], []]), True),
-        ("{a: var * float64, b: int64}", ak.zip({"a": [[]] * 4, "b": [1] * 4}, depth_limit=1), True),
-        ("{a: var * float64, b: int32}", ak.zip({"a": [[]] * 4, "b": [1] * 4}, depth_limit=1), False),
-        ("{c: var * float64, b: int64}", ak.zip({"a": [[]] * 4, "b": [1] * 4}, depth_limit=1), False),
-        ("float64", ak.Array([[], [], [], []]), False),  # unknown fits in place of a type, not a list
+        (
+            "{a: var * float64, b: int64}",
+            ak.zip({"a": [[]] * 4, "b": [1] * 4}, depth_limit=1),
+            True,
+        ),
+        (
+            "{a: var * float64, b: int32}",
+            ak.zip({"a": [[]] * 4, "b": [1] * 4}, depth_limit=1),
+            False,
+        ),
+        (
+            "{c: var * float64, b: int64}",
+            ak.zip({"a": [[]] * 4, "b": [1] * 4}, depth_limit=1),
+            False,
+        ),
+        (
+            "float64",
+            ak.Array([[], [], [], []]),
+            False,
+        ),  # unknown fits in place of a type, not a list
         ("2 * var * float64", ak.to_regular(ak.Array([[[]] * 3] * 4), axis=1), False),
         ("3 * var * float64", ak.to_regular(ak.Array([[[]] * 3] * 4), axis=1), True),
     ],
@@ -193,18 +221,27 @@ def test_a_value_awkward_cannot_type_is_refused() -> None:
     assert "its value is 'object'" in _refused(lambda: s.materialize(out), line).detail
 
 
-def test_the_correction_template_checks_its_float64_leaves(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_the_correction_template_checks_its_float64_leaves(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     pytest.importorskip("correctionlib")
     from graphed.preserve.externals import _base  # noqa: PLC0415
-    from graphed.preserve.externals.correctionlib_external import CORRECTIONLIB_PLUGIN  # noqa: PLC0415
+    from graphed.preserve.externals.correctionlib_external import (  # noqa: PLC0415
+        CORRECTIONLIB_PLUGIN,
+    )
 
     def float32(resource: Any, params: Any, inputs: list[Any]) -> Any:
         return ak.values_astype(inputs[0], "float32")
 
-    monkeypatch.setitem(_base._REGISTRY, "correctionlib", replace(CORRECTIONLIB_PLUGIN, evaluate=float32))
+    monkeypatch.setitem(
+        _base._REGISTRY, "correctionlib", replace(CORRECTIONLIB_PLUGIN, evaluate=float32)
+    )
     s, ev = _events()
     cset = CORRECTIONLIB_PLUGIN.samples()[0]
-    sf, line = gak.apply_correction(cset, "sf", [ev.x], fx.score, args=["nominal", "$0"]), fx.here()
+    sf, line = (
+        gak.apply_correction(cset, "sf", [ev.x], fx.score, args=["nominal", "$0"]),
+        fx.here(),
+    )
     err = _refused(lambda: s.materialize(sf), line)
     assert "declares output_dtype 'float64'; its value is 'float32'" in err.detail
 
@@ -220,11 +257,16 @@ def test_the_correction_template_checks_its_float64_leaves(monkeypatch: pytest.M
 def test_an_output_dtype_is_checked_on_every_leaf(value: Any, fits: bool) -> None:
     s, ev = _events()
     fn, leaf = _value(value), {"output_dtype": "float64"}
-    out, line = s.record_external("map", fn, [ev.x], {"fn": f"leaves {fits}"}, form_params=leaf), fx.here()
+    out, line = (
+        s.record_external("map", fn, [ev.x], {"fn": f"leaves {fits}"}, form_params=leaf),
+        fx.here(),
+    )
     if fits:
         assert s.materialize(out) is value
     else:
-        assert "declares output_dtype 'float64'" in _refused(lambda: s.materialize(out), line).detail
+        assert (
+            "declares output_dtype 'float64'" in _refused(lambda: s.materialize(out), line).detail
+        )
 
 
 def test_an_unrepresentable_output_dtype_beside_a_form_is_refused_at_its_line() -> None:
@@ -233,7 +275,13 @@ def test_an_unrepresentable_output_dtype_beside_a_form_is_refused_at_its_line() 
     line = fx.here() + 2  # the call's first line
     with pytest.raises(GraphedTypeError) as info:
         s.record_external(
-            "map", fx.cut, [ev.x], {"fn": "f"}, descriptor=desc, form=form, form_params={"output_dtype": "x"}
+            "map",
+            fx.cut,
+            [ev.x],
+            {"fn": "f"},
+            descriptor=desc,
+            form=form,
+            form_params={"output_dtype": "x"},
         )
     assert info.value.provenance.lineno == line
 

@@ -56,7 +56,8 @@ def _shifted_context() -> tuple[Session, Any]:
     ctx = ga.gnano.events(from_awkward(session, "ev", EVENTS))
     jets = ctx.Jet
     shifted = {
-        tag: ga.gak.with_field(jets, jets.pt * scale, "pt") for tag, scale in (("up", 1.05), ("down", 0.95))
+        tag: ga.gak.with_field(jets, jets.pt * scale, "pt")
+        for tag, scale in (("up", 1.05), ("down", 0.95))
     }
     return session, graphed.vary(ctx, "jes", collections={"Jet": shifted})
 
@@ -66,7 +67,11 @@ def _factor(ctx: Any, wide: Any, scale: float, *, nominal: Any = None) -> Any:
     nominal, `wide`-shaped at `jes_up`."""
     flat = ctx["w"] * scale
     return rebuild(
-        {"nominal": flat if nominal is None else nominal * scale, "jes_up": wide * scale, "jes_down": flat},
+        {
+            "nominal": flat if nominal is None else nominal * scale,
+            "jes_up": wide * scale,
+            "jes_down": flat,
+        },
         context=ctx,
     )
 
@@ -78,7 +83,9 @@ def test_two_factors_that_collide_at_one_shift_label_are_refused_at_registration
 
     second = _factor(shifted, shifted["r5"], 2.0)  # nominals multiply; the `jes_up` members do not
     nominals = [session.form(graphed.nominal(first)), session.form(graphed.nominal(second))]
-    session.backend.op_form("mul", nominals, {})  # must not raise, or this is not the per-label case
+    session.backend.op_form(
+        "mul", nominals, {}
+    )  # must not raise, or this is not the per-label case
 
     with pytest.raises(GraphedTypeError, match="jes_up"):
         graphed.vary(registered, "B", second, is_weight=True, up=second * 1.1)
@@ -119,7 +126,9 @@ def test_a_refused_weight_leaves_no_residue_for_the_shift_after_weight_report() 
         graphed.vary(registered, "bad", jets, is_weight=True, up=jets)
 
     later = graphed.vary(
-        registered, "jer", collections={"Jet": {"up": ga.gak.with_field(jets, jets.pt * 1.02, "pt")}}
+        registered,
+        "jer",
+        collections={"Jet": {"up": ga.gak.with_field(jets, jets.pt * 1.02, "pt")}},
     )
     ambient = graphed.weight(later)
     universes = [graphed.universe(ambient, label) for label in graphed.labels(ambient)]
@@ -134,7 +143,9 @@ def _colliding_shapes() -> tuple[tuple[int, ...], tuple[int, ...]]:
     for depth in range(6, 15):
         deep, wide = (2,) * depth, (2,) * (depth - 1) + (3,)
         record = from_awkward(
-            session, f"probe{depth}", ak.Array({"d": np.ones((2, *deep)), "e": np.ones((2, *wide))})
+            session,
+            f"probe{depth}",
+            ak.Array({"d": np.ones((2, *deep)), "e": np.ones((2, *wide))}),
         )
         left, right = session.form(record["d"]), session.form(record["e"])
         if str(left) == str(right) and left.describe() != right.describe():
@@ -238,11 +249,16 @@ def test_a_clash_at_a_joint_this_registration_mints_is_refused() -> None:
     bound for the Session's life."""
     session, shifted = _shifted_context()
     registered, central, clashing = _joint_pair(shifted, shifted["r5"])
-    assert "B_up__jes_up" not in registered._recorded, "the joint is not new to the union; wrong case"
+    assert "B_up__jes_up" not in registered._recorded, (
+        "the joint is not new to the union; wrong case"
+    )
     at_jes_up = [
-        session.form(_two_level(container, "jes_up")) for container in (registered._factors[0], central)
+        session.form(_two_level(container, "jes_up"))
+        for container in (registered._factors[0], central)
     ]
-    session.backend.op_form("mul", at_jes_up, {})  # jes_up itself agrees, or the joint is not the cause
+    session.backend.op_form(
+        "mul", at_jes_up, {}
+    )  # jes_up itself agrees, or the joint is not the cause
 
     with pytest.raises(GraphedTypeError, match="B_up__jes_up"):
         graphed.vary(registered, "B", central, is_weight=True, up=clashing)
@@ -274,7 +290,9 @@ def test_a_rolled_back_mint_leaves_no_resolution_the_restored_registry_no_longer
     assert restricted.node_id != _two_level(factor, "nominal").node_id, "the two answers coincide"
 
 
-def test_a_valid_pair_that_only_LOOKS_clashing_through_the_running_nominal_still_registers() -> None:
+def test_a_valid_pair_that_only_LOOKS_clashing_through_the_running_nominal_still_registers() -> (
+    None
+):
     """The other end of the same class. `A` is wide at nominal and flat at `jes_up`, so at the
     minted joint the composition multiplies flat by `B`'s wide member and succeeds — a check that
     folded the running NOMINAL there would refuse a program the composition composes."""
@@ -284,7 +302,9 @@ def test_a_valid_pair_that_only_LOOKS_clashing_through_the_running_nominal_still
     )
     with pytest.raises(ValueError, match="broadcast"):  # the pair a nominal fold would have formed
         running_nominal = session.form(_two_level(registered._factors[0], "nominal"))
-        session.backend.op_form("mul", [running_nominal, session.form(_two_level(wider, "jes_up"))], {})
+        session.backend.op_form(
+            "mul", [running_nominal, session.form(_two_level(wider, "jes_up"))], {}
+        )
 
     ok = graphed.vary(registered, "B", central, is_weight=True, up=wider)
     ambient = graphed.weight(ok)
@@ -330,7 +350,9 @@ def test_a_product_only_the_composition_s_own_grouping_forms_is_refused_at_regis
     third = registered["r5"] * 1.0
     with pytest.raises(GraphedTypeError, match="mul"):
         graphed.vary(registered, "C", third, is_weight=True, up=third * 1.1)
-    assert sorted(session._points) == ["A_up", "B_up"], "the refused registration moved the registry"
+    assert sorted(session._points) == ["A_up", "B_up"], (
+        "the refused registration moved the registry"
+    )
 
     fine = registered["var"] * 2.0  # the name is free again
     ok = graphed.vary(registered, "C", fine, is_weight=True, up=fine * 1.1)
@@ -375,7 +397,10 @@ def _clash_at_an_unwalked_label() -> tuple[Session, Any]:
     the union, put there by the hand-built escape hatch, waiting for a mint to reach it."""
     session = Session(AwkwardBackend())
     ctx = ga.gnano.events(from_awkward(session, "ev", EVENTS))
-    ctx._collections = {**ctx._collections, "hand": rebuild({"nominal": ctx["w"], JOINT: ctx["w"] * 2.0})}
+    ctx._collections = {
+        **ctx._collections,
+        "hand": rebuild({"nominal": ctx["w"], JOINT: ctx["w"] * 2.0}),
+    }
     flat = ctx["w"] * 1.0
     # distinct nominals, so the two remain two factors and their `q_up` members meet
     for name, field, scale in (("A", "r3", 1.0), ("B", "r5", 2.0)):
@@ -387,7 +412,9 @@ def _clash_at_an_unwalked_label() -> tuple[Session, Any]:
 JOINT = "b_up__q_up"
 
 
-def test_a_clash_a_later_mint_creates_raises_at_the_read_and_leaves_that_varys_labels_bound() -> None:
+def test_a_clash_a_later_mint_creates_raises_at_the_read_and_leaves_that_varys_labels_bound() -> (
+    None
+):
     """The one raise this design moves out of `vary`. A clash at a label NO registration could see
     — neither factor's registration walked it, because nothing carried it — becomes reachable when
     a later, unrelated `vary` mints the joint over it. Resolving as of the read is what finds it;
@@ -413,5 +440,7 @@ def test_a_clash_a_later_mint_creates_raises_at_the_read_and_leaves_that_varys_l
     for label in labels:
         with pytest.raises(GraphedTypeError, match=JOINT):
             graphed.universe(graphed.weight(ctx), label)
-    assert {"q_up", "b_up", JOINT} <= set(session._points), "the loose vary's labels were rolled back"
+    assert {"q_up", "b_up", JOINT} <= set(session._points), (
+        "the loose vary's labels were rolled back"
+    )
     assert graphed.universe(graphed.weight(unclashed), "C_up").node_id

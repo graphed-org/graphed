@@ -33,7 +33,9 @@ class SumBackend:
     def op_form(self, op: str, inputs: Sequence[Form], params: Mapping[str, object]) -> Form:
         return _ToyForm(op)
 
-    def eval_stage(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> object:
+    def eval_stage(
+        self, op: str, inputs: Sequence[object], params: Mapping[str, object]
+    ) -> object:
         SumBackend.calls.append(op)
         if op == "add":
             return [sum(vs) for vs in zip(*cast("list[list[int]]", inputs), strict=True)]
@@ -153,7 +155,10 @@ _X, _Y = [1, 2], [10, 20]
         (lambda x, y: [[[[x]]]], [[[[_X]]]]),
         (lambda x, y: [(x, y), [y, x]], [(_X, _Y), [_Y, _X]]),
         (lambda x, y: {1: x, (2, 3): y}, {1: _X, (2, 3): _Y}),
-        (lambda x, y: {"x": x, "y": [y], "z": {"w": (x, 3)}}, {"x": _X, "y": [_Y], "z": {"w": (_X, 3)}}),
+        (
+            lambda x, y: {"x": x, "y": [y], "z": {"w": (x, 3)}},
+            {"x": _X, "y": [_Y], "z": {"w": (_X, 3)}},
+        ),
     ],
     ids=[
         "array",
@@ -231,7 +236,9 @@ def _fold(outputs: Sequence[Any]) -> Any:
 def test_aggregate_plan_over_several_sessions_names_collate() -> None:
     x = Session(SumBackend()).source("x", form=_form(), data=Rows((1, 2)))
     y = Session(SumBackend()).source("y", form=_form(), data=Rows((3,)))
-    with pytest.raises(TypeError, match=r"one session; collate one plan per Session \(graphed.collate\)"):
+    with pytest.raises(
+        TypeError, match=r"one session; collate one plan per Session \(graphed.collate\)"
+    ):
         _fold([x, y])
     plan = graphed.collate({"x": _fold([x]), "y": _fold([y])})
     assert SequentialRunner().run(plan).value == {"x": [3], "y": [3]}

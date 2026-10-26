@@ -60,7 +60,10 @@ def _correctionlib_json() -> bytes:
             {
                 "name": "btag_sf",
                 "version": 1,
-                "inputs": [{"name": "systematic", "type": "string"}, {"name": "x", "type": "real"}],
+                "inputs": [
+                    {"name": "systematic", "type": "string"},
+                    {"name": "x", "type": "real"},
+                ],
                 "output": {"name": "sf", "type": "real"},
                 "data": {
                     "nodetype": "category",
@@ -163,9 +166,14 @@ class CorpusEvents:
         return self.data
 
     def partitions(self, steps_per_file: int = 1) -> tuple[Partition, ...]:
-        return tuple(Partition.blind("corpus://events", "", s, steps_per_file) for s in range(steps_per_file))
+        return tuple(
+            Partition.blind("corpus://events", "", s, steps_per_file)
+            for s in range(steps_per_file)
+        )
 
-    def read_partition(self, partition: Partition, columns: Any, resources: WorkerResources) -> ak.Array:
+    def read_partition(
+        self, partition: Partition, columns: Any, resources: WorkerResources
+    ) -> ak.Array:
         part = partition.resolve(len(self.data))
         self.part_reads.append((part.entry_start, part.entry_stop))
         return self.data[part.entry_start : part.entry_stop]
@@ -254,7 +262,9 @@ class _Zeros:
 
 def _plan(build: Any) -> Any:
     _session, outs = build()
-    return aggregate_plan(*outs, reduce=_sums, combine=_add, empty=_zeros_for(len(outs)), steps_per_file=4)
+    return aggregate_plan(
+        *outs, reduce=_sums, combine=_add, empty=_zeros_for(len(outs)), steps_per_file=4
+    )
 
 
 # ---------------------------------- 1. pool portability -------------------------------------------
@@ -262,7 +272,9 @@ def test_apply_correction_plan_pickles_and_runs_in_a_process_pool() -> None:
     pytest.importorskip("correctionlib")
     ProcessPoolExecutor = pytest.importorskip("graphed_executors.local").ProcessPoolExecutor
 
-    pickle.dumps(_plan(_correction_universes).process)  # pre-fix: AttributeError on the local closure
+    pickle.dumps(
+        _plan(_correction_universes).process
+    )  # pre-fix: AttributeError on the local closure
     seq = SequentialRunner().run(_plan(_correction_universes)).value
     par = ProcessPoolExecutor(max_workers=2).run(_plan(_correction_universes)).value
     assert np.array_equal(par, seq)  # bit-for-bit, not merely close
@@ -354,7 +366,9 @@ def test_the_template_path_evaluates_in_process_through_the_plugin(
     # ENGAGED, not merely consulted: a None return is a silent fall back to correctionlib's wrapper
     assert len(answered) == 1 and answered[0] is not None
     ref_njet = ak.num(EVENTS.Jet[EVENTS.Jet.pt > 25], axis=1)
-    ref = correctionlib.CorrectionSet.from_string(CSET.decode())["btag_sf"].evaluate("up", ref_njet)
+    ref = correctionlib.CorrectionSet.from_string(CSET.decode())["btag_sf"].evaluate(
+        "up", ref_njet
+    )
     assert ak.to_list(got) == ak.to_list(ref)  # bit-for-bit, and not the all-ones nominal
     assert set(ak.to_list(got)) == set(_SF_CONTENT["up"])  # every bin of the varied SF was read
 
@@ -372,7 +386,11 @@ def test_a_compound_correction_resolves_out_of_cset_compound() -> None:
 
     got = ak.Array(session.materialize(jec))
     flat_pt = ak.to_numpy(ak.flatten(_COMPOUND_EVENTS.Jet.pt))
-    ref = correctionlib.CorrectionSet.from_string(COMPOUND_CSET.decode()).compound["jec"].evaluate(flat_pt)
+    ref = (
+        correctionlib.CorrectionSet.from_string(COMPOUND_CSET.decode())
+        .compound["jec"]
+        .evaluate(flat_pt)
+    )
     assert ak.num(got, axis=1).tolist() == [2, 0, 1]  # jagged structure survives the compound call
     assert ak.to_list(ak.flatten(got)) == list(ref)  # bit-for-bit against correctionlib itself
     assert set(ak.to_list(ak.flatten(got))) == {0.9 * 2.0, 1.1 * 3.0}  # neither factor on its own
@@ -386,7 +404,9 @@ def test_an_unknown_correction_name_names_both_key_sets() -> None:
     ev = from_awkward(session, "events", _COMPOUND_EVENTS)
     sf = gak.apply_correction(COMPOUND_CSET, "l3", [ev.Jet.pt], _unusable, args=["$0"])
 
-    with pytest.raises(PreserveError, match=r"no correction named 'l3'.*\['l1', 'l2'\].*\['jec'\]"):
+    with pytest.raises(
+        PreserveError, match=r"no correction named 'l3'.*\['l1', 'l2'\].*\['jec'\]"
+    ):
         session.materialize(sf)
 
 
@@ -395,7 +415,9 @@ def test_a_missing_framework_is_attributed_to_the_plugin() -> None:
     happens. A bare `ImportError: No module named 'correctionlib'` out of a worker names neither the
     External that needed it nor the payload kind; the branded error names both."""
     from graphed.preserve.externals._base import _PluginEvaluator  # noqa: PLC0415
-    from graphed.preserve.externals.correctionlib_external import CORRECTIONLIB_PLUGIN  # noqa: PLC0415
+    from graphed.preserve.externals.correctionlib_external import (  # noqa: PLC0415
+        CORRECTIONLIB_PLUGIN,
+    )
 
     def _no_lib(payload: bytes, params: Any) -> Any:
         raise ImportError("No module named 'correctionlib'")
@@ -407,8 +429,12 @@ def test_a_missing_framework_is_attributed_to_the_plugin() -> None:
     def _params(tag: str) -> dict[str, Any]:
         return {"name": "btag_sf", "content_hash": f"sha256:{tag}", "args": '["up", "$0"]'}
 
-    with pytest.raises(PreserveError, match=r"'correctionlib' plugin.*correctionlib is not importable"):
-        _PluginEvaluator(replace(CORRECTIONLIB_PLUGIN, load=_no_lib), CSET, _params("no-lib"))(ak.Array([3]))
+    with pytest.raises(
+        PreserveError, match=r"'correctionlib' plugin.*correctionlib is not importable"
+    ):
+        _PluginEvaluator(replace(CORRECTIONLIB_PLUGIN, load=_no_lib), CSET, _params("no-lib"))(
+            ak.Array([3])
+        )
 
     # only a missing import is a missing framework: any other load failure keeps its own type
     with pytest.raises(RuntimeError, match="not a correction set"):
@@ -438,7 +464,9 @@ def test_content_identity_and_plan_bytes_are_unchanged_and_deterministic() -> No
         assert node["descriptor"]["content_hash"] == correctionlib_contents_hash(CSET)
         assert "path" not in node["params"]
         assert json.loads(str(node["params"]["args"])) == [syst, "$0"]
-    assert bytes(_plan(_correction_universes).process.ir) == bytes(_plan(_correction_universes).process.ir)
+    assert bytes(_plan(_correction_universes).process.ir) == bytes(
+        _plan(_correction_universes).process.ir
+    )
 
 
 def test_onnx_content_identity_is_unchanged() -> None:

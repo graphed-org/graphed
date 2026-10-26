@@ -30,7 +30,9 @@ def test_an_external_over_FIELDS_alone_still_narrows() -> None:
     """The control that keeps the fix from degenerating into "any External reads everything":
     projection must still flow through an External to its declared field inputs."""
     _s, record = _source()
-    fields_only = graphed.apply(lambda pt, eta: pt, record["pt"], record["eta"], name="fields_only")
+    fields_only = graphed.apply(
+        lambda pt, eta: pt, record["pt"], record["eta"], name="fields_only"
+    )
     assert read_columns([fields_only], record.node_id) == ("eta", "pt")
     assert read_columns([record["pt"] * 2.0], record.node_id) == ("pt",)
 

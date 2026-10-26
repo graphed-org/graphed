@@ -134,7 +134,9 @@ def scalar_param(params: Mapping[str, Any], key: str = "scalar", dtype_key: str 
     value = params[key]
     if dtype_key not in params:
         return value
-    return np.dtype(str(params[dtype_key])).type(value)  # the dtype parses the wide int's text itself
+    return np.dtype(str(params[dtype_key])).type(
+        value
+    )  # the dtype parses the wide int's text itself
 
 
 def _scalar_operands(operands: Sequence[Any], params: Mapping[str, Any]) -> list[Any]:
@@ -206,7 +208,10 @@ def _decode_call(text: str, operands: Sequence[Any]) -> Any:
 
 
 def apply(
-    op: str, operands: Sequence[Any], params: Mapping[str, Any], behavior: Mapping[str, Any] | None = None
+    op: str,
+    operands: Sequence[Any],
+    params: Mapping[str, Any],
+    behavior: Mapping[str, Any] | None = None,
 ) -> Any:
     if behavior:
         # M54: the backend's behavior dict rides on every operand (with its own attrs), so a
@@ -219,7 +224,9 @@ def apply(
     if op == "pack_key":  # M40 §2.1: add the big-endian-packed u64 __joinkey__ column
         return join.pack_key(operands[0], join.on_from_params(params))
     if op == "exchange":
-        return operands[0]  # a pure data-movement boundary is identity on values in-process (§3.3a)
+        return operands[
+            0
+        ]  # a pure data-movement boundary is identity on values in-process (§3.3a)
     if op in _UNARY:
         return _UNARY[op](operands[0])
     if op in _BINARY:
@@ -240,7 +247,8 @@ def apply(
         # arrays share this branch, so form inference, projection replay and evaluation agree.
         target = getattr(operands[0], str(params["method"]))
         result = target(
-            *_decode_call(str(params["args"]), operands), **_decode_call(str(params["kwargs"]), operands)
+            *_decode_call(str(params["args"]), operands),
+            **_decode_call(str(params["kwargs"]), operands),
         )
         # M59: a tuple result may be NESTED; `index` numbers its leaves depth-first
         return _leaves(result)[int(params["index"])] if "index" in params else result
@@ -265,7 +273,9 @@ def apply(
     ):
         return _global_extremum(op, operands[0])
     if op in _AK_REDUCERS:
-        return _AK_REDUCERS[op](operands[0], axis=_axis(params), **_reduce_kwargs(op, params, operands))
+        return _AK_REDUCERS[op](
+            operands[0], axis=_axis(params), **_reduce_kwargs(op, params, operands)
+        )
     if op in ("ak.std", "ak.var"):
         if (
             _axis(params) is None
@@ -282,7 +292,10 @@ def apply(
         )
     if op == "ak.moment":
         return ak.moment(
-            operands[0], int(params["n"]), axis=_axis(params), **_reduce_kwargs(op, params, operands)
+            operands[0],
+            int(params["n"]),
+            axis=_axis(params),
+            **_reduce_kwargs(op, params, operands),
         )
     if op == "ak.softmax":
         return ak.softmax(operands[0], axis=int(params.get("axis", 1)))
@@ -309,7 +322,11 @@ def apply(
             **_naming_kwargs(params),
         )
     if op == "ak.zip":
-        zipped = tuple(operands) if params.get("tuple") else dict(zip(_fields(params), operands, strict=True))
+        zipped = (
+            tuple(operands)
+            if params.get("tuple")
+            else dict(zip(_fields(params), operands, strict=True))
+        )
         kw: dict[str, Any] = dict(_naming_kwargs(params))
         if "depth_limit" in params:
             kw["depth_limit"] = int(params["depth_limit"])
@@ -342,7 +359,9 @@ def apply(
         return ak.flatten(operands[0], axis=_axis(params, default=1))
     if op == "ak.fill_none":
         return ak.fill_none(
-            operands[0], scalar_param(params, "value", "value_dtype"), axis=int(params.get("axis", -1))
+            operands[0],
+            scalar_param(params, "value", "value_dtype"),
+            axis=int(params.get("axis", -1)),
         )
     if op == "ak.drop_none":
         ax = params.get("axis")

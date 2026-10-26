@@ -138,7 +138,11 @@ def ttgamma_region(events: ak.Array, *, variation: str) -> Hist:
     jets = _apply_jes(events.Jet, variation=variation)
     good_jets = jets[jets.pt > 25]
 
-    sel = (ak.num(photons, axis=1) >= 1) & (ak.num(muons, axis=1) >= 1) & (ak.num(good_jets, axis=1) >= 2)
+    sel = (
+        (ak.num(photons, axis=1) >= 1)
+        & (ak.num(muons, axis=1) >= 1)
+        & (ak.num(good_jets, axis=1) >= 2)
+    )
     lead_pho_pt = ak.firsts(photons[sel].pt)
 
     sf = 0.98
@@ -159,4 +163,6 @@ TTBAR_FIXTURES = {
     for region in ("4j1b", "4j2b")
     for var in ("nominal", "jes_up", "jes_down", "btag_up", "btag_down")
 }
-TTGAMMA_FIXTURES = {f"ttgamma_{var}": var for var in ("nominal", "jes_up", "jes_down", "pho_up", "pho_down")}
+TTGAMMA_FIXTURES = {
+    f"ttgamma_{var}": var for var in ("nominal", "jes_up", "jes_down", "pho_up", "pho_down")
+}

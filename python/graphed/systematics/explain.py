@@ -40,7 +40,9 @@ class Entry:
             named = ", ".join(self.families)
             return f"joins the factor carrying {named}" if named else "joins a factor"
         if self.kind == "overlay":
-            return f"an overlay over {', '.join(self.families) or 'the composition it was read over'}"
+            return (
+                f"an overlay over {', '.join(self.families) or 'the composition it was read over'}"
+            )
         return "a new factor"
 
 
@@ -76,7 +78,9 @@ class Family:
     independent_of: frozenset[str]
 
     def __str__(self) -> str:
-        placed = "".join(f", placing a universe at {_render_point(point)}" for point in self.placements)
+        placed = "".join(
+            f", placing a universe at {_render_point(point)}" for point in self.placements
+        )
         relations = "".join(
             f"; {phrase} {', '.join(sorted(names))}"
             for phrase, names in (
@@ -270,7 +274,9 @@ def explain(ctx: EventContext) -> Explanation:
             )
         )
     relations = {
-        registration.name: _relations(registration, kinds, minted, registered, shared, flagged, sharing)
+        registration.name: _relations(
+            registration, kinds, minted, registered, shared, flagged, sharing
+        )
         for registration in registrations
     }
     families = {
@@ -323,10 +329,14 @@ def _origin_of(
                 label, f"{own.name} placed at {_render_point(point)}", (own.name, *others), point
             )
         if own.form == "overlay":
-            return Variation(label, f"{own.name}'s own universe, a relative-delta family", (own.name,), point)
+            return Variation(
+                label, f"{own.name}'s own universe, a relative-delta family", (own.name,), point
+            )
         return Variation(label, f"{own.name}, one at a time", (own.name,), point)
     read = tuple(name for name in families if name != own.name)
-    return Variation(label, f"{own.name} fanned out over {', '.join(read) or '?'}", families, point)
+    return Variation(
+        label, f"{own.name} fanned out over {', '.join(read) or '?'}", families, point
+    )
 
 
 def _minted_by(label: str, registrations: Sequence[_Registration]) -> _Registration | None:
@@ -371,7 +381,9 @@ def _relations(
         for other in variation.families
     }
     shares = frozenset(shared.get(registration.name, ()))
-    fans = frozenset(name for name, kind in kinds.items() if kind == Kind.SHIFT and name in reached)
+    fans = frozenset(
+        name for name, kind in kinds.items() if kind == Kind.SHIFT and name in reached
+    )
     preceded = frozenset(flagged.get(registration.name, ())) - fans
     return (
         frozenset(

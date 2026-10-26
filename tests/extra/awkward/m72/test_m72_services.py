@@ -102,8 +102,12 @@ def test_a_collated_plan_carries_the_union_and_binds_every_part(tmp_path: Path) 
     write = PartWrite(array=mc_y, destination=str(tmp_path), name=by_step, codec=json_codec)
     mc = graphed.aggregate_plan(reduce=paths_only, combine=add, empty=no_paths, writes=[write])
     _x, data_y = _served(DATA_FILES, "Runs", OTHER)
-    data = graphed.aggregate_plan(gak.sum(data_y), reduce=data_reduce, combine=data_combine, empty=data_empty)
-    value = _run_bound(graphed.collate({"mc": graphed.collate({"mc": mc}), "data": data}), (OTHER, SVC))
+    data = graphed.aggregate_plan(
+        gak.sum(data_y), reduce=data_reduce, combine=data_combine, empty=data_empty
+    )
+    value = _run_bound(
+        graphed.collate({"mc": graphed.collate({"mc": mc}), "data": data}), (OTHER, SVC)
+    )
     assert value["data"][0] == sum(int(v.sum()) + len(v) for v in DATA_FILES.values())
     assert read_part(value["mc"]["mc"][0])["values"] == (MC_FILES["mc-a"] + 1).tolist()
 
@@ -112,7 +116,9 @@ def test_collate_refuses_one_service_name_declared_two_ways() -> None:
     _x, a = _served(MC_FILES, "Events", SVC)
     _x, b = _served(DATA_FILES, "Runs", ServiceSpec("svc", "grpc"))
     plans = {
-        n: graphed.aggregate_plan(gak.sum(y), reduce=data_reduce, combine=data_combine, empty=data_empty)
+        n: graphed.aggregate_plan(
+            gak.sum(y), reduce=data_reduce, combine=data_combine, empty=data_empty
+        )
         for n, y in (("mc", a), ("data", b))
     }
     with pytest.raises(ValueError, match="'svc'"):
@@ -137,7 +143,9 @@ def _written(tmp_path: Path) -> list[str]:
     return sorted(str(p.relative_to(tmp_path)) for p in tmp_path.rglob("*.json"))
 
 
-def test_an_unbound_collated_plan_writes_nothing_and_names_every_missing_service(tmp_path: Path) -> None:
+def test_an_unbound_collated_plan_writes_nothing_and_names_every_missing_service(
+    tmp_path: Path,
+) -> None:
     data, mc = _two_sources(tmp_path)
     plan = graphed.collate({"data": data, "mc": mc})
     with pytest.raises(UnboundService) as err:
@@ -150,7 +158,9 @@ def test_an_unbound_collated_plan_writes_nothing_and_names_every_missing_service
 def test_a_partly_bound_plan_names_only_the_missing_service(tmp_path: Path) -> None:
     _data, mc = _two_sources(tmp_path)
     _x, data_y = _served(DATA_FILES, "Runs", ServiceSpec("alt", "http"))
-    plan = graphed.collate({"mc": bind_services(mc, ENDPOINTS), "data": _writes(data_y, tmp_path, "data")})
+    plan = graphed.collate(
+        {"mc": bind_services(mc, ENDPOINTS), "data": _writes(data_y, tmp_path, "data")}
+    )
     with pytest.raises(UnboundService) as err:
         SequentialRunner().run(plan)
     assert _written(tmp_path) == []
@@ -213,7 +223,9 @@ class _RefusesItsOwnName:
 
 
 def test_a_part_refusing_a_name_it_was_handed_raises_instead_of_looping() -> None:
-    plan: Plan[list[str]] = Plan(process=_RefusesItsOwnName(), combine=add, empty=no_paths, services=(SVC,))
+    plan: Plan[list[str]] = Plan(
+        process=_RefusesItsOwnName(), combine=add, empty=no_paths, services=(SVC,)
+    )
     with pytest.raises(UnboundService) as err:
         require_bound(plan)
     assert err.value.names == ("x",)

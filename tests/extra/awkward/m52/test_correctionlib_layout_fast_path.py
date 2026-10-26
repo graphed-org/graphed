@@ -60,7 +60,9 @@ def cset() -> correctionlib.CorrectionSet:
     return correctionlib.CorrectionSet.from_string(_CSET_JSON)
 
 
-def _evaluate(monkeypatch: pytest.MonkeyPatch, cset: object, inputs: list[ak.Array]) -> tuple[ak.Array, bool]:
+def _evaluate(
+    monkeypatch: pytest.MonkeyPatch, cset: object, inputs: list[ak.Array]
+) -> tuple[ak.Array, bool]:
     """`eval_correctionlib`'s answer, plus whether the fast path is the one that produced it."""
     engaged: list[bool] = []
     real = clx._flat_buffer_fast_path
@@ -92,7 +94,9 @@ OPTION_JAGGED = [
 ]
 
 
-def test_matched_option_layout_takes_the_fast_path(monkeypatch: pytest.MonkeyPatch, cset: object) -> None:
+def test_matched_option_layout_takes_the_fast_path(
+    monkeypatch: pytest.MonkeyPatch, cset: object
+) -> None:
     got, engaged = _evaluate(monkeypatch, cset, OPTION_JAGGED)
     assert engaged, "option-typed jagged inputs sharing one layout must not reach the wrapper"
     _assert_identical(got, _wrapper_result(cset, OPTION_JAGGED))
@@ -149,7 +153,9 @@ def test_non_option_and_flat_inputs_are_unchanged(
     _assert_identical(got, _wrapper_result(cset, inputs))
 
 
-def test_a_layout_outside_the_guard_falls_back(monkeypatch: pytest.MonkeyPatch, cset: object) -> None:
+def test_a_layout_outside_the_guard_falls_back(
+    monkeypatch: pytest.MonkeyPatch, cset: object
+) -> None:
     """A member the class must refuse: a multidimensional NumpyArray has no flat buffer to evaluate,
     so the wrapper keeps the call."""
     inputs = [ak.Array(np.arange(6.0).reshape(3, 2)), ak.Array(np.arange(6.0).reshape(3, 2) * 8.0)]

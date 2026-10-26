@@ -111,7 +111,9 @@ def resolve_partition(partition: Partition) -> Partition:
 
 
 # ---- writer-side part naming (R15.9): the graphed.write base, parquet-flavored -------------------
-def derive_part_index(partition: Partition, *, steps_per_file: int, bases: Mapping[str, int]) -> int:
+def derive_part_index(
+    partition: Partition, *, steps_per_file: int, bases: Mapping[str, int]
+) -> int:
     """The output-part index a writer derives from ITS OWN partition: file base + step.
 
     Blind partitions carry their step (no I/O); an eager partition's step is reconstructed
@@ -119,7 +121,9 @@ def derive_part_index(partition: Partition, *, steps_per_file: int, bases: Mappi
     if partition.is_blind:
         return blind_part_index(partition, bases)
     n = num_rows(partition.uri)
-    return bases[partition.uri] + step_of(partition.entry_start, partition.entry_stop, n, steps_per_file)
+    return bases[partition.uri] + step_of(
+        partition.entry_start, partition.entry_stop, n, steps_per_file
+    )
 
 
 def part_path(destination: str, index: int, *, prefix: str = "part") -> str:
@@ -139,7 +143,9 @@ def deferred_source(
     """Record one source for the whole dataset: the file list is part of the source's recorded
     identity (different files => different node), the data is the LAZY loader — nothing is read
     until the reference ``materialize`` asks (executors never call it; they read per-partition)."""
-    return session.source(name, form=form, data=loader, uri=";".join(paths), format="parquet", **params)
+    return session.source(
+        name, form=form, data=loader, uri=";".join(paths), format="parquet", **params
+    )
 
 
 # ---- the deferred write plan: re-exported from the format-agnostic base (graphed.write) ----------

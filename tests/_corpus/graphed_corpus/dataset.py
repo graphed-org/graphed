@@ -23,7 +23,9 @@ def _jagged(rng: np.random.Generator, counts: np.ndarray, **flat_fields: np.ndar
     return ak.unflatten(ak.Array(dict(flat_fields)), counts)
 
 
-def _kin(rng: np.random.Generator, n: int, *, pt_scale: float, eta_max: float) -> dict[str, np.ndarray]:
+def _kin(
+    rng: np.random.Generator, n: int, *, pt_scale: float, eta_max: float
+) -> dict[str, np.ndarray]:
     return {
         "pt": rng.exponential(pt_scale, n).astype(np.float64) + 5.0,
         "eta": rng.uniform(-eta_max, eta_max, n).astype(np.float64),

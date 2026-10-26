@@ -57,14 +57,22 @@ def test_an_apply_value_of_another_dtype_raises_at_the_declaring_line() -> None:
     ("declared", "value", "fits"),
     [
         (("f4", (3,)), np.zeros((2, 3), dtype="f4"), True),
-        (("f4", (3,)), np.zeros((2, 2), dtype="f4"), False),  # the subarray pins the trailing shape
+        (
+            ("f4", (3,)),
+            np.zeros((2, 2), dtype="f4"),
+            False,
+        ),  # the subarray pins the trailing shape
         ("float32", np.zeros((2, 3), dtype="f4"), False),  # a plain dtype pins no trailing axes
         (str, np.array(["ab", "c"]), True),  # unsized: any length of its kind
         ("U5", np.array(["ab", "c"]), False),
         ("S0", np.array([b"ab"]), True),
         ([("pt", "f4"), ("eta", "f4")], np.zeros(2, dtype=[("pt", "f4"), ("eta", "f4")]), True),
         ([("pt", "f4"), ("eta", "f4")], np.zeros(2, dtype=[("pt", "f4"), ("phi", "f4")]), False),
-        ([("pt", "f4"), ("eta", "f4")], {"pt": X, "eta": X}, True),  # the backend's own record value
+        (
+            [("pt", "f4"), ("eta", "f4")],
+            {"pt": X, "eta": X},
+            True,
+        ),  # the backend's own record value
         ([("pt", "f4"), ("eta", "f4")], {"pt": X}, False),
         ("float32", {"pt": X}, False),
     ],
@@ -81,7 +89,9 @@ def test_what_matches_at_the_edges(declared: Any, value: Any, fits: bool) -> Non
 def test_a_scalar_input_takes_no_leading_axis() -> None:
     s, x = _x()
     total = x.reduce("sum")
-    assert s.materialize(total.map(_value(np.bool_(True)), name="s", output_type=bool)) == np.bool_(True)
+    assert s.materialize(
+        total.map(_value(np.bool_(True)), name="s", output_type=bool)
+    ) == np.bool_(True)
     out, line = total.map(_value(np.array([True])), name="v", output_type=bool), here()
     assert "its value is 'vector[bool]'" in _refused(lambda: s.materialize(out), line).detail
 
@@ -109,7 +119,9 @@ def test_evaluate_ir_raises_the_located_error_and_it_pickles() -> None:
     out, line = x.map(np.sqrt, output_type="float64"), here()
     compiled = compile_ir(s, out)
     err = _refused(
-        lambda: evaluate_ir(compiled, NumpyBackend(), {"x": X}, externals=external_evaluators(s, compiled)),
+        lambda: evaluate_ir(
+            compiled, NumpyBackend(), {"x": X}, externals=external_evaluators(s, compiled)
+        ),
         line,
     )
     clone = pickle.loads(pickle.dumps(err))
@@ -123,6 +135,8 @@ def test_evaluate_ir_raises_the_located_error_and_it_pickles() -> None:
 
 def test_numpy_records_and_checks_no_output_dtype() -> None:
     s, x = _x()
-    out = s.record_external("map", np.sqrt, [x], {"fn": "sqrt"}, form_params={"output_dtype": "float64"})
+    out = s.record_external(
+        "map", np.sqrt, [x], {"fn": "sqrt"}, form_params={"output_dtype": "float64"}
+    )
     assert s.form(out).describe() == "vector[object]"
     assert np.asarray(s.materialize(out)).dtype == np.float32

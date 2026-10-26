@@ -79,7 +79,9 @@ class BufferProjection:
     def offsets_only_for(self, source: str) -> frozenset[str]:
         """Columns needed only for their list structure (counts), never their values."""
         return frozenset(
-            c for c, need in self.read_buffers.get(source, {}).items() if need is BufferNeed.OFFSETS
+            c
+            for c, need in self.read_buffers.get(source, {}).items()
+            if need is BufferNeed.OFFSETS
         )
 
     def to_projection(self) -> Projection:
@@ -134,10 +136,13 @@ def read_columns(arrays: Sequence[Array], source_nid: int) -> tuple[str, ...] | 
 
         def reads_source(ins: list[object]) -> bool:
             return any(
-                isinstance(x, tuple) and len(x) == 2 and x[0] is sentinel and x[1] == source_nid for x in ins
+                isinstance(x, tuple) and len(x) == 2 and x[0] is sentinel and x[1] == source_nid
+                for x in ins
             )
 
-        def on_op(_nid: int, name: str, ins: list[object], params: Mapping[str, ParamValue]) -> object:
+        def on_op(
+            _nid: int, name: str, ins: list[object], params: Mapping[str, ParamValue]
+        ) -> object:
             nonlocal conservative
             if reads_source(ins):
                 if name == "field":
@@ -158,7 +163,9 @@ def read_columns(arrays: Sequence[Array], source_nid: int) -> tuple[str, ...] | 
             return None
 
         array.session.walk(array, source=on_source, op=on_op, external=on_external)
-        if conservative or not needed:  # whole-record consumption or a bare source read -> read all
+        if (
+            conservative or not needed
+        ):  # whole-record consumption or a bare source read -> read all
             return None
         return tuple(sorted(needed))
 

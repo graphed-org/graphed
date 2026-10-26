@@ -52,7 +52,10 @@ def _zero() -> float:
 
 def _plan(process: Any) -> Plan[Any]:
     return Plan(
-        process=process, combine=_add, empty=_zero, tasks=tuple(Task(i, p) for i, p in enumerate(_parts()))
+        process=process,
+        combine=_add,
+        empty=_zero,
+        tasks=tuple(Task(i, p) for i, p in enumerate(_parts())),
     )
 
 
@@ -70,12 +73,16 @@ def _dist(root: Path, name: str, version: str, *, named: bool = True) -> Path:
     info = root / f"{name}-{version}" / f"{name}-{version}.dist-info"
     info.mkdir(parents=True)
     header = f"Name: {name}\n" if named else ""
-    (info / "METADATA").write_text(f"Metadata-Version: 2.1\n{header}Version: {version}\n", encoding="utf-8")
+    (info / "METADATA").write_text(
+        f"Metadata-Version: 2.1\n{header}Version: {version}\n", encoding="utf-8"
+    )
     return info.parent
 
 
 def _files(root: Path) -> dict[str, bytes]:
-    return {str(p.relative_to(root)): p.read_bytes() for p in sorted(root.rglob("*")) if p.is_file()}
+    return {
+        str(p.relative_to(root)): p.read_bytes() for p in sorted(root.rglob("*")) if p.is_file()
+    }
 
 
 def test_key_bytes_are_never_loaded() -> None:
@@ -114,7 +121,9 @@ def _registry(order: Sequence[str]) -> Any:
     for n in sorted(made):
         Registry.register(made[n])
     registry = Registry()
-    registry.made = [made[n] for n in sorted(made)]  # the ABC registry holds its classes only weakly
+    registry.made = [
+        made[n] for n in sorted(made)
+    ]  # the ABC registry holds its classes only weakly
     return registry
 
 
@@ -142,7 +151,9 @@ def test_a_by_value_typevar_is_keyed_by_its_name_not_its_tracker_id(tmp_path: Pa
     assert _reused(make(_TYPEVAR("VB")), tmp_path) == 0
 
 
-def test_the_environment_record_in_process(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_the_environment_record_in_process(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     root, dists = tmp_path / "store", tmp_path / "dists"
     _filled(lambda p, r: 2.0, root)
     monkeypatch.syspath_prepend(str(_dist(dists, "zznameless", "1.0", named=False)))
@@ -174,7 +185,9 @@ def test_an_unkeyable_behavior_entry_is_named(monkeypatch: pytest.MonkeyPatch) -
 
     check_resumable(_plan(lambda p, r: 1.0))
     monkeypatch.setitem(ak.behavior, "m74x-lock", threading.Lock())
-    with pytest.raises(TypeError, match=r"cannot key ak\.behavior\['m74x-lock'\]: TypeError: .*lock"):
+    with pytest.raises(
+        TypeError, match=r"cannot key ak\.behavior\['m74x-lock'\]: TypeError: .*lock"
+    ):
         check_resumable(_plan(lambda p, r: 1.0))
 
 
@@ -230,7 +243,9 @@ def _staged(process: Any) -> DurablePlanV2:
     tasks = tuple(Task(i, Partition("src", "e", i, i + 1)) for i in range(2))
     return DurablePlanV2(
         ir=b"m74x",
-        stages=(StageSpec("map_write", process=OpSpec("ref", "m74x:stage", live=process), tasks=tasks),),
+        stages=(
+            StageSpec("map_write", process=OpSpec("ref", "m74x:stage", live=process), tasks=tasks),
+        ),
     )
 
 
@@ -305,7 +320,9 @@ def test_a_missing_cloudpickle_private_name_refuses_keys_only(tmp_path: Path, pa
         assert refusal.endswith(f"has no attribute {path.rpartition('.')[2]!r}")
 
 
-def test_a_missing_cloudpickle_private_name_is_refused_in_process(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_missing_cloudpickle_private_name_is_refused_in_process(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     import awkward as ak  # noqa: PLC0415
 
     monkeypatch.setitem(ak.behavior, "m74x-keyable", 1.0)
@@ -406,7 +423,10 @@ def _factory_key(elements: str) -> bytes:
 
 
 def test_set_elements_of_two_classes_from_one_factory_key_apart_from_one_class_twice() -> None:
-    assert _factory_key("K1(), K2()") not in {_factory_key("K2(), K2()"), _factory_key("K1(), K1()")}
+    assert _factory_key("K1(), K2()") not in {
+        _factory_key("K2(), K2()"),
+        _factory_key("K1(), K1()"),
+    }
 
 
 _MK = """
@@ -426,7 +446,9 @@ _MK_NESTED = _MK.replace(
 _TEXT = f"import io\nF = io.StringIO()\nF.write(open({__file__!r}).read())\nF.seek(0)\nF.name = {__file__!r}"
 _SLOTTED = "class C:\n    __slots__ = ('a', '__dict__')\nO = C()\nO.a = 1\nO.__dict__['a'] = "
 _INC = "C = 0\ndef INC():\n    global C\n    C += 1\n"
-_ANNOTATED = "K = type('K', (), {'__annotations__': {'x': %s}, '__annotations_cache__': {'x': int}})"
+_ANNOTATED = (
+    "K = type('K', (), {'__annotations__': {'x': %s}, '__annotations_cache__': {'x': int}})"
+)
 
 #: how class K's annotated field x gets its type
 _HINTED = {
@@ -438,7 +460,11 @@ _HINTED = {
 #: pairs of processes that compute differently: (source A, source B, process body)
 _APART = {
     "slot-shadowed-entry": (_SLOTTED + "5", _SLOTTED + "6", "return float(vars(O)['a'])"),
-    "memoryview-and-bytes": ("X = memoryview(b'abc')", "X = b'abc'", "return float(type(X) is bytes)"),
+    "memoryview-and-bytes": (
+        "X = memoryview(b'abc')",
+        "X = b'abc'",
+        "return float(type(X) is bytes)",
+    ),
     "file-and-stringio": (f"F = open({__file__!r})", _TEXT, "return float(hasattr(F, 'buffer'))"),
     "first-read-annotations": (
         "class K:\n    pass\nK.__annotations__",
@@ -486,7 +512,8 @@ _APART = {
     ),
     "globals-shared-with-a-rebinder": (
         _INC + "def GET():\n    return C",
-        _INC + "ns = {'__name__': 'm74copy', 'C': 0}\nexec('def GET():\\n    return C', ns)\nGET = ns['GET']",
+        _INC
+        + "ns = {'__name__': 'm74copy', 'C': 0}\nexec('def GET():\\n    return C', ns)\nGET = ns['GET']",
         "INC()\n    return float(GET())",
     ),
 }
@@ -496,7 +523,10 @@ def _keyed_run(source: str, body: str) -> tuple[bytes, float]:
     namespace: dict[str, Any] = {"__name__": "m74copy"}
     # dont_inherit: this module's future import would turn the sources' annotations into strings
     exec(
-        compile(f"{source}\ndef process(p, r):\n    {body}\n", "<pair>", "exec", dont_inherit=True), namespace
+        compile(
+            f"{source}\ndef process(p, r):\n    {body}\n", "<pair>", "exec", dont_inherit=True
+        ),
+        namespace,
     )
     key = rs._key_digest(namespace["process"])
     value: float = namespace["process"](None, None)

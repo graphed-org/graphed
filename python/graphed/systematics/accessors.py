@@ -43,7 +43,9 @@ def _variation_axis_index(hist: Any) -> int | None:
     `TypeError`, so the frontend (and the fixtures) stamp the name that way. `hist.axes.name` is NOT
     the oracle: bh maps that attribute over every axis and raises when one lacks it.
     """
-    return next((i for i, a in enumerate(hist.axes) if a.__dict__.get("name") == "variation"), None)
+    return next(
+        (i for i, a in enumerate(hist.axes) if a.__dict__.get("name") == "variation"), None
+    )
 
 
 def labels(x: Introspectable) -> tuple[str, ...]:
@@ -89,7 +91,9 @@ def universe(x: Introspectable, label: str) -> Any:
             # bh.loc did, so the unknown-label path still needs no guard of our own.
             return x[{index: x.axes[index].index(label)}]
         if label != "nominal":
-            raise KeyError(f"unknown variation label {label!r}; this histogram carries ['nominal']")
+            raise KeyError(
+                f"unknown variation label {label!r}; this histogram carries ['nominal']"
+            )
         return x
     raise GraphedError(f"graphed.universe does not know how to read {type(x).__name__}")
 
@@ -177,9 +181,12 @@ def variations(ctx: Any) -> dict[str, dict[str, tuple[Kind, Fraction | None]]]:
     for collection in ctx._collections.values():
         for name, tags in getattr(collection, "_tags", {}).items():
             for tag in tags:
-                kinds.setdefault(name, {})[tag] = kinds.get(name, {}).get(tag, Kind(0)) | Kind.SHIFT
+                kinds.setdefault(name, {})[tag] = (
+                    kinds.get(name, {}).get(tag, Kind(0)) | Kind.SHIFT
+                )
     return {
-        name: {tag: (kind, numeric_value(tag)) for tag, kind in tags.items()} for name, tags in kinds.items()
+        name: {tag: (kind, numeric_value(tag)) for tag, kind in tags.items()}
+        for name, tags in kinds.items()
     }
 
 
@@ -220,7 +227,9 @@ def reindex_to(value: Array | Varied, ctx: Any) -> Any:
     if handle is None or handle is ctx:
         return value
     if ctx is None:
-        raise GraphedError(f"cannot re-index a value read through {handle!r} to a context-free target")
+        raise GraphedError(
+            f"cannot re-index a value read through {handle!r} to a context-free target"
+        )
     if not handle._is_ancestor_of(ctx):
         above = _row_space_above(handle, ctx)
         if above is not None:

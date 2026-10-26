@@ -118,7 +118,9 @@ def capture() -> Provenance:
     if not _enabled:
         return _DISABLED
     frame: FrameType | None = sys._getframe(1)  # capture()'s caller; its own frame is graphed*
-    skip = _SKIP  # one read of the rebound global, so a concurrent registration cannot split a walk
+    skip = (
+        _SKIP  # one read of the rebound global, so a concurrent registration cannot split a walk
+    )
     first: FrameType | None = None
     while frame is not None:
         # the trailing dot is what makes a registered prefix match whole dotted COMPONENTS; it

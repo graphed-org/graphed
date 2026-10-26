@@ -41,7 +41,14 @@ from .projection import read_columns
 from .services import Bindable, Resolvable, ServiceSpec, bind_externals, referenced_services
 from .session import Session
 from .varied import refuse_container
-from .write import PartitionedSource, PartWrite, declared_columns, join_part, prepare_part, sources_read
+from .write import (
+    PartitionedSource,
+    PartWrite,
+    declared_columns,
+    join_part,
+    prepare_part,
+    sources_read,
+)
 
 T = TypeVar("T")
 V = TypeVar("V")
@@ -138,7 +145,9 @@ class _PartitionReduce(Generic[V]):
 
     checkpointable: ClassVar[bool] = True
     checkpoint_ignore: ClassVar[tuple[str, ...]] = ("frames", "variation_labels")
-    checkpoint_resolve: ClassVar[Mapping[str, Callable[[Any], Any]]] = {"backend_factory": resolve_backend}
+    checkpoint_resolve: ClassVar[Mapping[str, Callable[[Any], Any]]] = {
+        "backend_factory": resolve_backend
+    }
 
     ir: bytes
     source_name: str
@@ -178,7 +187,8 @@ class _PartitionReduce(Generic[V]):
                 on_failure=self._attribute(str(partition)),
             )
             return _adopted(
-                self.backend_factory, self.reduce(self._write(values, partition) if self.writes else values)
+                self.backend_factory,
+                self.reduce(self._write(values, partition) if self.writes else values),
             )
         import cloudpickle  # noqa: PLC0415  (only a capturing plan needs it)
 
@@ -186,17 +196,25 @@ class _PartitionReduce(Generic[V]):
 
         store = self._task_store()
         cid, label, codec = self._capture_id(partition), str(partition), PickleCodec()
-        capturable = getattr(resolve_backend(self.backend_factory), "capturable", lambda chunk: chunk)
+        capturable = getattr(
+            resolve_backend(self.backend_factory), "capturable", lambda chunk: chunk
+        )
         # the input is kept before evaluating, so a failing task's input survives it
         blob = store.put(cloudpickle.dumps(capturable(chunk), protocol=codec.PROTOCOL))
         store.record_done(f"{cid}:input", label, blob, stage="replay-input")
         result = _adopted(self.backend_factory, self.reduce(self._evaluate(chunk, partition)))
-        store.record_done(f"{cid}:output", label, store.put(codec.encode(result)), stage="replay-output")
+        store.record_done(
+            f"{cid}:output", label, store.put(codec.encode(result)), stage="replay-output"
+        )
         return result
 
     def bind_services(self, endpoints: Mapping[str, str]) -> _PartitionReduce[V]:
         """A copy whose External evaluators and ``reduce`` carry ``endpoints`` where they take them."""
-        reduce = self.reduce.bind_services(endpoints) if isinstance(self.reduce, Bindable) else self.reduce
+        reduce = (
+            self.reduce.bind_services(endpoints)
+            if isinstance(self.reduce, Bindable)
+            else self.reduce
+        )
         return replace(self, externals=bind_externals(self.externals, endpoints), reduce=reduce)
 
     def resolve_services(self, value: V) -> V:
@@ -208,13 +226,21 @@ class _PartitionReduce(Generic[V]):
 
     def part_paths(self, partition: Partition) -> list[str]:
         """Where this partition's parts land, without reading."""
-        return [join_part(destination, name(partition)) for _, destination, name, *_ in self.writes]
+        return [
+            join_part(destination, name(partition)) for _, destination, name, *_ in self.writes
+        ]
 
     def _write(self, values: list[object], partition: Partition) -> list[object]:
         paths = self.part_paths(partition)
-        for (codec, _, _, slot, kv, *storage_options), path in zip(self.writes, paths, strict=True):
+        for (codec, _, _, slot, kv, *storage_options), path in zip(
+            self.writes, paths, strict=True
+        ):
             prepare_part(path, **dict(*storage_options))
-            meta = None if kv is None else {k: v if isinstance(v, str) else str(values[v]) for k, v in kv}
+            meta = (
+                None
+                if kv is None
+                else {k: v if isinstance(v, str) else str(values[v]) for k, v in kv}
+            )
             codec(values[slot], path, meta)
         return [*values[: self.n_values], *paths]
 
@@ -233,14 +259,16 @@ class _PartitionReduce(Generic[V]):
         return _sha256_hex(b"graphed-replay-capture-v1", self.ir, _partition_bytes(partition))
 
     def _task_store(self) -> Any:
-        from graphed.checkpoint.resume import task_store  # noqa: PLC0415  (only a capturing plan needs it)
+        # only a capturing plan needs it
+        from graphed.checkpoint.resume import task_store  # noqa: PLC0415
 
         assert self.store is not None
         return task_store(self.store, self.storage_options)
 
     def _open_store(self, node: str | None = None) -> Any:
         """The capture root as a checkpoint store, as every task and replay opens it."""
-        from graphed.checkpoint.resume import open_store  # noqa: PLC0415  (only a capturing plan needs it)
+        # only a capturing plan needs it
+        from graphed.checkpoint.resume import open_store  # noqa: PLC0415
 
         assert self.store is not None
         return open_store(self.store, node, dict(self.storage_options))
@@ -265,7 +293,9 @@ def attribute_failures(
         return None
     from .debug.errors import SourceFrame, StageError  # noqa: PLC0415  (import cycle)
 
-    def attribute(key: Key, op: str, ins: list[object], exc: BaseException) -> BaseException | None:
+    def attribute(
+        key: Key, op: str, ins: list[object], exc: BaseException
+    ) -> BaseException | None:
         # §8.2(ii): "a `GraphedError` re-raises untouched on EVERY arm regardless of entry — it
         # is already an attributed error, and §6.1d's blame parity (the plan path re-raises the
         # guard's message verbatim) binds it". A declared-type check fails only here, in the
@@ -306,7 +336,9 @@ def _slot_of(compiled: CompiledGraph) -> Callable[[Array], int]:
     return lambda array: order[compiled.correspondence.node_map[array.node_id][0]]
 
 
-def external_evaluators(session: Session, compiled: CompiledGraph) -> dict[str, Callable[..., object]]:
+def external_evaluators(
+    session: Session, compiled: CompiledGraph
+) -> dict[str, Callable[..., object]]:
     """Every External surviving in the compiled IR, keyed by :func:`external_key`, resolved to the
     evaluator the recording session holds for it.
 
@@ -411,7 +443,9 @@ def aggregate_plan(
             "all outputs of one plan must record into one session; collate one plan per Session"
             " (graphed.collate)"
         )
-    partitioned = {nid: d for nid, d in sources_read(arrays).items() if isinstance(d, PartitionedSource)}
+    partitioned = {
+        nid: d for nid, d in sources_read(arrays).items() if isinstance(d, PartitionedSource)
+    }
     if len(partitioned) != 1:
         raise TypeError(
             f"aggregate_plan needs exactly one partitioned source; the outputs read {len(partitioned)}"
@@ -447,7 +481,9 @@ def aggregate_plan(
                 slot(w.array),
                 None
                 if w.metadata is None
-                else tuple((k, slot(v) if isinstance(v, Array) else str(v)) for k, v in w.metadata.items()),
+                else tuple(
+                    (k, slot(v) if isinstance(v, Array) else str(v)) for k, v in w.metadata.items()
+                ),
                 *((tuple(w.storage_options.items()),) if w.storage_options else ()),
             )
             for w in writes
@@ -462,8 +498,12 @@ def aggregate_plan(
     _refuse_shared_parts((process, t.partition) for t in tasks)
     return Plan(
         process=process,
-        combine=by_value(combine) if not isinstance(backend, str) else _Adopting(by_value(combine), backend),
-        empty=by_value(empty) if not isinstance(backend, str) else _Adopting(by_value(empty), backend),
+        combine=by_value(combine)
+        if not isinstance(backend, str)
+        else _Adopting(by_value(combine), backend),
+        empty=by_value(empty)
+        if not isinstance(backend, str)
+        else _Adopting(by_value(empty), backend),
         tasks=tasks,
         services=plan_services(session, compiled, services),
     )
@@ -507,7 +547,9 @@ class _Collated:
         return {name: self.processes[name](partition, resources)}
 
     def part_paths(self, partition: Partition) -> Sequence[str]:
-        return _written_parts(self.processes[self.route[(partition.uri, partition.tree)]], partition)
+        return _written_parts(
+            self.processes[self.route[(partition.uri, partition.tree)]], partition
+        )
 
     def bind_services(self, endpoints: Mapping[str, str]) -> _Collated:
         return replace(self, processes=dict(bind_externals(self.processes.items(), endpoints)))
@@ -531,7 +573,9 @@ class _CollatedCombine:
 
     def __call__(self, a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
         merged = {**a, **{n: self.combines[n](a[n], v) if n in a else v for n, v in b.items()}}
-        return {n: merged[n] for n in self.combines if n in merged}  # mapping order, whatever the tree
+        return {
+            n: merged[n] for n in self.combines if n in merged
+        }  # mapping order, whatever the tree
 
 
 def collate(plans: Mapping[str, Plan[Any]]) -> Plan[dict[str, Any]]:
@@ -553,12 +597,16 @@ def collate(plans: Mapping[str, Plan[Any]]) -> Plan[dict[str, Any]]:
     for name, plan in plans.items():
         for spec in plan.services:
             if services.setdefault(spec.name, spec) != spec:
-                raise ValueError(f"plan {name!r} declares service {spec.name!r} unlike another plan does")
+                raise ValueError(
+                    f"plan {name!r} declares service {spec.name!r} unlike another plan does"
+                )
     route: dict[tuple[str, str], str] = {}
     tasks: list[Task] = []
     for name, plan in plans.items():
         if plan.next_tasks is not None or plan.stop is not None:
-            raise TypeError(f"collate needs plans with fixed tasks; {name!r} is adaptive or stoppable")
+            raise TypeError(
+                f"collate needs plans with fixed tasks; {name!r} is adaptive or stoppable"
+            )
         for task in sorted(plan.tasks, key=lambda t: t.key):
             key = (task.partition.uri, task.partition.tree)
             owner = route.setdefault(key, name)

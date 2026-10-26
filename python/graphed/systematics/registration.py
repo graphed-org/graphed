@@ -181,7 +181,9 @@ def _vary_loose(
     # §4.6: registration resolves by the label's OWN point, so a supplied `Varied` contributes the
     # inner universe the point names instead of being flattened to its central one. A machine-minted
     # joint is already that inner cross node, so `member_of` on it is the identity.
-    resolved = {label: member_of(member, label) for label, member in {**one_at_a_time, **joints}.items()}
+    resolved = {
+        label: member_of(member, label) for label, member in {**one_at_a_time, **joints}.items()
+    }
     # BEFORE the row-space maps: a colliding label shadows its existing member in the merged
     # dict, so `check_members` never sees that member's handle and `_align` would work from a
     # handle the container does not really have.
@@ -270,7 +272,9 @@ def gather_members(
         _mint_defaults(name, tuple(canonical), session, {})
         return one_at_a_time, {}
 
-    joints, joint_points, additive = _fanout(name, canonical, carriers, composed, points_list, max_universes)
+    joints, joint_points, additive = _fanout(
+        name, canonical, carriers, composed, points_list, max_universes
+    )
     _mint_defaults(name, tuple(canonical), session, additive)
     if joint_points:
         _check_unique(joint_points, session._points, session._points_by_point)
@@ -278,14 +282,18 @@ def gather_members(
     return one_at_a_time, joints
 
 
-def _mint_defaults(name: str, tags: tuple[str, ...], session: Any, overrides: Mapping[str, Point]) -> None:
+def _mint_defaults(
+    name: str, tags: tuple[str, ...], session: Any, overrides: Mapping[str, Point]
+) -> None:
     """§4.4: give every one-at-a-time label its default point `{name: tag}` and register it.
 
     §3.4: a tag whose one-at-a-time label an additive `points=` entry RE-POINTS is SKIPPED here and
     minted from `overrides` instead — else `_check_unique` would reject two points (the default
     `{name: tag}` and the foreign-only override) for the one label.
     """
-    minted = {f"{name}_{tag}": default(name, tag) for tag in tags if f"{name}_{tag}" not in overrides}
+    minted = {
+        f"{name}_{tag}": default(name, tag) for tag in tags if f"{name}_{tag}" not in overrides
+    }
     minted.update(overrides)
     _check_unique(minted, session._points, session._points_by_point)
     _bind_points(session, minted)
@@ -339,7 +347,9 @@ def _foreign(
         if name in nuisances:
             continue
         if nuisances & composed:
-            assert ambient is not None  # the weight form always carries the ambient (context._carriers)
+            assert (
+                ambient is not None
+            )  # the weight form always carries the ambient (context._carriers)
             if _reads_ambient(ambient, member._members[label], label):
                 continue
         if carrier_nuisances and not nuisances <= carrier_nuisances:
@@ -355,7 +365,9 @@ def _reads_ambient(ambient: AmbientCarrier, member: Any, label: str) -> bool:
     two-level, point-restricted read) over every factor of the context's lineage, so a joint label
     and a mask-derived context resolve exactly as the ambient does."""
     targets = ambient.resolve(label)
-    return bool(targets) and any(targets & cone(ambient.session, nid) for nid in _member_nodes(member))
+    return bool(targets) and any(
+        targets & cone(ambient.session, nid) for nid in _member_nodes(member)
+    )
 
 
 def _member_nodes(value: Any) -> tuple[int, ...]:
@@ -427,7 +439,8 @@ def _fanout(
     carrier_nuisances = _carrier_nuisances(carriers)
     ambient = next((c for c in carriers if isinstance(c, AmbientCarrier)), None)
     foreign_by_tag = {
-        tag: _foreign(name, member, carrier_nuisances, composed, ambient) for tag, member in canonical.items()
+        tag: _foreign(name, member, carrier_nuisances, composed, ambient)
+        for tag, member in canonical.items()
     }
     joints: dict[str, Any] = {}
     joint_points: dict[str, Point] = {}
@@ -437,7 +450,9 @@ def _fanout(
             joints[joint_label] = member._members[fl]
             joint_points[joint_label] = Point({**dict(default(name, tag)), **dict(fp)})
     if points:  # an explicit selection is the analyst's own enumeration — never guarded (§4)
-        kept, additive = _route(name, tuple(canonical), points, joint_points, foreign_by_tag, carriers)
+        kept, additive = _route(
+            name, tuple(canonical), points, joint_points, foreign_by_tag, carriers
+        )
         return (
             {label: joints[label] for label in kept},
             {label: joint_points[label] for label in kept},
@@ -681,7 +696,9 @@ def check_members(labelled: Mapping[str, Any]) -> Any:
                     f"variation {label}: its form {session.form(array)} is incompatible with the "
                     f"central universe's {reference}"
                 )
-    return accessors.unify_contexts(*(accessors.context_of(member) for member in labelled.values()))
+    return accessors.unify_contexts(
+        *(accessors.context_of(member) for member in labelled.values())
+    )
 
 
 def _flatten(member: object) -> list[Array]:
@@ -689,7 +706,9 @@ def _flatten(member: object) -> list[Array]:
         return [array for item in member._members.values() for array in _flatten(item)]
     if isinstance(member, Array):
         return [member]
-    raise GraphedError(f"a variation member must be an Array or a Varied, got {type(member).__name__}")
+    raise GraphedError(
+        f"a variation member must be an Array or a Varied, got {type(member).__name__}"
+    )
 
 
 def _compatible(session: Any, reference: Any, form: Any) -> bool:

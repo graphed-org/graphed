@@ -23,7 +23,16 @@ from collections import OrderedDict
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar, cast, overload, runtime_checkable
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Generic,
+    Protocol,
+    TypeVar,
+    cast,
+    overload,
+    runtime_checkable,
+)
 
 from ..services import require_bound
 
@@ -219,7 +228,9 @@ class Plan(Generic[R]):
     combine: Callable[[R, R], R]  # associative (and commutative) reducer
     empty: Callable[[], R]  # identity, for zero partitions / an empty fold
     tasks: Sequence[Task] = ()  # a fixed partition set -> a deterministic reduction tree
-    next_tasks: Callable[[ExecContext], Iterable[Task] | None] | None = None  # adaptive hook (DONE=None)
+    next_tasks: Callable[[ExecContext], Iterable[Task] | None] | None = (
+        None  # adaptive hook (DONE=None)
+    )
     stop: StopCondition | None = None
     open_once: bool = False
     # a plain default, not a factory: a Plan pickled before this field existed still loads
@@ -433,7 +444,9 @@ class RunControl:
     def apply(self, cmd: str) -> None:
         """Run the named command (the dashboard's wire form)."""
         if cmd not in _COMMANDS:
-            raise ValueError(f"unknown run-control command {cmd!r} (expected pause, resume or cancel)")
+            raise ValueError(
+                f"unknown run-control command {cmd!r} (expected pause, resume or cancel)"
+            )
         getattr(self, cmd)()
 
     def wait(self, timeout: float | None = None) -> RunState:
@@ -556,7 +569,9 @@ class SequentialRunner:
             n = 0
             stopped: StopReason | None = None
             if control is not None and control.state is RunState.CANCELLED:
-                return ExecResult(value=value, n_partitions=0, n_combines=0, stopped=StopReason.CANCELLED)
+                return ExecResult(
+                    value=value, n_partitions=0, n_combines=0, stopped=StopReason.CANCELLED
+                )
             ordered = sorted(plan.tasks, key=lambda t: t.key)
             if monitor is not None:
                 for task in ordered:
@@ -572,13 +587,17 @@ class SequentialRunner:
                 except Exception as exc:
                     if monitor is not None:
                         error = f"{type(exc).__name__}: {exc}"
-                        emit_task(monitor, self._event(TaskPhase.ERRORED, task, error=error, lean=lean))
+                        emit_task(
+                            monitor, self._event(TaskPhase.ERRORED, task, error=error, lean=lean)
+                        )
                     raise
                 value = plan.combine(value, partial)
                 if monitor is not None:
                     emit_task(monitor, self._event(TaskPhase.FINISHED, task, lean=lean))
                 n += 1
-            return ExecResult(value=value, n_partitions=n, n_combines=max(0, n - 1), stopped=stopped)
+            return ExecResult(
+                value=value, n_partitions=n, n_combines=max(0, n - 1), stopped=stopped
+            )
         finally:
             resources.close()  # release file handles deterministically at end of run
             if control is not None and control.state is RunState.CANCELLED:
@@ -593,7 +612,10 @@ class SequentialRunner:
             for stage in plan.stages:
                 if control is not None and control.wait() is RunState.CANCELLED:
                     return ExecResult(
-                        value=None, n_partitions=ran[0], n_combines=ran[1], stopped=StopReason.CANCELLED
+                        value=None,
+                        n_partitions=ran[0],
+                        n_combines=ran[1],
+                        stopped=StopReason.CANCELLED,
                     )
                 process = stage.process.resolve()
                 upstream = tuple(p for dep in stage.inputs for p in payloads[dep])
@@ -602,14 +624,18 @@ class SequentialRunner:
                     out.append(process(task, upstream, resources))
                     ran[bool(stage.inputs)] += 1
                 payloads.append(out)
-            return ExecResult(value=plan.value(payloads[-1]), n_partitions=ran[0], n_combines=ran[1])
+            return ExecResult(
+                value=plan.value(payloads[-1]), n_partitions=ran[0], n_combines=ran[1]
+            )
         finally:
             resources.close()
             if control is not None and control.state is RunState.CANCELLED:
                 control.reset()  # a cancel ends this run only, whether or not a check saw it
 
     @staticmethod
-    def _event(phase: TaskPhase, task: Task, *, error: str | None = None, lean: bool = False) -> TaskEvent:
+    def _event(
+        phase: TaskPhase, task: Task, *, error: str | None = None, lean: bool = False
+    ) -> TaskEvent:
         return TaskEvent(
             phase=phase,
             key=task.key,

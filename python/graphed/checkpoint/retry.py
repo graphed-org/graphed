@@ -122,7 +122,9 @@ class RetrySmallerChunk:
         combine: Combine,
         resources: Any,
     ) -> Any:
-        return self._process_split(partition, error, process=process, combine=combine, resources=resources)
+        return self._process_split(
+            partition, error, process=process, combine=combine, resources=resources
+        )
 
     def _process_split(
         self,
@@ -143,7 +145,9 @@ class RetrySmallerChunk:
                 partials.append(process(sub, resources))
             except Exception as exc:
                 partials.append(
-                    self._process_split(sub, exc, process=process, combine=combine, resources=resources)
+                    self._process_split(
+                        sub, exc, process=process, combine=combine, resources=resources
+                    )
                 )
         return reduce(combine, partials)
 

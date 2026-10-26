@@ -13,7 +13,14 @@ correctionlib ship as plugins and double as templates for users' own Externals.
 
 from __future__ import annotations
 
-from .bundle import Bundle, attach_run_report, build_bundle, capture_environment, inspect, reproduce
+from .bundle import (
+    Bundle,
+    attach_run_report,
+    build_bundle,
+    capture_environment,
+    inspect,
+    reproduce,
+)
 from .errors import PreserveError, UnresolvedPayload
 from .externals import (
     CORRECTIONLIB_PLUGIN,

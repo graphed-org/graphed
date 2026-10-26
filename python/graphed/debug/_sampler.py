@@ -71,7 +71,9 @@ class StackSampler:
 
     def __init__(self, interval: float = 0.01) -> None:
         self._interval = interval
-        self._tid: int = -1  # the task thread's id; set on start(). -1 is no thread -> .get() misses.
+        self._tid: int = (
+            -1
+        )  # the task thread's id; set on start(). -1 is no thread -> .get() misses.
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
@@ -80,13 +82,17 @@ class StackSampler:
     def start(self) -> None:
         self._tid = threading.get_ident()  # the worker's task thread (the caller)
         self._stop.clear()
-        self._thread = threading.Thread(target=self._run, name="graphed-profile-sampler", daemon=True)
+        self._thread = threading.Thread(
+            target=self._run, name="graphed-profile-sampler", daemon=True
+        )
         self._thread.start()
 
     def _run(self) -> None:
         tid = self._tid
         while not self._stop.is_set():
-            frame = sys._current_frames().get(tid)  # the task thread's CURRENT stack; we don't own it
+            frame = sys._current_frames().get(
+                tid
+            )  # the task thread's CURRENT stack; we don't own it
             if frame is not None:
                 with self._lock:
                     _fold(frame, self._tree)

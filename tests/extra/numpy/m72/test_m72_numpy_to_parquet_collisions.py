@@ -33,7 +33,9 @@ def test_collated_numpy_to_parquet_plans_into_one_destination_are_refused(tmp_pa
     assert not out.exists()
 
 
-def test_collated_numpy_to_parquet_plans_into_distinct_destinations_write_each(tmp_path: Path) -> None:
+def test_collated_numpy_to_parquet_plans_into_distinct_destinations_write_each(
+    tmp_path: Path,
+) -> None:
     a = _write_plan(tmp_path / "a.parquet", [1.0, 2.0], tmp_path / "out-a")
     b = _write_plan(tmp_path / "b.parquet", [10.0, 20.0, 30.0], tmp_path / "out-b")
     value = SequentialRunner().run(graphed.collate({"a": a, "b": b})).value

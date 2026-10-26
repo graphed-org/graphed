@@ -18,7 +18,12 @@ def test_direct_replay_reduces_what_the_run_reduces(opt_level: int) -> None:
     _s, events = fx.record()
     outputs = fx.merged_pair(events)
     plan = aggregate_plan(
-        *outputs, reduce=fx.sums, combine=fx.add, empty=fx.zero, steps_per_file=2, opt_level=opt_level
+        *outputs,
+        reduce=fx.sums,
+        combine=fx.add,
+        empty=fx.zero,
+        steps_per_file=2,
+        opt_level=opt_level,
     )
     assert isinstance(plan.process, _PartitionReduce)
     task = plan.tasks[0]

@@ -55,7 +55,9 @@ def token_json_codec(value: object, path: str, kv: Mapping[str, str] | None) -> 
 
 
 def test_storage_options_reach_the_part_directory(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setitem(importlib.import_module("fsspec.registry")._registry, "tokmem", TokenMemory)
+    monkeypatch.setitem(
+        importlib.import_module("fsspec.registry")._registry, "tokmem", TokenMemory
+    )
     top = f"m73-{uuid.uuid4().hex}"
     x = Session(NumpyBackend()).source(
         "x", form=NumpyForm(np.dtype("float64"), shape=(None,)), data=FileSource()

@@ -53,7 +53,9 @@ def eval_pytorch(model: Any, params: Mapping[str, Any], inputs: list[Any]) -> An
     dtype = next((p.dtype for p in model.parameters()), None)
 
     def tensor(matrix: Any) -> Any:
-        return torch.from_numpy(matrix).to(dtype) if dtype is not None else torch.from_numpy(matrix)
+        return (
+            torch.from_numpy(matrix).to(dtype) if dtype is not None else torch.from_numpy(matrix)
+        )
 
     with torch.no_grad():
         if template is None:  # legacy: one stacked feature matrix

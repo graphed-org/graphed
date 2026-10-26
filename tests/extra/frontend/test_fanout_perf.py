@@ -50,7 +50,9 @@ def test_registry_accumulation_is_not_quadratic() -> None:
     was = provenance.is_enabled()
     provenance.set_enabled(False)
     try:
-        small = max(_time_build(100), 1e-4)  # floor: avoid divide-by-noise on a sub-millisecond build
+        small = max(
+            _time_build(100), 1e-4
+        )  # floor: avoid divide-by-noise on a sub-millisecond build
         large = _time_build(800)
     finally:
         provenance.set_enabled(was)
@@ -72,7 +74,9 @@ def test_source_ids_memoizes_the_shared_prefix() -> None:
     pt = from_record(session, "ev", pt=VEC)["pt"]
     for _ in range(200):  # a deep shared prefix all three universes (nominal/up/down) read through
         pt = pt * 1.0001
-    graphed.vary(pt, "sys", up=pt * 1.1, down=pt * 0.9)  # loose form -> check_members -> _source_ids
+    graphed.vary(
+        pt, "sys", up=pt * 1.1, down=pt * 0.9
+    )  # loose form -> check_members -> _source_ids
     cache = session._source_ids_cache
     assert cache, "the _source_ids memo is empty after a multi-universe vary over a deep prefix"
     # the whole deep prefix is memoized (one entry per reachable node), not re-walked per member

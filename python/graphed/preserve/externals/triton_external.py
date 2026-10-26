@@ -36,7 +36,9 @@ def triton_content_hash(payload: bytes) -> str:
 
 def _check_triton_params(params: Mapping[str, Any]) -> None:
     if ("url" in params) == ("service" in params):
-        raise PreserveError("a Triton node names exactly one of params['url'] or params['service']")
+        raise PreserveError(
+            "a Triton node names exactly one of params['url'] or params['service']"
+        )
 
 
 def triton_http_transport(params: Mapping[str, Any]) -> Any:

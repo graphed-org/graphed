@@ -52,7 +52,11 @@ class CheckedExternal:
         return value
 
     def bind_services(self, endpoints: Mapping[str, str]) -> CheckedExternal:
-        return replace(self, fn=self.fn.bind_services(endpoints)) if isinstance(self.fn, Bindable) else self
+        return (
+            replace(self, fn=self.fn.bind_services(endpoints))
+            if isinstance(self.fn, Bindable)
+            else self
+        )
 
     def __getattr__(self, name: str) -> Any:
         # the wrapped evaluator's own attributes (a plugin evaluator's `endpoint`) read through;
@@ -69,7 +73,9 @@ class Session:
         self._forms: dict[int, Form] = {}
         self._sources: dict[int, object] = {}
         self._source_names: dict[int, str] = {}
-        self._slots: dict[str, tuple[object, object]] = {}  # source name -> (form description, data)
+        self._slots: dict[
+            str, tuple[object, object]
+        ] = {}  # source name -> (form description, data)
         self._ops: dict[int, tuple[str, dict[str, ParamValue], list[int]]] = {}
         self._externals: dict[int, tuple[Callable[[object], object], list[int]]] = {}
         self._services: dict[str, ServiceSpec] = {}
@@ -184,7 +190,9 @@ class Session:
             if name is not None:
                 self._fn_taken.add(name)
                 return name
-            if type(fn) is types.MethodType:  # not isinstance: `__class__` is the callable's to claim
+            if (
+                type(fn) is types.MethodType
+            ):  # not isinstance: `__class__` is the callable's to claim
                 key: object = (id(fn.__self__), id(fn.__func__))
             else:
                 key = id(fn)
@@ -291,7 +299,9 @@ class Session:
         spec = self._services.get(name)
         if spec is None:
             declared = ", ".join(sorted(self._services)) or "none"
-            raise ValueError(f"service {name!r} is not declared on this Session (declared: {declared})")
+            raise ValueError(
+                f"service {name!r} is not declared on this Session (declared: {declared})"
+            )
         return spec
 
     def reduction_state(self) -> dict[str, int] | None:
@@ -343,7 +353,9 @@ class Session:
                 f"source {name!r} is already a slot of another form in this Session; name this one"
             )
         if held[1] is not data:
-            raise ValueError(f"source {name!r} is already bound to other data in this Session; name this one")
+            raise ValueError(
+                f"source {name!r} is already bound to other data in this Session; name this one"
+            )
         node_id = self._store.add_source(name, dict(params))
         self._forms.setdefault(node_id, form)
         self._sources.setdefault(node_id, data)
@@ -459,7 +471,9 @@ class Session:
         spec = output_type
         if spec is not None:
             if "output_type" in params_d:
-                raise GraphedTypeError(op, prov, "output_type= collides with an 'output_type' param")
+                raise GraphedTypeError(
+                    op, prov, "output_type= collides with an 'output_type' param"
+                )
             if form is not None:
                 raise GraphedTypeError(op, prov, "output_type= and form= are exclusive")
             canonical = getattr(self._backend, "canonical_output_type", None)
@@ -472,14 +486,18 @@ class Session:
         if descriptor is None:
             descriptor = self._backend.external_payload(op, params_d)
             if descriptor is None:
-                raise GraphedTypeError(op, prov, "backend returned no payload descriptor for external op")
+                raise GraphedTypeError(
+                    op, prov, "backend returned no payload descriptor for external op"
+                )
         if form is None:
             in_forms = [self._forms[a.node_id] for a in inputs]
             try:
                 form = self._backend.op_form(op, in_forms, {**form_view, **(form_params or {})})
             except GraphedTypeError:
                 raise
-            except Exception as exc:  # backend type/shape error -> user-located error (as record_op)
+            except (
+                Exception
+            ) as exc:  # backend type/shape error -> user-located error (as record_op)
                 raise GraphedTypeError(op, prov, str(exc)) from exc
         # the declaration op_form honoured (or, beside form=, a leaf dtype) is checked on every value
         check = getattr(self._backend, "check_output_type", None)
@@ -499,10 +517,14 @@ class Session:
             node = f"{op} node {node_id} ({params_d.get('fn', descriptor.kind)!r})"
             fn = CheckedExternal(fn, declared[0], declared[1], check, op, prov, node)
         prior = self._externals.get(node_id)
-        if prior is not None and isinstance(prior[0], CheckedExternal) != isinstance(fn, CheckedExternal):
+        if prior is not None and isinstance(prior[0], CheckedExternal) != isinstance(
+            fn, CheckedExternal
+        ):
             # an 'output_type' param and output_type= store the same params, so one node would drop the check
             raise GraphedTypeError(
-                op, prov, "this External is already recorded with its type declared on one call only"
+                op,
+                prov,
+                "this External is already recorded with its type declared on one call only",
             )
         self._forms.setdefault(node_id, form)
         self._externals.setdefault(node_id, (fn, ids))
@@ -617,7 +639,9 @@ def _projected_reads(session: Session, arrays: Sequence[Array]) -> dict[int, obj
             if len(partitions) == 1:
                 reads[nid] = data.read_partition(partitions[0], columns, resources)
             elif concat is not None:
-                reads[nid] = concat([data.read_partition(p, columns, resources) for p in partitions])
+                reads[nid] = concat(
+                    [data.read_partition(p, columns, resources) for p in partitions]
+                )
     finally:
         resources.close()
     return reads

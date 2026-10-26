@@ -28,7 +28,9 @@ def _first(resource: Any, params: Any, inputs: list[Any]) -> Any:
     return inputs[0]
 
 
-PLUGIN = ExternalPlugin(kind="m68_writer", content_hash=sha256_bytes, evaluate=_first, samples=lambda: [b"w"])
+PLUGIN = ExternalPlugin(
+    kind="m68_writer", content_hash=sha256_bytes, evaluate=_first, samples=lambda: [b"w"]
+)
 
 
 def _served(session: Session, x: Any) -> Any:
@@ -51,7 +53,9 @@ def _awkward_varied(dest: str) -> Any:
 
 
 @pytest.mark.parametrize("write", [_awkward, _awkward_varied], ids=["plain", "varied"])
-def test_a_write_plan_carries_and_binds_its_services(write: Callable[[str], Any], tmp_path: Any) -> None:
+def test_a_write_plan_carries_and_binds_its_services(
+    write: Callable[[str], Any], tmp_path: Any
+) -> None:
     plan: Plan[list[str]] = write(str(tmp_path / "out"))
     assert plan.services == (SPEC,)
     with pytest.raises(UnboundService, match="svc"):

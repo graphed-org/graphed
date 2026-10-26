@@ -120,7 +120,9 @@ class FsspecStore:
     def completed(self) -> Completed:
         """Replay the union of every writer's journal prefix into ``task_id -> JournalEntry``."""
         present = {path.rsplit("/", 1)[-1] for path in self.fs.find(self.objects)}
-        return _replay(self._records(f"{glob.escape(self.root)}/journal*.log/*"), present.__contains__)
+        return _replay(
+            self._records(f"{glob.escape(self.root)}/journal*.log/*"), present.__contains__
+        )
 
     # ---- dead-letter set ------------------------------------------------------------------------
     def record_dead(self, descriptor: Mapping[str, object]) -> None:
@@ -157,7 +159,9 @@ class FsspecStore:
         with _RECORDS_LOCK:
             missing = [path for path, key in zip(paths, keys, strict=True) if key not in _RECORDS]
         if missing:
-            data = self.fs.cat_ranges(missing, [None] * len(missing), [None] * len(missing), **opts)
+            data = self.fs.cat_ranges(
+                missing, [None] * len(missing), [None] * len(missing), **opts
+            )
             for raw in data:
                 if isinstance(raw, Exception):
                     raise raw

@@ -74,7 +74,9 @@ def _widening_program() -> tuple[Session, Any, Any, Any]:
     return session, joined, sjets, varied_sf
 
 
-def test_a_central_built_above_a_nominal_projection_joins_as_its_re_indexed_spelling_does() -> None:
+def test_a_central_built_above_a_nominal_projection_joins_as_its_re_indexed_spelling_does() -> (
+    None
+):
     """The re-index the registration performs peels the central to the projected level, so the
     union adds nothing and the join stands — §2.1's "a central built at an ancestor still names its
     factor after the expansion". Comparing the RAW central against the entry's member refuses the
@@ -163,9 +165,13 @@ def test_a_central_as_built_at_the_ancestor_names_its_factor_after_an_expansion(
     parent = m57_weight(ctx, "hf", sf, m57_table_members(jets, HF_TABLE))
     child = parent[parent["MET"].pt > MET_CUT]
     here = graphed.reindex_to(sf, child)
-    lf = {tag: graphed.reindex_to(m, child) for tag, m in m57_table_members(jets, LF_TABLE).items()}
+    lf = {
+        tag: graphed.reindex_to(m, child) for tag, m in m57_table_members(jets, LF_TABLE).items()
+    }
     after = m57_weight(child, "lf", here, lf)  # the expansion
-    mf = {tag: graphed.reindex_to(m, child) for tag, m in m57_table_members(jets, MF_TABLE).items()}
+    mf = {
+        tag: graphed.reindex_to(m, child) for tag, m in m57_table_members(jets, MF_TABLE).items()
+    }
 
     joined = m57_weight(after, "mf", sf, mf)  # the central AS BUILT at the ancestor
 
@@ -216,7 +222,12 @@ def test_ambient_entries_keep_composition_order_where_it_differs_from_slot_order
     after = m57_delta(after, "mu", handle)
 
     slots = _slots(after)
-    assert [families for _kind, families in _shape(after)] == [("pu",), ("hf",), ("mu",), ("trig",)]
+    assert [families for _kind, families in _shape(after)] == [
+        ("pu",),
+        ("hf",),
+        ("mu",),
+        ("trig",),
+    ]
     assert slots != sorted(slots)  # the two orders genuinely differ here
     listed = [
         line.split(": ")[1].split("[")[0]
@@ -263,7 +274,9 @@ def test_a_central_spelled_as_the_re_indexed_node_names_its_factor_at_the_masked
     assert _shape(joined) == [("factor", ("hf", "lf"))]
     here = free[graphed.selection(child)]  # the very node the expansion re-indexed the entry to
 
-    registered = graphed.vary(joined, "mf", here, is_weight=True, points=m57_scaled(here, MF_TABLE))
+    registered = graphed.vary(
+        joined, "mf", here, is_weight=True, points=m57_scaled(here, MF_TABLE)
+    )
 
     assert _shape(registered) == [("factor", ("hf", "lf", "mf"))]
     weight = graphed.weight(registered)

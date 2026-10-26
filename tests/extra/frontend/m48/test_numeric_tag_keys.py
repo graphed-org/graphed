@@ -47,7 +47,9 @@ def test_a_numeric_key_is_its_spelling(key: Any, spelling: str) -> None:
     assert numeric_value(canonical_tag(key)) == Fraction(spelling)
 
 
-@pytest.mark.parametrize("bad", [True, Fraction(1, 3), float("nan"), float("inf"), 2j, None, b"2"], ids=repr)
+@pytest.mark.parametrize(
+    "bad", [True, Fraction(1, 3), float("nan"), float("inf"), 2j, None, b"2"], ids=repr
+)
 def test_a_key_that_is_not_a_tag_is_refused(bad: Any) -> None:
     with pytest.raises(GraphedError):
         canonical_tag(bad)

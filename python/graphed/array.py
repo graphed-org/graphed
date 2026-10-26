@@ -131,8 +131,12 @@ def _refuse_axis0(first: object) -> TypeError:
         # `start:stop` always, `:step` only when there is one — rstrip would turn `1::` into `1`,
         # an integer index, which is a different op
         spell = ":".join(bits if first.step is not None else bits[:2])
-        return TypeError(f"a tuple key must leave the partitioned axis whole; chain it: a[{spell}][:, ...]")
-    return TypeError("a tuple key must keep the partitioned axis 0 whole: a[:, inner...], a[..., inner]")
+        return TypeError(
+            f"a tuple key must leave the partitioned axis whole; chain it: a[{spell}][:, ...]"
+        )
+    return TypeError(
+        "a tuple key must keep the partitioned axis 0 whole: a[:, inner...], a[..., inner]"
+    )
 
 
 def encode_subscript(key: tuple[object, ...]) -> str:
@@ -217,7 +221,9 @@ def _as_param(value: object) -> ParamValue:
     raise TypeError(f"unsupported scalar operand {value!r}")
 
 
-def _scalar_params(value: object, key: str = "scalar", dtype_key: str = "dtype") -> dict[str, ParamValue]:
+def _scalar_params(
+    value: object, key: str = "scalar", dtype_key: str = "dtype"
+) -> dict[str, ParamValue]:
     """The params a scalar operand records (M59).
 
     A value carrying a ``dtype`` — a numpy scalar — keeps BOTH halves of what it imposes on the
@@ -281,7 +287,10 @@ class Array:
         if isinstance(other, Array):
             inputs = [other, self] if reflected else [self, other]
             return self._session.record_op(op, inputs)
-        params: dict[str, ParamValue] = {**_scalar_params(other), "side": "l" if reflected else "r"}
+        params: dict[str, ParamValue] = {
+            **_scalar_params(other),
+            "side": "l" if reflected else "r",
+        }
         return self._session.record_op(op, [self], params)
 
     def _unary(self, op: str) -> Array:
@@ -551,7 +560,11 @@ class Array:
         return self._session.record_op("filter", [self, mask])
 
     def map(
-        self, fn: Callable[[object], object], *, name: str | None = None, output_type: object = None
+        self,
+        fn: Callable[[object], object],
+        *,
+        name: str | None = None,
+        output_type: object = None,
     ) -> Array:
         """Record ``fn`` over this array as one opaque External node (the callable is a flagged
         preservation risk, plan A.3.1).
@@ -604,7 +617,9 @@ def apply(
     from .varied import containers_in, expand  # noqa: PLC0415  (`varied` imports `Array`)
 
     if containers_in(*arrays):  # §2.3d *expanding*: one External per universe
-        return expand(lambda *members: apply(fn, *members, name=name, output_type=output_type), arrays, {})  # type: ignore[no-any-return]  # a Varied in, a Varied out
+        return expand(  # type: ignore[no-any-return]  # a Varied in, a Varied out
+            lambda *members: apply(fn, *members, name=name, output_type=output_type), arrays, {}
+        )
     if not arrays or not all(isinstance(a, Array) for a in arrays):
         raise TypeError("apply needs at least one deferred Array operand")
     session = arrays[0].session
@@ -652,7 +667,9 @@ class BoundMethod:
         return _record_method(self._receiver, self._name, args, kwargs)
 
 
-def _record_method(receiver: Array, name: str, args: tuple[Any, ...], kwargs: dict[str, Any]) -> Any:
+def _record_method(
+    receiver: Array, name: str, args: tuple[Any, ...], kwargs: dict[str, Any]
+) -> Any:
     """Record `receiver.<name>(*args, **kwargs)` as one `method` op per output.
 
     Every `Array` among the arguments joins the input list and stands in the JSON as its input
@@ -684,9 +701,14 @@ def _record_method(receiver: Array, name: str, args: tuple[Any, ...], kwargs: di
         if isinstance(value, dict):
             if not all(isinstance(key, str) for key in value):
                 raise refuse(where, value)
-            if set(value) in ({"$"}, {"$dtype", "v"}):  # the array-reference and typed-scalar shapes
+            if set(value) in (
+                {"$"},
+                {"$dtype", "v"},
+            ):  # the array-reference and typed-scalar shapes
                 raise GraphedTypeError(
-                    "method", prov, f"{name}(): {where} is a dict of the reserved shape {sorted(value)}"
+                    "method",
+                    prov,
+                    f"{name}(): {where} is a dict of the reserved shape {sorted(value)}",
                 )
             # sorted at every level: nested array inputs join in key order, not spelling order
             return {key: encode(value[key], f"{where}[{key!r}]") for key in sorted(value)}
@@ -713,7 +735,9 @@ def _record_method(receiver: Array, name: str, args: tuple[Any, ...], kwargs: di
     }
     outputs = getattr(session.backend, "method_outputs", None)
     if outputs is None:
-        raise GraphedTypeError("method", prov, f"{name}(): this backend records no behavior methods")
+        raise GraphedTypeError(
+            "method", prov, f"{name}(): this backend records no behavior methods"
+        )
     try:
         shape = outputs([session.form(a) for a in inputs], params)
     except Exception as exc:  # the typetracer refused the call -> located at the user's line

@@ -67,7 +67,9 @@ def _structural_paths(form: object, path: tuple[str, ...] = ()) -> dict[str, str
     return out
 
 
-def _replay(arrays: Sequence[Array], on_fail: str) -> tuple[dict[int, tuple[object, object, str]], bool]:
+def _replay(
+    arrays: Sequence[Array], on_fail: str
+) -> tuple[dict[int, tuple[object, object, str]], bool]:
     """Run the recorded graph of every output on ONE set of reporting typetracers, so each report is
     the union of the outputs' touches. Returns per-source (report, form, name) keyed by source node
     id, plus whether an opaque op forced conservative projection."""
@@ -154,7 +156,9 @@ def project_buffers_many(arrays: Sequence[Array], *, on_fail: str = "raise") -> 
     return _buffers(*_replay(arrays, on_fail))
 
 
-def _buffers(reports: dict[int, tuple[object, object, str]], conservative: bool) -> BufferProjection:
+def _buffers(
+    reports: dict[int, tuple[object, object, str]], conservative: bool
+) -> BufferProjection:
     read_buffers: dict[str, dict[str, BufferNeed]] = {}
     for report, form, name in reports.values():
         leaf_map = _leaf_columns(form)

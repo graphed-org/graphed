@@ -204,14 +204,18 @@ _MANIP_OPS = frozenset(
 _CONCRETE_AGGS = frozenset({"histogram", "histogram2d", "histogramdd"})
 
 
-def _scalar_param(params: Mapping[str, object], key: str = "scalar", dtype_key: str = "dtype") -> Any:
+def _scalar_param(
+    params: Mapping[str, object], key: str = "scalar", dtype_key: str = "dtype"
+) -> Any:
     """The scalar operand a binary op recorded — back in its own dtype when it had one (M59). The
     frontend cannot build a numpy scalar, so it records the dtype name beside the value, and a
     value wider than the store's i64 param as text."""
     value = params[key]
     if dtype_key not in params:
         return value
-    return np.dtype(str(params[dtype_key])).type(value)  # the dtype parses the wide int's text itself
+    return np.dtype(str(params[dtype_key])).type(
+        value
+    )  # the dtype parses the wide int's text itself
 
 
 def _decode_dims(spec: object) -> tuple[int, ...]:
@@ -247,17 +251,25 @@ def _manip_eval(op: str, xs: Sequence[Any], params: Mapping[str, object]) -> Any
     if op == "astype":
         return np.asarray(xs[0]).astype(np.dtype(str(params["dtype"])))
     if op == "clip":
-        lo, hi = (_scalar_param(params, k, f"{k}_dtype") if k in params else None for k in ("lo", "hi"))
+        lo, hi = (
+            _scalar_param(params, k, f"{k}_dtype") if k in params else None for k in ("lo", "hi")
+        )
         return np.clip(xs[0], lo, hi)
     if op == "round":
         return np.round(xs[0], _i(params.get("decimals", 0)))
     if op == "take":
         axis = params.get("axis")
-        return np.take(xs[0], np.asarray(xs[1]).astype(np.intp), axis=None if axis is None else _i(axis))
+        return np.take(
+            xs[0], np.asarray(xs[1]).astype(np.intp), axis=None if axis is None else _i(axis)
+        )
     if op == "where":
         rest = list(xs[1:])
-        xval = _scalar_param(params, "x_scalar", "x_dtype") if "x_scalar" in params else rest.pop(0)
-        yval = _scalar_param(params, "y_scalar", "y_dtype") if "y_scalar" in params else rest.pop(0)
+        xval = (
+            _scalar_param(params, "x_scalar", "x_dtype") if "x_scalar" in params else rest.pop(0)
+        )
+        yval = (
+            _scalar_param(params, "y_scalar", "y_dtype") if "y_scalar" in params else rest.pop(0)
+        )
         return np.where(np.asarray(xs[0]), xval, yval)
     if op == "concatenate":
         return np.concatenate([np.asarray(x) for x in xs], axis=_i(params.get("axis", 0)))
@@ -288,7 +300,9 @@ def _manip_eval(op: str, xs: Sequence[Any], params: Mapping[str, object]) -> Any
     raise TypeError(f"unsupported op {op!r}")
 
 
-def _check_manip_geometry(op: str, forms: Sequence[NumpyForm], params: Mapping[str, object]) -> None:
+def _check_manip_geometry(
+    op: str, forms: Sequence[NumpyForm], params: Mapping[str, object]
+) -> None:
     """The axis-0-partitioned MVP's geometry rules, enforced at record time (Phase 2 lifts them)."""
     if op == "reshape":
         dims = _decode_dims(params["shape"])
@@ -366,10 +380,14 @@ class NumpyBackend:
     canonical_output_type = staticmethod(canonical_output_type)
     check_output_type = staticmethod(check_output_type)
 
-    def op_form(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> NumpyForm:
+    def op_form(
+        self, op: str, inputs: Sequence[object], params: Mapping[str, object]
+    ) -> NumpyForm:
         forms = [f for f in inputs if isinstance(f, NumpyForm)]
         if op == "exchange":
-            return forms[0]  # a pure data-movement boundary is identity on the payload form (§3.3a)
+            return forms[
+                0
+            ]  # a pure data-movement boundary is identity on the payload form (§3.3a)
         if op == "pack_key":
             (rec,) = forms
             if rec.fields is None:
@@ -429,9 +447,15 @@ class NumpyBackend:
                 return declared_form(forms, str(declared))
             return NumpyForm(np.dtype(object))  # opaque callable: result form unknown
         if op == "gufunc":
-            if "output_type" in params:  # the signature types a gufunc: `apply_gufunc(output_dtype=)`
-                raise TypeError("output_type is declared only on map; a gufunc takes output_dtype=")
-            return gufunc_form(forms, params)  # M14: the signature makes the opaque callable typable
+            if (
+                "output_type" in params
+            ):  # the signature types a gufunc: `apply_gufunc(output_dtype=)`
+                raise TypeError(
+                    "output_type is declared only on map; a gufunc takes output_dtype="
+                )
+            return gufunc_form(
+                forms, params
+            )  # M14: the signature makes the opaque callable typable
         if op in _REDUCERS or op in _SCANS:
             (a,) = forms
             if not (is_numeric(a) or (a.fields is None and a.dtype == np.bool_)):
@@ -480,16 +504,25 @@ class NumpyBackend:
             return _BINARY[op](a, b)
         raise TypeError(f"unsupported op {op!r}")
 
-    def eval_stage(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> object:
+    def eval_stage(
+        self, op: str, inputs: Sequence[object], params: Mapping[str, object]
+    ) -> object:
         if op == "exchange":
-            return inputs[0]  # a pure data-movement boundary is identity on values in-process (§3.3a)
+            return inputs[
+                0
+            ]  # a pure data-movement boundary is identity on values in-process (§3.3a)
         if op == "pack_key":
             return shuffle.pack_key(inputs[0], _decode_on(params["on"]))
         if op == "join":
-            from graphed.shuffle import join_blocks  # noqa: PLC0415  (local: avoid import-order coupling)
+            # local: avoid import-order coupling
+            from graphed.shuffle import join_blocks  # noqa: PLC0415
 
             return join_blocks(
-                self, inputs[0], inputs[1], on=_decode_on(params["on"]), how=str(params.get("how", "inner"))
+                self,
+                inputs[0],
+                inputs[1],
+                on=_decode_on(params["on"]),
+                how=str(params.get("how", "inner")),
             )
         if op == "field":
             return np.asarray(inputs[0][str(params["field"])])  # type: ignore[index]
@@ -580,7 +613,9 @@ def from_record(session: Session, name: str, **columns: object) -> Array:
     """Create a record source (named columns) — the buffer-projection target."""
     cols = {k: np.asarray(v) for k, v in columns.items()}
     fields = tuple((k, v.dtype.str) for k, v in cols.items())
-    return session.source(name, form=NumpyForm(np.dtype(object), kind="record", fields=fields), data=cols)
+    return session.source(
+        name, form=NumpyForm(np.dtype(object), kind="record", fields=fields), data=cols
+    )
 
 
 # M12 (dask.array parity P1): creation routines, deterministic random sources, and the

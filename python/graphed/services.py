@@ -176,7 +176,9 @@ def referenced_services(
     """The ``session``'s specs named by the External ``nodes``' ``params["service"]`` and by
     ``names``, in name order; an undeclared name is refused."""
     named = {
-        str(n["params"]["service"]) for n in nodes if n["kind"] == "external" and "service" in n["params"]
+        str(n["params"]["service"])
+        for n in nodes
+        if n["kind"] == "external" and "service" in n["params"]
     }
     return tuple(session.service_for(name) for name in sorted(named.union(names or ())))
 
@@ -186,7 +188,8 @@ def bind_externals(
 ) -> tuple[tuple[str, Any], ...]:
     """A plan process's ``(key, evaluator)`` pairs with each :class:`Bindable` evaluator bound."""
     return tuple(
-        (key, fn.bind_services(endpoints) if isinstance(fn, Bindable) else fn) for key, fn in externals
+        (key, fn.bind_services(endpoints) if isinstance(fn, Bindable) else fn)
+        for key, fn in externals
     )
 
 
@@ -213,7 +216,9 @@ def _require_parts(parts: Sequence[Bindable]) -> None:
             for part in parts:
                 part.bind_services(missing)
         except UnboundService as err:
-            if err.name in missing:  # a part refusing a name it was handed breaks the Bindable contract
+            if (
+                err.name in missing
+            ):  # a part refusing a name it was handed breaks the Bindable contract
                 raise
             missing[err.name] = "tcp://unbound:0"
             continue
@@ -226,7 +231,9 @@ def _require_parts(parts: Sequence[Bindable]) -> None:
 def bind_services(plan: DurablePlanV2, endpoints: Mapping[str, str]) -> DurablePlanV2: ...
 @overload
 def bind_services(plan: Plan[R], endpoints: Mapping[str, str]) -> Plan[R]: ...
-def bind_services(plan: Plan[R] | DurablePlanV2, endpoints: Mapping[str, str]) -> Plan[R] | DurablePlanV2:
+def bind_services(
+    plan: Plan[R] | DurablePlanV2, endpoints: Mapping[str, str]
+) -> Plan[R] | DurablePlanV2:
     """``plan`` with ``endpoints`` (service name -> ``scheme://host:port``) bound into its process (a
     ``DurablePlanV2``: into each stage process, as ``OpSpec.live``, so bytes and task ids stay); the
     same plan when nothing has a ``bind_services`` hook. Every endpoint is checked first."""
@@ -240,7 +247,8 @@ def bind_services(plan: Plan[R] | DurablePlanV2, endpoints: Mapping[str, str]) -
             op, fn = stage.process, stage.process.resolve()
             if isinstance(fn, Bindable):
                 stage = replace(
-                    stage, process=OpSpec(op.kind, op.ref, op.blob_b64, live=fn.bind_services(endpoints))
+                    stage,
+                    process=OpSpec(op.kind, op.ref, op.blob_b64, live=fn.bind_services(endpoints)),
                 )
             stages.append(stage)
         return replace(plan, stages=tuple(stages))

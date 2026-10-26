@@ -60,7 +60,9 @@ class NetworkMonitor:
         self._profile = bool(profile) and _sampler.sampler_available()
         self._buf: deque[tuple[int, Any]] = deque(maxlen=queue_size)
         self._stop = threading.Event()
-        self._thread = threading.Thread(target=self._sender, name="graphed-dash-client", daemon=True)
+        self._thread = threading.Thread(
+            target=self._sender, name="graphed-dash-client", daemon=True
+        )
         self._started = False
         self._lock = threading.Lock()
 
@@ -85,7 +87,9 @@ class NetworkMonitor:
             time.sleep(0.02)
         self._stop.set()
         if self._started:
-            self._thread.join(join_s if join_s is not None else max(0.0, deadline - time.monotonic()))
+            self._thread.join(
+                join_s if join_s is not None else max(0.0, deadline - time.monotonic())
+            )
 
     # ---- Monitor protocol (passive; best-effort) ------------------------
 
@@ -103,14 +107,20 @@ class NetworkMonitor:
 
     def worker_monitor_factory(self) -> Callable[[], Monitor] | None:
         """With ``per_worker``, a picklable factory each worker process calls for its own monitor."""
-        return functools.partial(_worker_monitor, self._url, self.lean_events) if self._per_worker else None
+        return (
+            functools.partial(_worker_monitor, self._url, self.lean_events)
+            if self._per_worker
+            else None
+        )
 
     # ---- internals ------------------------------------------------------
 
     def _emit(self, item: tuple[int, Any]) -> None:
         if not self._started:
             self.start()  # lazy autostart on first event
-        self._buf.append(item)  # a full buffer drops its oldest item -> never back-pressure the run
+        self._buf.append(
+            item
+        )  # a full buffer drops its oldest item -> never back-pressure the run
 
     def _connect(self) -> Any:
         import websocket  # noqa: PLC0415 (optional dep, imported lazily)
@@ -119,7 +129,11 @@ class NetworkMonitor:
         if self._control is not None or self.lean_events:
             try:
                 conn.send(
-                    json.dumps(_wire.hello_message(control=self._control is not None, lean=self.lean_events))
+                    json.dumps(
+                        _wire.hello_message(
+                            control=self._control is not None, lean=self.lean_events
+                        )
+                    )
                 )
             except Exception:
                 conn.close()
@@ -160,7 +174,9 @@ class NetworkMonitor:
                 messages.append(_wire.combine_message(data))
             else:
                 worker, payload = data
-                messages.append(_wire.profile_message(worker, base64.b64encode(payload).decode("ascii")))
+                messages.append(
+                    _wire.profile_message(worker, base64.b64encode(payload).decode("ascii"))
+                )
 
     def _sender(self) -> None:
         conn: Any = None

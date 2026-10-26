@@ -38,7 +38,9 @@ from .execution import Partition, Task
 from .graphed_core import GraphStore
 
 FORMAT_VERSION = 1
-FORMAT_VERSION_V2 = "graphed-plan/2"  # a STRING (vs V1's int) -> V1 and V2 byte spaces never overlap
+FORMAT_VERSION_V2 = (
+    "graphed-plan/2"  # a STRING (vs V1's int) -> V1 and V2 byte spaces never overlap
+)
 _TASK_DOMAIN = b"graphed-task-v1"
 _TASK_DOMAIN_V2 = b"graphed-task-v2"
 
@@ -260,7 +262,9 @@ class StageSpec:
             "inputs": list(self.inputs),
             "process": self.process._to_json(),
             "routing": dict(self.routing),
-            "tasks": [{"key": t.key, "partition": _partition_json(t.partition)} for t in self.tasks],
+            "tasks": [
+                {"key": t.key, "partition": _partition_json(t.partition)} for t in self.tasks
+            ],
         }
 
     @classmethod
@@ -270,7 +274,9 @@ class StageSpec:
             inputs=tuple(int(i) for i in d["inputs"]),
             process=OpSpec._from_json(d["process"]),
             routing=dict(d["routing"]),
-            tasks=tuple(Task(int(t["key"]), _partition_from_json(t["partition"])) for t in d["tasks"]),
+            tasks=tuple(
+                Task(int(t["key"]), _partition_from_json(t["partition"])) for t in d["tasks"]
+            ),
         )
 
 
@@ -301,7 +307,9 @@ class DurablePlanV2:
         ``backend_id``, §7.2) so two conforming backends that route a key to different dests never
         journal the same id for different content (B-r5.2); cache-poisoning-safe like V1's."""
         stage = self.stages[stage_index]
-        routing_bytes = json.dumps(dict(stage.routing), sort_keys=True, separators=(",", ":")).encode()
+        routing_bytes = json.dumps(
+            dict(stage.routing), sort_keys=True, separators=(",", ":")
+        ).encode()
         return _sha256_hex(
             _TASK_DOMAIN_V2,
             self.ir,
@@ -400,7 +408,9 @@ def _partition_json(p: Partition) -> dict[str, str | int]:
 
 def _partition_from_json(d: Mapping[str, Any]) -> Partition:
     if "blind_step" in d:
-        return Partition.blind(d["uri"], d.get("tree", ""), int(d["blind_step"]), int(d["blind_n_steps"]))
+        return Partition.blind(
+            d["uri"], d.get("tree", ""), int(d["blind_step"]), int(d["blind_n_steps"])
+        )
     return Partition(
         uri=d["uri"],
         tree=d.get("tree", ""),

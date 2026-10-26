@@ -173,7 +173,9 @@ class EventContext:
         #: the weight families REGISTERED on this lineage, `{name: tags}` — the record `variations`
         #: and a same-name registration read, as opposed to the ambient container's tag map, which
         #: a row-space change widens with every shift the mask carries
-        self._weight_tags: dict[str, tuple[str, ...]] = {} if parent is None else dict(parent._weight_tags)
+        self._weight_tags: dict[str, tuple[str, ...]] = (
+            {} if parent is None else dict(parent._weight_tags)
+        )
         self._recorded: tuple[str, ...] = _union(("nominal",), labels_of(weight))
         #: the cache: `(mint epoch, factors it covers, composed container, settled)`, assigned as
         #: one immutable tuple so a concurrent reader sees either the old state or the new, both
@@ -217,7 +219,9 @@ class EventContext:
         )
 
     def __iter__(self) -> Any:
-        raise TypeError("an event context is not iterable; subscript it with a mask or a field name")
+        raise TypeError(
+            "an event context is not iterable; subscript it with a mask or a field name"
+        )
 
     def _read(self, name: str) -> Any:
         value = self._collections.get(name)
@@ -363,7 +367,9 @@ class EventContext:
         """Compose `operands` over the recorded union, with the verdict on whether a later mint
         could still move any resolution it just made (`_settled` over every operand and label)."""
         composed = rebuild(
-            _compose(operands, self._recorded, overlays=self._overlay_ids(), fixed=self._fixed_ids()),
+            _compose(
+                operands, self._recorded, overlays=self._overlay_ids(), fixed=self._fixed_ids()
+            ),
             tags=self._ambient_tags(),
             context=self._origin,
         )
@@ -411,7 +417,9 @@ class EventContext:
         }
         if self._factors:
             ambient = self._ambient_weight()
-            child._adopt_ambient(child._stamp(expand(lambda value, on: value[on], (ambient, mask), {})))
+            child._adopt_ambient(
+                child._stamp(expand(lambda value, on: value[on], (ambient, mask), {}))
+            )
         child._record = child._stamp(child._record)
         self._derived[key] = child
         return child
@@ -434,7 +442,8 @@ class EventContext:
             link=("project", label),
         )
         child._collections = {
-            name: child._stamp(member_of(collection, label)) for name, collection in self._collections.items()
+            name: child._stamp(member_of(collection, label))
+            for name, collection in self._collections.items()
         }
         if self._factors:
             child._adopt_ambient(child._stamp(member_of(self._ambient_weight(), label)))
@@ -502,7 +511,15 @@ def vary_context(
         )
     if is_weight:
         return _vary_weight(
-            ctx, name, nominal, variations, collections, points, composes_as_union, max_universes, tags
+            ctx,
+            name,
+            nominal,
+            variations,
+            collections,
+            points,
+            composes_as_union,
+            max_universes,
+            tags,
         )
     return _vary_shift(
         ctx, name, nominal, variations, collections, points, composes_as_union, max_universes, tags
