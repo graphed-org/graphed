@@ -176,6 +176,40 @@ def test_materialize_returns_the_structure_it_was_given(build: Any, expected: An
     assert graphed.materialize(build(x, y)) == expected
 
 
+@dataclass(frozen=True)
+class Declared:
+    """A partitioned source over ``files`` copies of its rows that declares its own read list."""
+
+    data: tuple[int, ...]
+    files: int
+    reads: ClassVar[list[object]] = []
+
+    def __call__(self) -> list[int]:
+        Declared.reads.append("all")
+        return list(self.data) * self.files
+
+    def projected_columns(self, outputs: Sequence[object]) -> list[str]:
+        return ["declared"]
+
+    def partitions(self, steps_per_file: int = 1) -> tuple[Partition, ...]:
+        return tuple(Partition(f"toy://{i}", "", 0, len(self.data)) for i in range(self.files))
+
+    def read_partition(self, partition: Any, columns: Any, resources: Any) -> list[int]:
+        Declared.reads.append(columns)
+        return list(self.data)
+
+
+@pytest.mark.parametrize(("files", "reads"), [(1, [("declared",)]), (2, ["all"])])
+def test_materialize_reads_a_declared_list_unless_the_backend_cannot_concatenate(
+    files: int, reads: list[object]
+) -> None:
+    Declared.reads.clear()
+    s = Session(SumBackend())  # no concat: two partitions fall back to the lazy loader
+    x = s.source("x", form=_form(), data=Declared((1, 2), files))
+    assert graphed.materialize(s.record_op("add", [x, x])) == [2, 4] * files
+    assert Declared.reads == reads
+
+
 def test_materialize_evaluates_a_sessions_shared_nodes_once() -> None:
     s = Session(SumBackend())
     x = s.source("x", form=_form(), data=Loader((1, 2)))

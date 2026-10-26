@@ -17,8 +17,9 @@ Several datasets in one Session
   binding was silently dropped, so ``from_awkward(s, "x", B)`` after ``from_awkward(s, "x", A)``
   evaluated ``A`` (#103).
 * ``graphed.materialize(arrays)`` evaluates Arrays from any number of Sessions in this process,
-  alone or nested in lists, tuples and dicts, as ``dask.compute`` takes them. A plan over several
-  Sessions is ``graphed.collate``, which ``aggregate_plan``'s refusal now names (#103).
+  alone or nested in lists, tuples and dicts, as ``dask.compute`` takes them. It reads only the
+  source columns those Arrays use, as a plan over them would. A plan over several Sessions is
+  ``graphed.collate``, which ``aggregate_plan``'s refusal now names (#103).
 
 0.0.9
 -----

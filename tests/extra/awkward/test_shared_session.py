@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import os
+from typing import Any
 
 import awkward as ak
 import pytest
 
+import graphed
 from graphed import GraphedError, Session
 
 pytest.importorskip("pyarrow")
@@ -38,3 +40,38 @@ def test_a_grouped_join_across_sessions_points_at_one_session() -> None:
     right = from_awkward(Session(AwkwardBackend()), "right", ak.Array({"k": [1]}))
     with pytest.raises(GraphedError, match="same Session; record both into one"):
         gak.join(left, right, on=["k"], grouped=True)
+
+
+def test_materialize_reads_only_the_columns_its_arrays_use(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    paths = []
+    for i in range(2):
+        paths.append(os.path.join(tmp_path, f"events{i}.parquet"))
+        ak.to_parquet(
+            ak.Array({"pt": [[1.0 + i, 2.0], [3.0]], "eta": [[0.1], []], "phi": [[0.0], []]}), paths[-1]
+        )
+    s = Session(AwkwardBackend())
+    events = from_parquet(s, "events", paths)
+    (loader,) = s.sources().values()
+    kind: Any = type(loader)
+    reads: list[object] = []
+    read_partition, load_all = kind.read_partition, kind.__call__
+
+    def logged_read(self: Any, partition: Any, columns: Any, resources: Any) -> Any:
+        reads.append(columns)
+        return read_partition(self, partition, columns, resources)
+
+    def logged_load(self: Any) -> Any:
+        reads.append("all")
+        return load_all(self)
+
+    monkeypatch.setattr(kind, "read_partition", logged_read)
+    monkeypatch.setattr(kind, "__call__", logged_load)
+    other = from_awkward(Session(AwkwardBackend()), "other", ak.Array({"x": [5.0]}))
+
+    got = graphed.materialize({"sum": gak.sum(events.pt), "n": gak.num(events.eta, axis=1), "x": other.x})
+    assert (got["sum"], got["n"].to_list(), got["x"].to_list()) == (13.0, [1, 0, 1, 0], [5.0])
+    assert reads == [("eta", "pt"), ("eta", "pt")]
+
+    reads.clear()
+    assert graphed.materialize(gak.num(events, axis=0)) == 4  # the whole record: every column
+    assert reads == ["all"]

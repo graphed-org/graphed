@@ -18,7 +18,8 @@ The recording surface. ``Session`` owns the recording and ``Array`` is the proxy
 data, part writes included (``graphed.write.PartWrite``), and ``collate`` joins plans over different
 graphs into one. ``aggregate_plan(opt_level=0)`` ships the outputs' unoptimized cone, one node per
 recorded operation, instead of the optimized graph. ``materialize`` evaluates Arrays from any
-number of Sessions in this process, with no executor: a debugging tool. One Session can record
+number of Sessions in this process, with no executor, reading only the source columns they use:
+a debugging tool. One Session can record
 several sources (a reader's ``session=``); a plan reads only the ones its outputs reach.
 ``vary`` declares a systematic variation, and ``labels`` / ``nominal`` / ``universe`` /
 ``variations`` read the results back (each tag's ``Kind``, a flag, beside its ordering). ``join``, ``repartition``, ``join_plan`` and
