@@ -163,12 +163,13 @@ class EventContext:
             {}
             if weight is None
             else {
+                # a seeded context is a root: it came through no row-space link
                 self._slots[0]: Rider(
                     "factor",
                     dict(getattr(weight, "_tags", None) or {}),
                     priors=(_two_level(weight, "nominal"),),
                     home=self,
-                )  # a seeded context is a root: it came through no row-space link
+                )
             }
         )
         #: the weight families REGISTERED on this lineage, `{name: tags}` — the record `variations`

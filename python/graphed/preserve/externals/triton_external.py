@@ -21,13 +21,12 @@ from ._helpers import (
     parse_call_template,
 )
 
-# ---- NVIDIA Triton (remote
-# inference) ------------------------------------------------------------- The payload is the
-# SERVED MODEL'S IDENTITY (a canonical JSON descriptor: model name/version, io names, weight
-# digests) — the bundle preserves what was called, but cannot bottle the server. The connection is
-# environment: a node names a declared service (params["service"], its endpoint bound per run by
-# graphed.services.bind_services, never recorded) or a literal params["url"]. An importable
-# params["transport"] ("module:attr") always wins; otherwise the endpoint's scheme picks
+# ---- NVIDIA Triton (remote inference) -----------------------------------------------------------
+# The payload is the SERVED MODEL'S IDENTITY (a canonical JSON descriptor: model name/version, io
+# names, weight digests) — the bundle preserves what was called, but cannot bottle the server. The
+# connection is environment: a node names a declared service (params["service"], its endpoint bound
+# per run by graphed.services.bind_services, never recorded) or a literal params["url"]. An
+# importable params["transport"] ("module:attr") always wins; otherwise the endpoint's scheme picks
 # tritonclient.http or tritonclient.grpc, and a url without "://" stays tritonclient.http. The
 # transport's module also supplies the InferInput/InferRequestedOutput request classes, so fakes
 # and tritonclient interchange without touching plugin code.

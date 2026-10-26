@@ -29,7 +29,7 @@ PINNED_ROUTING_HASH = "sha256"
 def route(key: int, parts: int, *, salt: int = 0) -> int:
     """Return the pinned §4/§3.0 route.
 
-    sha256 of the 8-byte big-endian key (salt=0 == no bytes appended).
+    The route is the sha256 of the 8-byte big-endian key (salt=0 == no bytes appended).
     """
     key_bytes = int(key).to_bytes(8, "big") + (int(salt).to_bytes(8, "big") if salt else b"")
     return int.from_bytes(hashlib.sha256(key_bytes).digest()[:8], "big") % parts
@@ -145,9 +145,8 @@ def match_indices(
     """
     bkey = _key_array(build, on)
     pkey = _key_array(probe, on)
-    order = np.argsort(
-        bkey, kind="stable"
-    )  # build positions sorted by key (stable ⇒ deterministic)
+    # build positions sorted by key (stable ⇒ deterministic)
+    order = np.argsort(bkey, kind="stable")
     skey = bkey[order]
     lo = np.searchsorted(skey, pkey, side="left")
     hi = np.searchsorted(skey, pkey, side="right")
@@ -187,9 +186,8 @@ def _masked_gather(block: np.ndarray, index: np.ndarray) -> np.ndarray:
     src: np.ma.MaskedArray = np.ma.asanyarray(block)
     data = np.ma.getdata(src)
     idx = np.asarray(index)
-    if (
-        data.shape[0] == 0
-    ):  # empty carrier -> len(idx) fully-masked null rows (clip-to-0 has no row 0)
+    # empty carrier -> len(idx) fully-masked null rows (clip-to-0 has no row 0)
+    if data.shape[0] == 0:
         out = np.zeros(len(idx), dtype=data.dtype)
         return np.ma.MaskedArray(
             out, mask=np.ones(len(idx), dtype=np.ma.make_mask_descr(data.dtype))
@@ -241,18 +239,16 @@ def merge_records(left: np.ndarray, right: np.ndarray, *, on: Sequence[str]) -> 
     data = np.zeros(n, dtype=out_dt)
     mask: np.ndarray = np.zeros(n, dtype=np.ma.make_mask_descr(out_dt))
     for name in lnames:
-        if (
-            name in on_set
-        ):  # coalesce the shared key: take the present side, null only if both miss
+        # coalesce the shared key: take the present side, null only if both miss
+        if name in on_set:
             data[name] = np.where(~lmask[name], ldata[name], rdata[name])
             mask[name] = lmask[name] & rmask[name]
         else:
             data[name], mask[name] = ldata[name], lmask[name]
     for name in right_extra:
         data[name], mask[name] = rdata[name], rmask[name]
-    if not any(
-        bool(mask[name].any()) for name in out_names
-    ):  # no nulls (inner) -> PLAIN (.npy wire)
+    # no nulls (inner) -> PLAIN (.npy wire)
+    if not any(bool(mask[name].any()) for name in out_names):
         return data
     return np.ma.MaskedArray(data, mask=mask)
 
@@ -275,9 +271,8 @@ def pack_key(record: object, on: Sequence[str]) -> np.ndarray:
         raise ValueError(
             f"pack_key: {len(names)} fields x 20 bits exceeds u64 (overflow->bytes is Phase-2)"
         )
-    for (
-        nm
-    ) in names:  # F8: a field value >= 2**20 bleeds into the adjacent field and silently collides
+    # F8: a field value >= 2**20 bleeds into the adjacent field and silently collides
+    for nm in names:
         if np.any(np.asarray(cols[nm]).astype(np.uint64) >= np.uint64(1 << 20)):
             raise ValueError(
                 f"pack_key: field {nm!r} has a value >= 2**20 (overflow->fixed-width bytes is "

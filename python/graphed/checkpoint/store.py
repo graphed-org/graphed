@@ -118,7 +118,8 @@ def _replay(records: Iterable[Any], present: Callable[[str], bool]) -> Completed
 class CheckpointStore(Protocol):
     """The store the resumable runners take.
 
-    content-addressed blobs, a replayable journal of completed tasks, and a dead-letter set.
+    It holds content-addressed blobs, a replayable journal of completed tasks, and a dead-letter
+    set.
 
     Contract beyond the signatures: ``get`` returns ``None`` for bytes that do not hash to their
     name (a corrupted result is recomputed, never served), and concurrent ``put`` of identical

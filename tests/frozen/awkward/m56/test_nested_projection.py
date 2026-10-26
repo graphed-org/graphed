@@ -25,9 +25,8 @@ def test_the_up_members_other_universe_is_not_a_target_at_this_label() -> None:
     _session, ctx, _seed = m56_base()
     registered, sjets = m56_both_kind(ctx)
 
-    up_member = m56_sf(
-        sjets, JES_SF["up"]
-    )  # the jes weight factor's `up` member, itself a container
+    # the jes weight factor's `up` member, itself a container
+    up_member = m56_sf(sjets, JES_SF["up"])
     cross = graphed.member_of(up_member, "jes_down")
     assert cross.node_id != graphed.member_of(up_member, "jes_up").node_id  # the target at jes_up
 

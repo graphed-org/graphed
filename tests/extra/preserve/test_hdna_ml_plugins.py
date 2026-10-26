@@ -63,8 +63,7 @@ def _onnx_eager(payload: bytes, x: np.ndarray) -> Any:
     return sess.run(None, {"x": x})[0]
 
 
-# ---- each plugin with a three-output model, and that model called
-# eagerly ------------------------
+# ---- each plugin with a three-output model, and that model called eagerly -----------------------
 def _onnx_case() -> tuple[ExternalPlugin, bytes, dict[str, Any], Callable[[np.ndarray], Any]]:
     payload = _onnx(W)
     return ONNX_PLUGIN, payload, ARGS, lambda x: _onnx_eager(payload, x.astype(np.float32))
@@ -222,9 +221,8 @@ def test_a_float64_torch_model_runs_in_float64_bit_equal_to_eager() -> None:
 
 
 def test_a_float64_onnx_model_is_fed_float64_bit_equal_to_eager() -> None:
-    weights = (
-        W[:, :1].astype(np.float64) + 1e-9
-    )  # below float32 resolution: a float32 feed would lose it
+    # below float32 resolution: a float32 feed would lose it
+    weights = W[:, :1].astype(np.float64) + 1e-9
     payload = _onnx(weights, TensorProto.DOUBLE)
     session, ev = _events()
     got = ak.to_numpy(

@@ -53,18 +53,16 @@ def test_augmented_file_roundtrips_through_ak_from_parquet(tmp_path) -> None:  #
     _s, events = events_context()
     record, evt_mask, jet_mask = multifield_skim_inputs(events)
     paths = ga.to_parquet(record, str(tmp_path / "rt"), select={0: evt_mask, ("Jet", 1): jet_mask})  # type: ignore[call-arg]
-    table = ak.from_parquet(
-        paths[0]
-    )  # the arrow-write path must preserve awkward's own KV entries
+    # the arrow-write path must preserve awkward's own KV entries
+    table = ak.from_parquet(paths[0])
     assert {"Jet", "MET"}.issubset(set(table.fields))
 
 
 def test_unvaried_write_keeps_ak_to_parquet_bytes_and_writes_no_manifest(tmp_path) -> None:  # type: ignore[no-untyped-def]
     session, events = events_context()
     jets = events.Jet
-    paths = ga.to_parquet(
-        jets, str(tmp_path / "plain")
-    )  # unvaried: no select=, feature-present path
+    # unvaried: no select=, feature-present path
+    paths = ga.to_parquet(jets, str(tmp_path / "plain"))
     reference = str(tmp_path / "ref.parquet")
     ak.to_parquet(session.materialize(jets), reference)
 

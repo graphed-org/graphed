@@ -47,10 +47,11 @@ def test_take_maps_negative_one_to_invalid_not_the_last_row() -> None:
     valid = _valid(out, "v")
     assert bool(valid[0]) and bool(valid[2])  # real gathers stay valid
     assert not bool(valid[1])  # the -1 row reads INVALID (np.take impl leaves it True → fails)
+    # correct values gathered
     assert list(np.ma.getdata(np.ma.asanyarray(out)["v"])[[0, 2]]) == [
         1,
         0,
-    ]  # correct values gathered
+    ]
     assert int(np.ma.getdata(np.ma.asanyarray(out)["v"])[1]) != 999  # did NOT gather the last row
 
 

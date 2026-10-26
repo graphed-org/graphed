@@ -69,20 +69,17 @@ def project(array: Array, *, on_fail: str = "raise") -> Projection:
                 origin = rec.fields.get(str(params["field"]))
                 if origin is not None:
                     return _Tracer(rec.touched | {origin}, None)
-        if (
-            name == "exchange"
-        ):  # a pure data-movement boundary is identity on the projection (§3.3a)
+        # a pure data-movement boundary is identity on the projection (§3.3a)
+        if name == "exchange":
             return ins[0]
-        if (
-            name == "pack_key"
-        ):  # M40: reads the `on` key fields; the record (its fields) passes through
+        # M40: reads the `on` key fields; the record (its fields) passes through
+        if name == "pack_key":
             rec = ins[0]
             if isinstance(rec, _Tracer) and rec.fields is not None:
                 read = {rec.fields[f] for f in _decode_on(params) if f in rec.fields}
                 return _Tracer(rec.touched | frozenset(read), rec.fields)
-        if (
-            name == "join"
-        ):  # M40: merge the two sides' per-field provenance (intersection-dedup, left wins)
+        # M40: merge the two sides' per-field provenance (intersection-dedup, left wins)
+        if name == "join":
             left, right = ins[0], ins[1]
             lf = left.fields if isinstance(left, _Tracer) and left.fields is not None else {}
             rf = right.fields if isinstance(right, _Tracer) and right.fields is not None else {}

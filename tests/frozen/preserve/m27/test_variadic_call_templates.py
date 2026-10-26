@@ -194,8 +194,7 @@ def test_correctionlib_jagged_replay_through_a_bundle(tmp_path) -> None:  # type
     # it
 
 
-# ---------------------------------- histogram: multi-axis +
-# multi-weight ---------------------------
+# ---------------------------------- histogram: multi-axis + multi-weight -------------------------
 def test_histogram_multi_axis_fill_replays_through_a_bundle(tmp_path) -> None:  # type: ignore[no-untyped-def]
     import boost_histogram as bh  # noqa: PLC0415
     import pytest  # noqa: PLC0415
@@ -261,8 +260,7 @@ def test_histogram_multiple_weights_multiply_on_replay(tmp_path) -> None:  # typ
     assert np.array_equal(got.view(flow=True)["variance"], eager.view(flow=True)["variance"])
 
 
-# ---------------------------------- Triton: multiple NAMED
-# inputs ----------------------------------
+# ---------------------------------- Triton: multiple NAMED inputs --------------------------------
 DESCRIPTOR = json.dumps(
     {"model": "scorer2", "version": "1", "weights": {"kin": [0.5, 0.25], "mask": [2.0]}}
 ).encode()
@@ -322,8 +320,7 @@ def test_triton_legacy_default_still_builds_one_input() -> None:
     assert np.allclose(np.asarray(out), want, atol=1e-6)
 
 
-# ---------------------------------- xgboost: tabular-only,
-# loudly ----------------------------------
+# ---------------------------------- xgboost: tabular-only, loudly --------------------------------
 def test_xgboost_rejects_multi_argument_templates_loudly() -> None:
     with pytest.raises(PreserveError, match="single"):
         XGBOOST_PLUGIN.evaluate(

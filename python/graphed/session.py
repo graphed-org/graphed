@@ -82,9 +82,8 @@ class Session:
         self._forms: dict[int, Form] = {}
         self._sources: dict[int, object] = {}
         self._source_names: dict[int, str] = {}
-        self._slots: dict[
-            str, tuple[object, object]
-        ] = {}  # source name -> (form description, data)
+        # source name -> (form description, data)
+        self._slots: dict[str, tuple[object, object]] = {}
         self._ops: dict[int, tuple[str, dict[str, ParamValue], list[int]]] = {}
         self._externals: dict[int, tuple[Callable[[object], object], list[int]]] = {}
         self._services: dict[str, ServiceSpec] = {}
@@ -202,9 +201,8 @@ class Session:
             if name is not None:
                 self._fn_taken.add(name)
                 return name
-            if (
-                type(fn) is types.MethodType
-            ):  # not isinstance: `__class__` is the callable's to claim
+            # not isinstance: `__class__` is the callable's to claim
+            if type(fn) is types.MethodType:
                 key: object = (id(fn.__self__), id(fn.__func__))
             else:
                 key = id(fn)
@@ -542,9 +540,8 @@ class Session:
                 form = self._backend.op_form(op, in_forms, {**form_view, **(form_params or {})})
             except GraphedTypeError:
                 raise
-            except (
-                Exception
-            ) as exc:  # backend type/shape error -> user-located error (as record_op)
+            # backend type/shape error -> user-located error (as record_op)
+            except Exception as exc:
                 raise GraphedTypeError(op, prov, str(exc)) from exc
         # the declaration op_form honoured (or, beside form=, a leaf dtype) is checked on every
         # value

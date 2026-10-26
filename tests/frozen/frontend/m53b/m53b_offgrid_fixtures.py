@@ -45,8 +45,7 @@ def _record(*, eta: bool = False) -> tuple[Session, Any]:
     return session, from_record(session, "ev", pt=VECTOR)
 
 
-# ---- two-axis carriers: jes + jer registered, an independent member re-pointed over
-# both ----------
+# ---- two-axis carriers: jes + jer registered, an independent member re-pointed over both --------
 def two_axis_loose() -> tuple[Session, Varied]:
     """Return the loose form's carrier is ``target._tags``.
 
@@ -87,8 +86,7 @@ def independent_weight(carrier: Any, factor: float = 0.5) -> Any:
     return graphed.nominal(carrier["pt"]) * factor
 
 
-# ---- numeric grids: μRxμF (2 / 0.5) and the prescribed off-diagonal (1
-# / -1) ----------------------
+# ---- numeric grids: μRxμF (2 / 0.5) and the prescribed off-diagonal (1 / -1) --------------------
 def scale_grid() -> tuple[Session, EventContext, Any]:
     """Return ``muR`` and ``muF`` as INDEPENDENT weight families (numeric tags ``2`` / ``0.5``).
 

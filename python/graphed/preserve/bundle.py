@@ -51,8 +51,7 @@ _ENV_PACKAGES = (
 )
 
 
-# ---- on-disk dataset codec (deterministic; awkward via
-# to_buffers) -------------------------------
+# ---- on-disk dataset codec (deterministic; awkward via to_buffers) ------------------------------
 def _pack_array(arr: Any) -> bytes:
     import awkward as ak  # noqa: PLC0415
 
@@ -272,9 +271,8 @@ def build_bundle(
             raise PreserveError(f"no payload bytes supplied for external {ch} (node {node['id']})")
         blob = payloads[ch]
         actual = plugin.content_hash(blob)
-        if (
-            actual != ch
-        ):  # integrity: the bytes must hash to the recorded id (cache-poisoning-safe)
+        # integrity: the bytes must hash to the recorded id (cache-poisoning-safe)
+        if actual != ch:
             raise PreserveError(
                 f"payload for node {node['id']} hashes to {actual}, not the recorded {ch} "
                 "(mismatched/poisoned)"
@@ -329,9 +327,8 @@ def build_bundle(
         "config": dict(config or {}),
         "seed": int(seed),
     }
-    if (
-        services_manifest
-    ):  # omitted when empty, like "variations": a bundle without services keeps its bytes
+    # omitted when empty, like "variations": a bundle without services keeps its bytes
+    if services_manifest:
         manifest["services"] = services_manifest
     (root / "manifest.json").write_bytes(canonical_bytes(manifest))
     return Bundle(root=root, manifest=manifest)

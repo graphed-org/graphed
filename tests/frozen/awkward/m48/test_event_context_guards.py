@@ -46,9 +46,8 @@ def test_the_context_reserves_no_names() -> None:
     assert isinstance(tree.weights, Array)
     assert isinstance(tree.vary, Array)
     assert tree["vary"].node_id == tree.vary.node_id  # string getitem IS field access
-    assert (
-        graphed.weight(tree) is None
-    )  # the verb is a module function; `.weights` is tree content
+    # the verb is a module function; `.weights` is tree content
+    assert graphed.weight(tree) is None
 
 
 def test_slice_and_int_subscripts_are_refused_naming_the_supported_forms() -> None:

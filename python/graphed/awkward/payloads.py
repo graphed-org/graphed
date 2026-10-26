@@ -94,8 +94,8 @@ def opaque_callable_descriptor(fn_name: str) -> PayloadDescriptor:
     )
 
 
-# ---- M28: content-identity descriptors, aligned with the graphed-preserve plugin
-# conventions ------ (identical domain strings + algorithms, so descriptor.content_hash ==
+# ---- M28: content-identity descriptors, aligned with the graphed-preserve plugin conventions ----
+# (identical domain strings + algorithms, so descriptor.content_hash ==
 # plugin.content_hash(payload) and gak-recorded Externals pass a bundle's payload-integrity check)
 def correctionlib_contents_hash(payload: bytes) -> str:
     """sha256 of the correction set's CONTENTS (canonical JSON) — formatting is not identity."""

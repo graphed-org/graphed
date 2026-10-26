@@ -85,9 +85,8 @@ def test_two_factors_that_collide_at_one_shift_label_are_refused_at_registration
 
     second = _factor(shifted, shifted["r5"], 2.0)  # nominals multiply; the `jes_up` members do not
     nominals = [session.form(graphed.nominal(first)), session.form(graphed.nominal(second))]
-    session.backend.op_form(
-        "mul", nominals, {}
-    )  # must not raise, or this is not the per-label case
+    # must not raise, or this is not the per-label case
+    session.backend.op_form("mul", nominals, {})
 
     with pytest.raises(GraphedTypeError, match="jes_up"):
         graphed.vary(registered, "B", second, is_weight=True, up=second * 1.1)
@@ -273,9 +272,8 @@ def test_a_clash_at_a_joint_this_registration_mints_is_refused() -> None:
         session.form(_two_level(container, "jes_up"))
         for container in (registered._factors[0], central)
     ]
-    session.backend.op_form(
-        "mul", at_jes_up, {}
-    )  # jes_up itself agrees, or the joint is not the cause
+    # jes_up itself agrees, or the joint is not the cause
+    session.backend.op_form("mul", at_jes_up, {})
 
     with pytest.raises(GraphedTypeError, match="B_up__jes_up"):
         graphed.vary(registered, "B", central, is_weight=True, up=clashing)

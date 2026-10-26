@@ -81,9 +81,8 @@ def test_aggregate_plan_refuses_an_interior_reduction(parquet_path: str) -> None
 def test_aggregate_plan_still_folds_an_output_reduction(parquet_path: str) -> None:
     ev = _ak_source(parquet_path)
     assert _total(_sum_plan(gak.sum(ev.x), steps=2)) == float(X.sum())
-    assert _total(_sum_plan(gak.sum(ev.x[ev.x > 4]), steps=3)) == float(
-        X[X > 4].sum()
-    )  # a mask is row-local
+    # a mask is row-local
+    assert _total(_sum_plan(gak.sum(ev.x[ev.x > 4]), steps=3)) == float(X[X > 4].sum())
 
 
 @pytest.mark.parametrize("backend", ["awkward", "numpy"])

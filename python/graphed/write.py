@@ -58,8 +58,7 @@ def write_plan(
     )
 
 
-# ---- a write as one output of a multi-output
-# plan ------------------------------------------------
+# ---- a write as one output of a multi-output plan -----------------------------------------------
 @dataclass(frozen=True, eq=False)
 class PartWrite:
     """One part per task of ``array``, written beside a plan's reductions.
@@ -83,8 +82,7 @@ class PartWrite:
     storage_options: Mapping[str, Any] | None = None
 
 
-# ---- writer-side part naming and indexing
-# (R15.9) ------------------------------------------------
+# ---- writer-side part naming and indexing (R15.9) -----------------------------------------------
 def file_bases(keys: Sequence[Hashable], steps_per_file: int) -> dict[Hashable, int]:
     """Key -> first output-part index of that file.
 
@@ -137,8 +135,7 @@ def part_path(destination: str, index: int, *, prefix: str = "part", suffix: str
     return join_part(destination, f"{prefix}-{index:05d}{suffix}")
 
 
-# ---- where a part lands: a local path or an fsspec
-# URL -------------------------------------------
+# ---- where a part lands: a local path or an fsspec URL ------------------------------------------
 def is_url(destination: str) -> bool:
     """Return whether ``destination`` contains ``://``, making it an fsspec URL.
 
@@ -200,8 +197,7 @@ def prepare_part(path: str, **storage_options: Any) -> tuple[Any, str]:
     return fs, where
 
 
-# ---- the partitioned-source protocol (read side of the
-# base) -------------------------------------
+# ---- the partitioned-source protocol (read side of the base) ------------------------------------
 @runtime_checkable
 class PartitionedSource(Protocol):
     """A source DATA object that can be read partition by partition.

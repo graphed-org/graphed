@@ -61,8 +61,8 @@ def restrict(point: Point, axes: frozenset[str]) -> Point:
 def render(point: Point) -> dict[str, str]:
     """§4.10's coordinate view.
 
-    nuisance-sorted, each coordinate by VALUE, so two equal points render alike and the rendering
-    predicts resolution rather than round-tripping the spelling.
+    Coordinates are nuisance-sorted and each is rendered by VALUE, so two equal points render alike
+    and the rendering predicts resolution rather than round-tripping the spelling.
     """
     return dict(point)
 

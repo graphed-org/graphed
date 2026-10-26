@@ -1,7 +1,7 @@
 """M65 A1 frozen suite (graphed-debug slice).
 
-browser-to-run control over the dashboard's ``POST /api/control`` route and the ``/ingest``
-websocket, into a ``RunControl``.
+It covers browser-to-run control over the dashboard's ``POST /api/control`` route and the
+``/ingest`` websocket, into a ``RunControl``.
 """
 
 from __future__ import annotations

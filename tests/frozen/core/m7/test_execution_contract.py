@@ -33,9 +33,8 @@ def test_stop_condition_wall_clock_and_error_budget() -> None:
         gc.StopCondition(max_errors=2).reason(gc.ExecContext(errors=3))
         is gc.StopReason.ERROR_BUDGET
     )
-    assert (
-        gc.StopCondition(max_errors=2).reason(gc.ExecContext(errors=2)) is None
-    )  # budget not exceeded
+    # budget not exceeded
+    assert gc.StopCondition(max_errors=2).reason(gc.ExecContext(errors=2)) is None
 
 
 def test_no_stop_condition_means_run_to_exhaustion() -> None:

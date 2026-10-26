@@ -1,7 +1,7 @@
 """Shared builders for the frozen m68c awkward suite.
 
-in-memory partitioned sources, a local HTTP stand-in for a scale-factor service, and the External
-that calls it on every evaluation.
+They are in-memory partitioned sources, a local HTTP stand-in for a scale-factor service, and the
+External that calls it on every evaluation.
 
 Stage processes reach a runner as cloudpickle copies, so the spies are module state (classes and
 functions here pickle by reference) rather than instance state.
@@ -121,8 +121,7 @@ def one_source() -> Any:
     return source(new_session(), "events", *events_files())
 
 
-# ---- the scale-factor service and the External that calls
-# it -------------------------------------
+# ---- the scale-factor service and the External that calls it ------------------------------------
 class _LookupFreeHTTPServer(ThreadingHTTPServer):
     """Binds without ``HTTPServer.server_bind``'s ``socket.getfqdn``.
 
@@ -218,8 +217,7 @@ def by_hand(events: Any) -> Any:
     return gak.zip({"run": events.run, "x": events.x * SF}, depth_limit=1)
 
 
-# ---- reduce/combine/empty that keep every gathered
-# block ------------------------------------------
+# ---- reduce/combine/empty that keep every gathered block ----------------------------------------
 def keep(values: list[Any]) -> list[Any]:
     return [values[0]]
 

@@ -45,9 +45,8 @@ def test_roundtrip_preserves_structure() -> None:
 def test_reserialize_is_byte_identical() -> None:
     g, out = _analysis()
     blob = g.serialize(outputs=[out])
-    assert (
-        GraphStore.deserialize(blob).serialize() == blob
-    )  # carried marks reserialize identically
+    # carried marks reserialize identically
+    assert GraphStore.deserialize(blob).serialize() == blob
 
 
 def test_identical_graphs_serialize_identically() -> None:

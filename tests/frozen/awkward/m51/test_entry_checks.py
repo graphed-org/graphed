@@ -100,9 +100,8 @@ def test_2a_refuses_a_contexted_record_with_a_handleless_mask(tmp_path) -> None:
     """
     _session, root = awkward_session()
     events = ga.gnano.events(root)
-    handleless = (
-        gak.num(root.Jet) >= 2
-    )  # read through the raw root, so it carries no context handle
+    # read through the raw root, so it carries no context handle
+    handleless = gak.num(root.Jet) >= 2
     assert graphed.context_of(events.Jet) is events and graphed.context_of(handleless) is None
     with pytest.raises(GraphedError):
         _write(events.Jet, str(tmp_path / "nohandle"), handleless, compute=False)
@@ -135,9 +134,8 @@ def test_2c_refuses_a_jagged_level_0_mask_that_passes_2a_and_2b(tmp_path) -> Non
     flat = gak.num(events.Jet) >= 2  # ndim 1 — per event, same context
     with pytest.raises(GraphedError):
         _write(events.Jet, str(tmp_path / "jag"), jagged, compute=False)
-    assert (
-        len(_write(events.Jet, str(tmp_path / "flat"), flat)) == 1
-    )  # depth is the only difference
+    # depth is the only difference
+    assert len(_write(events.Jet, str(tmp_path / "flat"), flat)) == 1
 
 
 def test_2c_refuses_a_too_shallow_mask_supplied_at_level_1(tmp_path) -> None:  # type: ignore[no-untyped-def]

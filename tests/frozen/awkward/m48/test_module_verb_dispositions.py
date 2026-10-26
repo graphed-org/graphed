@@ -162,9 +162,8 @@ def test_the_boundary_and_plan_verbs_refuse_without_silently_compiling() -> None
         except Exception as exc:
             raised = exc
         assert raised is not None, f"graphed.{verb} silently accepted a Varied"
-    assert (
-        graphed.repartition(plain, n=2).node_id != plain.node_id
-    )  # the control: plain still works
+    # the control: plain still works
+    assert graphed.repartition(plain, n=2).node_id != plain.node_id
 
 
 def test_the_compile_and_aggregate_verbs_refuse_naming_graphed_universe() -> None:
@@ -201,9 +200,8 @@ def test_the_expanding_verbs_are_asserted_PER_VERB() -> None:
     opaque = root.map(lambda events: events).MET.pt
     conservative = graphed.vary(root.MET.pt, "sig", up=opaque)
     assert read_columns([conservative], root.node_id) is None
-    assert (
-        read_columns([opaque], root.node_id) is None
-    )  # the member really is the conservative one
+    # the member really is the conservative one
+    assert read_columns([opaque], root.node_id) is None
 
 
 def test_the_idiom_expanding_verbs_return_their_own_type_per_label() -> None:

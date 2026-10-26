@@ -126,9 +126,8 @@ def test_a_scalar_value_wider_than_a_float_round_trips_exactly() -> None:
     inexact, floats = session_over(FLOATS)
     widened = inexact.materialize(floats * np.float32(0.1))
     assert ak.to_list(widened) == ak.to_list(FLOATS * np.float32(0.1))
-    assert (
-        ak.to_list(widened)[0][0] == 0.10000000149011612
-    )  # float32(0.1) widened, not float64 0.1
+    # float32(0.1) widened, not float64 0.1
+    assert ak.to_list(widened)[0][0] == 0.10000000149011612
 
 
 def test_python_scalars_record_exactly_as_before() -> None:

@@ -1,9 +1,9 @@
 """Complex graph topologies through the optimizer (plan M4).
 
-diamond, star (fan-out/fan-in), and deeply-nested shapes. These were the dask-optimizer failure
-points (CSE blow-ups, O(N^2) reduction, DCE dropping a node reachable via two paths), so they are
-guarded explicitly here: correct reduced structure, a shared apex/hub interned once, and
-sub-quadratic reduction time as the shape grows.
+The topologies are diamond, star (fan-out/fan-in), and deeply-nested shapes. These were the
+dask-optimizer failure points (CSE blow-ups, O(N^2) reduction, DCE dropping a node reachable via
+two paths), so they are guarded explicitly here: correct reduced structure, a shared apex/hub
+interned once, and sub-quadratic reduction time as the shape grows.
 """
 
 from __future__ import annotations

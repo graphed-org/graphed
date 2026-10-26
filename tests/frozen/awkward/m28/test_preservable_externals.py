@@ -120,8 +120,7 @@ def test_descriptors_carry_the_aligned_hash_and_metadata() -> None:
     assert m.content_hash == onnx_weights_hash(_onnx_bytes(0.5))
 
 
-# ---------------------------------- the template-bearing
-# recorders --------------------------------
+# ---------------------------------- the template-bearing recorders -------------------------------
 def _session() -> tuple[Session, Any]:
     events = ak.Array(
         {
@@ -155,11 +154,12 @@ def test_apply_correction_with_a_template_records_path_free_and_obeys_it() -> No
 
     node = _node(s, sf)
     assert "path" not in node["params"]  # no filesystem leakage into the IR
+    # the preserved template
     assert json.loads(str(node["params"]["args"])) == [
         "nominal",
         "$0",
         "$1",
-    ]  # the preserved template
+    ]
     assert node["descriptor"]["content_hash"] == correctionlib_contents_hash(CSET)
 
 
@@ -172,9 +172,8 @@ def test_apply_correction_accepts_payload_bytes_or_a_path(tmp_path) -> None:  # 
         str(p), "jetsf", [ev.Jet.pt], lambda *c: c[-1], args=["nominal", "$0"]
     )
     na, nb = _node(s, a), _node(s, b)
-    assert (
-        na["descriptor"]["content_hash"] == nb["descriptor"]["content_hash"]
-    )  # identity is content
+    # identity is content
+    assert na["descriptor"]["content_hash"] == nb["descriptor"]["content_hash"]
 
 
 def test_onnx_inference_with_a_group_template_stacks_features() -> None:

@@ -349,10 +349,10 @@ class WorkerTransport(Protocol):
         ...
 
 
-# ---- M41: the Phase-2 ClusterExecutor launch seam (plan
-# §6.1.3) ---------------------------------- Three data-only siblings of Executor/WorkerTransport.
-# The concrete cross-process Store + launcher live in graphed-exec-local BEHIND these types; this
-# module stays pure (§A.4 — no backend/exec import).
+# ---- M41: the Phase-2 ClusterExecutor launch seam (plan §6.1.3) ---------------------------------
+# Three data-only siblings of Executor/WorkerTransport. The concrete cross-process Store + launcher
+# live in graphed-exec-local BEHIND these types; this module stays pure (§A.4 — no backend/exec
+# import).
 @dataclass
 class AddressTable:
     """A data-only ``node_id -> routable (host, port)`` table a *launcher* populates.

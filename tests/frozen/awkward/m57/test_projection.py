@@ -467,9 +467,8 @@ def test_a_parent_built_projected_nominal_is_an_overlay_after_the_head() -> None
 
     # the control: the same expression built ABOVE a mask that lies between is a new factor
     child = base.ctx[base.met.pt > MET_CUT]
-    extra = (
-        m57_pu(child["Jet"]) * 0.5
-    )  # a factor the child registers, so its ambient is NOT the parent's
+    # a factor the child registers, so its ambient is NOT the parent's
+    extra = m57_pu(child["Jet"]) * 0.5
     child = m57_weight(child, "nf", extra, m57_scaled(extra, NF_TABLE))
     below = graphed.universe(child, "hf_up")
     crossed = _at(parent_member, below)

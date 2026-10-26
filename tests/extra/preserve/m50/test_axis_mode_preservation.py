@@ -116,15 +116,13 @@ def test_axis_mode_variation_fill_preserves_and_reproduces(tmp_path) -> None:  #
     # the synthesized payload is the DISCRIMINATED canonical (carries the variation), not the bare
     # spec
     assert payload.decode() != spec and "variation=" in payload.decode()
-    assert (
-        HISTOGRAM_PLUGIN.content_hash(payload) == entry["content_hash"]
-    )  # integrity, as build checks
+    # integrity, as build checks
+    assert HISTOGRAM_PLUGIN.content_hash(payload) == entry["content_hash"]
 
     got = reproduce(bundle)  # the eval-side half: reconstruct the axis loop from params
     assert isinstance(got, bh.Histogram)
-    assert any(
-        a.__dict__.get("name") == "variation" for a in got.axes
-    )  # the variation axis survived
+    # the variation axis survived
+    assert any(a.__dict__.get("name") == "variation" for a in got.axes)
     eager = _eager_axis_reference(spec)
     assert np.array_equal(got.view(flow=True)["value"], reference.view(flow=True)["value"])
     assert np.array_equal(got.view(flow=True)["value"], eager.view(flow=True)["value"])

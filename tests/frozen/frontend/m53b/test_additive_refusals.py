@@ -59,9 +59,8 @@ def test_a_single_foreign_coordinate_already_owned_by_its_axis_label_is_refused(
 
     A single-foreign ``{jes: up}`` is already the ``jes_up`` label's point — a second name for it.
     """
-    assert (
-        _repoint({"corr": "a", "jes": "up", "jer": "up"})["corr_a"] == JOINT
-    )  # admitted (2-coord)
+    # admitted (2-coord)
+    assert _repoint({"corr": "a", "jes": "up", "jer": "up"})["corr_a"] == JOINT
     _refused({"corr": "a", "jes": "up"})  # refused (1-coord, already owned)
 
 
@@ -77,9 +76,8 @@ def test_two_additive_entries_re_pointing_to_one_point_are_refused() -> None:
 
     Two labels for one universe means two datacard bins for one thing.
     """
-    assert (
-        _repoint({"corr": "a", "jes": "up", "jer": "up"})["corr_a"] == JOINT
-    )  # admitted (single)
+    # admitted (single)
+    assert _repoint({"corr": "a", "jes": "up", "jer": "up"})["corr_a"] == JOINT
 
     _session, ctx = two_axis_context()
     factor = independent_weight(ctx)

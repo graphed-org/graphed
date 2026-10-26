@@ -581,9 +581,8 @@ def test_a_projected_weight_stays_the_member_across_a_later_mint() -> None:
     registered = graphed.vary(ctx, "pu", weight, is_weight=True, up=weight * 1.1)
     projected = graphed.universe(registered, "pu_up")
     before = graphed.weight(projected)
-    graphed.vary(
-        registered, "sf", weight * 2.0, is_weight=True, up=weight * 2.1
-    )  # a mint, elsewhere
+    # a mint, elsewhere
+    graphed.vary(registered, "sf", weight * 2.0, is_weight=True, up=weight * 2.1)
     after = graphed.weight(projected)
     assert before is not None and after is not None
     assert not isinstance(before, Varied)

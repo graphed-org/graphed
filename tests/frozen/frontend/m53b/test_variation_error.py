@@ -44,7 +44,7 @@ def _dependent() -> tuple[Any, Any]:
 def _independent() -> tuple[Any, Any]:
     """Return an independent ``corr`` member (off the nominal) on a jes+jer context.
 
-    re-pointed additively.
+    The member is re-pointed additively.
     """
     _session, ctx = two_axis_context()
     return ctx, independent_weight(ctx)

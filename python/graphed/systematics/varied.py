@@ -126,9 +126,8 @@ class Varied:
         probe = getattr(self._members["nominal"], name)
         if isinstance(probe, BoundMethod):
             return BoundMethod(self, name)
-        if not isinstance(
-            probe, Array | Varied
-        ):  # a form answer, e.g. `.fields`: one for all universes
+        # a form answer, e.g. `.fields`: one for all universes
+        if not isinstance(probe, Array | Varied):
             if any(getattr(member, name) != probe for member in self._members.values()):
                 raise GraphedError(
                     f"the universes disagree on {name!r}; read one universe first, with "

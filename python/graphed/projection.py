@@ -182,9 +182,8 @@ def read_columns(arrays: Sequence[Array], source_nid: int) -> tuple[str, ...] | 
             return None
 
         array.session.walk(array, source=on_source, op=on_op, external=on_external)
-        if (
-            conservative or not needed
-        ):  # whole-record consumption or a bare source read -> read all
+        # whole-record consumption or a bare source read -> read all
+        if conservative or not needed:
             return None
         return tuple(sorted(needed))
 

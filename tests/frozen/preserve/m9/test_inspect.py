@@ -27,9 +27,8 @@ def test_inspect_renders_ir_provenance_and_payload_inventory(
     assert "correctionlib" in text and "onnx_model" in text  # payload inventory with descriptors
     assert "events" in text  # input dataset listed
     assert "agc.py:" in text  # M6 user-source provenance (basename:line)
-    assert (
-        "no opaque nodes" in text
-    )  # this analysis is fully durable IR + content-addressed payloads
+    # this analysis is fully durable IR + content-addressed payloads
+    assert "no opaque nodes" in text
 
 
 def test_inspect_neither_executes_nor_resolves_data(tmp_path) -> None:  # type: ignore[no-untyped-def]

@@ -80,10 +80,11 @@ def test_a_points_coordinate_that_is_not_a_tag_of_this_call_is_refused() -> None
             "corr",
             weight,
             is_weight=True,
+            # 'down' is not a corr tag
             points=[
                 ("up", weight * 3.0),
                 {"corr": "down", "jes": "up"},
-            ],  # 'down' is not a corr tag
+            ],
         )
     message = str(caught.value)
     assert "down" in message

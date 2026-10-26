@@ -35,9 +35,10 @@ HIST = {"name": "met", "bins": 20, "lo": 0.0, "hi": 200.0}
 def _hist(value: Any, weight: Any) -> np.ndarray:
     v = np.asarray(ak.to_numpy(ak.Array(value)), dtype="float64")
     w = np.asarray(ak.to_numpy(ak.Array(weight)), dtype="float64")
+    # the triple-path _histogram convention
     return np.histogram(v, bins=HIST["bins"], range=(HIST["lo"], HIST["hi"]), weights=w)[0].round(
         6
-    )  # the triple-path _histogram convention
+    )
 
 
 def _record(plugin: Any, payload: bytes, params: dict[str, Any] | None = None):  # type: ignore[no-untyped-def]

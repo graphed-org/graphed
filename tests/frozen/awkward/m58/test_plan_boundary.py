@@ -40,9 +40,8 @@ def test_a_pickled_declaring_source_keeps_its_counter_and_drops_its_witness_stat
     assert copy.outputs == () and copy.seen == []
     assert source.outputs[0] is outputs[0] and source.seen == [DECLARED]  # intact on this side
     with pytest.raises(AssertionError):
-        copy.projected_columns(
-            outputs
-        )  # the counter travelled at its limit: a worker call is loud
+        # the counter travelled at its limit: a worker call is loud
+        copy.projected_columns(outputs)
     copy.read_partition(copy.partitions(1)[0], DECLARED, None)
     assert copy.seen == [DECLARED]  # the shipped reader records its own reads, from empty
 

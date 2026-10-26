@@ -51,8 +51,8 @@ _KEYIDX = tuple(COLUMNS.index(k) for k in ON)
 def _cell(v: Any) -> int | None:
     """Return a single relational cell, null-normalized.
 
-    awkward option ``None``, a numpy masked element, or a pandas float ``NaN`` all collapse to the
-    ``None`` sentinel; everything else is an ``int``.
+    An awkward option ``None``, a numpy masked element, or a pandas float ``NaN`` all collapse to
+    the ``None`` sentinel; everything else is an ``int``.
     """
     if v is None or v is np.ma.masked or np.ma.is_masked(v):
         return None

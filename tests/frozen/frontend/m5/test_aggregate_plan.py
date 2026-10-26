@@ -87,13 +87,13 @@ def test_shared_subgraph_read_once_and_reduced_correctly() -> None:
         out1, out2, reduce=_sum_each, combine=_add_pairs, empty=lambda: [0, 0], steps_per_file=4
     )
     value = SequentialRunner().run(plan).value
+    # [156, 234]
     assert value == [
         sum(2 * v for v in range(1, 13)),
         sum(3 * v for v in range(1, 13)),
-    ]  # [156, 234]
-    assert (
-        len(src.reads) == 4
-    )  # witness: 4 partitions read ONCE each, not once per output (would be 8)
+    ]
+    # witness: 4 partitions read ONCE each, not once per output (would be 8)
+    assert len(src.reads) == 4
 
 
 def test_single_output() -> None:
@@ -122,7 +122,6 @@ def test_validation() -> None:
 
 def test_resolve_backend_forms() -> None:
     assert resolve_backend(lambda: "factory-made") == "factory-made"  # zero-arg factory
-    assert isinstance(
-        resolve_backend("collections:OrderedDict"), OrderedDict
-    )  # importable callable
+    # importable callable
+    assert isinstance(resolve_backend("collections:OrderedDict"), OrderedDict)
     assert resolve_backend("math:pi") == math.pi  # importable non-callable attr returned as-is

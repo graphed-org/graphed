@@ -90,12 +90,13 @@ def test_inner_join_matches_a_duplicating_sql_baseline() -> None:
     rk, rv = [20, 20, 40], [5.0, 6.0, 7.0]
     left = _rec(lk, lx=np.array(lv, dtype=np.int64))
     right = _rec(rk, rx=np.array(rv, dtype=np.float64))
+    # key 20: 2 left x 2 right = 4 rows — a grouped/list-of-matches join would give far fewer
     expected = sorted(
         (int(a), int(x), float(y))
         for a, x in zip(lk, lv, strict=True)
         for b, y in zip(rk, rv, strict=True)
         if a == b
-    )  # key 20: 2 left x 2 right = 4 rows — a grouped/list-of-matches join would give far fewer
+    )
     merged = _inner_join(be, left, right)
     got = sorted(
         (int(k), int(x), float(y))

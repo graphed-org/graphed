@@ -121,9 +121,8 @@ def test_awkward_right_option_null_key_form_matches_materialized_and_stays_optio
     right = _option_key_source(s, "right", [5, None], rv=[500, 999])
     j = graphed.join(left, right, on=["k"], how=how)
 
-    declared = _leaf(
-        s.form(j).tt["k"]
-    )  # recorded op_form key type (the CANONICAL durable form, §A.3.1)
+    # recorded op_form key type (the CANONICAL durable form, §A.3.1)
+    declared = _leaf(s.form(j).tt["k"])
     block = s.materialize(j)
     produced = _leaf(block["k"])
 

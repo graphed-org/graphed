@@ -79,9 +79,8 @@ def test_a_reduce_with_the_hook_is_bound_too() -> None:
     assert plan.process.reduce.endpoints is None
 
 
-def test_a_reduce_only_service_is_bound() -> (
-    None
-):  # D8: histserv lives on the reduce, no External names it
+# D8: histserv lives on the reduce, no External names it
+def test_a_reduce_only_service_is_bound() -> None:
     ev = new_events()
     ev.session.declare_service(ServiceSpec("hist-svc", "histserv"))
     plan = values_plan(ev.x, reduce=_BindableReduce(), services=("hist-svc",))

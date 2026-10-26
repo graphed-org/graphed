@@ -166,9 +166,8 @@ def pack_key(rec: ak.Array, on: Sequence[str]) -> ak.Array:
     n = len(on)
     if n == 0:
         raise ValueError("pack_key needs at least one key field")
-    if (
-        n * _PACK_STRIDE > 64
-    ):  # the packing itself cannot fit u64 (overflow→fixed-width bytes is Phase-2)
+    # the packing itself cannot fit u64 (overflow→fixed-width bytes is Phase-2)
+    if n * _PACK_STRIDE > 64:
         raise ValueError(
             f"pack_key: {n} fields x {_PACK_STRIDE} bits exceeds u64 (overflow->bytes is Phase-2)"
         )
@@ -226,13 +225,12 @@ def join_form(inputs: Sequence[ak.Array], params: Mapping[str, Any]) -> ak.Array
     right_opt = how in ("left", "outer")  # right's NON-key fields can be null on a left-only row
     fields: dict[str, ak.Array] = {}
     for f in lf:
-        if (
-            f in on_set and f in rf
-        ):  # coalesced shared key: OPTION iff EITHER input key is option — the
-            # surviving side of a right/outer join can carry a genuine null, so op_form must NOT
-            # under-declare the key non-option vs the materialised block (§A.3.1 durable-form
-            # soundness). A sound over-approximation: op_form ⊇ materialised (merge_records refines
-            # to the exact runtime type — non-option when no null actually survives).
+        # coalesced shared key: OPTION iff EITHER input key is option — the surviving side of a
+        # right/outer join can carry a genuine null, so op_form must NOT under-declare the key
+        # non-option vs the materialised block (§A.3.1 durable-form soundness). A sound
+        # over-approximation: op_form ⊇ materialised (merge_records refines to the exact runtime
+        # type — non-option when no null actually survives).
+        if f in on_set and f in rf:
             k = left[f]
             fields[f] = k if _is_option(k) else (_optional(k) if _is_option(right[f]) else k)
         # a non-key left field is null only on the absent (right-only) row of a right/outer join

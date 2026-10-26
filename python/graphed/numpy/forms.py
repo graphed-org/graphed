@@ -128,9 +128,8 @@ def declared_form(forms: Sequence[NumpyForm], canonical: str) -> NumpyForm:
         return NumpyForm(
             np.dtype(object), kind="record", fields=tuple((n, d[n].str) for n in d.names)
         )
-    kind = (
-        "scalar" if first.kind == "scalar" else "vector"
-    )  # a record input's kind does not carry over
+    # a record input's kind does not carry over
+    kind = "scalar" if first.kind == "scalar" else "vector"
     return NumpyForm(d.base, kind=kind, shape=first.shape[:1] + d.shape)
 
 
@@ -147,9 +146,8 @@ def check_output_type(
     if key != "output_type":
         return None
     d = _dtype(declared)
-    lead = int(
-        any(np.ndim(x) > 0 or isinstance(x, Mapping) for x in inputs)
-    )  # a record source is a dict
+    # a record source is a dict
+    lead = int(any(np.ndim(x) > 0 or isinstance(x, Mapping) for x in inputs))
     if isinstance(value, Mapping):
         cols = tuple((str(k), np.asarray(v).dtype) for k, v in value.items())
         ok = d.names is not None and cols == tuple((n, d[n]) for n in d.names)

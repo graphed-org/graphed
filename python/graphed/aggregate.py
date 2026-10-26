@@ -624,9 +624,8 @@ class _CollatedCombine:
 
     def __call__(self, a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
         merged = {**a, **{n: self.combines[n](a[n], v) if n in a else v for n, v in b.items()}}
-        return {
-            n: merged[n] for n in self.combines if n in merged
-        }  # mapping order, whatever the tree
+        # mapping order, whatever the tree
+        return {n: merged[n] for n in self.combines if n in merged}
 
 
 def collate(plans: Mapping[str, Plan[Any]]) -> Plan[dict[str, Any]]:

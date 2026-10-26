@@ -70,9 +70,8 @@ def events(s: Session) -> Any:
 
 
 def new_events() -> Any:
-    register_plugin(
-        TRITON_PLUGIN, validate=False
-    )  # preserve/m9 re-registers the kind with its own plugin
+    # preserve/m9 re-registers the kind with its own plugin
+    register_plugin(TRITON_PLUGIN, validate=False)
     return events(Session(AwkwardBackend()))
 
 

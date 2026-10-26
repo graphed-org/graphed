@@ -73,9 +73,8 @@ def _awkward_function(
             param.default,
             param.empty,
         ):
-            value = (
-                param.default
-            )  # an omitted ak argument means ak's default (ak.softmax: axis=-1)
+            # an omitted ak argument means ak's default (ak.softmax: axis=-1)
+            value = param.default
         else:
             continue
         if param.kind is inspect.Parameter.VAR_POSITIONAL:

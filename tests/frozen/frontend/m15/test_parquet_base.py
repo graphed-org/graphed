@@ -42,9 +42,8 @@ def files(tmp_path) -> list[str]:  # type: ignore[no-untyped-def]
 def test_discovery_forms(files: list[str], tmp_path) -> None:  # type: ignore[no-untyped-def]
     assert gpq.discover(files[0]) == (files[0],)
     assert gpq.discover(str(tmp_path)) == tuple(sorted(files))  # directory: sorted
-    assert gpq.discover(os.path.join(tmp_path, "data-*.parquet")) == tuple(
-        sorted(files)
-    )  # glob: sorted
+    # glob: sorted
+    assert gpq.discover(os.path.join(tmp_path, "data-*.parquet")) == tuple(sorted(files))
     explicit = [files[2], files[0]]
     assert gpq.discover(explicit) == (files[2], files[0])  # explicit list: caller's order kept
     with pytest.raises(FileNotFoundError):
@@ -103,8 +102,7 @@ def test_part_index_is_stable_for_blind_and_eager(files: list[str]) -> None:
     assert gpq.part_path("/out", 7) == os.path.join("/out", "part-00007.parquet")
 
 
-# ---- deferred
-# sources ----------------------------------------------------------------------------
+# ---- deferred sources ---------------------------------------------------------------------------
 def test_deferred_source_is_lazy_and_identity_carries_the_dataset(files: list[str]) -> None:
     s = session()
     loader = CountingLoader(value="DATA")
@@ -124,8 +122,7 @@ def test_deferred_source_is_lazy_and_identity_carries_the_dataset(files: list[st
     assert other.node_id != a.node_id  # a DIFFERENT file list is a different source identity
 
 
-# ---- the deferred write
-# plan ---------------------------------------------------------------------
+# ---- the deferred write plan --------------------------------------------------------------------
 class _SpyResources:
     def open_once(self, uri: str, opener):  # type: ignore[no-untyped-def]
         return opener(uri)

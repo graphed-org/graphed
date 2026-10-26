@@ -775,10 +775,11 @@ def _record_method(
         if isinstance(value, dict):
             if not all(isinstance(key, str) for key in value):
                 raise refuse(where, value)
+            # the array-reference and typed-scalar shapes
             if set(value) in (
                 {"$"},
                 {"$dtype", "v"},
-            ):  # the array-reference and typed-scalar shapes
+            ):
                 raise GraphedTypeError(
                     "method",
                     prov,

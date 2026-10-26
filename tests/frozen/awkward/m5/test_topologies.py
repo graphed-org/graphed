@@ -27,9 +27,8 @@ def test_diamond_reads_each_column_exactly_once() -> None:
     right = a - ev.Muon.phi
     out = left + right
     read = project(out).columns_for("events")
-    assert read == frozenset(
-        {"Muon.pt", "Muon.eta", "Muon.phi"}
-    )  # no charge/mass, no other collection
+    # no charge/mass, no other collection
+    assert read == frozenset({"Muon.pt", "Muon.eta", "Muon.phi"})
 
 
 def test_star_one_column_feeds_many_branches() -> None:

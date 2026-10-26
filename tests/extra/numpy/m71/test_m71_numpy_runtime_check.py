@@ -60,22 +60,24 @@ def test_an_apply_value_of_another_dtype_raises_at_the_declaring_line() -> None:
     ("declared", "value", "fits"),
     [
         (("f4", (3,)), np.zeros((2, 3), dtype="f4"), True),
+        # the subarray pins the trailing shape
         (
             ("f4", (3,)),
             np.zeros((2, 2), dtype="f4"),
             False,
-        ),  # the subarray pins the trailing shape
+        ),
         ("float32", np.zeros((2, 3), dtype="f4"), False),  # a plain dtype pins no trailing axes
         (str, np.array(["ab", "c"]), True),  # unsized: any length of its kind
         ("U5", np.array(["ab", "c"]), False),
         ("S0", np.array([b"ab"]), True),
         ([("pt", "f4"), ("eta", "f4")], np.zeros(2, dtype=[("pt", "f4"), ("eta", "f4")]), True),
         ([("pt", "f4"), ("eta", "f4")], np.zeros(2, dtype=[("pt", "f4"), ("phi", "f4")]), False),
+        # the backend's own record value
         (
             [("pt", "f4"), ("eta", "f4")],
             {"pt": X, "eta": X},
             True,
-        ),  # the backend's own record value
+        ),
         ([("pt", "f4"), ("eta", "f4")], {"pt": X}, False),
         ("float32", {"pt": X}, False),
     ],

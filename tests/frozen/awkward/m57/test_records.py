@@ -168,9 +168,8 @@ def test_ambient_entries_keep_their_slots_kinds_and_order_across_a_value_free_jo
         (slot, rider.kind, tuple(sorted(rider.families)))
         for slot, rider, _e in m57_entries(projected)
     ]
-    values = m57_values(
-        base.session, graphed.weight(projected)
-    )  # the projected ambient is one member
+    # the projected ambient is one member
+    values = m57_values(base.session, graphed.weight(projected))
 
     joined = m57_weight(
         projected,

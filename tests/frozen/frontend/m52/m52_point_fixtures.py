@@ -67,8 +67,7 @@ def plain_context() -> tuple[Session, EventContext]:
     )
 
 
-# ---- the six existing shapes 2.1 quantifies
-# over -------------------------------------------------
+# ---- the six existing shapes 2.1 quantifies over ------------------------------------------------
 def loose_family() -> tuple[Session, Varied]:
     """Return the loose form: `vary` on a bare `Array`."""
     session, record = source()
@@ -178,8 +177,7 @@ def build(name: str) -> tuple[Session, Any]:
     return globals()[name]()
 
 
-# ---- the §8-g shape: a container whose LABELS outrun its
-# `_tags` ---------------------------------
+# ---- the §8-g shape: a container whose LABELS outrun its `_tags` --------------------------------
 def shift_then_weight_context() -> tuple[Session, EventContext]:
     """Return a shift family, then a weight family.
 
@@ -198,8 +196,7 @@ def shift_then_weight_context() -> tuple[Session, EventContext]:
     return session, varied
 
 
-# ---- two registered axes, the smallest carrier of a legal TWO-coordinate
-# point --------------------
+# ---- two registered axes, the smallest carrier of a legal TWO-coordinate point ------------------
 def two_axis_loose() -> tuple[Session, Varied]:
     """Return a loose `Varied` over `jes` and `jer`.
 
@@ -235,8 +232,7 @@ def descendant_weight(ctx: EventContext) -> Any:
     return ctx[mask]["pt"] * 0.5
 
 
-# ---- R2 / §4.11-4: numerically tagged
-# families ---------------------------------------------------
+# ---- R2 / §4.11-4: numerically tagged families --------------------------------------------------
 def numeric_families() -> tuple[Session, EventContext]:
     """Three families tagged `1` / `-1`: `jes` as a shift, `btag` and `jer` as weights.
 
@@ -298,8 +294,7 @@ def identifier_families() -> tuple[Session, EventContext]:
     )
 
 
-# ---- §4.11-4's three context carriers, each in
-# isolation -----------------------------------------
+# ---- §4.11-4's three context carriers, each in isolation ----------------------------------------
 #: each carrier context registers TWO families on ONE carrier, so a legal two-coordinate point can
 #: be written whose every axis is reachable through that carrier alone
 CARRIERS = ("ambient_only_context", "collection_only_context", "selection_only_context")

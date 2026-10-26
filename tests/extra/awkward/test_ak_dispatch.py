@@ -128,10 +128,11 @@ def test_options_gak_lacks_are_refused_like_gak(arrays: dict[str, Any]) -> None:
     [
         ("ak.to_numpy", lambda a: ak.to_numpy(a)),
         ("ak.to_arrow_table", lambda a: ak.to_arrow_table(a)),
+        # named "join" like gak.join, a different function
         (
             "ak.str.join",
             lambda a: ak.str.join(a, "-"),
-        ),  # named "join" like gak.join, a different function
+        ),
     ],
 )
 def test_functions_without_a_gak_equivalent_refuse(

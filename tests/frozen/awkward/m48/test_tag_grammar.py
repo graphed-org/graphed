@@ -59,12 +59,13 @@ def test_the_variations_channel_carries_tags_kwarg_syntax_cannot_spell() -> None
     pdf = _weight_context(
         ctx, "pdf", points={f"{i}": pu_weight(ctx, float(i)) for i in (1, 2, 102)}
     )
+    # indices untouched
     assert list(graphed.labels(pdf)) == [
         "nominal",
         "pdf_1",
         "pdf_2",
         "pdf_102",
-    ]  # indices untouched
+    ]
 
 
 def test_the_collection_mapping_inner_keys_are_the_third_channel() -> None:
@@ -145,9 +146,8 @@ def test_malformed_and_non_string_tags_are_rejected() -> None:
         with pytest.raises(GraphedError):
             _weight_context(ctx, "sig", points={tag: pu_weight(ctx, 1.0)})
     with pytest.raises(GraphedError):
-        _weight_context(
-            ctx, "sig", points={True: pu_weight(ctx, 1.0)}
-        )  # a bool is not the number 1
+        # a bool is not the number 1
+        _weight_context(ctx, "sig", points={True: pu_weight(ctx, 1.0)})
 
 
 def test_negative_zero_canonicalizes_to_zero() -> None:

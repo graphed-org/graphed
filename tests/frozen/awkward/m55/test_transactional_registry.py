@@ -29,9 +29,8 @@ def test_a_refused_call_leaves_the_family_registrable() -> None:
     before = dict(toy.session._points)
 
     message = refused(toy, lambda: graphed.vary(ctx, "jer", collections={"Jet": container}))
-    assert (
-        "jer_up__jes_up" in message
-    )  # the refusal fired on the labels, not on something upstream
+    # the refusal fired on the labels, not on something upstream
+    assert "jer_up__jes_up" in message
     assert dict(toy.session._points) == before
 
     containers = jer_containers(ctx)

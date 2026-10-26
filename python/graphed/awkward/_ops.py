@@ -136,9 +136,8 @@ def scalar_param(params: Mapping[str, Any], key: str = "scalar", dtype_key: str 
     value = params[key]
     if dtype_key not in params:
         return value
-    return np.dtype(str(params[dtype_key])).type(
-        value
-    )  # the dtype parses the wide int's text itself
+    # the dtype parses the wide int's text itself
+    return np.dtype(str(params[dtype_key])).type(value)
 
 
 def _scalar_operands(operands: Sequence[Any], params: Mapping[str, Any]) -> list[Any]:
@@ -237,9 +236,8 @@ def apply(
     if op == "pack_key":  # M40 §2.1: add the big-endian-packed u64 __joinkey__ column
         return join.pack_key(operands[0], join.on_from_params(params))
     if op == "exchange":
-        return operands[
-            0
-        ]  # a pure data-movement boundary is identity on values in-process (§3.3a)
+        # a pure data-movement boundary is identity on values in-process (§3.3a)
+        return operands[0]
     if op in _UNARY:
         return _UNARY[op](operands[0])
     if op in _BINARY:

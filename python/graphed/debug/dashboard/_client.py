@@ -127,9 +127,8 @@ class NetworkMonitor:
     def _emit(self, item: tuple[int, Any]) -> None:
         if not self._started:
             self.start()  # lazy autostart on first event
-        self._buf.append(
-            item
-        )  # a full buffer drops its oldest item -> never back-pressure the run
+        # a full buffer drops its oldest item -> never back-pressure the run
+        self._buf.append(item)
 
     def _connect(self) -> Any:
         import websocket  # noqa: PLC0415 (optional dep, imported lazily)

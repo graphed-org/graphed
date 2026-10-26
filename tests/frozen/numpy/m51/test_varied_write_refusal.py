@@ -35,9 +35,8 @@ def _varied_numpy_array() -> object:
     session = Session(NumpyBackend())
     g = gn.from_array(session, "x", np.arange(12.0))
     varied = graphed.vary(g, "jes", up=g * 1.1, down=g * 0.9)
-    assert isinstance(
-        varied, graphed.Varied
-    )  # instrument live: the fixture really built a container
+    # instrument live: the fixture really built a container
+    assert isinstance(varied, graphed.Varied)
     assert graphed.labels(varied) == ("nominal", "jes_up", "jes_down")
     return varied
 

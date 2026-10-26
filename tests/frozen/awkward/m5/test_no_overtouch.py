@@ -81,10 +81,11 @@ def test_dimuon_does_not_touch_unused_muon_mass_or_other_collections() -> None:
     [
         (lambda e: e.Muon.pt + e.Muon.eta, {"Muon.pt", "Muon.eta"}),
         (lambda e: e.Jet.btag, {"Jet.btag"}),
+        # multiplicity touches structure, not leaf data
         (
             lambda e: gak.num(e.Electron, axis=1),
             set(),
-        ),  # multiplicity touches structure, not leaf data
+        ),
     ],
 )
 def test_read_set_is_minimal(build, expected: set[str]) -> None:

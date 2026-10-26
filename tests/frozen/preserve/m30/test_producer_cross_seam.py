@@ -1,6 +1,6 @@
 """M30 — the producer seams meet preservation.
 
-gak- and graphed-histogram-recorded Externals preserve, pass bundle integrity, and replay
+Externals recorded by gak and graphed-histogram preserve, pass bundle integrity, and replay
 bit-for-bit.
 
 M27 widened replay; M28 (graphed-awkward) and M29 (graphed-histogram) aligned the producers.

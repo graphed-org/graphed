@@ -202,12 +202,10 @@ def test_progress_aggregates_overall_and_per_worker() -> None:
             assert [t["key"] for t in tasks] == [3, 4, 5]  # sorted by start time, then key
             assert [t["state"] for t in tasks] == ["finished", "finished", "started"]
             for t in tasks:
-                assert (
-                    t["partition"] and t["n_entries"] == t["key"]
-                )  # carried from the STARTED event
-            assert (
-                tasks[0]["t_end"] is not None
-            )  # a finished task records its end time (-> duration)
+                # carried from the STARTED event
+                assert t["partition"] and t["n_entries"] == t["key"]
+            # a finished task records its end time (-> duration)
+            assert tasks[0]["t_end"] is not None
             assert tasks[2]["t_end"] is None  # the in-flight one has no end yet
         finally:
             mon.close()
@@ -268,9 +266,8 @@ def test_profile_ingest_lands_flamegraph() -> None:
 
 def test_profile_ingest_ignores_malformed_payload() -> None:
     server = DashboardServer()  # no start(): _ingest_profile is pure data, no IOLoop needed
-    server._ingest_profile(
-        {"tree_b64": "@@@not-base64@@@"}
-    )  # undecodable -> swallowed, never raises
+    # undecodable -> swallowed, never raises
+    server._ingest_profile({"tree_b64": "@@@not-base64@@@"})
     server._ingest_profile({})  # missing key -> swallowed too
     assert server.snapshot()["profile_samples"] == 0
     assert server.flamegraph()["value"] == 0

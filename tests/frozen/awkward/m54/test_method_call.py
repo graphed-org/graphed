@@ -62,9 +62,8 @@ def test_a_numpy_scalar_constant_keeps_its_dtype_as_a_distinct_node() -> None:
     typed = jets.scaled(np.float64(2.0))
     plain = jets.scaled(2.0)
 
-    assert (
-        typed.node_id != plain.node_id
-    )  # NEP 50: a numpy scalar's dtype promotes, a float's does not
+    # NEP 50: a numpy scalar's dtype promotes, a float's does not
+    assert typed.node_id != plain.node_id
     assert ak.array_equal(
         ak.Array(session.materialize(typed)), eager("Jet").scaled(np.float64(2.0))
     )

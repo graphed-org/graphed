@@ -50,9 +50,8 @@ def _plan(tmp_path: Path, url: str, **kw: Any) -> Any:
 def test_capture_store_is_opened_once_and_gets_storage_options(
     tmp_path: Path, s3_url: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    probe = gcp.FsspecStore(
-        s3_url, **OPTIONS
-    )  # the filesystem instance (and client) the tasks share
+    # the filesystem instance (and client) the tasks share
+    probe = gcp.FsspecStore(s3_url, **OPTIONS)
     calls: collections.Counter[str] = collections.Counter()
     client = probe.fs.s3
     client.meta.events.register("before-call.s3", lambda model, **_k: calls.update([model.name]))

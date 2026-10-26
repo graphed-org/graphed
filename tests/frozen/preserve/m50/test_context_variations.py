@@ -68,8 +68,7 @@ def test_variations_reports_kind_and_parsed_value_per_tag() -> None:
     assert {kind for fam in v.values() for kind, _ in fam.values()} == {Kind.WEIGHT, Kind.SHIFT}
 
 
-# ---- §6.2(i-bis): narrowing helpers over a bare axis-mode
-# histogram ------------------------------
+# ---- §6.2(i-bis): narrowing helpers over a bare axis-mode histogram -----------------------------
 _STORED_ORDER = ("jes_down", "jes_up", "nominal")  # lexicographic; its first bin is NOT "nominal"
 
 

@@ -40,9 +40,8 @@ def test_build_rejects_payload_that_does_not_match_its_hash(tmp_path) -> None:  
     )
     # supply the RIGHT keys but WRONG bytes for the correction -> hash mismatch is caught
     poisoned = {
-        CORRECTIONLIB_PLUGIN.content_hash(corr): agc.correctionlib_json(
-            scale=9.9
-        ),  # bytes != recorded hash
+        # bytes != recorded hash
+        CORRECTIONLIB_PLUGIN.content_hash(corr): agc.correctionlib_json(scale=9.9),
         ONNX_PLUGIN.content_hash(model): model,
     }
     with pytest.raises(PreserveError, match="hashes to"):

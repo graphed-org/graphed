@@ -65,10 +65,11 @@ def test_defaults_are_the_planned_ones_and_specs_are_frozen() -> None:
         site.name = "other"  # type: ignore[misc]
     with pytest.raises(dataclasses.FrozenInstanceError):
         bare.image = "x"  # type: ignore[misc]
+    # §3 defaults rule: read-only, not a shared mutable dict
     for mapping in (
         bare.env,
         bare.resources,
-    ):  # §3 defaults rule: read-only, not a shared mutable dict
+    ):
         with pytest.raises(TypeError):
             mapping["k"] = 1.0  # type: ignore[index]
 
@@ -97,9 +98,8 @@ def test_session_registry_refuses_conflicts_and_undeclared_names() -> None:
     with pytest.raises(Exception, match=r"(?s)nope") as looked_up:
         s.service_for("nope")
     assert looked_up.match(declared)
-    assert (
-        ev.x is not None
-    )  # interned before counting, so only a refused External could add a node
+    # interned before counting, so only a refused External could add a node
+    assert ev.x is not None
     before = s.node_count()
     with pytest.raises(Exception, match=r"(?s)nope") as recorded:
         score(ev, descriptor("undeclared"), service="nope")
@@ -133,10 +133,11 @@ def test_plan_and_durable_plan_carry_the_referenced_specs() -> None:
     weight = score(ev, descriptor("durable"), service="scorer-svc")
     score(ev, descriptor("dead"), service="scorer-site")
     assert values_plan(weight).services == (_managed(),)
+    # sorted by name
     assert values_plan(weight, services=("unused-svc",)).services == (
         _managed(),
         _unused(),
-    )  # sorted by name
+    )
     assert values_plan(weight, services=("scorer-svc",)).services == (_managed(),)  # a union
     with pytest.raises(Exception, match="nope") as err:
         values_plan(weight, services=("nope",))
@@ -163,9 +164,8 @@ def test_plan_and_durable_plan_carry_the_referenced_specs() -> None:
     }
     bare = DurablePlan(**kept)
     assert bare.services == ()
-    assert [durable.task_id(p) for p in parts] == [
-        bare.task_id(p) for p in parts
-    ]  # the spec is not identity
+    # the spec is not identity
+    assert [durable.task_id(p) for p in parts] == [bare.task_id(p) for p in parts]
 
 
 def _bundle(root: Any) -> Bundle:
@@ -188,9 +188,8 @@ def _bundle(root: Any) -> Bundle:
 
 def test_bundle_manifest_and_inspect_list_the_referenced_specs(tmp_path: Any) -> None:
     opened = Bundle.open(_bundle(tmp_path / "b").root)
-    assert opened.manifest["services"] == [
-        _json(s.to_json()) for s in (_site(), _managed())
-    ]  # name order
+    # name order
+    assert opened.manifest["services"] == [_json(s.to_json()) for s in (_site(), _managed())]
     lines = inspect(opened).splitlines()
     (header,) = [i for i, line in enumerate(lines) if line.strip().startswith("services")]
     assert header > next(i for i, line in enumerate(lines) if "external payloads" in line)

@@ -130,8 +130,7 @@ def reference() -> np.ndarray:
     return _hist(_all_values())
 
 
-# ---- a realistic HEP analysis recorded through graphed + executed per
-# chunk ----------------------
+# ---- a realistic HEP analysis recorded through graphed + executed per chunk ---------------------
 N_EVENTS_HEP = 3000
 SEED_HEP = 7
 HEP_BINS, HEP_LO, HEP_HI = 20, 0.0, 200.0

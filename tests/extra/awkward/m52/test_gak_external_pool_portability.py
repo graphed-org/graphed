@@ -280,15 +280,13 @@ def _plan(build: Any) -> Any:
     )
 
 
-# ---------------------------------- 1. pool
-# portability -------------------------------------------
+# ---------------------------------- 1. pool portability ------------------------------------------
 def test_apply_correction_plan_pickles_and_runs_in_a_process_pool() -> None:
     pytest.importorskip("correctionlib")
     local = pytest.importorskip("graphed_executors.local")
 
-    pickle.dumps(
-        _plan(_correction_universes).process
-    )  # pre-fix: AttributeError on the local closure
+    # pre-fix: AttributeError on the local closure
+    pickle.dumps(_plan(_correction_universes).process)
     seq = SequentialRunner().run(_plan(_correction_universes)).value
     par = local.ProcessPoolExecutor(max_workers=2).run(_plan(_correction_universes)).value
     assert np.array_equal(par, seq)  # bit-for-bit, not merely close
@@ -339,10 +337,10 @@ def test_onnx_inference_plan_pickles_and_runs_in_a_process_pool() -> None:
 
 
 def test_the_recorded_evaluator_round_trips_through_stdlib_pickle() -> None:
-    """The evaluator itself.
+    """The evaluator itself is picklable.
 
-    picklable, and the restored copy — which has NO access to the user's callable — evaluates to
-    the same numbers by rebuilding the correction set from the payload.
+    The restored copy — which has NO access to the user's callable — evaluates to the same numbers
+    by rebuilding the correction set from the payload.
     """
     pytest.importorskip("correctionlib")
     from graphed.awkward.functions import _TemplateExternal  # noqa: PLC0415  (absent pre-fix)
@@ -477,8 +475,7 @@ def test_a_missing_framework_is_attributed_to_the_plugin() -> None:
         )
 
 
-# ---------------------------------- 2. numeric
-# identity -------------------------------------------
+# ---------------------------------- 2. numeric identity ------------------------------------------
 def test_sequential_numbers_match_the_pre_fix_golden() -> None:
     """Routing in-process evaluation through the plugin changed no number.
 
@@ -490,8 +487,7 @@ def test_sequential_numbers_match_the_pre_fix_golden() -> None:
     assert got[1] > got[0] > got[2]  # up/down bracket nominal: the SF was really read per universe
 
 
-# ---------------------------------- 3. preservation
-# intact ----------------------------------------
+# ---------------------------------- 3. preservation intact ---------------------------------------
 def test_content_identity_and_plan_bytes_are_unchanged_and_deterministic() -> None:
     pytest.importorskip("correctionlib")
     session, outs = _correction_universes()
@@ -516,8 +512,7 @@ def test_onnx_content_identity_is_unchanged() -> None:
     assert "path" not in node["params"]
 
 
-# ---------------------------------- 4. no
-# cloudpickle ---------------------------------------------
+# ---------------------------------- 4. no cloudpickle --------------------------------------------
 def _imports_cloudpickle(module: Any) -> bool:
     tree = ast.parse(Path(str(module.__file__)).read_text())
     return any(

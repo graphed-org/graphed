@@ -214,9 +214,8 @@ def run_shuffle_resumable(
     check_environment(store, completed, "", accept_environment)
     report = ResumeReport()
     committed = 0
-    stage_payloads: dict[
-        int, list[bytes]
-    ] = {}  # stage index -> its blocks' payloads (in task order)
+    # stage index -> its blocks' payloads (in task order)
+    stage_payloads: dict[int, list[bytes]] = {}
     stage_hashes: dict[int, list[str]] = {}  # stage index -> its blocks' content hashes
 
     for si, stage in enumerate(plan.stages):
@@ -255,7 +254,6 @@ def run_shuffle_resumable(
         stage_payloads[si] = this_payloads
         stage_hashes[si] = this_hashes
 
-    value = tuple(
-        stage_hashes[len(plan.stages) - 1]
-    )  # the gather stage's content-addressed blocks
+    # the gather stage's content-addressed blocks
+    value = tuple(stage_hashes[len(plan.stages) - 1])
     return ShuffleResumeResult(value=value, report=report)

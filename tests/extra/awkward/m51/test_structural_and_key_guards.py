@@ -109,9 +109,8 @@ def test_malformed_select_key_is_refused(tmp_path) -> None:  # type: ignore[no-u
     """
     record, evt_mask, _jet_mask, _muon_mask = _multifield()
     with pytest.raises(GraphedError) as excinfo:
-        _write(
-            record, str(tmp_path / "badkey"), {("Jet",): evt_mask}, compute=False
-        )  # tuple w/o depth
+        # tuple w/o depth
+        _write(record, str(tmp_path / "badkey"), {("Jet",): evt_mask}, compute=False)
     # discriminates on _normalize_select's OWN early rejection (a downstream check also refuses the
     # key, but with a different message — this pins the trust-boundary guard, not the fallback)
     assert "bare depth" in str(excinfo.value)

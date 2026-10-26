@@ -134,7 +134,8 @@ def ttbar_joint_reference(
 def ttgamma_region(events: ak.Array, *, variation: str) -> Hist:
     """TTGamma-style slice: >=1 photon pt>20, >=1 muon pt>30, >=2 jets pt>25.
 
-    photon-pt observable with a photon-ID scale factor as a weight systematic (pho_up/pho_down).
+    The observable is photon pt, with a photon-ID scale factor as a weight systematic
+    (pho_up/pho_down).
     """
     photons = events.Photon[events.Photon.pt > 20]
     muons = events.Muon[events.Muon.pt > 30]

@@ -1,7 +1,7 @@
 """graphed-checkpoint (plan M8).
 
-content-addressed checkpoint Store, deterministic resume, and error harvesting on top of the M8
-``DurablePlan`` from ``graphed-core``.
+It provides a content-addressed checkpoint Store, deterministic resume, and error harvesting on
+top of the M8 ``DurablePlan`` from ``graphed-core``.
 
 ``Store`` is a local directory; ``FsspecStore`` puts the same store at an fsspec URL, pulled
 forward from Phase 2 past the M8 local-only guardrail. Analysis *preservation* is M9.

@@ -171,11 +171,12 @@ def _value(v: Any) -> Any:
         ("?float64", ak.Array([1.0, None, 2.0, 3.0]), True),
         ("var * float64", np.zeros((4, 2)), False),  # regular is not var
         ("2 * float64", np.zeros((4, 2)), True),
+        # a record name is a parameter
         (
             "{a: float64}",
             ak.zip({"a": fx.X}, with_name="Pt"),
             False,
-        ),  # a record name is a parameter
+        ),
         ("Pt[a: float64]", ak.zip({"a": fx.X}, with_name="Pt"), True),
         ("var * {a: float64, b: int64}", ak.Array([[], [], [], []]), True),
         (
@@ -193,11 +194,12 @@ def _value(v: Any) -> Any:
             ak.zip({"a": [[]] * 4, "b": [1] * 4}, depth_limit=1),
             False,
         ),
+        # unknown fits in place of a type, not a list
         (
             "float64",
             ak.Array([[], [], [], []]),
             False,
-        ),  # unknown fits in place of a type, not a list
+        ),
         ("2 * var * float64", ak.to_regular(ak.Array([[[]] * 3] * 4), axis=1), False),
         ("3 * var * float64", ak.to_regular(ak.Array([[[]] * 3] * 4), axis=1), True),
     ],

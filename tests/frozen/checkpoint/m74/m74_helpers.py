@@ -1,7 +1,7 @@
 """Importable pieces of the m74 suite.
 
-processes, codecs and builders that the tests and the ``python`` scripts beside them share. Spies
-are module state, so the objects that read them pickle by name.
+These are the processes, codecs and builders that the tests and the ``python`` scripts beside
+them share. Spies are module state, so the objects that read them pickle by name.
 """
 
 from __future__ import annotations
@@ -122,8 +122,7 @@ def raising(p: Partition, r: Any) -> float:
     raise ValueError(f"bad partition {p.entry_start}")
 
 
-# ---- wrapper fidelity
-# (T5) ------------------------------------------------------------------------
+# ---- wrapper fidelity (T5) ----------------------------------------------------------------------
 #: every call a Recorder saw, as ``(type(partition), partition, endpoint)``
 RECEIVED: list[tuple[type, Partition, str]] = []
 
@@ -143,8 +142,7 @@ class Recorder:
         return ("resolved", value)
 
 
-# ---- threads
-# (T6) ---------------------------------------------------------------------------------
+# ---- threads (T6) -------------------------------------------------------------------------------
 #: the barrier the current T6 leg's calls hold on
 BARRIER: list[threading.Barrier] = []
 
@@ -155,8 +153,7 @@ class Barriered:
         return float(p.entry_start)
 
 
-# ---- codecs
-# (T9) ----------------------------------------------------------------------------------
+# ---- codecs (T9) --------------------------------------------------------------------------------
 #: ``(pid, thread ident)`` of every CountingCodec decode
 DECODES: list[tuple[int, int]] = []
 
@@ -170,8 +167,7 @@ class CountingCodec:
         return pickle.loads(data)
 
 
-# ---- live partials
-# (T10) --------------------------------------------------------------------------
+# ---- live partials (T10) ------------------------------------------------------------------------
 LIVE: dict[str, int] = {"now": 0, "peak": 0}
 
 
@@ -218,8 +214,7 @@ def leaf_float(p: Partition, r: Any) -> float:
     return 1e16 if p.entry_start == 0 else 1.0
 
 
-# ---- durable
-# plans --------------------------------------------------------------------------------
+# ---- durable plans ------------------------------------------------------------------------------
 def ir_bytes() -> bytes:
     g = GraphStore()
     src = g.add_source("events", {"uri": "mem://m74/events"})
@@ -281,8 +276,7 @@ def stage_reused(plan: DurablePlanV2) -> list[int]:
     return [stage.process.resolve().reused for stage in plan.stages]
 
 
-# ---- refusals
-# (T4) --------------------------------------------------------------------------------
+# ---- refusals (T4) ------------------------------------------------------------------------------
 #: one entry per pickling of a Served
 PICKLED: list[str] = []
 
@@ -307,8 +301,7 @@ class Served:
         return self
 
 
-# ---- an importable object that resolves by name and whose reduce carries a uuid (T2
-# xiv) ----------
+# ---- an importable object that resolves by name and whose reduce carries a uuid (T2 xiv) --------
 def _kernel(tag: str) -> Kernel:
     return KERNEL
 

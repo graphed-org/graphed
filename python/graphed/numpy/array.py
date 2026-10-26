@@ -284,8 +284,7 @@ _NUMPY_FUNCTIONS.update(
 )
 
 
-# ---- M13: manipulation + combination handlers (dask.array parity
-# P2) ------------------------------
+# ---- M13: manipulation + combination handlers (dask.array parity P2) ----------------------------
 def _one_array(kind: str, args: tuple[object, ...]) -> NumpyArray:
     if not args or not isinstance(args[0], NumpyArray):
         raise TypeError(f"graphed np.{kind}: the first argument must be the deferred array")

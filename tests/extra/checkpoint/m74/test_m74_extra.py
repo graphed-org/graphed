@@ -123,9 +123,8 @@ def _registry(order: Sequence[str]) -> Any:
     for n in sorted(made):
         Registry.register(made[n])
     registry = Registry()
-    registry.made = [
-        made[n] for n in sorted(made)
-    ]  # the ABC registry holds its classes only weakly
+    # the ABC registry holds its classes only weakly
+    registry.made = [made[n] for n in sorted(made)]
     return registry
 
 

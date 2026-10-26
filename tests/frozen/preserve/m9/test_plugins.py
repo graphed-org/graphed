@@ -43,9 +43,8 @@ def test_builtin_plugins_have_valid_hashes() -> None:
 
 def test_correctionlib_hashes_contents_not_formatting() -> None:
     a = json.dumps({"schema_version": 2, "x": 1}, indent=4).encode()
-    b = json.dumps(
-        {"x": 1, "schema_version": 2}, separators=(",", ":")
-    ).encode()  # same content, diff bytes
+    # same content, diff bytes
+    b = json.dumps({"x": 1, "schema_version": 2}, separators=(",", ":")).encode()
     assert a != b
     assert CORRECTIONLIB_PLUGIN.content_hash(a) == CORRECTIONLIB_PLUGIN.content_hash(b)
     c = json.dumps({"schema_version": 2, "x": 2}).encode()  # different content

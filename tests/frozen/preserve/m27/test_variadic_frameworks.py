@@ -19,9 +19,8 @@ from graphed.preserve import JAX_PLUGIN, ONNX_PLUGIN, PYTORCH_PLUGIN, TENSORFLOW
 X0 = np.array([1.0, 2.0, -1.0, 4.0], dtype="float64")
 X1 = np.array([0.5, 0.0, 2.0, 1.0], dtype="float64")
 MASK = np.array([1.0, 0.0, 1.0, 1.0], dtype="float64")
-ARGS2 = {
-    "args": [["$0", "$1"], ["$2"]]
-}  # arg0 = (n,2) matrix of inputs 0+1; arg1 = (n,1) of input 2
+# arg0 = (n,2) matrix of inputs 0+1; arg1 = (n,1) of input 2
+ARGS2 = {"args": [["$0", "$1"], ["$2"]]}
 
 
 def _eval(plugin: Any, payload: bytes, params: dict[str, Any], inputs: list[Any]) -> np.ndarray:
@@ -156,8 +155,7 @@ def test_onnx_legacy_default_is_unchanged() -> None:
     assert np.array_equal(out, (X0 * 2.0))
 
 
-# ---------------------------------- keyword
-# arguments ----------------------------------------------
+# ---------------------------------- keyword arguments --------------------------------------------
 def test_pytorch_keyword_arguments() -> None:
     torch = pytest.importorskip("torch")
 

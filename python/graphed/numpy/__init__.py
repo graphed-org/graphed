@@ -215,9 +215,8 @@ def _scalar_param(
     value = params[key]
     if dtype_key not in params:
         return value
-    return np.dtype(str(params[dtype_key])).type(
-        value
-    )  # the dtype parses the wide int's text itself
+    # the dtype parses the wide int's text itself
+    return np.dtype(str(params[dtype_key])).type(value)
 
 
 def _decode_dims(spec: object) -> tuple[int, ...]:
@@ -397,9 +396,8 @@ class NumpyBackend:
         """Infer the form ``op`` gives ``inputs``."""
         forms = [f for f in inputs if isinstance(f, NumpyForm)]
         if op == "exchange":
-            return forms[
-                0
-            ]  # a pure data-movement boundary is identity on the payload form (§3.3a)
+            # a pure data-movement boundary is identity on the payload form (§3.3a)
+            return forms[0]
         if op == "pack_key":
             (rec,) = forms
             if rec.fields is None:
@@ -460,15 +458,13 @@ class NumpyBackend:
                 return declared_form(forms, str(declared))
             return NumpyForm(np.dtype(object))  # opaque callable: result form unknown
         if op == "gufunc":
-            if (
-                "output_type" in params
-            ):  # the signature types a gufunc: `apply_gufunc(output_dtype=)`
+            # the signature types a gufunc: `apply_gufunc(output_dtype=)`
+            if "output_type" in params:
                 raise TypeError(
                     "output_type is declared only on map; a gufunc takes output_dtype="
                 )
-            return gufunc_form(
-                forms, params
-            )  # M14: the signature makes the opaque callable typable
+            # M14: the signature makes the opaque callable typable
+            return gufunc_form(forms, params)
         if op in _REDUCERS or op in _SCANS:
             (a,) = forms
             if not (is_numeric(a) or (a.fields is None and a.dtype == np.bool_)):
@@ -522,9 +518,8 @@ class NumpyBackend:
     ) -> object:
         """Evaluate ``op`` over real numpy ``inputs``."""
         if op == "exchange":
-            return inputs[
-                0
-            ]  # a pure data-movement boundary is identity on values in-process (§3.3a)
+            # a pure data-movement boundary is identity on values in-process (§3.3a)
+            return inputs[0]
         if op == "pack_key":
             return shuffle.pack_key(inputs[0], _decode_on(params["on"]))
         if op == "join":
@@ -573,8 +568,7 @@ class NumpyBackend:
             preprocessing_ref=None,
         )
 
-    # ---- ShuffleBackend exchange half (M39 §3.0) — thin delegates to the pure `shuffle`
-    # module ----
+    # --- ShuffleBackend exchange half (M39 §3.0) — thin delegates to the pure `shuffle` module ---
     def partition(
         self,
         block: Any,

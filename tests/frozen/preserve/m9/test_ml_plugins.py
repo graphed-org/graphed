@@ -93,9 +93,8 @@ def _torch_model_bytes(*, weight: float, bias: float, two_inputs: bool = False) 
         model[0].weight.fill_(weight)
         model[0].bias.fill_(bias)
     model.eval()
-    traced = torch.jit.trace(
-        model, torch.zeros(1, n_in)
-    )  # self-contained: loadable with no user class
+    # self-contained: loadable with no user class
+    traced = torch.jit.trace(model, torch.zeros(1, n_in))
     buf = io.BytesIO()
     torch.jit.save(traced, buf)
     return buf.getvalue()
@@ -227,9 +226,8 @@ XGB_PLUGIN = ExternalPlugin(
 
 def test_xgboost_plugin_validates_and_reproduces(tmp_path) -> None:  # type: ignore[no-untyped-def]
     pytest.importorskip("xgboost")
-    validate_plugin(
-        XGB_PLUGIN
-    )  # the booster bytes ARE the content -> sha256_bytes template suffices
+    # the booster bytes ARE the content -> sha256_bytes template suffices
+    validate_plugin(XGB_PLUGIN)
     _check_roundtrip(tmp_path, XGB_PLUGIN, _xgb_model_bytes(seed=3))
 
 
@@ -306,14 +304,12 @@ TRITON_PLUGIN = ExternalPlugin(
 
 def test_triton_remote_inference_pattern(tmp_path) -> None:  # type: ignore[no-untyped-def]
     pytest.importorskip("tritonclient.http")
-    validate_plugin(
-        TRITON_PLUGIN
-    )  # hash of the served model's weights is deterministic + non-vacuous
+    # hash of the served model's weights is deterministic + non-vacuous
+    validate_plugin(TRITON_PLUGIN)
 
     weight, bias, url = 0.45, -0.1, "triton://localhost:8000"
-    _TRITON_SERVERS[url] = _FakeTritonClient(
-        weight, bias
-    )  # the connection is part of the environment
+    # the connection is part of the environment
+    _TRITON_SERVERS[url] = _FakeTritonClient(weight, bias)
     payload = _triton_served_weights(weight=weight, bias=bias)
     register_plugin(TRITON_PLUGIN)
 

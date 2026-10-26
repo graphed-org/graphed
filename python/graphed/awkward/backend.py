@@ -154,9 +154,8 @@ def _canonical_output_type(spec: object) -> str:
                 ak.from_numpy(np.zeros(1, dtype=np.dtype(cast("Any", s)))).type.content
             )
         rebuilt = _type(canonical)
-        if (
-            str(rebuilt) != canonical
-        ):  # the installed grammar misreads it (2.14: `float16[parameters=`)
+        # the installed grammar misreads it (2.14: `float16[parameters=`)
+        if str(rebuilt) != canonical:
             raise TypeError(f"rebuilds as {str(rebuilt)!r}")
         ak.forms.from_type(rebuilt).length_one_array(highlevel=False)
     except (LarkError, TypeError, ValueError) as exc:
@@ -318,9 +317,8 @@ class AwkwardBackend:
         """Infer the form ``op`` gives ``inputs`` from their typetracers."""
         forms = cast("Sequence[AwkwardForm]", inputs)
         if op == "exchange":
-            return forms[
-                0
-            ]  # a pure data-movement boundary is identity on the payload form (§3.3a)
+            # a pure data-movement boundary is identity on the payload form (§3.3a)
+            return forms[0]
         if op == "join":
             # M40 (§3.3): flat relational record-merge form; how=left/outer ⇒ missing side
             # option-typed
@@ -449,13 +447,11 @@ class AwkwardBackend:
         left, right = inputs[0], inputs[1]
         on = join.on_from_params(params)
         how = str(params.get("how", "inner"))
-        if (
-            ak.backend(left) == "typetracer"
-        ):  # projection replay: structural merge, no matching/data read
+        # projection replay: structural merge, no matching/data read
+        if ak.backend(left) == "typetracer":
             return join.merge_records(left, right, on=on)
-        if bool(
-            params.get("grouped", False)
-        ):  # gak.join(grouped=True): awkward-only regroup post-op
+        # gak.join(grouped=True): awkward-only regroup post-op
+        if bool(params.get("grouped", False)):
             return join.join_grouped(left, right, on=on, how=how)
         # the shared radix-hash kernel (JoinBackend prims only); local import avoids an import
         # cycle.
@@ -502,8 +498,7 @@ class AwkwardBackend:
             )
         return None
 
-    # ---- ShuffleBackend exchange half (M39 §3.0) — thin delegates to the pure `shuffle`
-    # module ----
+    # --- ShuffleBackend exchange half (M39 §3.0) — thin delegates to the pure `shuffle` module ---
     def partition(
         self,
         block: Any,

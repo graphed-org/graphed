@@ -71,9 +71,8 @@ class DashboardServer:
         self._control = control
         self._control_state: str | None = RunState.RUNNING.value if control else None
         self._live: set[Any] = set()  # open /ingest handlers (IOLoop thread only)
-        self._listeners: set[Any] = (
-            set()
-        )  # those whose monitor sent a control hello; mirrored under _lock
+        # those whose monitor sent a control hello; mirrored under _lock
+        self._listeners: set[Any] = set()
         self._thread: threading.Thread | None = None
         self._loop: Any = None
         self._http: Any = None
@@ -83,9 +82,8 @@ class DashboardServer:
         self._stats_table: Any = None
         self._lock = threading.RLock()
         self._stats: dict[str, int] = dict.fromkeys(_wire.STATS_KEYS, 0)
-        self._workers: dict[
-            str, dict[str, Any]
-        ] = {}  # worker -> per-worker progress (for the bars)
+        # worker -> per-worker progress (for the bars)
+        self._workers: dict[str, dict[str, Any]] = {}
         # ingest-only state (IOLoop thread): lean derivation and per-key lifecycles
         self._lean = False  # set once any ingest connection says hello with lean: true
         self._keys: dict[Any, _KeyState] = {}
@@ -95,9 +93,8 @@ class DashboardServer:
         self._unlabelled: dict[Any, list[dict[str, Any]]] = {}  # key -> records awaiting a label
         self._n_connections = 0
         self._last_error: dict[str, Any] | None = None
-        self._profile_tree: dict[str, Any] = (
-            _sampler._new_node()
-        )  # merged sampled stacks -> flamegraph
+        # merged sampled stacks -> flamegraph
+        self._profile_tree: dict[str, Any] = _sampler._new_node()
         self._profile_samples = 0
         self._ready = threading.Event()
         self._error: BaseException | None = None
@@ -379,9 +376,8 @@ class DashboardServer:
             w["inflight"] = max(0, w["inflight"] - 1)
         key = msg.get("key")
         rec = w["tasks"].get(key)
-        if (
-            rec is None
-        ):  # STARTED normally creates it; tolerate an out-of-order or lean finish/error
+        # STARTED normally creates it; tolerate an out-of-order or lean finish/error
+        if rec is None:
             rec = {
                 "key": key,
                 "partition": "",
@@ -402,9 +398,8 @@ class DashboardServer:
         if cls == _STARTED:
             rec["t_start"] = t
         else:
-            if (
-                derived
-            ):  # a lean start: this worker's previous end on this connection, else its own t
+            # a lean start: this worker's previous end on this connection, else its own t
+            if derived:
                 rec["t_start"] = self._last_end.get((cid, worker), t)
             rec["state"] = phase
             rec["t_end"] = t

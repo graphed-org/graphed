@@ -32,8 +32,7 @@ def _block(**cols: object) -> ak.Array:
 def test_merge_records_rejects_shared_nonkey_column() -> None:
     be = AwkwardBackend()
     left = _block(__joinkey__=[1, 2], njet=[10, 20])
-    right = _block(
-        __joinkey__=[1, 2], njet=[100, 200]
-    )  # `njet` is a NON-key field present on BOTH sides
+    # `njet` is a NON-key field present on BOTH sides
+    right = _block(__joinkey__=[1, 2], njet=[100, 200])
     with pytest.raises(ValueError):
         be.merge_records(left, right, on=["__joinkey__"])

@@ -357,9 +357,8 @@ def _foreign(
         if name in nuisances:
             continue
         if nuisances & composed:
-            assert (
-                ambient is not None
-            )  # the weight form always carries the ambient (context._carriers)
+            # the weight form always carries the ambient (context._carriers)
+            assert ambient is not None
             if _reads_ambient(ambient, member._members[label], label):
                 continue
         if carrier_nuisances and not nuisances <= carrier_nuisances:

@@ -115,8 +115,7 @@ def resolve_partition(partition: Partition) -> Partition:
     return partition.resolve(num_rows(partition.uri))
 
 
-# ---- writer-side part naming (R15.9): the graphed.write base,
-# parquet-flavored -------------------
+# ---- writer-side part naming (R15.9): the graphed.write base, parquet-flavored ------------------
 def derive_part_index(
     partition: Partition, *, steps_per_file: int, bases: Mapping[str, int]
 ) -> int:
@@ -159,10 +158,10 @@ def deferred_source(
     )
 
 
-# ---- the deferred write plan: re-exported from the format-agnostic base
-# (graphed.write) ---------- write_plan / file_bases are ALIASES of graphed.write's — the M15
-# surface is the parquet specialization of the M20 base. The reference runner is
-# graphed.core.execution.SequentialRunner (it is general execution, not a write/parquet concept).
+# ---- the deferred write plan: re-exported from the format-agnostic base (graphed.write) ---------
+# write_plan / file_bases are ALIASES of graphed.write's — the M15 surface is the parquet
+# specialization of the M20 base. The reference runner is graphed.core.execution.SequentialRunner
+# (it is general execution, not a write/parquet concept).
 __all__ = [
     "blind_part_index",
     "deferred_source",

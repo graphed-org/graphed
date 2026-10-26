@@ -1,6 +1,6 @@
 """M11: the backend-idiom factorization.
 
-dask.array parity P0.1/P0.3, re-factored by design review.
+It implements dask.array parity P0.1/P0.3, re-factored by design review.
 
 ``graphed.Array`` carries ONLY what is common to the backend idioms — operators, ufunc dispatch,
 field access, and protected infrastructure (``_form_meta``). Idiomatic surfaces (numpy's

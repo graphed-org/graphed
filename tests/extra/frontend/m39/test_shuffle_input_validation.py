@@ -209,8 +209,7 @@ def test_join_plan_without_a_join_boundary_raises_type_error() -> None:
         graphed.join_plan(output, backend=ToyBackend)
 
 
-# ---- join_plan: needs exactly two partitioned sources (a self-join has only
-# one) -----------------
+# ---- join_plan: needs exactly two partitioned sources (a self-join has only one) ----------------
 
 
 def test_join_plan_self_join_has_one_partitioned_source_raises_type_error() -> None:

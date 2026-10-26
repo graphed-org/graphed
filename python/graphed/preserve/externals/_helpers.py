@@ -69,14 +69,13 @@ def _strip_config_names(obj: Any) -> Any:
     return obj
 
 
-# ---- M27: variadic call
-# templates ---------------------------------------------------------------- params["args"]
-# (positional) / params["kwargs"] (keyword) route a node's graph inputs to the callee's REAL
-# signature. Entries: "$i" (input slot i), ["$i", "$j"] (a group — for ML plugins, stacked into one
-# feature matrix), or — where a plugin allows it — a constant (correctionlib's systematic names).
-# Stored in the IR as canonical-JSON strings (the ParamMap is scalar-typed); accepted here as
-# either the decoded structure or the JSON string. Replay obeys the template exactly; an unknown
-# shape is a loud PreserveError, never a guess.
+# ---- M27: variadic call templates ---------------------------------------------------------------
+# params["args"] (positional) / params["kwargs"] (keyword) route a node's graph inputs to the
+# callee's REAL signature. Entries: "$i" (input slot i), ["$i", "$j"] (a group — for ML plugins,
+# stacked into one feature matrix), or — where a plugin allows it — a constant (correctionlib's
+# systematic names). Stored in the IR as canonical-JSON strings (the ParamMap is scalar-typed);
+# accepted here as either the decoded structure or the JSON string. Replay obeys the template
+# exactly; an unknown shape is a loud PreserveError, never a guess.
 
 TemplateEntry = tuple[str, Any]  # ("slot", i) | ("group", [i, ...]) | ("const", value)
 
@@ -164,12 +163,12 @@ def ml_matrix(entry: TemplateEntry, inputs: list[Any]) -> Any:
     raise PreserveError(f"constants are not valid model inputs (got {value!r})")
 
 
-# ---- M36: memoize the EXPENSIVE (model-parsing) content
-# hashes ----------------------------------- A model's content hash is computed at record time AND
-# re-verified at bundle-build time; each call re-parses the model (onnx.load, torch.jit.load, keras
-# load, jax deserialize). Cache the result by the payload bytes so the same payload parses once.
-# Bounded FIFO; keyed per (domain, bytes) so distinct plugins never collide. Cold in a fresh
-# process, so the by-value validate subprocess still computes correctly.
+# ---- M36: memoize the EXPENSIVE (model-parsing) content hashes ----------------------------------
+# A model's content hash is computed at record time AND re-verified at bundle-build time; each call
+# re-parses the model (onnx.load, torch.jit.load, keras load, jax deserialize). Cache the result by
+# the payload bytes so the same payload parses once. Bounded FIFO; keyed per (domain, bytes) so
+# distinct plugins never collide. Cold in a fresh process, so the by-value validate subprocess
+# still computes correctly.
 # keyed by the payload itself: bytes cache their hash, so a repeat with the same object is O(1)
 _HASH_MEMO: OrderedDict[tuple[str, bytes], Any] = OrderedDict()
 _HASH_MEMO_CAP = 64  # also bounds the payloads the keys keep alive

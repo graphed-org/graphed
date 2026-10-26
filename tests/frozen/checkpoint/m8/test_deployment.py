@@ -98,9 +98,8 @@ def test_kill_mid_deployment_then_resume_is_correct_and_incremental(tmp_path) ->
     results = _run_deployment(plan, deployment.DATASETS, store)
     rep = {uri: r.report for uri, r in results.items()}
     assert rep[ds0.uri].executed == 0 and rep[ds0.uri].skipped == 3  # already done -> all reused
-    assert (
-        rep[ds1.uri].skipped == 2 and rep[ds1.uri].executed == 1
-    )  # only the unfinished chunk runs
+    # only the unfinished chunk runs
+    assert rep[ds1.uri].skipped == 2 and rep[ds1.uri].executed == 1
     assert rep[ds2.uri].executed == 3  # never started before -> fresh
     for ds in deployment.DATASETS:
         assert np.array_equal(results[ds.uri].value, deployment.reference_for(ds.uri))

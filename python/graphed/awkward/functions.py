@@ -525,13 +525,12 @@ def ones_like(arr: Array, *, dtype: npt.DTypeLike = None) -> Array:
     return arr.session.record_op("ak.ones_like", [arr], params)
 
 
-# ---- M28: variadic call templates for the recorded
-# externals -------------------------------------- The template ("$i" slots, [..] groups, constants
-# where the callee allows) is PRESERVED NODE CONTENT: it rides the IR as canonical JSON, and
-# record-time evaluation materializes THE SAME template the preservation replay obeys — agreement
-# by construction. Descriptors on this path use the content-identity hash conventions shared with
-# graphed-preserve, and params carry no filesystem paths. The template-less calls below remain the
-# M3 path, byte-for-byte.
+# ---- M28: variadic call templates for the recorded externals ------------------------------------
+# The template ("$i" slots, [..] groups, constants where the callee allows) is PRESERVED NODE
+# CONTENT: it rides the IR as canonical JSON, and record-time evaluation materializes THE SAME
+# template the preservation replay obeys — agreement by construction. Descriptors on this path use
+# the content-identity hash conventions shared with graphed-preserve, and params carry no
+# filesystem paths. The template-less calls below remain the M3 path, byte-for-byte.
 
 
 def _payload_bytes(payload: str | bytes) -> bytes:

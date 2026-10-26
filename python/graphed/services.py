@@ -258,9 +258,8 @@ def _require_parts(parts: Sequence[Bindable]) -> None:
             for part in parts:
                 part.bind_services(missing)
         except UnboundServiceError as err:
-            if (
-                err.name in missing
-            ):  # a part refusing a name it was handed breaks the Bindable contract
+            # a part refusing a name it was handed breaks the Bindable contract
+            if err.name in missing:
                 raise
             missing[err.name] = "tcp://unbound:0"
             continue

@@ -106,9 +106,8 @@ def test_a_placement_at_a_point_carrying_the_overlays_coordinate_keeps_its_membe
             session, ops, graphed.labels(weight)
         ), prefix_length
         own = m57_at(m57_scaled(handle, MU)["up"], "mu_up")
-        if (
-            prefix_length == 1
-        ):  # the `hf` factor was registered AFTER the overlay, so it multiplies
+        # the `hf` factor was registered AFTER the overlay, so it multiplies
+        if prefix_length == 1:
             own = own * m57_at(sf, "mu_up")
         assert m57_values(session, graphed.member_of(weight, "mu_up")) == m57_values(
             session, own

@@ -70,9 +70,8 @@ def test_class_resolution_is_what_makes_the_parity_gate_discriminating() -> None
     _s, record = record_source()
     varied = graphed.vary(record, "sf", up=record, down=record)
     assert getattr(type(varied), "pt", None) is None
-    assert list(graphed.labels(varied["pt"])) == list(
-        graphed.labels(varied)
-    )  # field access answers
+    # field access answers
+    assert list(graphed.labels(varied["pt"])) == list(graphed.labels(varied))
 
 
 def test_surface_floor_names_repartition_as_the_only_refusing_member() -> None:

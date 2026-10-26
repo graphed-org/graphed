@@ -49,9 +49,8 @@ def test_flattened_per_object_value_names_the_factor_and_the_unflatten_hint() ->
 
 
 def test_two_structured_operands_are_blamed_without_the_unflatten_hint() -> None:
-    counts = ak.Array(
-        [[1.0], [2.0, 3.0]]
-    )  # jagged; every row disagrees with Jet.pt, flattening is not the fix
+    # jagged; every row disagrees with Jet.pt, flattening is not the fix
+    counts = ak.Array([[1.0], [2.0, 3.0]])
     message = _blame(EVENTS.Jet.pt, counts)
     assert "factor" in message
     assert UNFLATTEN_HINT not in message.lower()

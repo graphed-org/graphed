@@ -37,8 +37,7 @@ TOTAL_BINS = sum(b for _, b, _, _ in _AXES)
 DATASETS = [Dataset(f"corpus://ttbar_{i}", n_events=N_EVENTS, name=f"ttbar_{i}") for i in range(3)]
 
 
-# ---- per-dataset synthetic events (deterministic from the
-# uri) -----------------------------------
+# ---- per-dataset synthetic events (deterministic from the uri) ----------------------------------
 def _seed_for(uri: str) -> int:
     return int.from_bytes(hashlib.sha256(uri.encode()).digest()[:4], "big")
 
@@ -49,8 +48,7 @@ def _events_for(uri: str) -> Any:
     return make_events(n_events=N_EVENTS, seed=_seed_for(uri))
 
 
-# ---- the analysis graph (recorded through the
-# frontend) ------------------------------------------
+# ---- the analysis graph (recorded through the frontend) -----------------------------------------
 def _pair_mass(o1: Any, o2: Any) -> Any:
     """Invariant mass of an object pair (the dimuon-mass calc — a deep arithmetic sub-DAG)."""
     px = o1.pt * np.cos(o1.phi) + o2.pt * np.cos(o2.phi)

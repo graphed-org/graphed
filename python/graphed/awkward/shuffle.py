@@ -25,7 +25,7 @@ PINNED_ROUTING_HASH = "sha256"
 def route(key: int, parts: int, *, salt: int = 0) -> int:
     """Return the pinned §4/§3.0 route.
 
-    sha256 of the 8-byte big-endian key (salt=0 == no bytes appended).
+    The route is the sha256 of the 8-byte big-endian key (salt=0 == no bytes appended).
     """
     key_bytes = int(key).to_bytes(8, "big") + (int(salt).to_bytes(8, "big") if salt else b"")
     return int.from_bytes(hashlib.sha256(key_bytes).digest()[:8], "big") % parts

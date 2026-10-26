@@ -118,9 +118,8 @@ def test_task_ids_are_namespaced_per_dataset() -> None:
 def test_retargeting_only_changes_partitions_in_the_serialized_form() -> None:
     base = _compiled_plan().with_partitions([Partition("ds-A", "Events", 0, 10)])
     other = base.with_partitions([Partition("ds-A", "Events", 0, 10)])
-    assert (
-        base.to_bytes() == other.to_bytes()
-    )  # deterministic + identical for identical deployment
+    # deterministic + identical for identical deployment
+    assert base.to_bytes() == other.to_bytes()
     moved = base.with_partitions([Partition("ds-B", "Events", 0, 10)])
     assert moved.to_bytes() != base.to_bytes()  # a different dataset is a different deployment
     assert moved.ir_fingerprint() == base.ir_fingerprint()  # ...but the same computation

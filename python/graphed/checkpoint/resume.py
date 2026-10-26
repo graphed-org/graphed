@@ -197,9 +197,8 @@ class _KeyPickler(pickle._Pickler):
             raise TypeError(
                 "the __main__ module cannot be keyed: a worker's __main__ is not the driver's"
             )
-        if (
-            getattr(module, "__spec__", None) is None
-        ):  # made at run time, so no import finds it by name
+        # made at run time, so no import finds it by name
+        if getattr(module, "__spec__", None) is None:
             return self._cp.dynamic_subimport, (
                 module.__name__,
                 {k: v for k, v in vars(module).items() if k != "__builtins__"},
@@ -287,9 +286,8 @@ class _KeyPickler(pickle._Pickler):
                 {id(c.cell_contents): obj for n, c in cells if n == "__classdict__"}
             )
             state["<key-only annotate>"] = annotate
-        if isinstance(
-            state.get("_abc_impl"), list
-        ):  # cloudpickle lists an ABC's registry from a set
+        # cloudpickle lists an ABC's registry from a set
+        if isinstance(state.get("_abc_impl"), list):
             state["_abc_impl"] = self._sorted(state["_abc_impl"])
         return (func, args, (state, slotstate), *rest)
 
@@ -406,9 +404,8 @@ def _key_digest(obj: object) -> bytes:
     rebound: set[int] = set()
     sink = _HashSink()
     _KeyPickler(sink, {}, rebound).dump(obj)
-    if (
-        rebound
-    ):  # the first pass wrote cells unmemoized before meeting the function that rebinds them
+    # the first pass wrote cells unmemoized before meeting the function that rebinds them
+    if rebound:
         sink = _HashSink()
         _KeyPickler(sink, {}, rebound).dump(obj)
     return sink.hash.digest()
@@ -689,9 +686,8 @@ def _keyed(obj: object, what: Callable[[], str]) -> bytes:
 
 
 def _of(process: object) -> Callable[[], str]:
-    return lambda: (
-        f"the process {reprlib.repr(process)}"
-    )  # a repr can be as large as the payloads it shows
+    # a repr can be as large as the payloads it shows
+    return lambda: f"the process {reprlib.repr(process)}"
 
 
 def _task_id(ident: str, salt: str, partition: Partition) -> str:

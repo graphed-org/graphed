@@ -118,9 +118,8 @@ def from_parquet(
     if steps_per_file < 1:
         raise ValueError(f"steps_per_file must be >= 1, got {steps_per_file}")
     if not open_files:
-        gpq.make_partitions(
-            paths, steps_per_file=steps_per_file, open_files=False
-        )  # validated blind
+        # validated blind
+        gpq.make_partitions(paths, steps_per_file=steps_per_file, open_files=False)
     loader = _DatasetLoader(paths, tuple(columns) if columns else None)
     return gpq.deferred_source(session, name, paths=paths, form=form, loader=loader)
 
@@ -556,9 +555,8 @@ def _canonical_leaf(
 ) -> int | str:
     key: int | str = member.node_id
     for part in path.split("."):
-        key = _resolve_field(
-            nodes, session, int(key), part
-        )  # a scalar key is always a path's last
+        # a scalar key is always a path's last
+        key = _resolve_field(nodes, session, int(key), part)
     return key
 
 
@@ -837,9 +835,10 @@ class _VariedWritePart:
                         f"{len(mask)} rows but the record spans {len(base)} (§6.4a(2b))"
                     )
                 valid = ~ak.is_none(mask, axis=0)  # a None row has no objects to check
+                # level->=1 STRUCTURAL: the mask's offsets must match the field's (§6.4a)
                 if mask_spec.depth >= 1 and not np.array_equal(
                     np.asarray(ak.num(mask[valid])), np.asarray(ak.num(field_values[valid]))
-                ):  # level->=1 STRUCTURAL: the mask's offsets must match the field's (§6.4a)
+                ):
                     raise GraphedError(
                         f"the level-{mask_spec.entry_flat} select= mask for {label!r} does not "
                         "share the offsets of the field it filters (§6.4a level->=1 structural "
@@ -1007,13 +1006,14 @@ def _write_varied(
                 if isinstance(key, int)
                 else functools.reduce(operator.getitem, parts, member)
             )
+        # a zip broadcast the leaf: encode what the reader's record holds
         if any(
             _type_of(session, leaves[label])
             != functools.reduce(
                 operator.getitem, parts, _tt(session, member_of(record, label))
             ).layout.form.type
             for label in labels
-        ):  # a zip broadcast the leaf: encode what the reader's record holds
+        ):
             leaves = {
                 label: functools.reduce(operator.getitem, parts, member_of(record, label))
                 for label in labels
@@ -1074,9 +1074,8 @@ def _write_varied(
             nominal_form.type, all_parameters=True
         )
     }
-    if (
-        nominal_form.is_record and nominal_form.parameters
-    ):  # its stored fields drop the record's own
+    # its stored fields drop the record's own
+    if nominal_form.is_record and nominal_form.parameters:
         record_types["nominal"] = nominal_form.to_dict()
     manifest = _build_manifest(labels, value_specs, mask_specs, record_types)
     rank = {node_id: i for i, node_id in enumerate(dict.fromkeys(out.node_id for out in outputs))}
@@ -1402,9 +1401,8 @@ def _reconstruct_universe(
     stored = columns.get(f"{_RECORD_TYPE}{label}") or manifest["nominal"].get(
         f"{_RECORD_TYPE}nominal"
     )
-    option = isinstance(
-        rec.type.content, ak.types.OptionType
-    )  # an option level-0 mask gave None rows
+    # an option level-0 mask gave None rows
+    option = isinstance(rec.type.content, ak.types.OptionType)
     target = rec.type.content.content if option else rec.type.content
     if stored is not None:
         want = ak.forms.from_dict(stored["type"]).type
