@@ -47,7 +47,7 @@ Close = Callable[[Any], None]
 
 
 def _identity_load(payload: bytes, params: Mapping[str, Any]) -> Any:
-    """Default ``load``: the resource IS the payload bytes (simple plugins evaluate from bytes)."""
+    """Return the payload bytes as the resource (the default ``load``; plugins evaluate bytes)."""
     return payload
 
 
