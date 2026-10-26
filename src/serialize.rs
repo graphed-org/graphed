@@ -305,30 +305,18 @@ impl<'a> Reader<'a> {
         }
         Ok(v)
     }
-}
-
-/// Decode the canonical byte form back into a freshly interned store. Because nodes are written in
-/// dependency order and re-interned in that order, the rebuilt store has identical ids, so a
-/// re-serialize is byte-identical to the input (asserted by the round-trip tests).
-pub(crate) fn deserialize(data: &[u8]) -> Result<GraphStore, DecodeError> {
-    let mut r = Reader::new(data);
-    if r.take(4)? != MAGIC {
-        return Err(DecodeError::BadMagic);
-    }
-    let n_nodes = u64::from(r.u32()?);
-    let store = GraphStore::new();
-    for idx in 0..n_nodes {
-        let tag = r.u8()?;
-        let key = match tag {
+    /// One node record, whose inputs must refer to the `idx` nodes before it.
+    fn node(&mut self, idx: u64) -> Result<NodeKey, DecodeError> {
+        Ok(match self.u8()? {
             T_SOURCE => {
-                let name = r.string()?;
-                let params = r.params()?;
+                let name = self.string()?;
+                let params = self.params()?;
                 NodeKey::Source { name, params }
             }
             T_OP => {
-                let name = r.string()?;
-                let params = r.params()?;
-                let inputs = r.inputs(idx)?;
+                let name = self.string()?;
+                let params = self.params()?;
+                let inputs = self.inputs(idx)?;
                 NodeKey::Op {
                     name,
                     params,
@@ -336,9 +324,9 @@ pub(crate) fn deserialize(data: &[u8]) -> Result<GraphStore, DecodeError> {
                 }
             }
             T_REDUCTION => {
-                let name = r.string()?;
-                let params = r.params()?;
-                let inputs = r.inputs(idx)?;
+                let name = self.string()?;
+                let params = self.params()?;
+                let inputs = self.inputs(idx)?;
                 NodeKey::Reduction {
                     name,
                     params,
@@ -346,18 +334,18 @@ pub(crate) fn deserialize(data: &[u8]) -> Result<GraphStore, DecodeError> {
                 }
             }
             T_EXTERNAL => {
-                let kind = r.string()?;
-                let content_hash = r.string()?;
-                let framework = r.string()?;
-                let version = r.string()?;
-                let io_schema = r.string()?;
-                let preprocessing_ref = if r.u8()? != 0 {
-                    Some(r.string()?)
+                let kind = self.string()?;
+                let content_hash = self.string()?;
+                let framework = self.string()?;
+                let version = self.string()?;
+                let io_schema = self.string()?;
+                let preprocessing_ref = if self.u8()? != 0 {
+                    Some(self.string()?)
                 } else {
                     None
                 };
-                let params = r.params()?;
-                let inputs = r.inputs(idx)?;
+                let params = self.params()?;
+                let inputs = self.inputs(idx)?;
                 NodeKey::External {
                     descriptor: PayloadDescriptor {
                         kind,
@@ -372,46 +360,66 @@ pub(crate) fn deserialize(data: &[u8]) -> Result<GraphStore, DecodeError> {
                 }
             }
             T_EXCHANGE => {
-                let scheme = r.params()?;
-                let inputs = r.inputs(idx)?;
+                let scheme = self.params()?;
+                let inputs = self.inputs(idx)?;
                 NodeKey::Exchange { scheme, inputs }
             }
             T_JOIN => {
-                let scheme = r.params()?;
-                let inputs = r.inputs(idx)?;
+                let scheme = self.params()?;
+                let inputs = self.inputs(idx)?;
                 NodeKey::Join { scheme, inputs }
             }
             T_STAGE => {
-                let inputs = r.inputs(idx)?;
-                let n_members = r.u32()? as usize;
-                let mut members = r.vec_for(n_members);
-                for m_idx in 0..n_members {
-                    let token = r.string()?;
-                    let n_refs = r.u32()? as usize;
-                    let mut refs = r.vec_for(n_refs);
-                    for _ in 0..n_refs {
-                        let rtag = r.u8()?;
-                        let v = r.u32()? as usize;
-                        refs.push(match rtag {
-                            R_INPUT => StageRef::Input(v),
-                            R_MEMBER => {
-                                if v >= m_idx {
-                                    return Err(DecodeError::BadNodeRef(v as u64));
-                                }
-                                StageRef::Member(v)
-                            }
-                            other => return Err(DecodeError::BadTag("stage-ref", other)),
-                        });
-                    }
-                    members.push(StageOp {
-                        token,
-                        inputs: refs,
-                    });
-                }
+                let inputs = self.inputs(idx)?;
+                let members = self.stage_members()?;
                 NodeKey::Stage { inputs, members }
             }
             other => return Err(DecodeError::BadTag("node", other)),
-        };
+        })
+    }
+    /// A stage's member list, whose member refs must point at earlier members.
+    fn stage_members(&mut self) -> Result<Vec<StageOp>, DecodeError> {
+        let n_members = self.u32()? as usize;
+        let mut members = self.vec_for(n_members);
+        for m_idx in 0..n_members {
+            let token = self.string()?;
+            let n_refs = self.u32()? as usize;
+            let mut refs = self.vec_for(n_refs);
+            for _ in 0..n_refs {
+                let rtag = self.u8()?;
+                let v = self.u32()? as usize;
+                refs.push(match rtag {
+                    R_INPUT => StageRef::Input(v),
+                    R_MEMBER => {
+                        if v >= m_idx {
+                            return Err(DecodeError::BadNodeRef(v as u64));
+                        }
+                        StageRef::Member(v)
+                    }
+                    other => return Err(DecodeError::BadTag("stage-ref", other)),
+                });
+            }
+            members.push(StageOp {
+                token,
+                inputs: refs,
+            });
+        }
+        Ok(members)
+    }
+}
+
+/// Decode the canonical byte form back into a freshly interned store. Because nodes are written in
+/// dependency order and re-interned in that order, the rebuilt store has identical ids, so a
+/// re-serialize is byte-identical to the input (asserted by the round-trip tests).
+pub(crate) fn deserialize(data: &[u8]) -> Result<GraphStore, DecodeError> {
+    let mut r = Reader::new(data);
+    if r.take(4)? != MAGIC {
+        return Err(DecodeError::BadMagic);
+    }
+    let n_nodes = u64::from(r.u32()?);
+    let store = GraphStore::new();
+    for idx in 0..n_nodes {
+        let key = r.node(idx)?;
         store
             .add_key(key)
             .map_err(|e| DecodeError::BadNodeRef(e.0))?;
