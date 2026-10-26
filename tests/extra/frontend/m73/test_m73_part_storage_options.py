@@ -23,7 +23,10 @@ from fsspec.implementations.memory import MemoryFileSystem  # noqa: E402
 
 
 class TokenMemory(MemoryFileSystem):  # type: ignore[misc]  # fsspec is untyped
-    """The memory filesystem, refused without ``token=`` (as S3 with a custom endpoint would be)."""
+    """The memory filesystem, refused without ``token=``.
+
+    As S3 with a custom endpoint would be.
+    """
 
     protocol = "tokmem"
 

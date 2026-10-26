@@ -1,5 +1,7 @@
-"""Sources as named slots (one form and one data object per name), and ``graphed.materialize``
-over several Sessions."""
+"""Sources as named slots (one form and one data object per name).
+
+And ``graphed.materialize`` over several Sessions.
+"""
 
 from __future__ import annotations
 

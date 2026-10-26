@@ -34,7 +34,10 @@ def _kin(
 
 
 def make_events(n_events: int = DEFAULT_N_EVENTS, seed: int = DEFAULT_SEED) -> ak.Array:
-    """Generate a deterministic event record array with Muon/Electron/Jet/Photon/MET collections."""
+    """Generate a deterministic event record array.
+
+    It carries Muon/Electron/Jet/Photon/MET collections.
+    """
     rng = np.random.default_rng(seed)
 
     n_mu = rng.poisson(0.9, n_events)

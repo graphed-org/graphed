@@ -1,5 +1,7 @@
-"""`gak.apply_correction`: a compound correction named like a regular one (graphed#96), and the
-recorded type of a flat-then-jagged call (graphed#97), checked against eager correctionlib."""
+"""`gak.apply_correction`: a compound correction named like a regular one (graphed#96).
+
+And the recorded type of a flat-then-jagged call (graphed#97), checked against eager correctionlib.
+"""
 
 from __future__ import annotations
 
@@ -34,7 +36,8 @@ def _formula(name: str, expression: str, variables: list[str]) -> dict[str, Any]
     }
 
 
-#: a regular and a compound correction both named "X" (legal: names are unique per list only); "Y" is compound only
+#: a regular and a compound correction both named "X" (legal: names are unique per list only); "Y"
+#: is compound only
 CSET = json.dumps(
     {
         "schema_version": 2,

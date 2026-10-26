@@ -1,4 +1,7 @@
-"""``aggregate_plan(store=<url>)`` opens the capture store once per worker thread and passes ``storage_options`` to it."""
+"""``aggregate_plan(store=<url>)`` opens the capture store once per worker thread.
+
+It passes ``storage_options`` to it.
+"""
 
 from __future__ import annotations
 

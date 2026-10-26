@@ -1,9 +1,9 @@
 """`graphed.systematics`: the variation machinery — what `graphed.vary` registers and what rides.
 
 The verbs stay where analyses already read them: `graphed.vary`, `graphed.weight`,
-`graphed.variations`, `graphed.explain` and the rest of §9.1 are exported from `graphed` itself, and
-`graphed.varied`/`graphed.accessors`/`graphed.vary` keep working as module paths. This package is
-where the machinery LIVES, one concern per module:
+`graphed.variations`, `graphed.explain` and the rest of §9.1 are exported from `graphed` itself,
+and `graphed.varied`/`graphed.accessors`/`graphed.vary` keep working as module paths. This package
+is where the machinery LIVES, one concern per module:
 
 - `registration` — `graphed.vary`'s three overloads: the checks, the minting, the fan-out.
 - `ambient` — the ambient event weight: the operation list, each entry's rider, the three outcomes

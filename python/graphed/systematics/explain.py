@@ -1,8 +1,8 @@
 """`graphed.explain` (§2.7): what varies here, how each family entered, and how they relate.
 
 A pure READER of what the context already keeps — the lineage's registrations, the ambient's riders
-through `ambient_entries`, the link chain from the root and the Session's point registry. It decides
-nothing and records nothing, which is what makes calling it unobservable.
+through `ambient_entries`, the link chain from the root and the Session's point registry. It
+decides nothing and records nothing, which is what makes calling it unobservable.
 """
 
 from __future__ import annotations
@@ -27,8 +27,8 @@ class Entry:
 
     #: ``"factor"`` (a new one), ``"join"``, ``"overlay"`` or ``"shift"``
     kind: str
-    #: the families the form names — the other families on the factor a join entered, the families an
-    #: overlay was read over. Empty for a new factor, and for a shift, which names collections
+    #: the families the form names — the other families on the factor a join entered, the families
+    #: an overlay was read over. Empty for a new factor, and for a shift, which names collections
     families: tuple[str, ...] = ()
     #: the collections a SHIFT form varies
     collections: tuple[str, ...] = ()
@@ -54,8 +54,8 @@ class Family:
     name: str
     kind: Kind
     tags: tuple[str, ...]
-    #: the ROW-SPACE links from the root down to the context that registered it, as ``(kind, label)``
-    #: pairs — ``("mask", None)``, ``("project", "hf_up")``; empty at the root
+    #: the ROW-SPACE links from the root down to the context that registered it, as ``(kind,
+    #: label)`` pairs — ``("mask", None)``, ``("project", "hf_up")``; empty at the root
     links: tuple[tuple[str, str | None], ...]
     #: how it entered
     entry: Entry
@@ -68,7 +68,8 @@ class Family:
     #: never a product, which is why their joint is not a universe either
     shares_with: frozenset[str]
     #: the SHIFT families registered AFTER this weight family read the objects they move (§2.5's
-    #: diagnostic): its members carry the pre-shift value, so it is neither fanned out nor independent
+    #: diagnostic): its members carry the pre-shift value, so it is neither fanned out nor
+    #: independent
     reads_shifted_by: frozenset[str]
     #: the SHIFT families a minted label of this one carries a coordinate of: the shifted objects
     #: this family read, so its members fan out over them
@@ -107,7 +108,8 @@ class Operation:
     position: int
     slot: int
     kind: str
-    #: the families this operation carries, as ``{name: coordinates}`` — a join's other families too
+    #: the families this operation carries, as ``{name: coordinates}`` — a join's other families
+    #: too
     families: Mapping[str, tuple[str, ...]]
     #: the row-space links this operation came through, oldest first, as ``(kind, label)`` pairs
     links: tuple[tuple[str, str | None], ...]
@@ -177,7 +179,10 @@ def _render_point(point: Sequence[tuple[str, str]]) -> str:
 
 
 def _render_links(links: Sequence[tuple[str, str | None]]) -> str:
-    """The link chain in words — what a reader of the line needs, where the record keeps the pairs."""
+    """Return the link chain in words.
+
+    What a reader of the line needs, where the record keeps the pairs.
+    """
     return "/".join(_link_name(link) for link in links) or "the root"
 
 
@@ -200,8 +205,10 @@ def _lineage_registrations(ctx: EventContext) -> tuple[_Registration, ...]:
 
 
 def explain(ctx: EventContext) -> Explanation:
-    """§2.7: how this context's variations came to be — the families, the ambient's operations and
-    the universes carried here, as a frozen record whose `str()` is one line per item.
+    """§2.7: how this context's variations came to be.
+
+    The families, the ambient's operations and the universes carried here, as a frozen record whose
+    `str()` is one line per item.
 
     Everything is DERIVED, never re-decided: the families from the registrations the lineage
     recorded, the operations from the riders (`ambient_entries`), and each universe's origin from
@@ -226,7 +233,8 @@ def explain(ctx: EventContext) -> Explanation:
         variations[label] = _origin_of(label, point, registrations)
     # §2.7: the relations and the placements quantify over the family's REGISTERED POINTS on the
     # lineage, never over the labels this context happens to carry — a projection drops labels, and
-    # what a family does with another is a fact about the registrations, not about where it is read.
+    # what a family does with another is a fact about the registrations, not about where it is
+    # read.
     registered = [
         _origin_of(label, tuple((name, tag) for name, tag in point), registrations)
         for label, point in points.items()
@@ -234,9 +242,9 @@ def explain(ctx: EventContext) -> Explanation:
     ]
     minted: dict[str, set[str]] = {registration.name: set() for registration in registrations}
     # §2.7: two families SHARE a registered point when one point carries both their coordinates —
-    # a symmetric relation over the points as REGISTERED, where a placement's own axis is not one of
-    # its coordinates (`_route` spells a placed universe by the point of the OTHERS), which is why
-    # the tour's diagonal takes `hf` out of `mu`'s composes-with and leaves `lf` in it
+    # a symmetric relation over the points as REGISTERED, where a placement's own axis is not one
+    # of its coordinates (`_route` spells a placed universe by the point of the OTHERS), which is
+    # why the tour's diagonal takes `hf` out of `mu`'s composes-with and leaves `lf` in it
     sharing: set[tuple[str, str]] = set()
     for variation in registered:
         own = _minted_by(variation.label, registrations)
@@ -248,9 +256,9 @@ def explain(ctx: EventContext) -> Explanation:
     for registration in registrations:
         kinds.setdefault(registration.name, registration.kind)
     # §2.1: two families on ONE operation are two values of one weight; the riders are where that
-    # is recorded, and it is why their joint is absent — not a product, so not "composes with". Read
-    # off the LIVE operations, never the listing, which shows an adopted head's product run as the
-    # one operation its node is: a run is a product, and its families share nothing.
+    # is recorded, and it is why their joint is absent — not a product, so not "composes with".
+    # Read off the LIVE operations, never the listing, which shows an adopted head's product run as
+    # the one operation its node is: a run is a product, and its families share nothing.
     shared: dict[str, tuple[str, ...]] = {}
     riders = _live_riders(ctx)
     for slot in _live_factors(ctx)[1]:
@@ -314,8 +322,11 @@ def explain(ctx: EventContext) -> Explanation:
 def _origin_of(
     label: str, point: tuple[tuple[str, str], ...], registrations: Sequence[_Registration]
 ) -> Variation:
-    """§2.7: where one universe came from, read off its registered point and the family whose
-    coordinate spells it — never by re-deciding anything."""
+    """§2.7: where one universe came from.
+
+    Read off its registered point and the family whose coordinate spells it — never by re-deciding
+    anything.
+    """
     families = tuple(dict.fromkeys(name for name, _tag in point))
     own = _minted_by(label, registrations)
     if own is None:
@@ -340,8 +351,11 @@ def _origin_of(
 
 
 def _minted_by(label: str, registrations: Sequence[_Registration]) -> _Registration | None:
-    """The family whose coordinate SPELLS `label` — its own universe first, then a joint of it —
-    or `None` for a label no registration on this lineage minted."""
+    """Return the family whose coordinate SPELLS `label`.
+
+    Its own universe first, then a joint of it — or `None` for a label no registration on this
+    lineage minted.
+    """
     return next(
         (r for r in registrations for tag in r.tags if label == f"{r.name}_{tag}"),
         next(
@@ -360,7 +374,9 @@ def _relations(
     flagged: Mapping[str, tuple[str, ...]],
     sharing: Collection[tuple[str, str]],
 ) -> tuple[frozenset[str], frozenset[str], frozenset[str], frozenset[str], frozenset[str]]:
-    """§2.7: what one WEIGHT family does with every other family, read off the points it registered.
+    """§2.7: what one WEIGHT family does with every other family.
+
+    Read off the points it registered.
 
     Two weight families whose coordinates never share a label COMPOSE: their joint is a product,
     not a universe, which is why `hf_up__mu_up` is not in the list. Two that SHARE one operation

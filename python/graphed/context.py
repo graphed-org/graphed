@@ -30,9 +30,9 @@ from .errors import GraphedError
 from .provenance import capture
 from .systematics import accessors
 
-# The ambient-weight machinery lives in `graphed.systematics` (m57); the context KEEPS its state and
-# calls into it. Every name is re-exported under its own name because `graphed.context` is where the
-# probes, the extra suites and the docs read the machinery from.
+# The ambient-weight machinery lives in `graphed.systematics` (m57); the context KEEPS its state
+# and calls into it. Every name is re-exported under its own name because `graphed.context` is
+# where the probes, the extra suites and the docs read the machinery from.
 from .systematics.ambient import (  # isort: skip
     _SLOT as _SLOT,
     Rider as Rider,
@@ -92,8 +92,8 @@ class EventContext:
     """
 
     __slots__ = (
-        "_adopted", "_collections", "_derived", "_factors", "_gens", "_head", "_head_ops", "_is_data",
-        "_link", "_memo", "_origin", "_overlays", "_parent", "_projected",
+        "_adopted", "_collections", "_derived", "_factors", "_gens", "_head", "_head_ops",
+        "_is_data", "_link", "_memo", "_origin", "_overlays", "_parent", "_projected",
         "_provenance", "_reads", "_record", "_recorded", "_registration", "_riders", "_serial",
         "_session", "_slots", "_weight_tags",
     )  # fmt: skip
@@ -230,9 +230,12 @@ class EventContext:
         return self._stamp(value)
 
     def _stamp(self, value: Any) -> Any:
-        """§2.3e's ORIGINATION rule: everything a context produces carries THAT context's handle,
-        overriding whatever the input merge would yield (a derived context's reads go through the
-        same root wrapper, so the merge alone would answer with the parent's handle)."""
+        """§2.3e's ORIGINATION rule.
+
+        Everything a context produces carries THAT context's handle, overriding whatever the input
+        merge would yield (a derived context's reads go through the same root wrapper, so the merge
+        alone would answer with the parent's handle).
+        """
         return accessors.with_context(value, self)
 
     # ---- lineage (§2.6b: variation history is object lineage) -------------------
@@ -245,7 +248,7 @@ class EventContext:
         return False
 
     def _links_below(self, ancestor: EventContext) -> tuple[Link, ...]:
-        """The links from just below `ancestor` down to `self`, parent-to-child (§6.1d)."""
+        """Return the links from just below `ancestor` down to `self`, parent-to-child (§6.1d)."""
         links: list[Link] = []
         node: EventContext | None = self
         while node is not None and node is not ancestor:
@@ -255,9 +258,12 @@ class EventContext:
         return tuple(reversed(links))
 
     def _selection(self) -> Any:
-        """§9.1's selection: the mask that derived this context, skipping `vary` IDENTITY links
-        and answering as of the first non-identity link (`None` at a root or across a projection,
-        which is one label's unvaried member and contributes no labels)."""
+        """§9.1's selection: the mask that derived this context.
+
+        It skips `vary` IDENTITY links, answering as of the first non-identity link (`None` at a
+        root or across a projection, which is one label's unvaried member and contributes no
+        labels).
+        """
         node: EventContext | None = self
         while node is not None and node._link is not None:
             kind, payload = node._link
@@ -289,8 +295,9 @@ class EventContext:
         return None
 
     def _ambient_weight(self) -> Varied | Array | None:
-        """The composed ambient weight, `None` while nothing is registered; a projection's is the
-        one member it adopted (§2.2).
+        """Return the composed ambient weight, `None` while nothing is registered.
+
+        A projection's is the one member it adopted (§2.2).
 
         A cache read: the memo answers when it still stands at the Session's mint epoch, and any
         mint since it was stamped makes this REMAKE the composition from the original factors, so
@@ -319,9 +326,11 @@ class EventContext:
         return composed
 
     def _record_read(self, composed: Any) -> None:
-        """§2.1: the READ is what lets a later central name this composition. What is recorded is
-        what a later registration compares — the member nodes the handle carries, the live factor
-        slots it stands for and their generations — never the container, which a mint may remake.
+        """§2.1: the READ is what lets a later central name this composition.
+
+        What is recorded is what a later registration compares — the member nodes the handle
+        carries, the live factor slots it stands for and their generations — never the container,
+        which a mint may remake.
         """
         slots = _live_slots(self)
         entry = (_member_nodes(composed), slots, tuple(self._gens.get(slot, 0) for slot in slots))
@@ -329,13 +338,18 @@ class EventContext:
             self._reads.append(entry)
 
     def _overlay_ids(self) -> frozenset[int]:
-        """The overlay slots as the OBJECT ids `_compose` tests, so the composition walk keeps
-        working on the fold base, where the head is a composed container in no slot."""
+        """Return the overlay slots as the OBJECT ids `_compose` tests.
+
+        So the composition walk keeps working on the fold base, where the head is a composed
+        container in no slot.
+        """
         return _marks(self._factors, self._slots, self._overlays)
 
     def _fixed_ids(self) -> frozenset[int]:
-        """The same, for the overlays a projection into their own universe FIXED (§2.3): there
-        every value is that universe, so the composition replaces with them at every label."""
+        """Return the same, for the overlays a projection into their own universe FIXED (§2.3).
+
+        There every value is that universe, so the composition replaces with them at every label.
+        """
         return _marks(
             self._factors,
             self._slots,
@@ -343,8 +357,9 @@ class EventContext:
         )
 
     def _foldable(self) -> tuple[int, int, Varied, bool] | None:
-        """The memo the next composition may build ON, `None` when it must remake from the
-        original factors.
+        """Return the memo the next composition may build ON.
+
+        `None` when it must remake from the original factors.
 
         One predicate for both readers — the operand list below and `_vary_weight`'s fold — so the
         record-time check walks exactly what the read will compose, in every memo state. A memo a
@@ -357,15 +372,20 @@ class EventContext:
         return memo
 
     def _ambient_operands(self) -> list[Any]:
-        """What the next composition multiplies: the composed container plus whatever registered
-        after it while the memo may be built on, and the original factors otherwise.
+        """Return What the next composition multiplies.
+
+        The composed container plus whatever registered after it while the memo may be built on,
+        and the original factors otherwise.
         """
         memo = self._foldable()
         return list(self._factors) if memo is None else [memo[2], *self._factors[memo[1] :]]
 
     def _materialise(self, operands: Sequence[Any]) -> tuple[Varied, bool]:
-        """Compose `operands` over the recorded union, with the verdict on whether a later mint
-        could still move any resolution it just made (`_settled` over every operand and label)."""
+        """Compose `operands` over the recorded union.
+
+        Also return the verdict on whether a later mint could still move any resolution it just
+        made (`_settled` over every operand and label).
+        """
         composed = rebuild(
             _compose(
                 operands, self._recorded, overlays=self._overlay_ids(), fixed=self._fixed_ids()
@@ -377,17 +397,22 @@ class EventContext:
         return stamped, _all_settled(self._session, operands, self._recorded)
 
     def _ambient_tags(self) -> dict[str, tuple[str, ...]]:
-        """The ambient's §1.1 tag map, accumulated over the factors in registration order — what
-        today's composed container carries, read without composing. A projection's factor is a
-        bare member carrying no map, which is how a projection still drops it."""
+        """Return the ambient's §1.1 tag map, accumulated over the factors in registration order.
+
+        What today's composed container carries, read without composing. A projection's factor is a
+        bare member carrying no map, which is how a projection still drops it.
+        """
         merged: dict[str, tuple[str, ...]] = {}
         for factor in self._factors:
             merged.update(getattr(factor, "_tags", None) or {})
         return merged
 
     def _context_labels(self) -> tuple[str, ...]:
-        """§2.2's §2.4-ordered union: (a) the ambient registry's labels, (b) the labels of the
-        `Varied` collections this context CARRIES, (c) the labels of its selection."""
+        """§2.2's §2.4-ordered union.
+
+        (a) the ambient registry's labels, (b) the labels of the `Varied` collections this context
+        CARRIES, (c) the labels of its selection.
+        """
         out: dict[str, None] = dict.fromkeys(self._recorded)
         for source in (*self._collections.values(), self._selection()):
             for label in labels_of(source):
@@ -396,9 +421,11 @@ class EventContext:
 
     # ---- derivation (§2.6c: scoping is lineage) ---------------------------------
     def _derive(self, mask: Array | Varied) -> EventContext:
-        """`ctx[mask]`. PURE DERIVATIONS ARE CANONICAL — the same mask answers with the same
-        object, memoised here, or two reads of one universe would falsely trip §2.3e's divergence
-        rule."""
+        """`ctx[mask]`.
+
+        PURE DERIVATIONS ARE CANONICAL — the same mask answers with the same object, memoised here,
+        or two reads of one universe would falsely trip §2.3e's divergence rule.
+        """
         key = _mask_key(mask)
         memo = self._derived.get(key)
         if memo is not None:
@@ -425,11 +452,14 @@ class EventContext:
         return child
 
     def _project(self, label: str) -> EventContext:
-        """`graphed.universe(ctx, L)` / `graphed.nominal(ctx)`: a CHILD context carrying that
-        label's collections and ambient weight (§2.2)."""
+        """`graphed.universe(ctx, L)` / `graphed.nominal(ctx)`.
+
+        A CHILD context carrying that label's collections and ambient weight (§2.2).
+        """
         if label not in self._context_labels():
             raise KeyError(
-                f"unknown variation label {label!r}; this context carries {list(self._context_labels())}"
+                f"unknown variation label {label!r}; this context carries "
+                f"{list(self._context_labels())}"
             )
         memo = self._projected.get(label)
         if memo is not None:
@@ -455,10 +485,11 @@ class EventContext:
         return child
 
     def _adopt_ambient(self, composed: Any) -> None:
-        """A row-space change MATERIALISES: the child starts from the one composed container, which
-        is also its running form state. Re-indexing every factor instead would cost factors x
-        labels per derivation — at the sizes this composition exists for, the same order as the
-        whole quadratic it removes.
+        """Adopt the parent's ambient: a row-space change MATERIALISES.
+
+        The child starts from the one composed container, which is also its running form state.
+        Re-indexing every factor instead would cost factors x labels per derivation — at the sizes
+        this composition exists for, the same order as the whole quadratic it removes.
         """
         self._factors = [composed]
         self._slots = [next(_SLOT)]
@@ -477,15 +508,19 @@ class EventContext:
         self._memo = (self._session._mint_epoch, 1, composed, True)
         self._recorded = _union(("nominal",), labels_of(composed))
         self._origin = self
-        # §2.1/§2.3: the adoption HANDS OUT the composed member, exactly as a read does, so a family
-        # whose nominal is that node decides the same way whether or not anything read here first —
-        # which is what makes `graphed.weight()` and `graphed.explain()` observations, not inputs.
+        # §2.1/§2.3: the adoption HANDS OUT the composed member, exactly as a read does, so a
+        # family whose nominal is that node decides the same way whether or not anything read here
+        # first — which is what makes `graphed.weight()` and `graphed.explain()` observations, not
+        # inputs.
         self._record_read(composed)
 
 
 def _mask_key(mask: Array | Varied) -> tuple[tuple[str, int], ...]:
-    """A derivation's identity: its per-label node ids. A REBUILT mask interns to the same ids,
-    which is the binding condition for `ctx[rebuilt] is ctx[mask]`."""
+    """Return a derivation's identity: its per-label node ids.
+
+    A REBUILT mask interns to the same ids, which is the binding condition for
+    `ctx[rebuilt] is ctx[mask]`.
+    """
     if isinstance(mask, Varied):
         return tuple((label, member.node_id) for label, member in mask._members.items())
     return (("nominal", mask.node_id),)
@@ -527,7 +562,9 @@ def vary_context(
 
 
 def _child_of(ctx: EventContext) -> EventContext:
-    """A `vary` link: the row space is unchanged, only registrations differ (§6.1d kind (2)).
+    """Return a `vary` link.
+
+    The row space is unchanged, only registrations differ (§6.1d kind (2)).
 
     So the ambient state is COPIED, never composed: seeding the child with the composed parent
     would make every registration a two-element fold and reproduce the quadratic exactly.

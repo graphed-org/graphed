@@ -1,5 +1,8 @@
-"""A `None` in an option-typed `select=` mask indexes as ak does: a `None` row (or object) in every
-universe whose mask holds it, round-tripped through `read_varied` (graphed#77)."""
+"""A `None` in an option-typed `select=` mask indexes as ak does.
+
+A `None` row (or object) in every universe whose mask holds it, round-tripped through `read_varied`
+(graphed#77).
+"""
 
 from __future__ import annotations
 
@@ -65,7 +68,10 @@ CASES: dict[str, tuple[Callable[[Any], Any], Select]] = {
 
 
 def _expected(member: ak.Array, masks: dict[Any, ak.Array]) -> ak.Array:
-    """The analyst's eager selection: rows by the level-0 mask, then each collection's objects."""
+    """Return the analyst's eager selection.
+
+    Rows by the level-0 mask, then each collection's objects.
+    """
     m0 = masks.get(0)
     out = member if m0 is None else member[m0]
     for key, mask in masks.items():

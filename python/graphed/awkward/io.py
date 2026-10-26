@@ -53,7 +53,9 @@ from .projection import project_buffers
 
 
 def _schema_form(paths: Sequence[str], columns: Sequence[str] | None) -> AwkwardForm:
-    """The dataset's form from the arrow SCHEMA alone (first file authoritative; nothing decoded).
+    """Return the dataset's form from the arrow SCHEMA alone.
+
+    The first file is authoritative; nothing is decoded.
 
     The form is what awkward's OWN reader gives a ZERO-ROW parquet file of that schema, not what
     `ak.from_arrow_schema` gives the schema: the latter sees arrow types only and drops the record
@@ -73,9 +75,11 @@ def _schema_form(paths: Sequence[str], columns: Sequence[str] | None) -> Awkward
 
 @dataclass(frozen=True)
 class _DatasetLoader:
-    """Lazy whole-dataset loader for the reference ``materialize`` — AND a
-    ``graphed.write.PartitionedSource``, so the generic writer reads it partition by partition
-    (the whole-dataset path is only ever the reference ``materialize``)."""
+    """Lazy whole-dataset loader for the reference ``materialize``.
+
+    AND a ``graphed.write.PartitionedSource``, so the generic writer reads it partition by
+    partition (the whole-dataset path is only ever the reference ``materialize``).
+    """
 
     paths: tuple[str, ...]
     columns: tuple[str, ...] | None
@@ -103,11 +107,12 @@ def from_parquet(
     steps_per_file: int = 1,
     open_files: bool = True,
 ) -> Any:
-    """A deferred awkward array over a parquet dataset (file / directory / glob / list).
+    """Return a deferred awkward array over a parquet dataset (file / directory / glob / list).
 
     The form is built from METADATA alone; no event data is read here. ``steps_per_file`` and
     ``open_files`` shape the dataset's default partitioning (``partitions_of``); with
-    ``open_files=False`` no file is opened at all (blind partitions, R7.9)."""
+    ``open_files=False`` no file is opened at all (blind partitions, R7.9).
+    """
     paths = gpq.discover(path)
     form = _schema_form(paths, columns)
     if steps_per_file < 1:
@@ -128,8 +133,10 @@ def read_parquet_partition(partition: Partition, columns: Sequence[str] | None =
 
 
 def _resolve_behavior(behavior: Any) -> Any:
-    """A behavior dict, or an importable "module:attr" reference (behavior dicts often contain
-    lambdas, which do not pickle to process workers)."""
+    """Return a behavior dict, or an importable "module:attr" reference.
+
+    Behavior dicts often contain lambdas, which do not pickle to process workers.
+    """
     if isinstance(behavior, str):
         import importlib  # noqa: PLC0415
 
@@ -193,7 +200,7 @@ class _WritePart:
 
 
 def _part_paths(writer: _WritePart | _VariedWritePart, partition: Partition) -> list[str]:
-    """A deferred writer's one part for ``partition``: its ``part_paths`` hook."""
+    """Return a deferred writer's one part for ``partition``: its ``part_paths`` hook."""
     if writer.reader is not None:
         index = gw.blind_part_index(partition, dict(writer.bases))
     else:
@@ -202,16 +209,18 @@ def _part_paths(writer: _WritePart | _VariedWritePart, partition: Partition) -> 
 
 
 def _payload(value: object, column: str) -> ak.Array:
-    """What a part holds: a record as is, anything else as the one field ``column``."""
+    """Return What a part holds: a record as is, anything else as the one field ``column``."""
     result = ak.Array(value)
     return result if result.fields else ak.Array({column: result})
 
 
 @dataclass(frozen=True)
 class _ArrowParquet:
-    """`parquet_write`'s codec: ``ak.to_arrow_table`` then ``pq.write_table``, each with its own
-    options, and the part's key-value metadata REPLACING the schema's (``to_arrow_table`` always
-    stamps ``ak:parameters``, whichever ``extensionarray``)."""
+    """`parquet_write`'s codec: ``ak.to_arrow_table`` then ``pq.write_table``.
+
+    Each takes its own options, and the part's key-value metadata REPLACES the schema's
+    (``to_arrow_table`` always stamps ``ak:parameters``, whichever ``extensionarray``).
+    """
 
     column: str
     arrow_options: tuple[tuple[str, Any], ...]
@@ -235,15 +244,16 @@ def parquet_write(
     parquet_options: Mapping[str, Any] | None = None,
     column: str = "data",
 ) -> gw.PartWrite:
-    """A parquet part per task of ``array``, for :func:`graphed.aggregate_plan` ``writes=``.
+    """Return a parquet part per task of ``array``, for :func:`graphed.aggregate_plan` ``writes=``.
 
     Each part is ``ak.to_arrow_table(array_chunk, **arrow_options)`` written by
     ``pyarrow.parquet.write_table(table, path, **parquet_options)`` at
     :func:`graphed.write.join_part` ``(destination, name(partition))``; a ``destination``
-    containing ``://`` is an fsspec URL, written through its filesystem. A non-record array is written as the field
-    ``column``. ``metadata`` (see :class:`~graphed.write.PartWrite`) replaces the schema's
-    key-value metadata when given. Column order is the array's: sort a record's fields in the
-    graph (``rec[sorted(rec.fields)]``) to write them sorted."""
+    containing ``://`` is an fsspec URL, written through its filesystem. A non-record array is
+    written as the field ``column``. ``metadata`` (see :class:`~graphed.write.PartWrite`) replaces
+    the schema's key-value metadata when given. Column order is the array's: sort a record's fields
+    in the graph (``rec[sorted(rec.fields)]``) to write them sorted.
+    """
     refuse_container("graphed.awkward.parquet_write", array, *(metadata or {}).values())
     codec = _ArrowParquet(
         column, tuple((arrow_options or {}).items()), tuple((parquet_options or {}).items())
@@ -254,8 +264,11 @@ def parquet_write(
 
 
 def _syntactic_fields(array: Any, source_node_id: int) -> set[str] | None:
-    """The top-level source fields the recorded graph ACCESSES (a session walk). ``None`` means
-    the whole source is consumed (a bare source, or a non-field op applied to it directly)."""
+    """Return the top-level source fields the recorded graph ACCESSES (a session walk).
+
+    ``None`` means the whole source is consumed (a bare source, or a non-field op applied to it
+    directly).
+    """
     found: set[str] = set()
     whole = [False]
     sentinel = object()
@@ -280,8 +293,10 @@ def _syntactic_fields(array: Any, source_node_id: int) -> set[str] | None:
         return None
 
     def on_external(_nid: int, _fn: Any, ins: list[object]) -> object:
-        """An External handed the source RECORD replays against every column, so the read list
-        cannot narrow — the same rule `on_op` applies to a non-field op."""
+        """Return an External handed the source RECORD replays against every column.
+
+        So the read list cannot narrow — the same rule `on_op` applies to a non-field op.
+        """
         if touches_source(ins):
             whole[0] = True
         return None
@@ -293,15 +308,17 @@ def _syntactic_fields(array: Any, source_node_id: int) -> set[str] | None:
 def _evaluation_columns(
     array: Any, source_node_id: int, source_name: str, source_form: AwkwardForm
 ) -> tuple[str, ...]:
-    """The per-task read list: the graph's SYNTACTIC source-field accesses, refined per field by
-    the buffer projection.
+    """Return the per-task read list.
+
+    The graph's SYNTACTIC source-field accesses, refined per field by the buffer projection.
 
     Evaluation replays EVERY recorded node — including field accesses whose buffers the output
     never touches (a zip's untouched legs) — so the syntactic set decides WHICH fields must
     exist; the buffer view then decides which LEAVES to read for each: DATA needs read their
     leaves, an offsets-only field reads its CHEAPEST CARRIER leaf (parquet has no standalone
     counter column — R15.8's translation). An empty tuple means "everything" (the whole source
-    is consumed)."""
+    is consumed).
+    """
     accessed = _syntactic_fields(array, source_node_id)
     if accessed is None:
         return ()
@@ -346,19 +363,24 @@ _VARY_PREFIX = "__vary_"
 _BASE_FIELD = "__base__"
 #: §6.4e: the manifest lives in parquet key-value file metadata (greenfield — graphed writes none).
 _MANIFEST_KEY = b"graphed.variations"
-#: prefix of a manifest entry that names no column (outside `_VARY_PREFIX`, so no leaf name collides): an
-#: `xor` entry whose `field` matches no stored leaf, so a reader that predates `base` refuses the file.
+#: prefix of a manifest entry that names no column (outside `_VARY_PREFIX`, so no leaf name
+#: collides): an `xor` entry whose `field` matches no stored leaf, so a reader that predates `base`
+#: refuses the file.
 _REQUIRES_BASE = "requires_base__"
-#: prefix of the entry carrying a universe's record form when the reader cannot rebuild its type from the
-#: columns (a parameter such as `__doc__`, a top record's own parameters); it names no column either.
+#: prefix of the entry carrying a universe's record form when the reader cannot rebuild its type
+#: from the columns (a parameter such as `__doc__`, a top record's own parameters); it names no
+#: column either.
 _RECORD_TYPE = "type__"
 
 _SelectKey = Any  # `int` (bare depth) or `tuple[str, int]` (field-scoped, depth >= 1)
 
 
 def _flat_field(path: str) -> str:
-    """§6.4b: the on-disk field spelling — a nested path flattened per level with `_` (`Jet.pt` ->
-    `Jet_pt`; a bare-field skim's `pt` -> `pt`)."""
+    """§6.4b: the on-disk field spelling.
+
+    A nested path flattened per level with `_` (`Jet.pt` -> `Jet_pt`; a bare-field skim's `pt` ->
+    `pt`).
+    """
     return path.replace(".", "_")
 
 
@@ -367,7 +389,7 @@ def _entry_depth(key: _SelectKey) -> int:
 
 
 def _entry_flat(key: _SelectKey) -> str:
-    """The mask column's `entry` token (`…__mask__0`, `…__mask__1`, `…__mask__Jet_1`)."""
+    """Return the mask column's `entry` token (`…__mask__0`, `…__mask__1`, `…__mask__Jet_1`)."""
     if isinstance(key, int):
         return str(key)
     field_name, depth = key
@@ -375,19 +397,25 @@ def _entry_flat(key: _SelectKey) -> str:
 
 
 def _entry_manifest(key: _SelectKey) -> int | list[Any]:
-    """The manifest `entry`/levels element: a bare depth `int`, or `[flat_field, depth]`."""
+    """Return the manifest `entry`/levels element: a bare depth `int`, or `[flat_field, depth]`."""
     return key if isinstance(key, int) else [_flat_field(key[0]), key[1]]
 
 
 def _level_sort_key(key: _SelectKey) -> tuple[int, str]:
-    """§6.4e's explicit total order over the heterogeneous levels list: `(depth, flat_field or "")`
-    — bare-depth before field-scoped of the same depth (`sorted()` cannot order the mixed list)."""
+    """§6.4e's explicit total order over the heterogeneous levels list.
+
+    `(depth, flat_field or "")` — bare-depth before field-scoped of the same depth (`sorted()`
+    cannot order the mixed list).
+    """
     return (_entry_depth(key), "" if isinstance(key, int) else _flat_field(key[0]))
 
 
 def _normalize_select(select: Any) -> dict[_SelectKey, Any]:
-    """§6.4a's key space: a single `Varied`/Array row mask (⇔ `{0: mask}`), or a mapping keyed by
-    `int` (bare depth) or `(field_name, depth>=1)` (field-scoped)."""
+    """§6.4a's key space.
+
+    A single `Varied`/Array row mask (⇔ `{0: mask}`), or a mapping keyed by `int` (bare depth) or
+    `(field_name, depth>=1)` (field-scoped).
+    """
     if isinstance(select, Mapping):
         out: dict[_SelectKey, Any] = {}
         for key, mask in select.items():
@@ -400,7 +428,8 @@ def _normalize_select(select: Any) -> dict[_SelectKey, Any]:
             )
             if not (isinstance(key, int) or field_scoped):
                 raise GraphedError(
-                    f"select= keys are a bare depth `int` or a `(field_name, depth>=1)` tuple, not {key!r}"
+                    "select= keys are a bare depth `int` or a `(field_name, depth>=1)` tuple, "
+                    f"not {key!r}"
                 )
             out[key] = mask
         return out
@@ -408,7 +437,10 @@ def _normalize_select(select: Any) -> dict[_SelectKey, Any]:
 
 
 def _is_option(session: Session, array: Any) -> bool:
-    """Whether a mask's type holds an option at any depth (`?bool`, `var * ?bool`, `?var * bool`)."""
+    """Whether a mask's type holds an option at any depth.
+
+    For example `?bool`, `var * ?bool`, `?var * bool`.
+    """
     t = _tt(session, array).type.content
     while t is not None:
         if isinstance(t, ak.types.OptionType):
@@ -418,7 +450,10 @@ def _is_option(session: Session, array: Any) -> bool:
 
 
 def _tt(session: Session, array: Any) -> ak.Array:
-    """The typetracer of an array's form — the awkward-idiom depth/leaf oracle (§6.4a's `.tt.ndim`)."""
+    """Return the typetracer of an array's form.
+
+    The awkward-idiom depth/leaf oracle (§6.4a's `.tt.ndim`).
+    """
     form = session.form(array)
     assert isinstance(form, AwkwardForm)
     return form.tt
@@ -429,18 +464,23 @@ def _type_of(session: Session, array: Any) -> ak.types.Type:
 
 
 def _record_context(value: Any) -> Any:
-    """The row-space handle of a write operand: a plain value's own handle, a container's
-    most-derived member handle (§2.3e)."""
+    """Return the row-space handle of a write operand.
+
+    A plain value's own handle, a container's most-derived member handle (§2.3e).
+    """
     if isinstance(value, Varied):
         return most_derived_context(*value._members.values())
     return context_of(value)
 
 
 def _lineage_refusal(record_ctx: Any, select_ctx: Any) -> None:
-    """§6.4a(2a) lineage / §6.4b row-space, decided record-time by CONTEXT-HANDLE reachability over
-    the level-0 mask. Vary IDENTITY links do not move the row space (§6.1d kind (2)); a mask or
-    project link does. Direction picks the message: a record selected BELOW its mask is §6.4b
-    (row-space, NEVER offsets); a mask more derived than the record is §6.4a(2a)."""
+    """Refuse a §6.4a(2a) lineage or §6.4b row-space mismatch, decided record-time.
+
+    It is decided by CONTEXT-HANDLE reachability over the level-0 mask. Vary IDENTITY links do not
+    move the row space (§6.1d kind (2)); a mask or project link does. Direction picks the message:
+    a record selected BELOW its mask is §6.4b (row-space, NEVER offsets); a mask more derived than
+    the record is §6.4a(2a).
+    """
     if record_ctx is None:
         return  # absent-operand (i): a loose record carries no handle, so (2a) is skipped
     if select_ctx is None:
@@ -454,17 +494,18 @@ def _lineage_refusal(record_ctx: Any, select_ctx: Any) -> None:
         if all(kind == "vary" for kind, _ in record_ctx._links_below(select_ctx)):
             return
         raise GraphedError(
-            f"the record read through {record_ctx!r} is selected into a narrower ROW SPACE than its "
-            f"select= mask ({select_ctx!r}) defines: a stored field would live below the superset the "
-            "mask spans, and a mask has no inverse to lift it back — read the record at the mask's "
-            "row space (§6.4b)"
+            f"the record read through {record_ctx!r} is selected into a narrower ROW SPACE than "
+            f"its select= mask ({select_ctx!r}) defines: a stored field would live below the "
+            "superset the mask spans, and a mask has no inverse to lift it back — read the "
+            "record at the mask's row space (§6.4b)"
         )
     if record_ctx._is_ancestor_of(select_ctx):
         if all(kind == "vary" for kind, _ in select_ctx._links_below(record_ctx)):
             return
         raise GraphedError(
             f"the record read through {record_ctx!r} is not the context its select= mask "
-            f"({select_ctx!r}) derives from: the mask is more derived than the record's rows (§6.4a(2a))"
+            f"({select_ctx!r}) derives from: the mask is more derived than the record's rows "
+            "(§6.4a(2a))"
         )
     raise GraphedError(
         f"the record ({record_ctx!r}) and its select= mask ({select_ctx!r}) are on divergent "
@@ -475,11 +516,14 @@ def _lineage_refusal(record_ctx: Any, select_ctx: Any) -> None:
 def _resolve_field(
     nodes: list[dict[str, Any]], session: Session, node_id: int, name: str
 ) -> int | str:
-    """The canonical value node for `field(node, name)`: the field is followed back to the node that
-    produced it through every op that passes fields through unchanged (zip, with_field, with_name,
-    with_parameter, without_field, a field selection, a field projection), and any other op ends the
-    walk at its own projection. The M4 optimizer pushes no projection through these, so without the
-    walk an untouched leaf of a varied record would look varied (§6.4b)."""
+    """Return the canonical value node for `field(node, name)`.
+
+    The field is followed back to the node that produced it through every op that passes fields
+    through unchanged (zip, with_field, with_name, with_parameter, without_field, a field
+    selection, a field projection), and any other op ends the walk at its own projection. The M4
+    optimizer pushes no projection through these, so without the walk an untouched leaf of a varied
+    record would look varied (§6.4b).
+    """
     if node_id >= len(nodes):  # newer than the snapshot: a projection we recorded, never a zip
         return int(getattr(Array(session, node_id), name).node_id)
     nd = nodes[node_id]
@@ -519,8 +563,11 @@ def _canonical_leaf(
 
 
 def _varied_leaves(session: Session, record: Any, labels: tuple[str, ...]) -> list[str]:
-    """The leaf paths whose canonical value node DIFFERS across labels (structurally varied, §6.4b);
-    an all-labels-equal leaf (unvaried, or coupled only through a zip) contributes no delta column."""
+    """Return the leaf paths whose canonical value node DIFFERS across labels.
+
+    Those are structurally varied, §6.4b; an all-labels-equal leaf (unvaried, or coupled only
+    through a zip) contributes no delta column.
+    """
     nodes = session._store.nodes()
     leaves = _tt(session, member_of(record, "nominal")).layout.form.columns()
     varied = []
@@ -534,8 +581,10 @@ def _varied_leaves(session: Session, record: Any, labels: tuple[str, ...]) -> li
 
 
 def _check_collision(varied: Sequence[str]) -> None:
-    """§6.4b: two varied leaves that flatten to one on-disk name are refused naming both (a nested
-    `Jet.pt` beside a flat `Jet_pt`, both -> `__vary_L__Jet_pt`)."""
+    """§6.4b: refuse two varied leaves that flatten to one on-disk name, naming both.
+
+    For example a nested `Jet.pt` beside a flat `Jet_pt`, both -> `__vary_L__Jet_pt`.
+    """
     by_flat: dict[str, list[str]] = {}
     for path in varied:
         by_flat.setdefault(_flat_field(path), []).append(path)
@@ -548,8 +597,10 @@ def _check_collision(varied: Sequence[str]) -> None:
 
 
 def _check_bare_key(session: Session, record: Any, keys: Sequence[_SelectKey]) -> None:
-    """§6.4a: a bare depth-`k>=1` key is legal only when the record is ITSELF jagged at depth `k`; a
-    flat record with two or more independently jagged fields refuses it, naming the ambiguity."""
+    """§6.4a: a bare depth-`k>=1` key is legal only when the record is ITSELF jagged at depth `k`.
+
+    A flat record with two or more independently jagged fields refuses it, naming the ambiguity.
+    """
     nominal = member_of(record, "nominal")
     record_ndim = _tt(session, nominal).ndim
     for key in keys:
@@ -557,22 +608,25 @@ def _check_bare_key(session: Session, record: Any, keys: Sequence[_SelectKey]) -
             form = _tt(session, nominal)
             jagged = [f for f in form.fields if form[f].ndim > key]
             raise GraphedError(
-                f"the bare depth-{key} select= key needs the record to be jagged at depth {key}; this "
-                f"record is a flat record whose jagged fields {jagged} each have their own offsets — "
-                f"name the field with a ({jagged[0]!r}, {key}) key instead (§6.4a)"
+                f"the bare depth-{key} select= key needs the record to be jagged at depth {key}; "
+                f"this record is a flat record whose jagged fields {jagged} each have their own "
+                f"offsets — name the field with a ({jagged[0]!r}, {key}) key instead (§6.4a)"
             )
 
 
 def _check_depth(session: Session, entries: Mapping[_SelectKey, Any]) -> None:
-    """§6.4a(2c): a mask supplied at level `k` must have depth `k` over the record's structure —
-    typetracer ndim `k + 1` (flat = ndim 1 at level 0), at EVERY supplied level, record-time."""
+    """§6.4a(2c): a mask supplied at level `k` must have depth `k` over the record's structure.
+
+    Typetracer ndim `k + 1` (flat = ndim 1 at level 0), at EVERY supplied level, record-time.
+    """
     for key, mask in entries.items():
         ndim = _tt(session, member_of(mask, "nominal")).ndim
         depth = _entry_depth(key)
         if ndim != depth + 1:
             raise GraphedError(
                 f"the select= mask at level {key!r} has depth {ndim - 1} (ndim {ndim}); level "
-                f"{depth} requires a depth-{depth} mask (ndim {depth + 1}) over the record (§6.4a(2c))"
+                f"{depth} requires a depth-{depth} mask (ndim {depth + 1}) over the record "
+                "(§6.4a(2c))"
             )
 
 
@@ -587,9 +641,12 @@ def _counts(values: ak.Array) -> np.ndarray:
 
 
 def _xor_representable(leaf_type: ak.types.Type) -> bool:
-    """The leaf types `_encode_delta` round-trips exactly: `T`, `?T`, `var * T`, `var * ?T` over a
-    primitive, none of them a string-like `__array__`, nor `datetime64[s]`, which parquet stores as `[ms]`
-    so nominal's bits on disk differ from the ones the delta was taken against."""
+    """Return the leaf types `_encode_delta` round-trips exactly.
+
+    `T`, `?T`, `var * T`, `var * ?T` over a primitive, none of them a string-like `__array__`, nor
+    `datetime64[s]`, which parquet stores as `[ms]` so nominal's bits on disk differ from the ones
+    the delta was taken against.
+    """
     if isinstance(leaf_type, ak.types.ListType):
         leaf_type = leaf_type.content
     if isinstance(leaf_type, ak.types.OptionType):
@@ -602,8 +659,11 @@ def _xor_representable(leaf_type: ak.types.Type) -> bool:
 
 
 def _filled(values: ak.Array, jagged: bool) -> tuple[np.ndarray, Any]:
-    """A leaf's flat values with `None` read as 0 (so both sides XOR the same bits), and its `None` mask
-    (numpy's `nomask` when it holds none, which keeps a no-`None` delta an `UnmaskedArray` on disk)."""
+    """Return a leaf's flat values with `None` read as 0 (so both sides XOR the same bits).
+
+    And its `None` mask (numpy's `nomask` when it holds none, which keeps a no-`None` delta an
+    `UnmaskedArray` on disk).
+    """
     flat = ak.to_numpy(ak.flatten(values) if jagged else values)
     if isinstance(flat, np.ma.MaskedArray):
         return flat.filled(0), np.ma.getmask(flat)
@@ -611,8 +671,10 @@ def _filled(values: ak.Array, jagged: bool) -> tuple[np.ndarray, Any]:
 
 
 def _encode_delta(nominal: ak.Array, label: ak.Array, jagged: bool) -> ak.Array:
-    """§6.4c: the same-dtype XOR bit-delta vs nominal (zero wherever a label equals nominal), masked
-    where the label is `None`."""
+    """§6.4c: the same-dtype XOR bit-delta vs nominal.
+
+    Zero wherever a label equals nominal, masked where the label is `None`.
+    """
     nominal_flat, _ = _filled(nominal, jagged)
     label_flat, mask = _filled(label, jagged)
     delta = _uint_view(label_flat) ^ _uint_view(nominal_flat)
@@ -621,8 +683,11 @@ def _encode_delta(nominal: ak.Array, label: ak.Array, jagged: bool) -> ak.Array:
 
 
 def _encode_mask(mask: ak.Array) -> ak.Array:
-    """§6.4c: a per-row `packbits` validity mask stored as `var * uint8` (row-aligned; a flat level-0
-    mask packs one bit per row, a jagged level-k>=1 mask packs its row's objects)."""
+    """§6.4c: a per-row `packbits` validity mask stored as `var * uint8`.
+
+    Row-aligned; a flat level-0 mask packs one bit per row, a jagged level-k>=1 mask packs its
+    row's objects.
+    """
     return ak.Array(
         [
             list(
@@ -635,21 +700,28 @@ def _encode_mask(mask: ak.Array) -> ak.Array:
 
 @dataclass(frozen=True)
 class _ValueSpec:
-    """A structurally-varied leaf: its on-disk name, jaggedness (record-time), and per-label output
-    node ids (nominal is the XOR reference AND, on an all-zero-delta collapse, the §7.2 dedup source)."""
+    """A structurally-varied leaf.
+
+    Its on-disk name, jaggedness (record-time), and per-label output node ids (nominal is the XOR
+    reference AND, on an all-zero-delta collapse, the §7.2 dedup source).
+    """
 
     path: str
     flat: str
     jagged: bool
     members: tuple[tuple[str, int], ...]
-    #: labels stored as-is (`"base"`): a type change from nominal, or a leaf `_xor_representable` refuses.
+    #: labels stored as-is (`"base"`): a type change from nominal, or a leaf `_xor_representable`
+    #: refuses.
     verbatim: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
 class _MaskSpec:
-    """A supplied selection level: its on-disk `entry` token, manifest value, depth, the field its
-    level->=1 mask filters (`None` = the record's own axis), and per-label output node ids."""
+    """A supplied selection level.
+
+    Its on-disk `entry` token, manifest value, depth, the field its level->=1 mask filters
+    (`None` = the record's own axis), and per-label output node ids.
+    """
 
     entry_flat: str
     manifest: int | list[Any]
@@ -662,9 +734,12 @@ class _MaskSpec:
 
 @dataclass(frozen=True)
 class _VariedWritePart:
-    """The picklable per-partition varied-write task (§6.4). Widens `_WritePart`: one `compile_ir`
-    over base + per-label values + per-label masks, resolved BY NODE ID through `rank` (§7.2), XOR/
-    packbits-encoded on the evaluated buffers, and written as one augmented row-level record."""
+    """The picklable per-partition varied-write task (§6.4).
+
+    Widens `_WritePart`: one `compile_ir` over base + per-label values + per-label masks, resolved
+    BY NODE ID through `rank` (§7.2), XOR/ packbits-encoded on the evaluated buffers, and written
+    as one augmented row-level record.
+    """
 
     checkpointable: ClassVar[bool] = True
     checkpoint_resolve: ClassVar[Mapping[str, Callable[[Any], Any]]] = {
@@ -680,8 +755,9 @@ class _VariedWritePart:
     steps_per_file: int
     bases: tuple[tuple[Any, int], ...]
     labels: tuple[str, ...]
-    #: §7.2: record node id -> position in `evaluate_ir`'s DEDUPLICATED output list. Driver-derived,
-    #: shipped in the closure — the worker cannot recompute it from the reduced bytes alone.
+    #: §7.2: record node id -> position in `evaluate_ir`'s DEDUPLICATED output list.
+    #: Driver-derived, shipped in the closure — the worker cannot recompute it from the reduced
+    #: bytes alone.
     rank: tuple[tuple[int, int], ...]
     base_id: int
     value_specs: tuple[_ValueSpec, ...]
@@ -737,9 +813,10 @@ class _VariedWritePart:
                         # §6.4d: differing per-label offsets have no representable XOR delta —
                         # execution-time (offsets are data), naming the label and the field.
                         raise GraphedError(
-                            f"variation {label!r} changes the multiplicity of field {spec.path!r}: its "
-                            "per-label offsets differ from nominal's, so it has no same-shaped delta "
-                            "(§6.4d — a multiplicity-changing stored variation is Phase 2)"
+                            f"variation {label!r} changes the multiplicity of field "
+                            f"{spec.path!r}: its per-label offsets differ from nominal's, so it "
+                            "has no same-shaped delta (§6.4d — a multiplicity-changing stored "
+                            "variation is Phase 2)"
                         )
             for label, node_id in spec.members:
                 if label == "nominal":
@@ -756,16 +833,17 @@ class _VariedWritePart:
                 mask = resolved(node_id)
                 if len(mask) != len(base):  # §6.4a(2b) row-count, execution-time
                     raise GraphedError(
-                        f"the level-{mask_spec.entry_flat} select= mask for {label!r} spans {len(mask)} "
-                        f"rows but the record spans {len(base)} (§6.4a(2b))"
+                        f"the level-{mask_spec.entry_flat} select= mask for {label!r} spans "
+                        f"{len(mask)} rows but the record spans {len(base)} (§6.4a(2b))"
                     )
                 valid = ~ak.is_none(mask, axis=0)  # a None row has no objects to check
                 if mask_spec.depth >= 1 and not np.array_equal(
                     np.asarray(ak.num(mask[valid])), np.asarray(ak.num(field_values[valid]))
                 ):  # level->=1 STRUCTURAL: the mask's offsets must match the field's (§6.4a)
                     raise GraphedError(
-                        f"the level-{mask_spec.entry_flat} select= mask for {label!r} does not share the "
-                        "offsets of the field it filters (§6.4a level->=1 structural check)"
+                        f"the level-{mask_spec.entry_flat} select= mask for {label!r} does not "
+                        "share the offsets of the field it filters (§6.4a level->=1 structural "
+                        "check)"
                     )
                 cols[f"{_VARY_PREFIX}{label}__mask__{mask_spec.entry_flat}"] = (
                     mask if label in mask_spec.option else _encode_mask(mask)
@@ -786,9 +864,11 @@ def _write_augmented(payload: ak.Array, path: str, manifest: Mapping[str, Any] |
     """Write the augmented record, merging the §6.4e manifest into the parquet file KV metadata.
 
     `ak.to_parquet` writes awkward's own form KV (needed so `read_varied`/`ak.from_parquet` still
-    reconstruct the record); we then re-stamp the file-level metadata through the PUBLIC arrow route
-    (`Table.replace_schema_metadata`, preserving awkward's entries and every field's metadata), never
-    `awkward._connect`. `manifest is None` is the unvaried byte-golden path — untouched (§6.4g)."""
+    reconstruct the record); we then re-stamp the file-level metadata through the PUBLIC arrow
+    route (`Table.replace_schema_metadata`, preserving awkward's entries and every field's
+    metadata), never `awkward._connect`. `manifest is None` is the unvaried byte-golden path —
+    untouched (§6.4g).
+    """
     ak.to_parquet(payload, path)
     if manifest is None:
         return
@@ -807,12 +887,15 @@ def _build_manifest(
     mask_specs: Sequence[_MaskSpec],
     record_types: Mapping[str, Mapping[str, Any]],
 ) -> dict[str, Any]:
-    """§6.4e: the driver-derived reconstruction manifest — every label's stored columns (value columns
-    keyed `xor` or `base`/field, masks keyed `packbits`/entry) plus the reserved ordered `levels` list.
-    Mirrors exactly the columns `_VariedWritePart.__call__` writes, plus one `_REQUIRES_BASE` marker entry
-    per `base` column and one `_RECORD_TYPE` entry per `record_types` label, neither naming a column, so it
-    is data-independent and deterministic
-    (serialized `json.dumps(sort_keys=True)`; `levels` order is the explicit key `sorted()` cannot give)."""
+    """§6.4e: the driver-derived reconstruction manifest.
+
+    Every label's stored columns (value columns keyed `xor` or `base`/field, masks keyed
+    `packbits`/entry) plus the reserved ordered `levels` list. Mirrors exactly the columns
+    `_VariedWritePart.__call__` writes, plus one `_REQUIRES_BASE` marker entry per `base` column
+    and one `_RECORD_TYPE` entry per `record_types` label, neither naming a column, so it is
+    data-independent and deterministic (serialized `json.dumps(sort_keys=True)`; `levels` order is
+    the explicit key `sorted()` cannot give).
+    """
     manifest: dict[str, Any] = {label: {} for label in labels}
     for spec in value_specs:
         for label in labels:
@@ -826,7 +909,9 @@ def _build_manifest(
             if label in spec.verbatim:
                 manifest[label][f"{_REQUIRES_BASE}{label}__{spec.flat}"] = {
                     "representation": "xor",
-                    "field": f"graphed>=0.0.7 needed: {label} stores {spec.flat} as representation base",
+                    "field": (
+                        f"graphed>=0.0.7 needed: {label} stores {spec.flat} as representation base"
+                    ),
                     "entry": None,
                 }
     for ms in mask_specs:
@@ -850,8 +935,11 @@ def _build_manifest(
 def _evaluation_columns_union(
     outputs: Sequence[Any], source_node_id: int, source_name: str, source_form: AwkwardForm
 ) -> tuple[str, ...]:
-    """The read list widened over EVERY marked output (§6.4f): the union of each output's projected
-    source-field accesses, `()` (read everything) absorbing when any output consumes the whole source."""
+    """Return the read list widened over EVERY marked output (§6.4f).
+
+    The union of each output's projected source-field accesses, `()` (read everything) absorbing
+    when any output consumes the whole source.
+    """
     union: set[str] = set()
     for out in outputs:
         cols = _evaluation_columns(out, source_node_id, source_name, source_form)
@@ -1050,19 +1138,23 @@ def _write_varied(
 def _refuse_optimizer_merge(
     session: Session, outputs: Sequence[Any], compiled: CompiledGraph
 ) -> None:
-    """§6.4f binds §7.2's optimizer-merge shortfall onto the write path (record-time, at the call):
-    the varied unpack resolves BY NODE ID, so the compiled output count must match the DISTINCT
+    """§6.4f binds §7.2's optimizer-merge shortfall onto the write path (record-time, at the call).
+
+    The varied unpack resolves BY NODE ID, so the compiled output count must match the DISTINCT
     marked ids; a `w * 1.0` label merges two distinct record ids into one compiled output, and the
-    node-id table can then no longer tell the labels apart."""
+    node-id table can then no longer tell the labels apart.
+    """
     marked = len(dict.fromkeys(out.node_id for out in outputs))
     compiled_outputs = len(graphed.core.GraphStore.deserialize(compiled.ir).outputs())
     if compiled_outputs >= marked:
         return
     raise GraphedError(
         f"the optimizer merged outputs that record as distinct nodes ({marked} marked, "
-        f"{compiled_outputs} compiled), so this varied write's labels can no longer be told apart. "
+        f"{compiled_outputs} compiled), so this varied write's labels can no longer be told "
+        "apart. "
         'Spell a label whose value equals another with the SAME expression (variations={"1": w}, '
-        "not w * 1.0), which routes it through the supported record-time dedup instead (§6.4f/§7.2)"
+        "not w * 1.0), which routes it through the supported record-time dedup instead "
+        "(§6.4f/§7.2)"
     )
 
 
@@ -1086,11 +1178,12 @@ def to_parquet(
     ``destination`` containing ``://`` is an fsspec URL: the parts are written on its filesystem.
 
     ``select=`` turns this into a §6.4 variation-aware write: ``array`` is the PRE-selection record
-    and ``select`` carries the per-level ``Varied`` mask(s) (a single row mask ⇔ ``{0: mask}``, or a
-    ``{0: event_mask, ("Jet", 1): jet_mask}`` mapping). The writer materializes the SUPERSET of rows
-    passing any universe's selection, augments the nominal record with reconstruction data, and
-    returns the ordinary part-path list — a §2.3d *accepting* verb. Without ``select=`` the path is
-    unchanged (byte-identical, §6.4g)."""
+    and ``select`` carries the per-level ``Varied`` mask(s) (a single row mask ⇔ ``{0: mask}``, or
+    a ``{0: event_mask, ("Jet", 1): jet_mask}`` mapping). The writer materializes the SUPERSET of
+    rows passing any universe's selection, augments the nominal record with reconstruction data,
+    and returns the ordinary part-path list — a §2.3d *accepting* verb. Without ``select=`` the
+    path is unchanged (byte-identical, §6.4g).
+    """
     if select is not None:
         return _write_varied(
             array,
@@ -1175,9 +1268,12 @@ def to_parquet(
 
 # ---- variation-aware read-back (§6.4c/e reconstruction contract) ------------------------------
 def _label_order(fields: Sequence[str]) -> list[str]:
-    """Universes in §2.4 order (nominal first) — recovered from the on-disk vary-column order: value
-    deltas precede masks, so a first-occurrence walk yields the variations in registration order; the
-    reserved `nominal` label (present only in mask columns) is forced to the front."""
+    """Universes in §2.4 order (nominal first).
+
+    Recovered from the on-disk vary-column order: value deltas precede masks, so a first-occurrence
+    walk yields the variations in registration order; the reserved `nominal` label (present only in
+    mask columns) is forced to the front.
+    """
     seen: list[str] = []
     for name in fields:
         if name.startswith(_VARY_PREFIX):
@@ -1188,7 +1284,10 @@ def _label_order(fields: Sequence[str]) -> list[str]:
 
 
 def _dotted_for_flat(record: ak.Array, flat: str) -> str:
-    """The record's leaf path whose `_`-flattening equals `flat` (unique — §6.4b refuses collisions)."""
+    """Return the record's leaf path whose `_`-flattening equals `flat`.
+
+    It is unique — §6.4b refuses collisions.
+    """
     for path in record.layout.form.columns():
         if _flat_field(path) == flat:
             return str(path)
@@ -1203,8 +1302,11 @@ def _get_leaf(record: ak.Array, path: str) -> ak.Array:
 
 
 def _apply_xor(nominal_value: ak.Array, delta: ak.Array, jagged: bool) -> ak.Array:
-    """§6.4c inverse: the label value is `nominal XOR delta` on the shared uint view, reinterpreted
-    back to nominal's dtype (XOR is its own inverse, so this is exact), `None` where the delta is."""
+    """§6.4c inverse: the label value is `nominal XOR delta` on the shared uint view.
+
+    It is reinterpreted back to nominal's dtype (XOR is its own inverse, so this is exact), `None`
+    where the delta is.
+    """
     nom, _ = _filled(nominal_value, jagged)
     del_, mask = _filled(delta, jagged)
     restored = (_uint_view(nom) ^ _uint_view(del_)).view(nom.dtype)
@@ -1213,7 +1315,7 @@ def _apply_xor(nominal_value: ak.Array, delta: ak.Array, jagged: bool) -> ak.Arr
 
 
 def _decode_level0(packed: ak.Array) -> np.ndarray:
-    """A flat level-0 validity mask: one packbits byte per row → one bool per row."""
+    """Return a flat level-0 validity mask: one packbits byte per row → one bool per row."""
     bits = [
         bool(np.unpackbits(np.asarray(row, dtype=np.uint8), count=1)[0])
         for row in ak.to_list(packed)
@@ -1223,7 +1325,7 @@ def _decode_level0(packed: ak.Array) -> np.ndarray:
 
 
 def _decode_jagged(packed: ak.Array, counts: np.ndarray) -> ak.Array:
-    """A level->=1 validity mask: each row's packbits bytes → its `count` object bits."""
+    """Return a level->=1 validity mask: each row's packbits bytes → its `count` object bits."""
     return ak.Array(
         [
             np.unpackbits(np.asarray(byte_row, dtype=np.uint8), count=int(n)).astype(bool).tolist()
@@ -1233,16 +1335,22 @@ def _decode_jagged(packed: ak.Array, counts: np.ndarray) -> ak.Array:
 
 
 def _entry_key(entry: int | list[Any]) -> tuple[str | None, int]:
-    """A manifest `entry` (bare `int` depth, or `[flat_field, depth]`) as `(field_path|None, depth)`."""
+    """Return a manifest `entry` as `(field_path|None, depth)`.
+
+    The entry is a bare `int` depth, or `[flat_field, depth]`.
+    """
     return (None, entry) if isinstance(entry, int) else (entry[0], entry[1])
 
 
 def _reconstruct_universe(
     base: ak.Array, full: ak.Array, manifest: Mapping[str, Any], label: str
 ) -> ak.Array:
-    """§6.4c: universe `label`'s post-selection record — nominal `base` (on the superset rows) with the
-    label's XOR value deltas applied, then its stored level-0 row mask AND every level->=1 object mask
-    (each stored at superset granularity, restricted to the kept rows)."""
+    """§6.4c: universe `label`'s post-selection record.
+
+    Nominal `base` (on the superset rows) with the label's XOR value deltas applied, then its
+    stored level-0 row mask AND every level->=1 object mask (each stored at superset granularity,
+    restricted to the kept rows).
+    """
     columns = manifest[label]
     rec = base
     for col, info in columns.items():
@@ -1260,8 +1368,9 @@ def _reconstruct_universe(
         for col, info in columns.items()
         if info["representation"] in ("packbits", "option")
     }
-    # level 0 selects rows; a higher level's mask is decoded over the PRE-selection field counts, then
-    # restricted to the kept rows — `X[m0][m_k[m0]]` == the analyst's `X[event][object]` (§6.4c).
+    # level 0 selects rows; a higher level's mask is decoded over the PRE-selection field counts,
+    # then restricted to the kept rows — `X[m0][m_k[m0]]` == the analyst's `X[event][object]`
+    # (§6.4c).
     higher: list[tuple[str | None, ak.Array]] = []
     m0: Any = None
     for entry in manifest["levels"]:
@@ -1288,7 +1397,8 @@ def _reconstruct_universe(
             rec = rec[inner]
         else:
             rec = ak.with_field(rec, rec[field_path][inner], where=field_path.split("."))
-    # the XOR rebuild carries no parameters: impose the universe's record type (nominal's, unless stored)
+    # the XOR rebuild carries no parameters: impose the universe's record type (nominal's, unless
+    # stored)
     stored = columns.get(f"{_RECORD_TYPE}{label}") or manifest["nominal"].get(
         f"{_RECORD_TYPE}nominal"
     )
@@ -1306,10 +1416,13 @@ def _reconstruct_universe(
 
 
 def read_varied(path: str) -> dict[str, ak.Array]:
-    """Reconstruct every universe of a §6.4 variation-aware skim: `{label: ak.Array}` in §2.4 order
-    (nominal first). Each value is universe `label`'s post-selection record — its rows passing the
-    stored level-0 mask and, at every supplied level, its objects passing the stored mask — bit-exact
-    vs the in-memory varied run. The symmetric partner of `to_parquet(..., select=…)`."""
+    """Reconstruct every universe of a §6.4 variation-aware skim.
+
+    `{label: ak.Array}` in §2.4 order (nominal first). Each value is universe `label`'s
+    post-selection record — its rows passing the stored level-0 mask and, at every supplied level,
+    its objects passing the stored mask — bit-exact vs the in-memory varied run. The symmetric
+    partner of `to_parquet(..., select=…)`.
+    """
     import pyarrow.parquet as pq  # noqa: PLC0415
 
     meta = pq.ParquetFile(path).metadata.metadata or {}

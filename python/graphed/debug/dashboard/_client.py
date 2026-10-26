@@ -1,15 +1,18 @@
-"""The dashboard **client** (M37): :class:`NetworkMonitor`, a passive ``Monitor`` that forwards a
-run's events to a :class:`DashboardServer` over a websocket — loopback for a local dashboard, or
+"""The dashboard **client** (M37).
+
+:class:`NetworkMonitor`, a passive ``Monitor`` that forwards a run's events to
+a :class:`DashboardServer` over a websocket — loopback for a local dashboard, or
 ``ws://host:port/ingest`` for a remote one (the network-comms transport).
 
 Passivity: an event is appended to a bounded in-process buffer (drop-oldest when full) and a
 background sender thread drains it on a short cadence, building the wire messages and shipping each
-drain as one ``batch`` frame; a down connection **drops** that batch and never blocks or raises into
-the executor, so the determinism gate is green attached-or-not. Given a ``control=RunControl``, the
-monitor also carries commands the other way, and a pause or cancel from the dashboard does change the
-run it steers. ``lean=True`` opts into lean events and ``per_worker=True`` offers a factory for one
-monitor per worker process (see ``graphed.core.lean_events`` / ``worker_monitor_factory``).
-``websocket-client`` is imported lazily (the ``dashboard`` extra).
+drain as one ``batch`` frame; a down connection **drops** that batch and never blocks or raises
+into the executor, so the determinism gate is green attached-or-not. Given a
+``control=RunControl``, the monitor also carries commands the other way, and a pause or cancel from
+the dashboard does change the run it steers. ``lean=True`` opts into lean events and
+``per_worker=True`` offers a factory for one monitor per worker process (see
+``graphed.core.lean_events`` / ``worker_monitor_factory``). ``websocket-client`` is imported lazily
+(the ``dashboard`` extra).
 """
 
 from __future__ import annotations
@@ -36,12 +39,15 @@ _TASK, _COMBINE, _PROFILE = 0, 1, 2
 
 
 class NetworkMonitor:
-    """A ``graphed.core.execution.Monitor`` that streams events to a dashboard server over a
-    websocket. Construct with the server's ingest URL (``DashboardServer.ingest_url``).
+    """A ``graphed.core.execution.Monitor`` that streams events to a dashboard server.
+
+    Events go over a websocket. Construct with the server's ingest URL
+    (``DashboardServer.ingest_url``).
 
     With ``control``, it connects at :meth:`start`, says ``hello`` on every connection, keeps a
     connection open while idle, and applies each command the server relays to ``control``. With
-    ``lean``, it says ``hello`` too, so the server derives what lean events leave out."""
+    ``lean``, it says ``hello`` too, so the server derives what lean events leave out.
+    """
 
     def __init__(
         self,
@@ -80,8 +86,8 @@ class NetworkMonitor:
         self._shutdown(_WORKER_EXIT_S)
 
     def _shutdown(self, drain_s: float, join_s: float | None = None) -> None:
-        # give the sender up to ``drain_s`` to ship what's buffered, then stop it; without ``join_s``
-        # the join shares that budget
+        # give the sender up to ``drain_s`` to ship what's buffered, then stop it; without
+        # ``join_s`` the join shares that budget
         deadline = time.monotonic() + drain_s
         while self._buf and time.monotonic() < deadline:
             time.sleep(0.02)
@@ -106,7 +112,10 @@ class NetworkMonitor:
         return _sampler.make_worker_profiler if self._profile else None
 
     def worker_monitor_factory(self) -> Callable[[], Monitor] | None:
-        """With ``per_worker``, a picklable factory each worker process calls for its own monitor."""
+        """Return, with ``per_worker``, a picklable per-worker monitor factory.
+
+        Each worker process calls it for its own monitor.
+        """
         return (
             functools.partial(_worker_monitor, self._url, self.lean_events)
             if self._per_worker
@@ -210,8 +219,11 @@ _worker_monitors_lock = threading.Lock()
 
 
 def _worker_monitor(url: str, lean: bool) -> NetworkMonitor:
-    """One monitor per worker process and ``(url, lean)``; it connects on its first event and its
-    exit flush is bounded by ``_WORKER_EXIT_S``, so a silent dashboard never holds a worker's exit."""
+    """One monitor per worker process and ``(url, lean)``.
+
+    It connects on its first event and its exit flush is bounded by ``_WORKER_EXIT_S``, so a silent
+    dashboard never holds a worker's exit.
+    """
     with _worker_monitors_lock:
         mon = _worker_monitors.get((url, lean))
         if mon is None:

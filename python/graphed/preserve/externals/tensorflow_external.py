@@ -1,4 +1,7 @@
-"""The ``tensorflow_model`` plugin (M26): ``.keras`` archives; hash = name-stripped config + weights."""
+"""The ``tensorflow_model`` plugin (M26): ``.keras`` archives.
+
+The hash is name-stripped config + weights.
+"""
 
 from __future__ import annotations
 

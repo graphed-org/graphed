@@ -14,8 +14,11 @@ from graphed.backend import PYTHON_TYPES
 
 @dataclass(frozen=True)
 class NumpyForm:
-    """Form for a numpy array: dtype + shape (axis 0 is the partitioned axis, length ``None``),
-    or a record source (named columns)."""
+    """Form for a numpy array.
+
+    Dtype + shape (axis 0 is the partitioned axis, length ``None``), or a record source (named
+    columns).
+    """
 
     dtype: np.dtype
     kind: str = "vector"
@@ -39,7 +42,10 @@ def is_numeric(form: NumpyForm) -> bool:
 
 
 def meta(form: NumpyForm) -> Any:
-    """A zero-length stand-in carrying the form's dtype/shape: numpy itself infers the result."""
+    """Return a zero-length stand-in carrying the form's dtype/shape.
+
+    numpy itself infers the result.
+    """
     if form.fields is not None:
         raise TypeError(
             f"elementwise ops need array operands, got {form.describe()}; access a field first"
@@ -48,7 +54,10 @@ def meta(form: NumpyForm) -> Any:
 
 
 def unit_meta(form: NumpyForm) -> Any:
-    """A LENGTH-ONE stand-in for reduction inference (argmin/mean reject zero-length input)."""
+    """Return a LENGTH-ONE stand-in for reduction inference.
+
+    argmin/mean reject zero-length input.
+    """
     if form.fields is not None:
         raise TypeError(
             f"reductions need array operands, got {form.describe()}; access a field first"
@@ -76,8 +85,11 @@ def _dtype(spec: Any) -> np.dtype:
 
 
 def canonical_output_type(spec: object) -> str:
-    """Reduce an ``output_type`` spelling (numpy dtype-like, Python type, or an awkward type object
-    that is a dtype) to ``str`` of its numpy dtype, a fixpoint under `_dtype`."""
+    """Reduce an ``output_type`` spelling to ``str`` of its numpy dtype.
+
+    The spelling is a numpy dtype-like, Python type, or an awkward type object that is a dtype; the
+    result is a fixpoint under `_dtype`.
+    """
     s: Any = spec
     if isinstance(s, type) and s in PYTHON_TYPES:
         return PYTHON_TYPES[s]
@@ -91,13 +103,17 @@ def canonical_output_type(spec: object) -> str:
         return str(_dtype(s))
     except (TypeError, ValueError, SyntaxError) as exc:
         raise TypeError(
-            f"NumpyBackend cannot represent output_type {s!r}; it takes a numpy dtype or Python scalar type"
+            f"NumpyBackend cannot represent output_type {s!r}; it takes a numpy dtype or Python "
+            "scalar type"
         ) from exc
 
 
 def declared_form(forms: Sequence[NumpyForm], canonical: str) -> NumpyForm:
-    """The form of a `map` declared ``canonical``: that element over the first array input's
-    leading axis, or a scalar when every input is a scalar."""
+    """Return the form of a `map` declared ``canonical``.
+
+    That element over the first array input's leading axis, or a scalar when every input is a
+    scalar.
+    """
     d = _dtype(canonical)
     first = next((f for f in forms if f.kind != "scalar"), forms[0])
     if first.kind == "scalar" and (d.names is not None or d.subdtype is not None):
@@ -122,7 +138,8 @@ def check_output_type(
     The dtype must be equal, an unsized string (``str``, ``<U0``) matching any length of its kind;
     a subarray declaration pins the trailing shape. There is a leading axis when any input is an
     array. A record declaration takes a structured array or a column mapping with those fields.
-    This backend records no ``output_dtype``, so it checks none."""
+    This backend records no ``output_dtype``, so it checks none.
+    """
     if key != "output_type":
         return None
     d = _dtype(declared)

@@ -1,7 +1,9 @@
-"""m74 paths the frozen suite reaches only in subprocesses, or not at all: the environment record in
-process, the key rules for ABC registries, ``__main__`` modules, by-value ``TypeVar``s and behavior
-entries, a cloudpickle without a private name the key reads, the worker store cache, and the
-wrappers' forwarding hooks."""
+"""m74 paths the frozen suite reaches only in subprocesses, or not at all.
+
+The environment record in process, the key rules for ABC registries, ``__main__`` modules, by-value
+``TypeVar``s and behavior entries, a cloudpickle without a private name the key reads, the worker
+store cache, and the wrappers' forwarding hooks.
+"""
 
 from __future__ import annotations
 
@@ -376,7 +378,10 @@ from graphed.checkpoint.resume import _key_digest
 mode, path = sys.argv[1:]
 if mode == "build":
     namespace = {"__name__": "m74copy", "typing": typing}
-    source = "class P(typing.Protocol):\\n    def f(self) -> int: ...\\ndef process(p, r):\\n    return float(P is not None)\\n"
+    source = (
+        "class P(typing.Protocol):\\n    def f(self) -> int: ...\\ndef process(p, r):\\n"
+        "    return float(P is not None)\\n"
+    )
     exec(compile(source, "<m74>", "exec", dont_inherit=True), namespace)
     process = namespace["process"]
     open(path, "wb").write(cloudpickle.dumps(process))
@@ -443,7 +448,10 @@ _MK_NESTED = _MK.replace(
     "        nonlocal c\n        c += 1\n",
     "        def bump():\n            nonlocal c\n            c += 1\n        bump()\n",
 )
-_TEXT = f"import io\nF = io.StringIO()\nF.write(open({__file__!r}).read())\nF.seek(0)\nF.name = {__file__!r}"
+_TEXT = (
+    f"import io\nF = io.StringIO()\nF.write(open({__file__!r}).read())\nF.seek(0)\nF.name = "
+    f"{__file__!r}"
+)
 _SLOTTED = "class C:\n    __slots__ = ('a', '__dict__')\nO = C()\nO.a = 1\nO.__dict__['a'] = "
 _INC = "C = 0\ndef INC():\n    global C\n    C += 1\n"
 _ANNOTATED = (
@@ -504,7 +512,8 @@ _APART = {
             "a-class-scope-type-alias": (
                 "G = int",
                 "G = str",
-                "class Holder:\n        type Inner = G\n    return float(Holder.Inner.__value__ is int)",
+                "class Holder:\n        type Inner = G\n    return float(Holder.Inner.__value__ "
+                "is int)",
             )
         }
         if sys.version_info >= (3, 12)  # the type statement
@@ -512,8 +521,8 @@ _APART = {
     ),
     "globals-shared-with-a-rebinder": (
         _INC + "def GET():\n    return C",
-        _INC
-        + "ns = {'__name__': 'm74copy', 'C': 0}\nexec('def GET():\\n    return C', ns)\nGET = ns['GET']",
+        _INC + "ns = {'__name__': 'm74copy', 'C': 0}\nexec('def GET():\\n    return C', ns)\n"
+        "GET = ns['GET']",
         "INC()\n    return float(GET())",
     ),
 }

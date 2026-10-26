@@ -68,8 +68,11 @@ _ShippedWrite = (
 
 @dataclass(frozen=True)
 class _ByValue:
-    """A user callable stdlib pickle cannot name (a lambda, closure or local def): it ships by value,
-    the one use of cloudpickle §A.3.1 allows, so every runner's own pickling carries it."""
+    """A user callable stdlib pickle cannot name (a lambda, closure or local def).
+
+    It ships by value, the one use of cloudpickle §A.3.1 allows, so every runner's own pickling
+    carries it.
+    """
 
     fn: Callable[..., Any]
 
@@ -92,9 +95,12 @@ def _load_by_value(blob: bytes) -> _ByValue:
 
 
 def by_value(fn: T) -> T:
-    """``fn``, a function or partial, wrapped to pickle through cloudpickle: by name when importable,
-    by value otherwise (a lambda, a closure, a ``__main__`` def a worker cannot import). A callable
-    object stays itself, so its ``bind_services``/``resolve_services`` hooks are still seen."""
+    """``fn``, a function or partial, wrapped to pickle through cloudpickle.
+
+    By name when importable, by value otherwise (a lambda, a closure, a ``__main__`` def a worker
+    cannot import). A callable object stays itself, so its ``bind_services``/``resolve_services``
+    hooks are still seen.
+    """
     if isinstance(fn, types.FunctionType | functools.partial):
         return _ByValue(fn)  # type: ignore[return-value]  # calls as fn does
     return fn
@@ -106,15 +112,20 @@ def _resolved(ref: str) -> Any:
 
 
 def _adopted(backend: Callable[[], Any] | str | None, value: T) -> T:
-    """``value`` with its arrays given back the behavior of the backend ``backend`` imports: an op
-    over several of them leaves an equal copy, which does not pickle by that import ref."""
+    """``value`` with its arrays given back the behavior of the backend ``backend`` imports.
+
+    An op over several of them leaves an equal copy, which does not pickle by that import ref.
+    """
     adopt = getattr(_resolved(backend), "adopt", None) if isinstance(backend, str) else None
     return value if adopt is None else cast("T", adopt(value))
 
 
 @dataclass(frozen=True)
 class _Adopting:
-    """A plan's ``combine``/``empty``, its result's arrays given back the backend ``ref``'s behavior."""
+    """A plan's ``combine``/``empty``, its result's arrays given back a behavior.
+
+    The behavior is the one the backend ``ref`` carries.
+    """
 
     fn: Callable[..., Any]
     ref: str
@@ -124,9 +135,12 @@ class _Adopting:
 
 
 def resolve_backend(ref: Callable[[], Any] | str) -> Any:
-    """A worker's evaluation backend: a zero-arg factory/class, or an importable ``"module:attr"``
-    reference resolved HERE in the worker — behavior-carrying backends (whose behavior dicts hold
-    lambdas) travel by import ref, never by pickling, so losing them is loud, not silent."""
+    """Return a worker's evaluation backend.
+
+    A zero-arg factory/class, or an importable ``"module:attr"`` reference resolved HERE in the
+    worker — behavior-carrying backends (whose behavior dicts hold lambdas) travel by import ref,
+    never by pickling, so losing them is loud, not silent.
+    """
     if isinstance(ref, str):
         import importlib  # noqa: PLC0415
 
@@ -140,8 +154,11 @@ def resolve_backend(ref: Callable[[], Any] | str) -> Any:
 
 @dataclass(frozen=True)
 class _PartitionReduce(Generic[V]):
-    """One partition's work for a multi-output graph: read once, evaluate the shared IR once into the
-    output-node values, then ``reduce`` them to this partition's result. Picklable for process pools."""
+    """One partition's work for a multi-output graph.
+
+    Read once, evaluate the shared IR once into the output-node values, then ``reduce`` them to
+    this partition's result. Picklable for process pools.
+    """
 
     checkpointable: ClassVar[bool] = True
     checkpoint_ignore: ClassVar[tuple[str, ...]] = ("frames", "variation_labels")
@@ -209,7 +226,10 @@ class _PartitionReduce(Generic[V]):
         return result
 
     def bind_services(self, endpoints: Mapping[str, str]) -> _PartitionReduce[V]:
-        """A copy whose External evaluators and ``reduce`` carry ``endpoints`` where they take them."""
+        """Return a copy carrying ``endpoints`` where it takes them.
+
+        The copy's External evaluators and ``reduce`` carry them.
+        """
         reduce = (
             self.reduce.bind_services(endpoints)
             if isinstance(self.reduce, Bindable)
@@ -254,8 +274,10 @@ class _PartitionReduce(Generic[V]):
         )
 
     def _capture_id(self, partition: Partition) -> str:
-        """The id a task's captures are journaled under: the IR and the partition, nothing about the
-        run, so one capture root holds one run."""
+        """Return the id a task's captures are journaled under.
+
+        The IR and the partition, nothing about the run, so one capture root holds one run.
+        """
         return _sha256_hex(b"graphed-replay-capture-v1", self.ir, _partition_bytes(partition))
 
     def _task_store(self) -> Any:
@@ -266,7 +288,7 @@ class _PartitionReduce(Generic[V]):
         return task_store(self.store, self.storage_options)
 
     def _open_store(self, node: str | None = None) -> Any:
-        """The capture root as a checkpoint store, as every task and replay opens it."""
+        """Return the capture root as a checkpoint store, as every task and replay opens it."""
         # only a capturing plan needs it
         from graphed.checkpoint.resume import open_store  # noqa: PLC0415
 
@@ -283,10 +305,12 @@ def attribute_failures(
     variation_labels: Sequence[Any] | None = None,
     opt_level: int = 1,
 ) -> OnFailure | None:
-    """§8.2(ii): the worker-side wrap. A RAW failure at any key with a frame becomes a
-    `StageError` pointing at the user's line, carrying the key's variation label when the label
-    channel has an entry; a key with no frame re-raises the original untouched, since
-    `StageError` needs frames at construction."""
+    """§8.2(ii): the worker-side wrap.
+
+    A RAW failure at any key with a frame becomes a `StageError` pointing at the user's line,
+    carrying the key's variation label when the label channel has an entry; a key with no frame
+    re-raises the original untouched, since `StageError` needs frames at construction.
+    """
     entries = dict(variation_labels or ())
     by_key = dict(frames)
     if not entries and not by_key:
@@ -330,8 +354,11 @@ def _compile_at(opt_level: int, session: Session, arrays: Sequence[Array]) -> Co
 
 
 def _slot_of(compiled: CompiledGraph) -> Callable[[Array], int]:
-    """Where an Array's value sits among the values ``compiled`` evaluates to: the optimizer may
-    merge outputs (``w * 1.0`` into ``w``), and the correspondence knows where each landed."""
+    """Where an Array's value sits among the values ``compiled`` evaluates to.
+
+    The optimizer may merge outputs (``w * 1.0`` into ``w``), and the correspondence knows where
+    each landed.
+    """
     order = {cid: i for i, cid in enumerate(GraphStore.deserialize(bytes(compiled.ir)).outputs())}
     return lambda array: order[compiled.correspondence.node_map[array.node_id][0]]
 
@@ -339,16 +366,19 @@ def _slot_of(compiled: CompiledGraph) -> Callable[[Array], int]:
 def external_evaluators(
     session: Session, compiled: CompiledGraph
 ) -> dict[str, Callable[..., object]]:
-    """Every External surviving in the compiled IR, keyed by :func:`external_key`, resolved to the
-    evaluator the recording session holds for it.
+    """Return every External surviving in the compiled IR, keyed by :func:`external_key`.
+
+    Each is resolved to the evaluator the recording session holds for it.
 
     This is the SINGLE wiring point for a plan's External evaluators. Every External — a
     ``hist.graphed`` fill FillEvaluator AND an upstream correctionlib/ONNX scale factor alike — is
-    registered on ``session._externals`` at record time, so one pass over the compiled External nodes
-    wires them all: a fill whose input cone reads a correctionlib SF now carries that SF's evaluator,
-    which is what makes "hundreds of histograms with systematic variations" run through a plan. The
-    key includes the node's params, so N systematic universes off one CorrectionSet each resolve to
-    their OWN evaluator (they share a payload ``content_hash`` but not a params digest)."""
+    registered on ``session._externals`` at record time, so one pass over the compiled External
+    nodes wires them all: a fill whose input cone reads a correctionlib SF now carries that SF's
+    evaluator, which is what makes "hundreds of histograms with systematic variations" run through
+    a plan. The key includes the node's params, so N systematic universes off one CorrectionSet
+    each resolve to their OWN evaluator (they share a payload ``content_hash`` but not a params
+    digest).
+    """
     by_key: dict[str, Callable[..., object]] = {}
     recorded = session._store.nodes()
     for node_id, (fn, _inputs) in session._externals.items():
@@ -366,15 +396,20 @@ def external_evaluators(
 def shipped_evaluators(
     session: Session, compiled: CompiledGraph
 ) -> tuple[tuple[str, Callable[..., object]], ...]:
-    """:func:`external_evaluators` for a plan runners pickle with stdlib pickle, each :func:`by_value`."""
+    """Return :func:`external_evaluators` for a plan runners pickle with stdlib pickle.
+
+    Each evaluator is wrapped by :func:`by_value`.
+    """
     return tuple((key, by_value(fn)) for key, fn in external_evaluators(session, compiled).items())
 
 
 def plan_services(
     session: Session, compiled: CompiledGraph, names: Sequence[str] | None = None
 ) -> tuple[ServiceSpec, ...]:
-    """The ``Plan.services`` of a plan over ``compiled``: the session's specs its External nodes name,
-    plus ``names``."""
+    """Return the ``Plan.services`` of a plan over ``compiled``.
+
+    The session's specs its External nodes name, plus ``names``.
+    """
     return referenced_services(session, GraphStore.deserialize(bytes(compiled.ir)).nodes(), names)
 
 
@@ -394,12 +429,13 @@ def aggregate_plan(
     writes: Sequence[PartWrite] = (),
     opt_level: int = 1,
 ) -> Plan[V]:
-    """Build a one-pass partition-wise reduction :class:`~graphed.core.execution.Plan` over the
-    session's single partitioned source (see module docstring). ``outputs`` are the output Arrays
-    (their shared sub-graph is compiled to one IR and evaluated once per partition); ``externals``
-    binds any External payload evaluator; ``backend`` is the workers' evaluation backend (factory,
-    class, or ``"module:attr"`` ref; defaults to the session backend's type). ``run(plan).value`` is
-    the ``reduce``+``combine`` aggregate over all partitions.
+    """Build a one-pass partition-wise reduction :class:`~graphed.core.execution.Plan`.
+
+    It runs over the session's single partitioned source (see module docstring). ``outputs`` are
+    the output Arrays (their shared sub-graph is compiled to one IR and evaluated once per
+    partition); ``externals`` binds any External payload evaluator; ``backend`` is the workers'
+    evaluation backend (factory, class, or ``"module:attr"`` ref; defaults to the session backend's
+    type). ``run(plan).value`` is the ``reduce``+``combine`` aggregate over all partitions.
 
     ``on_compiled`` is §7.2's seam onto the internally compiled :class:`CompiledGraph` — the
     artifact is otherwise unreachable from the caller. It fires ONCE, and whatever it returns is
@@ -423,10 +459,12 @@ def aggregate_plan(
     written arrays and the metadata arrays, every recorded operation its own node (the graph
     :func:`graphed.debug.lower` calls ``opt_level=0``), so ``reduce`` receives one value per
     distinct output. A ``StageError`` reports the level, and :func:`graphed.debug.replay`
-    recompiles at it. Any other value is refused."""
+    recompiles at it. Any other value is refused.
+    """
     if type(opt_level) is not int or opt_level not in (0, 1):
         raise ValueError(
-            f"aggregate_plan(opt_level=) is 0 (the outputs' 1:1 cone) or 1 (optimized), not {opt_level!r}"
+            "aggregate_plan(opt_level=) is 0 (the outputs' 1:1 cone) or 1 (optimized), not "
+            f"{opt_level!r}"
         )
     writes = tuple(writes)
     metadata = [value for w in writes for value in (w.metadata or {}).values()]
@@ -448,15 +486,17 @@ def aggregate_plan(
     }
     if len(partitioned) != 1:
         raise TypeError(
-            f"aggregate_plan needs exactly one partitioned source; the outputs read {len(partitioned)}"
+            "aggregate_plan needs exactly one partitioned source; the outputs read "
+            f"{len(partitioned)}"
         )
     ((nid, data),) = partitioned.items()
     compiled = _compile_at(opt_level, session, arrays)
     slot = _slot_of(compiled)
     written = {compiled.correspondence.node_map[w.array.node_id][0] for w in writes}
     refuse_chunk_partials(compiled, as_outputs=written)
-    # Wire EVERY External surviving in the compiled IR from the session (fills + upstream corrections
-    # alike); an explicit `externals=` (keyed by `external_key`) overrides the auto-wired evaluator.
+    # Wire EVERY External surviving in the compiled IR from the session (fills + upstream
+    # corrections alike); an explicit `externals=` (keyed by `external_key`) overrides the
+    # auto-wired evaluator.
     wired = dict(shipped_evaluators(session, compiled))
     if externals:
         wired.update((key, by_value(fn)) for key, fn in externals.items())
@@ -510,29 +550,38 @@ def aggregate_plan(
 
 
 def _written_parts(process: object, partition: Partition) -> Sequence[str]:
-    """The parts a plan's ``process`` writes for ``partition``, from its optional
-    ``part_paths(partition)`` hook (no I/O); a process without the hook is not checked."""
+    """Return the parts a plan's ``process`` writes for ``partition``.
+
+    They come from its optional ``part_paths(partition)`` hook (no I/O); a process without the hook
+    is not checked.
+    """
     hook = getattr(process, "part_paths", None)
     return () if hook is None else hook(partition)
 
 
 def _refuse_shared_parts(runs: Iterable[tuple[object, Partition]]) -> None:
-    """Driver-side, one hook call per task: a part two writes share would be silently overwritten."""
+    """Refuse a part two tasks share, which would be silently overwritten.
+
+    Driver-side, one hook call per task.
+    """
     seen: set[str] = set()
     for process, partition in runs:
         for path in map(os.path.normpath, _written_parts(process, partition)):
             if path in seen:
                 raise ValueError(
-                    f"two writes of this plan write the same part {path!r}: `name` must tell every"
-                    " partition apart (a blind partition's entry range is 0-0 until it is read), and"
-                    " plans collated together need distinct parts"
+                    f"two writes of this plan write the same part {path!r}: `name` must tell "
+                    "every partition apart (a blind partition's entry range is 0-0 until it is "
+                    "read), and plans collated together need distinct parts"
                 )
             seen.add(path)
 
 
 @dataclass(frozen=True)
 class _Collated:
-    """A collated plan's process: the task's ``(uri, tree)`` picks the sub-plan whose graph reads it."""
+    """A collated plan's process.
+
+    The task's ``(uri, tree)`` picks the sub-plan whose graph reads it.
+    """
 
     @property
     def checkpointable(self) -> bool:
@@ -555,8 +604,10 @@ class _Collated:
         return replace(self, processes=dict(bind_externals(self.processes.items(), endpoints)))
 
     def resolve_services(self, value: Mapping[str, Any]) -> dict[str, Any]:
-        """Each name's value resolved by its process when it takes it; a name absent from ``value``
-        is not called."""
+        """Each name's value resolved by its process when it takes it.
+
+        A name absent from ``value`` is not called.
+        """
         return {
             name: fn.resolve_services(value[name])
             if isinstance(fn := self.processes.get(name), Resolvable)
@@ -579,8 +630,10 @@ class _CollatedCombine:
 
 
 def collate(plans: Mapping[str, Plan[Any]]) -> Plan[dict[str, Any]]:
-    """ONE executable plan over several plans' tasks — plans over different sources or graphs (data
-    and MC, say) — whose value is ``{name: that plan's value}``.
+    """ONE executable plan over several plans' tasks.
+
+    Plans over different sources or graphs (data and MC, say) — whose value is ``{name: that plan's
+    value}``.
 
     Tasks are each plan's in key order, concatenated in mapping order and re-keyed ``0..N-1``, so
     the reduction tree stays the runner's. A task runs the process of the plan that holds its
@@ -590,7 +643,8 @@ def collate(plans: Mapping[str, Plan[Any]]) -> Plan[dict[str, Any]]:
     A name is in the value exactly when its plan has at least one task. ``Plan.services`` is the
     union of the plans' services; one name declared as two different specs is refused.
     Running each plan on its own and collecting ``{name: value}`` gives the same product when each
-    ``combine`` is exact."""
+    ``combine`` is exact.
+    """
     if not plans:
         raise ValueError("collate needs at least one plan")
     services: dict[str, ServiceSpec] = {}
@@ -612,8 +666,8 @@ def collate(plans: Mapping[str, Plan[Any]]) -> Plan[dict[str, Any]]:
             owner = route.setdefault(key, name)
             if owner != name:
                 raise ValueError(
-                    f"{key!r} appears in plans {owner!r} and {name!r}; record both over one source so"
-                    " one read serves both graphs"
+                    f"{key!r} appears in plans {owner!r} and {name!r}; record both over one "
+                    "source so one read serves both graphs"
                 )
             tasks.append(Task(len(tasks), task.partition))
     process = _Collated({n: p.process for n, p in plans.items()}, route)

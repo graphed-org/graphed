@@ -1,5 +1,7 @@
-"""A declared External type is checked against the value at run time and never cast (owner ruling):
-a disagreeing value raises `OutputTypeError` at the declaring line, in process and in a worker."""
+"""A declared External type is checked against the value at run time and never cast (owner ruling).
+
+A disagreeing value raises `OutputTypeError` at the declaring line, in process and in a worker.
+"""
 
 from __future__ import annotations
 

@@ -94,8 +94,11 @@ def _with_path(target: Any, path: tuple[str, ...], value: Any) -> Any:
 
 
 def _setitem(self: Any, where: object, what: object) -> None:
-    """ak's ``Array.__setitem__``: a field name, or a tuple path into nested records, set by recording
-    ``with_field`` and rebinding this proxy to it; other proxies of the old node are untouched."""
+    """Ak's ``Array.__setitem__``, by recording ``with_field`` and rebinding this proxy.
+
+    The key is a field name, or a tuple path into nested records; other proxies of the old node are
+    untouched.
+    """
     path = (where,) if isinstance(where, str) else where
     if not (isinstance(path, tuple) and path and all(isinstance(part, str) for part in path)):
         raise GraphedTypeError(
@@ -122,8 +125,11 @@ def _clip(a: object, a_min: object = None, a_max: object = None) -> object:
 
 
 def _array_function(self: object, func: Any, types: object, args: Any, kwargs: Any) -> Any:
-    """A numpy function that is not a ufunc, answered as ``ak.Array`` answers it: by awkward's own
-    implementation, whose ``ak.<fn>`` calls dispatch back through ``__awkward_function__``."""
+    """Return a numpy function that is not a ufunc, answered as ``ak.Array`` answers it.
+
+    By awkward's own implementation, whose ``ak.<fn>`` calls dispatch back through
+    ``__awkward_function__``.
+    """
     impl = _clip if func is np.clip else _ak_numpy.get(func)
     if impl is None:  # awkward would convert eagerly; a deferred array has nothing to convert
         raise no_eager_value(f"np.{func.__name__}(...)", "numpy value")

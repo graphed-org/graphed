@@ -1,9 +1,10 @@
 """Necessary-buffer (column) projection support (plan M5).
 
-The frontend supplies a backend-agnostic graph `walk` and the `Projection` result type; each backend
-computes the actually-touched columns its own way (graphed-awkward via a reporting typetracer,
-graphed-numpy via record-field touch tracking). Opaque ops (`map`) cannot be projected through, so a
-configurable on-fail policy (`pass | warn | raise`) governs them — mirroring dask-awkward.
+The frontend supplies a backend-agnostic graph `walk` and the `Projection` result type; each
+backend computes the actually-touched columns its own way (graphed-awkward via a reporting
+typetracer, graphed-numpy via record-field touch tracking). Opaque ops (`map`) cannot be projected
+through, so a configurable on-fail policy (`pass | warn | raise`) governs them — mirroring
+dask-awkward.
 """
 
 from __future__ import annotations
@@ -34,7 +35,10 @@ class ProjectionError(GraphedError):
 
 @dataclass(frozen=True)
 class Projection:
-    """The columns each source must actually read. ``read_columns`` maps source name -> column set."""
+    """The columns each source must actually read.
+
+    ``read_columns`` maps source name -> column set.
+    """
 
     read_columns: Mapping[str, frozenset[str]]
 
@@ -51,7 +55,8 @@ class BufferNeed(StrEnum):
     ``DATA``: the leaf values (implies the structure needed to interpret them).
     ``OFFSETS``: only the list structure — e.g. a multiplicity/count; the leaf values are never
     read. At column granularity this case collapsed to "nothing", which under-specifies the read
-    (a count-only analysis projected to the empty column set)."""
+    (a count-only analysis projected to the empty column set).
+    """
 
     DATA = "data"
     OFFSETS = "offsets"
@@ -63,7 +68,8 @@ class BufferProjection:
 
     Strictly finer than :class:`Projection`: `columns_for` (data-bearing columns) reproduces the
     column-level view, while `offsets_only_for` names the columns whose *structure alone* is needed
-    — readable as a counter branch (TTree) or an index column (RNTuple) without the payload."""
+    — readable as a counter branch (TTree) or an index column (RNTuple) without the payload.
+    """
 
     read_buffers: Mapping[str, Mapping[str, BufferNeed]]
 
@@ -94,8 +100,10 @@ CONSERVATIVE = object()
 
 
 def handle_opaque(op: str, on_fail: str, detail: str = "") -> object | None:
-    """Apply the on-fail policy when projection hits an opaque op. Returns CONSERVATIVE for ``warn``,
-    None for ``pass``, and raises for ``raise``."""
+    """Apply the on-fail policy when projection hits an opaque op.
+
+    Returns CONSERVATIVE for ``warn``, None for ``pass``, and raises for ``raise``.
+    """
     policy = OnFail(on_fail)
     if policy is OnFail.RAISE:
         msg = f"cannot project through opaque op {op!r}"
@@ -110,21 +118,24 @@ def handle_opaque(op: str, on_fail: str, detail: str = "") -> object | None:
 
 
 def read_columns(arrays: Sequence[Array], source_nid: int) -> tuple[str, ...] | None:
-    """The minimal set of source ``source_nid``'s columns the recorded graphs SYNTACTICALLY read —
-    every field accessed on the source across ``arrays`` via a ``field``/``fields`` op, sorted.
-    Returns ``None`` (meaning "read every column") when any graph consumes the whole source record — a
-    non-field op applied directly to the source, or a bare source read — which a column-level read
-    cannot narrow. Walks *through* External nodes (a histogram fill, an ONNX/correctionlib op): they
-    read their declared array inputs, never extra source columns, so projection flows to those inputs.
+    """Return the minimal set of source ``source_nid``'s columns the graphs read.
 
-    This is the read set the compiled-IR *evaluation* needs — every field the IR replays must exist in
-    the chunk, a superset of buffer-level projection — and is what a plan passes to
+    The read is SYNTACTIC — every field accessed on the source across ``arrays`` via a
+    ``field``/``fields`` op, sorted. Returns ``None`` (meaning "read every column") when any graph
+    consumes the whole source record — a non-field op applied directly to the source, or a bare
+    source read — which a column-level read cannot narrow. Walks *through* External nodes (a
+    histogram fill, an ONNX/correctionlib op): they read their declared array inputs, never extra
+    source columns, so projection flows to those inputs.
+
+    This is the read set the compiled-IR *evaluation* needs — every field the IR replays must exist
+    in the chunk, a superset of buffer-level projection — and is what a plan passes to
     ``PartitionedSource.read_partition(partition, columns, ...)`` (``None`` reads the source's full
-    selection). The dask-awkward ``necessary_columns`` analogue for graphed plans; backend-agnostic,
-    using only the generic ``session.walk`` graph traversal.
+    selection). The dask-awkward ``necessary_columns`` analogue for graphed plans;
+    backend-agnostic, using only the generic ``session.walk`` graph traversal.
 
     A ``Varied`` entry contributes EVERY universe (§2.3d *expanding*): the answer is one union
-    read set, and the ``None`` a conservative member reports dominates it (§5.3)."""
+    read set, and the ``None`` a conservative member reports dominates it (§5.3).
+    """
     sentinel = object()
 
     def one(array: Array) -> tuple[str, ...] | None:
@@ -154,9 +165,12 @@ def read_columns(arrays: Sequence[Array], source_nid: int) -> tuple[str, ...] | 
             return None
 
         def on_external(_nid: int, _fn: Callable[..., object], ins: list[object]) -> object:
-            """An External handed the source RECORD reads every column, exactly as a non-field op
-            does. Walking THROUGH externals narrows to their declared inputs, which is right when
-            those inputs are fields and wrong when one of them is the record itself."""
+            """Mark the read conservative when an External is handed the source RECORD.
+
+            Such an External reads every column, exactly as a non-field op does. Walking THROUGH
+            externals narrows to their declared inputs, which is right when those inputs are fields
+            and wrong when one of them is the record itself.
+            """
             nonlocal conservative
             if reads_source(ins):
                 conservative = True

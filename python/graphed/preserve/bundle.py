@@ -1,11 +1,12 @@
 """The preservation bundle: ``build_bundle`` / ``reproduce`` / ``inspect`` (plan M9).
 
-A bundle is a directory holding a canonical ``manifest.json`` (the content-addressed bill-of-materials
-whose hash is the bundle fingerprint) and a content-addressed ``store/`` (the M8
-``graphed.checkpoint.Store``) holding every referenced blob: the canonical serialized IR, each input
-dataset, each correction/model payload, and the provenance sourcemap. The bundle is **runnable from
-references alone** — no original user code, environment, author, or input files are needed on the
-reproducing machine (the environment is captured for audit; inputs are resolved from the archive).
+A bundle is a directory holding a canonical ``manifest.json`` (the content-addressed
+bill-of-materials whose hash is the bundle fingerprint) and a content-addressed ``store/`` (the M8
+``graphed.checkpoint.Store``) holding every referenced blob: the canonical serialized IR, each
+input dataset, each correction/model payload, and the provenance sourcemap. The bundle
+is **runnable from references alone** — no original user code, environment, author, or input files
+are needed on the reproducing machine (the environment is captured for audit; inputs are resolved
+from the archive).
 """
 
 from __future__ import annotations
@@ -50,7 +51,8 @@ _ENV_PACKAGES = (
 )
 
 
-# ---- on-disk dataset codec (deterministic; awkward via to_buffers) -------------------------------
+# ---- on-disk dataset codec (deterministic; awkward via
+# to_buffers) -------------------------------
 def _pack_array(arr: Any) -> bytes:
     import awkward as ak  # noqa: PLC0415
 
@@ -66,8 +68,11 @@ def _unpack_array(blob: bytes) -> Any:
 
 
 def capture_environment(container_digest: str | None = None) -> dict[str, Any]:
-    """The environment a bundle records: the Python version, the installed versions of the packages
-    it pins, and ``container_digest`` when given."""
+    """Return the environment a bundle records.
+
+    The Python version, the installed versions of the packages it pins, and ``container_digest``
+    when given.
+    """
     packages: dict[str, str] = {}
     for name in _ENV_PACKAGES:
         try:
@@ -101,7 +106,7 @@ class Bundle:
         return cls(root=root, manifest=manifest)
 
     def run_reports(self) -> list[dict[str, Any]]:
-        """The run reports attached with :func:`attach_run_report`, in attach order."""
+        """Return the run reports attached with :func:`attach_run_report`, in attach order."""
         return [report for _digest, report in _run_report_entries(self.store)]
 
 
@@ -109,8 +114,11 @@ _RUN_REPORT = "run-report"
 
 
 def attach_run_report(bundle: Bundle, report: Mapping[str, Any]) -> str:
-    """Keep a run report (``RunReport.to_json()``) in the bundle's store, outside the manifest and so
-    outside the fingerprint; returns its digest. Attaching the same report twice keeps one."""
+    """Keep a run report (``RunReport.to_json()``) in the bundle's store; return its digest.
+
+    It is kept outside the manifest and so outside the fingerprint. Attaching the same report twice
+    keeps one.
+    """
     digest = bundle.store.put(canonical_bytes(report))
     bundle.store.record_done(f"{_RUN_REPORT}:{digest}", "", digest, stage=_RUN_REPORT)
     return digest
@@ -194,15 +202,19 @@ def build_bundle(
     environment: dict[str, Any] | None = None,
     container_digest: str | None = None,
 ) -> Bundle:
-    """Capture a recorded analysis (``session`` + the ``value`` and ``weight`` output Arrays) as a
-    self-contained bundle. ``datasets`` maps each source name to its input array; ``payloads`` maps
-    each External descriptor ``content_hash`` to the correction/model file bytes; ``histogram`` is the
-    ``{name, bins, lo, hi}`` spec applied to ``value`` weighted by ``weight``."""
+    """Capture a recorded analysis as a self-contained bundle.
+
+    The analysis is ``session`` + the ``value`` and ``weight`` output Arrays. ``datasets`` maps
+    each source name to its input array; ``payloads`` maps each External descriptor
+    ``content_hash`` to the correction/model file bytes; ``histogram`` is the ``{name, bins, lo,
+    hi}`` spec applied to ``value`` weighted by ``weight``.
+    """
     from graphed.varied import Varied, member_of, union_labels  # noqa: PLC0415  (import cycle)
 
     if (weight is None) != (histogram is None):
         raise PreserveError(
-            "weight= and histogram= must be given together (the value/weight/spec triple) or both omitted (a histogram-terminal analysis)"
+            "weight= and histogram= must be given together (the value/weight/spec triple) or both "
+            "omitted (a histogram-terminal analysis)"
         )
     datasets = dict(datasets or {})
     payloads = dict(payloads or {})
@@ -245,7 +257,8 @@ def build_bundle(
         ch = desc["content_hash"]
         plugin = get_plugin(desc["kind"])
         if plugin is None:
-            # no plugin (e.g. an opaque cloudpickled `map`, or an unregistered kind) -> not preservable
+            # no plugin (e.g. an opaque cloudpickled `map`, or an unregistered kind) -> not
+            # preservable
             opaque_nodes.append(node["id"])
             continue
         if ch not in payloads and plugin.synthesize is not None:
@@ -260,7 +273,8 @@ def build_bundle(
             actual != ch
         ):  # integrity: the bytes must hash to the recorded id (cache-poisoning-safe)
             raise PreserveError(
-                f"payload for node {node['id']} hashes to {actual}, not the recorded {ch} (mismatched/poisoned)"
+                f"payload for node {node['id']} hashes to {actual}, not the recorded {ch} "
+                "(mismatched/poisoned)"
             )
         entry = {
             "node_id": node["id"],
@@ -269,7 +283,8 @@ def build_bundle(
             "store": store.put(blob),
             "io_schema": desc["io_schema"],
         }
-        # only a declaring node gets the key: a plugin param named `output_type` is not a declaration
+        # only a declaring node gets the key: a plugin param named `output_type` is not a
+        # declaration
         fn = session._externals[node["id"]][0]
         if isinstance(fn, CheckedExternal) and fn.key == "output_type":
             entry["output_type"] = fn.declared
@@ -325,7 +340,8 @@ def reproduce(bundle: Bundle) -> Any:
 
     Resolves the IR, datasets, and correction/model payloads from the bundle's content-addressed
     store (raising :class:`UnresolvedPayload` for anything missing), interprets the IR through the
-    awkward backend + payload-backed external evaluators, and applies the histogram spec."""
+    awkward backend + payload-backed external evaluators, and applies the histogram spec.
+    """
     from graphed.awkward import AwkwardBackend  # noqa: PLC0415
     from graphed.awkward.backend import canonical_output_type  # noqa: PLC0415
 
@@ -371,7 +387,10 @@ def reproduce(bundle: Bundle) -> Any:
         )
         if actual is not None:
             prov = Provenance(**sourcemap[str(node["id"])])
-            detail = f"external node {node['id']} ({entry['kind']!r}) declares {key} {declared!r}; its value is {actual!r}"
+            detail = (
+                f"external node {node['id']} ({entry['kind']!r}) declares {key} {declared!r}; its "
+                f"value is {actual!r}"
+            )
             raise OutputTypeError("external", prov, detail)
         return value
 
@@ -413,8 +432,11 @@ def _histogram(value: Any, weight: Any, spec: dict[str, Any]) -> Any:
 
 # ---- inspect (no execution) ---------------------------------------------------------------------
 def inspect(bundle: Bundle) -> str:
-    """Render the preserved analysis — the IR + M6 provenance + payload inventory + risk flags —
-    WITHOUT executing anything or resolving the (possibly absent) data/payloads."""
+    """Render the preserved analysis.
+
+    The IR + M6 provenance + payload inventory + risk flags — WITHOUT executing anything or
+    resolving the (possibly absent) data/payloads.
+    """
     store = bundle.store
     m = bundle.manifest
     nodes = GraphStore.deserialize(_resolve(store, m["analysis"]["ir"], what="IR")).nodes()

@@ -155,7 +155,7 @@ def _std_finalize(ddof: int) -> Callable[[State], float]:
 
 
 def monoid(kind: str, *, ddof: int = 0) -> Monoid:
-    """The tree-reducible monoid for ``kind`` (``ValueError`` if no such monoid exists)."""
+    """Return the tree-reducible monoid for ``kind`` (``ValueError`` if no such monoid exists)."""
     if kind == "sum":
         return Monoid(_sum_chunk, _add, _zero, _identity)
     if kind == "prod":

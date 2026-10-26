@@ -2,14 +2,15 @@
 
 ``lower(session, array, opt_level=...)`` walks the recorded graph and produces a `LoweredGraph`:
 
-- ``opt_level == 0``: **1:1 op↔node** — every recorded op is its own single-member stage, no fusion;
-  the debug runner additionally runs inter-op consistency assertions. This is the canonical mode for
-  pinpointing where a value first goes wrong.
+- ``opt_level == 0``: **1:1 op↔node** — every recorded op is its own single-member stage, no
+  fusion; the debug runner additionally runs inter-op consistency assertions. This is the canonical
+  mode for pinpointing where a value first goes wrong.
 - ``opt_level >= 1``: maximal runs of ops between boundaries are **fused** into multi-member stages
   (the same boundary rule as the M4 optimizer), so the structure matches what actually executes.
 
 Either way each op keeps its exact user provenance, so an error maps to the same analysis line
-regardless of opt level. Lowering uses only the frontend's public surface (``walk`` + ``provenance``
+regardless of opt level. Lowering uses only the frontend's public surface (``walk`` +
+``provenance``
 + ``form`` + ``backend.boundary_ops``); it does not reach into Session internals.
 """
 
@@ -113,8 +114,10 @@ def _collect(session: Session, array: Array) -> list[LoweredOp]:
 
 
 def _fuse(ops: list[LoweredOp]) -> list[LoweredStage]:
-    """Group maximal runs of non-boundary ops that chain (single use) into one stage. Mirrors the M4
-    boundary rule so the lowered structure matches what executes."""
+    """Group maximal runs of non-boundary ops that chain (single use) into one stage.
+
+    Mirrors the M4 boundary rule so the lowered structure matches what executes.
+    """
     by_id = {op.node_id: op for op in ops}
     uses: dict[int, int] = dict.fromkeys(by_id, 0)
     for op in ops:

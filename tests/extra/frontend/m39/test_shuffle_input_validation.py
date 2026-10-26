@@ -1,5 +1,6 @@
-"""M39/M40 — ``graphed.shuffle``'s input-validation raises (plan guards in ``repartition``,
-``join``, ``shuffle_plan``, ``join_plan``).
+"""M39/M40 — ``graphed.shuffle``'s input-validation raises.
+
+These are the plan guards in ``repartition``, ``join``, ``shuffle_plan``, ``join_plan``.
 
 The frozen M39/M40 shape suites build only VALID plans, so these guard branches — wrong scheme
 kwargs, a cross-session join, a graph missing its Exchange/Join boundary, the wrong partitioned-
@@ -45,9 +46,11 @@ class _ToyForm:
 
 
 class ToyBackend:
-    """Minimal ``Backend`` + ``ShuffleBackend`` (mirrors ``tests/frozen/frontend/m39/
-    shuffle_backends.py``'s ``ToyBackend``, extended with the join-family ``op_form`` arms so a
-    self-join records over it too)."""
+    """Minimal ``Backend`` + ``ShuffleBackend``.
+
+    It mirrors ``tests/frozen/frontend/m39/shuffle_backends.py``'s ``ToyBackend``, extended with
+    the join-family ``op_form`` arms so a self-join records over it too.
+    """
 
     identity = "toy/0"
 
@@ -206,7 +209,8 @@ def test_join_plan_without_a_join_boundary_raises_type_error() -> None:
         graphed.join_plan(output, backend=ToyBackend)
 
 
-# ---- join_plan: needs exactly two partitioned sources (a self-join has only one) -----------------
+# ---- join_plan: needs exactly two partitioned sources (a self-join has only
+# one) -----------------
 
 
 def test_join_plan_self_join_has_one_partitioned_source_raises_type_error() -> None:

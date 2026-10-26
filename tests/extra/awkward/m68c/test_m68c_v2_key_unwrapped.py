@@ -1,5 +1,7 @@
-"""A join plan's stage keys do not move with the by-value wrapping of stdlib-pickled plans (GW33):
-its stages pickle whole through cloudpickle, so their External evaluators stay raw."""
+"""A join plan's stage keys do not move with the by-value wrapping of stdlib-pickled plans (GW33).
+
+Its stages pickle whole through cloudpickle, so their External evaluators stay raw.
+"""
 
 from __future__ import annotations
 

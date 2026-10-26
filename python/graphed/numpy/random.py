@@ -49,5 +49,5 @@ class GraphedRNG:
 
 
 def default_rng(session: Session, seed: int) -> GraphedRNG:
-    """A deterministic generator of random source arrays for ``session``."""
+    """Return a deterministic generator of random source arrays for ``session``."""
     return GraphedRNG(session, int(seed))

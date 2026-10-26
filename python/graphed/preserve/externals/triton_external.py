@@ -1,5 +1,8 @@
-"""The ``triton_model`` plugin (M26): a REMOTE served model — the payload preserves the served
-identity (canonical JSON descriptor) and the node names the service; the connection is environment."""
+"""The ``triton_model`` plugin (M26).
+
+A REMOTE served model — the payload preserves the served identity (canonical JSON descriptor) and
+the node names the service; the connection is environment.
+"""
 
 from __future__ import annotations
 
@@ -18,15 +21,16 @@ from ._helpers import (
     parse_call_template,
 )
 
-# ---- NVIDIA Triton (remote inference) -------------------------------------------------------------
-# The payload is the SERVED MODEL'S IDENTITY (a canonical JSON descriptor: model name/version,
-# io names, weight digests) — the bundle preserves what was called, but cannot bottle the server.
-# The connection is environment: a node names a declared service (params["service"], its endpoint
-# bound per run by graphed.services.bind_services, never recorded) or a literal params["url"].
-# An importable params["transport"] ("module:attr") always wins; otherwise the endpoint's scheme
-# picks tritonclient.http or tritonclient.grpc, and a url without "://" stays tritonclient.http.
-# The transport's module also supplies the InferInput/InferRequestedOutput request classes, so
-# fakes and tritonclient interchange without touching plugin code.
+# ---- NVIDIA Triton (remote
+# inference) ------------------------------------------------------------- The payload is the
+# SERVED MODEL'S IDENTITY (a canonical JSON descriptor: model name/version, io names, weight
+# digests) — the bundle preserves what was called, but cannot bottle the server. The connection is
+# environment: a node names a declared service (params["service"], its endpoint bound per run by
+# graphed.services.bind_services, never recorded) or a literal params["url"]. An importable
+# params["transport"] ("module:attr") always wins; otherwise the endpoint's scheme picks
+# tritonclient.http or tritonclient.grpc, and a url without "://" stays tritonclient.http. The
+# transport's module also supplies the InferInput/InferRequestedOutput request classes, so fakes
+# and tritonclient interchange without touching plugin code.
 _WIRES = {"http": "http", "https": "http", "grpc": "grpc", "grpcs": "grpc"}
 
 
@@ -42,7 +46,7 @@ def _check_triton_params(params: Mapping[str, Any]) -> None:
 
 
 def triton_http_transport(params: Mapping[str, Any]) -> Any:
-    """A tritonclient HTTP connection to params['url'], passed as given."""
+    """Return a tritonclient HTTP connection to params['url'], passed as given."""
     import tritonclient.http as triton_http  # noqa: PLC0415
 
     return triton_http.InferenceServerClient(url=str(params["url"]))
@@ -60,7 +64,10 @@ def _wire(url: str) -> tuple[str, str, bool]:
 
 
 def triton_transport(params: Mapping[str, Any]) -> Any:
-    """A tritonclient connection chosen by params['url']'s scheme, given the bare host:port."""
+    """Return a tritonclient connection chosen by params['url']'s scheme.
+
+    It is given the bare host:port.
+    """
     module, address, ssl = _wire(str(params["url"]))
     return importlib.import_module(module).InferenceServerClient(url=address, ssl=ssl)
 

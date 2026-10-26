@@ -1,6 +1,8 @@
-"""ak.Array's own descriptors (`fields`, `ndim`, ...) describe a deferred array; they are answered from
-the record-time typetracer or refused, never recorded as a `field` op. A record field or a behavior
-class that provides the same name keeps today's path."""
+"""ak.Array's own descriptors (`fields`, `ndim`, ...) describe a deferred array.
+
+They are answered from the record-time typetracer or refused, never recorded as a `field` op. A
+record field or a behavior class that provides the same name keeps today's path.
+"""
 
 from __future__ import annotations
 

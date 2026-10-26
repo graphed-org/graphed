@@ -1,4 +1,7 @@
-"""A ``dir::`` store URL roots the store at the wrapped URL, with its options on that filesystem."""
+"""A ``dir::`` store URL roots the store at the wrapped URL.
+
+Its options apply on that filesystem.
+"""
 
 from __future__ import annotations
 

@@ -120,8 +120,11 @@ _UFUNC_TO_OP: dict[str, str] = {
 
 
 def _is_full_slice(value: object) -> bool:
-    """``:`` — the only axis-0 member a tuple key may carry (checked structurally: an operand's
-    ``__eq__`` would RECORD a comparison instead of answering one)."""
+    """Whether ``key`` is ``:``, the only axis-0 member a tuple key may carry.
+
+    Checked structurally: an operand's ``__eq__`` would RECORD a comparison instead of answering
+    one.
+    """
     return isinstance(value, slice) and (value.start, value.stop, value.step) == (None, None, None)
 
 
@@ -140,8 +143,9 @@ def _refuse_axis0(first: object) -> TypeError:
 
 
 def encode_subscript(key: tuple[object, ...]) -> str:
-    """Canonical injective spec for an inner (partition-local) tuple key — M13's numpy subscript,
-    widened in M59 to the kinds both array idioms share.
+    """Canonical injective spec for an inner (partition-local) tuple key.
+
+    M13's numpy subscript, widened in M59 to the kinds both array idioms share.
 
     Members are ``slice``s with int fields, ints, ``None`` (newaxis) and at most one ``Ellipsis``;
     axis 0 must be left whole (``:`` or a leading ``...``), since anything that consumes or
@@ -178,7 +182,7 @@ def encode_subscript(key: tuple[object, ...]) -> str:
 
 
 def check_leading_ellipsis(key: tuple[object, ...], depth: int) -> None:
-    """A leading ``...`` must absorb at least the partitioned axis (M59).
+    """Check that a leading ``...`` absorbs at least the partitioned axis (M59).
 
     ``[..., 0]`` leaves axis 0 whole only while the receiver is deeper than the members after the
     Ellipsis: on a flat array the Ellipsis absorbs nothing and the key indexes axis 0. Only the
@@ -199,7 +203,7 @@ def check_leading_ellipsis(key: tuple[object, ...], depth: int) -> None:
 
 
 def decode_subscript(spec: object) -> tuple[object, ...]:
-    """The inverse of :func:`encode_subscript`, for the backends that evaluate the key."""
+    """Return the inverse of :func:`encode_subscript`, for the backends that evaluate the key."""
     out: list[object] = []
     for part in str(spec).split(","):
         if part == "N":
@@ -224,7 +228,7 @@ def _as_param(value: object) -> ParamValue:
 def _scalar_params(
     value: object, key: str = "scalar", dtype_key: str = "dtype"
 ) -> dict[str, ParamValue]:
-    """The params a scalar operand records (M59).
+    """Return the params a scalar operand records (M59).
 
     A value carrying a ``dtype`` — a numpy scalar — keeps BOTH halves of what it imposes on the
     result: the dtype, as a ``str`` param read off the object (the frontend never imports numpy),
@@ -241,7 +245,10 @@ def _scalar_params(
 
 
 def no_eager_value(op: str, missing: str) -> GraphedTypeError:
-    """The refusal for ``bool()``/``np.asarray()`` on a deferred value, located at the user's line."""
+    """Return the refusal for ``bool()``/``np.asarray()`` on a deferred value.
+
+    It is located at the user's line.
+    """
     from .errors import GraphedTypeError  # noqa: PLC0415  (cycle: errors -> provenance -> array)
     from .provenance import capture  # noqa: PLC0415
 
@@ -424,16 +431,21 @@ class Array:
     # in its function namespace (graphed.awkward.gak — awkward arrays never grow methods). These
     # protected helpers are the infrastructure those surfaces are built from.
     def _form_meta(self, name: str) -> Any:
-        """Answer array metadata from the node's form when the backend models it; otherwise fall
-        back to recording a field op, preserving the M3 attribute-access semantics for backends
-        whose records may genuinely contain a column of that name."""
+        """Answer array metadata from the node's form when the backend models it.
+
+        Otherwise fall back to recording a field op, preserving the M3 attribute-access semantics
+        for backends whose records may genuinely contain a column of that name.
+        """
         form = self._session.form(self)
         if hasattr(form, name):
             return getattr(form, name)
         return self._session.record_op("field", [self], {"field": name})
 
     def _norm_axis(self, axis: int | None) -> int | None:
-        """Resolve a (possibly negative) axis against the form's ndim, when the backend models it."""
+        """Resolve a (possibly negative) axis against the form's ndim.
+
+        Only when the backend models it.
+        """
         if axis is None:
             return None
         if isinstance(axis, bool) or not isinstance(axis, int):
@@ -450,9 +462,11 @@ class Array:
     def _reduction(
         self, kind: str, axis: int | None = None, *, keepdims: bool = False, ddof: int = 0
     ) -> Array:
-        """Record one reduction with THE structural rule of M12 (dask.array parity P1.4):
-        reducing over the partitioned axis (``axis`` None or 0) is a stage boundary executed by
-        the M7 tree reduction; an inner axis is partition-local and fusible."""
+        """Record one reduction with THE structural rule of M12 (dask.array parity P1.4).
+
+        Reducing over the partitioned axis (``axis`` None or 0) is a stage boundary executed by the
+        M7 tree reduction; an inner axis is partition-local and fusible.
+        """
         axis = self._norm_axis(axis)
         params: dict[str, ParamValue] = {}
         if axis is not None:
@@ -502,7 +516,8 @@ class Array:
         # int __getitem__ (M13) would otherwise make Array INFINITELY iterable through Python's
         # legacy iteration protocol (a[0], a[1], ... never raises IndexError on a deferred graph)
         raise TypeError(
-            "deferred graphed arrays are not iterable (unknown partitioned length); materialize first"
+            "deferred graphed arrays are not iterable (unknown partitioned length); materialize "
+            "first"
         )
 
     def __bool__(self) -> bool:
@@ -566,8 +581,9 @@ class Array:
         name: str | None = None,
         output_type: object = None,
     ) -> Array:
-        """Record ``fn`` over this array as one opaque External node (the callable is a flagged
-        preservation risk, plan A.3.1).
+        """Record ``fn`` over this array as one opaque External node.
+
+        The callable is a flagged preservation risk, plan A.3.1.
 
         Without ``name=`` two distinct callables that derive one ``__name__`` are told apart by a
         per-Session ordinal. Pass ``name=`` to declare the identity yourself: a declared name IS
@@ -577,7 +593,8 @@ class Array:
 
         ``output_type=`` declares the type of each element of ``fn``'s result (a type string, a
         dtype or a Python type, as the backend accepts); it becomes the recorded form and is part
-        of the node's identity. It is a claim, never a cast."""
+        of the node's identity. It is a claim, never a cast.
+        """
         return self._session.record_external(
             "map", fn, [self], {"fn": self._session._fn_name(fn, name)}, output_type=output_type
         )
@@ -586,10 +603,13 @@ class Array:
         return self._session.record_op(kind, [self], reduction=True)
 
     def repartition(self, *, n: int | None = None, target_bytes: int | None = None) -> Array:
-        """Physically rebalance this array's partitions (M39): by count (``n``) or by measured size
-        (``target_bytes``). Rebalancing MOVES rows without reinterpreting them — a physical,
-        backend-neutral operation (no array idiom) — so it stays on ``Array`` (the keyed/join
-        repartition is the neutral module verb ``graphed.repartition``, per the factorization rule)."""
+        """Physically rebalance this array's partitions (M39).
+
+        By count (``n``) or by measured size (``target_bytes``). Rebalancing MOVES rows without
+        reinterpreting them — a physical, backend-neutral operation (no array idiom) — so it stays
+        on ``Array`` (the keyed/join repartition is the neutral module verb
+        ``graphed.repartition``, per the factorization rule).
+        """
         from .shuffle import repartition as _repartition  # noqa: PLC0415  (avoid an import cycle)
 
         return _repartition(self, n=n, target_bytes=target_bytes)
@@ -601,9 +621,11 @@ class Array:
 def apply(
     fn: Callable[..., object], *arrays: Array, name: str | None = None, output_type: object = None
 ) -> Array:
-    """Record ``fn`` over several deferred arrays as ONE multi-input External node (M14, parity
-    P3.8 — the blockwise/map_blocks analogue). A function over arrays, so it is idiom-neutral
-    (awkward style); the numpy-specific signature-aware form is ``graphed.numpy.apply_gufunc``.
+    """Record ``fn`` over several deferred arrays as ONE multi-input External node.
+
+    M14, parity P3.8 — the blockwise/map_blocks analogue. A function over arrays, so it is
+    idiom-neutral (awkward style); the numpy-specific signature-aware form is
+    ``graphed.numpy.apply_gufunc``.
 
     The node carries the backend's ``PayloadDescriptor``: the opaque callable stays a flagged
     preservation risk (plan A.3.1). With one array this IS ``Array.map`` (interns with it).
@@ -613,7 +635,8 @@ def apply(
     identity, so declaring a name another callable already wears — declared or derived — means
     that same node, and the name must encode everything that changes the callable's behaviour.
 
-    ``output_type=`` declares the result's element type, as for ``Array.map``."""
+    ``output_type=`` declares the result's element type, as for ``Array.map``.
+    """
     from .varied import containers_in, expand  # noqa: PLC0415  (`varied` imports `Array`)
 
     if containers_in(*arrays):  # §2.3d *expanding*: one External per universe

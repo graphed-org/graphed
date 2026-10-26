@@ -1,5 +1,8 @@
-"""A plan whose callables are lambdas or closures, and whose partials carry a lambda-holding behavior,
-runs across a stdlib-pickling process boundary as it runs in-process (GW33)."""
+"""A plan whose callables are lambdas or closures.
+
+And whose partials carry a lambda-holding behavior, runs across a stdlib-pickling process boundary
+as it runs in-process (GW33).
+"""
 
 from __future__ import annotations
 

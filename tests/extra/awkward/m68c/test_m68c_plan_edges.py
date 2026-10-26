@@ -1,5 +1,8 @@
-"""m68c edges the frozen suite does not take: the executors' payload slicer, a partial fold set, a
-join side that reads no partitioned source, and a plan with a lambda or ``__main__`` reduce."""
+"""m68c edges the frozen suite does not take.
+
+The executors' payload slicer, a partial fold set, a join side that reads no partitioned source,
+and a plan with a lambda or ``__main__`` reduce.
+"""
 
 from __future__ import annotations
 

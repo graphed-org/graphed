@@ -1,4 +1,7 @@
-"""A capturing plan keeps a projected read's input as read, and its replay agrees with the run (#54)."""
+"""A capturing plan keeps a projected read's input as read.
+
+Its replay agrees with the run (#54).
+"""
 
 from __future__ import annotations
 

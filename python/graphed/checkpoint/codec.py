@@ -2,8 +2,8 @@
 
 A per-task output (e.g. a histogram array) must serialize **deterministically** so the same result
 always lands under the same content hash (so resume can recognize completed work and so an
-uninterrupted run and a resumed run agree bit-for-bit). ``NumpyCodec`` uses ``numpy.save`` (a fixed,
-versioned ``.npy`` layout); ``PickleCodec`` is the general fallback (protocol pinned).
+uninterrupted run and a resumed run agree bit-for-bit). ``NumpyCodec`` uses ``numpy.save`` (a
+fixed, versioned ``.npy`` layout); ``PickleCodec`` is the general fallback (protocol pinned).
 """
 
 from __future__ import annotations

@@ -1,6 +1,9 @@
-"""Awkward idioms HiggsDNA uses record what eager awkward computes: numpy dtype classes (GW22),
-dict-form cartesian (GW24), non-ufunc numpy functions (GW26), ``hasattr`` on a missing field (GW28),
-a Varied's form answers (GW20) and numpy-typed scalar operands (GW4)."""
+"""Awkward idioms HiggsDNA uses record what eager awkward computes.
+
+numpy dtype classes (GW22), dict-form cartesian (GW24), non-ufunc numpy functions (GW26),
+``hasattr`` on a missing field (GW28), a Varied's form answers (GW20) and numpy-typed scalar
+operands (GW4).
+"""
 
 from __future__ import annotations
 

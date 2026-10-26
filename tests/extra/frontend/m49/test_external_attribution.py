@@ -1,10 +1,10 @@
 """§8.2(ii)/(iii) at the EXTERNAL dispatch point, and the GraphedError carve-out.
 
 §4.1 makes an External payload the canonical carrier of a weight variation, and graphed-histogram's
-fills and weight guards are themselves `record_external` nodes — so a RAW External failure attributes
-like any other node in the top-level dispatch loop. A `GraphedError` does not: §8.2(ii) re-raises it
-untouched on EVERY arm regardless of entry, because it is already an attributed error and §6.1d's
-blame parity (the plan path re-raises the guard's message verbatim) binds it.
+fills and weight guards are themselves `record_external` nodes — so a RAW External failure
+attributes like any other node in the top-level dispatch loop. A `GraphedError` does not: §8.2(ii)
+re-raises it untouched on EVERY arm regardless of entry, because it is already an attributed error
+and §6.1d's blame parity (the plan path re-raises the guard's message verbatim) binds it.
 
 An UNVARIED program attributes too: a raw failure at any key with a §8.2(i) frame becomes a
 `StageError` with an empty variation; the label channel only adds the label, and a frameless key
@@ -69,8 +69,11 @@ def _compiled() -> tuple[CompiledGraph, int]:
 def _worker_hook(
     entries: tuple[object, ...] | None, frames: tuple[tuple[Key, Frame], ...] = ()
 ) -> OnFailure | None:
-    """The shipped §8.2(ii) wrap. `_attribute` reads only the label and frame channels, so the rest
-    of the closure's fields are inert here."""
+    """Return the shipped §8.2(ii) wrap.
+
+    `_attribute` reads only the label and frame channels, so the rest of the closure's fields are
+    inert here.
+    """
     return _PartitionReduce(
         ir=b"",
         source_name="x",
@@ -126,8 +129,10 @@ def test_a_raw_external_failure_at_an_entried_key_becomes_a_labelled_stage_error
 
 
 def test_a_graphed_error_passes_verbatim_even_at_an_entried_key() -> None:
-    """§8.2(ii)'s carve-out — the same key, the same hook, the same entry as the test above; only
-    the exception class differs, and it is re-raised untouched."""
+    """§8.2(ii)'s carve-out — the same key, the same hook, the same entry as the test above.
+
+    Only the exception class differs, and it is re-raised untouched.
+    """
     _, output = _compiled()
     hook = _worker_hook((((output, None), (("jes_up",), FRAME)),))
     with pytest.raises(GraphedError) as excinfo:

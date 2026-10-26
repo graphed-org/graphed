@@ -1,9 +1,9 @@
 """Perf regression guards for systematics fanout CONSTRUCTION (the graphed.vary path).
 
 These pin the SCALING SHAPE the perf/systematics-fanout work established, so a reintroduced
-quadratic (or a dropped memo) is caught even though it breaks no correctness assertion -- the frozen
-suites verify the answers a fanout produces, not what they cost. Numpy-idiom only (no awkward), so
-the guard stays cheap and portable across the CI matrix.
+quadratic (or a dropped memo) is caught even though it breaks no correctness assertion -- the
+frozen suites verify the answers a fanout produces, not what they cost. Numpy-idiom only (no
+awkward), so the guard stays cheap and portable across the CI matrix.
 
 Two independent pathologies are pinned:
   * vary._check_unique's Session point-uniqueness test must stay ~linear in accumulated universes;
@@ -27,8 +27,11 @@ VEC = np.arange(1.0, 13.0)
 
 
 def _register_independent_families(n: int) -> None:
-    """n independent 2-universe families on one base array in one Session: each vary() mints into
-    the shared point registry, so _check_unique is exercised against a registry that grows with n."""
+    """N independent 2-universe families on one base array in one Session.
+
+    Each vary() mints into the shared point registry, so _check_unique is exercised against a
+    registry that grows with n.
+    """
     session = Session(NumpyBackend())
     pt = from_record(session, "ev", pt=VEC)["pt"]
     for i in range(n):
@@ -45,8 +48,8 @@ def _time_build(n: int, repeats: int = 3) -> float:
 
 
 def test_registry_accumulation_is_not_quadratic() -> None:
-    # Provenance is a fixed per-op cost that cancels in the ratio; hold it off so the ratio reflects
-    # the registry-uniqueness term alone.
+    # Provenance is a fixed per-op cost that cancels in the ratio; hold it off so the ratio
+    # reflects the registry-uniqueness term alone.
     was = provenance.is_enabled()
     provenance.set_enabled(False)
     try:
@@ -57,9 +60,9 @@ def test_registry_accumulation_is_not_quadratic() -> None:
     finally:
         provenance.set_enabled(was)
     growth = large / small
-    # Families grow 8x. Near-linear construction lands ~10x (a small residual super-linearity in the
-    # per-call minted scan); the pre-fix O(N^2) registry rescan lands ~30x. A bound between the two
-    # catches a reintroduced quadratic without tripping on timing noise.
+    # Families grow 8x. Near-linear construction lands ~10x (a small residual super-linearity in
+    # the per-call minted scan); the pre-fix O(N^2) registry rescan lands ~30x. A bound between the
+    # two catches a reintroduced quadratic without tripping on timing noise.
     assert growth < 20.0, (
         f"registry-accumulation scaling looks super-linear: 8x families -> {growth:.1f}x time"
     )

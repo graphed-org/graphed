@@ -1,5 +1,8 @@
-"""Every m72 plan shape whose tasks evaluate a service-calling External carries that service and
-binds its endpoint: a writes-only plan, writes beside reductions, and collated plans (the union)."""
+"""Each m72 plan shape whose tasks call a service carries that service and binds it.
+
+The service is called by an External; the shapes are a writes-only plan, writes beside reductions,
+and collated plans (the union).
+"""
 
 from __future__ import annotations
 
@@ -131,7 +134,10 @@ def _writes(array: Any, tmp_path: Path, sub: str) -> Plan[Any]:
 
 
 def _two_sources(tmp_path: Path) -> tuple[Plan[Any], Plan[Any]]:
-    """A service-free data plan and an mc plan calling ``svc`` then ``other``; both write parts."""
+    """Return a service-free data plan and an mc plan calling ``svc`` then ``other``.
+
+    Both write parts.
+    """
     data_x, _y = _served(DATA_FILES, "Runs", SVC)
     _x, mc_y = _served(MC_FILES, "Events", SVC)
     mc_y.session.declare_service(OTHER)

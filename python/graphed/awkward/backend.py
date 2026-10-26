@@ -27,8 +27,11 @@ from ._ops import apply
 
 @dataclass(frozen=True)
 class _AsRead:
-    """Pickles as its array's buffers, so the buffers a projected read skipped reload as the same
-    placeholders; ``ak.Array``'s own pickling packs the array, which reads them and raises."""
+    """Pickles as its array's buffers.
+
+    So the buffers a projected read skipped reload as the same placeholders; ``ak.Array``'s own
+    pickling packs the array, which reads them and raises.
+    """
 
     array: ak.Array
 
@@ -41,8 +44,10 @@ class _AsRead:
 
 
 class _BehaviorByRef(dict[Any, Any]):
-    """A backend's behavior that pickles as the import ref its backend was resolved from, since its
-    lambdas do not pickle; every array derived from one carrying it keeps this same object."""
+    """A backend's behavior that pickles as the import ref its backend was resolved from.
+
+    Its lambdas do not pickle; every array derived from one carrying it keeps this same object.
+    """
 
     def __init__(self, behavior: Mapping[Any, Any], ref: str) -> None:
         super().__init__(behavior)
@@ -63,8 +68,10 @@ def _behavior_from(ref: str) -> Any:
 
 
 def _adopt(value: Any, behavior: Mapping[Any, Any] | None) -> Any:
-    """``value`` with each array whose behavior merely equals ``behavior`` given ``behavior`` itself:
-    awkward merges the behaviors of several arrays into a new dict, which loses its pickling."""
+    """Give each array in ``value`` whose behavior merely equals ``behavior`` that object.
+
+    Awkward merges the behaviors of several arrays into a new dict, which loses its pickling.
+    """
     if not behavior:
         return value
     if isinstance(value, ak.Array):
@@ -107,8 +114,11 @@ _EXTERNAL = frozenset({"map", "correction", "onnx", "external"})
 
 @functools.cache  # a declared type is parsed once, not on every checked call
 def _type(canonical: str) -> ak.types.Type:
-    """The awkward type of a canonical ``output_type``; a primitive the datashape grammar lacks
-    (``float16`` on awkward 2.14) but awkward's dtype table knows is built directly."""
+    """Return the awkward type of a canonical ``output_type``.
+
+    A primitive the datashape grammar lacks (``float16`` on awkward 2.14) but awkward's dtype table
+    knows is built directly.
+    """
     try:
         return ak.types.from_datashape(canonical, highlevel=False)
     except LarkError:
@@ -117,8 +127,11 @@ def _type(canonical: str) -> ak.types.Type:
 
 
 def canonical_output_type(spec: object) -> str:
-    """Reduce an ``output_type`` spelling (datashape string, awkward Type/Form/ArrayType, numpy
-    dtype-like, Python type) to awkward's type string, a fixpoint; refuse what cannot be built."""
+    """Reduce an ``output_type`` spelling to awkward's type string, a fixpoint.
+
+    The spelling is a datashape string, awkward Type/Form/ArrayType, numpy dtype-like, or Python
+    type; refuse what cannot be built.
+    """
     return _canonical_string(spec) if isinstance(spec, str) else _canonical_output_type(spec)
 
 
@@ -157,8 +170,10 @@ _canonical_string = functools.cache(_canonical_output_type)
 
 
 def astype_form(form: AwkwardForm, dtype: object) -> AwkwardForm:
-    """``form`` with its leaves cast to the primitive ``dtype`` (any `canonical_output_type`
-    spelling of one); a scalar stays a scalar."""
+    """Return ``form`` with its leaves cast to the primitive ``dtype``.
+
+    ``dtype`` is any `canonical_output_type` spelling of one; a scalar stays a scalar.
+    """
     t = _type(canonical_output_type(dtype))
     if not isinstance(t, ak.types.NumpyType) or t.parameters:
         raise TypeError(f"output_dtype {dtype!r} is not a primitive dtype")
@@ -168,8 +183,10 @@ def astype_form(form: AwkwardForm, dtype: object) -> AwkwardForm:
 
 
 def broadcast_form(forms: Sequence[AwkwardForm]) -> AwkwardForm:
-    """The form ``ak.broadcast_arrays`` gives the array ``forms`` (scalars broadcast away), or the
-    first form when none is an array."""
+    """Return the form ``ak.broadcast_arrays`` gives the array ``forms``.
+
+    Scalars broadcast away; the first form when none is an array.
+    """
     arrays = [f for f in forms if isinstance(f.tt, ak.Array)]
     if len(arrays) < 2:
         return (arrays or list(forms))[0]
@@ -177,8 +194,11 @@ def broadcast_form(forms: Sequence[AwkwardForm]) -> AwkwardForm:
 
 
 def declared_form(forms: Sequence[AwkwardForm], canonical: str) -> AwkwardForm:
-    """The form of an External declared ``canonical``: that element type over an array input's
-    length, or a scalar (a record one included) when no input is an array."""
+    """Return the form of an External declared ``canonical``.
+
+    That element type over an array input's length, or a scalar (a record one included) when no
+    input is an array.
+    """
     t = _type(canonical)
     if not any(isinstance(f.tt, ak.Array) for f in forms):
         if isinstance(t, ak.types.NumpyType) and not t.parameters:
@@ -189,8 +209,11 @@ def declared_form(forms: Sequence[AwkwardForm], canonical: str) -> AwkwardForm:
 
 
 def _fits(value: ak.types.Type, declared: ak.types.Type) -> bool:
-    """``value`` is ``declared`` wherever it holds data; ``unknown``, the type of a buffer holding no
-    values (an all-empty list), fits any declared type."""
+    """``value`` is ``declared`` wherever it holds data.
+
+    ``unknown``, the type of a buffer holding no values (an all-empty list), fits any declared
+    type.
+    """
     if isinstance(value, ak.types.UnknownType):
         return True
     if type(value) is not type(declared) or value.parameters != declared.parameters:
@@ -211,7 +234,10 @@ def _fits(value: ak.types.Type, declared: ak.types.Type) -> bool:
 
 
 def _leaves(t: ak.types.Type) -> list[str]:
-    """The primitive of every leaf of ``t``; an ``unknown`` leaf holds no values and has none."""
+    """Return the primitive of every leaf of ``t``.
+
+    An ``unknown`` leaf holds no values and has none.
+    """
     if isinstance(t, ak.types.NumpyType):
         return [t.primitive]
     if isinstance(t, (ak.types.RecordType, ak.types.UnionType)):
@@ -234,7 +260,8 @@ def check_output_type(
 
     ``output_type`` is the whole element type: the value's type string must equal it (option-ness,
     regular vs var, record names and parameters included), except that ``unknown`` inside an array
-    fits anything. ``output_dtype`` is a static leaf dtype: every leaf must have it."""
+    fits anything. ``output_dtype`` is a static leaf dtype: every leaf must have it.
+    """
     try:
         t = ak.type(value)
     except (TypeError, ValueError):  # not array-like at all
@@ -267,7 +294,10 @@ class AwkwardBackend:
         self._behavior = dict(behavior) if behavior else None
 
     def array_type(self) -> type[Array]:
-        """The awkward-idiom proxy: Sessions return ``AwkwardArray``, so ``ak.<fn>`` records ``gak.<fn>``."""
+        """Return the awkward-idiom proxy.
+
+        Sessions return ``AwkwardArray``, so ``ak.<fn>`` records ``gak.<fn>``.
+        """
         # array imports gak, which imports this module
         from .array import AwkwardArray  # noqa: PLC0415
 
@@ -278,15 +308,16 @@ class AwkwardBackend:
     ) -> AwkwardForm:
         # `inputs` is the protocol-wide `Sequence[Form]`, not `Sequence[AwkwardForm]`: narrowing a
         # parameter would make AwkwardBackend structurally incompatible with `graphed.Backend`
-        # (contravariance), so `Session(AwkwardBackend())` would not type-check. A session only ever
-        # feeds a backend the forms that same backend produced.
+        # (contravariance), so `Session(AwkwardBackend())` would not type-check. A session only
+        # ever feeds a backend the forms that same backend produced.
         forms = cast("Sequence[AwkwardForm]", inputs)
         if op == "exchange":
             return forms[
                 0
             ]  # a pure data-movement boundary is identity on the payload form (§3.3a)
         if op == "join":
-            # M40 (§3.3): flat relational record-merge form; how=left/outer ⇒ missing side option-typed
+            # M40 (§3.3): flat relational record-merge form; how=left/outer ⇒ missing side
+            # option-typed
             return AwkwardForm(join.join_form([f.tt for f in forms], params))
         if op in _EXTERNAL:
             # an External's value type is not derivable from its inputs: a declared `output_type`
@@ -314,11 +345,14 @@ class AwkwardBackend:
     check_output_type = staticmethod(check_output_type)
 
     def attribute_kind(self, form: AwkwardForm, name: str) -> str:
-        """Classify `arr.<name>`: a record FIELD shadows the behavior (as `apply`'s `field` branch
-        resolves it), a behavior function is a "method" the frontend hands back as a callable, ak.Array's
-        own descriptors (`fields`, `ndim`, ...) are "introspection" answered by `introspect`, and
-        anything else that resolves is a "property" recorded as a `field` op. An unresolved name
-        raises `AttributeError` and the frontend keeps today's path."""
+        """Classify `arr.<name>` as a field, method, introspection or property.
+
+        A record FIELD shadows the behavior (as `apply`'s `field` branch resolves it), a behavior
+        function is a "method" the frontend hands back as a callable, ak.Array's own descriptors
+        (`fields`, `ndim`, ...) are "introspection" answered by `introspect`, and anything else
+        that resolves is a "property" recorded as a `field` op. An unresolved name raises
+        `AttributeError` and the frontend keeps today's path.
+        """
         tt = self._with_behavior(form.tt)
         if name in tt.fields:
             return "field"
@@ -336,8 +370,10 @@ class AwkwardBackend:
         return "method" if callable(static) or hasattr(static, "__get__") else "property"
 
     def introspect(self, form: AwkwardForm, name: str) -> object:
-        """Answer an `introspection` attribute from the record-time typetracer, or raise
-        `AttributeError` when the typetracer cannot answer it as the data would."""
+        """Answer an `introspection` attribute from the record-time typetracer.
+
+        Raise `AttributeError` when the typetracer cannot answer it as the data would.
+        """
         if name not in _INTROSPECT_EAGER:
             hint = (
                 "use gak.mask(array, condition)"
@@ -350,9 +386,12 @@ class AwkwardBackend:
     def method_outputs(
         self, forms: Sequence[AwkwardForm], params: Mapping[str, object]
     ) -> tuple[object, ...] | None:
-        """Run the call on the typetracers BEFORE anything is recorded: `None` for one awkward
-        array, and for a tuple of them the same NESTING with `None` at every leaf (M59 — the shape
-        `metric_table(return_combinations=True)` answers in). Anything else raises."""
+        """Run the call on the typetracers BEFORE anything is recorded.
+
+        `None` for one awkward array, and for a tuple of them the same NESTING with `None` at every
+        leaf (M59 — the shape `metric_table(return_combinations=True)` answers in). Anything else
+        raises.
+        """
         result = apply(
             "method", [self._with_behavior(f.tt) for f in forms], params, behavior=self._behavior
         )
@@ -366,25 +405,32 @@ class AwkwardBackend:
         if isinstance(result, tuple) and result:
             return tuple(self._output_shape(item, params) for item in result)
         raise TypeError(
-            f"{params['method']}() returned {type(result).__name__}, which is not an awkward array "
-            "or a tuple of awkward arrays, so it cannot be recorded"
+            f"{params['method']}() returned {type(result).__name__}, which is not an awkward "
+            "array or a tuple of awkward arrays, so it cannot be recorded"
         )
 
     def resolved_from(self, ref: str) -> AwkwardBackend:
-        """This backend as a worker resolved it from the import ``ref``: its behavior, and so every
-        partial carrying it, pickles as ``ref``."""
+        """Return this backend as a worker resolved it from the import ``ref``.
+
+        Its behavior, and so every partial carrying it, pickles as ``ref``.
+        """
         if self._behavior and not isinstance(self._behavior, _BehaviorByRef):
             self._behavior = _BehaviorByRef(self._behavior, ref)
         return self
 
     def adopt(self, value: Any) -> Any:
-        """``value`` (an array, or a list, tuple or dict of them) carrying this backend's behavior
-        object wherever it carries an equal copy."""
+        """Return ``value`` carrying this backend's behavior object.
+
+        ``value`` is an array, or a list, tuple or dict of them; it carries the object wherever it
+        carries an equal copy.
+        """
         return _adopt(value, self._behavior)
 
     def capturable(self, chunk: ak.Array) -> _AsRead:
-        """``chunk`` in a form that pickles (with cloudpickle, as behaviors hold lambdas) back to
-        the chunk as read."""
+        """Return ``chunk`` in a form that pickles back to the chunk as read.
+
+        It pickles with cloudpickle, as behaviors hold lambdas.
+        """
         return _AsRead(chunk)
 
     def _with_behavior(self, tt: ak.Array) -> ak.Array:
@@ -404,7 +450,8 @@ class AwkwardBackend:
             params.get("grouped", False)
         ):  # gak.join(grouped=True): awkward-only regroup post-op
             return join.join_grouped(left, right, on=on, how=how)
-        # the shared radix-hash kernel (JoinBackend prims only); local import avoids an import cycle.
+        # the shared radix-hash kernel (JoinBackend prims only); local import avoids an import
+        # cycle.
         from graphed.shuffle import join_blocks  # noqa: PLC0415
 
         return join_blocks(self, left, right, on=on, how=how)
@@ -419,7 +466,8 @@ class AwkwardBackend:
         """§6.1d's broadcast seam for this idiom: `factor` given `value`'s jagged structure.
 
         A rectilinear idiom needs nothing here, which is why the seam is optional and
-        `graphed.broadcast_like` falls back to the identity when a backend omits it."""
+        `graphed.broadcast_like` falls back to the identity when a backend omits it.
+        """
         from .functions import broadcast_arrays  # noqa: PLC0415  (functions imports this module)
 
         return broadcast_arrays(value, factor)[1]  # type: ignore[arg-type]
@@ -444,7 +492,8 @@ class AwkwardBackend:
             )
         return None
 
-    # ---- ShuffleBackend exchange half (M39 §3.0) — thin delegates to the pure `shuffle` module ----
+    # ---- ShuffleBackend exchange half (M39 §3.0) — thin delegates to the pure `shuffle`
+    # module ----
     def partition(
         self,
         block: Any,
@@ -489,8 +538,10 @@ def _typetracer(array: ak.Array) -> ak.Array:
 
 
 def from_awkward(session: Session, name: str, array: object, **descriptor: object) -> Any:
-    """Create a metadata-only source from an in-memory awkward array (form via typetracer; the real
-    array is retained only for evaluation)."""
+    """Create a metadata-only source from an in-memory awkward array.
+
+    The form comes from the typetracer; the real array is retained only for evaluation.
+    """
     real = array if isinstance(array, ak.Array) else ak.Array(array)
     return session.source(name, form=AwkwardForm(_typetracer(real)), data=real)
 

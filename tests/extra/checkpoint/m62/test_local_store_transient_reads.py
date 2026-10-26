@@ -1,4 +1,7 @@
-"""A blob that a concurrent put is replacing is briefly unopenable on Windows; ``get`` waits it out."""
+"""A blob a concurrent put is replacing is briefly unopenable on Windows.
+
+``get`` waits it out.
+"""
 
 from __future__ import annotations
 

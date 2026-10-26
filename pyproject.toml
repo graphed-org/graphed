@@ -114,12 +114,16 @@ src = ["python", "tests"]
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM", "C4", "RUF", "PLC0415"]
-ignore = ["E501"]
+select = ["E", "F", "I", "UP", "B", "SIM", "C4", "RUF", "PLC0415", "D"]
+# Public-API docstrings are added in a follow-up commit.
+ignore = ["D100", "D101", "D102", "D103", "D104", "D105", "D106", "D107"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "pep257"
 
 [tool.ruff.lint.per-file-ignores]
 # The frozen suites are restyled in their own refreeze commit.
-"tests/frozen/**" = ["I001", "RUF100"]
+"tests/frozen/**" = ["I001", "RUF100", "E501", "D"]
 
 [tool.ruff.format]
 # Immutable frozen suites (tests/frozen/**) are read-only under the §A.7 integrity rule, so they

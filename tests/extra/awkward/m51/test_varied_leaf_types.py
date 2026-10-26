@@ -1,6 +1,8 @@
-"""Every universe of a varied skim reads back from `read_varied` with its in-memory type and values: an
-XOR delta stores only same-type `T`/`?T`/`var * T`/`var * ?T` leaves, anything else is stored as-is
-under `"base"`."""
+"""Every universe of a varied skim reads back from `read_varied` as it was in memory.
+
+Type and values both round-trip: an XOR delta stores only same-type `T`/`?T`/`var * T`/`var * ?T`
+leaves, anything else is stored as-is under `"base"`.
+"""
 
 from __future__ import annotations
 
@@ -37,7 +39,10 @@ def _flat(up: Build, nominal: Build = lambda e: e.m) -> Build:
 
 
 def _nested(up: Build, nominal: Build = lambda e: e.Jet.pt) -> Build:
-    """`Jet.pt` beside a jagged `raw`, so a flat member is broadcast into the Jet lists by the zip."""
+    """`Jet.pt` beside a jagged `raw`.
+
+    So a flat member is broadcast into the Jet lists by the zip.
+    """
 
     def build(ev: Any) -> Any:
         pt = graphed.vary(nominal(ev), "s", points={"up": up(ev), "same": nominal(ev) * 2})
@@ -143,8 +148,10 @@ NULL_CASES: dict[str, tuple[Build, str]] = {
 def _write_and_check(
     build: Build, tmp_path: Any, *, exact_type: bool = True, behavior: dict[Any, Any] | None = None
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Write, read back, assert every universe equals its in-memory member; return the varied manifest
-    and awkward's own per-column metadata."""
+    """Write, read back, assert every universe equals its in-memory member.
+
+    Return the varied manifest and awkward's own per-column metadata.
+    """
     session = Session(AwkwardBackend(behavior=behavior))
     ev = from_awkward(session, "ev", ak.Array(DATA))
     record = build(ev)
@@ -169,7 +176,8 @@ def test_every_universe_reads_back_with_its_own_type_and_values(case: str, tmp_p
     manifest, _ = _write_and_check(build, tmp_path)
     for label, rep in (("s_up", up_rep), ("s_same", same_rep)):
         assert manifest[label][f"__vary_{label}__{flat}"]["representation"] == rep
-        # a "base" label also carries an xor marker naming no leaf, which a pre-"base" reader refuses
+        # a "base" label also carries an xor marker naming no leaf, which a pre-"base" reader
+        # refuses
         marker = manifest[label].get(f"requires_base__{label}__{flat}")
         assert (marker or {}).get("representation") == ("xor" if rep == "base" else None), label
 

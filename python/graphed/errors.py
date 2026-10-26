@@ -42,14 +42,20 @@ class GraphedTypeError(GraphedError):
 
 
 class OutputTypeError(GraphedTypeError):
-    """An External's value disagrees with the type its node declared; located at the declaring line."""
+    """An External's value disagrees with the type its node declared.
+
+    Located at the declaring line.
+    """
 
     def __reduce__(self) -> tuple[Any, ...]:
         return (type(self), (self.op, self.provenance, self.detail))
 
 
 class MissingFieldError(GraphedTypeError, AttributeError):
-    """``arr.<name>`` naming no field: an ill-typed ``field`` op that ``hasattr`` reads as absent."""
+    """``arr.<name>`` naming no field.
+
+    An ill-typed ``field`` op that ``hasattr`` reads as absent.
+    """
 
     def __reduce__(self) -> tuple[Any, ...]:
         return (type(self), (self.op, self.provenance, self.detail))

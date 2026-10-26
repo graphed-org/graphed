@@ -25,7 +25,7 @@ def _stage_label(stage: LoweredStage, projection: Mapping[str, frozenset[str]] |
 
 
 def _stage_inputs(graph: LoweredGraph, stage: LoweredStage) -> set[int]:
-    """The stage ids that feed this stage (external inputs of its members)."""
+    """Return the stage ids that feed this stage (external inputs of its members)."""
     member_ids = {m.node_id for m in stage.members}
     head_of: dict[int, int] = {}
     for s in graph.stages:

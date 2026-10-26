@@ -1,12 +1,14 @@
 """Retry / recovery policies for failed partitions (plan M8).
 
-When ``process(partition, resources)`` raises, the runner asks a policy to recover. A policy returns
-the partial result if it can recover, or re-raises (the runner then dead-letters the partition).
-Policies (plan M8 targets): ``retry_n | retry_smaller_chunk | retry_elsewhere | quarantine``.
+When ``process(partition, resources)`` raises, the runner asks a policy to recover. A policy
+returns the partial result if it can recover, or re-raises (the runner then dead-letters the
+partition). Policies (plan M8 targets): ``retry_n | retry_smaller_chunk | retry_elsewhere |
+quarantine``.
 
 ``RetrySmallerChunk`` is the one with teeth: it splits the partition into sub-ranges and processes
 each (recursively, down to ``min_size``), combining the sub-results — so a chunk that OOMed whole
-**succeeds split** (the M8 acceptance: "``retry_smaller_chunk`` succeeds where the original OOMed").
+**succeeds split** (the M8 acceptance: "``retry_smaller_chunk`` succeeds where the original
+OOMed").
 """
 
 from __future__ import annotations
@@ -107,8 +109,11 @@ class RetryElsewhere:
 
 @dataclass(frozen=True)
 class RetrySmallerChunk:
-    """Split the partition into ``splits`` sub-ranges and process each (recursively, to ``min_size``),
-    combining the sub-results. Recovers a chunk too big to process whole (a simulated OOM)."""
+    """Split the partition into ``splits`` sub-ranges and process each.
+
+    Each is processed recursively, to ``min_size``, and the sub-results are combined. Recovers a
+    chunk too big to process whole (a simulated OOM).
+    """
 
     splits: int = 2
     min_size: int = 1
@@ -153,7 +158,10 @@ class RetrySmallerChunk:
 
 
 def _split(p: Partition, n: int) -> list[Partition]:
-    """Deterministically split a partition's entry range into ``<= n`` contiguous sub-partitions."""
+    """Split a partition's entry range into ``<= n`` contiguous sub-partitions.
+
+    The split is deterministic.
+    """
     total = p.n_entries
     if total <= 1:
         return [p]

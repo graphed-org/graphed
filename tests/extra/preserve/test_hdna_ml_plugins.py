@@ -1,6 +1,8 @@
-"""ML External plugins on HiggsDNA's shapes: a Varied input fans out per universe (GW13), an (n, k)
-output keeps its rows (GW14), inputs keep their dtype (GW15), and a gzipped JSON payload hashes and
-loads as its plain twin (GW16)."""
+"""ML External plugins on HiggsDNA's shapes.
+
+A Varied input fans out per universe (GW13), an (n, k) output keeps its rows (GW14), inputs keep
+their dtype (GW15), and a gzipped JSON payload hashes and loads as its plain twin (GW16).
+"""
 
 from __future__ import annotations
 
@@ -61,7 +63,8 @@ def _onnx_eager(payload: bytes, x: np.ndarray) -> Any:
     return sess.run(None, {"x": x})[0]
 
 
-# ---- each plugin with a three-output model, and that model called eagerly ------------------------
+# ---- each plugin with a three-output model, and that model called
+# eagerly ------------------------
 def _onnx_case() -> tuple[ExternalPlugin, bytes, dict[str, Any], Callable[[np.ndarray], Any]]:
     payload = _onnx(W)
     return ONNX_PLUGIN, payload, ARGS, lambda x: _onnx_eager(payload, x.astype(np.float32))

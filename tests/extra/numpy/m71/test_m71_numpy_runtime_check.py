@@ -1,5 +1,8 @@
-"""m71 on numpy: a declared `map`/`apply` type is checked against the value at run time — dtype, the
-trailing shape a subarray pins, the leading axis of the first input, record fields."""
+"""m71 on numpy.
+
+A declared `map`/`apply` type is checked against the value at run time — dtype, the trailing shape
+a subarray pins, the leading axis of the first input, record fields.
+"""
 
 from __future__ import annotations
 

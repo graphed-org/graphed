@@ -1,6 +1,8 @@
-"""`graphed.Kind` is a union, and `variations` reads the lineage's registration record: a row-space
-change must not change what a nuisance is reported as, nor refuse a same-name registration the
-parent accepts."""
+"""`graphed.Kind` is a union.
+
+And `variations` reads the lineage's registration record: a row-space change must not change what a
+nuisance is reported as, nor refuse a same-name registration the parent accepts.
+"""
 
 from __future__ import annotations
 

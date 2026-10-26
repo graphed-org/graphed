@@ -1,14 +1,15 @@
-"""Multiparam correctionlib `External`s must EXECUTE through `aggregate_plan` — the plan path, not
-just recording.
+"""Multiparam correctionlib `External`s must EXECUTE through `aggregate_plan`.
+
+The plan path, not just recording.
 
 `test_correctionlib_multiparam` (frozen) pins the RECORDING side: one payload, N `systematic`
-universes as distinct nodes sharing a `content_hash`. Nothing ran them. This suite runs them through
-`aggregate_plan` — the engine every histogram plan is built on — and pins the three things the fix
-turns on:
+universes as distinct nodes sharing a `content_hash`. Nothing ran them. This suite runs them
+through `aggregate_plan` — the engine every histogram plan is built on — and pins the three things
+the fix turns on:
 
-* `aggregate_plan` auto-wires EVERY External surviving in the compiled IR from the recording session
-  (upstream corrections included), so a plan whose output cone reads a correctionlib node no longer
-  raises ``External payload '…' needs an evaluator``;
+* `aggregate_plan` auto-wires EVERY External surviving in the compiled IR from the recording
+  session (upstream corrections included), so a plan whose output cone reads a correctionlib node
+  no longer raises ``External payload '…' needs an evaluator``;
 * execution resolves each External by its ``(content_hash, params)`` key, so N universes off ONE
   payload get N evaluators — they do not collapse onto the shared payload hash;
 * the recorded evaluator is PICKLABLE (a module-level `_PluginEvaluator`, not a local closure), so
@@ -153,16 +154,21 @@ def _totals(executor: Any) -> np.ndarray:
 
 
 def test_multiparam_universes_execute_to_distinct_totals() -> None:
-    """One payload hash, three params → three evaluators. A collision onto the shared hash would tie
-    the totals; `up`/`down` bracket nominal because the SF was actually read per universe."""
+    """One payload hash, three params → three evaluators.
+
+    A collision onto the shared hash would tie the totals; `up`/`down` bracket nominal because the
+    SF was actually read per universe.
+    """
     nominal, up, down = _totals(SequentialRunner())
     assert up > nominal > down
     assert len({round(nominal, 9), round(up, 9), round(down, 9)}) == 3
 
 
 def test_the_plan_ships_to_a_process_pool() -> None:
-    """The recorded correctionlib evaluator must pickle and re-load in a worker (the pre-fix local
-    closure raised ``Can't get local object`` on plan submission)."""
+    """The recorded correctionlib evaluator must pickle and re-load in a worker.
+
+    The pre-fix local closure raised ``Can't get local object`` on plan submission.
+    """
     ProcessPoolExecutor = pytest.importorskip("graphed_exec_local").ProcessPoolExecutor
     seq = _totals(SequentialRunner())
     par = _totals(ProcessPoolExecutor(max_workers=2))
@@ -170,8 +176,10 @@ def test_the_plan_ships_to_a_process_pool() -> None:
 
 
 def test_the_recorded_evaluator_is_a_picklable_object() -> None:
-    """`preserve.record_external` records a module-level `_PluginEvaluator`, not a `<locals>` closure,
-    and it round-trips through pickle and evaluates identically."""
+    """`preserve.record_external` records a module-level `_PluginEvaluator`.
+
+    It is not a `<locals>` closure, and it round-trips through pickle and evaluates identically.
+    """
     session, _outs = _universes()
     (fn, _inputs) = next(iter(session._externals.values()))
     assert isinstance(fn, CheckedExternal) and isinstance(

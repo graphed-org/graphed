@@ -1,5 +1,8 @@
-"""m71: a declared type the installed awkward parser does not rebuild as itself (a parameterised
-``float16`` on awkward 2.14 reads back as an empty named tuple) is refused, never recorded wrong."""
+"""m71: a declared type awkward does not rebuild as itself is refused, never recorded wrong.
+
+The installed parser reads a parameterised ``float16`` on awkward 2.14 back as an empty named
+tuple.
+"""
 
 from __future__ import annotations
 

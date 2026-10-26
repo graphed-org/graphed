@@ -128,9 +128,11 @@ _AK_TWO_INPUT: dict[str, Any] = {
 
 
 def scalar_param(params: Mapping[str, Any], key: str = "scalar", dtype_key: str = "dtype") -> Any:
-    """The scalar operand a binary op recorded — back in its own dtype when it had one (M59). The
-    frontend cannot build a numpy scalar, so it records the dtype name beside the value, and a
-    value wider than the store's i64 param as text."""
+    """Return the scalar operand a binary op recorded.
+
+    Back in its own dtype when it had one (M59). The frontend cannot build a numpy scalar, so it
+    records the dtype name beside the value, and a value wider than the store's i64 param as text.
+    """
     value = params[key]
     if dtype_key not in params:
         return value
@@ -148,7 +150,10 @@ def _scalar_operands(operands: Sequence[Any], params: Mapping[str, Any]) -> list
 
 
 def _leaves(result: Any) -> list[Any]:
-    """A method result's arrays, depth-first — the order its `index` param numbers them in."""
+    """Return a method result's arrays, depth-first.
+
+    That is the order its `index` param numbers them in.
+    """
     if isinstance(result, tuple):
         return [leaf for item in result for leaf in _leaves(item)]
     return [result]
@@ -160,14 +165,19 @@ def _fields(params: Mapping[str, Any]) -> list[str]:
 
 
 def _structure(x: Any) -> str:
-    """A value's type BELOW its outer length — the part a typetracer form and a real partition
-    render identically, so one blame message reads the same on either path."""
+    """Return a value's type BELOW its outer length.
+
+    The part a typetracer form and a real partition render identically, so one blame message reads
+    the same on either path.
+    """
     return str(ak.Array(x).type).split(" * ", 1)[-1]
 
 
 def _broadcast_blame(operands: Sequence[Any], exc: ValueError) -> Exception:
-    """§6.1d: translate awkward's two-anonymous-layouts complaint into a `graphed` error naming the
-    offending FACTOR — the operand `broadcast_like` broadcasts to the value's structure.
+    """§6.1d: translate awkward's two-anonymous-layouts complaint into a `graphed` error.
+
+    The error names the offending FACTOR — the operand `broadcast_like` broadcasts to the value's
+    structure.
 
     One site for both paths: a regular-vs-regular mismatch is decidable from the typetracer forms
     and lands at record time (where `Session.record_op` re-raises this at the user's line), while a
@@ -190,8 +200,11 @@ def _broadcast_blame(operands: Sequence[Any], exc: ValueError) -> Exception:
 
 
 def _decode_call(text: str, operands: Sequence[Any]) -> Any:
-    """Rebuild a `method` op's argument structure: `{"$": i}` becomes operand `i` (M54) and
-    `{"$dtype": name, "v": item}` the numpy scalar it was recorded from."""
+    """Rebuild a `method` op's argument structure.
+
+    `{"$": i}` becomes operand `i` (M54) and `{"$dtype": name, "v": item}` the numpy scalar it was
+    recorded from.
+    """
 
     def walk(value: Any) -> Any:
         if isinstance(value, dict):
@@ -452,11 +465,14 @@ def apply(
 
 
 def _global_extremum(op: str, x: Any) -> Any:
-    """axis=None min/max/ptp need typetracer-aware handling: the typetracer's option-scalar
-    (MaybeNone) cannot be formed or subtracted, and upstream ak.ptp(axis=None) indexes its scalar
-    result. On the TYPETRACER path use awkward's own mask_identity=False inference (a plain
-    unknown scalar); the REAL path keeps awkward's default semantics untouched. ptp composes
-    max - min on the typetracer (identical kernels — not hand-rolled inference)."""
+    """axis=None min/max/ptp need typetracer-aware handling.
+
+    The typetracer's option-scalar (MaybeNone) cannot be formed or subtracted, and upstream
+    ak.ptp(axis=None) indexes its scalar result. On the TYPETRACER path use awkward's own
+    mask_identity=False inference (a plain unknown scalar); the REAL path keeps awkward's default
+    semantics untouched. ptp composes max - min on the typetracer (identical kernels — not
+    hand-rolled inference).
+    """
     tracing = ak.backend(x) == "typetracer"
     if op == "ak.ptp":
         if tracing:
@@ -469,13 +485,15 @@ def _global_extremum(op: str, x: Any) -> Any:
 
 
 def _global_moment(op: str, params: Mapping[str, Any], operands: Sequence[Any]) -> Any:
-    """axis=None std/var need the same typetracer-aware handling as _global_extremum: awkward
-    2.13.0's ak_var._impl indexes its mean scalar (`xmean[(0,) * xmean.ndim]`), which to_layout
-    refuses for the tracer's unknown scalar whatever mask_identity says. Compose the abstract
-    result from typetracer-safe kernels with awkward's own dtype rules (float32 promotes to
-    float64 on both paths, measured); the REAL path keeps ak.std/ak.var semantics untouched.
-    A weighted moment needs no special arm: the weight cannot change a scalar reduction's
-    abstract form, and the real path still applies it."""
+    """axis=None std/var need the same typetracer-aware handling as _global_extremum.
+
+    awkward 2.13.0's ak_var._impl indexes its mean scalar (`xmean[(0,) * xmean.ndim]`), which
+    to_layout refuses for the tracer's unknown scalar whatever mask_identity says. Compose the
+    abstract result from typetracer-safe kernels with awkward's own dtype rules (float32 promotes
+    to float64 on both paths, measured); the REAL path keeps ak.std/ak.var semantics untouched. A
+    weighted moment needs no special arm: the weight cannot change a scalar reduction's abstract
+    form, and the real path still applies it.
+    """
     x = operands[0]
     m1 = ak.mean(x, axis=None, mask_identity=False)
     var = ak.mean(x * x, axis=None, mask_identity=False) - m1 * m1
@@ -487,8 +505,10 @@ def _global_moment(op: str, params: Mapping[str, Any], operands: Sequence[Any]) 
 
 
 def _reduce_kwargs(op: str, params: Mapping[str, Any], operands: Sequence[Any]) -> dict[str, Any]:
-    """ak-parity reducer kwargs, present-only in params (ak's own defaults otherwise); a weighted
-    moment carries its weight as the SECOND OPERAND."""
+    """ak-parity reducer kwargs, present-only in params (ak's own defaults otherwise).
+
+    A weighted moment carries its weight as the SECOND OPERAND.
+    """
     kw: dict[str, Any] = {}
     if params.get("keepdims"):
         kw["keepdims"] = True

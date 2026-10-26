@@ -1,4 +1,4 @@
-"""``np.where``/``np.clip`` scalars on a deferred numpy array keep the dtype numpy gives them (GW4)."""
+"""``np.where``/``np.clip`` scalars on a deferred numpy array keep numpy's dtype (GW4)."""
 
 from __future__ import annotations
 

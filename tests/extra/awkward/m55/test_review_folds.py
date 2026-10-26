@@ -1,6 +1,8 @@
-"""m55 review folds: the `**tags` spelling, refusal-before-mint witnessed through the session's
-shift-after-weight diagnostic, the rollback of that diagnostic on a hand-form refusal, and the
-two widened messages."""
+"""m55 review folds.
+
+The `**tags` spelling, refusal-before-mint witnessed through the session's shift-after-weight
+diagnostic, the rollback of that diagnostic on a hand-form refusal, and the two widened messages.
+"""
 
 from __future__ import annotations
 

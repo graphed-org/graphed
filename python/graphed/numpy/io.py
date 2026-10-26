@@ -45,7 +45,8 @@ def _pa() -> Any:
         import pyarrow as pa  # noqa: PLC0415  (lazy: pyarrow is the optional extra)
     except ImportError as exc:  # pragma: no cover - exercised in the graphed base suite
         raise ImportError(
-            "parquet I/O needs pyarrow — install the optional extra: pip install 'graphed[parquet]'"
+            "parquet I/O needs pyarrow — install the optional extra: pip install "
+            "'graphed[parquet]'"
         ) from exc
     return pa
 
@@ -112,10 +113,13 @@ def from_parquet(
     steps_per_file: int = 1,
     open_files: bool = True,
 ) -> Any:
-    """A deferred RECTILINEAR record source over a parquet dataset (file / dir / glob / list).
+    """Return a deferred RECTILINEAR record source over a parquet dataset.
+
+    The dataset is a file / dir / glob / list.
 
     The form comes from the schema alone; non-primitive columns are refused by name. With
-    ``open_files=False`` no file is opened (blind partitions, R7.9)."""
+    ``open_files=False`` no file is opened (blind partitions, R7.9).
+    """
     paths = gpq.discover(path)
     if steps_per_file < 1:
         raise ValueError(f"steps_per_file must be >= 1, got {steps_per_file}")
@@ -126,9 +130,11 @@ def from_parquet(
 
 
 def _column_to_numpy(table: Any, name: str) -> np.ndarray:
-    """pandas-free column conversion: ChunkedArray.to_numpy routes through pyarrow's PANDAS SHIM
-    (found in CI, where pandas is absent — locally a sibling repo's dev deps masked it);
-    Array.to_numpy after combine_chunks does not."""
+    """pandas-free column conversion.
+
+    ChunkedArray.to_numpy routes through pyarrow's PANDAS SHIM (found in CI, where pandas is absent
+    — locally a sibling repo's dev deps masked it); Array.to_numpy after combine_chunks does not.
+    """
     return table.column(name).combine_chunks().to_numpy(zero_copy_only=False)  # type: ignore[no-any-return]
 
 
@@ -227,11 +233,13 @@ def to_parquet(
     With ``compute=False`` returns the task graph of write tasks; ``compute=True`` runs that SAME
     plan (sequential reference runner by default; any R7 executor pluggable). Exactly one source;
     the per-task read list is the M5 field-touch projection (exact for flat columns). A
-    ``destination`` containing ``://`` is an fsspec URL: the parts are written on its filesystem."""
+    ``destination`` containing ``://`` is an fsspec URL: the parts are written on its filesystem.
+    """
     if isinstance(array, Varied):
         # §6.4f: the numpy idiom hard-caps output at one 1-D column and gains no variation-aware
         # write-out — a `Varied` first positional is refused here rather than dying on §2.2's
-        # reserved-name AttributeError, pointing the analyst at the backend that DOES write variations.
+        # reserved-name AttributeError, pointing the analyst at the backend that DOES write
+        # variations.
         raise GraphedError(
             "graphed.numpy.io.to_parquet does not write variations; a numpy bag holds one 1-D "
             "column — write varied skims through the awkward backend (graphed.awkward.to_parquet)"

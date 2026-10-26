@@ -14,7 +14,10 @@ from ..errors import PreserveError
 
 
 def json_bytes(payload: bytes) -> bytes:
-    """A JSON payload's bytes, gunzipped when gzipped (CMS POGs ship correction sets as .json.gz)."""
+    """Return a JSON payload's bytes, gunzipped when gzipped.
+
+    CMS POGs ship correction sets as .json.gz.
+    """
     return gzip.decompress(payload) if payload[:2] == b"\x1f\x8b" else payload
 
 
@@ -35,8 +38,10 @@ def _canonical_json_hash_impl(domain: bytes, payload: bytes) -> str:
 
 
 def _stack_feature_columns(inputs: list[Any]) -> Any:
-    """Per-event feature arrays -> one (n_events, n_features) matrix in their common dtype; a
-    framework that needs one dtype casts it to the model's own."""
+    """Per-event feature arrays -> one (n_events, n_features) matrix in their common dtype.
+
+    A framework that needs one dtype casts it to the model's own.
+    """
     import awkward as ak  # noqa: PLC0415
     import numpy as np  # noqa: PLC0415
 
@@ -44,8 +49,10 @@ def _stack_feature_columns(inputs: list[Any]) -> Any:
 
 
 def _as_event_array(out: Any) -> Any:
-    """A model's (n,) or (n, 1) output as one value per event; (n, k, ...) as ``ak.from_numpy``
-    gives it, regular rows of k."""
+    """Return a model's (n,) or (n, 1) output as one value per event.
+
+    (n, k, ...) as ``ak.from_numpy`` gives it, regular rows of k.
+    """
     import awkward as ak  # noqa: PLC0415
     import numpy as np  # noqa: PLC0415
 
@@ -62,13 +69,14 @@ def _strip_config_names(obj: Any) -> Any:
     return obj
 
 
-# ---- M27: variadic call templates ----------------------------------------------------------------
-# params["args"] (positional) / params["kwargs"] (keyword) route a node's graph inputs to the
-# callee's REAL signature. Entries: "$i" (input slot i), ["$i", "$j"] (a group — for ML plugins,
-# stacked into one feature matrix), or — where a plugin allows it — a constant (correctionlib's
-# systematic names). Stored in the IR as canonical-JSON strings (the ParamMap is scalar-typed);
-# accepted here as either the decoded structure or the JSON string. Replay obeys the template
-# exactly; an unknown shape is a loud PreserveError, never a guess.
+# ---- M27: variadic call
+# templates ---------------------------------------------------------------- params["args"]
+# (positional) / params["kwargs"] (keyword) route a node's graph inputs to the callee's REAL
+# signature. Entries: "$i" (input slot i), ["$i", "$j"] (a group — for ML plugins, stacked into one
+# feature matrix), or — where a plugin allows it — a constant (correctionlib's systematic names).
+# Stored in the IR as canonical-JSON strings (the ParamMap is scalar-typed); accepted here as
+# either the decoded structure or the JSON string. Replay obeys the template exactly; an unknown
+# shape is a loud PreserveError, never a guess.
 
 TemplateEntry = tuple[str, Any]  # ("slot", i) | ("group", [i, ...]) | ("const", value)
 
@@ -156,12 +164,12 @@ def ml_matrix(entry: TemplateEntry, inputs: list[Any]) -> Any:
     raise PreserveError(f"constants are not valid model inputs (got {value!r})")
 
 
-# ---- M36: memoize the EXPENSIVE (model-parsing) content hashes -----------------------------------
-# A model's content hash is computed at record time AND re-verified at bundle-build time; each call
-# re-parses the model (onnx.load, torch.jit.load, keras load, jax deserialize). Cache the result by
-# the payload bytes so the same payload parses once. Bounded FIFO; keyed per (domain, bytes)
-# so distinct plugins never collide. Cold in a fresh process, so the by-value validate subprocess
-# still computes correctly.
+# ---- M36: memoize the EXPENSIVE (model-parsing) content
+# hashes ----------------------------------- A model's content hash is computed at record time AND
+# re-verified at bundle-build time; each call re-parses the model (onnx.load, torch.jit.load, keras
+# load, jax deserialize). Cache the result by the payload bytes so the same payload parses once.
+# Bounded FIFO; keyed per (domain, bytes) so distinct plugins never collide. Cold in a fresh
+# process, so the by-value validate subprocess still computes correctly.
 # keyed by the payload itself: bytes cache their hash, so a repeat with the same object is O(1)
 _HASH_MEMO: OrderedDict[tuple[str, bytes], Any] = OrderedDict()
 _HASH_MEMO_CAP = 64  # also bounds the payloads the keys keep alive

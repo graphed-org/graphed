@@ -3,7 +3,8 @@
 CI caught what the shared dev venv masked: pyarrow's ChunkedArray.to_numpy and
 DataType.to_pandas_dtype both route through pyarrow's pandas SHIM, importing pandas — which is
 not a dependency of this package. This test blocks pandas imports outright and exercises schema
-translation, materialize, partition reads, and writes."""
+translation, materialize, partition reads, and writes.
+"""
 
 from __future__ import annotations
 

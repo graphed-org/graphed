@@ -41,11 +41,13 @@ def write_plan(
     write_part: Callable[[Partition, WorkerResources], list[str]],
     services: tuple[ServiceSpec, ...] | None = None,
 ) -> Plan[list[str]]:
-    """A task graph of write tasks (R15.4 compute-disabled form): each task writes one output part
-    and returns its path; the combine concatenates path lists up the FIXED key-ordered tree, so
-    the final path list is deterministic. ``write_part`` must be picklable (a module-level
-    function, ``functools.partial`` of one, or a frozen dataclass) so the plan runs on a
-    process-pool executor unchanged. ``services`` is the plan's ``Plan.services``."""
+    """Return a task graph of write tasks (R15.4 compute-disabled form).
+
+    Each task writes one output part and returns its path; the combine concatenates path lists up
+    the FIXED key-ordered tree, so the final path list is deterministic. ``write_part`` must be
+    picklable (a module-level function, ``functools.partial`` of one, or a frozen dataclass) so the
+    plan runs on a process-pool executor unchanged. ``services`` is the plan's ``Plan.services``.
+    """
     tasks = tuple(Task(i, p) for i, p in enumerate(partitions))
     return Plan(
         process=write_part,
@@ -56,11 +58,13 @@ def write_plan(
     )
 
 
-# ---- a write as one output of a multi-output plan ------------------------------------------------
+# ---- a write as one output of a multi-output
+# plan ------------------------------------------------
 @dataclass(frozen=True, eq=False)
 class PartWrite:
-    """One part per task of ``array``, written beside a plan's reductions by
-    :func:`graphed.aggregate_plan` (``writes=``) in the same read and evaluation.
+    """One part per task of ``array``, written beside a plan's reductions.
+
+    Written by :func:`graphed.aggregate_plan` (``writes=``) in the same read and evaluation.
 
     The part lands at :func:`join_part` ``(destination, name(partition))`` for the task's partition
     as the plan holds it (a blind partition is unresolved); a ``destination`` containing ``://`` is
@@ -68,7 +72,8 @@ class PartWrite:
     backend's format. ``metadata`` values that are Arrays are evaluated per part, so a reduction
     there is THIS part's partial; any other value is ``str()``-ed once at build. ``kv`` is
     ``None`` exactly when ``metadata`` is. ``storage_options`` go to the fsspec filesystem the
-    part's directory is created on; the codec opens its own."""
+    part's directory is created on; the codec opens its own.
+    """
 
     array: Array
     destination: str
@@ -78,12 +83,16 @@ class PartWrite:
     storage_options: Mapping[str, Any] | None = None
 
 
-# ---- writer-side part naming and indexing (R15.9) ------------------------------------------------
+# ---- writer-side part naming and indexing
+# (R15.9) ------------------------------------------------
 def file_bases(keys: Sequence[Hashable], steps_per_file: int) -> dict[Hashable, int]:
-    """key -> first output-part index of that file. Keys are GENERIC: a plain uri for flat-file
-    formats, a (uri, tree) pair for container formats holding several objects per file. A key
-    listed twice is refused: a worker derives its part index from the partition alone, so two
-    partitions of one file and step would overwrite each other's part."""
+    """Key -> first output-part index of that file.
+
+    Keys are GENERIC: a plain uri for flat-file formats, a (uri, tree) pair for container formats
+    holding several objects per file. A key listed twice is refused: a worker derives its part
+    index from the partition alone, so two partitions of one file and step would overwrite each
+    other's part.
+    """
     seen: set[Hashable] = set()
     for k in keys:
         if k in seen:
@@ -93,8 +102,11 @@ def file_bases(keys: Sequence[Hashable], steps_per_file: int) -> dict[Hashable, 
 
 
 def blind_part_index(partition: Partition, bases: Mapping[Any, int]) -> int:
-    """The output-part index a worker derives from ITS OWN blind partition: file base + blind
-    step — no I/O. The base table may be keyed by ``(uri, tree)`` or plain ``uri``."""
+    """Return the output-part index a worker derives from ITS OWN blind partition.
+
+    File base + blind step — no I/O. The base table may be keyed by ``(uri, tree)`` or plain
+    ``uri``.
+    """
     if partition.blind_step is None:
         raise ValueError(f"{partition} is not blind; derive its step with step_of() instead")
     pair = (partition.uri, partition.tree)
@@ -104,8 +116,10 @@ def blind_part_index(partition: Partition, bases: Mapping[Any, int]) -> int:
 
 
 def step_of(entry_start: int, entry_stop: int, n_entries: int, steps_per_file: int) -> int:
-    """Reconstruct which step an EAGER partition is, exactly — ``entry_start`` alone is not
-    invertible (n=5, steps=3 gives starts 0, 1, 3)."""
+    """Reconstruct which step an EAGER partition is, exactly.
+
+    ``entry_start`` alone is not invertible (n=5, steps=3 gives starts 0, 1, 3).
+    """
     for s in range(steps_per_file):
         if ((s * n_entries) // steps_per_file, ((s + 1) * n_entries) // steps_per_file) == (
             entry_start,
@@ -113,7 +127,8 @@ def step_of(entry_start: int, entry_stop: int, n_entries: int, steps_per_file: i
         ):
             return s
     raise ValueError(
-        f"({entry_start}, {entry_stop}) matches none of {steps_per_file} steps over {n_entries} rows"
+        f"({entry_start}, {entry_stop}) matches none of {steps_per_file} steps over {n_entries} "
+        "rows"
     )
 
 
@@ -122,15 +137,21 @@ def part_path(destination: str, index: int, *, prefix: str = "part", suffix: str
     return join_part(destination, f"{prefix}-{index:05d}{suffix}")
 
 
-# ---- where a part lands: a local path or an fsspec URL -------------------------------------------
+# ---- where a part lands: a local path or an fsspec
+# URL -------------------------------------------
 def is_url(destination: str) -> bool:
-    """A destination containing ``://`` is an fsspec URL, as for a checkpoint store's root."""
+    """Return whether ``destination`` contains ``://``, making it an fsspec URL.
+
+    As for a checkpoint store's root.
+    """
     return "://" in destination
 
 
 def join_part(destination: str, name: str) -> str:
-    """``name`` under ``destination``: joined by ``/`` with the URL's own spelling kept, or by the
-    OS separator for a local directory."""
+    """``name`` under ``destination``.
+
+    Joined by ``/`` with the URL's own spelling kept, or by the OS separator for a local directory.
+    """
     if is_url(destination):
         # the strip stops at "://", so a scheme-only root ("memory://") stays a URL
         head, sep, tail = destination.partition("://")
@@ -147,11 +168,11 @@ def url_fs(url: str, **storage_options: Any) -> tuple[Any, str]:
             "a URL needs fsspec — install the optional extra: pip install 'graphed[checkpoint]'"
         ) from exc
     if url.startswith("dir::"):
-        # fsspec hands a "dir::" chain the wrapped path, which the dir filesystem nests under itself,
-        # and gives the options to the wrapper; the wrapped URL alone is the same root
+        # fsspec hands a "dir::" chain the wrapped path, which the dir filesystem nests under
+        # itself, and gives the options to the wrapper; the wrapped URL alone is the same root
         warnings.warn(
-            "graphed treats 'dir::<url>' as '<url>', because fsspec nests a 'dir::' chain's wrapped "
-            "path under itself; pass the wrapped URL instead",
+            "graphed treats 'dir::<url>' as '<url>', because fsspec nests a 'dir::' chain's "
+            "wrapped path under itself; pass the wrapped URL instead",
             stacklevel=3,
         )
     fs, stripped = url_to_fs(url.removeprefix("dir::"), **storage_options)
@@ -159,9 +180,11 @@ def url_fs(url: str, **storage_options: Any) -> tuple[Any, str]:
 
 
 def part_fs(path: str, **storage_options: Any) -> tuple[Any, str]:
-    """``(filesystem, path on it)`` for a part — the pair pyarrow's ``filesystem=`` takes: fsspec's
-    for a URL, with ``storage_options``, ``(None, path)`` for a local path, which never imports
-    fsspec."""
+    """``(filesystem, path on it)`` for a part.
+
+    The pair pyarrow's ``filesystem=`` takes: fsspec's for a URL, with ``storage_options``,
+    ``(None, path)`` for a local path, which never imports fsspec.
+    """
     if not is_url(path):
         return None, path
     return url_fs(path, **storage_options)
@@ -177,21 +200,25 @@ def prepare_part(path: str, **storage_options: Any) -> tuple[Any, str]:
     return fs, where
 
 
-# ---- the partitioned-source protocol (read side of the base) -------------------------------------
+# ---- the partitioned-source protocol (read side of the
+# base) -------------------------------------
 @runtime_checkable
 class PartitionedSource(Protocol):
-    """A source DATA object that can be read partition by partition — the read-side counterpart of
-    the write plan. Writers (and any partition-wise consumer) dispatch on this protocol instead of
-    materializing the whole dataset through the source's lazy loader: ``partitions`` describes the
-    dataset's partitioning (BLIND preferred — R7.9: no file opened at planning time) and
-    ``read_partition`` reads exactly one partition, restricted to ``columns`` (``None`` = the
-    source's own selection), with ``resources.open_once`` available for the file-locality
-    directive. Implemented by the parquet dataset loader and the ROOT reader integration's source.
+    """A source DATA object that can be read partition by partition.
+
+    The read-side counterpart of the write plan. Writers (and any partition-wise consumer) dispatch
+    on this protocol instead of materializing the whole dataset through the source's lazy loader:
+    ``partitions`` describes the dataset's partitioning (BLIND preferred — R7.9: no file opened at
+    planning time) and ``read_partition`` reads exactly one partition, restricted to ``columns``
+    (``None`` = the source's own selection), with ``resources.open_once`` available for the
+    file-locality directive. Implemented by the parquet dataset loader and the ROOT reader
+    integration's source.
 
     A source MAY additionally declare its own read list with an optional
     ``projected_columns(outputs) -> Sequence[str]`` — deliberately NOT a member of this Protocol,
     since adding one would make ``isinstance`` false for every source that lacks it. See
-    :func:`declared_columns`."""
+    :func:`declared_columns`.
+    """
 
     def partitions(self, steps_per_file: int) -> tuple[Partition, ...]: ...
 
@@ -201,7 +228,10 @@ class PartitionedSource(Protocol):
 
 
 def sources_read(outputs: Sequence[Any]) -> dict[int, object]:
-    """The sources ``outputs`` read, by node id: their one Session may record several datasets."""
+    """Return the sources ``outputs`` read, by node id.
+
+    Their one Session may record several datasets.
+    """
     from .systematics.registration import _source_ids  # noqa: PLC0415  (import cycle)
 
     session = outputs[0].session
@@ -210,7 +240,7 @@ def sources_read(outputs: Sequence[Any]) -> dict[int, object]:
 
 
 def declared_columns(source: object, outputs: Sequence[object]) -> tuple[str, ...] | None:
-    """The read list a source DECLARES for ``outputs``, or ``None`` when it declares none.
+    """Return the read list a source DECLARES for ``outputs``, or ``None`` when it declares none.
 
     A driver that gets an answer ships it verbatim — unsorted, undeduped, an empty answer honoured
     — and does NOT run its own column computation: a source that maps the graph's field names onto
@@ -219,7 +249,8 @@ def declared_columns(source: object, outputs: Sequence[object]) -> tuple[str, ..
     arrays that driver evaluates; the built plan carries the result, so no worker asks again.
 
     The answer is a SEQUENCE of column names — a bare ``str`` would be taken apart into its
-    characters."""
+    characters.
+    """
     hook = getattr(source, "projected_columns", None)
     if not callable(hook):
         return None

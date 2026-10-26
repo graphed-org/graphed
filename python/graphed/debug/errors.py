@@ -2,10 +2,10 @@
 
 A runtime failure inside a stage is wrapped in a ``StageError`` carrying the failing op, the **user
 source-frame chain** (filename / line / function / sub-expression text), the input forms, and the
-partition — all as plain data, so the error pickles intact and can be re-raised in the driver as the
-same formatted traceback pointing at the user's analysis line. It never degrades to an opaque string
-(plan A.3 #8). It deliberately does NOT carry the live Python traceback object (those do not pickle);
-the source-frame chain is the durable, transportable record.
+partition — all as plain data, so the error pickles intact and can be re-raised in the driver as
+the same formatted traceback pointing at the user's analysis line. It never degrades to an opaque
+string (plan A.3 #8). It deliberately does NOT carry the live Python traceback object (those do not
+pickle); the source-frame chain is the durable, transportable record.
 """
 
 from __future__ import annotations
@@ -49,8 +49,8 @@ class StageError(Exception):
         self.cause_message = cause_message
         self.opt_level = opt_level
         #: §8.1: the variation this failure belongs to. The EMPTY STRING is the single encoding of
-        #: nominal/unvaried (never the literal ``"nominal"``); several universes sharing one failing
-        #: node render sorted and joined by ``,`` (§8.2).
+        #: nominal/unvaried (never the literal ``"nominal"``); several universes sharing one
+        #: failing node render sorted and joined by ``,`` (§8.2).
         self.variation = variation
         super().__init__(self.summary())
 
@@ -67,9 +67,10 @@ class StageError(Exception):
             f"opt_level={self.opt_level}): {self.cause_type}: {self.cause_message}"
         )
 
-    # Custom pickling: Exception's default uses self.args; we carry structured fields instead, so the
-    # error round-trips byte-for-byte across a process boundary (only graphed.debug is needed to load).
-    # `__new__` reconstructs a bare instance (no __init__), then __setstate__ restores the fields.
+    # Custom pickling: Exception's default uses self.args; we carry structured fields instead, so
+    # the error round-trips byte-for-byte across a process boundary (only graphed.debug is needed
+    # to load). `__new__` reconstructs a bare instance (no __init__), then __setstate__ restores
+    # the fields.
     def __reduce__(self) -> tuple[object, tuple[type[StageError]], dict[str, object]]:
         return (self.__class__.__new__, (self.__class__,), self.__dict__.copy())
 

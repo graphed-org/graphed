@@ -1,4 +1,7 @@
-"""`to_parquet` plans name parts `part-<index>` from 0, so two collated into one destination collide."""
+"""`to_parquet` plans name parts `part-<index>` from 0.
+
+So two collated into one destination collide.
+"""
 
 from __future__ import annotations
 

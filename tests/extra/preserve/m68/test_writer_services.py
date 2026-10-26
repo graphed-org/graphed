@@ -1,5 +1,7 @@
-"""A ``to_parquet`` write plan carries the services its recording names and binds their endpoints,
-on the plain and the varied awkward writers alike."""
+"""A ``to_parquet`` write plan carries the services its recording names.
+
+It binds their endpoints, on the plain and the varied awkward writers alike.
+"""
 
 from __future__ import annotations
 

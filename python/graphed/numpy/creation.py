@@ -64,7 +64,10 @@ def full(
 def empty(
     session: Session, shape: ShapeLike, dtype: Any = float, *, name: str | None = None
 ) -> Array:
-    """Deterministic ``empty``: ZEROS by design (the determinism gate forbids uninitialized data)."""
+    """Deterministic ``empty``: ZEROS by design.
+
+    The determinism gate forbids uninitialized data.
+    """
     arr = np.zeros(_norm_shape(shape), dtype)
     return _source(session, name, f"empty[{arr.shape},{arr.dtype}]", arr)
 

@@ -1,5 +1,7 @@
-"""A served classifier over an in-memory Triton transport: it answers booleans, which the Triton
-plugin returns as float64 event scores."""
+"""A served classifier over an in-memory Triton transport.
+
+It answers booleans, which the Triton plugin returns as float64 event scores.
+"""
 
 from __future__ import annotations
 

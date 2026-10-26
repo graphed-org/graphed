@@ -27,7 +27,7 @@ def _context() -> tuple[Session, Any]:
 
 
 def _btag_weight(source: Any, scale: float = 1.0) -> Array:
-    """A per-event weight factor whose cone reaches the Jet collection."""
+    """Return a per-event weight factor whose cone reaches the Jet collection."""
     return gak.prod(1.0 + source.Jet.btag * scale, axis=1)
 
 

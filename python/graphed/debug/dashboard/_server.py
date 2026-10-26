@@ -1,18 +1,21 @@
-"""The dashboard **server** (M37): a `perspective` ``Server`` hosting the live ``stats`` table (and a
-``tasks`` table fed by the same event stream) over a Tornado app, plus two derived JSON views the
-browser polls — a merged profile **flamegraph** at ``/api/flamegraph.json`` and overall + per-worker
-**progress** at ``/api/progress.json`` (the dask-style progress bars). Browsers connect a
-``<perspective-viewer>`` to the ``/websocket`` endpoint; executors push events to the ``/ingest``
-websocket (see :class:`graphed.debug.dashboard.NetworkMonitor`). It runs its own asyncio/Tornado
-IOLoop in a daemon thread, so it is decoupled from the executor — the same server serves a local *or*
-a remote run.
+"""The dashboard **server** (M37).
+
+A `perspective` ``Server`` hosting the live ``stats`` table (and a ``tasks`` table fed by the same
+event stream) over a Tornado app, plus two derived JSON views the browser polls — a merged
+profile **flamegraph** at ``/api/flamegraph.json`` and overall + per-worker **progress** at
+``/api/progress.json`` (the dask-style progress bars). Browsers connect a ``<perspective-viewer>``
+to the ``/websocket`` endpoint; executors push events to the ``/ingest`` websocket
+(see :class:`graphed.debug.dashboard.NetworkMonitor`). It runs its own asyncio/Tornado IOLoop in a
+daemon thread, so it is decoupled from the executor — the same server serves a local *or* a remote
+run.
 
 With ``control=True`` it also relays run control: ``POST /api/control`` with JSON ``{"cmd": ...}``
 writes the command down every ``/ingest`` connection whose monitor said ``hello`` with
-``control: true`` (a :class:`NetworkMonitor` built with a ``RunControl``), which applies it to the run.
+``control: true`` (a :class:`NetworkMonitor` built with a ``RunControl``), which applies it to the
+run.
 
-perspective/tornado are imported lazily (the ``dashboard`` extra), so ``import graphed.debug`` works
-without them; :meth:`DashboardServer.start` raises a clear error if they are missing.
+perspective/tornado are imported lazily (the ``dashboard`` extra), so ``import graphed.debug``
+works without them; :meth:`DashboardServer.start` raises a clear error if they are missing.
 """
 
 from __future__ import annotations
@@ -40,8 +43,11 @@ _PHASE_CLASS = {
 
 
 class _KeyState:
-    """One task key's ingest state: ``life`` is the set of phase classes its current lifecycle has
-    seen; ``label`` is the ``(partition, n_entries)`` of its latest SUBMITTED, whatever lifecycle."""
+    """One task key's ingest state.
+
+    ``life`` is the set of phase classes its current lifecycle has seen; ``label`` is the
+    ``(partition, n_entries)`` of its latest SUBMITTED, whatever lifecycle.
+    """
 
     __slots__ = ("label", "life")
 
@@ -51,11 +57,13 @@ class _KeyState:
 
 
 class DashboardServer:
-    """Hosts the live Perspective tables and the ingest/viewer websockets. Start it, point one or
-    more executors' :class:`NetworkMonitor` at :attr:`ingest_url`, and open :attr:`url` in a browser.
-    Thread-safe: all Perspective table writes and websocket writes happen on the IOLoop thread;
-    :meth:`snapshot` reads a plain-Python mirror under a lock, and :meth:`stop` closes the ingest
-    connections through the loop."""
+    """Hosts the live Perspective tables and the ingest/viewer websockets.
+
+    Start it, point one or more executors' :class:`NetworkMonitor` at :attr:`ingest_url`, and
+    open :attr:`url` in a browser. Thread-safe: all Perspective table writes and websocket writes
+    happen on the IOLoop thread; :meth:`snapshot` reads a plain-Python mirror under a lock,
+    and :meth:`stop` closes the ingest connections through the loop.
+    """
 
     def __init__(self, host: str = "127.0.0.1", port: int = 0, *, control: bool = False) -> None:
         self._host = host
@@ -436,7 +444,10 @@ class DashboardServer:
     # ---- programmatic read (any thread) ---------------------------------
 
     def flamegraph(self) -> dict[str, Any]:
-        """The merged d3-flame-graph tree (``{name, value, children}``) across all flushes/workers."""
+        """Return the merged d3-flame-graph tree across all flushes/workers.
+
+        The tree is ``{name, value, children}``.
+        """
         with self._lock:
             return _sampler.flamegraph(self._profile_tree)
 
@@ -444,12 +455,15 @@ class DashboardServer:
         return json.dumps(self.flamegraph()).encode("utf-8")
 
     def progress(self) -> dict[str, Any]:
-        """Overall + per-worker progress for the bar chart. ``total`` is the submitted count; the
-        ``overall`` segments (finished/errored/inflight) plus the implicit pending remainder tile it.
-        ``workers`` is one row per worker that has run a task, sorted by id (deterministic order); each
-        carries its aggregate counts plus ``tasks`` — one record per task (sorted by start time, then
-        key) so the UI can render a hoverable cell per task. Records are deep-copied under the lock so
-        JSON encoding (outside the lock) never races a concurrent task update."""
+        """Overall + per-worker progress for the bar chart.
+
+        ``total`` is the submitted count; the ``overall`` segments (finished/errored/inflight) plus
+        the implicit pending remainder tile it. ``workers`` is one row per worker that has run a
+        task, sorted by id (deterministic order); each carries its aggregate counts plus ``tasks``
+        — one record per task (sorted by start time, then key) so the UI can render a hoverable
+        cell per task. Records are deep-copied under the lock so JSON encoding (outside the lock)
+        never races a concurrent task update.
+        """
         with self._lock:
             overall = {
                 k: self._stats[k]

@@ -1,9 +1,9 @@
 """C1 iteration witness — the dependency discriminator's four cases (numpy idiom, awkward-free).
 
-Pins the two hard-won distinctions the frozen suite spreads across trees, so a regression during the
-C3/C4 work trips here first: a spectator foreign nuisance (carrier varied but not by it) and a
-stacked weight (foreign nuisance in the ambient's `_tags`) both stay the union; a fresh carrier and a
-carrier that shares the foreign nuisance both fan out.
+Pins the two hard-won distinctions the frozen suite spreads across trees, so a regression during
+the C3/C4 work trips here first: a spectator foreign nuisance (carrier varied but not by it) and a
+stacked weight (foreign nuisance in the ambient's `_tags`) both stay the union; a fresh carrier and
+a carrier that shares the foreign nuisance both fan out.
 """
 
 from __future__ import annotations
@@ -43,7 +43,8 @@ def test_a_spectator_foreign_nuisance_stays_the_union() -> None:
     base = graphed.vary(x, "jes", up=x * 1.1, down=x * 0.9)  # carrier varied by jes
     supplied = graphed.vary(x * 1.1, "inner", hi=x * 9.9)  # member varied by a DIFFERENT nuisance
     stacked = graphed.vary(base, "jer", up=supplied, down=x * 0.9)
-    # inner is a spectator on a jes-varied carrier → no jer x inner joint; jer_up is supplied nominal
+    # inner is a spectator on a jes-varied carrier → no jer x inner joint; jer_up is supplied
+    # nominal
     assert not [label for label in graphed.labels(stacked) if "__" in label]
     assert graphed.universe(stacked, "jer_up").node_id == graphed.nominal(supplied).node_id
 
@@ -59,10 +60,13 @@ def test_a_carrier_sharing_the_foreign_nuisance_fans_out() -> None:
 
 
 def test_a_dependent_members_reachable_uncrossed_axis_is_refused_by_prune() -> None:
-    """The additive router (m53b) must keep the frozen prune refusal for a DEPENDENT member named
-    with a foreign axis that IS reachable (a carrier) but that the member does not cross — refused
-    loudly as "names no joint", never re-routed to additive to mint a bogus universe. Distinct from
-    the m53b `nosuch` guardrail, which is refused earlier by carrier-reachability."""
+    """The additive router (m53b) must keep the frozen prune refusal.
+
+    It is for a DEPENDENT member named with a foreign axis that IS reachable (a carrier) but that
+    the member does not cross — refused loudly as "names no joint", never re-routed to additive to
+    mint a bogus universe. Distinct from the m53b `nosuch` guardrail, which is refused earlier by
+    carrier-reachability.
+    """
     _s, record = _record()
     x = record["pt"]
     jes = graphed.vary(x, "jes", up=x * 1.1, down=x * 0.9)  # carrier varies jes ...

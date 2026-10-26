@@ -1,5 +1,8 @@
-"""An op recorded or refused inside installed third-party code names the analysis line that called
-it, and the first frame outside graphed when every other frame is installed (graphed#73)."""
+"""An op recorded or refused inside installed third-party code names its analysis line.
+
+That is the analysis line that called it, and the first frame outside graphed when every other
+frame is installed (graphed#73).
+"""
 
 from __future__ import annotations
 
@@ -43,7 +46,10 @@ def _correction() -> Any:
 
 
 def _fake_lib() -> types.ModuleType:
-    """A module whose code object says it lives in site-packages, as an installed library's does."""
+    """Return a module whose code object says it lives in site-packages.
+
+    As an installed library's does.
+    """
     module = types.ModuleType("gw73_fakelib.mod")
     exec(compile("def truth(x):\n    return bool(x)\n", FAKE_LIB, "exec"), module.__dict__)
     return module

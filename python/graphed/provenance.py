@@ -1,9 +1,9 @@
 """Provenance capture (real implementation, M3 — replaces the M2 stub).
 
 Captures the first stack frame outside the ``graphed*`` packages: filename, line number, the
-enclosing function, and the **sub-expression source text** (via ``executing``) so a node maps to the
-exact piece of user code that created it. Capture is stateless and therefore thread-safe (it only
-reads the calling thread's own stack). It is toggleable so builds can opt out of the overhead.
+enclosing function, and the **sub-expression source text** (via ``executing``) so a node maps to
+the exact piece of user code that created it. Capture is stateless and therefore thread-safe (it
+only reads the calling thread's own stack). It is toggleable so builds can opt out of the overhead.
 """
 
 from __future__ import annotations
@@ -106,8 +106,10 @@ def _source_text(frame: FrameType) -> str:
 
 
 def capture() -> Provenance:
-    """Return provenance for the user's line: the first stack frame outside the graphed* packages and
-    outside installed third-party code, else the first frame outside graphed*.
+    """Return provenance for the user's line.
+
+    The first stack frame outside the graphed* packages and outside installed third-party code,
+    else the first frame outside graphed*.
 
     Walks the frame chain directly (`f_back`) rather than `inspect.stack()`, which builds a
     `FrameInfo` — reading and `stat`ing the source file — for EVERY frame before we discard all but

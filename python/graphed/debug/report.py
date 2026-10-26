@@ -2,8 +2,8 @@
 
 ``RunRecorder`` is a monitor that records every event at the driver and forwards to an optional
 inner monitor (a dashboard). ``report()`` folds what arrived since the previous report into a
-``RunReport``: per task its state, worker, duration and error; the run's outcome, its ``StageError``
-and the environment digest a bundle would record.
+``RunReport``: per task its state, worker, duration and error; the run's outcome, its
+``StageError`` and the environment digest a bundle would record.
 """
 
 from __future__ import annotations
@@ -145,9 +145,12 @@ def _fold(key: int, events: list[TaskEvent]) -> TaskRecord:
 
 
 class RunRecorder:
-    """A ``Monitor`` that records a run's events for ``report()``, then forwards every call to
-    ``inner``. It defines neither ``lean_events`` nor ``worker_monitor_factory``, so the executor
-    routes the full stream through the driver, and it opts into ``complete_events``."""
+    """A ``Monitor`` that records a run's events for ``report()``.
+
+    It forwards every call to ``inner``. It defines neither ``lean_events`` nor
+    ``worker_monitor_factory``, so the executor routes the full stream through the driver, and it
+    opts into ``complete_events``.
+    """
 
     complete_events = True
 
@@ -179,9 +182,12 @@ class RunRecorder:
         container_digest: str | None = None,
         endpoints: Mapping[str, str] | None = None,
     ) -> RunReport:
-        """Fold the events received since the previous ``report()`` (or construction) into a
-        ``RunReport`` of ``result`` or of the raised ``error`` — exactly one of them; ``endpoints``
-        records where the run reached each service."""
+        """Fold the events received since the previous ``report()`` into a ``RunReport``.
+
+        The events since construction count for the first; the report is of ``result`` or of the
+        raised ``error`` — exactly one of them; ``endpoints`` records where the run reached each
+        service.
+        """
         if (result is None) == (error is None):
             raise ValueError("RunRecorder.report needs exactly one of result= or error=")
         from graphed.preserve import capture_environment, fingerprint  # noqa: PLC0415

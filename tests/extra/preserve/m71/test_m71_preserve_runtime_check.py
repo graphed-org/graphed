@@ -1,5 +1,8 @@
-"""A preserve External's declaration is checked at run time: ``output_type=``, else the plugin's
-static leaf ``output_dtype``; a disagreeing value is refused at the declaring line."""
+"""A preserve External's declaration is checked at run time.
+
+``output_type=``, else the plugin's static leaf ``output_dtype``; a disagreeing value is refused at
+the declaring line.
+"""
 
 from __future__ import annotations
 

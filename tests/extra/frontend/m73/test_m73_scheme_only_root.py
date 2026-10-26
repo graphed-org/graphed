@@ -1,4 +1,7 @@
-"""A scheme-only URL destination ("memory://") stays a URL: parts land on fsspec, never in the cwd."""
+"""A scheme-only URL destination ("memory://") stays a URL.
+
+Parts land on fsspec, never in the cwd.
+"""
 
 from __future__ import annotations
 

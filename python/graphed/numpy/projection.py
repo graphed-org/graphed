@@ -1,9 +1,10 @@
 """Necessary-buffer (column) projection for the numpy backend via field-touch tracking (plan M5).
 
-Replays the recorded computation on lightweight tracers that record which (source, column) pairs are
-actually read — record sources project to only their touched fields; flat sources are whole-buffer.
-Opaque `map` ops honor the on-fail policy. This is the numpy analogue of graphed-awkward's reporting
-typetracer (the user asked for a genuine projection here, not trivial all-inputs).
+Replays the recorded computation on lightweight tracers that record which (source, column) pairs
+are actually read — record sources project to only their touched fields; flat sources are
+whole-buffer. Opaque `map` ops honor the on-fail policy. This is the numpy analogue of
+graphed-awkward's reporting typetracer (the user asked for a genuine projection here, not trivial
+all-inputs).
 """
 
 from __future__ import annotations
@@ -16,10 +17,13 @@ from graphed import CONSERVATIVE, Array, Projection, expanding, handle_opaque
 
 @dataclass(frozen=True)
 class _Tracer:
-    """A projection tracer: the (source, column) pairs read so far, and — if still a live record — a
-    per-field provenance map ``field_name -> (source, source_column)``. A single-source record maps
-    every field to its own source; a JOIN output (M40) maps each field to WHICHEVER side it came from,
-    so a later ``field`` access on the joined record is attributed to the correct source."""
+    """A projection tracer.
+
+    The (source, column) pairs read so far, and — if still a live record — a per-field provenance
+    map ``field_name -> (source, source_column)``. A single-source record maps every field to its
+    own source; a JOIN output (M40) maps each field to WHICHEVER side it came from, so a later
+    ``field`` access on the joined record is attributed to the correct source.
+    """
 
     touched: frozenset[tuple[str, str]]
     fields: Mapping[str, tuple[str, str]] | None

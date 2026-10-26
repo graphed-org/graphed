@@ -2,8 +2,8 @@
 
 The frozen m49 debug anchors fail inside a fused stage, so they witness the inline member loop and
 its `member_index`. This is the other dispatch point: a boundary reduction never fuses, so its
-failure must arrive keyed `(node_id, None)` — a hook handed a member index there would mis-index the
-label channel, and returning nothing must still leave the original exception alone.
+failure must arrive keyed `(node_id, None)` — a hook handed a member index there would mis-index
+the label channel, and returning nothing must still leave the original exception alone.
 """
 
 from __future__ import annotations

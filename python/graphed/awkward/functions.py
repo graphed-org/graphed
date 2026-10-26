@@ -27,12 +27,16 @@ from .backend import AwkwardForm, astype_form, broadcast_form
 def join(
     left: Array, right: Array, *, on: Sequence[str], how: str = "inner", grouped: bool = False
 ) -> Array:
-    """The awkward-only ``gak.join`` verb (plan §3.1, a4). ``grouped=False`` is a thin alias to the
-    neutral :func:`graphed.join` (relational, SQL-*duplicating*). ``grouped=True`` adds the awkward-only
-    convenience: the relational result regrouped by a deterministic ``ak.unflatten`` — one sublist per
-    matching build row — flattening back to the relational result. The grouped shape lives ONLY here
-    (numpy has no ``gak``), so the neutral ``graphed.join`` rejects ``grouped`` outright."""
-    # local imports: the neutral shuffle/join surface, kept off module-load to avoid an import cycle.
+    """Return the awkward-only ``gak.join`` verb (plan §3.1, a4).
+
+    ``grouped=False`` is a thin alias to the neutral :func:`graphed.join` (relational,
+    SQL-*duplicating*). ``grouped=True`` adds the awkward-only convenience: the relational result
+    regrouped by a deterministic ``ak.unflatten`` — one sublist per matching build row — flattening
+    back to the relational result. The grouped shape lives ONLY here (numpy has no ``gak``), so the
+    neutral ``graphed.join`` rejects ``grouped`` outright.
+    """
+    # local imports: the neutral shuffle/join surface, kept off module-load to avoid an import
+    # cycle.
     import graphed  # noqa: PLC0415
     from graphed.errors import GraphedError  # noqa: PLC0415
     from graphed.shuffle import JOINKEY  # noqa: PLC0415
@@ -41,14 +45,16 @@ def join(
         return graphed.join(left, right, on=on, how=how)
     if left.session is not right.session:
         raise GraphedError(
-            "gak.join: left and right must belong to the same Session; record both into one (a reader's session=)"
+            "gak.join: left and right must belong to the same Session; record both into one (a "
+            "reader's session=)"
         )
     session = left.session
     lk = graphed.pack_key(left, on=on)
     rk = graphed.pack_key(right, on=on)
     le = session.record_exchange(lk, {"scheme": "hash", "key": JOINKEY})
     re = session.record_exchange(rk, {"scheme": "hash", "key": JOINKEY})
-    # same co-partitioning + full-key coalescing as graphed.join; grouped flips the Join to the regroup post-op.
+    # same co-partitioning + full-key coalescing as graphed.join; grouped flips the Join to the
+    # regroup post-op.
     return session.record_join(
         le, re, {"on": ",".join([*on, JOINKEY]), "how": how, "grouped": True}
     )
@@ -129,7 +135,10 @@ def cartesian(
 def _structure_params(
     *, with_name: str | None, parameters: Mapping[str, ParamValue] | None
 ) -> dict[str, ParamValue]:
-    """The shared inline record-naming/parameter kwargs (present-only; JSON for the dict)."""
+    """Return the shared inline record-naming/parameter kwargs.
+
+    Present-only; JSON for the dict.
+    """
     out: dict[str, ParamValue] = {}
     if with_name is not None:
         out["with_name"] = with_name
@@ -145,9 +154,11 @@ def zip(
     with_name: str | None = None,
     parameters: Mapping[str, ParamValue] | None = None,
 ) -> Array:
-    """``ak.zip`` parity: a mapping makes named records, a SEQUENCE makes tuple records
-    (fields "0", "1", ...); ``depth_limit=1`` builds an events-level record of collections
-    without broadcasting their jaggedness together."""
+    """``ak.zip`` parity: a mapping makes named records, a SEQUENCE makes tuple records.
+
+    Tuple fields are "0", "1", ...; ``depth_limit=1`` builds an events-level record of collections
+    without broadcasting their jaggedness together.
+    """
     if isinstance(fields, Mapping):
         arrays = list(fields.values())
         params: dict[str, ParamValue] = {"fields": ",".join(fields.keys())}
@@ -198,11 +209,13 @@ def _reduce(
     initial: float | None = None,
     weight: Array | None = None,
 ) -> Array:
-    """Record one awkward reduction under the M12/M16 STRUCTURAL RULE: reducing over the event
-    (partitioned) axis — axis None or 0 — is a stage boundary executed by the M7 tree reduction;
-    an inner-axis (per-event) reduction is partition-local and fusible. The ak parity kwargs are
-    recorded PRESENT-ONLY (awkward's own defaults apply when absent); a weight is a second
-    INPUT, not a parameter."""
+    """Record one awkward reduction under the M12/M16 STRUCTURAL RULE.
+
+    Reducing over the event (partitioned) axis — axis None or 0 — is a stage boundary executed by
+    the M7 tree reduction; an inner-axis (per-event) reduction is partition-local and fusible. The
+    ak parity kwargs are recorded PRESENT-ONLY (awkward's own defaults apply when absent); a weight
+    is a second INPUT, not a parameter.
+    """
     params: dict[str, object] = {"axis": "none" if axis is None else axis}
     if extra:
         params.update(extra)
@@ -466,7 +479,7 @@ def where(cond: Array, a: object, b: object) -> Array:
 
 
 def _dtype_name(dtype: npt.DTypeLike) -> str:
-    """A dtype read as awkward reads one (``np.dtype``), recorded by name."""
+    """Return a dtype read as awkward reads one (``np.dtype``), recorded by name."""
     return np.dtype(dtype).name
 
 
@@ -481,12 +494,13 @@ def ones_like(arr: Array, *, dtype: npt.DTypeLike = None) -> Array:
     return arr.session.record_op("ak.ones_like", [arr], params)
 
 
-# ---- M28: variadic call templates for the recorded externals --------------------------------------
-# The template ("$i" slots, [..] groups, constants where the callee allows) is PRESERVED NODE
-# CONTENT: it rides the IR as canonical JSON, and record-time evaluation materializes THE SAME
-# template the preservation replay obeys — agreement by construction. Descriptors on this path
-# use the content-identity hash conventions shared with graphed-preserve, and params carry no
-# filesystem paths. The template-less calls below remain the M3 path, byte-for-byte.
+# ---- M28: variadic call templates for the recorded
+# externals -------------------------------------- The template ("$i" slots, [..] groups, constants
+# where the callee allows) is PRESERVED NODE CONTENT: it rides the IR as canonical JSON, and
+# record-time evaluation materializes THE SAME template the preservation replay obeys — agreement
+# by construction. Descriptors on this path use the content-identity hash conventions shared with
+# graphed-preserve, and params carry no filesystem paths. The template-less calls below remain the
+# M3 path, byte-for-byte.
 
 
 def _payload_bytes(payload: str | bytes) -> bytes:
@@ -547,7 +561,8 @@ class _TemplateExternal:
     still records the user's ``runner``, whose inference session may be configured (providers,
     devices) in ways the plugin's CPU-only ``load`` would not reproduce.
 
-    No cloudpickle: these payloads are preservable, not opaque (§A.3.1)."""
+    No cloudpickle: these payloads are preservable, not opaque (§A.3.1).
+    """
 
     kind: str
     payload: bytes
@@ -599,7 +614,8 @@ def apply_correction(
     plugin, rebuilt from the payload bytes under the recorded template, so ``evaluator`` is
     ignored: the two cannot diverge, and in-process gets the plugin's flat-buffer evaluation
     instead of correctionlib's per-call ``ak.transform`` wrapper. The recorded type is the
-    broadcast of every slotted input, as that wrapper broadcasts them."""
+    broadcast of every slotted input, as that wrapper broadcasts them.
+    """
     # recorded only when set, so a regular correction's node identity is what it always was
     which: dict[str, ParamValue] = {"compound": True} if compound else {}
     if args is None:
@@ -650,7 +666,9 @@ def onnx_inference(
     Without them: the original M3 recording, unchanged (``payload`` must then be a path).
 
     Out-of-process backends re-run the model canonically from the payload; ``runner`` is only the
-    in-process eager path, so it must be the plugin's own inference (a wrapper diverges by backend)."""
+    in-process eager path, so it must be the plugin's own inference (a wrapper diverges by
+    backend).
+    """
     if args is None and kwargs is None:
         return inputs[0].session.record_external(
             "onnx", runner, list(inputs), {"path": str(payload)}
@@ -731,8 +749,10 @@ def pad_none(arr: Array, target: int, axis: int = 1, *, clip: bool = False) -> A
 
 
 def unflatten(arr: Array, counts: Array | int, axis: int = 0) -> Array:
-    """``ak.unflatten``'s counts is "an integer or a one-dimensional array of integers"; an integer
-    is a PARAMETER, not an input, so it never enters the graph as an edge."""
+    """``ak.unflatten``'s counts is "an integer or a one-dimensional array of integers".
+
+    An integer is a PARAMETER, not an input, so it never enters the graph as an edge.
+    """
     if isinstance(counts, int):
         return arr.session.record_op("ak.unflatten", [arr], {"axis": axis, "counts": counts})
     return arr.session.record_op("ak.unflatten", [arr, counts], {"axis": axis})
@@ -844,8 +864,11 @@ def to_list(arr: Array) -> list[object]:
 
 # ---- M18: behaviors (dask-awkward parity plan P2) ---------------------------------------------
 def with_name(arr: Array, name: str) -> Array:
-    """Name the records; with a behavior dict registered on the backend, behavior properties
-    (vector's .pt/.mass) then work through plain attribute access."""
+    """Name the records.
+
+    With a behavior dict registered on the backend, behavior properties (vector's .pt/.mass) then
+    work through plain attribute access.
+    """
     return arr.session.record_op("ak.with_name", [arr], {"name": name})
 
 
@@ -864,12 +887,12 @@ def fields(arr: Array) -> list[str]:
 
 
 def type_of(arr: Array) -> str:
-    """The awkward type string from the FORM (pure metadata: records nothing)."""
+    """Return the awkward type string from the FORM (pure metadata: records nothing)."""
     return str(arr.session.form(arr).describe())
 
 
 def backend_of(arr: Array) -> str:
-    """The session's backend class name (pure metadata: records nothing)."""
+    """Return the session's backend class name (pure metadata: records nothing)."""
     return type(arr.session.backend).__name__
 
 
@@ -947,7 +970,7 @@ class GakArgFixture:
 
 
 def _echo(*values: object, **_kwargs: object) -> object:
-    """A stand-in payload evaluator for the two External-recording fixtures below."""
+    """Return a stand-in payload evaluator for the two External-recording fixtures below."""
     return values[0]
 
 

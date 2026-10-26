@@ -30,9 +30,12 @@ def load_correctionlib(payload: bytes, params: Mapping[str, Any]) -> Any:
 
 
 def _peel_layout(layout: Any) -> tuple[list[tuple[str, Any]], Any] | None:
-    """Split a ListOffset/IndexedOption stack over a 1-D NumpyArray into its layer buffers
-    (outer to inner, option layers projected away) and the flat data, or ``None`` if it is
-    anything else. Parameters (strings, named records) disqualify: not a numeric column."""
+    """Split a ListOffset/IndexedOption stack over a 1-D NumpyArray into its layers.
+
+    The result is the layer buffers (outer to inner, option layers projected away) and the flat
+    data, or ``None`` if it is anything else. Parameters (strings, named records) disqualify: not a
+    numeric column.
+    """
     import awkward as ak  # noqa: PLC0415
     import numpy as np  # noqa: PLC0415
 
@@ -88,7 +91,8 @@ def _flat_buffer_fast_path(evaluate: Callable[..., Any], call: list[Any]) -> Any
     jagged option-typed evaluation and is redundant when every array argument already shares one
     layout. The guard is structural equality of every offsets/index buffer, so the values, the None
     mask and the type of the rebuilt result are the ones the wrapper would have produced. ``None``
-    means "not that shape" — the caller falls back to the dispatched call."""
+    means "not that shape" — the caller falls back to the dispatched call.
+    """
     import awkward as ak  # noqa: PLC0415
     import numpy as np  # noqa: PLC0415
 
@@ -116,11 +120,14 @@ def _flat_buffer_fast_path(evaluate: Callable[..., Any], call: list[Any]) -> Any
 
 
 def _resolve(cset: Any, name: str, compound: bool) -> Any:
-    """A *compound* correction (the JEC L1L2L3 stack) lives in ``cset.compound``, not in ``cset``,
-    and the schema lets one name sit in both: ``compound`` searches only the compound list, else a
+    """Resolve a correction name in ``cset`` or ``cset.compound``.
+
+    A *compound* correction (the JEC L1L2L3 stack) lives in ``cset.compound``, not in ``cset``, and
+    the schema lets one name sit in both: ``compound`` searches only the compound list, else a
     regular correction wins and the compound list is the fallback. Both ``__getitem__``s raise
     ``IndexError`` on a miss instead of ``KeyError``, so membership is tested against the key sets
-    rather than caught."""
+    rather than caught.
+    """
     if not compound and name in set(cset):
         return cset[name]
     if name in set(cset.compound):

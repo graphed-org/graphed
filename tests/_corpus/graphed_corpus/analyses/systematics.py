@@ -23,7 +23,7 @@ from ..histograms import STABLE_DECIMALS
 
 
 def _btag_weight(jets: ak.Array, *, variation: str) -> ak.Array:
-    """A correctionlib-style b-tag scale factor as a per-event weight (weight systematic).
+    """Return a correctionlib-style b-tag scale factor as a per-event weight (weight systematic).
 
     Stands in for a real correctionlib JSON evaluation; M3/M9 replace this with an External node
     whose PayloadDescriptor content-hashes the correction set.
@@ -111,10 +111,11 @@ def ttbar_joint_reference(
     observable and binning are `ttbar_region`'s. Contents are returned unrounded — rounding is the
     comparison helpers' job (:func:`~graphed_corpus.histograms.bin_values`).
 
-    The two knobs isolate where the two axes' cross term comes from: `pt_dependent=False` falls back
-    to the flat +-3% rule, leaving only JES selection migration; `freeze_selection=True` additionally
-    takes the jet and event selection from nominal kinematics while still evaluating the observable
-    and the SF at the shifted pT, which removes the migration too and so leaves no cross term at all.
+    The two knobs isolate where the two axes' cross term comes from: `pt_dependent=False` falls
+    back to the flat +-3% rule, leaving only JES selection migration; `freeze_selection=True`
+    additionally takes the jet and event selection from nominal kinematics while still evaluating
+    the observable and the SF at the shifted pT, which removes the migration too and so leaves no
+    cross term at all.
     """
     shifted = _apply_jes(events.Jet, variation=jes)
     selector = events.Jet if freeze_selection else shifted
@@ -131,8 +132,10 @@ def ttbar_joint_reference(
 
 
 def ttgamma_region(events: ak.Array, *, variation: str) -> Hist:
-    """TTGamma-style slice: >=1 photon pt>20, >=1 muon pt>30, >=2 jets pt>25; photon-pt observable
-    with a photon-ID scale factor as a weight systematic (pho_up/pho_down)."""
+    """TTGamma-style slice: >=1 photon pt>20, >=1 muon pt>30, >=2 jets pt>25.
+
+    photon-pt observable with a photon-ID scale factor as a weight systematic (pho_up/pho_down).
+    """
     photons = events.Photon[events.Photon.pt > 20]
     muons = events.Muon[events.Muon.pt > 30]
     jets = _apply_jes(events.Jet, variation=variation)

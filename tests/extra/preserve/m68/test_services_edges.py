@@ -1,7 +1,9 @@
-"""Service-surface edges the frozen m68 suite leaves untaken: pickling (specs ride a stdlib-pickled
-``Plan`` to a driver job; ``UnboundService`` crosses back from a worker), two more refused endpoint
-forms, a literal Triton url whose scheme no client speaks, a hashable spec with a recipe, and a
-``RunReport`` pickled before it had ``endpoints``."""
+"""Service-surface edges the frozen m68 suite leaves untaken.
+
+Pickling (specs ride a stdlib-pickled ``Plan`` to a driver job; ``UnboundService`` crosses back
+from a worker), two more refused endpoint forms, a literal Triton url whose scheme no client
+speaks, a hashable spec with a recipe, and a ``RunReport`` pickled before it had ``endpoints``.
+"""
 
 from __future__ import annotations
 
@@ -114,7 +116,10 @@ def test_a_spec_with_a_recipe_hashes() -> None:
 
 
 class _Pickled:
-    """Pickles to a stream that builds ``cls`` from ``state`` without ``__init__``, as 0.0.6 wrote it."""
+    """Pickles to a stream that builds ``cls`` from ``state`` without ``__init__``.
+
+    As 0.0.6 wrote it.
+    """
 
     def __init__(self, cls: type, state: dict[str, Any]) -> None:
         self.cls, self.state = cls, state

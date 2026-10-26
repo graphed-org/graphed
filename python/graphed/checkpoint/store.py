@@ -7,9 +7,9 @@ same parts at a URL):
   (write to a temp file in the same directory, ``fsync``, then ``rename``), so an interrupted write
   never leaves a torn object visible. Writes are idempotent: the same content always maps to the
   same name, so re-running a task is a no-op (cache-poisoning-safe — the name *is* the hash).
-- **journal.log** — an append-only manifest of completed tasks (one JSON line per task, ``fsync``'d).
-  Resume replays it to learn what is already done. A torn trailing line (a crash mid-append) is
-  ignored on replay, so a half-written journal never corrupts recovery.
+- **journal.log** — an append-only manifest of completed tasks (one JSON line per task,
+  ``fsync``'d). Resume replays it to learn what is already done. A torn trailing line (a crash
+  mid-append) is ignored on replay, so a half-written journal never corrupts recovery.
 - **dead_letter.log** — an append-only set of failures (the harvested ``StageError`` descriptor +
   partition + provenance), so a poison partition is recorded reproducibly rather than lost.
 
@@ -33,10 +33,14 @@ from typing import Any, Protocol, runtime_checkable
 
 @dataclass(frozen=True)
 class JournalEntry:
-    """One completed task recorded in the manifest. M39 adds ``stage`` (which pipeline stage the
-    block belongs to — ``map_write``/``gather_join``/``manifest``/…) and ``deps`` (hashes naming a
-    gather block's upstream inputs: the blocks themselves, or one blob that lists them), so a multi-stage shuffle resumes with the right dependency
-    structure. Both default empty, so a V1 single-stage entry is unchanged."""
+    """One completed task recorded in the manifest.
+
+    M39 adds ``stage`` (which pipeline stage the block belongs to —
+    ``map_write``/``gather_join``/``manifest``/…) and ``deps`` (hashes naming a gather block's
+    upstream inputs: the blocks themselves, or one blob that lists them), so a multi-stage shuffle
+    resumes with the right dependency structure. Both default empty, so a V1 single-stage entry is
+    unchanged.
+    """
 
     task_id: str
     partition: str  # a human-readable partition tag (uri@start:stop), for audit
@@ -50,12 +54,12 @@ ENVIRONMENT_JOURNAL = "journal.environment.log"
 
 
 def _record_line(record: Mapping[str, object]) -> str:
-    """The one serialization of a journal or dead-letter record, shared by every store."""
+    """Return the one serialization of a journal or dead-letter record, shared by every store."""
     return json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n"
 
 
 def _parse_record(raw: str | bytes) -> Any:
-    """A parsed record, or ``None`` for a torn one (an interrupted append, or bad UTF-8)."""
+    """Return a parsed record, or ``None`` for a torn one (an interrupted append, or bad UTF-8)."""
     try:
         return json.loads(raw)
     except ValueError:
@@ -76,16 +80,21 @@ def _done_record(
 
 
 class Completed(dict[str, JournalEntry]):
-    """``completed()``'s mapping of task records; ``environments`` holds the environment records
-    (``stage == "environment"``) the same read set aside."""
+    """``completed()``'s mapping of task records.
+
+    ``environments`` holds the environment records (``stage == "environment"``) the same read set
+    aside.
+    """
 
     environments: tuple[JournalEntry, ...] = ()
 
 
 def _replay(records: Iterable[Any], present: Callable[[str], bool]) -> Completed:
-    """``task_id -> JournalEntry`` from records in write order (the later record wins), honouring
-    only a record whose blob is present (a journal line can outrace its object write across a
-    crash)."""
+    """Replay records in write order into ``task_id -> JournalEntry``.
+
+    The later record wins, honouring only a record whose blob is present (a journal line can
+    outrace its object write across a crash).
+    """
     done = Completed()
     environments = []
     for rec in records:
@@ -107,12 +116,14 @@ def _replay(records: Iterable[Any], present: Callable[[str], bool]) -> Completed
 
 @runtime_checkable
 class CheckpointStore(Protocol):
-    """The store the resumable runners take: content-addressed blobs, a replayable journal of
-    completed tasks, and a dead-letter set.
+    """The store the resumable runners take.
+
+    content-addressed blobs, a replayable journal of completed tasks, and a dead-letter set.
 
     Contract beyond the signatures: ``get`` returns ``None`` for bytes that do not hash to their
-    name (a corrupted result is recomputed, never served), and concurrent ``put`` of identical bytes
-    never fails."""
+    name (a corrupted result is recomputed, never served), and concurrent ``put`` of identical
+    bytes never fails.
+    """
 
     def put(self, data: bytes) -> str: ...
 
@@ -139,9 +150,10 @@ class Store:
     """A content-addressed, append-only, crash-safe checkpoint store on the local filesystem.
 
     M39 (§6.3/§7.3): with ``node=None`` this is the V1 single-writer store — one ``journal.log``,
-    byte-for-byte the M8 behaviour. With ``node="A"`` it writes its OWN ``journal.A.log`` (so N nodes
-    checkpointing shuffle intermediates to one root never contend on a shared append), and
-    :meth:`completed` replays the UNION of every writer's journal."""
+    byte-for-byte the M8 behaviour. With ``node="A"`` it writes its OWN ``journal.A.log`` (so N
+    nodes checkpointing shuffle intermediates to one root never contend on a shared append), and
+    :meth:`completed` replays the UNION of every writer's journal.
+    """
 
     def __init__(self, root: str | os.PathLike[str], node: str | None = None) -> None:
         self.root = Path(root)
@@ -161,8 +173,9 @@ class Store:
     def put(self, data: bytes) -> str:
         """Store ``data`` under its content hash, atomically and idempotently. Returns the hash.
 
-        A present blob is not read back; one of the wrong size, or that this instance's ``get`` found
-        not to verify, is rewritten."""
+        A present blob is not read back; one of the wrong size, or that this instance's ``get``
+        found not to verify, is rewritten.
+        """
         digest = self.content_hash(data)
         if digest in self._bad or self._blob_size(digest) != len(data):
             self._atomic_write(digest, data)
@@ -179,7 +192,10 @@ class Store:
         return (self.objects / digest).exists()
 
     def get(self, digest: str) -> bytes | None:
-        """The blob named ``digest``, or ``None`` when it is absent or its bytes do not hash to it."""
+        """Return the blob named ``digest``.
+
+        ``None`` when it is absent or its bytes do not hash to it.
+        """
         path = self.objects / digest
         backoff = iter(_READ_BACKOFF)
         while True:
@@ -188,7 +204,8 @@ class Store:
             except FileNotFoundError:
                 return None
             except PermissionError:
-                # Windows: a blob a concurrent put is replacing cannot be opened until the rename lands
+                # Windows: a blob a concurrent put is replacing cannot be opened until the rename
+                # lands
                 delay = next(backoff, None)
                 if delay is None:
                     raise
@@ -218,9 +235,12 @@ class Store:
         )
 
     def completed(self) -> Completed:
-        """Replay the UNION of every writer's journal (``journal.log`` + ``journal.<node>.log``) into
-        ``task_id -> JournalEntry`` (last write wins, deterministic file order). A torn trailing line
-        (interrupted append) is skipped, never fatal."""
+        """Replay the UNION of every writer's journal into ``task_id -> JournalEntry``.
+
+        The journals are ``journal.log`` + ``journal.<node>.log``; the last write wins, in
+        deterministic file order. A torn trailing line (interrupted append) is skipped, never
+        fatal.
+        """
         journals = sorted(self.root.glob("journal*.log"))
         return _replay((rec for path in journals for rec in self._read_lines(path)), self.has_blob)
 

@@ -1,5 +1,8 @@
-"""`project_buffers_many` answers the union of several outputs' buffer needs from ONE reporting
-typetracer per source, where a per-output `project_buffers` loop builds one per source per output."""
+"""`project_buffers_many` answers several outputs' buffer needs from one typetracer.
+
+It answers their union from ONE reporting typetracer per source, where a per-output
+`project_buffers` loop builds one per source per output.
+"""
 
 from __future__ import annotations
 
@@ -50,8 +53,11 @@ def _outputs(opaque: bool = False) -> tuple[Session, list[Any]]:
 
 
 def _union(projections: Sequence[BufferProjection]) -> dict[str, dict[str, BufferNeed]]:
-    """Per-output needs merged by the module's rule: DATA wins, and an OFFSETS path is dropped when a
-    DATA path at or under it already brings its structure."""
+    """Per-output needs merged by the module's rule.
+
+    DATA wins, and an OFFSETS path is dropped when a DATA path at or under it already brings its
+    structure.
+    """
     merged: dict[str, dict[str, BufferNeed]] = {}
     for projection in projections:
         for source, needs in projection.read_buffers.items():

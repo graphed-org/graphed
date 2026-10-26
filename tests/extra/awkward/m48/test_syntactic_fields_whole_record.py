@@ -31,8 +31,11 @@ def test_an_external_over_the_whole_record_makes_the_read_list_conservative() ->
 
 
 def test_an_external_reaching_a_field_THROUGH_the_record_is_not_narrowed_away() -> None:
-    """The sharper case: the External replays against `phi`, which no field op records, so a read
-    list of {'pt'} would hand evaluation a chunk without the column it needs."""
+    """The sharper case.
+
+    The External replays against `phi`, which no field op records, so a read list of {'pt'} would
+    hand evaluation a chunk without the column it needs.
+    """
     _s, root = _source()
     scored = graphed.apply(lambda rec: rec.phi, root, name="reads_phi_internally")
     graph = graphed.apply(lambda score, pt: pt, scored, root.pt, name="combine")
@@ -40,7 +43,10 @@ def test_an_external_reaching_a_field_THROUGH_the_record_is_not_narrowed_away() 
 
 
 def test_an_external_over_FIELDS_alone_still_narrows() -> None:
-    """The control that keeps the repair from degenerating into "every External reads everything"."""
+    """The control that keeps the repair from degenerating.
+
+    The degenerate repair is "every External reads everything".
+    """
     _s, root = _source()
     fields_only = graphed.apply(lambda pt, eta: pt, root.pt, root.eta, name="fields_only")
     assert _syntactic_fields(fields_only, root.node_id) == {"eta", "pt"}

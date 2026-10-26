@@ -1,5 +1,7 @@
-"""External payload **plugins** — one module per plugin under this package (see ``_base`` for
-the machinery: :class:`ExternalPlugin`, the registry, hash validation, :class:`ResourceCache`).
+"""External payload **plugins**.
+
+One module per plugin under this package (see ``_base`` for the machinery: :class:`ExternalPlugin`,
+the registry, hash validation, :class:`ResourceCache`).
 
 Importing this package registers every shipped plugin, in a fixed order.
 """

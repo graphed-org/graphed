@@ -2,9 +2,9 @@
 
 Regression guard: a checkpointing *demo* asked ``run_resumable`` to "crash after 3 committed
 partitions" while the plan it was given had only one partition. The kill point was unreachable, so
-the run completed uninterrupted and the demonstration silently became a no-op (no crash, no resume).
-A simulated crash that can never happen is a misconfiguration; the runner now raises ``ValueError``
-rather than finishing quietly.
+the run completed uninterrupted and the demonstration silently became a no-op (no crash, no
+resume). A simulated crash that can never happen is a misconfiguration; the runner now raises
+``ValueError`` rather than finishing quietly.
 
 The three cases below are mutually discriminating on the SAME single-partition plan: the kill point
 is the only thing that changes.

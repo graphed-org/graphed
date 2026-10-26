@@ -1,4 +1,7 @@
-"""The ``jax_export`` plugin (M26): ``jax.export`` artifacts; hash = location-stripped StableHLO + avals."""
+"""The ``jax_export`` plugin (M26): ``jax.export`` artifacts.
+
+The hash is location-stripped StableHLO + avals.
+"""
 
 from __future__ import annotations
 

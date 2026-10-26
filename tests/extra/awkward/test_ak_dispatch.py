@@ -1,5 +1,7 @@
-"""``ak.<fn>(deferred)`` records exactly the node ``gak.<fn>`` records, through awkward's
-``__awkward_function__`` hook on ``AwkwardArray``/``AwkwardVaried``."""
+"""``ak.<fn>(deferred)`` records exactly the node ``gak.<fn>`` records.
+
+It goes through awkward's ``__awkward_function__`` hook on ``AwkwardArray``/``AwkwardVaried``.
+"""
 
 from __future__ import annotations
 
@@ -29,7 +31,8 @@ def arrays() -> dict[str, Any]:
 
 
 Call = Callable[[dict[str, Any]], Any]
-# (ak spelling, the gak call it must equal); the keyword/positional cases are where the signatures differ
+# (ak spelling, the gak call it must equal); the keyword/positional cases are where the signatures
+# differ
 PAIRS: dict[str, tuple[Call, Call]] = {
     "sum": (lambda x: ak.sum(x["a"], axis=1), lambda x: gak.sum(x["a"], axis=1)),
     "sum-array-keyword": (

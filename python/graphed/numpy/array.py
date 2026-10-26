@@ -24,8 +24,10 @@ Handler = Callable[["NumpyArray", tuple[object, ...], dict[str, object]], Any]
 
 
 def _i(value: object) -> int:
-    """Coerce a graph param (an int|float|bool|str value typed as object) to int -- the one
-    unavoidable builtins-overload gap for param coercion, centralized here."""
+    """Coerce a graph param (an int|float|bool|str value typed as object) to int.
+
+    The one unavoidable builtins-overload gap for param coercion, centralized here.
+    """
     return int(value)  # type: ignore[call-overload, no-any-return]
 
 
@@ -255,7 +257,8 @@ _NUMPY_FUNCTIONS.update(
 )
 
 
-# ---- M13: manipulation + combination handlers (dask.array parity P2) ------------------------------
+# ---- M13: manipulation + combination handlers (dask.array parity
+# P2) ------------------------------
 def _one_array(kind: str, args: tuple[object, ...]) -> NumpyArray:
     if not args or not isinstance(args[0], NumpyArray):
         raise TypeError(f"graphed np.{kind}: the first argument must be the deferred array")

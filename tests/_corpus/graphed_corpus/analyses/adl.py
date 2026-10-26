@@ -111,8 +111,11 @@ def q7_sum_isolated_jet_pt(events: ak.Array) -> Hist:
 
 
 def q8_mt_met_lepton(events: ak.Array) -> Hist:
-    """Q8: events with >= 3 leptons and an OSSF pair; transverse mass of MET + the highest-pt
-    lepton not in the OSSF pair whose mass is closest to 91.2."""
+    """Q8: events with >= 3 leptons and an OSSF pair.
+
+    Transverse mass of MET + the highest-pt lepton not in the OSSF pair whose mass is closest to
+    91.2.
+    """
     muons = ak.with_field(events.Muon, ak.zeros_like(events.Muon.pt, dtype=np.int64), "flavor")
     eles = ak.with_field(
         events.Electron, ak.ones_like(events.Electron.pt, dtype=np.int64), "flavor"

@@ -39,7 +39,7 @@ class Corr:
         return value * self.k
 
     def offset(self, value: Any) -> Any:
-        """A second method on the same owner: same `__self__`, a different `__func__`."""
+        """Return a second method on the same owner: same `__self__`, a different `__func__`."""
         return value + self.k
 
 
@@ -150,7 +150,7 @@ class Trigger:
 
 
 def scale(value: Any) -> Any:
-    """A free function spelled like `Corr.scale`, with no `self` in sight."""
+    """Return a free function spelled like `Corr.scale`, with no `self` in sight."""
     return value * 1000
 
 
@@ -159,7 +159,7 @@ def q(value: Any) -> Any:
 
 
 def q_closure(factor: float) -> Any:
-    """A second distinct callable named `q`: one factory's code, its own object."""
+    """Return a second distinct callable named `q`: one factory's code, its own object."""
 
     def q(value: Any) -> Any:
         return value * factor
@@ -177,7 +177,7 @@ def toy_session() -> tuple[Session, Array]:
 
 
 def fn_params(session: Session, *outputs: Array) -> list[str]:
-    """The `fn` param of every External node reaching `outputs`, in record order."""
+    """Return the `fn` param of every External node reaching `outputs`, in record order."""
     graph = graphed.core.GraphStore.deserialize(session.serialized_ir(*outputs, optimize=False))
     return [str(node["params"]["fn"]) for node in graph.nodes() if node["kind"] == "external"]
 
@@ -252,8 +252,11 @@ def test_two_methods_of_one_owner_are_two_nodes() -> None:
 
 
 def test_bound_methods_of_two_equal_owners_are_two_nodes() -> None:
-    """The owners are `==` and hash alike, so an owner-as-key memo hands the second the first's
-    result — the same collapse `==`-equal CALLABLES offered, one level up."""
+    """The owners are `==` and hash alike.
+
+    So an owner-as-key memo hands the second the first's result — the same collapse `==`-equal
+    CALLABLES offered, one level up.
+    """
     session, x = toy_session()
     c, e = Calib("nominal", 2.0), Calib("nominal", 100.0)
     mine: Any = c.scale
@@ -353,8 +356,11 @@ def test_two_callables_their_class_calls_equal_are_still_two_nodes(
 
 
 def test_a_method_wrapper_recorded_twice_is_never_a_WRONG_answer() -> None:
-    """The accepted ceiling: a method-wrapper is not a `types.MethodType`, so a re-access may mint
-    a second node. However many it mints, every one of them materializes to `k * DATUM`."""
+    """The accepted ceiling.
+
+    A method-wrapper is not a `types.MethodType`, so a re-access may mint a second node. However
+    many it mints, every one of them materializes to `k * DATUM`.
+    """
     session, x = toy_session()
     k: Any = 3.0
     wrapper, wrapper_again = k.__mul__, k.__mul__  # both held: no id can recycle under us
@@ -400,7 +406,10 @@ def test_a_third_callable_of_a_declared_name_advances_to_the_next_free_ordinal()
 
 
 def test_a_declared_ordinal_spelling_is_taken_like_any_other_name() -> None:
-    """The adversarial member: the declaration pre-empts the ordinal a derivation would reach for."""
+    """The adversarial member.
+
+    The declaration pre-empts the ordinal a derivation would reach for.
+    """
     session, x = toy_session()
 
     decoy = x.map(zero, name="q#1")
@@ -411,7 +420,10 @@ def test_a_declared_ordinal_spelling_is_taken_like_any_other_name() -> None:
 
 
 def test_a_declaration_stays_the_callers_identity_after_a_derivation_of_that_name() -> None:
-    """Reverse order: `name="q"` is a declaration, not a request — it interns with the `q` there."""
+    """Reverse order: `name="q"` is a declaration, not a request.
+
+    It interns with the `q` there.
+    """
     session, x = toy_session()
 
     derived = x.map(q)

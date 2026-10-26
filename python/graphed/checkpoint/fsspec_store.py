@@ -11,9 +11,9 @@ which cannot append in place: each log file becomes a prefix of one-record objec
   within a writer and follows creation time across writers.
 
 A blob write is one whole-object write, and ``get`` verifies the bytes against the name. A torn or
-tampered object is therefore never served. ``put`` of a present blob costs one ``info`` request, not
-a read, and rewrites a copy of the wrong size or one this instance's ``get`` refused; a same-size
-corruption that no instance has read stays until a ``get`` refuses it.
+tampered object is therefore never served. ``put`` of a present blob costs one ``info`` request,
+not a read, and rewrites a copy of the wrong size or one this instance's ``get`` refused; a
+same-size corruption that no instance has read stays until a ``get`` refuses it.
 Identical-content writers need no exclusion, because they write the same bytes to the same name.
 """
 
@@ -39,7 +39,8 @@ from .store import (
     _replay,
 )
 
-# a record object is written once and never changes, so a parsed one is kept for every later listing
+# a record object is written once and never changes, so a parsed one is kept for every later
+# listing
 _RECORDS: dict[tuple[Any, str], Any] = {}
 _RECORDS_LOCK = threading.Lock()
 
@@ -89,7 +90,10 @@ class FsspecStore:
         return size
 
     def get(self, digest: str) -> bytes | None:
-        """The blob named ``digest``, or ``None`` when it is absent or its bytes do not hash to it."""
+        """Return the blob named ``digest``.
+
+        ``None`` when it is absent or its bytes do not hash to it.
+        """
         try:
             data: bytes = self.fs.cat_file(f"{self.objects}/{digest}")
         except FileNotFoundError:
@@ -153,7 +157,8 @@ class FsspecStore:
         if not paths:
             return []
         # async fsspec (2025.9 and older) returns a failed read in the list whatever on_error says
-        # a record is one small object: s3fs's concurrent-read path would spend a HEAD on each to size it
+        # a record is one small object: s3fs's concurrent-read path would spend a HEAD on each to
+        # size it
         opts = {"max_concurrency": 1} if hasattr(self.fs, "max_concurrency") else {}
         keys = [(self._protocol, path) for path in paths]
         with _RECORDS_LOCK:
