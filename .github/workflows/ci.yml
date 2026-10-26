@@ -97,7 +97,7 @@ jobs:
         with:
           components: clippy, rustfmt
       - name: Link libpython for the test binary
-        run: echo "LD_LIBRARY_PATH=$(python -c 'import sysconfig; print(sysconfig.get_config_var(\"LIBDIR\"))')" >> "$GITHUB_ENV"
+        run: echo "LD_LIBRARY_PATH=$(python -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))")" >> "$GITHUB_ENV"
       - uses: astral-sh/setup-uv@v5
       - name: Rust lint (cargo fmt + clippy via prek)
         run: uvx prek@0.4.5 run --all-files cargo-fmt cargo-clippy
@@ -121,7 +121,7 @@ jobs:
         with:
           toolchain: ${{ steps.msrv.outputs.version }}
       - name: Link libpython for the test binary
-        run: echo "LD_LIBRARY_PATH=$(python -c 'import sysconfig; print(sysconfig.get_config_var(\"LIBDIR\"))')" >> "$GITHUB_ENV"
+        run: echo "LD_LIBRARY_PATH=$(python -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))")" >> "$GITHUB_ENV"
       - run: cargo test --locked
 
   coverage-rust:
@@ -139,7 +139,7 @@ jobs:
           components: llvm-tools-preview
       - uses: taiki-e/install-action@cargo-llvm-cov
       - name: Link libpython for the test binary
-        run: echo "LD_LIBRARY_PATH=$(python -c 'import sysconfig; print(sysconfig.get_config_var(\"LIBDIR\"))')" >> "$GITHUB_ENV"
+        run: echo "LD_LIBRARY_PATH=$(python -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))")" >> "$GITHUB_ENV"
       - name: Run tests, collect profile data once
         run: cargo llvm-cov --no-report
       - name: Combined coverage (fail under 90% lines)

@@ -696,7 +696,7 @@ mod tests {
         let too_long = usize::try_from(u64::from(u32::MAX) + 1).unwrap();
         let mut out = Vec::new();
         assert_eq!(put_len(&mut out, too_long), Err(EncodeError(too_long)));
-        assert!(out.is_empty());
+        assert_eq!(out, Vec::<u8>::new());
         assert_eq!(
             EncodeError(too_long).to_string(),
             "4294967296 does not fit the graphed IR format's u32 field"
