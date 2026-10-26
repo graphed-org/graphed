@@ -222,68 +222,12 @@ fn stage_fusion(
     mode: FusionMode,
 ) -> (Reduced, Vec<Landing>) {
     let n = graph.nodes.len();
-    // consumers + output marks
-    let mut consumers: Vec<Vec<usize>> = vec![Vec::new(); n];
-    for (i, node) in graph.nodes.iter().enumerate() {
-        for &inp in &node.inputs {
-            consumers[inp].push(i);
-        }
-    }
-    let mut is_output = vec![false; n];
-    for &o in &graph.outputs {
-        is_output[o] = true;
-    }
-
     let comp_id: Vec<usize> = match mode {
-        FusionMode::SingleUse => {
-            // union ops whose single use is another op
-            let mut dsu = Dsu::new(n);
-            for (i, node) in graph.nodes.iter().enumerate() {
-                if node.boundary {
-                    continue;
-                }
-                if consumers[i].len() == 1 && !is_output[i] {
-                    let c = consumers[i][0];
-                    if !graph.nodes[c].boundary {
-                        dsu.union(i, c);
-                    }
-                }
-            }
-            // component id per node (ops -> dsu root; boundaries -> themselves)
-            (0..n)
-                .map(|i| {
-                    if graph.nodes[i].boundary {
-                        i
-                    } else {
-                        dsu.find(i)
-                    }
-                })
-                .collect()
-        }
-        FusionMode::Maximal => {
-            // One descending pass: a node's consumers all have higher indices (topological order),
-            // so their components are final when the node is visited. An op joins its consumers'
-            // stage iff every consumer is an op AND they all sit in one component; otherwise (an
-            // output, a boundary consumer, or consumers in different stages) it heads its own
-            // stage. Deterministic: a pure function of the (ordered) graph.
-            let mut comp: Vec<usize> = (0..n).collect();
-            for i in (0..n).rev() {
-                if graph.nodes[i].boundary || is_output[i] || consumers[i].is_empty() {
-                    continue;
-                }
-                if consumers[i].iter().any(|&c| graph.nodes[c].boundary) {
-                    continue;
-                }
-                let c0 = comp[consumers[i][0]];
-                if consumers[i].iter().all(|&c| comp[c] == c0) {
-                    comp[i] = c0;
-                }
-            }
-            comp
-        }
+        FusionMode::SingleUse => single_use_components(graph),
+        FusionMode::Maximal => maximal_components(graph),
     };
 
-    // build comp -> member node indices
+    // build comp -> member node indices, each list ascending
     let mut comp_members: HashMap<usize, Vec<usize>> = HashMap::new();
     for (i, &c) in comp_id.iter().enumerate() {
         comp_members.entry(c).or_default().push(i);
@@ -291,7 +235,7 @@ fn stage_fusion(
 
     // topological order of comps (by max member index = the comp's head/output)
     let mut comps: Vec<usize> = comp_members.keys().copied().collect();
-    comps.sort_by_key(|c| *comp_members[c].iter().max().unwrap());
+    comps.sort_by_key(|c| comp_members[c].iter().max().copied());
 
     let mut reduced: Vec<NodeKey> = Vec::new();
     let mut comp_to_reduced: HashMap<usize, NodeId> = HashMap::new();
@@ -301,6 +245,7 @@ fn stage_fusion(
 
     for &comp in &comps {
         let members = &comp_members[&comp];
+        let rid = reduced.len() as NodeId;
         if graph.nodes[comp].boundary {
             // a single boundary node -> reduced as itself
             let node = &graph.nodes[comp];
@@ -309,58 +254,17 @@ fn stage_fusion(
                 .iter()
                 .map(|&i| comp_to_reduced[&comp_id[i]])
                 .collect();
-            let template = &templates[&node.token];
-            reduced.push(template.with_inputs(inputs));
+            reduced.push(templates[&node.token].with_inputs(inputs));
             boundary_nodes += 1;
-        } else {
-            // an op-component -> a fused Stage
-            let mut ops: Vec<usize> = members.clone();
-            ops.sort_unstable();
-            let local: HashMap<usize, usize> =
-                ops.iter().enumerate().map(|(k, &v)| (v, k)).collect();
-            let mut input_slots: Vec<usize> = Vec::new(); // external comps, in first-seen order
-            let mut slot_of: HashMap<usize, usize> = HashMap::new();
-            let mut stage_ops: Vec<StageOp> = Vec::new();
-            for &op in &ops {
-                let refs = graph.nodes[op]
-                    .inputs
-                    .iter()
-                    .map(|&inp| {
-                        if local.contains_key(&inp) {
-                            StageRef::Member(local[&inp])
-                        } else {
-                            let c = comp_id[inp];
-                            let slot = *slot_of.entry(c).or_insert_with(|| {
-                                input_slots.push(c);
-                                input_slots.len() - 1
-                            });
-                            StageRef::Input(slot)
-                        }
-                    })
-                    .collect();
-                stage_ops.push(StageOp {
-                    token: graph.nodes[op].token.clone(),
-                    inputs: refs,
-                });
-            }
-            let inputs: Vec<NodeId> = input_slots.iter().map(|&c| comp_to_reduced[&c]).collect();
-            reduced.push(NodeKey::Stage {
-                inputs,
-                members: stage_ops,
-            });
-            stages += 1;
-        }
-        let rid = (reduced.len() - 1) as NodeId;
-        comp_to_reduced.insert(comp, rid);
-        if graph.nodes[comp].boundary {
             landing[comp] = (rid, None);
         } else {
-            for (member_index, &op) in comp_members[&comp].iter().enumerate() {
-                // `comp_members` is built in ascending index order — the same order `ops` is
-                // sorted into above, so `member_index` is the op's slot in the emitted Stage.
+            reduced.push(fuse_stage(graph, members, &comp_id, &comp_to_reduced));
+            stages += 1;
+            for (member_index, &op) in members.iter().enumerate() {
                 landing[op] = (rid, Some(member_index));
             }
         }
+        comp_to_reduced.insert(comp, rid);
     }
 
     let outputs: Vec<NodeId> = graph
@@ -386,6 +290,114 @@ fn stage_fusion(
         },
         landing,
     )
+}
+
+/// Each node's consumers, and whether it is an output.
+fn uses(graph: &EngineGraph) -> (Vec<Vec<usize>>, Vec<bool>) {
+    let n = graph.nodes.len();
+    let mut consumers: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for (i, node) in graph.nodes.iter().enumerate() {
+        for &inp in &node.inputs {
+            consumers[inp].push(i);
+        }
+    }
+    let mut is_output = vec![false; n];
+    for &o in &graph.outputs {
+        is_output[o] = true;
+    }
+    (consumers, is_output)
+}
+
+/// `FusionMode::SingleUse` components: ops whose single use is another op share a union-find
+/// root; a boundary is its own component.
+fn single_use_components(graph: &EngineGraph) -> Vec<usize> {
+    let (consumers, is_output) = uses(graph);
+    let mut dsu = Dsu::new(graph.nodes.len());
+    for (i, node) in graph.nodes.iter().enumerate() {
+        if node.boundary {
+            continue;
+        }
+        if consumers[i].len() == 1 && !is_output[i] {
+            let c = consumers[i][0];
+            if !graph.nodes[c].boundary {
+                dsu.union(i, c);
+            }
+        }
+    }
+    // component id per node (ops -> dsu root; boundaries -> themselves)
+    (0..graph.nodes.len())
+        .map(|i| {
+            if graph.nodes[i].boundary {
+                i
+            } else {
+                dsu.find(i)
+            }
+        })
+        .collect()
+}
+
+/// `FusionMode::Maximal` components, in one descending pass: a node's consumers all have higher
+/// indices (topological order), so their components are final when the node is visited. An op
+/// joins its consumers' stage iff every consumer is an op AND they all sit in one component;
+/// otherwise (an output, a boundary consumer, or consumers in different stages) it heads its own
+/// stage. Deterministic: a pure function of the (ordered) graph.
+fn maximal_components(graph: &EngineGraph) -> Vec<usize> {
+    let (consumers, is_output) = uses(graph);
+    let n = graph.nodes.len();
+    let mut comp: Vec<usize> = (0..n).collect();
+    for i in (0..n).rev() {
+        if graph.nodes[i].boundary || is_output[i] || consumers[i].is_empty() {
+            continue;
+        }
+        if consumers[i].iter().any(|&c| graph.nodes[c].boundary) {
+            continue;
+        }
+        let c0 = comp[consumers[i][0]];
+        if consumers[i].iter().all(|&c| comp[c] == c0) {
+            comp[i] = c0;
+        }
+    }
+    comp
+}
+
+/// The `Stage` for one op component; `ops` ascends, so an op's position in it is its member
+/// index, and inputs from other components become the stage's input slots in first-seen order.
+fn fuse_stage(
+    graph: &EngineGraph,
+    ops: &[usize],
+    comp_id: &[usize],
+    comp_to_reduced: &HashMap<usize, NodeId>,
+) -> NodeKey {
+    let local: HashMap<usize, usize> = ops.iter().enumerate().map(|(k, &v)| (v, k)).collect();
+    let mut input_slots: Vec<usize> = Vec::new();
+    let mut slot_of: HashMap<usize, usize> = HashMap::new();
+    let mut members: Vec<StageOp> = Vec::new();
+    for &op in ops {
+        let refs = graph.nodes[op]
+            .inputs
+            .iter()
+            .map(|&inp| {
+                if let Some(&k) = local.get(&inp) {
+                    StageRef::Member(k)
+                } else {
+                    let c = comp_id[inp];
+                    let slot = *slot_of.entry(c).or_insert_with(|| {
+                        input_slots.push(c);
+                        input_slots.len() - 1
+                    });
+                    StageRef::Input(slot)
+                }
+            })
+            .collect();
+        members.push(StageOp {
+            token: graph.nodes[op].token.clone(),
+            inputs: refs,
+        });
+    }
+    NodeKey::Stage {
+        inputs: input_slots.iter().map(|&c| comp_to_reduced[&c]).collect(),
+        members,
+    }
 }
 
 #[cfg(all(test, not(loom)))]
