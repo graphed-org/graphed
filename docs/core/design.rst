@@ -106,9 +106,9 @@ not of the store.** ``reduce``, ``serialize`` and the incremental reducer's ``fi
 take the output set as an argument and use exactly that set — there is no output mutator on the
 store. So compiling two different expressions from one session gives byte-identical results to
 compiling each in a fresh session, whatever else the session recorded and in whatever order, and
-two threads compiling at once cannot interfere, because compiling only ever reads. One exception:
-an incremental session fixes a commuted op's operand order when the op is first recorded, so a
-``b + a`` recorded earlier for another output shapes a later ``a + b``.
+two threads compiling at once cannot interfere, because compiling only ever reads. A commutative
+op's operands are put in an order fixed by their structure, so a ``b + a`` recorded earlier for
+another output cannot change how a later ``a + b`` serializes.
 
 That guarantee is for the reduced IR. ``serialized_ir(..., optimize=False)`` and
 ``compile_ir(..., optimize=False)`` write the whole record arena with its record ids and flag only

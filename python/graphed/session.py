@@ -264,8 +264,7 @@ class Session:
         ``optimize=True`` (the default) the graph is reduced by the M4 optimizer (DCE + CSE +
         equality-saturation stage fusion), so the bytes carry the **optimized interned graph** —
         the same content-addressed artifact an executor runs — and are byte-identical to a
-        fresh-session serialization of the same outputs, whatever else this Session recorded
-        (except that an incremental Session keeps a commuted op's first-recorded operand order).
+        fresh-session serialization of the same outputs, whatever else this Session recorded.
         ``optimize=False`` writes the whole record arena with its record ids, flagging only
         ``outputs``, so its bytes change with every node the Session holds.
         This is the "compile" step for a ``graphed.core.DurablePlan`` deployment:

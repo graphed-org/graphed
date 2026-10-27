@@ -31,6 +31,22 @@ def test_optimized_ir_matches_a_fresh_session(
     assert compile_ir(s, out).ir == compile_ir(fresh_s, fresh).ir
 
 
+def _commuted(twin_first: bool, incremental: bool) -> tuple[Session, Array]:
+    s = Session(NumpyBackend(), incremental=incremental)
+    a = from_array(s, "a", np.arange(3.0))
+    b = from_array(s, "b", np.arange(3.0))
+    if twin_first:
+        _ = (b + a) - a
+    return s, (a + b) - b
+
+
+@pytest.mark.parametrize("incremental", [False, True])
+def test_a_commuted_twin_recorded_first_leaves_the_ir_alone(incremental: bool) -> None:
+    fresh_s, fresh = _commuted(False, incremental)
+    s, out = _commuted(True, incremental)
+    assert s.serialized_ir(out) == fresh_s.serialized_ir(fresh)
+
+
 def test_a_different_cone_serializes_differently() -> None:
     s, out = _masked(False, False, False)
     assert s.serialized_ir(out) != s.serialized_ir(out * 3)

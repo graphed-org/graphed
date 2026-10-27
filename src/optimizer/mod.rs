@@ -16,6 +16,7 @@ mod incremental;
 use std::collections::HashMap;
 
 pub(crate) use engine::{EggEngine, EngineGraph, EngineNode, RewriteEngine};
+use engine::{IDENTITY_TOKENS, SYMMETRIC_OPS};
 pub(crate) use incremental::IncrementalReducer;
 
 use crate::node::{index, NodeId, NodeKey, StageOp, StageRef};
@@ -74,8 +75,9 @@ pub(crate) fn reduce_with_mode(
     engine: &dyn RewriteEngine,
     mode: FusionMode,
 ) -> Reduced {
-    // 1. DCE — keep only nodes reachable from the outputs.
-    let (reachable_keys, reachable_outputs, dce_map) = dead_code_elimination(nodes, outputs);
+    // 1. DCE — keep only nodes reachable from the outputs, symmetric operands in canonical order.
+    let (reachable_keys, reachable_outputs, dce_map) =
+        dead_code_elimination(&orient_symmetric_ops(nodes), outputs);
 
     // operator-token -> a NodeKey template, for reconstructing boundary nodes after canonicalization
     let mut templates: HashMap<String, NodeKey> = HashMap::new();
@@ -101,6 +103,63 @@ pub(crate) fn reduce_with_mode(
         .iter()
         .map(|&d| (d != DROPPED).then(|| landing[cse_map[canon_map[d]]]))
         .collect();
+    out
+}
+
+/// The engine's commute rule applies to this node (`(op|<sym> ?a ?b)`: no params, two inputs).
+pub(crate) fn is_symmetric(key: &NodeKey) -> bool {
+    matches!(key, NodeKey::Op { name, params, inputs }
+        if inputs.len() == 2 && params.is_empty() && SYMMETRIC_OPS.contains(&name.as_str()))
+}
+
+/// A node's structural key from its inputs' keys: FNV-1a 128 over the injective token and the
+/// input keys, so it is stable across Rust releases and platforms. It is invariant under the
+/// engine's rules: an identity op (`x+0`, `x*1`) has its input's key and a symmetric op hashes its
+/// operand keys sorted, so commuted twins share a key whichever was recorded first.
+pub(crate) fn structural_key(key: &NodeKey, input_keys: &[u128]) -> u128 {
+    const OFFSET: u128 = 0x6c62_272e_07bb_0142_62b8_2175_6295_c58d;
+    const PRIME: u128 = 0x0000_0000_0100_0000_0000_0000_0000_013b;
+    let token = key.token();
+    if let [only] = input_keys {
+        if matches!(key, NodeKey::Op { .. }) && IDENTITY_TOKENS.contains(&token.as_str()) {
+            return *only;
+        }
+    }
+    let mut ins = input_keys.to_vec();
+    if is_symmetric(key) {
+        ins.sort_unstable();
+    }
+    let bytes = (token.len() as u64)
+        .to_le_bytes()
+        .into_iter()
+        .chain(token.bytes())
+        .chain(ins.iter().flat_map(|k| k.to_le_bytes()));
+    bytes.fold(OFFSET, |h, b| (h ^ u128::from(b)).wrapping_mul(PRIME))
+}
+
+/// `key` with a symmetric op's operands in structural-key order (smaller first); other nodes as
+/// they are. `input_keys` are `key`'s inputs' structural keys, in input order.
+// ponytail: equal keys of distinct operands (a 128-bit collision) keep the recorded order.
+pub(crate) fn orient(key: NodeKey, input_keys: &[u128]) -> NodeKey {
+    match (input_keys, key.inputs()) {
+        (&[ka, kb], &[a, b]) if kb < ka && is_symmetric(&key) => key.with_inputs(vec![b, a]),
+        _ => key,
+    }
+}
+
+/// The arena with every symmetric op's operands in canonical order, ids unchanged.
+#[allow(
+    clippy::indexing_slicing,
+    reason = "the store keeps each input below its node, so its key is already computed"
+)]
+fn orient_symmetric_ops(nodes: &[NodeKey]) -> Vec<NodeKey> {
+    let mut keys: Vec<u128> = Vec::with_capacity(nodes.len());
+    let mut out = Vec::with_capacity(nodes.len());
+    for node in nodes {
+        let ins: Vec<u128> = node.inputs().iter().map(|&i| keys[index(i)]).collect();
+        keys.push(structural_key(node, &ins));
+        out.push(orient(node.clone(), &ins));
+    }
     out
 }
 

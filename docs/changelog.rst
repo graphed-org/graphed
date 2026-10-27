@@ -50,6 +50,12 @@ Fixes
   bytes than a fresh Session. The ``opt_level=0`` cone gets the same order. The docs now say the
   fresh-Session byte identity is for the optimized IR. ``optimize=False`` writes the whole record
   arena, so its bytes change with everything the Session holds (#105).
+* A commutative op (``a + b``, ``a * b``, ``a & b``, …) takes its operands in an order fixed by
+  their structure, in incremental and one-shot Sessions alike. An incremental Session no longer
+  serializes ``a + b`` as ``b + a`` because another output recorded ``b + a`` first (#117).
+* Those two orderings change the optimized IR bytes against 0.0.9 for some programs, so a 0.0.9
+  checkpoint of such a program recomputes on resume under 0.0.10; results are unchanged
+  (#105, #117).
 
 0.0.9
 -----
