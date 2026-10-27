@@ -13,16 +13,22 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, TypeGuard
 
 from ..array import Array, attach, labels_carried
+from ..context import project
 from ..errors import GraphedError
+from .ambient import context_labels, weight_of
 from .kinds import Kind
 from .lineage import (
     ContextNode,
+    ambient_of,
     collections_of,
     context_session,
     is_ancestor,
+    link_of,
     links_below,
+    parent_of,
     row_space_above,
 )
+from .lineage import selection as lineage_selection
 from .lineage import unify_contexts as unify_contexts
 from .points import Point, render
 from .tags import numeric_value
@@ -69,7 +75,7 @@ def labels(x: Introspectable) -> tuple[str, ...]:
     if isinstance(x, Varied):
         return tuple(members_of(x))
     if _is_context(x):
-        return x._context_labels()
+        return context_labels(x)
     if isinstance(x, Array):
         raise GraphedError(
             "a plain Array carries no variations; graphed.labels takes a Varied, an event "
@@ -93,7 +99,7 @@ def universe(x: Introspectable, label: str) -> Any:
     if isinstance(x, Varied):
         return member_exact(x, label)
     if _is_context(x):
-        return x._project(label)
+        return project(x, label)
     if isinstance(x, Array):
         raise GraphedError("a plain Array carries no variations; read one from a Varied instead")
     if isinstance(x, Mapping):
@@ -135,7 +141,7 @@ def points(x: Introspectable) -> dict[str, dict[str, str]]:
         registry: Mapping[str, Point] = point_registry(x)
         carried = labels(x)
     elif _is_context(x):
-        registry, carried = context_session(x).systematics.points, x._context_labels()
+        registry, carried = context_session(x).systematics.points, context_labels(x)
     else:
         raise GraphedError(
             "graphed.points reads a record-time shape — a Varied or an event context — not "
@@ -151,11 +157,22 @@ def selection(ctx: Any) -> Any:
     `None` for a root context. On a universe/nominal-derived context it returns that label's member
     of the argument's own selection — an unvaried `Array` in the grandparent's row space; on a
     `vary`-derived one it skips the identity links and answers with the mask below. The verb that
-    makes the m51 skim sink reachable from the §2.6 context idiom.
+    makes the m51 skim sink reachable from the §2.6 context idiom. Not `lineage.selection`, which
+    answers `None` across a projection.
     """
     if not _is_context(ctx):
         raise GraphedError("graphed.selection reads an event context's derivation mask")
-    return ctx._selection_bridge()
+    node: ContextNode | None = ctx
+    while node is not None and (link := link_of(node)) is not None:
+        kind, payload = link
+        if kind == "mask":
+            return payload
+        parent = parent_of(node)
+        if kind == "project":
+            parent_selection = lineage_selection(parent) if parent is not None else None
+            return None if parent_selection is None else member_of(parent_selection, payload)
+        node = parent  # `vary` identity link: skip
+    return None
 
 
 def weight(ctx: Any) -> Varied | Array | None:
@@ -168,7 +185,7 @@ def weight(ctx: Any) -> Varied | Array | None:
     """
     if not _is_context(ctx):
         raise GraphedError("graphed.weight reads an event context's ambient weight registry")
-    return ctx._ambient_weight()
+    return weight_of(ctx)
 
 
 def variations(ctx: Any) -> dict[str, dict[str, tuple[Kind, Fraction | None]]]:
@@ -185,7 +202,7 @@ def variations(ctx: Any) -> dict[str, dict[str, tuple[Kind, Fraction | None]]]:
     if not _is_context(ctx):
         raise GraphedError("graphed.variations reads an event context's registered variations")
     kinds: dict[str, dict[str, Kind]] = {}
-    for name, tags in ctx._weight_tags.items():
+    for name, tags in ambient_of(ctx).weight_tags.items():
         for tag in tags:
             kinds.setdefault(name, {})[tag] = kinds.get(name, {}).get(tag, Kind(0)) | Kind.WEIGHT
     for collection in collections_of(ctx).values():

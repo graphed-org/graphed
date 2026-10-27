@@ -93,7 +93,7 @@ class CompiledGraph:
     #: §2.5's shift-after-weight ordering diagnostic: sorted `(factor family, collection)` pairs,
     #: one per ambient weight factor whose cone reaches a collection varied AFTER it was
     #: registered — that factor fills every shift universe with its PRE-shift value. Empty when the
-    #: order is sound. Detected at RECORD time (`context._vary_shift`); neither operand survives to
+    #: order is sound. Detected at RECORD time (`ambient.shift_form`); neither operand survives to
     #: here, so the compile-time walk the unreached-label diagnostic uses cannot see it.
     shift_after_weight: tuple[tuple[str, str], ...] = ()
 

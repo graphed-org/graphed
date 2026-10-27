@@ -239,7 +239,7 @@ list and everything that decides over it, ``explain`` is the report at the end o
 columns per label, and ``kinds`` / ``tags`` / ``points`` spell a variation's kind, its universe tags
 and a family's points. You never import by that path: ``vary``, ``labels``, ``weight``, ``explain``
 and the rest are exported from ``graphed``, and the event context they ride is ``graphed.context``,
-which keeps the ambient state that ``ambient`` decides over.
+which builds child contexts from the ambient records that ``ambient`` returns.
 
 Variations that ride an event context
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

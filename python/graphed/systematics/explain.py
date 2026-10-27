@@ -12,9 +12,16 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from ..errors import GraphedError
-from .ambient import _live_factors, _live_riders, _Registration, _row_links, ambient_entries
+from .ambient import (
+    _live_factors,
+    _live_riders,
+    _Registration,
+    _row_links,
+    ambient_entries,
+    weight_of,
+)
 from .kinds import Kind
-from .lineage import ContextNode, collections_of, context_session, parent_of
+from .lineage import ContextNode, ambient_of, collections_of, context_session, parent_of
 from .varied import labels_of, member_nodes
 
 if TYPE_CHECKING:
@@ -203,8 +210,9 @@ def _lineage_registrations(ctx: EventContext) -> tuple[_Registration, ...]:
     found: list[_Registration] = []
     node: EventContext | None = ctx
     while node is not None:
-        if node._registration is not None:
-            found.append(node._registration)
+        registration = ambient_of(node).registration
+        if registration is not None:
+            found.append(registration)
         node = parent_of(node)
     return tuple(reversed(found))
 
@@ -223,7 +231,7 @@ def explain(ctx: EventContext) -> Explanation:
     if not isinstance(ctx, ContextNode):
         raise GraphedError("graphed.explain reads an event context")
     registrations = _lineage_registrations(ctx)
-    ambient = ctx._ambient_weight()
+    ambient = weight_of(ctx)
     # a row-space change hands its child ONE composed member, which carries no labels of its own:
     # the universe this context is inside is its nominal, and that is the universe it carries
     carried: dict[str, None] = dict.fromkeys(labels_of(ambient) or ("nominal",))

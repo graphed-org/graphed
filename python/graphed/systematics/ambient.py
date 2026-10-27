@@ -1,10 +1,11 @@
 """The ambient event weight (§2.1-§2.3): the operation list, its provenance, its composition.
 
-`graphed.context.EventContext` KEEPS this state — the ordered operations, the slot ids, the riders,
-the reads, the memo — and this module is every rule that reads it: which of the three outcomes a
-weight registration decides (a read it names, a factor it joins, a new factor), how an entry is
-re-indexed across a row-space change, and how the operations compose into one container. Moved out
-of `graphed.context` (m57): the context tree is one concern, what rides it is another.
+An event context's `AmbientRecord` holds this state — the ordered operations, the slot ids, the
+riders, the reads, the memo. This module alone builds and mutates it, and holds every rule that
+reads it: which of the three outcomes a weight registration decides (a read it names, a factor it
+joins, a new factor), how an entry is re-indexed across a row-space change, and how the operations
+compose into one container. Moved out of `graphed.context` (m57): the context tree is one concern,
+what rides it is another.
 
 Every decision here reads PROVENANCE — the rider beside a slot, the recorded reads — and never the
 entry object as it currently stands, which a re-index replaces with a bare member.
@@ -15,8 +16,9 @@ from __future__ import annotations
 import itertools
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
+from ..array import Array
 from ..errors import GraphedError, GraphedTypeError
 from ..provenance import capture
 from . import accessors
@@ -24,6 +26,7 @@ from .by_label import cone
 from .kinds import Kind
 from .lineage import (
     ContextNode,
+    ambient_of,
     collections_of,
     context_session,
     is_ancestor,
@@ -39,6 +42,7 @@ from .registration import (
     gather_members,
     record_labels,
     register,
+    stamp_labels,
 )
 from .tags import canonical_tag
 from .varied import (
@@ -129,8 +133,282 @@ class _Registration:
     varies: tuple[str, ...] = ()
 
 
+_Read = tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]
+
+
+class Memo(NamedTuple):
+    """A context's composed ambient weight, cached (§5)."""
+
+    #: the mint epoch it was composed at: any later mint makes the next read remake it
+    epoch: int
+    #: how many of the record's factors it covers
+    covers: int
+    composed: Varied
+    #: no mint can move a resolution it made, which is what lets a registration fold onto it
+    settled: bool
+
+
+@dataclass(slots=True)
+class AmbientRecord:
+    """One context's ambient weight (§2.1-§2.3): its operations, their provenance, the cache.
+
+    §2.6's ambient weight is a DEFERRED composition (§4): composing at every registration would be
+    quadratic in the families registered, because each one rewrites every label the ambient
+    already carries. Only this module constructs or mutates a record.
+    """
+
+    #: the registered operations in composition order
+    factors: list[Any]
+    #: the SLOT of each entry, minted at append and kept by a join, so a handle recorded over
+    #: `(pu, hf)` still names those operations after `lf` joined the `hf` container
+    slots: list[int]
+    #: whether `factors[0]` is the composed container a row-space change ADOPTED, standing for the
+    #: parent's own operations (`_live_factors` walks back through it)
+    adopted: bool
+    #: §2.3: what that adopted head STANDS FOR — the parent's live factor slots and their
+    #: generations at the adoption, the tuple a read records
+    head: tuple[tuple[int, ...], tuple[int, ...]] | None
+    #: §2.3: the operations the head stands for, re-indexed here with every join of one of them
+    #: applied — `None` while nothing has joined one, where the ancestor's own live list answers
+    head_ops: tuple[list[Any], list[int], frozenset[int]] | None
+    #: §2.1's ORDERED operations: a slot named here holds an OVERLAY, which REPLACES the running
+    #: value at its labels instead of multiplying
+    overlays: frozenset[int]
+    #: §2.1's record of what a `graphed.weight()` READ handed out: `(the container's member nodes,
+    #: the live FACTOR slots it composed, their generations)`. Keyed by the whole member map, since
+    #: a join leaves the nominal node untouched. SHARED down a `vary` link (one row space),
+    #: replaced by a row-space change.
+    reads: list[_Read]
+    #: §2.1's staleness stamp, `slot -> generation`, bumped by a join whose union ADDS universes
+    #: to that slot's nominal member; it counts unions, not nodes, so a re-index is not one
+    gens: dict[int, int]
+    #: §2.3's RIDERS, `slot -> Rider`, for the operations this context's list introduced
+    riders: dict[int, Rider]
+    #: the §2.4 label union RECORDED at each registration
+    recorded: tuple[str, ...]
+    #: the composition cache, assigned as one immutable value so a concurrent reader sees either
+    #: the old state or the new
+    memo: Memo | None
+    #: §2.3e's ORIGINATION handle: the context that last CHANGED the operation list, not the one
+    #: that happens to read it first; `None` is the context holding this record
+    origin: ContextNode | None
+    #: the weight families REGISTERED on this lineage, name to tags — what `variations` and a
+    #: same-name registration read, unlike the ambient's tag map, which a mask widens
+    weight_tags: dict[str, tuple[str, ...]]
+    #: §2.7: the `graphed.vary` call that produced this context, `None` for every other one
+    registration: _Registration | None
+
+
+def seed(ctx: ContextNode, weight: Varied | None, parent: ContextNode | None) -> AmbientRecord:
+    """Return the record a context starts with: `weight` as its one factor, if any."""
+    slots = [] if weight is None else [next(_SLOT)]
+    riders = (
+        {}
+        if weight is None
+        else {
+            # a seeded context is a root: it came through no row-space link
+            slots[0]: Rider(
+                "factor", dict(tags_of(weight)), priors=(_two_level(weight, "nominal"),), home=ctx
+            )
+        }
+    )
+    return AmbientRecord(
+        factors=[] if weight is None else [weight],
+        slots=slots,
+        adopted=False,
+        head=None,
+        head_ops=None,
+        overlays=frozenset(),
+        reads=[],
+        gens={},
+        riders=riders,
+        recorded=_union(("nominal",), labels_of(weight)),
+        memo=(
+            None
+            if weight is None
+            else Memo(context_session(ctx).systematics.epoch, 1, weight, True)
+        ),
+        origin=None,
+        weight_tags={} if parent is None else dict(ambient_of(parent).weight_tags),
+        registration=None,
+    )
+
+
+def for_vary_link(ctx: EventContext) -> AmbientRecord:
+    """Return the record of a `vary` child of `ctx`: the same operations, COPIED, never composed.
+
+    The row space is unchanged (§6.1d kind (2)); seeding the child with the composed parent would
+    make every registration a two-element fold and reproduce the quadratic exactly.
+    """
+    held = ambient_of(ctx)
+    return replace(
+        held,
+        factors=list(held.factors),
+        slots=list(held.slots),
+        gens=dict(held.gens),
+        riders=dict(held.riders),
+        origin=ctx if held.origin is None else held.origin,
+        weight_tags=dict(held.weight_tags),
+        registration=None,
+    )
+
+
+def adopt(
+    child: EventContext, parent: EventContext, composed: Any, projected: str | None = None
+) -> None:
+    """Make `child`, across a row-space change, MATERIALISE `parent`'s ambient `composed`.
+
+    Re-indexing every factor instead would cost factors x labels per derivation. A projection to
+    `projected` also records each live entry's member there (§2.3) and drops the registry (§2.2).
+    `composed` is `None` when `parent` has no ambient.
+    """
+    held = ambient_of(child)
+    if composed is not None:
+        slots = _live_slots(parent)
+        gens = ambient_of(parent).gens
+        held.factors = [composed]
+        held.slots = [next(_SLOT)]
+        held.adopted = True
+        held.head_ops = None
+        held.overlays = frozenset()
+        # the child's OWN reads start empty; the ancestors' stay reachable through the adoption
+        # (`_lineage_reads`), because the head is exactly the composition they recorded (§2.3)
+        held.reads = []
+        held.head = (slots, tuple(gens.get(slot, 0) for slot in slots))
+        held.gens = dict(gens)
+        held.memo = Memo(context_session(child).systematics.epoch, 1, composed, True)
+        held.recorded = _union(("nominal",), labels_of(composed))
+        held.origin = None
+        # §2.1/§2.3: the adoption HANDS OUT the composed member, as a read does, so
+        # `graphed.weight` and `graphed.explain` stay observations, not inputs
+        _record_read(child, composed)
+        if projected is not None and projected != "nominal":
+            held.riders = _project_riders(parent, projected)
+    if projected is not None:
+        held.weight_tags = {}
+
+
+def weight_of(ctx: EventContext) -> Varied | Array | None:
+    """Return the composed ambient weight, `None` while nothing is registered.
+
+    A projection's is the one member it adopted (§2.2). The memo answers while it stands at the
+    Session's mint epoch; a mint since makes this REMAKE the composition from the original
+    factors, so every factor is resolved against the registry as of this read.
+    """
+    held = ambient_of(ctx)
+    if not held.factors:
+        return None
+    if len(held.factors) == 1 and not isinstance(held.factors[0], Varied):
+        # §2.2: a projection adopted ONE resolved member and nothing registered after it; the
+        # adoption already recorded it as the read, so handing it out records nothing new
+        adopted: Array = held.factors[0]
+        return adopted
+    epoch = context_session(ctx).systematics.epoch
+    memo = held.memo
+    if memo is not None and memo.epoch == epoch and memo.covers == len(held.factors):
+        _record_read(ctx, memo.composed)
+        return memo.composed
+    composed, settled = _materialise(ctx, _ambient_operands(ctx))
+    held.memo = Memo(epoch, len(held.factors), composed, settled)
+    _record_read(ctx, composed)
+    return composed
+
+
+def fold(child: EventContext, operands: Sequence[Any]) -> None:
+    """Cache `child`'s ambient as `operands` composed: an append onto the parent's memo (§3)."""
+    held = ambient_of(child)
+    folded, settled = _materialise(child, operands)
+    held.memo = Memo(context_session(child).systematics.epoch, len(held.factors), folded, settled)
+
+
+def context_labels(ctx: EventContext) -> tuple[str, ...]:
+    """§2.2's §2.4-ordered union of the labels a context carries.
+
+    (a) the ambient registry's, (b) those of the `Varied` collections it CARRIES, (c) those of its
+    selection.
+    """
+    out: dict[str, None] = dict.fromkeys(ambient_of(ctx).recorded)
+    for source in (*collections_of(ctx).values(), selection(ctx)):
+        for label in labels_of(source):
+            out.setdefault(label, None)
+    return tuple(out)
+
+
+def _origin(ctx: ContextNode) -> ContextNode:
+    held = ambient_of(ctx).origin
+    return ctx if held is None else held
+
+
+def _record_read(ctx: EventContext, composed: Any) -> None:
+    """§2.1: the READ is what lets a later central name this composition.
+
+    What is recorded is what a later registration compares — the member nodes the handle carries,
+    the live factor slots it stands for and their generations — never the container, which a mint
+    may remake.
+    """
+    held = ambient_of(ctx)
+    slots = _live_slots(ctx)
+    entry = (member_nodes(composed), slots, tuple(held.gens.get(slot, 0) for slot in slots))
+    if entry not in held.reads:
+        held.reads.append(entry)
+
+
+def _foldable(ctx: EventContext) -> Memo | None:
+    """Return the memo the next composition may build ON, `None` when it must remake.
+
+    One predicate for both the operand list below and the weight form's fold, so the record-time
+    check walks exactly what the read will compose. A memo a mint has passed is stale; an
+    UNSETTLED one could still move under a later mint, and folding onto it would freeze it.
+    """
+    memo = ambient_of(ctx).memo
+    if memo is None or memo.epoch != context_session(ctx).systematics.epoch or not memo.settled:
+        return None
+    return memo
+
+
+def _ambient_operands(ctx: EventContext) -> list[Any]:
+    """Return what the next composition multiplies.
+
+    The composed container plus whatever registered after it while the memo may be built on, and
+    the original factors otherwise.
+    """
+    factors = ambient_of(ctx).factors
+    memo = _foldable(ctx)
+    return list(factors) if memo is None else [memo.composed, *factors[memo.covers :]]
+
+
+def _materialise(ctx: EventContext, operands: Sequence[Any]) -> tuple[Varied, bool]:
+    """Compose `operands` over the recorded union, and say whether a later mint could move it."""
+    held = ambient_of(ctx)
+    origin = _origin(ctx)
+    fixed = frozenset(slot for slot, rider in held.riders.items() if rider.fixed)
+    composed = rebuild(
+        _compose(
+            operands,
+            held.recorded,
+            overlays=_marks(held.factors, held.slots, held.overlays),
+            fixed=_marks(held.factors, held.slots, fixed),
+        ),
+        tags=_ambient_tags(ctx),
+        context=origin,
+    )
+    stamped = accessors.with_context(stamp_labels(composed), origin)
+    return stamped, _all_settled(context_session(ctx), operands, held.recorded)
+
+
+def _ambient_tags(ctx: EventContext) -> dict[str, tuple[str, ...]]:
+    """Return the ambient's §1.1 tag map, accumulated over the factors in registration order.
+
+    A projection's factor is a bare member carrying no map, which is how a projection drops it.
+    """
+    merged: dict[str, tuple[str, ...]] = {}
+    for factor in ambient_of(ctx).factors:
+        merged.update(tags_of(factor))
+    return merged
+
+
 def _carriers(ctx: EventContext) -> tuple[Any, ...]:
-    """§4.11-4's carrier list for the context forms — the three `_context_labels` already reads.
+    """§4.11-4's carrier list for the context forms — the three `context_labels` already reads.
 
     The ambient contributes the `(session, labels)` pair, not a container: both readers want labels
     and points only, so composing here would record nodes for a walk that never does arithmetic.
@@ -148,7 +426,7 @@ def _carriers(ctx: EventContext) -> tuple[Any, ...]:
             )
         return frozenset(out)
 
-    ambient = AmbientCarrier(context_session(ctx), ctx._recorded, resolve)
+    ambient = AmbientCarrier(context_session(ctx), ambient_of(ctx).recorded, resolve)
     return (ambient, *collections_of(ctx).values(), selection(ctx))
 
 
@@ -162,7 +440,7 @@ def _lineage_factors(ctx: EventContext) -> tuple[Any, ...]:
     seen: dict[int, Any] = {}
     node: EventContext | None = ctx
     while node is not None:
-        for factor in node._factors:
+        for factor in ambient_of(node).factors:
             seen.setdefault(id(factor), factor)
         node = parent_of(node)
     return tuple(seen.values())
@@ -174,22 +452,23 @@ def _live_factors(ctx: EventContext) -> tuple[list[Any], list[int], frozenset[in
     In the order `_compose` applies them, with their slots and the slots of the overlays among
     them.
 
-    The order is the LIST's: `ctx._slots` holds every operation of this row space in the position
-    the composition walks, and a row-space change adopts the ONE composed container, so the head
-    stands for the adopting parent's own live list and expands in place. Walking back through the
-    adoption is what lets a weight registered on a mask-derived child name a factor of its parent
-    (§2.1). Not `_lineage_factors`, which answers with every factor ever registered on the
-    ancestry: one that an extension has since replaced is no longer multiplied in, and naming it
-    would double it.
+    The order is the LIST's: the record's `slots` hold every operation of this row space in the
+    position the composition walks, and a row-space change adopts the ONE composed container, so
+    the head stands for the adopting parent's own live list and expands in place. Walking back
+    through the adoption is what lets a weight registered on a mask-derived child name a factor of
+    its parent (§2.1). Not `_lineage_factors`, which answers with every factor ever registered on
+    the ancestry: one that an extension has since replaced is no longer multiplied in, and naming
+    it would double it.
 
     Never the order a lineage WALK meets the entries: an overlay is inserted after the factors it
     was read over, so a child registering a factor and then an overlay anchored before it is met in
     the opposite order from the one it composes in, and an expansion built that way would move the
     overlay past the factor and replace its product (§2.3).
     """
-    entries = list(ctx._factors)
-    slots = list(ctx._slots)
-    overlays = ctx._overlays
+    held = ambient_of(ctx)
+    entries = list(held.factors)
+    slots = list(held.slots)
+    overlays = held.overlays
     stood = _stood_for(ctx) if entries else None
     if stood is not None:
         above, above_slots, above_overlays = stood
@@ -209,10 +488,11 @@ def _stood_for(ctx: EventContext) -> tuple[list[Any], list[int], frozenset[int]]
     second family naming the same central, and every rider the projection records, read the JOINED
     operation rather than the ancestor's own.
     """
-    if not ctx._adopted:
+    held = ambient_of(ctx)
+    if not held.adopted:
         return None
-    if ctx._head_ops is not None:
-        entries, slots, overlays = ctx._head_ops
+    if held.head_ops is not None:
+        entries, slots, overlays = held.head_ops
         return list(entries), list(slots), overlays
     ancestor = _adopted_from(ctx)
     return None if ancestor is None else _live_factors(ancestor)
@@ -241,9 +521,9 @@ def _raw_riders(ctx: EventContext) -> dict[int, Rider]:
     riders: dict[int, Rider] = {}
     node: EventContext | None = ctx
     while node is not None:
-        for slot, rider in node._riders.items():
+        for slot, rider in ambient_of(node).riders.items():
             riders.setdefault(slot, rider)
-        if not node._adopted:
+        if not ambient_of(node).adopted:
             break
         node = parent_of(node)
     return riders
@@ -479,7 +759,8 @@ def _prefix_slots(
     covers exactly the slots the head stands for, plus whatever this context registered before the
     anchor; once the head is expanded the slots are the list's own.
     """
-    head = ctx._head[0] if adopted and ctx._head is not None else ()
+    held = ambient_of(ctx)
+    head = held.head[0] if adopted and held.head is not None else ()
     own = tuple(slot for slot in slots[1 if adopted else 0 : at] if slot not in overlays)
     return (*head, *own)
 
@@ -512,7 +793,7 @@ def ambient_entries(ctx: EventContext) -> tuple[tuple[int, Rider, Any], ...]:
         )
     live, slots, _overlays = _live_factors(ctx)
     riders = _live_riders(ctx)
-    own = frozenset(ctx._slots)
+    own = frozenset(ambient_of(ctx).slots)
     composed: list[tuple[int, Rider, Any]] = []
     run: list[int] = []
     for entry, slot in zip(live, slots, strict=True):
@@ -540,15 +821,13 @@ def _adopted_record(
     Its families are every family the operations in the run carry, a join of one of them included,
     and its links are the ones the lineage took to get here — the head came through all of them.
     """
+    held = ambient_of(ctx)
     families = {name: tags for slot in run for name, tags in riders[slot].families.items()}
     return (
-        ctx._slots[0],
+        held.slots[0],
         Rider("factor", families, home=ctx, links=_row_links(ctx)),
-        ctx._factors[0],
+        held.factors[0],
     )
-
-
-_Read = tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]
 
 
 def _lineage_reads(ctx: EventContext) -> Iterator[tuple[EventContext, _Read]]:
@@ -568,9 +847,9 @@ def _lineage_reads(ctx: EventContext) -> Iterator[tuple[EventContext, _Read]]:
     node: EventContext | None = ctx
     seen: set[int] = set()
     while node is not None:
-        if id(node._reads) not in seen:
-            seen.add(id(node._reads))
-            for record in node._reads:
+        if id(ambient_of(node).reads) not in seen:
+            seen.add(id(ambient_of(node).reads))
+            for record in ambient_of(node).reads:
                 yield node, record
         node = parent_of(node)
 
@@ -626,10 +905,10 @@ def _extension(ctx: EventContext, central: Any) -> tuple[str, Any] | None:
     A composition a read handed out (`("ambient", the index the overlay goes at)`, or
     `("prefix", the slot it was read over)` when that index is inside an adopted head the
     registration must expand first), a composition a later join has since WIDENED
-    (`("stale", the families that grew)`, which `_vary_weight` refuses), an already-registered
+    (`("stale", the families that grew)`, which `weight_form` refuses), an already-registered
     factor (`("factor", its slot)`), or nothing new.
 
-    Three answers are refusals `_vary_weight` raises on (§2.3): `("owned", the universe)` for a
+    Three answers are refusals `weight_form` raises on (§2.3): `("owned", the universe)` for a
     factor the universe this context is projected into is OF, and `("covered", …)` /
     `("covered-read", …)` for an operation that would land among the factors a relative-delta
     family covers, inside that family's own universe — a join of one of them, or a handle read over
@@ -641,6 +920,7 @@ def _extension(ctx: EventContext, central: Any) -> tuple[str, Any] | None:
     under new coordinates, a widening in name only that moves the slot's generation and fires both
     §2.1 refusals on programs §2.1 admits.
     """
+    held = ambient_of(ctx)
     node = member_of(central, "nominal")  # ONE level in, not `_two_level`, which peels a second
     if isinstance(node, Varied):  # nested past §2.2's one level; `_check_forms` names it properly
         return None
@@ -659,13 +939,13 @@ def _extension(ctx: EventContext, central: Any) -> tuple[str, Any] | None:
         if members not in keys[id(home)] or read != factors[: len(read)]:
             continue
         moved = [
-            slot for slot, was in zip(read, stamps, strict=True) if ctx._gens.get(slot, 0) != was
+            slot for slot, was in zip(read, stamps, strict=True) if held.gens.get(slot, 0) != was
         ]
         if moved:  # a join has since ADDED universes under this handle (§2.1)
             stale = moved
             continue
         at = _overlay_index(ctx, read)
-        if at is not None and read[-1] not in ctx._slots:
+        if at is not None and read[-1] not in held.slots:
             # the record is the adopted head's own tuple: the overlay anchors right after it and
             # nothing is re-indexed, so no operation lands inside a covered prefix (§2.3)
             return ("ambient", at)
@@ -709,7 +989,7 @@ def _names_nominal(
     """§2.3: whether a central names this entry's NOMINAL identity in the central's own row space.
 
     The entry itself (`("factor", slot)`), or the universe this context is projected into that the
-    entry OWNS (`("owned", L)`, which `_vary_weight` refuses).
+    entry OWNS (`("owned", L)`, which `weight_form` refuses).
 
     The candidates are the rider's nodes only, never the entry as it currently stands: at a
     projection that object's nominal is its MEMBER at the label, which for the factor the universe
@@ -868,17 +1148,18 @@ def _overlay_index(ctx: EventContext, read: tuple[int, ...]) -> int | None:
     that factor is not this list's to order (a prefix ending inside an ancestor's entries, which no
     read here records).
     """
+    held = ambient_of(ctx)
     if not read:
         return None
-    if read[-1] in ctx._slots:
-        at = ctx._slots.index(read[-1]) + 1
-    elif ctx._adopted and ctx._head is not None and read == ctx._head[0]:
+    if read[-1] in held.slots:
+        at = held.slots.index(read[-1]) + 1
+    elif held.adopted and held.head is not None and read == held.head[0]:
         # the adopted head stands for exactly this prefix, so the overlay goes after it and the
         # ancestor's operations stay folded inside it — nothing is re-indexed
         at = 1
     else:
         return None
-    while at < len(ctx._slots) and ctx._slots[at] in ctx._overlays:
+    while at < len(held.slots) and held.slots[at] in held.overlays:
         at += 1
     return at
 
@@ -984,15 +1265,16 @@ def _extend(
     registered before an overlay keeps that factor's position and the overlay still replaces the
     product of the operations it was read over.
     """
+    held = ambient_of(ctx)
     covering = _covering_overlay(ctx, slot)
-    if slot in ctx._slots:
-        at = ctx._slots.index(slot)
-        joined, widened = _joined(ctx._factors[at], members, name, family, ctx, covering)
-        entries = list(ctx._factors)
+    if slot in held.slots:
+        at = held.slots.index(slot)
+        joined, widened = _joined(held.factors[at], members, name, family, ctx, covering)
+        entries = list(held.factors)
         entries[at] = joined
         # a join keeps the nominal node, so the entry stands for what it always did
-        riders = {**ctx._riders, slot: _carries(ctx._riders[slot], name, family)}
-        return joined, entries, list(ctx._slots), ctx._overlays, widened, riders, None
+        riders = {**held.riders, slot: _carries(held.riders[slot], name, family)}
+        return joined, entries, list(held.slots), held.overlays, widened, riders, None
     live, live_slots, live_overlays, riders = _expanded(ctx)
     # only the operations the HEAD stands for are re-composed: the ones this context registered
     # AFTER the adoption keep their own places in the list behind it, and composing them into the
@@ -1012,9 +1294,9 @@ def _extend(
     head = _headed(ctx, stood, slots, overlays, fixed, standing, joined, name, family)
     return (
         joined,
-        [head, *ctx._factors[1:]],
-        list(ctx._slots),
-        ctx._overlays,
+        [head, *held.factors[1:]],
+        list(held.slots),
+        held.overlays,
         widened,
         riders,
         (
@@ -1047,11 +1329,11 @@ def _headed(
     nominal at, which the head already answers) becomes the product of the operations the head
     stands for, read at that label with the joined member in place.
     """
-    current = ctx._factors[0]
+    current = ambient_of(ctx).factors[0]
     carried = dict(members_of(current))
     moved = [
         label
-        for label in _union(ctx._context_labels(), labels_of(joined))
+        for label in _union(context_labels(ctx), labels_of(joined))
         if label != "nominal"
         and label not in carried
         and member_nodes(_two_level(joined, label)) != member_nodes(_two_level(standing, label))
@@ -1098,7 +1380,7 @@ def _marks(
 ) -> frozenset[int]:
     """Return the overlay slots as the OBJECT ids `_compose` tests.
 
-    See `EventContext._overlay_ids`.
+    See `_materialise`.
     """
     return frozenset(
         id(entry) for entry, slot in zip(entries, slots, strict=True) if slot in overlays
@@ -1181,7 +1463,7 @@ def _here(ctx: EventContext, value: Any) -> Any:
     """Return `value` at the level `ctx` reads it, peeled through the PROJECTIONS.
 
     Only the projections between its row space and this one, and nothing else — the label-set half
-    of the re-index `_vary_weight` performs two statements on (`accessors._follow`). A mask leaves
+    of the re-index `weight_form` performs two statements on (`accessors._follow`). A mask leaves
     the set alone and is not followed: following one mints, and this decides a refusal that must
     leave no node behind (§2.5).
     """
@@ -1233,7 +1515,7 @@ def _union_nominal(
     return rebuild(merged, tags=tags, context=ctx), widened
 
 
-def _vary_weight(
+def weight_form(
     ctx: EventContext,
     name: str,
     central: object,
@@ -1243,12 +1525,14 @@ def _vary_weight(
     composes_as_union: bool,
     max_universes: int,
     tags: Mapping[str, Any],
-) -> EventContext:
+) -> tuple[AmbientRecord, list[Any] | None]:
     """Overload (b): register a per-event weight factor into the context's ambient weight.
 
-    The context is the returned one; the factor is composed label-aligned per §2.4 with whatever is
-    already registered.
+    Returns the record of the `vary` child the registration derives, and the operands its cache
+    folds onto (`fold`) when the factor appends to a foldable memo, else `None`. The factor is
+    composed label-aligned per §2.4 with whatever is already registered.
     """
+    held = ambient_of(ctx)
     if collections is not None:
         raise GraphedError("collections= belongs to the shift form; a weight form takes tags")
     if central is None:
@@ -1256,15 +1540,15 @@ def _vary_weight(
             f"the weight form of graphed.vary({name!r}) needs the central per-event factor as its "
             "third positional argument"
         )
-    ambient_tags = ctx._ambient_tags()
-    inherited = ctx._weight_tags.get(name, ())
+    ambient_tags = _ambient_tags(ctx)
+    inherited = held.weight_tags.get(name, ())
     # What the next composition will multiply, decided HERE, before this registration mints, and by
     # the same predicate the read uses: onto a foldable memo the new factor folds (today's
     # two-element chain step, so a program reading at every intermediate context pays today's node
     # count and no more); otherwise the composition is remade from the original factors and this
     # registration joins them.
-    base = ctx._ambient_operands()
-    folds = ctx._foldable() is not None
+    base = _ambient_operands(ctx)
+    folds = _foldable(ctx) is not None
     # §2.1: the central NAMES the factor it varies. Decided here, before anything is minted, and
     # read only for its answer — nothing is composed or re-indexed to reach it, so a program that
     # names nothing records exactly the nodes it records without this.
@@ -1336,7 +1620,7 @@ def _vary_weight(
         composed=composed,
     )
     # §1.1's within-the-container clause, keyed by family NAME over the three carriers
-    # `_context_labels` reads. `_members` alone is the §2.4 union and cannot say which family a
+    # `context_labels` reads. `_members` alone is the §2.4 union and cannot say which family a
     # label came from; the same `name` is the correlated case (one knob, §2.1) and is admitted —
     # `check_family` refuses a repeated tag within it — while any OTHER family already spelling
     # this label would make one universe differ from nominal in two knobs.
@@ -1373,12 +1657,12 @@ def _vary_weight(
     else:
         joined_slot = stood = None
         slot = next(_SLOT)
-        entries, entry_slots, riders = ctx._factors, ctx._slots, ctx._riders
-        adopted = ctx._adopted
+        entries, entry_slots, riders = held.factors, held.slots, held.riders
+        adopted = held.adopted
         prefix: tuple[int, ...] = ()
         if match is None:
             factor = rebuild(factors, tags={name: family}, context=ctx)
-            at, overlays, kind = len(ctx._factors), ctx._overlays, "factor"
+            at, overlays, kind = len(held.factors), held.overlays, "factor"
         else:
             # §2.1: the OVERLAY lands right after the operations the handle it was built from was
             # read over, so a factor registered after that read multiplies its result
@@ -1394,7 +1678,7 @@ def _vary_weight(
                 while at < len(entry_slots) and entry_slots[at] in overlays:
                     at += 1
             else:
-                at, overlays = match[1], ctx._overlays
+                at, overlays = match[1], held.overlays
             prefix = _prefix_slots(ctx, entry_slots, at, overlays, adopted)
             overlays = overlays | {slot}
         riders = {
@@ -1416,7 +1700,7 @@ def _vary_weight(
     # the §2.4 union is RECORDED here, never recomputed at the read: recomputing it from the
     # context would hand the ambient every shift registered after it, and recomputing it from the
     # factors would drop the shift labels a factor computed on shifted objects is read through.
-    recorded = _union(ctx._context_labels(), tuple(factors))
+    recorded = _union(context_labels(ctx), tuple(factors))
     if operands is not updated and not _resolvable(base, tuple(factors)):
         operands = updated  # the memo cannot answer a label this call minted (below)
     # the record-time type check, run BEFORE anything is recorded so a refused registration leaves
@@ -1451,43 +1735,32 @@ def _vary_weight(
     # §2.5's shift-after-weight operand one: this factor's OWN member node ids, by value.
     context_session(ctx).systematics.record_weight_factor(name, member_nodes(factor))
 
-    from ..context import _child_of  # noqa: PLC0415  (import cycle: it builds an EventContext)
-
-    child = _child_of(ctx)
-    child._registration = _Registration(name, Kind.WEIGHT, family, ctx, form, names)
-    child._weight_tags[name] = family
-    child._factors = updated
-    child._slots = slots
-    child._overlays = overlays
-    child._riders = riders
+    record = for_vary_link(ctx)
+    record.registration = _Registration(name, Kind.WEIGHT, family, ctx, form, names)
+    record.weight_tags[name] = family
+    record.factors = updated
+    record.slots = slots
+    record.overlays = overlays
+    record.riders = riders
     if joined_slot is not None:
         # §2.1's staleness stamp: every handle read over this factor before now composed universes
         # this join has just added to, and naming one of them is refused from here on
-        child._gens[joined_slot] = ctx._gens.get(joined_slot, 0) + 1
+        record.gens[joined_slot] = held.gens.get(joined_slot, 0) + 1
     # the adoption marker outlives a registration only while the head still STANDS FOR the parent's
     # live operations: a join extends it and it does (`stood` is what it stands for here, the
     # operations re-indexed with that join applied); an overlay anchored inside it replaced it with
     # them and it does not
-    child._adopted = ctx._adopted and (stood is not None or updated[0] is ctx._factors[0])
-    child._head_ops = stood if child._adopted else None
-    child._recorded = recorded
-    child._origin = child
+    record.adopted = held.adopted and (stood is not None or updated[0] is held.factors[0])
+    record.head_ops = stood if record.adopted else None
+    record.recorded = recorded
+    record.origin = None
+    record.memo = None
     # a join, and an overlay inserted before the end, remake the composition from the entry list;
-    # only an append composed onto the memo above and can fold onto it (§3)
-    if folds and operands is not updated:
-        folded, settled = child._materialise(operands)
-        child._memo = (
-            context_session(ctx).systematics.epoch,
-            len(child._factors),
-            folded,
-            settled,
-        )
-    else:
-        child._memo = None
-    return child
+    # only an append composed onto the memo above can fold onto it (§3)
+    return record, (operands if folds and operands is not updated else None)
 
 
-def _vary_shift(
+def shift_form(
     ctx: EventContext,
     name: str,
     nominal: object,
@@ -1497,8 +1770,11 @@ def _vary_shift(
     composes_as_union: bool,
     max_universes: int,
     tags: Mapping[str, Any],
-) -> EventContext:
-    """Overload (c): replace each named collection with a `Varied` over one shared tag set."""
+) -> tuple[dict[str, Any], AmbientRecord]:
+    """Overload (c): replace each named collection with a `Varied` over one shared tag set.
+
+    Returns the collections the call varies, by name, and the record of the `vary` child.
+    """
     if nominal is not None:
         raise GraphedError(
             "nominal= has no meaning in the shift form — the collections' central members come "
@@ -1524,13 +1800,10 @@ def _vary_shift(
             mapping[collection_name] = _unpack_varied(ctx, name, collection_name, inner, points)
     _check_lockstep(name, mapping)
 
-    from ..context import _child_of  # noqa: PLC0415  (import cycle: it builds an EventContext)
-
-    child = _child_of(ctx)
-    replaced = dict(collections_of(ctx))
+    replaced: dict[str, Any] = {}
     family: tuple[str, ...] = ()
     for collection_name, inner in mapping.items():
-        current = ctx._read(collection_name)
+        current = ctx[collection_name]
         inherited = tags_of(current).get(name, ())
         one_at_a_time, joints = gather_members(
             name,
@@ -1560,15 +1833,15 @@ def _vary_shift(
         # a joint is a cross-coordinate, not a tag of this single family, so it stays out of
         # `_tags`
         family = tag_map[name] = inherited + _tags_of(name, one_at_a_time)
-        replaced[collection_name] = child._stamp(
-            register(rebuild({**existing, **resolved}, tags=tag_map, context=ctx))
+        replaced[collection_name] = register(
+            rebuild({**existing, **resolved}, tags=tag_map, context=ctx)
         )
         _report_shift_after_weight(ctx, collection_name, existing)
-    child._collections = replaced
-    child._registration = _Registration(
+    record = for_vary_link(ctx)
+    record.registration = _Registration(
         name, Kind.SHIFT, family, ctx, "shift", varies=tuple(mapping)
     )
-    return child
+    return replaced, record
 
 
 def _report_shift_after_weight(
@@ -1626,7 +1899,7 @@ def _unpack_varied(
             f"build it as graphed.vary(graphed.nominal(ctx[{collection_name!r}]), {name!r}, ...) "
             f"on the context's central collection with only the tags being added, or pass {hand}"
         )
-    current = ctx._read(collection_name)
+    current = ctx[collection_name]
     central = member_of(current, "nominal") if isinstance(current, Varied) else current
     nominal = accessors.reindex_to(member_of(varied, "nominal"), ctx)
     if nominal.node_id != central.node_id:

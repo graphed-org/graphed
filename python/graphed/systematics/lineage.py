@@ -12,9 +12,12 @@ narrows to one universe (§6.1d).
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, Self, TypeVar
+from typing import TYPE_CHECKING, Any, Self, TypeVar
 
 from ..errors import GraphedError
+
+if TYPE_CHECKING:
+    from .ambient import AmbientRecord
 
 #: §6.1d's three link kinds: ("mask", mask), ("vary", None), ("project", label)
 Link = tuple[str, Any]
@@ -23,11 +26,15 @@ _Node = TypeVar("_Node", bound="ContextNode")
 
 
 class ContextNode:
-    """An event context's Session, parent, link and collections."""
+    """An event context's Session, parent, link, collections and ambient record.
 
-    __slots__ = ("_collections", "_link", "_parent", "_session")
+    The record (`ambient_of`) is set by the constructing subclass, which the record names.
+    """
+
+    __slots__ = ("_ambient", "_collections", "_link", "_parent", "_session")
 
     _parent: Self | None
+    _ambient: AmbientRecord
 
     def __init__(
         self,
@@ -61,6 +68,11 @@ def link_of(ctx: ContextNode) -> Link | None:
 def collections_of(ctx: ContextNode) -> Mapping[str, Any]:
     """Return the collections `ctx` carries, by name."""
     return ctx._collections
+
+
+def ambient_of(ctx: ContextNode) -> AmbientRecord:
+    """Return `ctx`'s ambient weight record (`graphed.systematics.ambient`)."""
+    return ctx._ambient
 
 
 def is_ancestor(ancestor: ContextNode, ctx: ContextNode) -> bool:
