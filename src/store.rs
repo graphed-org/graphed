@@ -274,7 +274,7 @@ impl GraphStore {
     /// `(cone id, None)`.
     pub(crate) fn cone(&self, outputs: &[NodeId]) -> Result<Self, BadNodeId> {
         let nodes = self.arena_holding(outputs)?;
-        let (kept, outs, remap) = optimizer::dead_code_elimination(&nodes, outputs);
+        let (kept, outs, remap) = optimizer::dead_code_elimination(&nodes, outputs, None);
         let reduced = optimizer::Reduced {
             nodes: kept,
             outputs: outs.into_iter().map(|o| o as NodeId).collect(),

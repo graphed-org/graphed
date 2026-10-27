@@ -65,19 +65,30 @@ pub(crate) struct Reduced {
 /// Run the full reduction with an explicit fusion mode (see [`FusionMode`]). `nodes` is the
 /// interned arena (topological by id); `outputs` are marked output ids. Returns reduced `NodeKey`s
 /// whose inputs reference indices *within the returned list*.
-#[allow(
-    clippy::indexing_slicing,
-    reason = "each pass's remap is total over the graph the previous pass produced"
-)]
 pub(crate) fn reduce_with_mode(
     nodes: &[NodeKey],
     outputs: &[NodeId],
     engine: &dyn RewriteEngine,
     mode: FusionMode,
 ) -> Reduced {
+    reduce_oriented(nodes, outputs, Some(&symmetric_swaps(nodes)), engine, mode)
+}
+
+/// `reduce_with_mode` over an arena whose symmetric ops `swap` orients; `None` for an arena that
+/// is already oriented (the incremental reducer's canonical arena).
+#[allow(
+    clippy::indexing_slicing,
+    reason = "each pass's remap is total over the graph the previous pass produced"
+)]
+pub(crate) fn reduce_oriented(
+    nodes: &[NodeKey],
+    outputs: &[NodeId],
+    swap: Option<&[bool]>,
+    engine: &dyn RewriteEngine,
+    mode: FusionMode,
+) -> Reduced {
     // 1. DCE — keep only nodes reachable from the outputs, symmetric operands in canonical order.
-    let (reachable_keys, reachable_outputs, dce_map) =
-        dead_code_elimination(&orient_symmetric_ops(nodes), outputs);
+    let (reachable_keys, reachable_outputs, dce_map) = dead_code_elimination(nodes, outputs, swap);
 
     // operator-token -> a NodeKey template, for reconstructing boundary nodes after canonicalization
     let mut templates: HashMap<String, NodeKey> = HashMap::new();
@@ -116,19 +127,23 @@ pub(crate) fn is_symmetric(key: &NodeKey) -> bool {
 /// input keys, so it is stable across Rust releases and platforms. It is invariant under the
 /// engine's rules: an identity op (`x+0`, `x*1`) has its input's key and a symmetric op hashes its
 /// operand keys sorted, so commuted twins share a key whichever was recorded first.
-pub(crate) fn structural_key(key: &NodeKey, input_keys: &[u128]) -> u128 {
+/// `token` is `key.token()`, passed in so a caller that already built it does not build it again.
+pub(crate) fn structural_key(key: &NodeKey, token: &str, input_keys: &[u128]) -> u128 {
     const OFFSET: u128 = 0x6c62_272e_07bb_0142_62b8_2175_6295_c58d;
     const PRIME: u128 = 0x0000_0000_0100_0000_0000_0000_0000_013b;
-    let token = key.token();
     if let [only] = input_keys {
-        if matches!(key, NodeKey::Op { .. }) && IDENTITY_TOKENS.contains(&token.as_str()) {
+        if matches!(key, NodeKey::Op { .. }) && IDENTITY_TOKENS.contains(&token) {
             return *only;
         }
     }
-    let mut ins = input_keys.to_vec();
-    if is_symmetric(key) {
-        ins.sort_unstable();
-    }
+    let sorted;
+    let ins = match *input_keys {
+        [a, b] if is_symmetric(key) => {
+            sorted = [a.min(b), a.max(b)];
+            &sorted[..]
+        }
+        _ => input_keys,
+    };
     let bytes = (token.len() as u64)
         .to_le_bytes()
         .into_iter()
@@ -141,26 +156,34 @@ pub(crate) fn structural_key(key: &NodeKey, input_keys: &[u128]) -> u128 {
 /// they are. `input_keys` are `key`'s inputs' structural keys, in input order.
 // ponytail: equal keys of distinct operands (a 128-bit collision) keep the recorded order.
 pub(crate) fn orient(key: NodeKey, input_keys: &[u128]) -> NodeKey {
-    match (input_keys, key.inputs()) {
-        (&[ka, kb], &[a, b]) if kb < ka && is_symmetric(&key) => key.with_inputs(vec![b, a]),
+    match key.inputs() {
+        &[a, b] if swaps(&key, input_keys) => key.with_inputs(vec![b, a]),
         _ => key,
     }
 }
 
-/// The arena with every symmetric op's operands in canonical order, ids unchanged.
+/// `orient` would swap this node's two operands.
+fn swaps(key: &NodeKey, input_keys: &[u128]) -> bool {
+    matches!(*input_keys, [ka, kb] if kb < ka) && is_symmetric(key)
+}
+
+/// For each arena node, whether `orient` swaps its operands; DCE applies it while it copies the cone,
+/// so the arena itself is never cloned.
 #[allow(
     clippy::indexing_slicing,
     reason = "the store keeps each input below its node, so its key is already computed"
 )]
-fn orient_symmetric_ops(nodes: &[NodeKey]) -> Vec<NodeKey> {
+fn symmetric_swaps(nodes: &[NodeKey]) -> Vec<bool> {
     let mut keys: Vec<u128> = Vec::with_capacity(nodes.len());
-    let mut out = Vec::with_capacity(nodes.len());
+    let mut swap = Vec::with_capacity(nodes.len());
+    let mut ins: Vec<u128> = Vec::new();
     for node in nodes {
-        let ins: Vec<u128> = node.inputs().iter().map(|&i| keys[index(i)]).collect();
-        keys.push(structural_key(node, &ins));
-        out.push(orient(node.clone(), &ins));
+        ins.clear();
+        ins.extend(node.inputs().iter().map(|&i| keys[index(i)]));
+        keys.push(structural_key(node, &node.token(), &ins));
+        swap.push(swaps(node, &ins));
     }
-    out
+    swap
 }
 
 /// `dead_code_elimination`'s remap entry for a node the pass dropped.
@@ -171,7 +194,8 @@ pub(crate) const DROPPED: usize = usize::MAX;
 /// and the `remap` vector itself (`DROPPED` for a node this pass dropped).
 ///
 /// The order is the post-order walk from the outputs (in request order, inputs in order), so it
-/// depends only on the outputs' cone, never on the order the arena recorded it in.
+/// depends only on the outputs' cone, never on the order the arena recorded it in. With `swap`, a
+/// node marked there is visited and kept with its two operands swapped.
 #[allow(
     clippy::indexing_slicing,
     reason = "callers bound the outputs, and the store keeps each input below its node"
@@ -179,7 +203,17 @@ pub(crate) const DROPPED: usize = usize::MAX;
 pub(crate) fn dead_code_elimination(
     nodes: &[NodeKey],
     outputs: &[NodeId],
+    swap: Option<&[bool]>,
 ) -> (Vec<NodeKey>, Vec<usize>, Vec<usize>) {
+    let input = |i: usize, k: usize| {
+        let ins = nodes[i].inputs();
+        let k = if k < ins.len() && swap.is_some_and(|s| s[i]) {
+            1 - k
+        } else {
+            k
+        };
+        ins.get(k).copied()
+    };
     let mut remap = vec![DROPPED; nodes.len()];
     let mut kept: Vec<NodeKey> = Vec::new();
     // (node, next input to visit); a DAG never meets a node already on this path
@@ -190,7 +224,7 @@ pub(crate) fn dead_code_elimination(
         }
         while let Some(top) = stack.last_mut() {
             let (i, next) = *top;
-            if let Some(&inp) = nodes[i].inputs().get(next) {
+            if let Some(inp) = input(i, next) {
                 top.1 += 1;
                 if remap[index(inp)] == DROPPED {
                     stack.push((index(inp), 0));
@@ -198,10 +232,9 @@ pub(crate) fn dead_code_elimination(
             } else {
                 stack.pop();
                 remap[i] = kept.len();
-                let new_inputs: Vec<NodeId> = nodes[i]
-                    .inputs()
-                    .iter()
-                    .map(|&x| remap[index(x)] as NodeId)
+                let new_inputs: Vec<NodeId> = (0..nodes[i].inputs().len())
+                    .filter_map(|k| input(i, k))
+                    .map(|x| remap[index(x)] as NodeId)
                     .collect();
                 kept.push(nodes[i].with_inputs(new_inputs));
             }
@@ -623,7 +656,7 @@ mod tests {
         let _dead = s.add_op("neg".into(), vec![a], empty()).unwrap(); // never marked output
         s.mark_output(used).unwrap();
         let (nodes, outs) = s.snapshot();
-        let (kept, _kout, _remap) = dead_code_elimination(&nodes, &outs);
+        let (kept, _kout, _remap) = dead_code_elimination(&nodes, &outs, None);
         // a + used kept; dead dropped
         assert_eq!(kept.len(), 2);
         // every node on the path to the output survives
@@ -825,7 +858,7 @@ mod tests {
         let _dead = s.add_op("mul".into(), vec![a, x], empty()).unwrap(); // off the apex, not an output
         s.mark_output(out).unwrap();
         let (nodes, outs) = s.snapshot();
-        let (kept, _, _) = dead_code_elimination(&nodes, &outs);
+        let (kept, _, _) = dead_code_elimination(&nodes, &outs, None);
         assert_eq!(kept.len(), 5); // x, a, l, r, out kept; the dead mul dropped
         let sd = seeds(&[("x", 5)]);
         let (reduced, _) = s.reduce(&EggEngine::default());

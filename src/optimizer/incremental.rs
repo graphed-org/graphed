@@ -34,6 +34,8 @@ pub(crate) struct IncrementalReducer {
     canon_table: HashMap<NodeKey, NodeId>,
     /// each canonical node's `structural_key`, by canonical id.
     canon_keys: Vec<u128>,
+    /// `canonicalize`'s input-key buffer, kept to avoid an allocation per recorded node.
+    scratch_keys: Vec<u128>,
     /// original arena id -> canonical id (`len()` is the watermark into the original arena).
     map: Vec<NodeId>,
     /// cumulative nodes processed across all steps — the incrementality witness: equals the
@@ -83,27 +85,32 @@ impl IncrementalReducer {
     fn canonicalize(&mut self, key: NodeKey) -> NodeId {
         // identity elimination — the engine's identity rules (arity one, as their `(tok ?x)`
         // patterns are), applied at record time.
+        let mut token = None;
         if let NodeKey::Op { inputs, .. } = &key {
             if let [only] = inputs.as_slice() {
-                if IDENTITY_TOKENS.contains(&key.token().as_str()) {
+                let t = key.token();
+                if IDENTITY_TOKENS.contains(&t.as_str()) {
                     return *only;
                 }
+                token = Some(t);
             }
         }
         // commutativity — the engine's commute rules: both orientations of a symmetric op orient
         // to ONE canonical node by their operands' structural keys, as the one-shot path orients
         // them, so which orientation was recorded first never shows in the result.
-        let input_keys: Vec<u128> = key
-            .inputs()
-            .iter()
-            .map(|&i| self.canon_keys[index(i)])
-            .collect();
+        let mut input_keys = std::mem::take(&mut self.scratch_keys);
+        input_keys.clear();
+        input_keys.extend(key.inputs().iter().map(|&i| self.canon_keys[index(i)]));
         let key = orient(key, &input_keys);
         if let Some(&id) = self.canon_table.get(&key) {
+            self.scratch_keys = input_keys;
             return id;
         }
         let id = self.canon_nodes.len() as NodeId;
-        self.canon_keys.push(structural_key(&key, &input_keys));
+        let token = token.unwrap_or_else(|| key.token());
+        self.canon_keys
+            .push(structural_key(&key, &token, &input_keys));
+        self.scratch_keys = input_keys;
         self.canon_nodes.push(key.clone());
         self.canon_table.insert(key, id);
         id
@@ -126,7 +133,8 @@ impl IncrementalReducer {
         for &o in outputs {
             outs.push(self.map.get(index(o)).copied().ok_or(BadNodeId(o))?);
         }
-        let mut red = super::reduce_with_mode(&self.canon_nodes, &outs, engine, mode);
+        // `canonicalize` oriented every symmetric op as it recorded it
+        let mut red = super::reduce_oriented(&self.canon_nodes, &outs, None, engine, mode);
         // §8.2(i): the four passes answered in CANONICAL-arena ids, so compose this reducer's own
         // original->canonical map in front. Without it the accessor silently mis-keys every
         // `Session(incremental=True)` program.
@@ -325,7 +333,7 @@ mod tests {
         let mut keys: Vec<u128> = Vec::new();
         for n in &nodes {
             let ins: Vec<u128> = n.inputs().iter().map(|&i| keys[index(i)]).collect();
-            keys.push(structural_key(n, &ins));
+            keys.push(structural_key(n, &n.token(), &ins));
         }
         let k = |id: NodeId| keys[index(id)];
         // FNV-1a 128 of the source token `src|a` behind its u64 length: a release-stable value
