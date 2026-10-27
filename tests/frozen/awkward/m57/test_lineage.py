@@ -323,4 +323,4 @@ def test_an_ancestor_factor_join_after_a_crossed_overlay_agrees_in_both_orders()
             m57_joined(m57_reindexed(m57_factor("hf", sf, hf), child), "lf", lf),
         ]
 
-        _agrees(session, graphed.weight(target), expected), delta_first
+        _agrees(session, graphed.weight(target), expected, delta_first)
