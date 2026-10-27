@@ -428,10 +428,18 @@ def _partition_tag(p: Partition) -> str:
     return f"{p.uri}@{p.entry_start}:{p.entry_stop}"
 
 
-_OPEN = threading.local()
+class _OpenStores(threading.local):
+    """Each thread's cached object-store stores, keyed by (process, root, options)."""
+
+    def __init__(self) -> None:
+        self.stores: dict[tuple[int, str, str], Any] = {}
+
+
+_OPEN = _OpenStores()
 #: filesystems with no directories, so a cached store cannot outlive its root
 _DIRLESS = frozenset({"s3", "s3a", "gcs", "gs", "abfs", "az", "adl", "memory"})
-_TOKEN: tuple[int, str] = (os.getpid(), uuid.uuid4().hex)
+#: each process's journal token, keyed by pid so a forked child never writes its parent's journals
+_TOKENS: dict[int, str] = {os.getpid(): uuid.uuid4().hex}
 
 
 def open_store(
@@ -453,14 +461,14 @@ def task_store(root: str, storage_options: Sequence[tuple[str, Any]] = ()) -> An
     costs a bucket request per task. Any other root is opened per call, since a cached store would
     outlive a removed directory.
     """
-    global _TOKEN
-    if _TOKEN[0] != os.getpid():  # a forked child must not share its parent's journals
-        _TOKEN = (os.getpid(), uuid.uuid4().hex)
-    cache: dict[tuple[int, str, str], Any] = _OPEN.__dict__.setdefault("stores", {})
-    key = (os.getpid(), root, repr(storage_options))
+    pid = os.getpid()
+    if pid not in _TOKENS:
+        _TOKENS[pid] = uuid.uuid4().hex
+    cache = _OPEN.stores
+    key = (pid, root, repr(storage_options))
     if key in cache:
         return cache[key]
-    store = open_store(root, f"{_TOKEN[1]}-{threading.get_ident()}", dict(storage_options))
+    store = open_store(root, f"{_TOKENS[pid]}-{threading.get_ident()}", dict(storage_options))
     protocols = getattr(getattr(store, "fs", None), "protocol", ())
     if is_url(root) and _DIRLESS & set(
         protocols if isinstance(protocols, (tuple, list)) else (protocols,)
