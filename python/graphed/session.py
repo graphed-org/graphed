@@ -205,7 +205,7 @@ class Session:
         """The backend this session records on."""
         return self._backend
 
-    # read-only views of `systematics`, under the names the test suites read
+    # read-only views of `systematics`, under the names the frozen suites read
     @property
     def _points(self) -> Mapping[str, Point]:
         return self.systematics.points
@@ -213,26 +213,6 @@ class Session:
     @property
     def _points_by_point(self) -> Mapping[Point, str]:
         return self.systematics.point_owners
-
-    @property
-    def _mint_epoch(self) -> int:
-        return self.systematics.epoch
-
-    @property
-    def _universes(self) -> Mapping[int, Mapping[str, tuple[str, str | None]]]:
-        return self.systematics.universes
-
-    @property
-    def _mul_forms(self) -> Mapping[tuple[str, str], Any]:
-        return dict(self.systematics.mul_forms)
-
-    @property
-    def _weight_factors(self) -> Sequence[tuple[str, tuple[int, ...]]]:
-        return self.systematics.weight_factors
-
-    @property
-    def _shift_after_weight(self) -> Mapping[tuple[str, str], frozenset[int]]:
-        return self.systematics.shift_after_weight
 
     def node_count(self) -> int:
         """Return the number of interned nodes."""

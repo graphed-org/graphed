@@ -33,7 +33,6 @@ from .provenance import capture
 # `graphed.context` is where the probes, the extra suites and the docs read them from.
 from .systematics.ambient import (  # isort: skip
     AmbientRecord,
-    Memo,
     Rider as Rider,
     adopt,
     ambient_entries as ambient_entries,
@@ -49,7 +48,6 @@ from .systematics.by_label import cone as cone  # isort: skip
 from .systematics.lineage import (  # isort: skip
     ContextNode,
     Link as Link,
-    ambient_of,
     collections_of,
     context_session,
 )
@@ -108,19 +106,6 @@ class EventContext(ContextNode):
         self._provenance = capture()
         self._derived: dict[tuple[tuple[str, int], ...], EventContext] = {}
         self._projected: dict[str, EventContext] = {}
-
-    # the extra suites read these three of the ambient record
-    @property
-    def _factors(self) -> list[Any]:
-        return ambient_of(self).factors
-
-    @property
-    def _recorded(self) -> tuple[str, ...]:
-        return ambient_of(self).recorded
-
-    @property
-    def _memo(self) -> Memo | None:
-        return ambient_of(self).memo
 
     def __repr__(self) -> str:
         """Show the context's serial and where it was made."""

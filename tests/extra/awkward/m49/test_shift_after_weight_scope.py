@@ -1,10 +1,10 @@
 """§2.5's shift-after-weight report describes ONE COMPILED PROGRAM, not the Session that built it.
 
-`Session._shift_after_weight` accumulates for the Session's lifetime, so without a per-compile
-filter two correct programs inherit a third one's violation. Both directions here: the violating
-program still reports its pair (the instrument is live), while a sibling program that never applies
-the offending weight reports `()` — whether it is compiled from the same session afterwards, or
-built on a branch the weight was never registered on at all.
+`Session.systematics.shift_after_weight` accumulates for the Session's lifetime, so without a
+per-compile filter two correct programs inherit a third one's violation. Both directions here: the
+violating program still reports its pair (the instrument is live), while a sibling program that
+never applies the offending weight reports `()` — whether it is compiled from the same session
+afterwards, or built on a branch the weight was never registered on at all.
 """
 
 from __future__ import annotations
