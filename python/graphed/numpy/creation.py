@@ -28,13 +28,9 @@ def _norm_shape(shape: ShapeLike) -> tuple[int, ...]:
 
 
 def _source(session: Session, name: str | None, content: str, arr: Any) -> Array:
-    if name is None:  # a content name binds one array: an identical creation reuses it
-        name = content
-        arr = next(
-            (held for nid, held in session.sources().items() if session.source_name(nid) == name),
-            arr,
-        )
-    return session.source(name, form=NumpyForm(arr.dtype, shape=(None, *arr.shape[1:])), data=arr)
+    # the content name fixes the values, so an identical creation reuses the held binding
+    form = NumpyForm(arr.dtype, shape=(None, *arr.shape[1:]))
+    return session.source(name or content, form=form, data=arr, identity=content)
 
 
 @overload

@@ -52,14 +52,14 @@ def _race(
 
 def test_compiling_while_other_threads_record_raises_nothing() -> None:
     session = Session(NumpyBackend())
-    x = from_array(session, "x", np.arange(10.0))
+    x = from_array("x", np.arange(10.0), session=session)
     out = apply(lambda a: a + 1, x, output_type="float64").sum()
     counter = iter(range(10**9))
 
     def record(stop: threading.Event) -> None:
         while not stop.is_set():
             i = next(counter)
-            own = from_array(session, f"src{i}", np.arange(3.0))
+            own = from_array(f"src{i}", np.arange(3.0), session=session)
             apply(lambda a, i=i: a * i, own, output_type="float64")
 
     def compile_repeatedly() -> None:
@@ -79,7 +79,7 @@ def _finishes(fn: Callable[[], object], timeout: float = 5.0) -> bool:
 
 def test_the_lock_is_reentrant() -> None:
     session = Session(NumpyBackend())
-    x = from_array(session, "x", np.arange(3.0))
+    x = from_array("x", np.arange(3.0), session=session)
 
     def nested() -> None:
         with session._lock:
@@ -91,7 +91,7 @@ def test_the_lock_is_reentrant() -> None:
 
 def test_evaluation_does_not_hold_the_lock() -> None:
     session = Session(NumpyBackend())
-    x = from_array(session, "x", np.arange(3.0))
+    x = from_array("x", np.arange(3.0), session=session)
     entered, release = threading.Event(), threading.Event()
 
     def blocking(a: Any) -> Any:
@@ -105,7 +105,9 @@ def test_evaluation_does_not_hold_the_lock() -> None:
     evaluating.start()
     try:
         assert entered.wait(5.0)
-        assert _finishes(lambda: from_array(session, "y", np.arange(2.0)) + 1.0, timeout=2.0)
+        assert _finishes(
+            lambda: from_array("y", np.arange(2.0), session=session) + 1.0, timeout=2.0
+        )
     finally:
         release.set()
         evaluating.join()

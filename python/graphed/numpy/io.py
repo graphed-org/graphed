@@ -95,6 +95,12 @@ class _DatasetLoader:
 
     paths: tuple[str, ...]
     columns: tuple[str, ...] | None
+    steps_per_file: int = 1
+    open_files: bool = True
+
+    def source_identity(self) -> object:
+        """Return what this loader reads and how it partitions it."""
+        return (type(self), self.paths, self.columns, self.steps_per_file, self.open_files)
 
     def __call__(self) -> dict[str, np.ndarray]:
         import pyarrow.parquet as pq
@@ -148,7 +154,7 @@ def from_parquet(
         raise ValueError(f"steps_per_file must be >= 1, got {steps_per_file}")
     fields = _rectilinear_fields(paths, columns)
     form = NumpyForm(np.dtype(object), kind="record", fields=fields)
-    loader = _DatasetLoader(paths, tuple(columns) if columns else None)
+    loader = _DatasetLoader(paths, tuple(columns) if columns else None, steps_per_file, open_files)
     return gpq.deferred_source(name, paths=paths, form=form, loader=loader, session=session)
 
 

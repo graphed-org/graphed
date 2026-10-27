@@ -103,8 +103,8 @@ class Session:
         self._forms: dict[int, Form] = {}
         self._sources: dict[int, object] = {}
         self._source_names: dict[int, str] = {}
-        # source name -> (form description, data)
-        self._slots: dict[str, tuple[object, object]] = {}
+        # source name -> (form description, data, identity)
+        self._slots: dict[str, tuple[object, object, object]] = {}
         self._ops: dict[int, tuple[str, dict[str, ParamValue], list[int]]] = {}
         self._externals: dict[int, tuple[Callable[[object], object], list[int]]] = {}
         self._services: dict[str, ServiceSpec] = {}
@@ -493,25 +493,43 @@ class Session:
         return value() if callable(value) else value
 
     # ---- builders --------------------------------------------------------------
-    def source(self, name: str, *, form: Form, data: object, **params: ParamValue) -> Array:
+    def source(
+        self,
+        name: str,
+        *,
+        form: Form,
+        data: object,
+        identity: object = None,
+        **params: ParamValue,
+    ) -> Array:
         # a name is a slot of one form bound to one data object; the store interns (name, params),
         # so a name reused for other data would silently keep its first binding
-        """Record a source called ``name`` of ``form``, bound to ``data``."""
+        """Record a source called ``name`` of ``form``, bound to ``data``.
+
+        A name already bound here is reused when ``data`` is the held object, or when both
+        bindings have an identity and they compare equal; any other data is refused. The
+        identity is ``identity``, else ``data.source_identity()`` where ``data`` defines it.
+        """
         described = getattr(form, "describe", None)
         key = described() if callable(described) else form
+        if identity is None:
+            own = getattr(data, "source_identity", None)
+            identity = own() if callable(own) else None
         prov = capture()
+        fix = "pass name= to name this one, or call graphed.new_session() for a fresh Session"
         with self._lock:
-            held = self._slots.setdefault(name, (key, data))
+            held = self._slots.setdefault(name, (key, data, identity))
             if held[0] != key:
                 raise ValueError(
-                    f"source {name!r} is already a slot of another form in this Session; "
-                    "name this one"
+                    f"source {name!r} is already a slot of another form in this Session; {fix}"
                 )
             if held[1] is not data:
-                raise ValueError(
-                    f"source {name!r} is already bound to other data in this Session; "
-                    "name this one"
-                )
+                # `==` on the identities only: the data's own `==` may be elementwise (ndarrays)
+                if identity is None or held[2] is None or not bool(held[2] == identity):
+                    raise ValueError(
+                        f"source {name!r} is already bound to other data in this Session; {fix}"
+                    )
+                data = held[1]
             node_id = self._store.add_source(name, dict(params))
             self._forms.setdefault(node_id, form)
             self._sources.setdefault(node_id, data)

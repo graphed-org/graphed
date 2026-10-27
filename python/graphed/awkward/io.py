@@ -92,6 +92,12 @@ class _DatasetLoader:
 
     paths: tuple[str, ...]
     columns: tuple[str, ...] | None
+    steps_per_file: int = 1
+    open_files: bool = True
+
+    def source_identity(self) -> object:
+        """Return what this loader reads and how it partitions it."""
+        return (type(self), self.paths, self.columns, self.steps_per_file, self.open_files)
 
     def __call__(self) -> ak.Array:
         return ak.from_parquet(
@@ -152,7 +158,7 @@ def from_parquet(
     if not open_files:
         # validated blind
         gpq.make_partitions(paths, steps_per_file=steps_per_file, open_files=False)
-    loader = _DatasetLoader(paths, tuple(columns) if columns else None)
+    loader = _DatasetLoader(paths, tuple(columns) if columns else None, steps_per_file, open_files)
     return gpq.deferred_source(name, paths=paths, form=form, loader=loader, session=session)
 
 

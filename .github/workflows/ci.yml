@@ -186,7 +186,7 @@ jobs:
           # also drops the m39/m40 `shuffle_backends.py` top-level-name collision (only m39's remains).
           pytest tests/frozen/frontend --ignore=tests/frozen/frontend/m40 -p no:cacheprovider
           # the shared-Session races and scope inheritance: they need the no-GIL leg to bite
-          pytest tests/extra/frontend/test_session_lock.py tests/extra/frontend/test_current_session.py tests/extra/frontend/test_reader_session.py -p no:cacheprovider
+          pytest tests/extra/frontend/test_session_lock.py tests/extra/frontend/test_current_session.py tests/extra/frontend/test_reader_session.py tests/extra/frontend/test_source_identity.py -p no:cacheprovider
           # numpy m5 and m40 both ship test_projection.py — separate invocations avoid the duplicate
           # basename collision (m40 here is numpy-only, so it stays in this awkward-free gate).
           pytest tests/frozen/numpy --ignore=tests/frozen/numpy/m40 -p no:cacheprovider

@@ -91,9 +91,9 @@ def test_new_session_installs_a_backend_or_clears_the_default() -> None:
 
 def test_new_session_releases_the_old_default() -> None:
     old = current_session(NumpyBackend())
-    x = from_array(old, "x", np.arange(3.0)) + 1.0
+    x = from_array("x", np.arange(3.0)) + 1.0  # lands in the default, `old`
     try:
-        from_array(old, "x", np.arange(2.0))
+        from_array("x", np.arange(2.0))
     except ValueError as exc:  # a caught error's traceback holds the frames that held `old`
         del exc
     ref = weakref.ref(old)
@@ -184,7 +184,7 @@ def test_a_thread_inherits_a_scope_exactly_when_the_build_says_so() -> None:
 def test_arrays_recorded_in_a_scope_outlive_it() -> None:
     s = Session(NumpyBackend())
     with s:
-        y = from_array(s, "x", np.arange(3.0)) * 2.0
+        y = from_array("x", np.arange(3.0), session=s) * 2.0
         count = s.node_count()
     assert s.node_count() == count
     np.testing.assert_array_equal(graphed.materialize(y), np.arange(3.0) * 2.0)
@@ -231,8 +231,8 @@ def test_without_awkward_or_a_factory_a_bare_call_names_both(
 
 def _two_sessions() -> tuple[Any, Any]:
     return (
-        from_array(Session(NumpyBackend()), "a", np.arange(3.0)),
-        from_array(Session(NumpyBackend()), "b", np.arange(3.0)),
+        from_array("a", np.arange(3.0), session=Session(NumpyBackend())),
+        from_array("b", np.arange(3.0), session=Session(NumpyBackend())),
     )
 
 
@@ -269,8 +269,8 @@ def test_a_grouped_gak_join_refusal_points_at_a_scope() -> None:
     ak = pytest.importorskip("awkward")
     from graphed.awkward import AwkwardBackend, from_awkward, gak  # noqa: PLC0415
 
-    left = from_awkward(Session(AwkwardBackend()), "left", ak.Array({"k": [1]}))
-    right = from_awkward(Session(AwkwardBackend()), "right", ak.Array({"k": [1]}))
+    left = from_awkward("left", ak.Array({"k": [1]}), session=Session(AwkwardBackend()))
+    right = from_awkward("right", ak.Array({"k": [1]}), session=Session(AwkwardBackend()))
     with pytest.raises(graphed.GraphedError, match="same Session") as info:
         gak.join(left, right, on=["k"], grouped=True)
     assert "with left.session" in str(info.value)

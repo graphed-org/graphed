@@ -22,6 +22,12 @@ A current Session for reads with no array input
   records into ``current_session()``. A Session on a backend the reader cannot record on is
   refused at the read. The leading positional Session still works and raises a
   ``DeprecationWarning``; pass ``session=`` instead.
+* ``Session.source`` reuses a taken name's binding when the new data is the same source: the same
+  object, or an equal ``source_identity()`` (or ``identity=``). A re-run ``from_parquet`` with the
+  same files, columns, ``steps_per_file`` and ``open_files`` returns its node; other data under
+  the name is refused, and both refusals name ``name=`` and ``graphed.new_session()``. The numpy
+  creators and ``default_rng`` draws bind their content name atomically, so two threads creating
+  one content no longer race into a refusal.
 * Session methods lock their state, so threads may record into and compile one Session at once;
   compiling while another thread recorded raised ``dictionary changed size during iteration``.
 * The cross-Session refusals of ``join``, ``gak.join``, ``apply``, ``apply_gufunc``,
