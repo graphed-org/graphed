@@ -46,7 +46,7 @@ A plan's workers keep the Session backend's behavior
   built in the graph) raised ``AttributeError`` in workers while it worked on the driver. Arrays
   the tasks return carry the shipped behavior back, lambdas included. A behavior cloudpickle
   cannot copy is refused with a ``TypeError`` when the plan is built. A behavior-less Session's
-  plan keeps its bytes (#122).
+  plan keeps its bytes (#123).
 
 Exceptions are named ``…Error``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
