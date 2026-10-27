@@ -12,21 +12,21 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, TypeGuard
 
-from ..array import Array, attach, labels_carried
+from ..array import Array
 from ..context import project
 from ..errors import GraphedError
 from .ambient import context_labels, weight_of
+from .handles import broadcast_like as broadcast_like
+from .handles import reindex_to as reindex_to
+from .handles import with_context as with_context
 from .kinds import Kind
 from .lineage import (
     ContextNode,
     ambient_of,
     collections_of,
     context_session,
-    is_ancestor,
     link_of,
-    links_below,
     parent_of,
-    row_space_above,
 )
 from .lineage import selection as lineage_selection
 from .lineage import unify_contexts as unify_contexts
@@ -38,7 +38,6 @@ from .varied import (
     member_of,
     members_of,
     point_registry,
-    rebuild,
     tags_of,
 )
 from .varied import context_of as context_of
@@ -61,12 +60,13 @@ def _is_context(value: object) -> TypeGuard[EventContext]:
 def _variation_axis_index(hist: Any) -> int | None:
     """§6.2(i-bis): the position of the axis-mode variation axis, `None` when there is none.
 
-    Recognised by the name carried on the axis' `__dict__` — `bh.axis.StrCategory(..., name=)` is a
-    `TypeError`, so the frontend (and the fixtures) stamp the name that way. `hist.axes.name` is
+    Recognised by the axis' `name` — a `hist` axis takes it by keyword, while
+    `bh.axis.StrCategory(..., name=)` is a `TypeError`, so the frontend (and the fixtures) stamp
+    it on the axis' `__dict__`. `hist.axes.name` is
     NOT the oracle: bh maps that attribute over every axis and raises when one lacks it.
     """
     return next(
-        (i for i, a in enumerate(hist.axes) if a.__dict__.get("name") == "variation"), None
+        (i for i, a in enumerate(hist.axes) if getattr(a, "name", None) == "variation"), None
     )
 
 
@@ -215,80 +215,3 @@ def variations(ctx: Any) -> dict[str, dict[str, tuple[Kind, Fraction | None]]]:
         name: {tag: (kind, numeric_value(tag)) for tag, kind in tags.items()}
         for name, tags in kinds.items()
     }
-
-
-def reindex_to(value: Array | Varied, ctx: Any) -> Any:
-    """§6.1d(B): `value` re-expressed in `ctx`'s row space, label-aligned per §2.4.
-
-    Identity when `value` already carries `ctx`'s handle or carries none; a `GraphedError` when
-    `value`'s handle is a DESCENDANT of `ctx` (a mask has no inverse) or divergent from it.
-
-    A `vary` link changes only registrations, so a handle standing below a RUN of them stands in
-    the row space above that run: the walk starts from there, which is what re-indexes a value read
-    on a branch that differs from `ctx` in registrations alone.
-    """
-    handle = context_of(value)
-    if handle is None or handle is ctx:
-        return value
-    if ctx is None:
-        raise GraphedError(
-            f"cannot re-index a value read through {handle!r} to a context-free target"
-        )
-    if not is_ancestor(handle, ctx):
-        above = row_space_above(handle, ctx)
-        if above is not None:
-            handle = above
-        elif is_ancestor(ctx, handle):
-            raise GraphedError(
-                f"{handle!r} is a descendant of {ctx!r}: a selection-scoped value has no way back "
-                "to its parent's row space (a mask has no inverse) — read the value at "
-                f"{ctx!r} instead"
-            )
-        else:
-            raise GraphedError(
-                f"variation contexts {handle!r} and {ctx!r} are on divergent branches; no lineage "
-                "path re-indexes one to the other"
-            )
-    for kind, payload in links_below(ctx, handle):
-        value = _follow(value, kind, payload)
-    return with_context(value, ctx)
-
-
-def _follow(value: Any, kind: str, payload: Any) -> Any:
-    from .varied import expand  # noqa: PLC0415  (import cycle)
-
-    if kind == "mask":  # link kind (1): each label's member by THAT label's mask
-        return expand(lambda item, mask: item[mask], (value, payload), {})
-    if kind == "project":  # link kind (3): project, and RESET the accumulated label set
-        return member_of(value, payload)
-    return value  # link kind (2): a `vary` link is the identity — only registrations differ
-
-
-def with_context(value: Any, ctx: Any) -> Any:
-    """Stamp `ctx`'s handle on a value (§2.3e's ORIGINATION rule), leaving node identity alone."""
-    if isinstance(value, Varied):
-        return rebuild(
-            {label: with_context(member, ctx) for label, member in members_of(value).items()},
-            tags=tags_of(value),
-            context=ctx,
-        )
-    if isinstance(value, Array):
-        return attach(type(value)(value.session, value.node_id), ctx, labels_carried(value))
-    return value
-
-
-def broadcast_like(value: Array | Varied, factor: Any) -> Any:
-    """§6.1d's neutral broadcast seam: `factor` broadcast to `value`'s structure.
-
-    Dispatched to the backend idiom — the awkward backend records `ak.broadcast_arrays`, while a
-    rectilinear idiom (numpy) needs nothing, so a backend that supplies no implementation gets the
-    bound NO-OP and a genuine shape mismatch surfaces as its own execution-time error.
-    """
-    from .varied import expand  # noqa: PLC0415  (import cycle)
-
-    def one(item: Any, other: Any) -> Any:
-        session = getattr(item, "session", None)
-        seam = getattr(session.backend, "broadcast_like", None) if session is not None else None
-        return other if seam is None else seam(item, other)
-
-    return expand(one, (value, factor), {})

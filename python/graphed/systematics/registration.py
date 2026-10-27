@@ -1,10 +1,7 @@
-"""`graphed.vary`: the one functional verb that registers variations (§2.1).
+"""The construction machinery `graphed.vary`'s three overloads share (§2.1).
 
-A neutral module verb — like `join`/`repartition`, never an `Array` method, never gak, never
-numpy-idiom — with three overloads distinguished by the target: the loose primitive over an
-`Array`/`Varied`, and the weight and shift forms over an event context. It NEVER mutates: the
-result is a new object of the target's kind and the target stays valid and unchanged, because
-variation history is object lineage (§2.6b).
+The tag channels, the minting, the fan-out, the member checks and §2.5's stamping, plus the loose
+overload over an `Array`/`Varied` (`vary_loose`). The verb itself is `graphed.systematics.verb`.
 """
 
 from __future__ import annotations
@@ -13,11 +10,10 @@ from collections.abc import Callable, Iterable, Mapping
 from typing import Any, NamedTuple
 
 from ..array import Array, add_labels
-from ..errors import GraphedError, GraphedTypeError, PointError
-from ..provenance import capture
-from . import accessors
+from ..errors import GraphedError, PointError
 from .by_label import cone
-from .lineage import context_session, links_below
+from .handles import reindex_to
+from .lineage import links_below, unify_contexts
 from .points import Point, coordinate, default, render
 from .tags import canonical_tag, numeric_value
 from .varied import (
@@ -38,98 +34,7 @@ from .varied import (
 DEFAULT_MAX_UNIVERSES = 64
 
 
-def vary(
-    target: Array | Varied | Any,
-    name: str,
-    /,
-    nominal: Array | Varied | None = None,
-    *,
-    is_weight: bool = False,
-    points: Mapping[Any, Any] | Iterable[Any] | None = None,
-    collections: Mapping[str, Mapping[Any, Any] | Varied] | None = None,
-    composes_as_union: bool = False,
-    max_universes: int = DEFAULT_MAX_UNIVERSES,
-    **tags: Any,
-) -> Any:
-    """Register a variation family `name` on `target`, returning a NEW object (§2.1).
-
-    `**tags` and `points=` carry tag/member pairs under the §1.1 grammar; the signature's own
-    keyword names (`nominal`, `is_weight`, `points`, `collections`) are legal tags AND legal
-    collection names, so one so named arrives through a mapping channel instead.
-
-    `points=` is either a `Mapping[tag, member]` (declares only, the common case) or an iterable
-    mixing 2-`tuple` `(tag, member)` declares with `{nuisance: coordinate}` placement mappings that
-    SELECT a derived joint (dependent member) or RE-POINT a label off-grid (independent member)
-    (§2/§3). When a member is computed over another registered nuisance's varied nodes the family
-    fans out to the full grid of joint universes automatically (§2). `composes_as_union=True`
-    collapses it back to the one-at-a-time datacard union; `max_universes=` raises the §4 guard's
-    budget.
-    """
-    if not isinstance(name, str) or not name.isidentifier():
-        raise GraphedError(f"a variation name must be a Python identifier, got {name!r}")
-    declares, placements = _parse_points(points)
-    from ..context import EventContext, vary_context  # noqa: PLC0415  (import cycle)
-
-    overload: Any  # the two context overloads take one arg shape; mypy keeps its own narrowing
-    if isinstance(target, Array | Varied):
-        session = session_of(target)
-        overload = _vary_loose
-    elif isinstance(target, EventContext):
-        session = context_session(target)
-        overload = vary_context
-    else:
-        raise GraphedError(
-            "graphed.vary takes an Array, a Varied or an event context, got "
-            f"{type(target).__name__}"
-        )
-    # §4.5's TRANSACTIONAL mint: everything that can raise after `gather_members` has minted — the
-    # label-collision check, `check_members`, `_align`/`reindex_to` — must leave no binding behind
-    with session.systematics.transaction():
-        return overload(
-            target,
-            name,
-            nominal,
-            is_weight,
-            declares,
-            collections,
-            placements,
-            composes_as_union,
-            max_universes,
-            tags,
-        )
-
-
-def _parse_points(
-    points: Mapping[Any, Any] | Iterable[Any] | None,
-) -> tuple[Mapping[Any, Any] | None, list[Mapping[str, Any]] | None]:
-    """Split the unified `points=` surface into the internal (declares, placements) channels.
-
-    A `Mapping` (or `None`) is declares-only — today's path, passed straight through. A non-Mapping
-    iterable mixes 2-`tuple` `(tag, member)` declares with `{nuisance: coordinate}` placement
-    mappings; an entry that is neither is ill-typed input (`GraphedTypeError`). The result feeds
-    the old two-parameter seam unchanged, so `gather_members`/`_route` stay byte-identical.
-    """
-    if points is None or isinstance(points, Mapping):
-        return points, None
-    declares: dict[Any, Any] = {}
-    placements: list[Mapping[str, Any]] = []
-    for entry in points:
-        if isinstance(entry, Mapping):
-            placements.append(entry)
-        elif isinstance(entry, tuple) and len(entry) == 2:
-            tag, member = entry
-            declares[tag] = member
-        else:
-            raise GraphedTypeError(
-                "vary",
-                capture(),
-                f"a points= entry must be a (tag, member) declare 2-tuple or a "
-                f"{{nuisance: coordinate}} placement mapping, got {entry!r}",
-            )
-    return (declares or None), (placements or None)
-
-
-def _vary_loose(
+def vary_loose(
     target: Array | Varied,
     name: str,
     nominal: object,
@@ -186,7 +91,7 @@ def _vary_loose(
             raise GraphedError(f"variation label {label!r} is already carried by this container")
     handle = check_members({**existing, **resolved})
     existing = {label: _align(member, handle) for label, member in existing.items()}
-    resolved = {label: accessors.reindex_to(member, handle) for label, member in resolved.items()}
+    resolved = {label: reindex_to(member, handle) for label, member in resolved.items()}
     inherited_tags = dict(tags_of(target))
     # a joint is a cross-coordinate, not a tag of this single family, so it stays out of `_tags`
     inherited_tags[name] = inherited + tuple(label[len(name) + 1 :] for label in one_at_a_time)
@@ -205,7 +110,7 @@ def _align(member: Any, handle: Any) -> Any:
         return member
     if not any(kind in ("mask", "project") for kind, _payload in links_below(handle, src)):
         return member
-    return accessors.reindex_to(member, handle)
+    return reindex_to(member, handle)
 
 
 # ---- shared construction machinery (the context overloads use it too) ---------------------
@@ -314,7 +219,7 @@ def _foreign(
 
     * **composition** (`composed`): the member's node at that label READS a registered factor's
       member at the same label, so the weight form's label-aligned composition already resolves it
-      into the union — fanning it out would double-count it through `_two_level(old, ...)`. A
+      into the union — fanning it out would double-count it through `two_level(old, ...)`. A
       nuisance the ambient registers as a weight that the member reaches through the SHIFTED
       objects instead (a nuisance that is both a shift and a weight, m56) is a dependency like any
       other; or
@@ -692,7 +597,7 @@ def check_members(labelled: Mapping[str, Any]) -> Any:
                     f"variation {label}: its form {session.form(array)} is incompatible with the "
                     f"central universe's {reference}"
                 )
-    return accessors.unify_contexts(*(context_of(member) for member in labelled.values()))
+    return unify_contexts(*(context_of(member) for member in labelled.values()))
 
 
 def _flatten(member: object) -> list[Array]:

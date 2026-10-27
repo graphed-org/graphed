@@ -7,15 +7,10 @@ import through either path means exactly the same thing.
 from __future__ import annotations
 
 from .systematics.varied import (  # isort: skip
-    _BROADCAST_SURFACE as _BROADCAST_SURFACE,
-    _VARIED_CLASSES as _VARIED_CLASSES,
     RESERVED as RESERVED,
     SURFACE_DISPOSITIONS as SURFACE_DISPOSITIONS,
     Member as Member,
     Varied as Varied,
-    _broadcast_method as _broadcast_method,
-    _collect as _collect,
-    _refusing_method as _refusing_method,
     boundary_refusal as boundary_refusal,
     broadcasting as broadcasting,
     containers_in as containers_in,

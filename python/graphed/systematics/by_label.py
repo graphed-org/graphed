@@ -9,12 +9,15 @@ heterogeneous operand (a jes-varied kinematic beside a btag-varied weight is the
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from typing import TYPE_CHECKING
 
 from ..array import Array
 from ..errors import GraphedError
 from ..projection import read_columns
-from ..session import Session
 from .varied import Varied, member_of, members_of, union_labels
+
+if TYPE_CHECKING:
+    from ..session import Session
 
 __all__ = ["cone", "impact_by_label", "read_columns_by_label"]
 

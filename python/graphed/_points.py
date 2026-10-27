@@ -8,9 +8,6 @@ from __future__ import annotations
 
 from .systematics.points import (  # isort: skip
     Point as Point,
-    _build as _build,
-    _decimal as _decimal,
-    _nuisance as _nuisance,
     coordinate as coordinate,
     default as default,
     render as render,

@@ -20,7 +20,7 @@ from typing import Any
 
 from .points import Point
 
-#: one `_two_level` page: label -> the (outer, inner) member keys the label resolves through
+#: one `two_level` page: label -> the (outer, inner) member keys the label resolves through
 Page = dict[str, tuple[str, str | None]]
 
 
@@ -47,7 +47,7 @@ class SystematicsState:
         # M48 §2.5: every container's labels (by value) beside a weak reference to it, so
         # `compile_ir` can report a label that reaches no marked output
         self._varied: list[tuple[tuple[str, ...], weakref.ref[Any]]] = []
-        # `ambient._two_level`'s memo, by container id. Keys and never members, so it pins
+        # `ambient.two_level`'s memo, by container id. Keys and never members, so it pins
         # nothing; a page is stored only where no later mint can move it, and a rollback drops all
         self._universes: dict[int, Page] = {}
         #: `ambient._mul_form`'s memo, (left, right) form descriptions -> product form. Per Session
@@ -87,7 +87,7 @@ class SystematicsState:
 
     @property
     def universes(self) -> Mapping[int, Mapping[str, tuple[str, str | None]]]:
-        """Return a copy of `ambient._two_level`'s memo pages, by container id."""
+        """Return a copy of `ambient.two_level`'s memo pages, by container id."""
         with self._lock:
             return {key: dict(page) for key, page in self._universes.items()}
 
@@ -158,7 +158,7 @@ class SystematicsState:
                     self._weight_factors,
                 ) = saved
                 # the one place a resolution can move BACKWARDS: the epoch moves as for a mint, and
-                # the `_two_level` memo, which assumes the registry only grows, is dropped
+                # the `two_level` memo, which assumes the registry only grows, is dropped
                 self._epoch += 1
                 self._universes.clear()
                 raise

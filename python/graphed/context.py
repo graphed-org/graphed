@@ -28,41 +28,20 @@ from typing import Any
 from .array import Array
 from .errors import GraphedError
 from .provenance import capture
-from .systematics import accessors
 
-# The ambient-weight machinery lives in `graphed.systematics` (m57). Every name is re-exported
-# under its own name because `graphed.context` is where the probes, the extra suites and the docs
-# read the machinery from.
+# `Rider` and `ambient_entries` are re-exported, and `_two_level` aliased, because
+# `graphed.context` is where the probes, the extra suites and the docs read them from.
 from .systematics.ambient import (  # isort: skip
     AmbientRecord,
     Memo,
-    context_labels,
-    _SLOT as _SLOT,
     Rider as Rider,
-    _all_settled as _all_settled,
-    _compose as _compose,
-    _covering_overlay as _covering_overlay,
-    _extension as _extension,
-    _lineage_factors as _lineage_factors,
-    _lineage_reads as _lineage_reads,
-    _live_factors as _live_factors,
-    _live_riders as _live_riders,
-    _live_slots as _live_slots,
-    _marks as _marks,
-    _owned_projection as _owned_projection,
-    _placed_elsewhere as _placed_elsewhere,
-    _project_riders as _project_riders,
-    _Read as _Read,
-    _Registration as _Registration,
-    _same_node as _same_node,
-    _two_level as _two_level,
-    _union as _union,
-    _union_nominal as _union_nominal,
     adopt,
     ambient_entries as ambient_entries,
+    context_labels,
     fold,
     seed,
     shift_form,
+    two_level,
     weight_form,
     weight_of,
 )
@@ -75,6 +54,7 @@ from .systematics.lineage import (  # isort: skip
     context_session,
 )
 from .systematics.explain import Explanation as Explanation, explain as explain  # isort: skip
+from .systematics.handles import with_context  # isort: skip
 from .systematics.registration import stamp_labels as stamp_labels  # isort: skip
 from .systematics.varied import (  # isort: skip
     Varied as Varied,
@@ -87,6 +67,8 @@ from .systematics.varied import (  # isort: skip
     rebuild as rebuild,
     tags_of as tags_of,
 )
+
+_two_level = two_level
 
 #: contexts are compared by IDENTITY (§2.6b), so a divergence error must name two distinguishable
 #: objects; the serial plus the user line where the context was built is that name
@@ -183,7 +165,7 @@ class EventContext(ContextNode):
         merge would yield (a derived context's reads go through the same root wrapper, so the merge
         alone would answer with the parent's handle).
         """
-        return accessors.with_context(value, self)
+        return with_context(value, self)
 
     # ---- derivation (§2.6c: scoping is lineage) ---------------------------------
     def _derive(self, mask: Array | Varied) -> EventContext:

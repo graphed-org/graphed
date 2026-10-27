@@ -13,11 +13,11 @@ from typing import TYPE_CHECKING
 
 from ..errors import GraphedError
 from .ambient import (
-    _live_factors,
-    _live_riders,
-    _Registration,
-    _row_links,
+    Registration,
     ambient_entries,
+    live_factors,
+    live_riders,
+    row_links,
     weight_of,
 )
 from .kinds import Kind
@@ -205,9 +205,9 @@ def _link_name(link: tuple[str, str | None]) -> str:
     return "nominal" if label == "nominal" else f"universe:{label}"
 
 
-def _lineage_registrations(ctx: EventContext) -> tuple[_Registration, ...]:
+def _lineage_registrations(ctx: EventContext) -> tuple[Registration, ...]:
     """Every `graphed.vary` call on this lineage, oldest first (§2.7)."""
-    found: list[_Registration] = []
+    found: list[Registration] = []
     node: EventContext | None = ctx
     while node is not None:
         registration = ambient_of(node).registration
@@ -271,8 +271,8 @@ def explain(ctx: EventContext) -> Explanation:
     # Read off the LIVE operations, never the listing, which shows an adopted head's product run as
     # the one operation its node is: a run is a product, and its families share nothing.
     shared: dict[str, tuple[str, ...]] = {}
-    riders = _live_riders(ctx)
-    for slot in _live_factors(ctx)[1]:
+    riders = live_riders(ctx)
+    for slot in live_factors(ctx)[1]:
         on_slot = riders[slot].families
         for name in on_slot:
             shared[name] = tuple(other for other in on_slot if other != name)
@@ -303,7 +303,7 @@ def explain(ctx: EventContext) -> Explanation:
             registration.name,
             registration.kind,
             registration.tags,
-            _row_links(registration.context),
+            row_links(registration.context),
             Entry(registration.form, registration.names, registration.varies),
             tuple(
                 variation.point
@@ -331,7 +331,7 @@ def explain(ctx: EventContext) -> Explanation:
 
 
 def _origin_of(
-    label: str, point: tuple[tuple[str, str], ...], registrations: Sequence[_Registration]
+    label: str, point: tuple[tuple[str, str], ...], registrations: Sequence[Registration]
 ) -> Variation:
     """§2.7: where one universe came from.
 
@@ -361,7 +361,7 @@ def _origin_of(
     )
 
 
-def _minted_by(label: str, registrations: Sequence[_Registration]) -> _Registration | None:
+def _minted_by(label: str, registrations: Sequence[Registration]) -> Registration | None:
     """Return the family whose coordinate SPELLS `label`.
 
     Its own universe first, then a joint of it — or `None` for a label no registration on this
@@ -377,7 +377,7 @@ def _minted_by(label: str, registrations: Sequence[_Registration]) -> _Registrat
 
 
 def _relations(
-    registration: _Registration,
+    registration: Registration,
     kinds: Mapping[str, Kind],
     minted: Mapping[str, set[str]],
     variations: Sequence[Variation],
