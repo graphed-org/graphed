@@ -49,6 +49,7 @@ from .write import (
     join_part,
     prepare_part,
     sources_read,
+    steps_for,
 )
 
 T = TypeVar("T")
@@ -442,7 +443,7 @@ def aggregate_plan(
     empty: Callable[[], V],
     externals: Mapping[str, Callable[..., object]] | None = None,
     backend: Callable[[], Any] | str | None = None,
-    steps_per_file: int = 1,
+    steps_per_file: int | None = None,
     partitions: Sequence[Partition] | None = None,
     on_compiled: Callable[[CompiledGraph], Any] | None = None,
     store: str | os.PathLike[str] | None = None,
@@ -460,6 +461,9 @@ def aggregate_plan(
     evaluation backend (factory, class, or ``"module:attr"`` ref; defaults to the session backend's
     class, with its behavior). ``run(plan).value`` is the ``reduce``+``combine`` aggregate over
     all partitions.
+
+    The tasks are ``partitions`` when given, else the source's partitions at ``steps_per_file``
+    steps per file; ``None`` takes the source's own default (``from_parquet(steps_per_file=)``).
 
     ``on_compiled`` is §7.2's seam onto the internally compiled :class:`CompiledGraph` — the
     artifact is otherwise unreachable from the caller. It fires ONCE, and whatever it returns is
@@ -547,7 +551,7 @@ def aggregate_plan(
         opt_level=opt_level,
     )
     if partitions is None:
-        partitions = data.partitions(steps_per_file)
+        partitions = data.partitions(steps_for(data, steps_per_file))
     tasks = tuple(Task(i, p) for i, p in enumerate(partitions))
     _refuse_shared_parts((process, t.partition) for t in tasks)
     return Plan(

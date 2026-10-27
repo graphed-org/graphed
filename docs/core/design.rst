@@ -105,8 +105,14 @@ One property matters more than it looks: **which outputs you want is a property 
 not of the store.** ``reduce``, ``serialize`` and the incremental reducer's ``finalize`` all
 take the output set as an argument and use exactly that set — there is no output mutator on the
 store. So compiling two different expressions from one session gives byte-identical results to
-compiling each in a fresh session, and two threads compiling at once cannot interfere, because
-compiling only ever reads.
+compiling each in a fresh session, whatever else the session recorded and in whatever order, and
+two threads compiling at once cannot interfere, because compiling only ever reads. A commutative
+op's operands are put in an order fixed by their structure, so a ``b + a`` recorded earlier for
+another output cannot change how a later ``a + b`` serializes.
+
+That guarantee is for the reduced IR. ``serialized_ir(..., optimize=False)`` and
+``compile_ir(..., optimize=False)`` write the whole record arena with its record ids and flag only
+the requested outputs, so their bytes change with everything the session has recorded.
 
 
 What the optimizer removes, and why it cannot be wrong

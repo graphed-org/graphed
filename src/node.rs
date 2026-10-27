@@ -128,16 +128,36 @@ impl NodeKey {
             } => with_params(
                 format!(
                     "ext|{}|{}|{}|{}|{}|{}",
-                    descriptor.kind,
-                    descriptor.content_hash,
-                    descriptor.framework,
-                    descriptor.version,
-                    descriptor.io_schema,
-                    descriptor.preprocessing_ref.as_deref().unwrap_or("-")
+                    esc(&descriptor.kind),
+                    esc(&descriptor.content_hash),
+                    esc(&descriptor.framework),
+                    esc(&descriptor.version),
+                    esc(&descriptor.io_schema),
+                    descriptor
+                        .preprocessing_ref
+                        .as_deref()
+                        .map_or_else(|| "-".to_string(), |r| format!("+{}", esc(r)))
                 ),
                 params,
             ),
-            Self::Stage { members, .. } => format!("stage|{}", members.len()),
+            // escaped member tokens hold no `;`/`=`, so `tok=refs;...` is injective over members
+            Self::Stage { members, .. } => {
+                let body: Vec<String> = members
+                    .iter()
+                    .map(|m| {
+                        let refs: Vec<String> = m
+                            .inputs
+                            .iter()
+                            .map(|r| match r {
+                                StageRef::Input(i) => format!("i{i}"),
+                                StageRef::Member(i) => format!("m{i}"),
+                            })
+                            .collect();
+                        format!("{}={}", esc(&m.token), refs.join(","))
+                    })
+                    .collect();
+                format!("stage|{}", body.join(";"))
+            }
             // a non-`op|` prefix, so the optimizer's `boundary_from_token` treats it as a boundary;
             // the scheme is in the token so distinct schemes are distinct templates on reconstruction.
             Self::Exchange { scheme, .. } => with_params("exch".to_string(), scheme),
@@ -372,7 +392,46 @@ mod tests {
                 inputs: vec![StageRef::Input(0)],
             }],
         };
-        assert_eq!(stage.token(), "stage|1");
+        assert_eq!(stage.token(), "stage|op%7Cinc=i0");
+    }
+
+    #[test]
+    fn stage_tokens_separate_stages_that_differ_only_in_members() {
+        let stage = |token: &str, inputs: Vec<StageRef>| NodeKey::Stage {
+            inputs: vec![0],
+            members: vec![StageOp {
+                token: token.into(),
+                inputs,
+            }],
+        };
+        let neg = stage("op|neg", vec![StageRef::Input(0)]);
+        assert_ne!(
+            neg.token(),
+            stage("op|abs", vec![StageRef::Input(0)]).token()
+        );
+        assert_ne!(
+            neg.token(),
+            stage("op|neg", vec![StageRef::Member(0)]).token()
+        );
+    }
+
+    #[test]
+    fn external_tokens_separate_descriptors_that_differ_in_any_field() {
+        let ext = |kind: &str, content_hash: &str, preprocessing_ref: Option<&str>| {
+            NodeKey::External {
+                descriptor: PayloadDescriptor {
+                    kind: kind.into(),
+                    content_hash: content_hash.into(),
+                    preprocessing_ref: preprocessing_ref.map(Into::into),
+                    ..ext_desc()
+                },
+                params: pm(vec![]),
+                inputs: vec![],
+            }
+            .token()
+        };
+        assert_ne!(ext("a|b", "c", None), ext("a", "b|c", None));
+        assert_ne!(ext("a", "b", None), ext("a", "b", Some("-")));
     }
 
     #[test]

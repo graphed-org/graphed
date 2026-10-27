@@ -619,10 +619,12 @@ named fields.
 
 Four details worth knowing before you point this at a real dataset:
 
-*You can skip the metadata pass entirely.* ``steps_per_file`` sets how finely each file is split;
-``open_files=False`` makes the split blind, so no file is opened to plan the work and the first
-task starts without waiting on a scan of the whole dataset. Each task then resolves its own
-partition when it reads.
+*Planning opens no file unless you ask.* ``from_parquet(steps_per_file=)`` sets how finely each
+file is split, for every plan over the source that does not pass its own ``steps_per_file=``. The
+split is blind by default (``open_files=False``): no file is opened to plan the work, so the first
+task starts without waiting on a scan of the whole dataset, and each task resolves its own
+partition when it reads. ``open_files=True`` reads each file's row count when the plan is built,
+so every task carries its exact entry range.
 
 *Any partitioned source writes through the same entry point.* ``to_parquet`` dispatches on the
 protocol a source implements rather than on the source's type, so a parquet dataset, a ROOT

@@ -113,6 +113,19 @@ def blind_part_index(partition: Partition, bases: Mapping[Any, int]) -> int:
     return bases[partition.uri] + partition.blind_step
 
 
+def eager_ranges(n_entries: int, steps_per_file: int) -> list[tuple[int, int]]:
+    """Return the entry ranges of ``steps_per_file`` even steps over ``n_entries``, all distinct.
+
+    Empty steps are dropped (an empty input keeps one), since equal ranges would map to one step
+    in :func:`step_of` and so to one part.
+    """
+    ranges = [
+        ((s * n_entries) // steps_per_file, ((s + 1) * n_entries) // steps_per_file)
+        for s in range(steps_per_file)
+    ]
+    return [r for r in ranges if r[1] > r[0]] or ranges[:1]
+
+
 def step_of(entry_start: int, entry_stop: int, n_entries: int, steps_per_file: int) -> int:
     """Reconstruct which step an EAGER partition is, exactly.
 
@@ -257,3 +270,17 @@ def declared_columns(source: object, outputs: Sequence[object]) -> tuple[str, ..
     if not callable(hook):
         return None
     return tuple(hook(tuple(outputs)))
+
+
+def steps_for(source: object, steps_per_file: int | None) -> int:
+    """Return a driver's ``steps_per_file``, or the source's own default when it is ``None``.
+
+    A partitioned source declares that default with an optional ``steps_per_file`` attribute (not
+    a protocol member, for the reason ``projected_columns`` is not); without one, a file is one
+    step.
+    """
+    if steps_per_file is not None:
+        return steps_per_file
+    return (
+        int(getattr(source, "steps_per_file", 1)) if isinstance(source, PartitionedSource) else 1
+    )

@@ -21,6 +21,13 @@ Several datasets in one Session
   source columns those Arrays use, as a plan over them would. A plan over several Sessions is
   ``graphed.collate``, which ``aggregate_plan``'s refusal now names (#103).
 
+Random draws
+~~~~~~~~~~~~
+
+* A ``default_rng`` draw is named by its whole call (sampler, shape and parameters): equal
+  generators gave ``normal(3, loc=100.0)`` the name of an earlier ``normal(3)``, which silently
+  returned the first draw's values (#115).
+
 Interrupts stop a resumable run
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -48,12 +55,45 @@ A plan's workers keep the Session backend's behavior
   cannot copy is refused with a ``TypeError`` when the plan is built. A behavior-less Session's
   plan keeps its bytes (#123).
 
+A reader's ``steps_per_file`` and ``open_files`` partition its plans
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``from_parquet(steps_per_file=, open_files=)`` (awkward and numpy) were validated and dropped.
+  They are now the source's default partitioning: ``aggregate_plan``, ``shuffle_plan``,
+  ``join_plan`` and the ``to_parquet`` writers split each file into the reader's
+  ``steps_per_file`` unless given their own, whose default is now ``None``. Both are source params,
+  so reads that differ in them record different IR. ``open_files=True`` reads each file's row
+  count when the plan is built, for exact entry ranges; its default is now ``False``, the blind
+  partitions every read already planned (#109).
+* A file, or an in-memory write, with fewer rows than ``steps_per_file`` is split into its
+  distinct non-empty entry ranges (one empty range for an empty input): equal empty ranges named
+  one part, so the writers refused or overwrote them (#109).
+
 Exceptions are named ``…Error``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 * PEP 8 names: ``StoreUnavailableError``, ``EnvironmentChangedError`` (``graphed.checkpoint``),
   ``UnboundServiceError`` (``graphed.services``) and ``UnresolvedPayloadError``
   (``graphed.preserve``). The first three keep their old names as aliases.
+
+Fixes
+~~~~~
+
+* ``GraphStore.reduce`` on an already-reduced store keeps every stage: two stages with the same
+  number of members were merged into one and an output was dropped. Two ``External`` nodes whose
+  descriptors differ only by a ``|`` in a field, or by ``preprocessing_ref="-"`` against none,
+  stay apart too (#104).
+* The optimized IR (``serialized_ir``, ``compile_ir``) no longer depends on the order the Session
+  recorded a shared sub-expression: recording ``x > 1`` before ``(x * 2)[x > 1]`` gave other
+  bytes than a fresh Session. The ``opt_level=0`` cone gets the same order. The docs now say the
+  fresh-Session byte identity is for the optimized IR. ``optimize=False`` writes the whole record
+  arena, so its bytes change with everything the Session holds (#105).
+* A commutative op (``a + b``, ``a * b``, ``a & b``, …) takes its operands in an order fixed by
+  their structure, in incremental and one-shot Sessions alike. An incremental Session no longer
+  serializes ``a + b`` as ``b + a`` because another output recorded ``b + a`` first (#117).
+* Those two orderings change the optimized IR bytes against 0.0.9 for some programs, so a 0.0.9
+  checkpoint of such a program recomputes on resume under 0.0.10; results are unchanged
+  (#105, #117).
 
 The systematics internals, reorganized
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

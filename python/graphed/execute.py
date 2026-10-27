@@ -123,7 +123,10 @@ def compile_ir(
     Reduction runs once, here — workers receive the already-reduced bytes. An incremental session
     finishes from its maintained canonical view (per-step work already paid at record time).
     The artifact carries EXACTLY the requested outputs (M22), so compiling different
-    expressions sequentially from one session never cross-talks.
+    expressions sequentially from one session never cross-talks. With ``optimize=True`` the IR is
+    byte-identical to compiling the same outputs in a fresh session; ``optimize=False`` carries
+    the whole record arena with its record ids, so its bytes change with every node the session
+    holds.
     """
     refuse_container("graphed.compile_ir", *outputs)
     session._mine(outputs)  # m60: a node id only means something in its own store
