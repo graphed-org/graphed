@@ -42,8 +42,8 @@ are paired:
     from graphed.awkward import AwkwardBackend, from_awkward, gak
 
     s = Session(AwkwardBackend())
-    left = from_awkward(s, "L", ak.Array({"k": [1, None, 3], "l": [10, 20, 30]}))
-    right = from_awkward(s, "R", ak.Array({"k": [1, None], "r": [100, 200]}))
+    left = from_awkward("L", ak.Array({"k": [1, None, 3], "l": [10, 20, 30]}), session=s)
+    right = from_awkward("R", ak.Array({"k": [1, None], "r": [100, 200]}), session=s)
 
     for how in ("inner", "left"):
         out = gak.join(left, right, on=["k"], how=how)

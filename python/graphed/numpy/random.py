@@ -9,12 +9,14 @@ determinism gate extends to random programs), while successive draws are distinc
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast, overload
 
 import numpy as np
 
 from graphed import Array, Session
+from graphed.session import _reader
 
+from . import NumpyBackend
 from .creation import ShapeLike, _norm_shape, _source
 
 
@@ -54,6 +56,14 @@ class GraphedRNG:
         return self._draw("integers", lambda r: r.integers(low, high, shape))
 
 
-def default_rng(session: Session, seed: int) -> GraphedRNG:
-    """Return a deterministic generator of random source arrays for ``session``."""
-    return GraphedRNG(session, int(seed))
+@overload
+def default_rng(session: Session, seed: int) -> GraphedRNG: ...
+@overload
+def default_rng(seed: int, *, session: Session | None = None) -> GraphedRNG: ...
+@_reader(NumpyBackend)
+def default_rng(seed: int, *, session: Session | None = None) -> GraphedRNG:
+    """Return a deterministic generator of random source arrays for ``session``.
+
+    Else for the current Session.
+    """
+    return GraphedRNG(cast("Session", session), int(seed))

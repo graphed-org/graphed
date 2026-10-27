@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, cast, overload
 
 import numpy as np
 
@@ -34,6 +34,7 @@ from graphed.aggregate import shipped_evaluators
 from graphed.core import Partition
 from graphed.core.execution import Plan, SequentialRunner, WorkerResources
 from graphed.errors import GraphedError
+from graphed.session import _reader
 from graphed.varied import Varied
 
 from . import NumpyBackend, project
@@ -104,6 +105,7 @@ class _DatasetLoader:
         return {n: np.concatenate([_column_to_numpy(t, n) for t in tables]) for n in names}
 
 
+@overload
 def from_parquet(
     session: Session,
     name: str,
@@ -112,10 +114,31 @@ def from_parquet(
     columns: Sequence[str] | None = None,
     steps_per_file: int = 1,
     open_files: bool = True,
+) -> Any: ...
+@overload
+def from_parquet(
+    name: str,
+    path: str | Sequence[str],
+    *,
+    columns: Sequence[str] | None = None,
+    steps_per_file: int = 1,
+    open_files: bool = True,
+    session: Session | None = None,
+) -> Any: ...
+@_reader(NumpyBackend)
+def from_parquet(
+    name: str,
+    path: str | Sequence[str],
+    *,
+    columns: Sequence[str] | None = None,
+    steps_per_file: int = 1,
+    open_files: bool = True,
+    session: Session | None = None,
 ) -> Any:
     """Return a deferred RECTILINEAR record source over a parquet dataset.
 
-    The dataset is a file / dir / glob / list.
+    The dataset is a file / dir / glob / list; the source records into ``session``, else the
+    current Session.
 
     The form comes from the schema alone; non-primitive columns are refused by name. With
     ``open_files=False`` no file is opened (blind partitions, R7.9).
@@ -126,7 +149,7 @@ def from_parquet(
     fields = _rectilinear_fields(paths, columns)
     form = NumpyForm(np.dtype(object), kind="record", fields=fields)
     loader = _DatasetLoader(paths, tuple(columns) if columns else None)
-    return gpq.deferred_source(session, name, paths=paths, form=form, loader=loader)
+    return gpq.deferred_source(name, paths=paths, form=form, loader=loader, session=session)
 
 
 def _column_to_numpy(table: Any, name: str) -> np.ndarray:

@@ -29,13 +29,13 @@ from __future__ import annotations
 import glob as _glob
 import os
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from typing import Any
+from typing import Any, cast, overload
 
 from graphed.core import Partition
 
 from .array import Array
 from .backend import Form, ParamValue
-from .session import Session
+from .session import Session, _reader
 from .write import blind_part_index, file_bases, step_of, write_plan
 from .write import part_path as _base_part_path
 
@@ -138,6 +138,7 @@ def part_path(destination: str, index: int, *, prefix: str = "part") -> str:
 
 
 # ---- deferred sources --------------------------------------------------------------------------
+@overload
 def deferred_source(
     session: Session,
     name: str,
@@ -146,14 +147,34 @@ def deferred_source(
     form: Form,
     loader: Callable[[], object],
     **params: ParamValue,
+) -> Array: ...
+@overload
+def deferred_source(
+    name: str,
+    *,
+    paths: Sequence[str],
+    form: Form,
+    loader: Callable[[], object],
+    session: Session | None = None,
+    **params: ParamValue,
+) -> Array: ...
+@_reader(None)
+def deferred_source(
+    name: str,
+    *,
+    paths: Sequence[str],
+    form: Form,
+    loader: Callable[[], object],
+    session: Session | None = None,
+    **params: ParamValue,
 ) -> Array:
-    """Record one source for the whole dataset.
+    """Record one source for the whole dataset into ``session``, else the current Session.
 
     The file list is part of the source's recorded identity (different files => different node),
     the data is the LAZY loader — nothing is read until the reference ``materialize`` asks
     (executors never call it; they read per-partition).
     """
-    return session.source(
+    return cast("Session", session).source(
         name, form=form, data=loader, uri=";".join(paths), format="parquet", **params
     )
 

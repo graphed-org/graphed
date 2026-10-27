@@ -26,9 +26,9 @@ A first taste — the same numpy you already write, deferred:
     from graphed.numpy import NumpyBackend, from_record
 
     s = Session(NumpyBackend())
-    ev = from_record(s, "events",
+    ev = from_record("events",
                      pt=np.array([25.0, 55.0, 10.0, 80.0]),
-                     eta=np.array([0.1, -1.2, 2.0, 0.4]))
+                     eta=np.array([0.1, -1.2, 2.0, 0.4]), session=s)
 
     sel = ev["pt"][abs(ev["eta"]) < 1.5]     # records; nothing computes
     print(sel.shape, sel.dtype)              # known without data

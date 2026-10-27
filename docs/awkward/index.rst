@@ -36,7 +36,7 @@ Your first deferred analysis
                        "MET": [12.0, 35.0, 8.0]})
 
     s = Session(AwkwardBackend())
-    g = from_awkward(s, "events", events)
+    g = from_awkward("events", events, session=s)
     good = g.Jet[abs(g.Jet.eta) < 1.0]       # jagged boolean mask - recorded, not computed
     keep = gak.num(good, axis=1) >= 1        # per-event jet multiplicity
     out = g.MET[keep]
@@ -81,8 +81,8 @@ every universe:
     from graphed.awkward import AwkwardBackend, from_awkward, gak
 
     s = Session(AwkwardBackend())
-    events = ga.gnano.events(from_awkward(s, "events", ak.Array(
-        {"Jet": [[{"pt": 31.0}, {"pt": 12.0}], [{"pt": 55.0}], [{"pt": 8.0}]]})))
+    events = ga.gnano.events(from_awkward("events", ak.Array(
+        {"Jet": [[{"pt": 31.0}, {"pt": 12.0}], [{"pt": 55.0}], [{"pt": 8.0}]]}), session=s))
 
     jets = events.Jet
     scaled = graphed.vary(events, "jes", collections={"Jet": {

@@ -14,7 +14,7 @@ pool on your laptop, a dask cluster, a parsl pool.
     from graphed.awkward import AwkwardBackend, from_awkward, gak
 
     session = Session(AwkwardBackend())
-    jets = from_awkward(session, "jets", ak.Array([[40.0, 12.0], [55.0], [8.0]]))
+    jets = from_awkward("jets", ak.Array([[40.0, 12.0], [55.0], [8.0]]), session=session)
     leading = gak.max(jets[jets > 25.0], axis=1)     # nothing has run yet
 
     print(session.form(leading).describe())          # the result type, without reading any data

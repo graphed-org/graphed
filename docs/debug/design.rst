@@ -19,7 +19,7 @@ array, which no amount of type checking can see before real data arrives:
    from graphed.numpy import NumpyBackend, from_array
 
    s = Session(NumpyBackend())
-   x = from_array(s, "x", np.arange(4.0))
+   x = from_array("x", np.arange(4.0), session=s)
    pt = x * 2.0
    bad = pt.map(lambda a: a[100], name="oob")     # only fails once real data arrives
 
@@ -38,7 +38,7 @@ Transcripts on this page show your analysis file by name; you will see its full 
    analysis.py:9
    Traceback (most recent call last) — user analysis frames:
          File "analysis.py", line 7, in <module>
-             from_array(s, 'x', np.arange(4.0))
+             from_array('x', np.arange(4.0), session=s)
          File "analysis.py", line 8, in <module>
              x * 2.0
      --> File "analysis.py", line 9, in <module>
@@ -106,7 +106,7 @@ on its own, in the order you wrote them, nothing rearranged. That is ``opt_level
    from graphed.numpy import NumpyBackend, from_array
 
    s = Session(NumpyBackend())
-   x = from_array(s, "x", np.arange(4.0))
+   x = from_array("x", np.arange(4.0), session=s)
    scaled = x * 2.0
    shifted = scaled + 1.0
 
@@ -164,7 +164,7 @@ worker can raise it, a pool can ship it, and your driver re-raises *the same* di
 
    def analyse(chunk_id):
        s = Session(NumpyBackend())
-       x = from_array(s, "x", np.arange(4.0))
+       x = from_array("x", np.arange(4.0), session=s)
        counts = x.map(lambda a: a.astype("int64") - 1, name="counts")
        unflat = counts.map(lambda a: np.repeat(a, a), name="unflatten")
        return gd.run(s, unflat, opt_level=1, partition=f"skim@{chunk_id}")
@@ -245,7 +245,7 @@ read) and each source is annotated with the columns it will actually read off di
    from graphed.numpy import NumpyBackend, from_array
 
    s = Session(NumpyBackend())
-   x = from_array(s, "x", np.arange(4.0))
+   x = from_array("x", np.arange(4.0), session=s)
    lowered = gd.lower(s, (x * 2.0) + 1.0, opt_level=1)
    print(gd.visualize(lowered, fmt="mermaid"))
 
@@ -598,7 +598,7 @@ lines, so replay works while that session is alive.
 
 
    s = Session(AwkwardBackend())
-   ev = from_parquet(s, "events", f"{root}/d.parquet")
+   ev = from_parquet("events", f"{root}/d.parquet", session=s)
    total = gak.sum(ev.x.map(calibrate, name="calibrate"), axis=None)
 
    plan = aggregate_plan(

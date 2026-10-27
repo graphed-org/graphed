@@ -9,11 +9,13 @@ backend.
 from __future__ import annotations
 
 import contextvars
+import functools
 import threading
 import types
+import warnings
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
 import graphed.core
 
@@ -853,6 +855,57 @@ def set_default_backend(factory: Callable[[], Backend] | None, /) -> Callable[[]
     with _default_lock:
         previous, _default_factory = _default_factory, factory
     return previous
+
+
+R = TypeVar("R")
+
+
+def _reader(kind: type[Backend] | None) -> Callable[[Callable[..., R]], Callable[..., R]]:
+    """Resolve an array-less reader's ``session=``: the argument, else :func:`current_session`.
+
+    A default made here records on ``kind()``, and a Session whose backend is not a ``kind`` is
+    refused at the read (``None``: any). The legacy leading positional Session still works, with a
+    ``DeprecationWarning``.
+    """
+
+    def wrap(fn: Callable[..., R]) -> Callable[..., R]:
+        name = fn.__name__
+
+        @functools.wraps(fn)
+        def reader(*args: Any, **kwargs: Any) -> R:
+            if args and isinstance(args[0], Session):
+                if "session" in kwargs:
+                    raise TypeError(
+                        f"{name}: the Session was passed both positionally and as session="
+                    )
+                warnings.warn(
+                    f"{name}(session, ...) is deprecated; pass session= as a keyword",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+                kwargs["session"], args = args[0], args[1:]
+            session = kwargs.get("session")
+            if session is None:
+                session = current_session(None if kind is None else kind())
+            elif not isinstance(session, Session):
+                raise TypeError(
+                    f"{name}: session= must be a graphed.Session, not {type(session).__name__}; "
+                    "'session' is reserved"
+                )
+            if kind is not None and not isinstance(session.backend, kind):
+                wanted = kind.__name__
+                raise TypeError(
+                    f"{name}: the Session records on {type(session.backend).__name__}, and this "
+                    f"reader records on {wanted}; pass session=, call "
+                    f"graphed.new_session({wanted}()), or read inside "
+                    f"`with graphed.Session({wanted}()):`"
+                )
+            kwargs["session"] = session
+            return fn(*args, **kwargs)
+
+        return reader
+
+    return wrap
 
 
 def _replace_arrays(item: Any, leaf: Callable[[Array], Any]) -> Any:

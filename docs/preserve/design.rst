@@ -70,7 +70,7 @@ Save this as ``analysis.py`` — it needs ``pip install "graphed[preserve]"`` an
    )
 
    s = Session(AwkwardBackend())
-   ev = from_awkward(s, "events", events)
+   ev = from_awkward("events", events, session=s)
    ht = gak.sum(ev.Jet.pt, axis=1)
    njet = gak.num(ev.Jet, axis=1)
    weight = record_external(
@@ -195,7 +195,7 @@ run, and the fingerprint must not. Attaching the same report twice keeps one cop
    data = ak.Array({"x": [1.0, 2.0, 3.0]})
    s = Session(AwkwardBackend())
    root = tempfile.mkdtemp()
-   events = from_awkward(s, "events", data)
+   events = from_awkward("events", data, session=s)
    bundle = build_bundle(root, session=s, value=events.x * 2, datasets={"events": data})
    before = bundle.fingerprint()
 
@@ -365,7 +365,7 @@ what they were before services existed.
        )
    )
    data = ak.Array({"x": [0.5, 1.5, 2.5]})
-   events = from_awkward(s, "events", data)
+   events = from_awkward("events", data, session=s)
    model = json.dumps({"model": "tagger", "version": "1"}).encode()
    score = record_external(
        s, TRITON_PLUGIN, model, [events.x],
@@ -443,8 +443,8 @@ masks and behaviors work at build time:
                              samples=lambda: [b"v1", b"v2"])
 
     s = Session(AwkwardBackend())
-    ev = from_awkward(s, "events", ak.zip({"Jet": ak.zip({"pt": [[30.0, 20.0], [], [40.0]]})},
-                                          depth_limit=1))
+    ev = from_awkward("events", ak.zip({"Jet": ak.zip({"pt": [[30.0, 20.0], [], [40.0]]})},
+                                          depth_limit=1), session=s)
     undeclared = record_external(s, PHOTONS, b"v1", [ev.Jet.pt])
     pho = record_external(s, PHOTONS, b"v1", [ev.Jet.pt],
                           output_type="var * Photon[pt: float32, eta: float32]")
@@ -541,7 +541,7 @@ not one bundle per universe. ``reproduce`` then returns ``{label: counts}``:
    )
 
    s = Session(AwkwardBackend())
-   ev = from_awkward(s, "events", events)
+   ev = from_awkward("events", events, session=s)
    ht = gak.sum(ev.Jet.pt, axis=1)
    w = ev.genWeight
    weight = vary(w, "sf", up=w * 1.1, down=w * 0.9)

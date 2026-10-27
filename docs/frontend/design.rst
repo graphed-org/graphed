@@ -22,7 +22,7 @@ Your code, kept instead of run
     from graphed.numpy import NumpyBackend, from_array
 
     s = Session(NumpyBackend())
-    pt = from_array(s, "pt", np.arange(6.0))
+    pt = from_array("pt", np.arange(6.0), session=s)
     sel = (pt * 2.0 + 1.0)[pt > 2.0]        # four operations recorded, nothing computed
 
     p = s.provenance(sel)
@@ -89,23 +89,26 @@ is. ``evaluate_ir`` returns one entry per requested output.
 Recording into the current Session
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-An operation on arrays records into its inputs' Session. A read has no array input, so it needs
-to be told where to land, and ``graphed.current_session()`` is that answer: the innermost open
-``with`` scope, else the **default** Session. The default is created on first use, on the
+An operation on arrays records into its inputs' Session. A read has no array input, so it records
+into its ``session=`` when given, else into ``graphed.current_session()``: the innermost open
+``with`` scope, else the **default** Session. A reader refuses a Session whose backend it cannot
+record on, at the read. The default is created on first use, on the
 reader's own backend (``AwkwardBackend()`` for a bare ``current_session()``), and is one object
 for the whole process: every thread and every asyncio task sees it.
 
 .. code-block:: python
 
+    import numpy as np
+
     import graphed
     from graphed import Session
-    from graphed.numpy import NumpyBackend
+    from graphed.numpy import NumpyBackend, from_array
 
     graphed.new_session(NumpyBackend())            # replace the default with a fresh Session
     default = graphed.current_session()
     with Session(NumpyBackend()) as scoped:        # reads in this block land in `scoped`
-        print(graphed.current_session() is scoped)
-    print(graphed.current_session() is default)
+        print(from_array("x", np.arange(3.0)).session is scoped)
+    print(from_array("x", np.arange(3.0)).session is default)
     previous = graphed.set_session(scoped)         # install an existing Session as the default
     print(previous is default, graphed.current_session() is scoped)
 
@@ -146,7 +149,7 @@ on the way in, not at the end.
     from graphed.numpy import NumpyBackend, from_array
 
     s = Session(NumpyBackend())
-    pt = from_array(s, "pt", np.arange(6.0))
+    pt = from_array("pt", np.arange(6.0), session=s)
 
     def tight(a):                 # a helper you call from two places
         return a[a > 2.0]
@@ -203,7 +206,7 @@ At the line you wrote it, before any file is opened:
     from graphed.awkward import AwkwardBackend, from_awkward
 
     s = Session(AwkwardBackend())
-    ev = from_awkward(s, "events", ak.Array({"Jet": ak.zip({"pt": [[40.0, 25.0], [55.0]]})}))
+    ev = from_awkward("events", ak.Array({"Jet": ak.zip({"pt": [[40.0, 25.0], [55.0]]})}), session=s)
 
     try:
         ht = ev.Jet.et                       # there is no `et` field — only `pt`
@@ -244,7 +247,7 @@ most analyses need. A universe displaced on two or more axes at once is register
     from graphed.numpy import NumpyBackend, from_array
 
     s = Session(NumpyBackend())
-    pt = from_array(s, "pt", np.array([10.0, 20.0, 30.0]))
+    pt = from_array("pt", np.array([10.0, 20.0, 30.0]), session=s)
 
     jes = vary(pt, "jes", up=pt * 1.05, down=pt * 0.95)
 
@@ -311,7 +314,7 @@ supplies the NanoEvents-flavoured constructor, ``gnano.events``.
     })
 
     s   = Session(AwkwardBackend())
-    ev  = from_awkward(s, "events", events)
+    ev  = from_awkward("events", events, session=s)
     ctx = ga.gnano.events(ev)
 
     w   = ev.MET.pt
@@ -484,7 +487,7 @@ relative-delta family on a handle read after it.
 .. code-block:: python
 
     s   = Session(AwkwardBackend())
-    ctx = ga.gnano.events(from_awkward(s, "events", events))
+    ctx = ga.gnano.events(from_awkward("events", events, session=s))
 
     sf  = ctx.MET.pt / 10.0                 # one b-tag scale factor, [1.0, 2.0, 3.0]
     pu  = ctx.MET.pt * 0.0 + 0.5            # a pile-up weight
@@ -506,7 +509,7 @@ relative-delta family on a handle read after it.
 
     # a second central over jes-shifted jets joins the first and carries its coordinate
     s2   = Session(AwkwardBackend())
-    ctx2 = ga.gnano.events(from_awkward(s2, "events", events))
+    ctx2 = ga.gnano.events(from_awkward("events", events, session=s2))
     jets = ctx2.Jet
     ctx2 = vary(ctx2, "jes", collections={"Jet": {
         "up": gak.with_field(jets, jets.pt * 1.05, "pt")}})
@@ -626,7 +629,7 @@ underneath; it takes plain ``Array`` inputs and knows nothing about labels.
     ).model_dump_json(exclude_unset=True).encode()
 
     s   = Session(AwkwardBackend())
-    ev  = from_awkward(s, "events", ak.Array({"Jet": [[{"pt": 38.0}], [{"pt": 70.0}]]}))
+    ev  = from_awkward("events", ak.Array({"Jet": [[{"pt": 38.0}], [{"pt": 70.0}]]}), session=s)
     ctx = ga.gnano.events(ev)
 
     jets = ctx.Jet
@@ -682,7 +685,7 @@ projects each point onto whatever axes each container downstream happens to know
     })
 
     s   = Session(AwkwardBackend())
-    ctx = ga.gnano.events(from_awkward(s, "events", events))
+    ctx = ga.gnano.events(from_awkward("events", events, session=s))
 
     jets = ctx.Jet
     ctx  = vary(ctx, "jes", collections={"Jet": {
@@ -740,7 +743,7 @@ jets still fans out over ``jes``, whichever of the two registrations comes first
     from graphed import labels, member_of, variations
 
     s   = Session(AwkwardBackend())
-    ctx = ga.gnano.events(from_awkward(s, "events", events))
+    ctx = ga.gnano.events(from_awkward("events", events, session=s))
     jets = ctx.Jet
     ctx  = vary(ctx, "jes", collections={"Jet": {
         "up":   gak.with_field(jets, jets.pt * 1.05, "pt"),
@@ -800,7 +803,7 @@ silently resolved to nominal:
     from graphed.numpy import NumpyBackend, from_array
 
     s  = Session(NumpyBackend())
-    pt = from_array(s, "pt", np.array([10.0, 20.0, 30.0]))
+    pt = from_array("pt", np.array([10.0, 20.0, 30.0]), session=s)
 
     named  = vary(pt, "jes", up=pt * 1.05, down=pt * 0.95)
     sigmas = vary(pt, "jes", **{"1": pt * 1.05, "0p5": pt * 1.025})
@@ -881,7 +884,7 @@ lists the labels without executing anything.
     })
 
     s  = Session(AwkwardBackend())
-    ev = from_awkward(s, "events", events)
+    ev = from_awkward("events", events, session=s)
 
     value  = gak.sum(ev.Jet.pt, axis=1)
     weight = vary(ev.MET.pt, "sf", up=ev.MET.pt * 1.1, down=ev.MET.pt * 0.9)
@@ -953,7 +956,7 @@ difference is worth money:
     })
 
     s  = Session(AwkwardBackend())
-    ev = from_awkward(s, "events", events)
+    ev = from_awkward("events", events, session=s)
 
     njet = gak.num(ev.Jet, axis=1)          # how many jets, never their values
 
@@ -1041,7 +1044,7 @@ parquet files first so that it runs anywhere:
         )
 
     s = Session(AwkwardBackend())
-    ev = from_parquet(s, "events", root, steps_per_file=1)
+    ev = from_parquet("events", root, steps_per_file=1, session=s)
 
     ht = gak.sum(ev.Jet_pt, axis=1)          # shared by both outputs
     n_high = gak.sum(ht > 60.0, axis=None)
@@ -1096,7 +1099,7 @@ one part path per write:
     )
 
     s = Session(AwkwardBackend())
-    ev = from_parquet(s, "events", f"{root}/events.parquet", steps_per_file=2)
+    ev = from_parquet("events", f"{root}/events.parquet", steps_per_file=2, session=s)
     selected = ev[ev.pt > 28.0]
 
 
@@ -1186,7 +1189,7 @@ name to plan and returns one plan whose value is ``{name: that plan's value}``:
 
 
     def dataset_plan(path, is_mc):
-        ev = from_parquet(Session(AwkwardBackend()), "events", path)
+        ev = from_parquet("events", path, session=Session(AwkwardBackend()))
         passed = ev.pt > 28.0
         # decided in Python while recording: only the MC graph has a weight
         count = gak.sum(ev.w * passed) if is_mc else gak.sum(passed)
@@ -1242,8 +1245,8 @@ Because a join or a repartition is a barrier, the plan for it has stages:
                   f"{root}/lumi.parquet")
 
     s = Session(AwkwardBackend())
-    events = from_parquet(s, "events", f"{root}/events.parquet")
-    lumi = from_parquet(s, "lumi", f"{root}/lumi.parquet")
+    events = from_parquet("events", f"{root}/events.parquet", session=s)
+    lumi = from_parquet("lumi", f"{root}/lumi.parquet", session=s)
 
     joined = join(events, lumi, on=["run"], how="inner")
     weighted = joined.MET_pt * joined.lumi_w
@@ -1391,7 +1394,9 @@ configuration dict. Two calls under one name are one node.
 **One session per program.** A node id only means something in the store that minted it, so every
 ``Session`` method that takes an array refuses one recorded elsewhere: the ``record_*`` family with
 a located :class:`~graphed.GraphedTypeError`, the readers and ``compile_ir`` with a ``TypeError``.
-Record into the session you were handed (``array.session``), never one of your own making.
+A library records into ``array.session``; a reader with no array input records into ``session=``
+or ``graphed.current_session(your_backend)`` and checks that it can use that Session's backend; a
+read made for the library's own purposes passes a fresh ``session=``.
 
 
 Not supported yet

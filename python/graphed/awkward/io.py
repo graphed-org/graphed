@@ -21,7 +21,7 @@ import os
 import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import Any, ClassVar, cast
+from typing import Any, ClassVar, cast, overload
 
 import awkward as ak
 import numpy as np
@@ -44,6 +44,7 @@ from graphed.core import Partition
 from graphed.core.execution import Plan, SequentialRunner, WorkerResources
 from graphed.errors import GraphedError
 from graphed.services import bind_externals
+from graphed.session import _reader
 from graphed.systematics.lineage import is_ancestor, links_below
 from graphed.varied import (
     Varied,
@@ -106,6 +107,7 @@ class _DatasetLoader:
         return read_parquet_partition(partition, columns if columns else (self.columns or None))
 
 
+@overload
 def from_parquet(
     session: Session,
     name: str,
@@ -114,8 +116,30 @@ def from_parquet(
     columns: Sequence[str] | None = None,
     steps_per_file: int = 1,
     open_files: bool = True,
+) -> Any: ...
+@overload
+def from_parquet(
+    name: str,
+    path: str | Sequence[str],
+    *,
+    columns: Sequence[str] | None = None,
+    steps_per_file: int = 1,
+    open_files: bool = True,
+    session: Session | None = None,
+) -> Any: ...
+@_reader(AwkwardBackend)
+def from_parquet(
+    name: str,
+    path: str | Sequence[str],
+    *,
+    columns: Sequence[str] | None = None,
+    steps_per_file: int = 1,
+    open_files: bool = True,
+    session: Session | None = None,
 ) -> Any:
     """Return a deferred awkward array over a parquet dataset (file / directory / glob / list).
+
+    It records into ``session``, else the current Session.
 
     The form is built from METADATA alone; no event data is read here. ``steps_per_file`` and
     ``open_files`` shape the dataset's default partitioning (``partitions_of``); with
@@ -129,7 +153,7 @@ def from_parquet(
         # validated blind
         gpq.make_partitions(paths, steps_per_file=steps_per_file, open_files=False)
     loader = _DatasetLoader(paths, tuple(columns) if columns else None)
-    return gpq.deferred_source(session, name, paths=paths, form=form, loader=loader)
+    return gpq.deferred_source(name, paths=paths, form=form, loader=loader, session=session)
 
 
 def read_parquet_partition(partition: Partition, columns: Sequence[str] | None = None) -> ak.Array:

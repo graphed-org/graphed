@@ -16,7 +16,7 @@ The rest of the package is for everything around that error:
    from graphed.numpy import NumpyBackend, from_array
 
    s = Session(NumpyBackend())
-   pt = from_array(s, "pt", np.arange(4.0))
+   pt = from_array("pt", np.arange(4.0), session=s)
    leading = pt.map(lambda a: a[100], name="leading")
 
    try:
