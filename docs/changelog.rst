@@ -21,6 +21,13 @@ Several datasets in one Session
   source columns those Arrays use, as a plan over them would. A plan over several Sessions is
   ``graphed.collate``, which ``aggregate_plan``'s refusal now names (#103).
 
+Random draws
+~~~~~~~~~~~~
+
+* A ``default_rng`` draw is named by its whole call (sampler, shape and parameters): equal
+  generators gave ``normal(3, loc=100.0)`` the name of an earlier ``normal(3)``, which silently
+  returned the first draw's values (#115).
+
 A plan finalizes its value on the driver
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
