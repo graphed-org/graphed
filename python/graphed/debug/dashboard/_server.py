@@ -94,7 +94,7 @@ class DashboardServer:
         self._n_connections = 0
         self._last_error: dict[str, Any] | None = None
         # merged sampled stacks -> flamegraph
-        self._profile_tree: dict[str, Any] = _sampler._new_node()
+        self._profile_tree: dict[str, Any] = _sampler.new_node()
         self._profile_samples = 0
         self._ready = threading.Event()
         self._error: BaseException | None = None
@@ -145,15 +145,16 @@ class DashboardServer:
 
     def _run(self) -> None:
         try:
-            import asyncio  # noqa: PLC0415
+            # asyncio is lazy: importing graphed.debug must not pull in its ~55 modules
+            import asyncio
 
-            import perspective  # noqa: PLC0415
-            from perspective.handlers.tornado import PerspectiveTornadoHandler  # noqa: PLC0415
-            from tornado.httpserver import HTTPServer  # noqa: PLC0415
-            from tornado.ioloop import IOLoop  # noqa: PLC0415
-            from tornado.netutil import bind_sockets  # noqa: PLC0415
-            from tornado.web import Application, RequestHandler, StaticFileHandler  # noqa: PLC0415
-            from tornado.websocket import WebSocketHandler  # noqa: PLC0415
+            import perspective
+            from perspective.handlers.tornado import PerspectiveTornadoHandler
+            from tornado.httpserver import HTTPServer
+            from tornado.ioloop import IOLoop
+            from tornado.netutil import bind_sockets
+            from tornado.web import Application, RequestHandler, StaticFileHandler
+            from tornado.websocket import WebSocketHandler
 
             asyncio.set_event_loop(asyncio.new_event_loop())
             self._loop = IOLoop.current()
@@ -248,7 +249,9 @@ class DashboardServer:
     def _ingest(self, message: str, conn: Any = None) -> None:
         try:
             msg = json.loads(message)
-        except Exception:
+        except (ValueError, RecursionError):
+            return
+        if not isinstance(msg, dict):
             return
         cid = getattr(conn, "cid", 0)
         # held across the frame so a reader waiting on a count also sees the rows written below
@@ -418,7 +421,7 @@ class DashboardServer:
 
     def _send_control(self, cmd: str, state: str) -> int:
         """Write ``cmd`` to every listening monitor (IOLoop thread); return how many took it."""
-        from tornado.websocket import WebSocketClosedError  # noqa: PLC0415
+        from tornado.websocket import WebSocketClosedError
 
         text = json.dumps(_wire.control_message(cmd))
         with self._lock:

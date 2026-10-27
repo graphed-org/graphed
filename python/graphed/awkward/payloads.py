@@ -32,7 +32,7 @@ def correctionlib_descriptor(json_path: str, correction_name: str) -> PayloadDes
     try:
         data = json.loads(Path(json_path).read_text(encoding="utf-8"))
         schema_version = str(data.get("schema_version", "unknown"))
-    except Exception:  # pragma: no cover - malformed JSON still gets a hash
+    except (OSError, ValueError, AttributeError):  # pragma: no cover - malformed: still hashed
         pass
     return PayloadDescriptor(
         kind="correctionlib",
@@ -50,7 +50,7 @@ def onnx_descriptor(model_path: str) -> PayloadDescriptor:
     opset = "unknown"
     io_schema = "opaque"
     try:
-        import onnx  # noqa: PLC0415  -- onnx is an optional dependency, imported lazily on demand
+        import onnx
 
         model = onnx.load(model_path)
         opset = ",".join(str(o.version) for o in model.opset_import)
@@ -99,7 +99,7 @@ def opaque_callable_descriptor(fn_name: str) -> PayloadDescriptor:
 # plugin.content_hash(payload) and gak-recorded Externals pass a bundle's payload-integrity check)
 def correctionlib_contents_hash(payload: bytes) -> str:
     """sha256 of the correction set's CONTENTS (canonical JSON) — formatting is not identity."""
-    from graphed.preserve.externals._helpers import json_bytes  # noqa: PLC0415
+    from graphed.preserve.externals._helpers import json_bytes
 
     data = json.loads(json_bytes(payload))
     canonical = json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -108,8 +108,8 @@ def correctionlib_contents_hash(payload: bytes) -> str:
 
 def onnx_weights_hash(payload: bytes) -> str:
     """sha256 of the model's WEIGHTS + graph op structure — file bytes are not identity."""
-    import onnx  # noqa: PLC0415
-    from onnx import numpy_helper  # noqa: PLC0415
+    import onnx
+    from onnx import numpy_helper
 
     model = onnx.load_from_string(payload)
     h = hashlib.sha256()
@@ -123,7 +123,7 @@ def onnx_weights_hash(payload: bytes) -> str:
 
 
 def _correctionlib_identity(payload: bytes) -> tuple[str, str]:
-    from graphed.preserve.externals._helpers import json_bytes  # noqa: PLC0415
+    from graphed.preserve.externals._helpers import json_bytes
 
     schema_version = "unknown"
     with contextlib.suppress(Exception):  # malformed JSON still fails loudly at the hash step
@@ -133,7 +133,7 @@ def _correctionlib_identity(payload: bytes) -> tuple[str, str]:
 
 def correctionlib_contents_descriptor(payload: bytes, correction_name: str) -> PayloadDescriptor:
     """Describe correction ``correction_name`` of a correctionlib payload's bytes."""
-    from graphed.preserve.externals._helpers import memoized_model_hash  # noqa: PLC0415
+    from graphed.preserve.externals._helpers import memoized_model_hash
 
     # one set is recorded once per call (e.g. per systematic universe): parse it once
     content_hash, schema_version = memoized_model_hash(
@@ -151,7 +151,7 @@ def correctionlib_contents_descriptor(payload: bytes, correction_name: str) -> P
 
 def onnx_weights_descriptor(payload: bytes) -> PayloadDescriptor:
     """Describe an ONNX model payload's bytes."""
-    from graphed.preserve.externals._helpers import memoized_model_hash  # noqa: PLC0415
+    from graphed.preserve.externals._helpers import memoized_model_hash
 
     content_hash, opset, io_schema = memoized_model_hash(
         "onnx-descriptor", payload, _onnx_identity
@@ -167,15 +167,11 @@ def onnx_weights_descriptor(payload: bytes) -> PayloadDescriptor:
 
 
 def _onnx_identity(payload: bytes) -> tuple[str, str, str]:
-    opset, io_schema = "unknown", "opaque"
-    try:
-        import onnx  # noqa: PLC0415
+    content_hash = onnx_weights_hash(payload)  # a model onnx cannot load raises here
+    import onnx
 
-        model = onnx.load_from_string(payload)
-        opset = ",".join(str(o.version) for o in model.opset_import)
-        ins = ",".join(i.name for i in model.graph.input)
-        outs = ",".join(o.name for o in model.graph.output)
-        io_schema = f"{ins}->{outs}"
-    except Exception:  # pragma: no cover
-        pass
-    return onnx_weights_hash(payload), opset, io_schema
+    model = onnx.load_from_string(payload)
+    opset = ",".join(str(o.version) for o in model.opset_import)
+    ins = ",".join(i.name for i in model.graph.input)
+    outs = ",".join(o.name for o in model.graph.output)
+    return content_hash, opset, f"{ins}->{outs}"

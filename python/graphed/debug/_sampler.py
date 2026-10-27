@@ -39,8 +39,12 @@ def _display(frame: Any) -> str:
     return f"{co.co_name}  ({short}:{frame.f_lineno})"
 
 
-def _new_node(name: str = "all") -> dict[str, Any]:
+def new_node(name: str = "all") -> dict[str, Any]:
+    """Return an empty count-tree node named ``name``."""
     return {"name": name, "count": 0, "children": {}}
+
+
+_new_node = new_node  # the m37 frozen suite's name
 
 
 def _fold(leaf: Any, root: dict[str, Any]) -> None:
@@ -85,7 +89,7 @@ class StackSampler:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
-        self._tree = _new_node()
+        self._tree = new_node()
 
     def start(self) -> None:
         self._tid = threading.get_ident()  # the worker's task thread (the caller)
@@ -109,7 +113,7 @@ class StackSampler:
     def flush(self) -> bytes | None:
         with self._lock:
             tree = self._tree
-            self._tree = _new_node()
+            self._tree = new_node()
         if tree["count"] == 0:
             return None
         return json.dumps(tree).encode("utf-8")

@@ -44,7 +44,7 @@ PathLike = str | Iterable[str]
 
 def _pq() -> Any:
     try:
-        import pyarrow.parquet as pq  # noqa: PLC0415  (lazy: pyarrow is the optional extra)
+        import pyarrow.parquet as pq
     except ImportError as exc:  # pragma: no cover - exercised via the import-hook test
         raise ImportError(
             "parquet I/O needs pyarrow — install the optional extra: pip install "

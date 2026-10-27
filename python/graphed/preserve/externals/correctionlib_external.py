@@ -25,7 +25,7 @@ def _correctionlib_content_hash_impl(payload: bytes) -> str:
 
 def load_correctionlib(payload: bytes, params: Mapping[str, Any]) -> Any:
     """Parse the correction set once (per worker)."""
-    import correctionlib  # noqa: PLC0415
+    import correctionlib
 
     return correctionlib.CorrectionSet.from_string(json_bytes(payload).decode("utf-8"))
 
@@ -37,8 +37,8 @@ def _peel_layout(layout: Any) -> tuple[list[tuple[str, Any]], Any] | None:
     data, or ``None`` if it is anything else. Parameters (strings, named records) disqualify: not a
     numeric column.
     """
-    import awkward as ak  # noqa: PLC0415
-    import numpy as np  # noqa: PLC0415
+    import awkward as ak
+    import numpy as np
 
     layers: list[tuple[str, Any]] = []
     node = layout
@@ -62,7 +62,7 @@ def _peel_layout(layout: Any) -> tuple[list[tuple[str, Any]], Any] | None:
 
 
 def _same_layers(a: list[tuple[str, Any]], b: list[tuple[str, Any]]) -> bool:
-    import numpy as np  # noqa: PLC0415
+    import numpy as np
 
     return len(a) == len(b) and all(
         ka == kb and np.array_equal(ba, bb) for (ka, ba), (kb, bb) in zip(a, b, strict=True)
@@ -70,8 +70,8 @@ def _same_layers(a: list[tuple[str, Any]], b: list[tuple[str, Any]]) -> bool:
 
 
 def _rebuild(layers: list[tuple[str, Any]], data: Any) -> Any:
-    import awkward as ak  # noqa: PLC0415
-    import numpy as np  # noqa: PLC0415
+    import awkward as ak
+    import numpy as np
 
     node: Any = ak.contents.NumpyArray(data)
     for kind, buf in reversed(layers):
@@ -94,8 +94,8 @@ def _flat_buffer_fast_path(evaluate: Callable[..., Any], call: list[Any]) -> Any
     mask and the type of the rebuilt result are the ones the wrapper would have produced. ``None``
     means "not that shape" — the caller falls back to the dispatched call.
     """
-    import awkward as ak  # noqa: PLC0415
-    import numpy as np  # noqa: PLC0415
+    import awkward as ak
+    import numpy as np
 
     layers: list[tuple[str, Any]] | None = None
     flat: list[Any] = []
@@ -141,8 +141,8 @@ def _resolve(cset: Any, name: str, compound: bool) -> Any:
 
 def eval_correctionlib(cset: Any, params: Mapping[str, Any], inputs: list[Any]) -> Any:
     """Evaluate the named correction over ``inputs``."""
-    import awkward as ak  # noqa: PLC0415
-    import numpy as np  # noqa: PLC0415
+    import awkward as ak
+    import numpy as np
 
     name = str(params.get("name", ""))
     corr = _resolve(cset, name, bool(params.get("compound", False)))
