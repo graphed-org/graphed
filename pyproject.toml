@@ -125,6 +125,24 @@ convention = "pep257"
 "conftest.py" = ["D100", "D101", "D102", "D103", "D104", "D105", "D106", "D107"]
 # Frozen m48 test names capitalize words for emphasis; renaming them would change their test ids.
 "tests/frozen/awkward/m48/test_*.py" = ["N802"]
+# These import an optional extra (numpy, pyarrow, onnx, the dashboard's servers, a preserve
+# framework) where it is used, so a base install imports them without it.
+"python/graphed/awkward/payloads.py" = ["PLC0415"]
+"python/graphed/checkpoint/codec.py" = ["PLC0415"]
+"python/graphed/debug/dashboard/_client.py" = ["PLC0415"]
+"python/graphed/debug/dashboard/_server.py" = ["PLC0415"]
+"python/graphed/numpy/io.py" = ["PLC0415"]
+"python/graphed/numpy/shuffle.py" = ["PLC0415"]
+"python/graphed/parquet.py" = ["PLC0415"]
+"python/graphed/preserve/externals/_helpers.py" = ["PLC0415"]
+"python/graphed/preserve/externals/correctionlib_external.py" = ["PLC0415"]
+"python/graphed/preserve/externals/histogram_external.py" = ["PLC0415"]
+"python/graphed/preserve/externals/jax_external.py" = ["PLC0415"]
+"python/graphed/preserve/externals/onnx_external.py" = ["PLC0415"]
+"python/graphed/preserve/externals/pytorch_external.py" = ["PLC0415"]
+"python/graphed/preserve/externals/tensorflow_external.py" = ["PLC0415"]
+"python/graphed/preserve/externals/triton_external.py" = ["PLC0415"]
+"python/graphed/preserve/externals/xgboost_external.py" = ["PLC0415"]
 
 [tool.mypy]
 # 3.12 pin: numpy 2.5.0 (py>=3.12) ships PEP695 stubs that require mypy on 3.12+.

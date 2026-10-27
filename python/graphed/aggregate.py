@@ -90,7 +90,7 @@ class _ByValue:
 
 
 def _load_by_value(blob: bytes) -> _ByValue:
-    import cloudpickle  # noqa: PLC0415
+    import cloudpickle  # noqa: PLC0415  (only an opaque callable needs it)
 
     return _ByValue(cloudpickle.loads(blob))
 
@@ -208,7 +208,7 @@ class _PartitionReduce(Generic[V]):
             )
         import cloudpickle  # noqa: PLC0415  (only a capturing plan needs it)
 
-        from graphed.checkpoint import PickleCodec  # noqa: PLC0415
+        from graphed.checkpoint import PickleCodec  # noqa: PLC0415  (as cloudpickle)
 
         store = self._task_store()
         cid, label, codec = self._capture_id(partition), str(partition), PickleCodec()

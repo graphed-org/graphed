@@ -115,7 +115,7 @@ class OpSpec:
                     return cls.from_ref(f"{mod}:{qual}")
             except (ImportError, AttributeError, ValueError):
                 pass
-        import cloudpickle  # noqa: PLC0415
+        import cloudpickle  # noqa: PLC0415  (lazy: only opaque plans need it)
 
         return cls(kind="opaque", blob_b64=base64.b64encode(cloudpickle.dumps(fn)).decode())
 

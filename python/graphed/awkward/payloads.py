@@ -51,7 +51,7 @@ def onnx_descriptor(model_path: str) -> PayloadDescriptor:
     opset = "unknown"
     io_schema = "opaque"
     try:
-        import onnx  # noqa: PLC0415  -- onnx is an optional dependency, imported lazily on demand
+        import onnx
 
         model = onnx.load(model_path)
         opset = ",".join(str(o.version) for o in model.opset_import)
@@ -107,8 +107,8 @@ def correctionlib_contents_hash(payload: bytes) -> str:
 
 def onnx_weights_hash(payload: bytes) -> str:
     """sha256 of the model's WEIGHTS + graph op structure — file bytes are not identity."""
-    import onnx  # noqa: PLC0415
-    from onnx import numpy_helper  # noqa: PLC0415
+    import onnx
+    from onnx import numpy_helper
 
     model = onnx.load_from_string(payload)
     h = hashlib.sha256()
@@ -162,7 +162,7 @@ def onnx_weights_descriptor(payload: bytes) -> PayloadDescriptor:
 def _onnx_identity(payload: bytes) -> tuple[str, str, str]:
     opset, io_schema = "unknown", "opaque"
     try:
-        import onnx  # noqa: PLC0415
+        import onnx
 
         model = onnx.load_from_string(payload)
         opset = ",".join(str(o.version) for o in model.opset_import)

@@ -31,7 +31,7 @@ def tensorflow_content_hash(payload: bytes) -> str:
 def _tensorflow_content_hash_impl(payload: bytes) -> str:
     """Architecture (name-stripped config) + weights — stable across re-saves of one model."""
     model = _keras_load_from_bytes(payload)
-    import numpy as np  # noqa: PLC0415
+    import numpy as np
 
     h = hashlib.sha256(b"keras-config-weights-v1")
     h.update(
@@ -43,7 +43,7 @@ def _tensorflow_content_hash_impl(payload: bytes) -> str:
 
 
 def _keras_load_from_bytes(payload: bytes) -> Any:
-    import keras  # noqa: PLC0415
+    import keras
 
     with tempfile.TemporaryDirectory() as tmp:  # keras loads from a path; fully in-memory after
         path = Path(tmp) / "model.keras"
@@ -72,8 +72,8 @@ def eval_tensorflow(model: Any, params: Mapping[str, Any], inputs: list[Any]) ->
 
 
 def _tensorflow_samples() -> list[bytes]:
-    import keras  # noqa: PLC0415
-    import numpy as np  # noqa: PLC0415
+    import keras
+    import numpy as np
 
     def _model(weight: float) -> bytes:
         m = keras.Sequential(

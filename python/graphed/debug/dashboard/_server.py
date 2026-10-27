@@ -146,13 +146,13 @@ class DashboardServer:
 
     def _run(self) -> None:
         try:
-            import perspective  # noqa: PLC0415
-            from perspective.handlers.tornado import PerspectiveTornadoHandler  # noqa: PLC0415
-            from tornado.httpserver import HTTPServer  # noqa: PLC0415
-            from tornado.ioloop import IOLoop  # noqa: PLC0415
-            from tornado.netutil import bind_sockets  # noqa: PLC0415
-            from tornado.web import Application, RequestHandler, StaticFileHandler  # noqa: PLC0415
-            from tornado.websocket import WebSocketHandler  # noqa: PLC0415
+            import perspective
+            from perspective.handlers.tornado import PerspectiveTornadoHandler
+            from tornado.httpserver import HTTPServer
+            from tornado.ioloop import IOLoop
+            from tornado.netutil import bind_sockets
+            from tornado.web import Application, RequestHandler, StaticFileHandler
+            from tornado.websocket import WebSocketHandler
 
             asyncio.set_event_loop(asyncio.new_event_loop())
             self._loop = IOLoop.current()
@@ -417,7 +417,7 @@ class DashboardServer:
 
     def _send_control(self, cmd: str, state: str) -> int:
         """Write ``cmd`` to every listening monitor (IOLoop thread); return how many took it."""
-        from tornado.websocket import WebSocketClosedError  # noqa: PLC0415
+        from tornado.websocket import WebSocketClosedError
 
         text = json.dumps(_wire.control_message(cmd))
         with self._lock:

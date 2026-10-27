@@ -42,8 +42,8 @@ def _stack_feature_columns(inputs: list[Any]) -> Any:
 
     A framework that needs one dtype casts it to the model's own.
     """
-    import awkward as ak  # noqa: PLC0415
-    import numpy as np  # noqa: PLC0415
+    import awkward as ak
+    import numpy as np
 
     return np.stack([np.asarray(ak.to_numpy(ak.Array(i))) for i in inputs], axis=1)
 
@@ -53,8 +53,8 @@ def _as_event_array(out: Any) -> Any:
 
     (n, k, ...) as ``ak.from_numpy`` gives it, regular rows of k.
     """
-    import awkward as ak  # noqa: PLC0415
-    import numpy as np  # noqa: PLC0415
+    import awkward as ak
+    import numpy as np
 
     values = np.asarray(out, dtype="float64")
     return ak.from_numpy(values.reshape(-1) if values.shape[1:] == (1,) else values)
