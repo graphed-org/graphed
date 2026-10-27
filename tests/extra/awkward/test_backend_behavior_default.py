@@ -151,6 +151,7 @@ def test_a_behavior_less_plan_pickles_as_with_the_backend_class(build: Any) -> N
 
 
 def test_to_parquet_writes_a_backend_behavior_method_in_workers(tmp_path: Any) -> None:
+    pytest.importorskip("pyarrow")
     session = Session(AwkwardBackend(behavior=BEHAVIOR))
     y = gak.zip({"y": _doubled(_source(session, "events", EVENTS).x)})
     plan = pickle.loads(
