@@ -83,6 +83,8 @@ class _DatasetLoader:
 
     paths: tuple[str, ...]
     columns: tuple[str, ...] | None
+    steps_per_file: int = 1
+    open_files: bool = False
 
     def __call__(self) -> ak.Array:
         return ak.from_parquet(
@@ -90,7 +92,9 @@ class _DatasetLoader:
         )
 
     def partitions(self, steps_per_file: int = 1) -> tuple[Partition, ...]:
-        return gpq.make_partitions(self.paths, steps_per_file=steps_per_file, open_files=False)
+        return gpq.make_partitions(
+            self.paths, steps_per_file=steps_per_file, open_files=self.open_files
+        )
 
     def read_partition(
         self, partition: Partition, columns: Sequence[str] | None, resources: Any
@@ -105,23 +109,31 @@ def from_parquet(
     *,
     columns: Sequence[str] | None = None,
     steps_per_file: int = 1,
-    open_files: bool = True,
+    open_files: bool = False,
 ) -> Any:
     """Return a deferred awkward array over a parquet dataset (file / directory / glob / list).
 
     The form is built from METADATA alone; no event data is read here. ``steps_per_file`` and
-    ``open_files`` shape the dataset's default partitioning (``partitions_of``); with
-    ``open_files=False`` no file is opened at all (blind partitions, R7.9).
+    ``open_files`` shape the dataset's default partitioning, which a plan takes unless its own
+    ``steps_per_file=`` is given: each file splits into ``steps_per_file`` partitions, blind by
+    default (no file is opened to plan, R7.9) or, with ``open_files=True``, with exact entry
+    ranges from each file's metadata row count, read when the plan is built. Both are source
+    params, so they are part of the source's identity.
     """
     paths = gpq.discover(path)
     form = _schema_form(paths, columns)
     if steps_per_file < 1:
         raise ValueError(f"steps_per_file must be >= 1, got {steps_per_file}")
-    if not open_files:
-        # validated blind
-        gpq.make_partitions(paths, steps_per_file=steps_per_file, open_files=False)
-    loader = _DatasetLoader(paths, tuple(columns) if columns else None)
-    return gpq.deferred_source(session, name, paths=paths, form=form, loader=loader)
+    loader = _DatasetLoader(paths, tuple(columns) if columns else None, steps_per_file, open_files)
+    return gpq.deferred_source(
+        session,
+        name,
+        paths=paths,
+        form=form,
+        loader=loader,
+        steps_per_file=steps_per_file,
+        open_files=open_files,
+    )
 
 
 def read_parquet_partition(partition: Partition, columns: Sequence[str] | None = None) -> ak.Array:
@@ -166,6 +178,7 @@ class _WritePart:
     bases: tuple[tuple[Any, int], ...]
     column: str = "data"
     reader: Any = None  # a graphed.write.PartitionedSource (picklable)
+    rows: tuple[tuple[Any, int], ...] = ()  # each eagerly partitioned file's row count
     behavior: Any = None  # a behavior dict or an importable "module:attr" reference
     memory_data: ak.Array | None = None  # in-memory source payload (bounded by the dataset)
     memory_rows: int = 0
@@ -198,12 +211,36 @@ class _WritePart:
         return [path]
 
 
+def _file_key(partition: Partition) -> Any:
+    return (partition.uri, partition.tree) if partition.tree else partition.uri
+
+
+def _file_tables(partitions: Sequence[Partition], steps_per_file: int) -> dict[str, Any]:
+    """Return a reader-backed writer's ``bases`` and ``rows`` over its source's ``partitions``.
+
+    A source gives each file ``steps_per_file`` partitions in order, so every listing of a file
+    gets a key and a repeated one is refused; a file's last partition ends at its row count,
+    against which an eager step is reconstructed.
+    """
+    files = [_file_key(p) for p in partitions[::steps_per_file]]
+    rows = {_file_key(p): p.entry_stop for p in partitions if not p.is_blind}
+    return {
+        "bases": tuple(gw.file_bases(files, steps_per_file).items()),
+        "rows": tuple(rows.items()),
+    }
+
+
 def _part_paths(writer: _WritePart | _VariedWritePart, partition: Partition) -> list[str]:
     """Return a deferred writer's one part for ``partition``: its ``part_paths`` hook."""
-    if writer.reader is not None:
+    if writer.reader is None:
+        index = _memory_step(partition, writer.memory_rows, writer.steps_per_file)
+    elif partition.is_blind:
         index = gw.blind_part_index(partition, dict(writer.bases))
     else:
-        index = _memory_step(partition, writer.memory_rows, writer.steps_per_file)
+        key = _file_key(partition)
+        index = dict(writer.bases)[key] + _memory_step(
+            partition, dict(writer.rows)[key], writer.steps_per_file
+        )
     return [gpq.part_path(writer.destination, index, prefix=writer.prefix)]
 
 
@@ -762,6 +799,7 @@ class _VariedWritePart:
     mask_specs: tuple[_MaskSpec, ...]
     wrapped: bool
     reader: Any = None
+    rows: tuple[tuple[Any, int], ...] = ()  # as `_WritePart.rows`
     behavior: Any = None
     memory_data: ak.Array | None = None
     memory_rows: int = 0
@@ -953,7 +991,7 @@ def _write_varied(
     destination: str,
     select: Any,
     *,
-    steps_per_file: int,
+    steps_per_file: int | None,
     compute: bool,
     executor: Any | None,
     prefix: str,
@@ -1082,6 +1120,7 @@ def _write_varied(
     wrapped = _tt(session, nominal_record).ndim > 1
 
     ((source_id, data),) = gw.sources_read(outputs).items()
+    steps_per_file = gw.steps_for(data, steps_per_file)
     source_name = session.source_name(source_id)
     source_form = session.form_of(source_id)
     assert isinstance(source_form, AwkwardForm)
@@ -1109,9 +1148,8 @@ def _write_varied(
     }
     if isinstance(data, PartitionedSource):
         partitions = data.partitions(steps_per_file)
-        keys = [(p.uri, p.tree) if p.tree else p.uri for p in partitions if p.blind_step == 0]
         writer = _VariedWritePart(
-            bases=tuple(gw.file_bases(keys, steps_per_file).items()), reader=data, **common
+            **_file_tables(partitions, steps_per_file), reader=data, **common
         )
     else:
         whole = ak.Array(data() if callable(data) else data)
@@ -1162,7 +1200,7 @@ def to_parquet(
     destination: str,
     *,
     select: Any = None,
-    steps_per_file: int = 1,
+    steps_per_file: int | None = None,
     compute: bool = True,
     executor: Any | None = None,
     prefix: str = "part",
@@ -1175,6 +1213,7 @@ def to_parquet(
     SAME plan (``SequentialRunner`` by default; pass any R7 executor). The array must be recorded
     over exactly one source; the per-task read list comes from the recorded graph's projection. A
     ``destination`` containing ``://`` is an fsspec URL: the parts are written on its filesystem.
+    ``steps_per_file`` parts are written per input file; ``None`` takes the source's own default.
 
     ``select=`` turns this into a §6.4 variation-aware write: ``array`` is the PRE-selection record
     and ``select`` carries the per-level ``Varied`` mask(s) (a single row mask ⇔ ``{0: mask}``, or
@@ -1201,6 +1240,7 @@ def to_parquet(
             f"to_parquet needs an array recorded over exactly one source, got {len(sources)}"
         )
     ((node_id, data),) = sources.items()
+    steps_per_file = gw.steps_for(data, steps_per_file)
     source_name = session.source_name(node_id)
     source_form = session.form_of(node_id)
     assert isinstance(source_form, AwkwardForm)  # this backend recorded the source
@@ -1217,7 +1257,6 @@ def to_parquet(
         # ROOT reader integration, ...) is written partition by partition — its whole-dataset
         # loader is never invoked
         partitions = data.partitions(steps_per_file)
-        keys = [(p.uri, p.tree) if p.tree else p.uri for p in partitions if p.blind_step == 0]
         writer = _WritePart(
             compiled=compiled,
             source_name=source_name,
@@ -1225,7 +1264,7 @@ def to_parquet(
             destination=destination,
             prefix=prefix,
             steps_per_file=steps_per_file,
-            bases=tuple(gw.file_bases(keys, steps_per_file).items()),
+            **_file_tables(partitions, steps_per_file),
             column=column,
             reader=data,
             behavior=behavior,
