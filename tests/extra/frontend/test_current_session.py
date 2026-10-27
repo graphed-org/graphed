@@ -274,3 +274,9 @@ def test_a_grouped_gak_join_refusal_points_at_a_scope() -> None:
     with pytest.raises(graphed.GraphedError, match="same Session") as info:
         gak.join(left, right, on=["k"], grouped=True)
     assert "with left.session" in str(info.value)
+
+
+def test_set_session_refuses_what_is_not_a_session() -> None:
+    events = from_array("x", np.arange(3.0), session=Session(NumpyBackend()))
+    with pytest.raises(TypeError, match=r"graphed\.Session or None, not NumpyArray"):
+        set_session(events)  # type: ignore[arg-type]

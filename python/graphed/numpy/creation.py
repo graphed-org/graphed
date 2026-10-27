@@ -27,6 +27,16 @@ def _norm_shape(shape: ShapeLike) -> tuple[int, ...]:
     return (shape,) if isinstance(shape, int) else tuple(int(d) for d in shape)
 
 
+def _exact(value: Any) -> str:
+    """Render ``value`` for a content name so that only equal values render alike.
+
+    ``repr`` of an ndarray rounds to 8 digits and elides past 1000 elements; ``tolist`` does
+    neither.
+    """
+    a = np.asarray(value)
+    return repr(a.item()) if a.ndim == 0 else f"{a.dtype}{a.shape}:{a.tolist()!r}"
+
+
 def _source(session: Session, name: str | None, content: str, arr: Any) -> Array:
     # the content name fixes the values, so an identical creation reuses the held binding
     form = NumpyForm(arr.dtype, shape=(None, *arr.shape[1:]))
@@ -87,7 +97,7 @@ def ones(
 def full(
     session: Session,
     shape: ShapeLike,
-    fill_value: float,
+    fill_value: Any,
     dtype: Any = None,
     *,
     name: str | None = None,
@@ -95,7 +105,7 @@ def full(
 @overload
 def full(
     shape: ShapeLike,
-    fill_value: float,
+    fill_value: Any,
     dtype: Any = None,
     *,
     name: str | None = None,
@@ -104,7 +114,7 @@ def full(
 @_reader(NumpyBackend)
 def full(
     shape: ShapeLike,
-    fill_value: float,
+    fill_value: Any,
     dtype: Any = None,
     *,
     name: str | None = None,
@@ -113,7 +123,7 @@ def full(
     """Create a source array filled with ``fill_value``."""
     arr = np.full(_norm_shape(shape), fill_value, dtype)
     return _source(
-        cast("Session", session), name, f"full[{arr.shape},{arr.dtype},{fill_value!r}]", arr
+        cast("Session", session), name, f"full[{arr.shape},{arr.dtype},{_exact(fill_value)}]", arr
     )
 
 
@@ -185,7 +195,10 @@ def arange(
         else _np_arange(start, dtype=dtype)
     )
     return _source(
-        cast("Session", session), name, f"arange[{start},{stop},{step},{arr.dtype}]", arr
+        cast("Session", session),
+        name,
+        f"arange[{_exact(start)},{_exact(stop)},{_exact(step)},{arr.dtype}]",
+        arr,
     )
 
 
@@ -222,7 +235,10 @@ def linspace(
     """Create a source array of ``num`` evenly spaced values, as ``numpy.linspace``."""
     arr = np.linspace(start, stop, num, dtype=dtype)
     return _source(
-        cast("Session", session), name, f"linspace[{start},{stop},{num},{arr.dtype}]", arr
+        cast("Session", session),
+        name,
+        f"linspace[{_exact(start)},{_exact(stop)},{_exact(num)},{arr.dtype}]",
+        arr,
     )
 
 

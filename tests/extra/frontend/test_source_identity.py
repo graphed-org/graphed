@@ -135,3 +135,37 @@ def test_two_threads_creating_one_content_bind_it_once(create: Callable[[Session
         refused += any(isinstance(o, ValueError) for o in out)
         assert s.node_count() == 1
     assert refused == 0
+
+
+def test_a_named_creation_over_a_nearby_fill_is_other_data() -> None:
+    s = Session(NumpyBackend())
+    gn.full((1,), np.array([0.1]), name="w", session=s)
+    with pytest.raises(ValueError, match=REFUSAL):
+        gn.full((1,), np.array([0.1000000001]), name="w", session=s)
+
+
+_ELIDED = np.arange(2000.0)
+_ELIDED_OTHER = _ELIDED.copy()
+_ELIDED_OTHER[1000] = -1.0  # inside the span ndarray repr elides
+
+
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [(np.array([0.1]), np.array([0.1000000001])), (_ELIDED, _ELIDED_OTHER)],
+    ids=["past 8 digits", "past 1000 elements"],
+)
+def test_creations_over_nearby_fills_are_distinct_sources(
+    first: np.ndarray, second: np.ndarray
+) -> None:
+    s = Session(NumpyBackend())
+    a = gn.full(first.shape, first, session=s)
+    b = gn.full(second.shape, second, session=s)
+    assert a.node_id != b.node_id
+    np.testing.assert_array_equal(s.materialize(b), second)
+
+
+def test_draws_with_nearby_array_parameters_are_distinct_sources() -> None:
+    s = Session(NumpyBackend())
+    a = gn.default_rng(7, session=s).normal(1, loc=np.array([0.1]))
+    b = gn.default_rng(7, session=s).normal(1, loc=np.array([0.1000000001]))
+    assert a.node_id != b.node_id

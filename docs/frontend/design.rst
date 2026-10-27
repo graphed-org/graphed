@@ -133,9 +133,9 @@ A source name is one binding per Session. Reading the same source again under it
 re-run notebook cell, the same files, columns and partitioning — reuses that binding, and its node
 when the params match. Binding a taken name to other data is refused at the read, so a loop over
 datasets passes each its own name, or reads each inside its own ``with graphed.Session(...)``.
-"The same source" is the same object, or two objects whose ``source_identity()`` values compare
-equal: the parquet readers define it, as do the numpy creators and ``default_rng`` draws, whose
-names fix their values. An in-memory array is the same source only as the same object.
+"The same source" is the same object, or two objects whose identities compare equal: the parquet
+readers' loaders define ``source_identity()``, and the numpy creators and ``default_rng`` draws
+pass their content name, which fixes their values, as ``Session.source``'s ``identity=``. An in-memory array is the same source only as the same object.
 
 ``graphed.set_default_backend(factory)`` chooses the backend of defaults no caller names — a bare
 ``current_session()`` and ``new_session()`` without a backend. It never overrides a reader's own

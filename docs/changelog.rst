@@ -28,6 +28,10 @@ A current Session for reads with no array input
   the name is refused, and both refusals name ``name=`` and ``graphed.new_session()``. The numpy
   creators and ``default_rng`` draws bind their content name atomically, so two threads creating
   one content no longer race into a refusal.
+* A creator's or draw's content name renders array arguments exactly (dtype, shape and every
+  value): ``full`` fills and ``default_rng`` parameters that ``repr`` rounded or elided alike no
+  longer share one source.
+* ``set_session`` refuses anything that is not a Session or ``None``, naming its type.
 * Session methods lock their state, so threads may record into and compile one Session at once;
   compiling while another thread recorded raised ``dictionary changed size during iteration``.
 * The cross-Session refusals of ``join``, ``gak.join``, ``apply``, ``apply_gufunc``,

@@ -857,6 +857,11 @@ def set_session(default: Session | None, /) -> Session | None:
     The previous one is the restore token: ``prev = set_session(s); ...; set_session(prev)``.
     """
     global _default  # the process-wide default
+    if default is not None and not isinstance(default, Session):
+        raise TypeError(
+            f"set_session takes a graphed.Session or None, not {type(default).__name__} "
+            "(an array's Session is array.session)"
+        )
     with _default_lock:
         previous, _default = _default, default
     return previous
