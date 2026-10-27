@@ -21,14 +21,14 @@
 
 use std::collections::HashMap;
 
-use crate::node::{NodeId, NodeKey};
+use crate::node::{index, NodeId, NodeKey};
 use crate::store::BadNodeId;
 
 use super::engine::{IDENTITY_TOKENS, SYMMETRIC_OPS};
 use super::{FusionMode, Reduced, RewriteEngine};
 
 #[derive(Default)]
-pub struct IncrementalReducer {
+pub(crate) struct IncrementalReducer {
     /// The canonical arena: identity-eliminated, symmetry-deduped, hash-consed nodes whose inputs
     /// are canonical ids. Grows monotonically; never rescanned by `step`.
     canon_nodes: Vec<NodeKey>,
@@ -41,32 +41,32 @@ pub struct IncrementalReducer {
 }
 
 impl IncrementalReducer {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::default()
     }
 
     /// How many original-arena nodes have been consumed so far.
-    pub fn watermark(&self) -> usize {
+    pub(crate) fn watermark(&self) -> usize {
         self.map.len()
     }
 
     /// Cumulative nodes processed across every `step` (each original node is touched once).
-    pub fn total_work(&self) -> usize {
+    pub(crate) fn total_work(&self) -> usize {
         self.total_work
     }
 
     /// Size of the maintained canonical (concise) form.
-    pub fn canonical_count(&self) -> usize {
+    pub(crate) fn canonical_count(&self) -> usize {
         self.canon_nodes.len()
     }
 
     /// Consume the nodes recorded since the last step (`delta` = original arena `[watermark..]`).
     /// Returns the number of nodes processed — always exactly `delta.len()`.
-    pub fn step(&mut self, delta: &[NodeKey]) -> Result<usize, BadNodeId> {
+    pub(crate) fn step(&mut self, delta: &[NodeKey]) -> Result<usize, BadNodeId> {
         for key in delta {
             let mut inputs = Vec::with_capacity(key.inputs().len());
             for &i in key.inputs() {
-                inputs.push(self.map.get(i as usize).copied().ok_or(BadNodeId(i))?);
+                inputs.push(self.map.get(index(i)).copied().ok_or(BadNodeId(i))?);
             }
             let canon = self.canonicalize(key.with_inputs(inputs));
             self.map.push(canon);
@@ -82,20 +82,25 @@ impl IncrementalReducer {
             inputs,
         } = &key
         {
-            // identity elimination — the engine's identity rules, applied at record time.
-            if IDENTITY_TOKENS.contains(&key.token().as_str()) {
-                return inputs[0];
+            // identity elimination — the engine's identity rules (arity one, as their `(tok ?x)`
+            // patterns are), applied at record time.
+            if let [only] = inputs.as_slice() {
+                if IDENTITY_TOKENS.contains(&key.token().as_str()) {
+                    return *only;
+                }
             }
             // commutativity — the engine's commute rules: both orientations of a symmetric op are
             // ONE canonical node; the first-recorded orientation is the representative (matching
             // the engine's earliest-member extraction).
-            if inputs.len() == 2 && params.is_empty() && SYMMETRIC_OPS.contains(&name.as_str()) {
-                if let Some(&id) = self.canon_table.get(&key) {
-                    return id;
-                }
-                let swapped = key.with_inputs(vec![inputs[1], inputs[0]]);
-                if let Some(&id) = self.canon_table.get(&swapped) {
-                    return id;
+            if let [a, b] = inputs.as_slice() {
+                if params.is_empty() && SYMMETRIC_OPS.contains(&name.as_str()) {
+                    if let Some(&id) = self.canon_table.get(&key) {
+                        return id;
+                    }
+                    let swapped = key.with_inputs(vec![*b, *a]);
+                    if let Some(&id) = self.canon_table.get(&swapped) {
+                        return id;
+                    }
                 }
             }
         }
@@ -111,7 +116,11 @@ impl IncrementalReducer {
     /// Finish the reduction for the given original-arena outputs: translate them into the
     /// canonical arena and run the standard pipeline (DCE + engine + CSE + stage fusion) over the
     /// *canonical* nodes. Cost is O(canonical size) once — independent of how many steps fed it.
-    pub fn finalize(
+    #[allow(
+        clippy::indexing_slicing,
+        reason = "the reduction's node_map covers the canonical arena that self.map points into"
+    )]
+    pub(crate) fn finalize(
         &self,
         outputs: &[NodeId],
         engine: &dyn RewriteEngine,
@@ -119,19 +128,24 @@ impl IncrementalReducer {
     ) -> Result<Reduced, BadNodeId> {
         let mut outs = Vec::with_capacity(outputs.len());
         for &o in outputs {
-            outs.push(self.map.get(o as usize).copied().ok_or(BadNodeId(o))?);
+            outs.push(self.map.get(index(o)).copied().ok_or(BadNodeId(o))?);
         }
         let mut red = super::reduce_with_mode(&self.canon_nodes, &outs, engine, mode);
         // §8.2(i): the four passes answered in CANONICAL-arena ids, so compose this reducer's own
         // original->canonical map in front. Without it the accessor silently mis-keys every
         // `Session(incremental=True)` program.
         let canonical = std::mem::take(&mut red.node_map);
-        red.node_map = self.map.iter().map(|&c| canonical[c as usize]).collect();
+        red.node_map = self.map.iter().map(|&c| canonical[index(c)]).collect();
         Ok(red)
     }
 }
 
-#[cfg(all(test, not(loom)))]
+#[cfg(test)]
+#[cfg(not(loom))]
+#[allow(
+    clippy::many_single_char_names,
+    reason = "test graphs name their nodes a, b, c as the plan's examples do"
+)]
 mod tests {
     use super::*;
     use crate::optimizer::EggEngine;
@@ -188,7 +202,53 @@ mod tests {
         // own canonical map in front of the four passes so both answer in original-arena ids.
         assert_eq!(inc.node_map.len(), s.node_count());
         assert_eq!(inc.node_map, full.node_map);
-        assert_eq!(inc.node_map[one as usize], inc.node_map[ab as usize]);
+        assert_eq!(inc.node_map[index(one)], inc.node_map[index(ab)]);
+    }
+
+    #[test]
+    fn identity_tokens_collapse_only_at_arity_one_like_the_engine() {
+        let zero = ParamMap::new(vec![
+            ("scalar".into(), ParamValue::Float(0.0)),
+            ("side".into(), ParamValue::Str("r".into())),
+        ]);
+        for arity in [0, 2] {
+            let s = GraphStore::new();
+            let a = s.add_source("a".into(), empty());
+            let b = s.add_source("b".into(), empty());
+            let inputs = [a, b][..arity].to_vec();
+            let out = s.add_op("add".into(), inputs, zero.clone()).unwrap();
+            let engine = EggEngine::default();
+            let inc = reduce_incrementally(&s)
+                .finalize(&[out], &engine, FusionMode::SingleUse)
+                .unwrap();
+            let full = crate::optimizer::reduce_with_mode(
+                &s.snapshot().0,
+                &[out],
+                &engine,
+                FusionMode::SingleUse,
+            );
+            assert_eq!(inc.nodes, full.nodes, "arity {arity}");
+            assert_eq!(inc.outputs, full.outputs, "arity {arity}");
+        }
+    }
+
+    #[test]
+    fn nodes_equal_after_canonicalizing_their_inputs_share_one_canonical_node() {
+        let s = GraphStore::new();
+        let a = s.add_source("a".into(), empty());
+        let b = s.add_source("b".into(), empty());
+        s.add_op("add".into(), vec![a, b], empty()).unwrap();
+        let zero = ParamMap::new(vec![
+            ("scalar".into(), ParamValue::Float(0.0)),
+            ("side".into(), ParamValue::Str("r".into())),
+        ]);
+        let x = s.add_op("add".into(), vec![a], zero).unwrap(); // identity: x is a
+        s.add_op("add".into(), vec![x, b], empty()).unwrap(); // the symmetric add(a, b) again
+        s.add_op("neg".into(), vec![a], empty()).unwrap();
+        s.add_op("neg".into(), vec![x], empty()).unwrap(); // the plain neg(a) again
+        let r = reduce_incrementally(&s);
+        assert_eq!(r.total_work(), 7);
+        assert_eq!(r.canonical_count(), 4, "a, b, add(a, b), neg(a)");
     }
 
     #[test]

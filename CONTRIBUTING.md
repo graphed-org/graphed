@@ -2,7 +2,7 @@
 
 `graphed` is a mixed Rust/Python package: a compiled Rust core (the graph store and
 optimizer) underneath a pure-Python frontend. Building it from source therefore needs a
-**Rust toolchain** (rustc ≥ 1.74, via [rustup](https://rustup.rs)) in addition to
+**Rust toolchain** (rustc ≥ 1.83, via [rustup](https://rustup.rs)) in addition to
 Python ≥ 3.11.
 
 ## Layout
@@ -99,11 +99,11 @@ diff-cover coverage.xml --compare-branch=origin/main --fail-under=98
 
 # Rust per-file gate (`cargo llvm-cov --json`'s per-file `summary.lines.percent`)
 cargo llvm-cov --no-report
-cargo llvm-cov report --json --output-path llvm-cov.json --ignore-filename-regex 'lib\.rs'
-python3 scripts/coverage_gate.py llvm-cov.json --rust --exclude lib.rs
+cargo llvm-cov report --json --output-path llvm-cov.json
+python3 scripts/coverage_gate.py llvm-cov.json --rust
 
 # Rust PR delta gate
-cargo llvm-cov report --lcov --output-path lcov.info --ignore-filename-regex 'lib\.rs'
+cargo llvm-cov report --lcov --output-path lcov.info
 diff-cover lcov.info --compare-branch=origin/main --fail-under=98
 ```
 

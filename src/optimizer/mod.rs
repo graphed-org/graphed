@@ -15,10 +15,10 @@ mod incremental;
 
 use std::collections::HashMap;
 
-pub use engine::{EggEngine, EngineGraph, EngineNode, RewriteEngine};
-pub use incremental::IncrementalReducer;
+pub(crate) use engine::{EggEngine, EngineGraph, EngineNode, RewriteEngine};
+pub(crate) use incremental::IncrementalReducer;
 
-use crate::node::{NodeId, NodeKey, StageOp, StageRef};
+use crate::node::{index, NodeId, NodeKey, StageOp, StageRef};
 
 /// How aggressively ops fuse into stages. `SingleUse` is the original M4 behavior (an op fuses only
 /// into its sole consumer) and stays the default — it is pinned by the frozen M4 suite. `Maximal`
@@ -26,7 +26,7 @@ use crate::node::{NodeId, NodeKey, StageOp, StageRef};
 /// diamond inside an op region becomes ONE stage (the glossary's "maximal fused run"). Both modes
 /// never cross a boundary.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum FusionMode {
+pub(crate) enum FusionMode {
     #[default]
     SingleUse,
     Maximal,
@@ -34,7 +34,7 @@ pub enum FusionMode {
 
 /// Stats reported for one reduction (plan M4 `reduction_report`).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct ReductionReport {
+pub(crate) struct ReductionReport {
     pub input_nodes: usize,
     pub reachable_nodes: usize,
     pub canonical_nodes: usize,
@@ -46,14 +46,14 @@ pub struct ReductionReport {
 /// Where one input node landed in the reduced graph: the reduced node id, plus its position in
 /// that node's member list when the node fused into a Stage (`None` for a boundary, which reduces
 /// to itself).
-pub type Landing = (NodeId, Option<usize>);
+pub(crate) type Landing = (NodeId, Option<usize>);
 
 /// §8.2(i)'s record→reduced correspondence, indexed by input-arena node id. `None` where DCE
 /// dropped the node.
-pub type NodeMap = Vec<Option<Landing>>;
+pub(crate) type NodeMap = Vec<Option<Landing>>;
 
-/// The reduced graph: interned NodeKeys (topological), remapped outputs, and the report.
-pub struct Reduced {
+/// The reduced graph: interned `NodeKey`s (topological), remapped outputs, and the report.
+pub(crate) struct Reduced {
     pub nodes: Vec<NodeKey>,
     pub outputs: Vec<NodeId>,
     pub report: ReductionReport,
@@ -62,9 +62,13 @@ pub struct Reduced {
 }
 
 /// Run the full reduction with an explicit fusion mode (see [`FusionMode`]). `nodes` is the
-/// interned arena (topological by id); `outputs` are marked output ids. Returns reduced NodeKeys
+/// interned arena (topological by id); `outputs` are marked output ids. Returns reduced `NodeKey`s
 /// whose inputs reference indices *within the returned list*.
-pub fn reduce_with_mode(
+#[allow(
+    clippy::indexing_slicing,
+    reason = "each pass's remap is total over the graph the previous pass produced"
+)]
+pub(crate) fn reduce_with_mode(
     nodes: &[NodeKey],
     outputs: &[NodeId],
     engine: &dyn RewriteEngine,
@@ -106,19 +110,23 @@ pub(crate) const DROPPED: usize = usize::MAX;
 /// Reachability from the outputs (plan M4: DCE = reachability; never drops a node on a path to an
 /// output). Returns the reachable nodes compacted into topological order, the remapped outputs,
 /// and the `remap` vector itself (`DROPPED` for a node this pass dropped).
-pub fn dead_code_elimination(
+#[allow(
+    clippy::indexing_slicing,
+    reason = "callers bound the outputs, and the store keeps each input below its node"
+)]
+pub(crate) fn dead_code_elimination(
     nodes: &[NodeKey],
     outputs: &[NodeId],
 ) -> (Vec<NodeKey>, Vec<usize>, Vec<usize>) {
     let mut keep = vec![false; nodes.len()];
-    let mut stack: Vec<usize> = outputs.iter().map(|&o| o as usize).collect();
+    let mut stack: Vec<usize> = outputs.iter().map(|&o| index(o)).collect();
     while let Some(i) = stack.pop() {
         if keep[i] {
             continue;
         }
         keep[i] = true;
         for &inp in nodes[i].inputs() {
-            stack.push(inp as usize);
+            stack.push(index(inp));
         }
     }
     // compact, preserving topological (ascending-id) order
@@ -130,12 +138,12 @@ pub fn dead_code_elimination(
             let new_inputs: Vec<NodeId> = node
                 .inputs()
                 .iter()
-                .map(|&x| remap[x as usize] as NodeId)
+                .map(|&x| remap[index(x)] as NodeId)
                 .collect();
             kept.push(node.with_inputs(new_inputs));
         }
     }
-    let out_idx = outputs.iter().map(|&o| remap[o as usize]).collect();
+    let out_idx = outputs.iter().map(|&o| remap[index(o)]).collect();
     (kept, out_idx, remap)
 }
 
@@ -145,7 +153,7 @@ fn to_engine_graph(keys: &[NodeKey], outputs: &[usize]) -> EngineGraph {
         .map(|k| EngineNode {
             token: k.token(),
             boundary: k.is_boundary(),
-            inputs: k.inputs().iter().map(|&i| i as usize).collect(),
+            inputs: k.inputs().iter().map(|&i| index(i)).collect(),
         })
         .collect();
     EngineGraph {
@@ -156,6 +164,10 @@ fn to_engine_graph(keys: &[NodeKey], outputs: &[usize]) -> EngineGraph {
 
 /// Hash-cons identical (token, inputs) nodes — CSE as a plain pass. Returns the deduped graph and
 /// the `remap` it already builds (input index -> deduped index).
+#[allow(
+    clippy::indexing_slicing,
+    reason = "an EngineGraph's inputs and outputs index its own nodes, inputs before consumers"
+)]
 fn cse(graph: &EngineGraph) -> (EngineGraph, Vec<usize>) {
     let mut remap = vec![0usize; graph.nodes.len()];
     let mut seen: HashMap<(String, Vec<usize>), usize> = HashMap::new();
@@ -181,9 +193,13 @@ fn cse(graph: &EngineGraph) -> (EngineGraph, Vec<usize>) {
 struct Dsu {
     parent: Vec<usize>,
 }
+#[allow(
+    clippy::indexing_slicing,
+    reason = "parent holds positions in 0..n from new"
+)]
 impl Dsu {
     fn new(n: usize) -> Self {
-        Dsu {
+        Self {
             parent: (0..n).collect(),
         }
     }
@@ -216,74 +232,22 @@ impl Dsu {
 ///
 /// Also returns each input node's [`Landing`] — the component's reduced id plus, for a fused op,
 /// its index in that stage's sorted member list. Both are already computed to build the stages.
+#[allow(
+    clippy::indexing_slicing,
+    reason = "components reduce in topological order, so each input's component is mapped"
+)]
 fn stage_fusion(
     graph: &EngineGraph,
     templates: &HashMap<String, NodeKey>,
     mode: FusionMode,
 ) -> (Reduced, Vec<Landing>) {
     let n = graph.nodes.len();
-    // consumers + output marks
-    let mut consumers: Vec<Vec<usize>> = vec![Vec::new(); n];
-    for (i, node) in graph.nodes.iter().enumerate() {
-        for &inp in &node.inputs {
-            consumers[inp].push(i);
-        }
-    }
-    let mut is_output = vec![false; n];
-    for &o in &graph.outputs {
-        is_output[o] = true;
-    }
-
     let comp_id: Vec<usize> = match mode {
-        FusionMode::SingleUse => {
-            // union ops whose single use is another op
-            let mut dsu = Dsu::new(n);
-            for (i, node) in graph.nodes.iter().enumerate() {
-                if node.boundary {
-                    continue;
-                }
-                if consumers[i].len() == 1 && !is_output[i] {
-                    let c = consumers[i][0];
-                    if !graph.nodes[c].boundary {
-                        dsu.union(i, c);
-                    }
-                }
-            }
-            // component id per node (ops -> dsu root; boundaries -> themselves)
-            (0..n)
-                .map(|i| {
-                    if graph.nodes[i].boundary {
-                        i
-                    } else {
-                        dsu.find(i)
-                    }
-                })
-                .collect()
-        }
-        FusionMode::Maximal => {
-            // One descending pass: a node's consumers all have higher indices (topological order),
-            // so their components are final when the node is visited. An op joins its consumers'
-            // stage iff every consumer is an op AND they all sit in one component; otherwise (an
-            // output, a boundary consumer, or consumers in different stages) it heads its own
-            // stage. Deterministic: a pure function of the (ordered) graph.
-            let mut comp: Vec<usize> = (0..n).collect();
-            for i in (0..n).rev() {
-                if graph.nodes[i].boundary || is_output[i] || consumers[i].is_empty() {
-                    continue;
-                }
-                if consumers[i].iter().any(|&c| graph.nodes[c].boundary) {
-                    continue;
-                }
-                let c0 = comp[consumers[i][0]];
-                if consumers[i].iter().all(|&c| comp[c] == c0) {
-                    comp[i] = c0;
-                }
-            }
-            comp
-        }
+        FusionMode::SingleUse => single_use_components(graph),
+        FusionMode::Maximal => maximal_components(graph),
     };
 
-    // build comp -> member node indices
+    // build comp -> member node indices, each list ascending
     let mut comp_members: HashMap<usize, Vec<usize>> = HashMap::new();
     for (i, &c) in comp_id.iter().enumerate() {
         comp_members.entry(c).or_default().push(i);
@@ -291,7 +255,7 @@ fn stage_fusion(
 
     // topological order of comps (by max member index = the comp's head/output)
     let mut comps: Vec<usize> = comp_members.keys().copied().collect();
-    comps.sort_by_key(|c| *comp_members[c].iter().max().unwrap());
+    comps.sort_by_key(|c| comp_members[c].iter().max().copied());
 
     let mut reduced: Vec<NodeKey> = Vec::new();
     let mut comp_to_reduced: HashMap<usize, NodeId> = HashMap::new();
@@ -301,6 +265,7 @@ fn stage_fusion(
 
     for &comp in &comps {
         let members = &comp_members[&comp];
+        let rid = reduced.len() as NodeId;
         if graph.nodes[comp].boundary {
             // a single boundary node -> reduced as itself
             let node = &graph.nodes[comp];
@@ -309,58 +274,17 @@ fn stage_fusion(
                 .iter()
                 .map(|&i| comp_to_reduced[&comp_id[i]])
                 .collect();
-            let template = &templates[&node.token];
-            reduced.push(template.with_inputs(inputs));
+            reduced.push(templates[&node.token].with_inputs(inputs));
             boundary_nodes += 1;
-        } else {
-            // an op-component -> a fused Stage
-            let mut ops: Vec<usize> = members.clone();
-            ops.sort_unstable();
-            let local: HashMap<usize, usize> =
-                ops.iter().enumerate().map(|(k, &v)| (v, k)).collect();
-            let mut input_slots: Vec<usize> = Vec::new(); // external comps, in first-seen order
-            let mut slot_of: HashMap<usize, usize> = HashMap::new();
-            let mut stage_ops: Vec<StageOp> = Vec::new();
-            for &op in &ops {
-                let refs = graph.nodes[op]
-                    .inputs
-                    .iter()
-                    .map(|&inp| {
-                        if local.contains_key(&inp) {
-                            StageRef::Member(local[&inp])
-                        } else {
-                            let c = comp_id[inp];
-                            let slot = *slot_of.entry(c).or_insert_with(|| {
-                                input_slots.push(c);
-                                input_slots.len() - 1
-                            });
-                            StageRef::Input(slot)
-                        }
-                    })
-                    .collect();
-                stage_ops.push(StageOp {
-                    token: graph.nodes[op].token.clone(),
-                    inputs: refs,
-                });
-            }
-            let inputs: Vec<NodeId> = input_slots.iter().map(|&c| comp_to_reduced[&c]).collect();
-            reduced.push(NodeKey::Stage {
-                inputs,
-                members: stage_ops,
-            });
-            stages += 1;
-        }
-        let rid = (reduced.len() - 1) as NodeId;
-        comp_to_reduced.insert(comp, rid);
-        if graph.nodes[comp].boundary {
             landing[comp] = (rid, None);
         } else {
-            for (member_index, &op) in comp_members[&comp].iter().enumerate() {
-                // `comp_members` is built in ascending index order — the same order `ops` is
-                // sorted into above, so `member_index` is the op's slot in the emitted Stage.
+            reduced.push(fuse_stage(graph, members, &comp_id, &comp_to_reduced));
+            stages += 1;
+            for (member_index, &op) in members.iter().enumerate() {
                 landing[op] = (rid, Some(member_index));
             }
         }
+        comp_to_reduced.insert(comp, rid);
     }
 
     let outputs: Vec<NodeId> = graph
@@ -388,7 +312,136 @@ fn stage_fusion(
     )
 }
 
-#[cfg(all(test, not(loom)))]
+/// Each node's consumers, and whether it is an output.
+#[allow(
+    clippy::indexing_slicing,
+    reason = "an EngineGraph's inputs and outputs index its own nodes, inputs before consumers"
+)]
+fn uses(graph: &EngineGraph) -> (Vec<Vec<usize>>, Vec<bool>) {
+    let n = graph.nodes.len();
+    let mut consumers: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for (i, node) in graph.nodes.iter().enumerate() {
+        for &inp in &node.inputs {
+            consumers[inp].push(i);
+        }
+    }
+    let mut is_output = vec![false; n];
+    for &o in &graph.outputs {
+        is_output[o] = true;
+    }
+    (consumers, is_output)
+}
+
+/// `FusionMode::SingleUse` components: ops whose single use is another op share a union-find
+/// root; a boundary is its own component.
+#[allow(
+    clippy::indexing_slicing,
+    reason = "an EngineGraph's inputs and outputs index its own nodes, inputs before consumers"
+)]
+fn single_use_components(graph: &EngineGraph) -> Vec<usize> {
+    let (consumers, is_output) = uses(graph);
+    let mut dsu = Dsu::new(graph.nodes.len());
+    for (i, node) in graph.nodes.iter().enumerate() {
+        if node.boundary {
+            continue;
+        }
+        if consumers[i].len() == 1 && !is_output[i] {
+            let c = consumers[i][0];
+            if !graph.nodes[c].boundary {
+                dsu.union(i, c);
+            }
+        }
+    }
+    // component id per node (ops -> dsu root; boundaries -> themselves)
+    (0..graph.nodes.len())
+        .map(|i| {
+            if graph.nodes[i].boundary {
+                i
+            } else {
+                dsu.find(i)
+            }
+        })
+        .collect()
+}
+
+/// `FusionMode::Maximal` components, in one descending pass: a node's consumers all have higher
+/// indices (topological order), so their components are final when the node is visited. An op
+/// joins its consumers' stage iff every consumer is an op AND they all sit in one component;
+/// otherwise (an output, a boundary consumer, or consumers in different stages) it heads its own
+/// stage. Deterministic: a pure function of the (ordered) graph.
+#[allow(
+    clippy::indexing_slicing,
+    reason = "an EngineGraph's inputs and outputs index its own nodes, inputs before consumers"
+)]
+fn maximal_components(graph: &EngineGraph) -> Vec<usize> {
+    let (consumers, is_output) = uses(graph);
+    let n = graph.nodes.len();
+    let mut comp: Vec<usize> = (0..n).collect();
+    for i in (0..n).rev() {
+        if graph.nodes[i].boundary || is_output[i] || consumers[i].is_empty() {
+            continue;
+        }
+        if consumers[i].iter().any(|&c| graph.nodes[c].boundary) {
+            continue;
+        }
+        let c0 = comp[consumers[i][0]];
+        if consumers[i].iter().all(|&c| comp[c] == c0) {
+            comp[i] = c0;
+        }
+    }
+    comp
+}
+
+/// The `Stage` for one op component; `ops` ascends, so an op's position in it is its member
+/// index, and inputs from other components become the stage's input slots in first-seen order.
+#[allow(
+    clippy::indexing_slicing,
+    reason = "inputs precede their consumers, so every outside input's component is already mapped"
+)]
+fn fuse_stage(
+    graph: &EngineGraph,
+    ops: &[usize],
+    comp_id: &[usize],
+    comp_to_reduced: &HashMap<usize, NodeId>,
+) -> NodeKey {
+    let local: HashMap<usize, usize> = ops.iter().enumerate().map(|(k, &v)| (v, k)).collect();
+    let mut input_slots: Vec<usize> = Vec::new();
+    let mut slot_of: HashMap<usize, usize> = HashMap::new();
+    let mut members: Vec<StageOp> = Vec::new();
+    for &op in ops {
+        let refs = graph.nodes[op]
+            .inputs
+            .iter()
+            .map(|&inp| {
+                if let Some(&k) = local.get(&inp) {
+                    StageRef::Member(k)
+                } else {
+                    let c = comp_id[inp];
+                    let slot = *slot_of.entry(c).or_insert_with(|| {
+                        input_slots.push(c);
+                        input_slots.len() - 1
+                    });
+                    StageRef::Input(slot)
+                }
+            })
+            .collect();
+        members.push(StageOp {
+            token: graph.nodes[op].token.clone(),
+            inputs: refs,
+        });
+    }
+    NodeKey::Stage {
+        inputs: input_slots.iter().map(|&c| comp_to_reduced[&c]).collect(),
+        members,
+    }
+}
+
+#[cfg(test)]
+#[cfg(not(loom))]
+#[allow(
+    clippy::many_single_char_names,
+    reason = "test graphs name their nodes a, b, c as the plan's examples do"
+)]
 mod tests {
     use super::*;
     use crate::node::StageRef;
@@ -432,15 +485,15 @@ mod tests {
             vals[i] = match node {
                 NodeKey::Source { name, .. } => seeds[name],
                 NodeKey::Op { name, inputs, .. } => {
-                    let v: Vec<i64> = inputs.iter().map(|&x| vals[x as usize]).collect();
+                    let v: Vec<i64> = inputs.iter().map(|&x| vals[index(x)]).collect();
                     apply_op(name, &v)
                 }
                 NodeKey::Reduction { inputs, .. }
                 | NodeKey::External { inputs, .. }
                 | NodeKey::Exchange { inputs, .. }
-                | NodeKey::Join { inputs, .. } => vals[inputs[0] as usize],
+                | NodeKey::Join { inputs, .. } => vals[index(inputs[0])],
                 NodeKey::Stage { inputs, members } => {
-                    let inv: Vec<i64> = inputs.iter().map(|&x| vals[x as usize]).collect();
+                    let inv: Vec<i64> = inputs.iter().map(|&x| vals[index(x)]).collect();
                     let mut mv: Vec<i64> = Vec::new();
                     for op in members {
                         let ins: Vec<i64> = op
@@ -457,7 +510,7 @@ mod tests {
                 }
             };
         }
-        outputs.iter().map(|&o| vals[o as usize]).collect()
+        outputs.iter().map(|&o| vals[index(o)]).collect()
     }
 
     #[test]
@@ -588,8 +641,8 @@ mod tests {
         let (reduced, _) = s.reduce(&EggEngine::default());
         let map = reduced.node_map();
         assert_eq!(map.len(), s.node_count());
-        assert_eq!(map[dead as usize], None, "DCE dropped it");
-        let (src_id, src_member) = map[x as usize].unwrap();
+        assert_eq!(map[index(dead)], None, "DCE dropped it");
+        let (src_id, src_member) = map[index(x)].unwrap();
         assert_eq!(
             src_member, None,
             "a source reduces to itself, not into a stage"
@@ -598,7 +651,7 @@ mod tests {
         // folded onto its input, so it lands exactly where `b` did (the post-DCE passes).
         let stage: Vec<_> = [a, b, id, out]
             .iter()
-            .map(|&n| map[n as usize].unwrap())
+            .map(|&n| map[index(n)].unwrap())
             .collect();
         assert_ne!(stage[0].0, src_id);
         assert!(stage.iter().all(|&(node, _)| node == stage[0].0));
@@ -701,7 +754,7 @@ mod tests {
         let (reduced, _) = s.reduce(&EggEngine::default());
         let (rn, ro) = reduced.snapshot();
         // hub = x+1 = 3; each leaf = hub + 1 = 4; out = sum = n*4
-        let expect = vec![(n as i64) * 4];
+        let expect = vec![i64::try_from(n).unwrap() * 4];
         assert_eq!(eval(&nodes, &outs, &sd), expect);
         assert_eq!(eval(&rn, &ro, &sd), expect);
         // the hub is a single shared node feeding all N leaves

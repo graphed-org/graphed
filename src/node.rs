@@ -8,11 +8,20 @@ use std::fmt;
 
 use crate::param::ParamMap;
 
-pub type NodeId = u64;
+pub(crate) type NodeId = u64;
+
+/// `id` as a position in an in-memory arena.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "ids index in-memory arenas and only 64-bit targets are built"
+)]
+pub(crate) const fn index(id: NodeId) -> usize {
+    id as usize
+}
 
 /// Reproducibility metadata an `External` node carries (plan A.6 "Payload descriptor").
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct PayloadDescriptor {
+pub(crate) struct PayloadDescriptor {
     pub kind: String,
     pub content_hash: String,
     pub framework: String,
@@ -24,21 +33,21 @@ pub struct PayloadDescriptor {
 /// A reference inside a fused `Stage`: either one of the stage's external inputs or an earlier
 /// member op. This makes a Stage a self-contained, executable, hashable mini-DAG.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum StageRef {
+pub(crate) enum StageRef {
     Input(usize),
     Member(usize),
 }
 
 /// One fused op inside a `Stage` (the M4 optimizer groups a maximal run of ops into a stage).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct StageOp {
+pub(crate) struct StageOp {
     pub token: String,
     pub inputs: Vec<StageRef>,
 }
 
 /// The structural identity of a node. Equality/Hash here define interning.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum NodeKey {
+pub(crate) enum NodeKey {
     Source {
         name: String,
         params: ParamMap,
@@ -67,7 +76,7 @@ pub enum NodeKey {
     },
     /// A pure data-movement boundary (plan M39 §2.1): its one logical input's rows are
     /// repartitioned according to `scheme` (hash|range|coalesce|split, key, parts, seed, …). Its
-    /// identity IS its `scheme` ParamMap — it is NOT an `Op`, so it interns/CSEs like every node,
+    /// identity IS its `scheme` `ParamMap` — it is NOT an `Op`, so it interns/CSEs like every node,
     /// ends a stage (fusion never crosses it), and survives reduction as itself.
     Exchange {
         scheme: ParamMap,
@@ -85,36 +94,36 @@ pub enum NodeKey {
 }
 
 impl NodeKey {
-    pub fn inputs(&self) -> &[NodeId] {
+    pub(crate) fn inputs(&self) -> &[NodeId] {
         match self {
-            NodeKey::Source { .. } => &[],
-            NodeKey::Op { inputs, .. }
-            | NodeKey::Reduction { inputs, .. }
-            | NodeKey::External { inputs, .. }
-            | NodeKey::Stage { inputs, .. }
-            | NodeKey::Exchange { inputs, .. }
-            | NodeKey::Join { inputs, .. } => inputs,
+            Self::Source { .. } => &[],
+            Self::Op { inputs, .. }
+            | Self::Reduction { inputs, .. }
+            | Self::External { inputs, .. }
+            | Self::Stage { inputs, .. }
+            | Self::Exchange { inputs, .. }
+            | Self::Join { inputs, .. } => inputs,
         }
     }
 
     /// True for boundary nodes (source / reduction / external / stage) — fusion never merges
     /// across these (plan A.6 boundary op).
-    pub fn is_boundary(&self) -> bool {
-        !matches!(self, NodeKey::Op { .. })
+    pub(crate) fn is_boundary(&self) -> bool {
+        !matches!(self, Self::Op { .. })
     }
 
     /// The "operator" identity of a node, excluding inputs — the egg symbol and the key into the
     /// reconstruction table. Two structurally identical operators share a token; inputs are
     /// children in the e-graph, not part of the token.
-    pub fn token(&self) -> String {
+    pub(crate) fn token(&self) -> String {
         use crate::param::escape_token as esc;
         match self {
-            NodeKey::Source { name, params } => with_params(format!("src|{}", esc(name)), params),
-            NodeKey::Op { name, params, .. } => with_params(format!("op|{}", esc(name)), params),
-            NodeKey::Reduction { name, params, .. } => {
+            Self::Source { name, params } => with_params(format!("src|{}", esc(name)), params),
+            Self::Op { name, params, .. } => with_params(format!("op|{}", esc(name)), params),
+            Self::Reduction { name, params, .. } => {
                 with_params(format!("red|{}", esc(name)), params)
             }
-            NodeKey::External {
+            Self::External {
                 descriptor, params, ..
             } => with_params(
                 format!(
@@ -128,51 +137,51 @@ impl NodeKey {
                 ),
                 params,
             ),
-            NodeKey::Stage { members, .. } => format!("stage|{}", members.len()),
+            Self::Stage { members, .. } => format!("stage|{}", members.len()),
             // a non-`op|` prefix, so the optimizer's `boundary_from_token` treats it as a boundary;
             // the scheme is in the token so distinct schemes are distinct templates on reconstruction.
-            NodeKey::Exchange { scheme, .. } => with_params("exch".to_string(), scheme),
+            Self::Exchange { scheme, .. } => with_params("exch".to_string(), scheme),
             // a non-`op|` prefix so `boundary_from_token` treats it as a boundary; the two ordered
             // inputs are e-graph children (build vs probe asymmetry preserved), the scheme is in the
             // token so distinct join types/keys are distinct templates on reconstruction.
-            NodeKey::Join { scheme, .. } => with_params("join".to_string(), scheme),
+            Self::Join { scheme, .. } => with_params("join".to_string(), scheme),
         }
     }
 
     /// Clone this node's operator identity with a fresh input list (used when rebuilding the
     /// reduced graph). Sources ignore inputs.
-    pub fn with_inputs(&self, new_inputs: Vec<NodeId>) -> NodeKey {
+    pub(crate) fn with_inputs(&self, new_inputs: Vec<NodeId>) -> Self {
         match self {
-            NodeKey::Source { name, params } => NodeKey::Source {
+            Self::Source { name, params } => Self::Source {
                 name: name.clone(),
                 params: params.clone(),
             },
-            NodeKey::Op { name, params, .. } => NodeKey::Op {
-                name: name.clone(),
-                params: params.clone(),
-                inputs: new_inputs,
-            },
-            NodeKey::Reduction { name, params, .. } => NodeKey::Reduction {
+            Self::Op { name, params, .. } => Self::Op {
                 name: name.clone(),
                 params: params.clone(),
                 inputs: new_inputs,
             },
-            NodeKey::External {
+            Self::Reduction { name, params, .. } => Self::Reduction {
+                name: name.clone(),
+                params: params.clone(),
+                inputs: new_inputs,
+            },
+            Self::External {
                 descriptor, params, ..
-            } => NodeKey::External {
+            } => Self::External {
                 descriptor: descriptor.clone(),
                 params: params.clone(),
                 inputs: new_inputs,
             },
-            NodeKey::Stage { members, .. } => NodeKey::Stage {
+            Self::Stage { members, .. } => Self::Stage {
                 inputs: new_inputs,
                 members: members.clone(),
             },
-            NodeKey::Exchange { scheme, .. } => NodeKey::Exchange {
+            Self::Exchange { scheme, .. } => Self::Exchange {
                 scheme: scheme.clone(),
                 inputs: new_inputs,
             },
-            NodeKey::Join { scheme, .. } => NodeKey::Join {
+            Self::Join { scheme, .. } => Self::Join {
                 scheme: scheme.clone(),
                 inputs: new_inputs,
             },
@@ -180,12 +189,12 @@ impl NodeKey {
     }
 
     /// Deterministic graphviz label (used by `to_dot`).
-    pub fn label(&self) -> String {
+    pub(crate) fn label(&self) -> String {
         match self {
-            NodeKey::Source { name, params } => fmt_label("Source", name, params),
-            NodeKey::Op { name, params, .. } => fmt_label("Op", name, params),
-            NodeKey::Reduction { name, params, .. } => fmt_label("Reduction", name, params),
-            NodeKey::External {
+            Self::Source { name, params } => fmt_label("Source", name, params),
+            Self::Op { name, params, .. } => fmt_label("Op", name, params),
+            Self::Reduction { name, params, .. } => fmt_label("Reduction", name, params),
+            Self::External {
                 descriptor, params, ..
             } => {
                 let base = format!(
@@ -201,15 +210,15 @@ impl NodeKey {
                     format!("{base} {params}")
                 }
             }
-            NodeKey::Stage { members, .. } => format!("Stage[{} members]", members.len()),
-            NodeKey::Exchange { scheme, .. } => {
+            Self::Stage { members, .. } => format!("Stage[{} members]", members.len()),
+            Self::Exchange { scheme, .. } => {
                 if scheme.is_empty() {
                     "Exchange".to_string()
                 } else {
                     format!("Exchange {scheme}")
                 }
             }
-            NodeKey::Join { scheme, .. } => {
+            Self::Join { scheme, .. } => {
                 if scheme.is_empty() {
                     "Join".to_string()
                 } else {
@@ -242,7 +251,7 @@ fn with_params(prefix: String, params: &ParamMap) -> String {
 /// carries. This is what lets `GraphStore.nodes()` expose stage members as executable
 /// (name, params) pairs for IR-driven evaluation, without changing the stage's structural identity
 /// or the serialized form. Returns `None` for non-op tokens (sources/externals never fuse).
-pub fn parse_op_token(token: &str) -> Option<(String, String, ParamMap)> {
+pub(crate) fn parse_op_token(token: &str) -> Option<(String, String, ParamMap)> {
     use crate::param::unescape_token;
     let mut parts = token.splitn(3, '|');
     let kind = parts.next()?;
@@ -309,7 +318,7 @@ mod tests {
         assert_eq!(rejoined.inputs(), &[3, 4]);
         match rejoined {
             NodeKey::Join { scheme, .. } => {
-                assert_eq!(scheme, pm(vec![("how", ParamValue::Str("inner".into()))]))
+                assert_eq!(scheme, pm(vec![("how", ParamValue::Str("inner".into()))]));
             }
             _ => panic!("with_inputs must not change the variant"),
         }
