@@ -96,7 +96,7 @@ class _DatasetLoader:
     paths: tuple[str, ...]
     columns: tuple[str, ...] | None
     steps_per_file: int = 1
-    open_files: bool = True
+    open_files: bool = False
 
     def source_identity(self) -> object:
         """Return what this loader reads and how it partitions it."""
@@ -119,7 +119,7 @@ def from_parquet(
     *,
     columns: Sequence[str] | None = None,
     steps_per_file: int = 1,
-    open_files: bool = True,
+    open_files: bool = False,
 ) -> Any: ...
 @overload
 def from_parquet(
@@ -128,7 +128,7 @@ def from_parquet(
     *,
     columns: Sequence[str] | None = None,
     steps_per_file: int = 1,
-    open_files: bool = True,
+    open_files: bool = False,
     session: Session | None = None,
 ) -> Any: ...
 @_reader(NumpyBackend)
@@ -138,7 +138,7 @@ def from_parquet(
     *,
     columns: Sequence[str] | None = None,
     steps_per_file: int = 1,
-    open_files: bool = True,
+    open_files: bool = False,
     session: Session | None = None,
 ) -> Any:
     """Return a deferred RECTILINEAR record source over a parquet dataset.
@@ -146,8 +146,9 @@ def from_parquet(
     The dataset is a file / dir / glob / list; the source records into ``session``, else the
     current Session.
 
-    The form comes from the schema alone; non-primitive columns are refused by name. With
-    ``open_files=False`` no file is opened (blind partitions, R7.9).
+    The form comes from the schema alone; non-primitive columns are refused by name.
+    ``steps_per_file`` and ``open_files`` are the dataset's default partitioning, as in
+    ``graphed.awkward.from_parquet``, taken by ``to_parquet`` unless it is given its own.
     """
     paths = gpq.discover(path)
     if steps_per_file < 1:
@@ -155,7 +156,15 @@ def from_parquet(
     fields = _rectilinear_fields(paths, columns)
     form = NumpyForm(np.dtype(object), kind="record", fields=fields)
     loader = _DatasetLoader(paths, tuple(columns) if columns else None, steps_per_file, open_files)
-    return gpq.deferred_source(name, paths=paths, form=form, loader=loader, session=session)
+    return gpq.deferred_source(
+        name,
+        paths=paths,
+        form=form,
+        loader=loader,
+        session=session,
+        steps_per_file=steps_per_file,
+        open_files=open_files,
+    )
 
 
 def _column_to_numpy(table: Any, name: str) -> np.ndarray:
@@ -284,7 +293,7 @@ def to_parquet(
     array: Any,
     destination: str,
     *,
-    steps_per_file: int = 1,
+    steps_per_file: int | None = None,
     compute: bool = True,
     executor: Any | None = None,
     prefix: str = "part",
@@ -296,6 +305,7 @@ def to_parquet(
     plan (sequential reference runner by default; any R7 executor pluggable). Exactly one source;
     the per-task read list is the M5 field-touch projection (exact for flat columns). A
     ``destination`` containing ``://`` is an fsspec URL: the parts are written on its filesystem.
+    ``steps_per_file`` parts are written per input file; ``None`` takes ``from_parquet``'s.
     """
     if isinstance(array, Varied):
         # §6.4f: the numpy idiom hard-caps output at one 1-D column and gains no variation-aware
@@ -313,6 +323,8 @@ def to_parquet(
             f"to_parquet needs an array recorded over exactly one source, got {len(sources)}"
         )
     ((node_id, data),) = sources.items()
+    if steps_per_file is None:
+        steps_per_file = data.steps_per_file if isinstance(data, _DatasetLoader) else 1
     source_name = session.source_name(node_id)
     columns = tuple(sorted(project(array, on_fail="pass").columns_for(source_name)))
     compiled = compile_ir(session, array)
@@ -330,7 +342,7 @@ def to_parquet(
     }
     if isinstance(data, _DatasetLoader):
         partitions = gpq.make_partitions(
-            data.paths, steps_per_file=steps_per_file, open_files=False
+            data.paths, steps_per_file=steps_per_file, open_files=data.open_files
         )
         writer = _WritePart(
             bases=tuple(gpq.file_bases(data.paths, steps_per_file).items()),  # type: ignore[arg-type]
@@ -345,13 +357,8 @@ def to_parquet(
             mem = (("", np.asarray(resolved)),)
             n = len(mem[0][1])
         partitions = tuple(
-            Partition(
-                f"memory://{source_name}",
-                "",
-                (s * n) // steps_per_file,
-                ((s + 1) * n) // steps_per_file,
-            )
-            for s in range(steps_per_file)
+            Partition(f"memory://{source_name}", "", start, stop)
+            for start, stop in gw.eager_ranges(n, steps_per_file)
         )
         writer = _WritePart(bases=(), memory_data=mem, memory_rows=n, **common)  # type: ignore[arg-type]
 

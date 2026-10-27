@@ -7,9 +7,8 @@
 //! constructor-time* canonicalization:
 //!
 //! - identity ops (`x+0`, `x*1`) collapse to their input the moment they are recorded;
-//! - a symmetric op (`add`/`mul`/`and`/...) recorded with swapped arguments dedups onto the
-//!   first-recorded orientation — the same earliest-representative choice the engine's O(N)
-//!   extraction makes;
+//! - a symmetric op (`add`/`mul`/`and`/...) takes its operands in structural-key order, as the
+//!   one-shot path does, so both orientations dedup onto one node whichever came first;
 //! - everything else hash-conses against the canonical arena.
 //!
 //! Because every rule is constructor-local (an op's canonical form depends only on its inputs'
@@ -24,8 +23,8 @@ use std::collections::HashMap;
 use crate::node::{index, NodeId, NodeKey};
 use crate::store::BadNodeId;
 
-use super::engine::{IDENTITY_TOKENS, SYMMETRIC_OPS};
-use super::{FusionMode, Reduced, RewriteEngine};
+use super::engine::IDENTITY_TOKENS;
+use super::{orient, structural_key, FusionMode, Reduced, RewriteEngine};
 
 #[derive(Default)]
 pub(crate) struct IncrementalReducer {
@@ -33,6 +32,10 @@ pub(crate) struct IncrementalReducer {
     /// are canonical ids. Grows monotonically; never rescanned by `step`.
     canon_nodes: Vec<NodeKey>,
     canon_table: HashMap<NodeKey, NodeId>,
+    /// each canonical node's `structural_key`, by canonical id.
+    canon_keys: Vec<u128>,
+    /// `canonicalize`'s input-key buffer, kept to avoid an allocation per recorded node.
+    scratch_keys: Vec<u128>,
     /// original arena id -> canonical id (`len()` is the watermark into the original arena).
     map: Vec<NodeId>,
     /// cumulative nodes processed across all steps — the incrementality witness: equals the
@@ -75,39 +78,39 @@ impl IncrementalReducer {
         Ok(delta.len())
     }
 
+    #[allow(
+        clippy::indexing_slicing,
+        reason = "inputs are canonical ids, and every canonical node has its key"
+    )]
     fn canonicalize(&mut self, key: NodeKey) -> NodeId {
-        if let NodeKey::Op {
-            name,
-            params,
-            inputs,
-        } = &key
-        {
-            // identity elimination — the engine's identity rules (arity one, as their `(tok ?x)`
-            // patterns are), applied at record time.
+        // identity elimination — the engine's identity rules (arity one, as their `(tok ?x)`
+        // patterns are), applied at record time.
+        let mut token = None;
+        if let NodeKey::Op { inputs, .. } = &key {
             if let [only] = inputs.as_slice() {
-                if IDENTITY_TOKENS.contains(&key.token().as_str()) {
+                let t = key.token();
+                if IDENTITY_TOKENS.contains(&t.as_str()) {
                     return *only;
                 }
-            }
-            // commutativity — the engine's commute rules: both orientations of a symmetric op are
-            // ONE canonical node; the first-recorded orientation is the representative (matching
-            // the engine's earliest-member extraction).
-            if let [a, b] = inputs.as_slice() {
-                if params.is_empty() && SYMMETRIC_OPS.contains(&name.as_str()) {
-                    if let Some(&id) = self.canon_table.get(&key) {
-                        return id;
-                    }
-                    let swapped = key.with_inputs(vec![*b, *a]);
-                    if let Some(&id) = self.canon_table.get(&swapped) {
-                        return id;
-                    }
-                }
+                token = Some(t);
             }
         }
+        // commutativity — the engine's commute rules: both orientations of a symmetric op orient
+        // to ONE canonical node by their operands' structural keys, as the one-shot path orients
+        // them, so which orientation was recorded first never shows in the result.
+        let mut input_keys = std::mem::take(&mut self.scratch_keys);
+        input_keys.clear();
+        input_keys.extend(key.inputs().iter().map(|&i| self.canon_keys[index(i)]));
+        let key = orient(key, &input_keys);
         if let Some(&id) = self.canon_table.get(&key) {
+            self.scratch_keys = input_keys;
             return id;
         }
         let id = self.canon_nodes.len() as NodeId;
+        let token = token.unwrap_or_else(|| key.token());
+        self.canon_keys
+            .push(structural_key(&key, &token, &input_keys));
+        self.scratch_keys = input_keys;
         self.canon_nodes.push(key.clone());
         self.canon_table.insert(key, id);
         id
@@ -130,7 +133,8 @@ impl IncrementalReducer {
         for &o in outputs {
             outs.push(self.map.get(index(o)).copied().ok_or(BadNodeId(o))?);
         }
-        let mut red = super::reduce_with_mode(&self.canon_nodes, &outs, engine, mode);
+        // `canonicalize` oriented every symmetric op as it recorded it
+        let mut red = super::reduce_oriented(&self.canon_nodes, &outs, None, engine, mode);
         // §8.2(i): the four passes answered in CANONICAL-arena ids, so compose this reducer's own
         // original->canonical map in front. Without it the accessor silently mis-keys every
         // `Session(incremental=True)` program.
@@ -273,5 +277,70 @@ mod tests {
         }
         // every node touched exactly once across the whole build
         assert_eq!(r.total_work(), s.node_count());
+    }
+
+    #[test]
+    fn a_commuted_twin_recorded_first_does_not_reorient_a_later_output() {
+        // `(a + b) * b`, alone or after an unrelated `(b + a) * a` that records the other orientation
+        let build = |twin_first: bool| {
+            let s = GraphStore::new();
+            let a = s.add_source("a".into(), empty());
+            let b = s.add_source("b".into(), empty());
+            if twin_first {
+                let ba = s.add_op("add".into(), vec![b, a], empty()).unwrap();
+                s.add_op("sub".into(), vec![ba, a], empty()).unwrap();
+            }
+            let ab = s.add_op("add".into(), vec![a, b], empty()).unwrap();
+            let out = s.add_op("sub".into(), vec![ab, b], empty()).unwrap();
+            let inc = reduce_incrementally(&s)
+                .finalize(&[out], &EggEngine::default(), FusionMode::SingleUse)
+                .unwrap();
+            let (one_shot, _) = s
+                .reduce_with_outputs(&[out], &EggEngine::default(), FusionMode::SingleUse)
+                .unwrap();
+            (
+                crate::serialize::serialize(&GraphStore::from_reduced(inc).0).unwrap(),
+                crate::serialize::serialize(&one_shot).unwrap(),
+            )
+        };
+        let (fresh_inc, fresh_one_shot) = build(false);
+        let (inc, one_shot) = build(true);
+        assert_eq!(one_shot, fresh_one_shot, "one-shot control");
+        assert_eq!(inc, fresh_inc);
+        assert_eq!(inc, one_shot);
+    }
+
+    #[test]
+    fn structural_key_is_fnv1a_and_invariant_under_the_engine_rules() {
+        let s = GraphStore::new();
+        let a = s.add_source("a".into(), empty());
+        let b = s.add_source("b".into(), empty());
+        let ab = s.add_op("add".into(), vec![a, b], empty()).unwrap();
+        let ba = s.add_op("add".into(), vec![b, a], empty()).unwrap();
+        let sub = s.add_op("sub".into(), vec![a, b], empty()).unwrap();
+        let bsub = s.add_op("sub".into(), vec![b, a], empty()).unwrap();
+        let ident = s
+            .add_op(
+                "add".into(),
+                vec![a],
+                ParamMap::new(vec![
+                    ("scalar".into(), ParamValue::Float(0.0)),
+                    ("side".into(), ParamValue::Str("r".into())),
+                ]),
+            )
+            .unwrap();
+        let (nodes, _) = s.snapshot();
+        let mut keys: Vec<u128> = Vec::new();
+        for n in &nodes {
+            let ins: Vec<u128> = n.inputs().iter().map(|&i| keys[index(i)]).collect();
+            keys.push(structural_key(n, &n.token(), &ins));
+        }
+        let k = |id: NodeId| keys[index(id)];
+        // FNV-1a 128 of the source token `src|a` behind its u64 length: a release-stable value
+        assert_eq!(k(a), 0x6168_9e05_c825_02fc_5e5e_1696_7b11_fd3d);
+        assert_eq!(k(ab), k(ba), "commuted twins share a key");
+        assert_ne!(k(sub), k(bsub), "an asymmetric op keeps its operand order");
+        assert_eq!(k(ident), k(a), "an identity op is its input");
+        assert_ne!(k(a), k(b));
     }
 }

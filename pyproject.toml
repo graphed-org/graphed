@@ -215,12 +215,6 @@ module = [
 ]
 disable_error_code = ["func-returns-value"]
 
-# Test bug: `_agrees(session, weight, expected), delta_first` builds a discarded tuple, so
-# `delta_first` never reaches `_agrees`'s `note` (the assertion itself still runs).
-[[tool.mypy.overrides]]
-module = ["tests.frozen.awkward.m57.test_lineage"]
-disable_error_code = ["func-returns-value"]
-
 # Subclasses of untyped bases (awkward, torch via importorskip, the bare-name fake Triton module).
 [[tool.mypy.overrides]]
 module = [

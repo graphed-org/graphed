@@ -14,6 +14,7 @@ import pytest
 import graphed.numpy as gn
 from graphed import Session
 from graphed.numpy import NumpyBackend, NumpyForm
+from graphed.write import steps_for
 
 REFUSAL = r"already bound to other data in this Session; pass name=.*graphed\.new_session\(\)"
 
@@ -44,10 +45,24 @@ def test_the_partitioning_is_part_of_a_parquet_identity(parquet: tuple[Any, list
     count = s.node_count()
     assert from_parquet("ev", paths, steps_per_file=3, session=s).node_id == first.node_id
     assert s.node_count() == count
-    with pytest.raises(ValueError, match=REFUSAL):
-        from_parquet("ev", paths, session=s)
-    with pytest.raises(ValueError, match=REFUSAL):
-        from_parquet("ev", paths, steps_per_file=3, open_files=False, session=s)
+    variants: list[dict[str, Any]] = [{}, {"steps_per_file": 3, "open_files": True}]
+    for variant in variants:
+        with pytest.raises(ValueError, match=REFUSAL):
+            from_parquet("ev", paths, session=s, **variant)
+    # each refused read would have partitioned its plans differently from the held one
+    plans = {
+        _default_partitions(from_parquet, paths, s, **variant)
+        for variant in [{"steps_per_file": 3}, *variants]
+    }
+    assert len(plans) == 3
+
+
+def _default_partitions(
+    from_parquet: Any, paths: list[str], like: Session, **variant: Any
+) -> tuple[Any, ...]:
+    fresh = from_parquet("ev", paths, session=Session(type(like.backend)()), **variant)
+    (data,) = fresh.session.sources().values()
+    return tuple(data.partitions(steps_for(data, None)))
 
 
 @pytest.mark.parametrize(
