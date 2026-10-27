@@ -34,7 +34,7 @@ _IDENTIFIER = re.compile(r"[A-Za-z0-9_]+\Z")
 _NOT_FINITE = frozenset({"inf", "infinity", "nan"})
 
 
-def _normalize(negative: bool, digits: str, exp10: int) -> tuple[bool, str, int]:
+def normalize(negative: bool, digits: str, exp10: int) -> tuple[bool, str, int]:
     """Minimal mantissa: no leading zeros, no trailing zeros, exponent absorbing the shift."""
     digits = digits.lstrip("0")
     if not digits:
@@ -45,7 +45,8 @@ def _normalize(negative: bool, digits: str, exp10: int) -> tuple[bool, str, int]
     return negative, digits, exp10
 
 
-def _render(negative: bool, digits: str, exp10: int, source: str) -> str:
+def spell_number(negative: bool, digits: str, exp10: int, source: str) -> str:
+    """Spell a normalized (sign, digits, exponent) triple as its canonical tag."""
     if digits == "0":
         return "0"
     sign = 1 if negative else 0
@@ -109,11 +110,11 @@ def canonical_tag(tag: object) -> str:
     if sugar is not None:
         frac = sugar["frac"] or ""
         exp10 = int(sugar["exp"] or 0) - len(frac)
-        return _render(*_normalize(sugar["sign"] == "-", sugar["int"] + frac, exp10), tag)
+        return spell_number(*normalize(sugar["sign"] == "-", sugar["int"] + frac, exp10), tag)
     canonical = _CANONICAL.fullmatch(tag)
     if canonical is not None:  # a hand-typed e-form is re-rendered minimally, not passed through
         exp10 = -int(canonical["exp"] or 0)
-        return _render(*_normalize(canonical["sign"] == "m", canonical["int"], exp10), tag)
+        return spell_number(*normalize(canonical["sign"] == "m", canonical["int"], exp10), tag)
     if not _IDENTIFIER.fullmatch(tag):
         raise GraphedError(
             f"variation tag {tag!r} is neither a numeric spelling nor an identifier "

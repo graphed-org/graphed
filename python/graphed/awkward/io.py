@@ -44,7 +44,15 @@ from graphed.core import Partition
 from graphed.core.execution import Plan, SequentialRunner, WorkerResources
 from graphed.errors import GraphedError
 from graphed.services import bind_externals
-from graphed.varied import Varied, member_of, most_derived_context, refuse_container, union_labels
+from graphed.systematics.lineage import is_ancestor, links_below
+from graphed.varied import (
+    Varied,
+    member_of,
+    members_of,
+    most_derived_context,
+    refuse_container,
+    union_labels,
+)
 from graphed.write import PartitionedSource
 
 from .backend import AwkwardBackend, AwkwardForm
@@ -468,7 +476,7 @@ def _record_context(value: Any) -> Any:
     A plain value's own handle, a container's most-derived member handle (§2.3e).
     """
     if isinstance(value, Varied):
-        return most_derived_context(*value._members.values())
+        return most_derived_context(*members_of(value).values())
     return context_of(value)
 
 
@@ -489,8 +497,8 @@ def _lineage_refusal(record_ctx: Any, select_ctx: Any) -> None:
         )
     if record_ctx is select_ctx:
         return
-    if select_ctx._is_ancestor_of(record_ctx):
-        if all(kind == "vary" for kind, _ in record_ctx._links_below(select_ctx)):
+    if is_ancestor(select_ctx, record_ctx):
+        if all(kind == "vary" for kind, _ in links_below(record_ctx, select_ctx)):
             return
         raise GraphedError(
             f"the record read through {record_ctx!r} is selected into a narrower ROW SPACE than "
@@ -498,8 +506,8 @@ def _lineage_refusal(record_ctx: Any, select_ctx: Any) -> None:
             "superset the mask spans, and a mask has no inverse to lift it back — read the "
             "record at the mask's row space (§6.4b)"
         )
-    if record_ctx._is_ancestor_of(select_ctx):
-        if all(kind == "vary" for kind, _ in select_ctx._links_below(record_ctx)):
+    if is_ancestor(record_ctx, select_ctx):
+        if all(kind == "vary" for kind, _ in links_below(select_ctx, record_ctx)):
             return
         raise GraphedError(
             f"the record read through {record_ctx!r} is not the context its select= mask "

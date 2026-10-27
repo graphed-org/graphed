@@ -5,17 +5,22 @@ The verbs stay where analyses already read them: `graphed.vary`, `graphed.weight
 and `graphed.varied`/`graphed.accessors`/`graphed.vary` keep working as module paths. This package
 is where the machinery LIVES, one concern per module:
 
-- `registration` — `graphed.vary`'s three overloads: the checks, the minting, the fan-out.
-- `ambient` — the ambient event weight: the operation list, each entry's rider, the three outcomes
-  a weight registration decides between, and the composition itself.
+- `verb` — `graphed.vary` itself: the target dispatch and the transactional mint.
+- `registration` — what its three overloads share: the checks, the minting, the fan-out.
+- `ambient` — the ambient event weight: a context's `AmbientRecord` (the operation list, each
+  entry's rider), the three outcomes a weight registration decides between, and the composition.
 - `explain` — `graphed.explain`'s record of what varies here and how the families relate.
 - `varied` — the `Varied` container, its surface dispositions and its re-wrapping rules.
 - `accessors` — §9.1's reader verbs (`labels`, `universe`, `nominal`, `weight`, `variations`, …).
+- `handles` — a value's handle: stamping it, re-indexing to a context, broadcasting.
 - `by_label` — per-label column reads and impact.
 - `kinds`, `tags`, `points` — a variation's kind, a universe's tag spelling, a family's points.
+- `state` — one Session's variation registries (`Session.systematics`) and `vary`'s rollback.
+- `lineage` — what an event context is to these layers: its Session, parent, link, collections
+  and ambient record.
 
 The event context itself is NOT here: it is a frontend object with a row space and collections
-(`graphed.context`), and it KEEPS the ambient state that `ambient` decides over.
+(`graphed.context`) that builds child contexts from the records `ambient` returns.
 """
 
 from __future__ import annotations
@@ -36,5 +41,5 @@ from .accessors import (  # isort: skip
 from .ambient import Rider as Rider, ambient_entries as ambient_entries  # isort: skip
 from .explain import Explanation as Explanation, explain as explain  # isort: skip
 from .kinds import Kind as Kind  # isort: skip
-from .registration import vary as vary  # isort: skip
+from .verb import vary as vary  # isort: skip
 from .varied import Varied as Varied, member_of as member_of  # isort: skip
