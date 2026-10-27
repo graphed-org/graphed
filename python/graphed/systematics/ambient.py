@@ -13,7 +13,6 @@ entry object as it currently stands, which a re-index replaces with a bare membe
 from __future__ import annotations
 
 import itertools
-import weakref
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
@@ -325,7 +324,7 @@ def _covers(ctx: EventContext, rider: Rider, label: str) -> bool:
     """
     if _named_by(label, rider.families.items()):
         return True
-    point = ctx._session._points.get(label)
+    point = ctx._session.systematics.points.get(label)
     if point is None or not any(name in rider.families for name, _tag in point):
         return False
     return _named_by(label, ((name, (tag,)) for name, tag in point))
@@ -816,7 +815,8 @@ def _owns(ctx: EventContext, rider: Rider, label: str) -> bool:
     A family of its RIDER is a coordinate of that universe's point, so a joint or a placed label
     has several owners and the point decides rather than the label's name.
     """
-    return any(name in rider.families for name, _tag in ctx._session._points.get(label, ()))
+    points = ctx._session.systematics.points
+    return any(name in rider.families for name, _tag in points.get(label, ()))
 
 
 def _fixed_cover(
@@ -1438,7 +1438,7 @@ def _vary_weight(
         )
     record_labels(factor)  # §2.5's vary-time half; the members are stamped when they compose
     # §2.5's shift-after-weight operand one: this factor's OWN member node ids, by value.
-    ctx._session._weight_factors.append((name, _member_nodes(factor)))
+    ctx._session.systematics.record_weight_factor(name, _member_nodes(factor))
 
     from ..context import _child_of  # noqa: PLC0415  (import cycle: it builds an EventContext)
 
@@ -1465,7 +1465,7 @@ def _vary_weight(
     # only an append composed onto the memo above and can fold onto it (§3)
     if folds and operands is not updated:
         folded, settled = child._materialise(operands)
-        child._memo = (ctx._session._mint_epoch, len(child._factors), folded, settled)
+        child._memo = (ctx._session.systematics.epoch, len(child._factors), folded, settled)
     else:
         child._memo = None
     return child
@@ -1568,16 +1568,16 @@ def _report_shift_after_weight(
     program — which is why the walk is per (family, collection) rather than a membership test.
     """
     session = ctx._session
-    if not session._weight_factors:
+    state = session.systematics
+    factors = state.weight_factors
+    if not factors:
         return
     targets = {member.node_id for member in pre_shift.values()}
-    registry = session._shift_after_weight
-    for family, nodes in session._weight_factors:
+    for family, nodes in factors:
         if any(targets & cone(session, nid) for nid in nodes):
-            key = (family, collection)
             # by value, with the factor's own ids: the shipping site filters on them (§2.5's
             # report is about one compiled program, the registry is about the whole Session)
-            registry[key] = registry.get(key, frozenset()) | frozenset(nodes)
+            state.report_shift_after_weight((family, collection), frozenset(nodes))
 
 
 def _unpack_varied(
@@ -1661,10 +1661,7 @@ def _two_level(container: Any, label: str) -> Any:
     session = session_of(container)
     if session is None:
         return member_of(member_of(container, label), label)
-    page = session._universes.get(id(container))
-    if page is None:
-        page = session._universes[id(container)] = {}
-        weakref.finalize(container, session._universes.pop, id(container), None)
+    page = session.systematics.universe_page(container)
     path = page.get(label)
     if path is not None:
         member = container._members[path[0]]
@@ -1701,11 +1698,12 @@ def _all_settled(session: Any, operands: Sequence[Any], labels: Sequence[str]) -
     A composition that is not settled must not be FOLDED onto, because a mint could move an operand
     it already multiplied; it is remade from the original factors instead.
     """
+    state = session.systematics
     return all(
-        label in session._universes.get(id(operand), ())
-        for operand in operands
-        if isinstance(operand, Varied)
-        for label in labels
+        all(label in page for label in labels)
+        for page in (
+            state.universe_page(operand) for operand in operands if isinstance(operand, Varied)
+        )
     )
 
 
@@ -2029,7 +2027,7 @@ def _member_form(session: Any, member: Any, label: str) -> Any:
 
 
 def _mul_form(session: Any, left: Any, right: Any, label: str) -> Any:
-    """Return the product form of two member forms, memoised on the Session (`_mul_forms`).
+    """Return the product form of two member forms, memoised per Session (`mul_forms`).
 
     The walk multiplies one factor's handful of member forms at a time, so the distinct pairs stay
     few whatever the union's size; without the memo it would pay a backend inference per multiply.
@@ -2038,7 +2036,8 @@ def _mul_form(session: Any, left: Any, right: Any, label: str) -> Any:
     share a key and the memo would admit the very clash the walk exists to refuse.
     """
     key = (left.describe(), right.describe())
-    hit = session._mul_forms.get(key)
+    memo = session.systematics.mul_forms
+    hit = memo.get(key)
     if hit is not None:
         return hit
     try:
@@ -2047,7 +2046,7 @@ def _mul_form(session: Any, left: Any, right: Any, label: str) -> Any:
         raise GraphedTypeError(
             "mul", capture(), f"the ambient weight at variation label {label!r}: {exc}"
         ) from exc
-    session._mul_forms[key] = form
+    memo[key] = form
     return form
 
 

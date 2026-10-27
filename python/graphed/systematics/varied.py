@@ -171,7 +171,7 @@ def session_of(value: object) -> Any:
 def point_registry(value: object) -> Mapping[str, Point]:
     """Return the `{label: point}` registry of the Session `value` records into (§4.5)."""
     session = session_of(value)
-    return {} if session is None else session._points
+    return {} if session is None else session.systematics.points
 
 
 def registered_points(container: Varied) -> dict[str, Point]:

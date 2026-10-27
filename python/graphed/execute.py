@@ -167,7 +167,7 @@ def _compiled(
     reached: set[str] = set()
     for arr in outputs:
         reached |= getattr(arr, "_labels", None) or frozenset()
-    registered = {label for labels, _ref in session._varied for label in labels}
+    registered = session.systematics.registered_labels()
     return CompiledGraph(
         ir=blob,
         source_names=names,
@@ -179,7 +179,7 @@ def _compiled(
         shift_after_weight=tuple(
             sorted(
                 pair
-                for pair, nodes in session._shift_after_weight.items()
+                for pair, nodes in session.systematics.shift_after_weight.items()
                 if not nodes.isdisjoint(node_map)
             )
         ),

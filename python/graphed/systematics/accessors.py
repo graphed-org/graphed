@@ -119,7 +119,7 @@ def points(x: Introspectable) -> dict[str, dict[str, str]]:
         registry: Mapping[str, Point] = point_registry(x)
         carried = labels(x)
     elif _is_context(x):
-        registry, carried = x._session._points, x._context_labels()
+        registry, carried = x._session.systematics.points, x._context_labels()
     else:
         raise GraphedError(
             "graphed.points reads a record-time shape — a Varied or an event context — not "

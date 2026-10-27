@@ -13,6 +13,7 @@ is where the machinery LIVES, one concern per module:
 - `accessors` — §9.1's reader verbs (`labels`, `universe`, `nominal`, `weight`, `variations`, …).
 - `by_label` — per-label column reads and impact.
 - `kinds`, `tags`, `points` — a variation's kind, a universe's tag spelling, a family's points.
+- `state` — one Session's variation registries (`Session.systematics`) and `vary`'s rollback.
 
 The event context itself is NOT here: it is a frontend object with a row space and collections
 (`graphed.context`), and it KEEPS the ambient state that `ambient` decides over.

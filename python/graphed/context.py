@@ -184,7 +184,7 @@ class EventContext:
         #: valid. `settled` says no mint can move a resolution it made, which is what lets a later
         #: registration fold onto it instead of remaking.
         self._memo: tuple[int, int, Varied, bool] | None = (
-            None if weight is None else (session._mint_epoch, 1, weight, True)
+            None if weight is None else (session.systematics.epoch, 1, weight, True)
         )
         # §2.3e's ORIGINATION handle for the ambient: the context that last CHANGED the factor
         # list, which is NOT the one that happens to read it first. Stamping the reader would make
@@ -321,7 +321,7 @@ class EventContext:
             # records nothing new.
             adopted: Array = self._factors[0]
             return adopted
-        epoch = self._session._mint_epoch
+        epoch = self._session.systematics.epoch
         memo = self._memo
         if memo is not None and memo[0] == epoch and memo[1] == len(self._factors):
             self._record_read(memo[2])
@@ -373,7 +373,7 @@ class EventContext:
         operand of, and folding onto it would freeze a resolution the read remakes.
         """
         memo = self._memo
-        if memo is None or memo[0] != self._session._mint_epoch or not memo[3]:
+        if memo is None or memo[0] != self._session.systematics.epoch or not memo[3]:
             return None
         return memo
 
@@ -511,7 +511,7 @@ class EventContext:
         self._head = (slots, tuple(gens.get(slot, 0) for slot in slots))
         # the live list is the adopting parent's, so its stamps come along
         self._gens = dict(gens)
-        self._memo = (self._session._mint_epoch, 1, composed, True)
+        self._memo = (self._session.systematics.epoch, 1, composed, True)
         self._recorded = _union(("nominal",), labels_of(composed))
         self._origin = self
         # §2.1/§2.3: the adoption HANDS OUT the composed member, exactly as a read does, so a

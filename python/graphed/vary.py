@@ -10,7 +10,6 @@ from .systematics.registration import (  # isort: skip
     DEFAULT_MAX_UNIVERSES as DEFAULT_MAX_UNIVERSES,
     AmbientCarrier as AmbientCarrier,
     _align as _align,
-    _bind_points as _bind_points,
     _carrier_nuisances as _carrier_nuisances,
     _carrier_points as _carrier_points,
     _check_reachable as _check_reachable,

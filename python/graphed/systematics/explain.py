@@ -231,7 +231,7 @@ def explain(ctx: EventContext) -> Explanation:
     carried: dict[str, None] = dict.fromkeys(labels_of(ambient) or ("nominal",))
     for collection in ctx._collections.values():
         carried.update(dict.fromkeys(labels_of(collection)))
-    points = ctx._session._points
+    points = ctx._session.systematics.points
     variations: dict[str, Variation] = {}
     for label in carried:
         point = tuple((name, tag) for name, tag in points.get(label, ()))
@@ -273,7 +273,7 @@ def explain(ctx: EventContext) -> Explanation:
     # §2.5's registry, by (weight family, collection): the shift that moved the objects a weight
     # family had already read, which is neither fanning out nor independence
     flagged: dict[str, tuple[str, ...]] = {}
-    for family_name, collection in ctx._session._shift_after_weight:
+    for family_name, collection in ctx._session.systematics.shift_after_weight:
         flagged[family_name] = tuple(
             dict.fromkeys(
                 (

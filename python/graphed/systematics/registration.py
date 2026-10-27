@@ -9,7 +9,6 @@ variation history is object lineage (§2.6b).
 
 from __future__ import annotations
 
-import weakref
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any, NamedTuple
 
@@ -73,15 +72,8 @@ def vary(
             f"{type(target).__name__}"
         )
     # §4.5's TRANSACTIONAL mint: everything that can raise after `gather_members` has minted — the
-    # label-collision check, `check_members`, `_align`/`reindex_to` — must leave no binding behind,
-    # or one failed call poisons a label for the life of the Session with no escape but a new one.
-    saved = dict(session._points)
-    saved_by_point = dict(session._points_by_point)
-    # §2.5's diagnostic registries are written per collection inside the shift form, so a refusal
-    # on a LATER collection would otherwise leave the first collection's report behind
-    saved_after_weight = dict(session._shift_after_weight)
-    saved_factors = list(session._weight_factors)
-    try:
+    # label-collision check, `check_members`, `_align`/`reindex_to` — must leave no binding behind
+    with session.systematics.transaction():
         return overload(
             target,
             name,
@@ -94,20 +86,6 @@ def vary(
             max_universes,
             tags,
         )
-    except BaseException:
-        session._points.clear()
-        session._points.update(saved)
-        session._points_by_point.clear()
-        session._points_by_point.update(saved_by_point)
-        session._shift_after_weight.clear()
-        session._shift_after_weight.update(saved_after_weight)
-        session._weight_factors[:] = saved_factors
-        # the only place the registry is not purely extended, and so the only place a resolution
-        # can move BACKWARDS: the epoch moves for it like any mint, and `context._two_level`'s memo
-        # — which stores answers on the premise that the registry only grows — is dropped wholesale
-        session._mint_epoch += 1
-        session._universes.clear()
-        raise
 
 
 def _parse_points(
@@ -283,8 +261,9 @@ def gather_members(
     )
     _mint_defaults(name, tuple(canonical), session, additive)
     if joint_points:
-        _check_unique(joint_points, session._points, session._points_by_point)
-        _bind_points(session, joint_points)
+        state = session.systematics
+        _check_unique(joint_points, state.points, state.point_owners)
+        state.bind(joint_points)
     return one_at_a_time, joints
 
 
@@ -301,23 +280,9 @@ def _mint_defaults(
         f"{name}_{tag}": default(name, tag) for tag in tags if f"{name}_{tag}" not in overrides
     }
     minted.update(overrides)
-    _check_unique(minted, session._points, session._points_by_point)
-    _bind_points(session, minted)
-
-
-def _bind_points(session: Any, minted: Mapping[str, Point]) -> None:
-    """Record `{label: point}` in the Session registry AND its point->label inverse together.
-
-    So `_check_unique`'s one-point-one-label test (§4.11-2) stays an O(1) lookup. The two maps are
-    only ever written here and rolled back together in `vary`, so the inverse never drifts from
-    `_points`.
-    """
-    session._points.update(minted)
-    for label, point in minted.items():
-        session._points_by_point[point] = label
-    # the sole extension point of the registry, so the sole place a composed ambient weight can go
-    # stale: every mint moves the epoch a context's composition memo is stamped with (§5)
-    session._mint_epoch += 1
+    state = session.systematics
+    _check_unique(minted, state.points, state.point_owners)
+    state.bind(minted)
 
 
 def _foreign(
@@ -416,7 +381,7 @@ def _carrier_points(carrier: Any) -> Mapping[str, Point]:
     `registered_points` does for a container, so the two spellings agree entry for entry.
     """
     if isinstance(carrier, AmbientCarrier):
-        registry = carrier.session._points
+        registry = carrier.session.systematics.points
         return {label: registry[label] for label in carrier.labels if label in registry}
     if isinstance(carrier, Varied):
         return registered_points(carrier)
@@ -785,7 +750,7 @@ def record_labels(container: Varied) -> Varied:
     session = session_of(container)
     labels = tuple(label for label in container._members if label != "nominal")
     if labels and session is not None:
-        session._varied.append((labels, weakref.ref(container)))
+        session.systematics.record_varied(labels, container)
     return container
 
 
