@@ -513,21 +513,7 @@ def aggregate_plan(
         frames=compiled.correspondence.frames,
         store=None if store is None else os.fspath(store),
         storage_options=tuple((storage_options or {}).items()),
-        writes=tuple(
-            (
-                w.codec,
-                w.destination,
-                w.name,
-                slot(w.array),
-                None
-                if w.metadata is None
-                else tuple(
-                    (k, slot(v) if isinstance(v, Array) else str(v)) for k, v in w.metadata.items()
-                ),
-                *((tuple(w.storage_options.items()),) if w.storage_options else ()),
-            )
-            for w in writes
-        ),
+        writes=tuple(_shipped(w, slot) for w in writes),
         # outputs are marked first, so their distinct values lead the evaluated list
         n_values=len({slot(o) for o in outputs}) if writes else None,
         opt_level=opt_level,
@@ -547,6 +533,25 @@ def aggregate_plan(
         tasks=tasks,
         services=plan_services(session, compiled, services),
     )
+
+
+def _shipped(w: PartWrite, slot: Callable[[Array], int]) -> _ShippedWrite:
+    """Return ``w`` as a task ships it, its arrays replaced by their output slots."""
+    kv = (
+        None
+        if w.metadata is None
+        else tuple((k, slot(v) if isinstance(v, Array) else str(v)) for k, v in w.metadata.items())
+    )
+    if w.storage_options:
+        return (
+            w.codec,
+            w.destination,
+            w.name,
+            slot(w.array),
+            kv,
+            tuple(w.storage_options.items()),
+        )
+    return (w.codec, w.destination, w.name, slot(w.array), kv)
 
 
 def _written_parts(process: object, partition: Partition) -> Sequence[str]:
