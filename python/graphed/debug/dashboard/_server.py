@@ -20,7 +20,6 @@ works without them; :meth:`DashboardServer.start` raises a clear error if they a
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import contextlib
 import json
@@ -146,6 +145,9 @@ class DashboardServer:
 
     def _run(self) -> None:
         try:
+            # asyncio is lazy: importing graphed.debug must not pull in its ~55 modules
+            import asyncio
+
             import perspective
             from perspective.handlers.tornado import PerspectiveTornadoHandler
             from tornado.httpserver import HTTPServer
@@ -247,7 +249,9 @@ class DashboardServer:
     def _ingest(self, message: str, conn: Any = None) -> None:
         try:
             msg = json.loads(message)
-        except ValueError:
+        except (ValueError, RecursionError):
+            return
+        if not isinstance(msg, dict):
             return
         cid = getattr(conn, "cid", 0)
         # held across the frame so a reader waiting on a count also sees the rows written below

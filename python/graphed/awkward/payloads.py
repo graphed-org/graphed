@@ -15,7 +15,6 @@ import platform
 from pathlib import Path
 
 from graphed.core import PayloadDescriptor
-from graphed.preserve.externals._helpers import json_bytes, memoized_model_hash
 
 
 def _sha256(path: str) -> str:
@@ -100,6 +99,8 @@ def opaque_callable_descriptor(fn_name: str) -> PayloadDescriptor:
 # plugin.content_hash(payload) and gak-recorded Externals pass a bundle's payload-integrity check)
 def correctionlib_contents_hash(payload: bytes) -> str:
     """sha256 of the correction set's CONTENTS (canonical JSON) — formatting is not identity."""
+    from graphed.preserve.externals._helpers import json_bytes
+
     data = json.loads(json_bytes(payload))
     canonical = json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return "sha256:" + hashlib.sha256(b"correctionlib-contents-v1" + canonical).hexdigest()
@@ -122,6 +123,8 @@ def onnx_weights_hash(payload: bytes) -> str:
 
 
 def _correctionlib_identity(payload: bytes) -> tuple[str, str]:
+    from graphed.preserve.externals._helpers import json_bytes
+
     schema_version = "unknown"
     with contextlib.suppress(Exception):  # malformed JSON still fails loudly at the hash step
         schema_version = str(json.loads(json_bytes(payload)).get("schema_version", "unknown"))
@@ -130,6 +133,8 @@ def _correctionlib_identity(payload: bytes) -> tuple[str, str]:
 
 def correctionlib_contents_descriptor(payload: bytes, correction_name: str) -> PayloadDescriptor:
     """Describe correction ``correction_name`` of a correctionlib payload's bytes."""
+    from graphed.preserve.externals._helpers import memoized_model_hash
+
     # one set is recorded once per call (e.g. per systematic universe): parse it once
     content_hash, schema_version = memoized_model_hash(
         "correctionlib-descriptor", payload, _correctionlib_identity
@@ -146,6 +151,8 @@ def correctionlib_contents_descriptor(payload: bytes, correction_name: str) -> P
 
 def onnx_weights_descriptor(payload: bytes) -> PayloadDescriptor:
     """Describe an ONNX model payload's bytes."""
+    from graphed.preserve.externals._helpers import memoized_model_hash
+
     content_hash, opset, io_schema = memoized_model_hash(
         "onnx-descriptor", payload, _onnx_identity
     )
