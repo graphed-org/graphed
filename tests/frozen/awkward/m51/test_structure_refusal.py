@@ -1,13 +1,16 @@
-"""m51 anchor H — the §6.4d structure refusal (negative), with the object-migration positive control.
+"""m51 anchor H — the §6.4d structure refusal (negative).
+
+It comes with the object-migration positive control.
 
 Deltas require same-shaped buffers. §2.1's construction check is a TYPE check (`var * float64`
 matches whatever the per-event counts), so a variation that legitimately CHANGES multiplicity
 (shift-dependent cleaning, overlap removal, a matched collection) passes §2.1 and then has no
 representable XOR delta. Binding refusal: a stored varied field whose per-label OFFSETS differ from
-nominal's is refused with an error naming the LABEL and the FIELD — offsets are data, so it surfaces
-per partition at execution time (trap ledger §7). The supported v1 model is same-multiplicity
-variation plus per-label validity masks, which STILL writes and round-trips — the positive control
-that keeps object-level migration (a JES shift moving jets across a per-jet cut) a first-class case.
+nominal's is refused with an error naming the LABEL and the FIELD — offsets are data, so it
+surfaces per partition at execution time (trap ledger §7). The supported v1 model is
+same-multiplicity variation plus per-label validity masks, which STILL writes and round-trips — the
+positive control that keeps object-level migration (a JES shift moving jets across a per-jet cut) a
+first-class case.
 """
 
 from __future__ import annotations
@@ -32,8 +35,10 @@ pytest.importorskip("pyarrow")
 
 
 def _cleaning_record(events: Any) -> tuple[Any, Any]:
-    """A `{Jet, MET}` record whose Jet field drops a DIFFERENT number of jets per universe (a
-    shift-dependent cleaning): `clean_up`'s offsets differ from nominal's, `MET` is unvaried."""
+    """Return a `{Jet, MET}` record whose Jet field drops a DIFFERENT number of jets per universe.
+
+    A shift-dependent cleaning: `clean_up`'s offsets differ from nominal's, `MET` is unvaried.
+    """
     jets = events.Jet
     up = jets[jets.pt > 10.0]
     down = jets[jets.pt > 5.0]
@@ -53,8 +58,11 @@ def test_multiplicity_changing_field_is_refused_naming_the_label_and_field(tmp_p
 
 
 def test_same_multiplicity_object_migration_still_writes_and_roundtrips(tmp_path) -> None:  # type: ignore[no-untyped-def]
-    """The positive control: a JES shift keeps every universe's jet OFFSETS equal to nominal's and
-    expresses the migration as per-label inner masks — so it writes and round-trips (§6.4d)."""
+    """The positive control.
+
+    A JES shift keeps every universe's jet OFFSETS equal to nominal's and expresses the migration
+    as per-label inner masks — so it writes and round-trips (§6.4d).
+    """
     _s, events = events_context()
     record, evt_mask, jet_mask = jet_skim_inputs(events)
     paths = ga.to_parquet(record, str(tmp_path / "ok"), select={0: evt_mask, 1: jet_mask})  # type: ignore[call-arg]

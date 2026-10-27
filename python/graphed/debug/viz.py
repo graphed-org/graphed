@@ -25,7 +25,7 @@ def _stage_label(stage: LoweredStage, projection: Mapping[str, frozenset[str]] |
 
 
 def _stage_inputs(graph: LoweredGraph, stage: LoweredStage) -> set[int]:
-    """The stage ids that feed this stage (external inputs of its members)."""
+    """Return the stage ids that feed this stage (external inputs of its members)."""
     member_ids = {m.node_id for m in stage.members}
     head_of: dict[int, int] = {}
     for s in graph.stages:
@@ -48,7 +48,11 @@ def visualize(
     """Render ``graph`` as ``"mermaid"`` or ``"graphviz"`` source text."""
     if fmt not in ("mermaid", "graphviz"):
         raise ValueError(f"unknown fmt {fmt!r}; use 'mermaid' or 'graphviz'")
-    edges = [(src, stage.node_id) for stage in graph.stages for src in sorted(_stage_inputs(graph, stage))]
+    edges = [
+        (src, stage.node_id)
+        for stage in graph.stages
+        for src in sorted(_stage_inputs(graph, stage))
+    ]
     if fmt == "mermaid":
         lines = [f"flowchart TD  %% opt_level={graph.opt_level}"]
         for stage in graph.stages:

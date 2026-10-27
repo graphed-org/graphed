@@ -2,10 +2,10 @@
 
 Mirrors the M2 discipline (``tests/frozen/m2/backends.py``): graphed itself MUST NOT import
 numpy/awkward (§A.4), so the frontend-recording and generic-engine tests run over a TOY
-``ShuffleBackend`` whose blocks are plain lists of ``{"__joinkey__": int, ...}`` rows. The toy routes
-by the SAME pinned §4 rule the real backends must, so it is a legitimate conformance reference; the
-REAL awkward/numpy golden-vector + backend-independence witnesses live in graphed-awkward /
-graphed-numpy / graphed-exec-local.
+``ShuffleBackend`` whose blocks are plain lists of ``{"__joinkey__": int, ...}`` rows. The toy
+routes by the SAME pinned §4 rule the real backends must, so it is a legitimate conformance
+reference; the REAL awkward/numpy golden-vector + backend-independence witnesses live in
+graphed-awkward / graphed-numpy / graphed-exec-local.
 """
 
 from __future__ import annotations
@@ -22,14 +22,17 @@ Block = list  # a toy partition == a list of Row
 
 
 def route(key: int, parts: int, *, salt: int = 0) -> int:
-    """The pinned §4/§3.0 routing rule (salt=0 == no bytes appended)."""
+    """Return the pinned §4/§3.0 routing rule (salt=0 == no bytes appended)."""
     key_bytes = int(key).to_bytes(8, "big") + (salt.to_bytes(8, "big") if salt else b"")
     return int.from_bytes(hashlib.sha256(key_bytes).digest()[:8], "big") % parts
 
 
 class ToyBackend:
-    """A Session ``Backend`` AND a ``ShuffleBackend`` in one object (the M39 pattern — a backend is
-    both). ``op_form(exchange)`` is identity; the exchange primitives operate on list-of-row blocks."""
+    """A Session ``Backend`` AND a ``ShuffleBackend`` in one object.
+
+    This is the M39 pattern — a backend is both. ``op_form(exchange)`` is identity; the exchange
+    primitives operate on list-of-row blocks.
+    """
 
     identity = "toy/0"
 
@@ -39,7 +42,9 @@ class ToyBackend:
             return inputs[0]  # identity on the payload form (§3.3a)
         return op
 
-    def eval_stage(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> object:
+    def eval_stage(
+        self, op: str, inputs: Sequence[object], params: Mapping[str, object]
+    ) -> object:
         return inputs[0]
 
     def boundary_ops(self) -> frozenset[str]:
@@ -90,7 +95,9 @@ class ListSource:
         raise AssertionError("the whole-dataset loader must never run during a plan")
 
     def partitions(self, steps_per_file: int = 1) -> tuple[Partition, ...]:
-        return tuple(Partition.blind("toy://list", "", s, steps_per_file) for s in range(steps_per_file))
+        return tuple(
+            Partition.blind("toy://list", "", s, steps_per_file) for s in range(steps_per_file)
+        )
 
     def read_partition(self, partition, columns, resources) -> list:  # type: ignore[no-untyped-def]
         part = partition.resolve(len(self.data))

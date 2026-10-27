@@ -36,7 +36,9 @@ class ToyBackend:
     def op_form(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> ToyForm:
         return ToyForm(op)
 
-    def eval_stage(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> object:
+    def eval_stage(
+        self, op: str, inputs: Sequence[object], params: Mapping[str, object]
+    ) -> object:
         return (op, list(inputs), dict(params))
 
     def boundary_ops(self) -> frozenset[str]:
@@ -47,7 +49,12 @@ class ToyBackend:
 
     def external_payload(self, op: str, params: Mapping[str, object]) -> PayloadDescriptor | None:
         return PayloadDescriptor(
-            kind="toy", content_hash="h", framework="f", version="v", io_schema="s", preprocessing_ref=None
+            kind="toy",
+            content_hash="h",
+            framework="f",
+            version="v",
+            io_schema="s",
+            preprocessing_ref=None,
         )
 
 

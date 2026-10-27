@@ -1,5 +1,7 @@
-"""T2's cross-interpreter legs: ``python m74_xleg.py <leg> <store> <data dir> [args...]``. Everything a
-leg keys is defined in this ``__main__``; the last stdout line is a JSON report."""
+"""T2's cross-interpreter legs: ``python m74_xleg.py <leg> <store> <data dir> [args...]``.
+
+Everything a leg keys is defined in this ``__main__``; the last stdout line is a JSON report.
+"""
 
 from __future__ import annotations
 
@@ -54,7 +56,9 @@ def run_cell(source: str, filename: str) -> dict[str, Any]:
 
 
 def events() -> Any:
-    return from_parquet(Session(AwkwardBackend()), "events", h.events(DATA), open_files=False, steps_per_file=2)
+    return from_parquet(
+        Session(AwkwardBackend()), "events", h.events(DATA), open_files=False, steps_per_file=2
+    )
 
 
 if LEG == "frozenset":
@@ -66,7 +70,9 @@ if LEG == "frozenset":
         def __call__(self, p: Any, r: Any) -> float:
             return float(len(self.tags) + p.entry_start)
 
-    tagged = Tagged(frozenset({"alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta"}))
+    tagged = Tagged(
+        frozenset({"alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta"})
+    )
     finish(h.plan_of(tagged), plain_digest=hashlib.sha256(pickle.dumps(tagged)).hexdigest())
 
 elif LEG == "agg":
@@ -84,7 +90,9 @@ def agg_combine(a, b):
     return tuple(x + y for x, y in zip(a, b))
 def agg_empty():
     return (0.0,)
-plan = aggregate_plan(gak.sum((ev.x + ev.y) * 2), reduce=agg_reduce, combine=agg_combine, empty=agg_empty)
+plan = aggregate_plan(
+    gak.sum((ev.x + ev.y) * 2), reduce=agg_reduce, combine=agg_combine, empty=agg_empty
+)
 """,
         ARGS[0],
     )
@@ -113,7 +121,12 @@ def emp():
             ARGS[0],
         )
         reduce = ns["red"] if variant == "def" else ns["Red"]()
-        plan = shuffle_plan(gak.sum(repartition(ns["ev"], n=2).x), reduce=reduce, combine=ns["comb"], empty=ns["emp"])
+        plan = shuffle_plan(
+            gak.sum(repartition(ns["ev"], n=2).x),
+            reduce=reduce,
+            combine=ns["comb"],
+            empty=ns["emp"],
+        )
         with open(ARGS[2], "wb") as f:
             pickle.dump(plan, f)
         finish(plan)
@@ -135,8 +148,16 @@ elif LEG == "bins":
     pad, bins, body = int(ARGS[0]), ARGS[1], ARGS[2]
     expr = "float(v) % BINS" if body == "a" else "(float(v) + 1.0) % BINS"
     comment = "    # a comment\n" if pad else ""
-    ns = run_cell("\n" * pad + f"BINS = {bins}\ndef reduce(values):\n{comment}    return tuple({expr} for v in values)\n", "m74_bins")
-    finish(aggregate_plan(gak.sum(events().x), reduce=ns["reduce"], combine=h.agg_combine, empty=h.agg_empty))
+    ns = run_cell(
+        "\n" * pad + f"BINS = {bins}\ndef reduce(values):\n"
+        f"{comment}    return tuple({expr} for v in values)\n",
+        "m74_bins",
+    )
+    finish(
+        aggregate_plan(
+            gak.sum(events().x), reduce=ns["reduce"], combine=h.agg_combine, empty=h.agg_empty
+        )
+    )
 
 elif LEG == "generic":
     # (viii)
@@ -197,7 +218,8 @@ elif LEG == "copyreg":
     finish(h.plan_of(scaled))
 
 elif LEG == "abc":
-    # (xi): ARGS = ["fwd" | "rev"], the order the registered classes and the set's members are made in
+    # (xi): ARGS = ["fwd" | "rev"], the order the registered classes and the set's members are made
+    # in
     names = ["A", "B", "C", "D", "E", "F"]
     order = names if ARGS[0] == "fwd" else names[::-1]
     made = {n: type(n, (), {"f": lambda self: 1}) for n in order}
@@ -246,28 +268,59 @@ elif LEG == "mixin":
     # (xiii): ARGS = [variant, V, destination]
     variant, v, dest = ARGS
     target = "ak.behavior" if variant == "global" else "h.behavior"
-    run_cell(f"@ak.mixin_class({target})\nclass Point:\n    @property\n    def mag(self):\n        return self.x * {v}\n", "m74_mixin")
+    run_cell(
+        f"@ak.mixin_class({target})\nclass Point:\n    @property\n    def mag(self):\n        "
+        f"return self.x * {v}\n",
+        "m74_mixin",
+    )
     backend = AwkwardBackend() if variant == "global" else AwkwardBackend(behavior=h.behavior)
-    ev = from_parquet(Session(backend), "events", h.events(DATA), open_files=False, steps_per_file=2)
+    ev = from_parquet(
+        Session(backend), "events", h.events(DATA), open_files=False, steps_per_file=2
+    )
     if variant in ("parquet", "varied"):
         if variant == "parquet":
-            plan = to_parquet(gak.zip({"x": ev.x}, with_name="Point").mag, dest, compute=False, behavior="m74_helpers:behavior")
+            plan = to_parquet(
+                gak.zip({"x": ev.x}, with_name="Point").mag,
+                dest,
+                compute=False,
+                behavior="m74_helpers:behavior",
+            )
             column = "data"
         else:
             evs = ga.gnano.events(ev)
             w = evs.x * 0 + 1.0
-            ctx = graphed.vary(evs, "murf", w, is_weight=True, points={"1": w, "0.5": w * 0.5, "2": w * 2.0})
-            rec = gak.zip({"m": gak.zip({"x": ctx.x}, with_name="Point").mag, "w": graphed.weight(ctx)}, depth_limit=1)
-            plan = to_parquet(rec, dest, compute=False, behavior="m74_helpers:behavior", select={0: ctx.x > 10})
+            ctx = graphed.vary(
+                evs, "murf", w, is_weight=True, points={"1": w, "0.5": w * 0.5, "2": w * 2.0}
+            )
+            rec = gak.zip(
+                {"m": gak.zip({"x": ctx.x}, with_name="Point").mag, "w": graphed.weight(ctx)},
+                depth_limit=1,
+            )
+            plan = to_parquet(
+                rec, dest, compute=False, behavior="m74_helpers:behavior", select={0: ctx.x > 10}
+            )
             column = "m"
         rp = resumable(plan, STORE)
         files = SequentialRunner().run(rp).value
         written = sum(float(ak.sum(ak.from_parquet(f)[column])) for f in files)
-        print(json.dumps({"reused": rp.process.reused, "tasks": len(rp.tasks), "written": written, "kind": type(plan.process).__name__}))
+        print(
+            json.dumps(
+                {
+                    "reused": rp.process.reused,
+                    "tasks": len(rp.tasks),
+                    "written": written,
+                    "kind": type(plan.process).__name__,
+                }
+            )
+        )
     else:
         if variant in ("global", "ref", "callable"):
-            ref = {"global": None, "ref": "m74_helpers:make_backend", "callable": h.make_backend}[variant]
-            plan = aggregate_plan(gak.sum(gak.zip({"x": ev.x}, with_name="Point").mag), backend=ref, **FOLD)
+            ref = {"global": None, "ref": "m74_helpers:make_backend", "callable": h.make_backend}[
+                variant
+            ]
+            plan = aggregate_plan(
+                gak.sum(gak.zip({"x": ev.x}, with_name="Point").mag), backend=ref, **FOLD
+            )
         elif variant == "shuffle_before":
             mag = gak.zip({"x": ev.x}, with_name="Point").mag
             out = gak.sum(repartition(gak.zip({"m": mag}), n=2).m)
@@ -284,7 +337,10 @@ elif LEG == "uuid_helper":
     def kernel_proc(p: Any, r: Any) -> float:
         return KERNEL(float(p.entry_start))
 
-    finish(h.plan_of(kernel_proc), reduce_varies=pickle.dumps(KERNEL.__reduce__()) != pickle.dumps(KERNEL.__reduce__()))
+    finish(
+        h.plan_of(kernel_proc),
+        reduce_varies=pickle.dumps(KERNEL.__reduce__()) != pickle.dumps(KERNEL.__reduce__()),
+    )
 
 elif LEG == "upstream":
     # (xv): ARGS = [variant "gather" | "reader" | "join", V]
@@ -312,20 +368,36 @@ class Loader:
     s = Session(AwkwardBackend())
 
     def scaled_source(name: str, files: list[str]) -> Any:
-        form = AwkwardForm(ak.Array(ak.from_parquet(files).layout.to_typetracer(forget_length=True)))
-        return gpq.deferred_source(s, name, paths=tuple(files), form=form, loader=ns["Loader"](files))
+        form = AwkwardForm(
+            ak.Array(ak.from_parquet(files).layout.to_typetracer(forget_length=True))
+        )
+        return gpq.deferred_source(
+            s, name, paths=tuple(files), form=form, loader=ns["Loader"](files)
+        )
 
     if variant == "gather":
         ev = from_parquet(s, "events", paths, open_files=False, steps_per_file=2)
-        plan = shuffle_plan(gak.sum(repartition(ev, n=2).x), reduce=ns["red"], combine=h.agg_combine, empty=h.agg_empty, steps_per_file=2)
+        plan = shuffle_plan(
+            gak.sum(repartition(ev, n=2).x),
+            reduce=ns["red"],
+            combine=h.agg_combine,
+            empty=h.agg_empty,
+            steps_per_file=2,
+        )
     elif variant == "reader":
-        plan = shuffle_plan(gak.sum(repartition(scaled_source("events", paths), n=2).x), steps_per_file=2, **FOLD)
+        plan = shuffle_plan(
+            gak.sum(repartition(scaled_source("events", paths), n=2).x), steps_per_file=2, **FOLD
+        )
     else:
         left = from_parquet(s, "left", paths[:1], open_files=False, steps_per_file=2)
         right = scaled_source("right", paths[1:])
         right = gak.zip({"y": right.y, "z": right.x})
         plan = join_plan(gak.sum(join(left, right, on=["y"]).z), steps_per_file=2, **FOLD)
-    finish(plan, fresh=plain(SequentialRunner().run(plan).value), kinds=[st.kind for st in plan.stages])
+    finish(
+        plan,
+        fresh=plain(SequentialRunner().run(plan).value),
+        kinds=[st.kind for st in plan.stages],
+    )
 
 else:
     raise SystemExit(f"unknown leg {LEG!r}")

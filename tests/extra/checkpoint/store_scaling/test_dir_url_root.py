@@ -1,4 +1,7 @@
-"""A ``dir::`` store URL roots the store at the wrapped URL, with its options on that filesystem."""
+"""A ``dir::`` store URL roots the store at the wrapped URL.
+
+Its options apply on that filesystem.
+"""
 
 from __future__ import annotations
 
@@ -23,7 +26,9 @@ def test_dir_store_lands_at_the_wrapped_root(tmp_path: Path) -> None:
         assert FsspecStore(root.as_uri()).get(digest) == b"blob"
 
 
-def test_dir_s3_store_takes_its_endpoint_option(s3_url: str, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_dir_s3_store_takes_its_endpoint_option(
+    s3_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
     s3fs = pytest.importorskip("s3fs")
     endpoint = os.environ["AWS_ENDPOINT_URL"]
     # only the option names the live endpoint: nothing listens on the discard port

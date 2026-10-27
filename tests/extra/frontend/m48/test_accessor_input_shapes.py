@@ -3,7 +3,8 @@
 The frozen m48 tree reaches the `Varied` and event-context shapes; the `{label: hist}` RESULT
 MAPPING and the bare histogram are `graphed-histogram`'s anchors, in a different distribution, and
 this tree must stay importable under `pytest hypothesis numpy` alone — so the histogram here is a
-duck-typed stand-in on the one attribute §2.2 keys on. Awkward-free, like the frozen tree beside it.
+duck-typed stand-in on the one attribute §2.2 keys on. Awkward-free, like the frozen tree beside
+it.
 """
 
 from __future__ import annotations
@@ -38,8 +39,11 @@ def test_a_result_mapping_reads_as_its_keys_with_nominal_first() -> None:
 
 
 def test_a_mapping_without_nominal_is_not_given_one() -> None:
-    """§2.2 binds both verbs to the same input shapes, so they must not disagree about which
-    labels exist: seating `"nominal"` unconditionally claims a label `universe` refuses."""
+    """§2.2 binds both verbs to the same input shapes.
+
+    So they must not disagree about which labels exist: seating `"nominal"` unconditionally claims
+    a label `universe` refuses.
+    """
     result = {"jes_up": _Hist(), "jes_down": _Hist()}
     assert graphed.labels(result) == ("jes_up", "jes_down")
     with pytest.raises(KeyError, match="nominal"):
@@ -61,9 +65,11 @@ def test_a_bare_histogram_reads_as_the_single_label_nominal() -> None:
         graphed.universe(hist, "jes_up")
 
 
-def test_a_plain_Array_is_refused_by_both_verbs_rather_than_read_as_one_universe() -> None:
-    """Answering `("nominal",)` here would let a DROPPED container read as a legal single
-    universe — the §2.5 silent drop this refusal exists to prevent."""
+def test_a_plain_array_is_refused_by_both_verbs_rather_than_read_as_one_universe() -> None:
+    """Answering `("nominal",)` here would let a DROPPED container read as a legal single universe.
+
+    The §2.5 silent drop this refusal exists to prevent.
+    """
     _s, x, _v = _varied()
     with pytest.raises(GraphedError, match="carries no variations"):
         graphed.labels(x)
@@ -86,8 +92,10 @@ def test_weight_refuses_anything_that_is_not_an_event_context() -> None:
 
 
 def test_reindex_to_a_context_free_target_refuses_naming_the_handle() -> None:
-    """A context-free target has no row space to re-index INTO, so the identity would silently
-    keep the value in the source context's rows."""
+    """A context-free target has no row space to re-index INTO.
+
+    So the identity would silently keep the value in the source context's rows.
+    """
     session = Session(NumpyBackend())
     x = from_array(session, "x", np.arange(1.0, 5.0))
     assert graphed.reindex_to(x, None) is x  # context-free value: identity, not an error
@@ -97,8 +105,11 @@ def test_reindex_to_a_context_free_target_refuses_naming_the_handle() -> None:
 
 
 def test_broadcast_like_is_the_bound_no_op_for_a_backend_without_the_seam() -> None:
-    """numpy is rectilinear, so its backend supplies no `broadcast_like` and a genuine shape
-    mismatch surfaces at execution rather than being papered over at record time."""
+    """Numpy is rectilinear.
+
+    So its backend supplies no `broadcast_like` and a genuine shape mismatch surfaces at execution
+    rather than being papered over at record time.
+    """
     session, x, varied = _varied()
     factor = x * 2.0
     assert not hasattr(session.backend, "broadcast_like")  # the control for "bound no-op"

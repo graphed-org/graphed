@@ -29,6 +29,7 @@ CoreDims = tuple[str, ...]
 
 
 def parse_signature(signature: str) -> tuple[list[CoreDims], CoreDims]:
+    """Parse a gufunc ``signature`` into its input core dims and output core dims."""
     lhs, arrow, rhs = signature.partition("->")
     if not arrow:
         raise TypeError(f"gufunc signature needs '->': {signature!r}")
@@ -57,7 +58,8 @@ def gufunc_form(forms: Sequence[NumpyForm], params: Any) -> NumpyForm:
         inner = form.shape[1:]
         if len(inner) != len(core):
             raise TypeError(
-                f"operand of shape {form.shape} has {len(inner)} core dim(s); signature wants {len(core)}"
+                f"operand of shape {form.shape} has {len(inner)} core dim(s); signature wants "
+                f"{len(core)}"
             )
         for name, size in zip(core, inner, strict=True):
             if name in bound and bound[name] != size:
@@ -84,7 +86,8 @@ def apply_gufunc(
     Without ``name=`` two distinct callables that derive one ``__name__`` are told apart by a
     per-Session ordinal. Pass ``name=`` to declare the identity yourself: a declared name IS the
     identity, so declaring a name another callable already wears — declared or derived — means
-    that same node, and the name must encode everything that changes the callable's behaviour."""
+    that same node, and the name must encode everything that changes the callable's behaviour.
+    """
     parse_signature(signature)  # malformed signatures fail HERE, before any recording
     if not arrays or not all(isinstance(a, NumpyArray) for a in arrays):
         raise TypeError("apply_gufunc needs at least one deferred array operand")

@@ -4,9 +4,9 @@ Two witnesses, both over the REAL backends:
 
 * across-runs determinism — two independent builds of the same join compile to a byte-identical
   reduced IR (the M8 durable-artifact guarantee; a nondeterministic router / task-id fold drifts).
-* backend-independence — the recorded join graph is structurally identical across AwkwardBackend and
-  NumpyBackend (the M2 ``to_dot`` witness): the graph structure is backend-independent, only forms /
-  evaluation differ. This is the ShuffleBackend-seam witness at the recording layer.
+* backend-independence — the recorded join graph is structurally identical across AwkwardBackend
+  and NumpyBackend (the M2 ``to_dot`` witness): the graph structure is backend-independent, only
+  forms / evaluation differ. This is the ShuffleBackend-seam witness at the recording layer.
 
 Pre-implementation ``graphed`` has no ``join`` attribute -> right-reason ``AttributeError``.
 """

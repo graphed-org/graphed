@@ -2,7 +2,8 @@
 
 The frontend records ~85 canonical ops; the awkward backend previously implemented 25. Every
 case applies the numpy ufunc to a DEFERRED jagged array (recording one canonical op with a
-typetracer form) and compares the materialization against the same ufunc on the raw array."""
+typetracer form) and compares the materialization against the same ufunc on the raw array.
+"""
 
 from __future__ import annotations
 
@@ -97,7 +98,9 @@ def test_unary_ufunc_on_jagged_matches_awkward(fn, data) -> None:  # type: ignor
     assert ak.array_equal(got, ref, equal_nan=True)  # same kernel, same inputs: exactly equal
 
 
-@pytest.mark.parametrize(("fn", "x", "y"), BINARY_CASES, ids=[f.__name__ for f, *_ in BINARY_CASES])
+@pytest.mark.parametrize(
+    ("fn", "x", "y"), BINARY_CASES, ids=[f.__name__ for f, *_ in BINARY_CASES]
+)
 def test_binary_ufunc_on_jagged_matches_awkward(fn, x, y) -> None:  # type: ignore[no-untyped-def]
     s, _, _ = session_events()
     a = _src(s, "a", x)

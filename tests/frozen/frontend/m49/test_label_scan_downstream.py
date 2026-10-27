@@ -36,8 +36,10 @@ def test_a_label_reached_only_downstream_is_not_reported_unreached() -> None:
 
 
 def test_a_registered_label_no_output_reaches_is_still_reported() -> None:
-    """The control leg in the same program: the scan is live, so the first assertion means
-    something."""
+    """The control leg in the same program.
+
+    The scan is live, so the first assertion means something.
+    """
     session, central, deep = _program()
     compiled = compile_ir(session, central, deep)
 

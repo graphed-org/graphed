@@ -1,6 +1,8 @@
-"""m56 §2 item 2 / §4 order independence: registering the name-identity weight before or after the
-family built over the shifted objects gives the same universes and, per universe, the same Jet, MET
-and ambient weight. The ambient here has exactly two factors, so the product is bit-equal either way.
+"""m56 §2 item 2 / §4 order independence.
+
+Registering the name-identity weight before or after the family built over the shifted objects
+gives the same universes and, per universe, the same Jet, MET and ambient weight. The ambient here
+has exactly two factors, so the product is bit-equal either way.
 """
 
 from __future__ import annotations
@@ -12,7 +14,7 @@ import graphed
 
 
 def _universes(program: Capstone) -> dict[str, tuple[list[float], list[float], list[float]]]:
-    """{label: (Jet pt, MET pt, ambient weight)} materialized for every universe the program has."""
+    """Return {label: (Jet pt, MET pt, ambient weight)}, materialized, for each universe."""
     jets, met = program.ctx["Jet"], program.ctx["MET"]
     read = program.session.materialize
     return {
@@ -30,5 +32,7 @@ def test_the_two_registration_orders_give_the_same_universes_and_values() -> Non
     family_first = m56_capstone(weight_first=False)
 
     # not an empty agreement: both orders carry the cross-kind joints
-    assert m56_minted(weight_first.weight, "hf") == m56_joints("hf", "jes") | m56_joints("hf", "jer")
+    assert m56_minted(weight_first.weight, "hf") == m56_joints("hf", "jes") | m56_joints(
+        "hf", "jer"
+    )
     assert _universes(weight_first) == _universes(family_first)

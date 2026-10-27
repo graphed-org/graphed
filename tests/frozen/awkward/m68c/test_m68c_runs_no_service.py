@@ -1,6 +1,9 @@
-"""m68c §3.3/§3.4: ``SequentialRunner`` runs builder output. The map stage reads each partition and
-evaluates the IR up to the barrier, the gather joins or concatenates per dest and runs what was
-recorded after the barrier, and a ``reduce`` stage folds the per-dest values in dest order."""
+"""m68c §3.3/§3.4: ``SequentialRunner`` runs builder output.
+
+The map stage reads each partition and evaluates the IR up to the barrier, the gather joins or
+concatenates per dest and runs what was recorded after the barrier, and a ``reduce`` stage folds
+the per-dest values in dest order.
+"""
 
 from __future__ import annotations
 
@@ -26,11 +29,13 @@ from graphed.awkward import AwkwardBackend, gak
 from graphed.core.execution import SequentialRunner
 
 HOWS = ["inner", "left", "right", "outer"]
-JOIN_READS = Counter({("events", "mem://events/0"): 2, ("lumi", "mem://lumi/0"): 2, ("lumi", "mem://lumi/1"): 2})
+JOIN_READS = Counter(
+    {("events", "mem://events/0"): 2, ("lumi", "mem://lumi/0"): 2, ("lumi", "mem://lumi/1"): 2}
+)
 
 
 def _joined(how: str) -> tuple[Any, Any]:
-    """A join with an operation after it, and what ``materialize`` gives for it."""
+    """Return a join with an operation after it, and what ``materialize`` gives for it."""
     ev, lu = two_sources()
     j = graphed.join(ev, lu, on=["run"], how=how)
     post = gak.with_field(j, j.run * 10, "run10")
@@ -94,7 +99,9 @@ def test_shuffle_plan_by_key_routes_each_key_to_one_dest_and_runs_the_post_op() 
     res = SequentialRunner().run(graphed.shuffle_plan(post, steps_per_file=2, **FOLD))
     assert Counter(READS) == Counter({("lumi", "mem://lumi/0"): 2, ("lumi", "mem://lumi/1"): 2})
     routed = AwkwardBackend().partition(expected, "run", 2)
-    assert [sorted(set(b.run.tolist())) for b in res.value] == [sorted(set(b.run.tolist())) for b in routed]
+    assert [sorted(set(b.run.tolist())) for b in res.value] == [
+        sorted(set(b.run.tolist())) for b in routed
+    ]
     assert all(len(b) for b in res.value)
     _assert_same(res.value, expected)
 

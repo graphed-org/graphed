@@ -46,7 +46,10 @@ def s3_url(s3_bucket: str) -> str:
 
 @pytest.fixture
 def s3_counter() -> Callable[..., collections.Counter[str]]:
-    """``count(store, fn)`` runs ``fn()`` and returns the S3 API calls ``store.fs`` made, by name."""
+    """Return ``count(store, fn)``, which runs ``fn()``.
+
+    It returns the S3 API calls ``store.fs`` made, by name.
+    """
 
     def count(store: object, fn: Callable[[], object]) -> collections.Counter[str]:
         calls: collections.Counter[str] = collections.Counter()

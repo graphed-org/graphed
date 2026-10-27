@@ -1,9 +1,9 @@
 """m57 §2.6: no silent change, and the extending program is deterministic.
 
-A program whose registrations never re-use a nominal node must mint EXACTLY the composition it minted
-before — which the test pins by rebuilding every universe's product from its own operands and showing
-that rebuild mints nothing — and the extending program must serialize byte-identically across two
-independent Sessions.
+A program whose registrations never re-use a nominal node must mint EXACTLY the composition it
+minted before — which the test pins by rebuilding every universe's product from its own operands
+and showing that rebuild mints nothing — and the extending program must serialize byte-identically
+across two independent Sessions.
 """
 
 from __future__ import annotations
@@ -31,8 +31,11 @@ import graphed
 
 
 def test_the_extending_program_serializes_byte_identically_across_two_sessions() -> None:
-    """Two Sessions building the §1 chain — two factors, a join, an overlay and a placement — produce
-    the same bytes for the same universes."""
+    """Two Sessions building the §1 chain.
+
+    Two factors, a join, an overlay and a placement — produce the same bytes for the same
+    universes.
+    """
     first, second = m57_tour(), m57_tour()
     first_weight, second_weight = graphed.weight(first.ctx), graphed.weight(second.ctx)
 
@@ -42,9 +45,11 @@ def test_the_extending_program_serializes_byte_identically_across_two_sessions()
 
 
 def test_a_program_that_names_nothing_mints_exactly_the_composition_it_minted_before() -> None:
-    """A program whose registrations name no live nominal — including one at a masked child whose
-    central is not the parent's — keeps every universe node and mints nothing new: the reference
-    products are rebuilt here from the program's own operands."""
+    """A program whose registrations name no live nominal.
+
+    Including one at a masked child whose central is not the parent's — keeps every universe node
+    and mints nothing new: the reference products are rebuilt here from the program's own operands.
+    """
     session, ctx = m57_base()
     jets, met = ctx["Jet"], ctx["MET"]
     sf, pu = m57_sf(jets), m57_pu(jets)

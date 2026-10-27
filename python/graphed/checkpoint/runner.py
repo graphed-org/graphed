@@ -7,9 +7,9 @@ Correctness model (why resume is safe):
   already journaled with a present blob, the expensive ``process`` is **skipped** and the stored
   partial is reused. So a resumed run does **measurably less work** (``skipped`` is logged).
 - The final reduction recombines the **per-task partials** (in deterministic task order) — never a
-  persisted running accumulator. Each partition therefore contributes **exactly once** regardless of
-  where a crash happened: **no double-count, no lost partition**, and the result is bit-for-bit equal
-  to an uninterrupted run.
+  persisted running accumulator. Each partition therefore contributes **exactly once** regardless
+  of where a crash happened: **no double-count, no lost partition**, and the result is bit-for-bit
+  equal to an uninterrupted run.
 - A failed partition is recovered by the ``retry`` policy or harvested into the Store's dead-letter
   set with a reproducible descriptor; an **error budget** is a stopping condition.
 
@@ -36,27 +36,38 @@ from .store import CheckpointStore
 
 @dataclass
 class ResumeReport:
-    """What a resumable run did — the audit trail for "measurably less work" and error harvesting."""
+    """What a resumable run did.
+
+    The audit trail for "measurably less work" and error harvesting.
+    """
 
     executed: int = 0  # partitions whose process actually ran this invocation
     skipped: int = 0  # partitions reused from the checkpoint store
     dead: int = 0  # partitions harvested into the dead-letter set
-    stopped: str | None = None  # a StopReason value if a stopping condition fired (e.g. error budget)
+    stopped: str | None = (
+        None  # a StopReason value if a stopping condition fired (e.g. error budget)
+    )
     dead_letters: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def did_less_work(self) -> bool:
+        """Return whether the resumed run skipped any task."""
         return self.skipped > 0
 
 
 @dataclass
 class ResumeResult:
+    """A resumable run's value and its report."""
+
     value: Any
     report: ResumeReport
 
 
 class _SimulatedInterrupt(BaseException):
-    """Test hook: a kill that escapes normal ``except Exception`` handling (see ``_kill_after``)."""
+    """Test hook: a kill that escapes normal ``except Exception`` handling.
+
+    See ``_kill_after``.
+    """
 
 
 def run_resumable(
@@ -74,8 +85,8 @@ def run_resumable(
 
     ``error_budget`` stops the run once the number of dead-lettered partitions exceeds it.
     ``_kill_after`` (test-only) raises an uncatchable interrupt after that many tasks commit, to
-    simulate a crash mid-run; the committed journal/objects are what a resumed run recovers from. If
-    the run would finish before committing that many tasks (the plan has too few partitions), it
+    simulate a crash mid-run; the committed journal/objects are what a resumed run recovers from.
+    If the run would finish before committing that many tasks (the plan has too few partitions), it
     raises ``ValueError`` instead of completing silently — a simulated crash that can never fire is
     a misconfiguration, not an uninterrupted run.
 
@@ -111,7 +122,9 @@ def run_resumable(
                 continue
 
         try:
-            value = _run_one(part, process=process, combine=combine, resources=resources, retry=retry)
+            value = _run_one(
+                part, process=process, combine=combine, resources=resources, retry=retry
+            )
         except _SimulatedInterrupt:
             raise
         except BaseException as exc:
@@ -162,8 +175,11 @@ def _run_one(
 # ---- M39: two-phase (map-write -> gather) shuffle resume ----------------------------------------
 @dataclass
 class ShuffleResumeResult:
-    """The result of a resumable multi-stage shuffle: the content-addressed gather-block hashes (in
-    dest-task order) plus an M8-style report (``executed``/``skipped``/``did_less_work``)."""
+    """The result of a resumable multi-stage shuffle.
+
+    The content-addressed gather-block hashes (in dest-task order) plus an M8-style report
+    (``executed``/``skipped``/``did_less_work``).
+    """
 
     value: tuple[str, ...]
     report: ResumeReport
@@ -177,25 +193,29 @@ def run_shuffle_resumable(
     accept_environment: bool = False,
     _kill_after: int | None = None,
 ) -> ShuffleResumeResult:
-    """Run a two-phase :class:`~graphed.core.DurablePlanV2` (map-write -> gather) against ``store``,
-    skipping already-journaled blocks (plan §5.3/§7.3, the M8 kill/resume pattern extended to two
-    stages). Each block is content-addressed by its V2 ``task_id`` and journaled with its ``stage``
-    and ``deps``, the hash of one blob listing its upstream input block hashes (shared by the stage's
-    records, so a record stays constant-size); a stage's tasks receive the payloads of the
-    stages it depends on as ``inputs``. A crash at any point resumes from the last durable block, and
-    the result (the tuple of gather-block hashes) is byte-identical to an uninterrupted run.
+    """Run a two-phase :class:`~graphed.core.DurablePlanV2` against ``store``, resumably.
+
+    The phases are map-write -> gather; already-journaled blocks are skipped (plan §5.3/§7.3, the
+    M8 kill/resume pattern extended to two stages). Each block is content-addressed by its V2
+    ``task_id`` and journaled with its ``stage`` and ``deps``, the hash of one blob listing its
+    upstream input block hashes (shared by the stage's records, so a record stays constant-size); a
+    stage's tasks receive the payloads of the stages it depends on as ``inputs``. A crash at any
+    point resumes from the last durable block, and the result (the tuple of gather-block hashes) is
+    byte-identical to an uninterrupted run.
 
     Stage-process convention: ``process(task, inputs, resources) -> bytes`` where ``inputs`` is the
     tuple of upstream dep block payloads (empty for stage 0). A plan with unbound ``services`` is
     refused before its first task (``graphed.services.require_bound``). The store's environment
-    record is checked as :func:`run_resumable` checks it."""
+    record is checked as :func:`run_resumable` checks it.
+    """
     require_environment_store(store)
     require_bound(plan)
     completed = store.completed()
     check_environment(store, completed, "", accept_environment)
     report = ResumeReport()
     committed = 0
-    stage_payloads: dict[int, list[bytes]] = {}  # stage index -> its blocks' payloads (in task order)
+    # stage index -> its blocks' payloads (in task order)
+    stage_payloads: dict[int, list[bytes]] = {}
     stage_hashes: dict[int, list[str]] = {}  # stage index -> its blocks' content hashes
 
     for si, stage in enumerate(plan.stages):
@@ -221,7 +241,9 @@ def run_shuffle_resumable(
             if deps is None:
                 listing = json.dumps(upstream_hashes, separators=(",", ":")).encode()
                 deps = (store.put(listing),) if upstream_hashes else ()
-            store.record_done(tid, _partition_tag(task.partition), blob_hash, stage=stage.kind, deps=deps)
+            store.record_done(
+                tid, _partition_tag(task.partition), blob_hash, stage=stage.kind, deps=deps
+            )
             this_payloads.append(payload)
             this_hashes.append(blob_hash)
             report.executed += 1
@@ -232,5 +254,6 @@ def run_shuffle_resumable(
         stage_payloads[si] = this_payloads
         stage_hashes[si] = this_hashes
 
-    value = tuple(stage_hashes[len(plan.stages) - 1])  # the gather stage's content-addressed blocks
+    # the gather stage's content-addressed blocks
+    value = tuple(stage_hashes[len(plan.stages) - 1])
     return ShuffleResumeResult(value=value, report=report)

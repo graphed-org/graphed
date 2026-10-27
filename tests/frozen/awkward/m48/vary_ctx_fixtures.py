@@ -2,9 +2,9 @@
 
 Every anchor in this tree imports `graphed.awkward` — the gak enumerations and representatives, the
 whole §2.6 event-context family, and §4.1's correctionlib recording, which yields a payload
-descriptor only under `AwkwardBackend` (§10/m48 partition rule (2)). The two numpy-idiom fixtures at
-the bottom are duplicated rather than shared: `tests/frozen/frontend/m48` must stay importable under
-`pytest hypothesis numpy` alone, so no helper crosses between the two trees.
+descriptor only under `AwkwardBackend` (§10/m48 partition rule (2)). The two numpy-idiom fixtures
+at the bottom are duplicated rather than shared: `tests/frozen/frontend/m48` must stay importable
+under `pytest hypothesis numpy` alone, so no helper crosses between the two trees.
 """
 
 from __future__ import annotations
@@ -32,25 +32,28 @@ OPERAND_KINDS = ("flat", "jagged", "record", "mask", "option")
 
 
 def awkward_session() -> tuple[Session, Array]:
-    """A session over the corpus events; the returned `Array` is the root event RECORD."""
+    """Return a session over the corpus events; the returned `Array` is the root event RECORD."""
     session = Session(AwkwardBackend())
     return session, from_awkward(session, "events", EVENTS)
 
 
 def context_with_root(*, is_data: bool = False) -> tuple[Session, Any, Array]:
-    """The context and the CONTEXT-FREE root read it wraps, for the seams that need both."""
+    """Return the context and the CONTEXT-FREE root read it wraps, for the seams that need both."""
     session, root = awkward_session()
     return session, ga.gnano.events(root, is_data=is_data), root
 
 
 def events_context(*, is_data: bool = False) -> tuple[Session, Any]:
-    """The §2.6 event context. `is_data=True` is the explicit constructor flag §2.6d guards on."""
+    """Return the §2.6 event context.
+
+    `is_data=True` is the explicit constructor flag §2.6d guards on.
+    """
     session, context, _root = context_with_root(is_data=is_data)
     return session, context
 
 
 def reserved_names_context() -> tuple[Session, Any]:
-    """A context whose tree literally carries branches named `collections`, `weights` and `vary`.
+    """Return a context whose tree carries branches named `collections`, `weights` and `vary`.
 
     §2.6a: the context reserves NO names — branch names are analysis-controlled — and §2.1's
     `collections={"collections": ...}` self-reference has no other operand.
@@ -79,7 +82,7 @@ def operands(source: Any) -> dict[str, Array]:
 
 
 def shifted_jets(source: Any, factor: float) -> Array:
-    """A lockstep JES-shifted Jet RECORD, the corpus's own `ak.with_field` spelling."""
+    """Return a lockstep JES-shifted Jet RECORD, the corpus's own `ak.with_field` spelling."""
     jets = source.Jet
     return gak.with_field(jets, jets.pt * factor, "pt")
 
@@ -90,7 +93,7 @@ def shifted_met(source: Any, factor: float) -> Array:
 
 
 def jes_kwargs(source: Any) -> dict[str, dict[str, Array]]:
-    """The lockstep shift form's collection mappings: Jet and MET move together (§2.6a)."""
+    """Return the lockstep shift form's collection mappings: Jet and MET move together (§2.6a)."""
     return {
         "Jet": {"up": shifted_jets(source, 1.05), "down": shifted_jets(source, 0.95)},
         "MET": {"up": shifted_met(source, 1.02), "down": shifted_met(source, 0.98)},
@@ -98,7 +101,9 @@ def jes_kwargs(source: Any) -> dict[str, dict[str, Array]]:
 
 
 def pu_weight(source: Any, scale: float) -> Array:
-    """A per-EVENT weight factor read through `source` (so it lives in that row space, §2.1(b)).
+    """Return a per-EVENT weight factor read through `source`.
+
+    So it lives in that row space (§2.1(b)).
 
     Deliberately NOT constant: §2.6c's re-indexing is asserted elementwise, and a constant factor
     would compare equal under the wrong mask whenever two labels' row counts coincide.
@@ -107,7 +112,10 @@ def pu_weight(source: Any, scale: float) -> Array:
 
 
 def btag_weight(jets: Array, scale: float = 1.0) -> Array:
-    """The corpus shape: a per-JET scale factor producted over axis 1 into a per-event weight."""
+    """Return the corpus shape.
+
+    A per-JET scale factor producted over axis 1 into a per-event weight.
+    """
     return gak.prod(1.0 + jets.btag * scale, axis=1)
 
 
@@ -117,7 +125,10 @@ def as_list(value: object) -> Any:
 
 
 def reindexed(session: Session, value: Array, mask: Array) -> Any:
-    """The manual re-indexing reference: apply THAT label's own mask to the ancestor value."""
+    """Return the manual re-indexing reference.
+
+    It applies THAT label's own mask to the ancestor value.
+    """
     return as_list(session.materialize(value[mask]))
 
 
@@ -145,8 +156,11 @@ def loose_varied(x: Array, name: str = "jes") -> graphed.Varied:
 
 @dataclass
 class ArraySource:
-    """A numpy-idiom `PartitionedSource` — `aggregate_plan` binds exactly one per session, so its
-    §2.3d positive control ("the same verb on a plain `Array` still works") needs one."""
+    """A numpy-idiom `PartitionedSource`.
+
+    `aggregate_plan` binds exactly one per session, so its §2.3d positive control ("the same verb
+    on a plain `Array` still works") needs one.
+    """
 
     data: np.ndarray
 
@@ -154,7 +168,9 @@ class ArraySource:
         raise AssertionError("the whole-dataset loader must never run during a plan")
 
     def partitions(self, steps_per_file: int = 1) -> tuple[Partition, ...]:
-        return tuple(Partition.blind("toy://vector", "", s, steps_per_file) for s in range(steps_per_file))
+        return tuple(
+            Partition.blind("toy://vector", "", s, steps_per_file) for s in range(steps_per_file)
+        )
 
     def read_partition(self, partition: Any, columns: Any, resources: Any) -> np.ndarray:
         part = partition.resolve(len(self.data))

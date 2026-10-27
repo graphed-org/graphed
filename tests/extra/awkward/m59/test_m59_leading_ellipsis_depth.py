@@ -79,7 +79,9 @@ def test_a_partitioned_run_of_a_surviving_leading_ellipsis_equals_the_unpartitio
         source = PlainSource()
         session, root = partitioned(source)
         out = root.x[Ellipsis, 0]
-        plan = graphed.aggregate_plan(out, reduce=rows, combine=merge, empty=nothing, steps_per_file=steps)
+        plan = graphed.aggregate_plan(
+            out, reduce=rows, combine=merge, empty=nothing, steps_per_file=steps
+        )
         assert recorded(session, out)["kind"] == "op"  # survived the guard, still fusible
         value[steps] = SequentialRunner().run(plan).value
         assert len(source.seen) == steps

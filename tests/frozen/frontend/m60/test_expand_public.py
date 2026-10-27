@@ -47,9 +47,12 @@ def test_an_unvaried_call_passes_straight_through_with_the_bare_calls_ir() -> No
 
 
 def test_expand_stays_outside_the_array_consuming_verb_surface() -> None:
-    """m48 §2.3d walks `graphed.__all__` for functions whose annotations mention `Array` and
-    demands a `VERB_DISPOSITIONS` entry for each. `expand` takes `(fn, args, kwargs)`, so joining
-    `__all__` adds no disposition obligation and the older frozen enumeration stays green."""
+    """m48 §2.3d demands a `VERB_DISPOSITIONS` entry for each Array-consuming function.
+
+    It walks `graphed.__all__` for functions whose annotations mention `Array`. `expand` takes
+    `(fn, args, kwargs)`, so joining `__all__` adds no disposition obligation and the older frozen
+    enumeration stays green.
+    """
     signature = inspect.signature(graphed.systematics.varied.expand)
 
     assert not any("Array" in str(p.annotation) for p in signature.parameters.values())

@@ -1,6 +1,8 @@
-"""M40 GAP-3 — the ``grouped`` join convenience is correctly ABSENT from the neutral/numpy path
-(README pin: "The grouped shape is ONLY here (awkward post-op) ... this convenience is correctly
-ABSENT on numpy"; spec INVARIANTS: "Grouped shape is ONLY `gak.join(grouped=True)`").
+"""M40 GAP-3 — the ``grouped`` join convenience is correctly ABSENT from the numpy path.
+
+It is absent from the neutral/numpy path. README pin: "The grouped shape is ONLY here (awkward
+post-op) ... this convenience is correctly ABSENT on numpy"; spec INVARIANTS: "Grouped shape is
+ONLY `gak.join(grouped=True)`".
 
 ``grouped=True`` lives EXCLUSIVELY on ``graphed.awkward.gak.join`` (``tests/frozen/awkward/m40/
 test_grouped.py``); the neutral ``graphed.join`` — the same entry point the numpy path uses — must
@@ -39,5 +41,6 @@ def test_grouped_is_rejected_on_the_neutral_numpy_join_path() -> None:
     )
     with pytest.raises(TypeError):
         graphed.join(left, right, on=["run", "lumi", "event"], how="inner", grouped=True)
-    # the backend itself carries no grouped-join convenience either (that's an awkward-only post-op).
+    # the backend itself carries no grouped-join convenience either (that's an awkward-only
+    # post-op).
     assert not hasattr(NumpyBackend(), "join_grouped")

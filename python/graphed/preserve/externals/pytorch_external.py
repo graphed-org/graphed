@@ -17,6 +17,7 @@ from ._helpers import (
 
 
 def pytorch_content_hash(payload: bytes) -> str:
+    """Return the content hash of a TorchScript payload."""
     return memoized_model_hash("pytorch", payload, _pytorch_content_hash_impl)
 
 
@@ -36,6 +37,7 @@ def _pytorch_content_hash_impl(payload: bytes) -> str:
 
 
 def load_pytorch(payload: bytes, params: Mapping[str, Any]) -> Any:
+    """Load a TorchScript payload on the CPU, in eval mode."""
     import io  # noqa: PLC0415
 
     import torch  # noqa: PLC0415
@@ -46,6 +48,7 @@ def load_pytorch(payload: bytes, params: Mapping[str, Any]) -> Any:
 
 
 def eval_pytorch(model: Any, params: Mapping[str, Any], inputs: list[Any]) -> Any:
+    """Run the TorchScript model on ``inputs``, one value per event."""
     import torch  # noqa: PLC0415
 
     template = parse_call_template(params, len(inputs))
@@ -53,7 +56,9 @@ def eval_pytorch(model: Any, params: Mapping[str, Any], inputs: list[Any]) -> An
     dtype = next((p.dtype for p in model.parameters()), None)
 
     def tensor(matrix: Any) -> Any:
-        return torch.from_numpy(matrix).to(dtype) if dtype is not None else torch.from_numpy(matrix)
+        return (
+            torch.from_numpy(matrix).to(dtype) if dtype is not None else torch.from_numpy(matrix)
+        )
 
     with torch.no_grad():
         if template is None:  # legacy: one stacked feature matrix

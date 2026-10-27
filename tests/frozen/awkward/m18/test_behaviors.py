@@ -22,7 +22,10 @@ from graphed.awkward import AwkwardBackend, from_awkward, gak, project  # noqa: 
 MUONS = ak.Array(
     {
         "Muon": [
-            [{"px": 1.0, "py": 2.0, "pz": 0.5, "E": 3.0}, {"px": -1.0, "py": 0.5, "pz": 2.0, "E": 4.0}],
+            [
+                {"px": 1.0, "py": 2.0, "pz": 0.5, "E": 3.0},
+                {"px": -1.0, "py": 0.5, "pz": 2.0, "E": 4.0},
+            ],
             [],
             [{"px": 3.0, "py": -2.0, "pz": 1.0, "E": 5.0}],
         ]
@@ -31,7 +34,9 @@ MUONS = ak.Array(
 
 
 def _ref() -> ak.Array:
-    return ak.Array(ak.with_name(MUONS.Muon, "Momentum4D").layout, behavior=vector.backends.awkward.behavior)
+    return ak.Array(
+        ak.with_name(MUONS.Muon, "Momentum4D").layout, behavior=vector.backends.awkward.behavior
+    )
 
 
 def _s() -> tuple[Session, object]:

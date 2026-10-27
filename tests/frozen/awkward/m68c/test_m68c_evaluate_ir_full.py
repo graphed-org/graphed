@@ -1,5 +1,8 @@
-"""m68c §3.3: ``evaluate_ir`` dispatches ``exchange`` and ``join`` nodes through ``eval_stage``, so the
-full IR of a join graph or a repartition graph evaluates to what ``Session.materialize`` gives."""
+"""m68c §3.3: ``evaluate_ir`` dispatches ``exchange`` and ``join`` nodes through ``eval_stage``.
+
+So the full IR of a join graph or a repartition graph evaluates to what ``Session.materialize``
+gives.
+"""
 
 from __future__ import annotations
 

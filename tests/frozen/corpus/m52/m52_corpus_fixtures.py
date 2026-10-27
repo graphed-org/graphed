@@ -13,8 +13,8 @@ hand-named joint tags. The joint labels are machine-generated `f"{name}_{tag}__{
 `btag_hf_up__jes_up`.
 
 The histogram producer is eager `hist.Hist`, never `graphed_histogram`: `graphed`'s CI does not
-install it, so a tree reaching for it would `skip` and this arc's only physics check would contribute
-no frozen coverage.
+install it, so a tree reaching for it would `skip` and this arc's only physics check would
+contribute no frozen coverage.
 
 No `conftest.py`: three `corpus/m05` tests do `from conftest import ...` and the whole
 `tests/frozen/corpus` tree collects in ONE process.
@@ -91,7 +91,7 @@ class JointProgram:
 
 
 def joint_program() -> JointProgram:
-    """The m53 auto-fanout spelling over the corpus ttbar analysis.
+    """Return the m53 auto-fanout spelling over the corpus ttbar analysis.
 
     A plain `graphed.vary` over the four b-tag SF members: each is computed on the jes-varied jets,
     so the family depends on `jes` and the full jes x btag grid is minted automatically — no
@@ -112,7 +112,8 @@ def joint_program() -> JointProgram:
     sgood = sel.Jet[sel.Jet.pt > 25.0]
     observable = gak.sum(sgood.pt, axis=1)
     sf = 0.95 + 0.1 * sgood.btag
-    # `gak` has no element-wise minimum; `where` is the reference's arithmetic, `pt == 100` included
+    # `gak` has no element-wise minimum; `where` is the reference's arithmetic, `pt == 100`
+    # included
     rel_hf = 0.01 + 0.05 * gak.where(sgood.pt < 100.0, sgood.pt / 100.0, 1.0)
     # a light-flavour component with a distinct pT dependence, so its universes never coincide with
     # the heavy-flavour ones
@@ -142,7 +143,7 @@ def universe_hist(program: JointProgram, label: str) -> Hist:
 
 
 def reference_hist(*, jes: str, btag: str, **kwargs: bool) -> Hist:
-    """The eager joint reference at one `(jes, btag)` coordinate pair.
+    """Return the eager joint reference at one `(jes, btag)` coordinate pair.
 
     Reached as a module ATTRIBUTE, so this file still imports against a corpus without it.
     """
@@ -150,13 +151,16 @@ def reference_hist(*, jes: str, btag: str, **kwargs: bool) -> Hist:
 
 
 def integral(h: Hist) -> float:
-    """The acceptance is on the INTEGRAL: per bin, JES migrates events and even the flat,
-    frozen-selection leg is nonzero, which would void the machine-zero control."""
+    """Return the acceptance is on the INTEGRAL.
+
+    Per bin, JES migrates events and even the flat, frozen-selection leg is nonzero, which would
+    void the machine-zero control.
+    """
     return float(h.sum(flow=True))
 
 
 def factorized(*, jes_only: float, btag_only: float, nominal: float) -> float:
-    """The multiplicative composition of the two one-at-a-time universes."""
+    """Return the multiplicative composition of the two one-at-a-time universes."""
     return jes_only * btag_only / nominal
 
 

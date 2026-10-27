@@ -1,5 +1,7 @@
-"""m68c §3.1/§3.2: a ``DurablePlanV2`` carries ``services`` outside its identity, and binding an
-endpoint into its stage processes changes neither its bytes nor any task id."""
+"""m68c §3.1/§3.2: a ``DurablePlanV2`` carries ``services`` outside its identity.
+
+And binding an endpoint into its stage processes changes neither its bytes nor any task id.
+"""
 
 from __future__ import annotations
 
@@ -12,7 +14,7 @@ from typing import Any
 import pytest
 
 from graphed.core import DurablePlanV2, GraphStore, OpSpec, Partition, StageSpec, Task
-from graphed.services import ServiceSpec, UnboundService, bind_services
+from graphed.services import ServiceSpec, UnboundServiceError, bind_services
 
 SPEC = ServiceSpec("sf", "http")
 URL = "http://sf.example:8080"
@@ -26,13 +28,13 @@ class Stamp:
 
     def __call__(self, task: Task, inputs: tuple[bytes, ...], resources: Any) -> bytes:
         if self.endpoint is None:
-            raise UnboundService("sf")
+            raise UnboundServiceError("sf")
         return pickle.dumps((task.key, self.endpoint))
 
     def bind_services(self, endpoints: Mapping[str, str]) -> Stamp:
         endpoint = endpoints.get("sf", self.endpoint)
         if endpoint is None:
-            raise UnboundService("sf")
+            raise UnboundServiceError("sf")
         return replace(self, endpoint=endpoint)
 
 

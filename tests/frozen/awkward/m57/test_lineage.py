@@ -1,9 +1,9 @@
 """m57 §2.3: lineage — a family registered on a mask-derived child EXTENDS the ancestor's factor.
 
 The child adopts one composed container that stands for the adopting parent's live operations, so a
-central built at the ancestor still names the factor it named there; the child's list is the parent's
-live operations re-indexed with the matched one extended. Pre-m57 the adopted product is multiplied
-by the ancestor's central all over again.
+central built at the ancestor still names the factor it named there; the child's list is the
+parent's live operations re-indexed with the matched one extended. Pre-m57 the adopted product is
+multiplied by the ancestor's central all over again.
 """
 
 from __future__ import annotations
@@ -52,14 +52,17 @@ def _members_at(members: Any, ctx: Any) -> dict[str, Any]:
 
 
 def _agrees(session: Any, weight: Any, ops: list[Op], note: Any = "") -> None:
-    """The ambient matches the one-SF oracle on every label the ambient carries."""
+    """Assert the ambient matches the one-SF oracle on every label the ambient carries."""
     got = m57_ambient_values(session, weight)
     assert got == m57_oracle_values(session, ops, graphed.labels(weight)), note
 
 
 def _parent(*, two_factors: bool) -> tuple[Any, Any, Any, Any, list[Op]]:
-    """A root context with one or two live factors over the SF central `sf`; returns the session, the
-    context, the jets, that central and the expected factor operations in registration order."""
+    """Return a root context with one or two live factors over the SF central `sf`.
+
+    Returns the session, the context, the jets, that central and the expected factor operations in
+    registration order.
+    """
     session, ctx = m57_base()
     jets = ctx["Jet"]
     sf, pu = m57_sf(jets), m57_pu(jets)
@@ -75,8 +78,11 @@ def _parent(*, two_factors: bool) -> tuple[Any, Any, Any, Any, list[Op]]:
 
 
 def test_a_family_on_a_masked_child_extends_the_ancestors_factor() -> None:
-    """One parent factor and two: the child's ambient is the parent's operations re-indexed with the
-    matched one extended, and the parent's own ambient is untouched."""
+    """One parent factor and two.
+
+    The child's ambient is the parent's operations re-indexed with the matched one extended, and
+    the parent's own ambient is untouched.
+    """
     for two_factors in (False, True):
         session, parent, jets, sf, ops = _parent(two_factors=two_factors)
         parent_before = m57_ambient_values(session, graphed.weight(parent))
@@ -93,8 +99,11 @@ def test_a_family_on_a_masked_child_extends_the_ancestors_factor() -> None:
 
 
 def test_the_same_central_recomputed_at_the_child_is_a_new_factor() -> None:
-    """A mask makes one node id two values, so a central re-derived below it names nothing: today's
-    product, which is this tree's live control."""
+    """A mask makes one node id two values.
+
+    So a central re-derived below it names nothing: today's product, which is this tree's live
+    control.
+    """
     session, parent, _jets, sf, ops = _parent(two_factors=True)
     child = parent[parent["MET"].pt > MET_CUT]
     re_derived = m57_sf(child["Jet"])
@@ -108,8 +117,11 @@ def test_the_same_central_recomputed_at_the_child_is_a_new_factor() -> None:
 
 
 def test_a_bare_varied_over_a_live_factors_central_is_refused_as_before() -> None:
-    """A central whose member at `nominal` is ITSELF a container is nested past the one level the
-    weight form reads: the form check refuses it exactly as today, and it names no factor."""
+    """A central whose member at `nominal` is ITSELF a container is refused as before.
+
+    It is nested past the one level the weight form reads: the form check refuses it exactly as
+    today, and it names no factor.
+    """
     session, ctx = m57_base()
     shifted = m57_shifted(ctx, "jes", JES)
     sjets = shifted["Jet"]
@@ -123,9 +135,11 @@ def test_a_bare_varied_over_a_live_factors_central_is_refused_as_before() -> Non
 
 
 def test_a_crossed_handle_registers_at_the_child_beside_an_ancestor_factor_join() -> None:
-    """A handle read at the parent is matched at the child as any record is — the adopted head stands
-    for the ancestor's live factors — so the overlay lands behind the head in either order with a
-    family that joins an ancestor's factor there."""
+    """A handle read at the parent is matched at the child as any record is.
+
+    The adopted head stands for the ancestor's live factors — so the overlay lands behind the head
+    in either order with a family that joins an ancestor's factor there.
+    """
     for projected in (False, True):
         for delta_first in (True, False):
             session, parent, jets, sf, ops = _parent(two_factors=True)
@@ -148,16 +162,24 @@ def test_a_crossed_handle_registers_at_the_child_beside_an_ancestor_factor_join(
             child_ops[-1] = m57_joined(child_ops[-1], "lf", lf)
             child_ops.append(m57_overlay("mu", m57_scaled(crossed, MU)))
             carried = {"nominal", *(label for op in child_ops for label in op.members)}
-            expected = m57_oracle_values(session, child_ops, sorted(carried & set(graphed.labels(weight))))
+            expected = m57_oracle_values(
+                session, child_ops, sorted(carried & set(graphed.labels(weight)))
+            )
             values = m57_ambient_values(session, weight)
 
             assert len(expected) > 1, (projected, delta_first)
-            assert {label: values[label] for label in expected} == expected, (projected, delta_first)
+            assert {label: values[label] for label in expected} == expected, (
+                projected,
+                delta_first,
+            )
 
 
 def test_a_crossed_handle_over_a_strict_prefix_anchors_after_that_prefix_at_the_child() -> None:
-    """A record that is a strict PREFIX of the head's tuple expands the head and anchors after its
-    prefix, so a factor registered at the parent after the read still multiplies the overlay."""
+    """A record that is a strict PREFIX of the head's tuple expands the head.
+
+    It anchors after its prefix, so a factor registered at the parent after the read still
+    multiplies the overlay.
+    """
     session, ctx = m57_base()
     jets, met = ctx["Jet"], ctx["MET"]
     sf, pu = m57_sf(jets), m57_pu(jets)
@@ -179,8 +201,10 @@ def test_a_crossed_handle_over_a_strict_prefix_anchors_after_that_prefix_at_the_
 
 
 def test_a_crossed_handle_over_a_widened_factor_is_refused_as_stale() -> None:
-    """A handle read over a factor a join later widened no longer names the composition it did; the
-    cut taken after the join does not launder it, and the refusal names the read to repeat."""
+    """A handle read over a factor a join later widened no longer names the composition it did.
+
+    The cut taken after the join does not launder it, and the refusal names the read to repeat.
+    """
     _session, ctx = m57_base()
     shifted = m57_shifted(ctx, "jes", JES)
     sjets = shifted["Jet"]
@@ -203,8 +227,11 @@ def test_a_crossed_handle_over_a_widened_factor_is_refused_as_stale() -> None:
 
 
 def test_two_families_on_one_ancestor_central_are_one_factor_at_the_child() -> None:
-    """Each re-indexed entry keeps the nominal it had in every row space it came through, so a second
-    and a third family built on the ancestor's central both land on the one extended factor."""
+    """Each re-indexed entry keeps the nominal it had in every row space it came through.
+
+    So a second and a third family built on the ancestor's central both land on the one extended
+    factor.
+    """
     session, parent, jets, sf, ops = _parent(two_factors=False)
     child = parent[parent["MET"].pt > MET_CUT]
     lf = _members_at(m57_table_members(jets, LF_TABLE), child)
@@ -218,8 +245,10 @@ def test_two_families_on_one_ancestor_central_are_one_factor_at_the_child() -> N
 
 
 def test_two_families_on_two_different_ancestor_factors_extend_each_of_them() -> None:
-    """Two ancestor factors, one family naming each at the same child: the ancestor's list keeps its
-    order and each entry is extended once."""
+    """Two ancestor factors, one family naming each at the same child.
+
+    The ancestor's list keeps its order and each entry is extended once.
+    """
     session, ctx = m57_base()
     jets = ctx["Jet"]
     one, other = m57_sf(jets), m57_sf(jets, 1.5) * 1.0
@@ -241,12 +270,16 @@ def test_two_families_on_two_different_ancestor_factors_extend_each_of_them() ->
 
 
 def test_a_central_from_the_top_of_a_two_mask_chain_names_its_factor_at_every_depth() -> None:
-    """Each re-indexed entry keeps the nominal it had in EVERY row space it came through, not only the
-    last: the root's central still names the factor after an expansion at the child and again at the
-    grandchild."""
+    """Each re-indexed entry keeps the nominal it had in EVERY row space it came through.
+
+    Not only the last: the root's central still names the factor after an expansion at the child
+    and again at the grandchild.
+    """
     session, parent, jets, sf, ops = _parent(two_factors=False)
     child = parent[parent["MET"].pt > MET_CUT]
-    at_child = m57_weight(child, "lf", _at(sf, child), _members_at(m57_table_members(jets, LF_TABLE), child))
+    at_child = m57_weight(
+        child, "lf", _at(sf, child), _members_at(m57_table_members(jets, LF_TABLE), child)
+    )
     grandchild = at_child[gak.sum(at_child["Jet"].pt, axis=1) > HT_CUT]
     lf = _members_at(m57_table_members(jets, LF_TABLE), grandchild)
     mf = _members_at(m57_table_members(jets, MF_TABLE), grandchild)
@@ -258,8 +291,11 @@ def test_a_central_from_the_top_of_a_two_mask_chain_names_its_factor_at_every_de
 
 
 def test_an_ancestor_factor_join_after_a_crossed_overlay_agrees_in_both_orders() -> None:
-    """A family joining an ancestor's factor after a strict-prefix crossed overlay joins it as it
-    would before: the overlay keeps its anchored position in either registration order."""
+    """A family joining an ancestor's factor after a strict-prefix crossed overlay joins it.
+
+    It joins as it would before: the overlay keeps its anchored position in either registration
+    order.
+    """
     for delta_first in (True, False):
         session, ctx = m57_base()
         jets, met = ctx["Jet"], ctx["MET"]

@@ -23,7 +23,9 @@ def test_apply_maps_the_function_over_every_universe() -> None:
         # node-id equality, sound by interning: an implementation that applies `fn` to nominal
         # alone (or returns its argument) leaves the non-nominal members at the wrong id.
         assert graphed.universe(applied, label).node_id == (member * 2.0).node_id
-    assert graphed.universe(applied, "jes_up").node_id != graphed.universe(applied, "nominal").node_id
+    assert (
+        graphed.universe(applied, "jes_up").node_id != graphed.universe(applied, "nominal").node_id
+    )
 
 
 def test_apply_returns_the_nominal_members_idiom() -> None:
@@ -34,8 +36,11 @@ def test_apply_returns_the_nominal_members_idiom() -> None:
 
 
 def test_a_function_returning_a_varied_is_refused_with_guidance() -> None:
-    """The error contract: containers are combined by ORDINARY ops (§2.4's label-aligned union),
-    never by returning one out of `apply`, which has no label alignment to apply."""
+    """The error contract.
+
+    Containers are combined by ORDINARY ops (§2.4's label-aligned union), never by returning one
+    out of `apply`, which has no label alignment to apply.
+    """
     _s, x = vector_source()
     other = loose_varied(x, "jer")  # the container `fn` closed over
     with pytest.raises(GraphedError, match="ordinary ops"):

@@ -15,7 +15,9 @@ from graphed.core import TaskEvent, TaskPhase
 from graphed.debug import DashboardServer, NetworkMonitor
 
 
-def test_an_event_emitted_just_before_the_first_pop_is_sent(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_an_event_emitted_just_before_the_first_pop_is_sent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     real = NetworkMonitor._drain
     injected: list[NetworkMonitor] = []
 

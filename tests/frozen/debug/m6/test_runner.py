@@ -1,5 +1,7 @@
-"""The debug runner maps a failure to the user's analysis line — including deep inside a fused stage,
-and at the same location regardless of opt level (plan M6)."""
+"""The debug runner maps a failure to the user's analysis line.
+
+Including deep inside a fused stage, and at the same location regardless of opt level (plan M6).
+"""
 
 from __future__ import annotations
 
@@ -34,7 +36,9 @@ def test_error_localizes_deep_inside_a_fused_stage() -> None:
     s, bad = numpy_mismatch_in_fused_stage()
     g = gd.lower(s, bad, opt_level=1)
     # the failing op is a non-boundary member fused into a multi-member stage
-    failing_stage = next(st for st in g.stages if any(m.node_id == bad.node_id for m in st.members))
+    failing_stage = next(
+        st for st in g.stages if any(m.node_id == bad.node_id for m in st.members)
+    )
     assert len(failing_stage.members) >= 2
     try:
         gd.run(s, bad, opt_level=1)
@@ -66,7 +70,8 @@ def test_opt0_reports_one_to_one_mapping() -> None:
 
 
 def test_source_load_failure_is_mapped_to_a_stage_error() -> None:
-    # a failing (lazy) source loader surfaces as a StageError pointing at the source, not a raw OSError
+    # a failing (lazy) source loader surfaces as a StageError pointing at the source, not a raw
+    # OSError
     s = Session(gn.NumpyBackend())
 
     def boom() -> object:

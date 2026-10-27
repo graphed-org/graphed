@@ -75,7 +75,9 @@ def test_a_declaration_short_circuits_the_varied_write_drivers_own_computation(
     plain_record, plain_mask = varied_record(plain_root)
 
     with pytest.raises(AssertionError):
-        ga.to_parquet(plain_record, str(tmp_path / "control"), select={0: plain_mask}, steps_per_file=2)
+        ga.to_parquet(
+            plain_record, str(tmp_path / "control"), select={0: plain_mask}, steps_per_file=2
+        )
 
     source = DeclaringSource()
     _session, root = partitioned(source)
@@ -94,9 +96,11 @@ def test_an_empty_declaration_ships_an_empty_read_list() -> None:
 
 
 def _reads_everything(source: Any) -> Any:
-    """Keeps recording the read list it is handed, then reads the whole chunk anyway, so a
-    declaration of "nothing" still lets the write finish. An instance attribute rather than a
-    subclass: the frozen fixture module is `Any` to mypy, which cannot be subclassed."""
+    """Keep recording the read list it is handed, then read the whole chunk anyway.
+
+    So a declaration of "nothing" still lets the write finish. An instance attribute rather than a
+    subclass: the frozen fixture module is `Any` to mypy, which cannot be subclassed.
+    """
 
     def read_partition(partition: Any, columns: Any, _resources: Any) -> Any:
         source.seen.append(columns)
@@ -129,8 +133,11 @@ def test_the_varied_write_driver_ships_an_empty_declaration_to_every_read(tmp_pa
 def test_a_hook_less_whole_record_write_still_reads_with_the_sources_own_selection(
     tmp_path: Path,
 ) -> None:
-    """The control for the sentinel translation: with no declaration, a write whose own column
-    computation answers "everything" must still reach `read_partition` as `None`."""
+    """The control for the sentinel translation.
+
+    With no declaration, a write whose own column computation answers "everything" must still reach
+    `read_partition` as `None`.
+    """
     source = PlainSource()
     _session, root = partitioned(source)
 
@@ -142,8 +149,11 @@ def test_a_hook_less_whole_record_write_still_reads_with_the_sources_own_selecti
 def test_a_hook_less_varied_whole_record_write_also_reads_with_the_sources_own_selection(
     tmp_path: Path,
 ) -> None:
-    """The varied end of that control: a getitem on the source is a non-field op, so the union
-    absorbs to its own "everything" — which must also reach `read_partition` as `None`."""
+    """The varied end of that control.
+
+    A getitem on the source is a non-field op, so the union absorbs to its own "everything" — which
+    must also reach `read_partition` as `None`.
+    """
     source = PlainSource()
     _session, root = partitioned(source)
     record, mask = varied_record(root[root.z > 8.0])
@@ -154,8 +164,11 @@ def test_a_hook_less_varied_whole_record_write_also_reads_with_the_sources_own_s
 
 
 def _asserts_a_tuple(source: Any) -> Any:
-    """Refuses anything but a tuple of outputs; only the varied driver holds its own outputs in a
-    list, so that is where an un-tupled hand-off shows."""
+    """Refuses anything but a tuple of outputs.
+
+    Only the varied driver holds its own outputs in a list, so that is where an un-tupled hand-off
+    shows.
+    """
     hook = source.projected_columns
 
     def projected_columns(outputs: Any) -> Any:
@@ -189,8 +202,10 @@ def test_a_non_callable_projected_columns_attribute_is_not_a_declaration() -> No
 
 @dataclass(frozen=True)
 class _ForeignForm:
-    """A form recorded by another package (graphed-histogram's `HistogramForm` is one): it
-    describes a value that is not an array at all, so it has no typetracer to stand in with."""
+    """A form recorded by another package (graphed-histogram's `HistogramForm` is one).
+
+    It describes a value that is not an array at all, so it has no typetracer to stand in with.
+    """
 
     def describe(self) -> str:
         return "m58-foreign"

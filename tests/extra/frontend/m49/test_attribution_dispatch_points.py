@@ -2,8 +2,8 @@
 
 The frozen m49 debug anchors fail inside a fused stage, so they witness the inline member loop and
 its `member_index`. This is the other dispatch point: a boundary reduction never fuses, so its
-failure must arrive keyed `(node_id, None)` — a hook handed a member index there would mis-index the
-label channel, and returning nothing must still leave the original exception alone.
+failure must arrive keyed `(node_id, None)` — a hook handed a member index there would mis-index
+the label channel, and returning nothing must still leave the original exception alone.
 """
 
 from __future__ import annotations
@@ -18,14 +18,16 @@ from graphed import Session
 from graphed.execute import CompiledGraph, Key, compile_ir, evaluate_ir
 
 
-class Boom(RuntimeError):
+class BoomError(RuntimeError):
     pass
 
 
 class PoisonedSum(ListBackend):  # type: ignore[misc]  # `backends` is off mypy's path (see pyproject)
-    def eval_stage(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> object:
+    def eval_stage(
+        self, op: str, inputs: Sequence[object], params: Mapping[str, object]
+    ) -> object:
         if op == "sum":
-            raise Boom("the reduction failed")
+            raise BoomError("the reduction failed")
         return super().eval_stage(op, inputs, params)
 
 
@@ -52,5 +54,5 @@ def test_a_failing_boundary_reduction_is_keyed_with_no_member_index() -> None:
 
 def test_a_hook_that_attributes_nothing_leaves_the_original_exception() -> None:
     compiled, _output = _compiled()
-    with pytest.raises(Boom):
+    with pytest.raises(BoomError):
         evaluate_ir(compiled, PoisonedSum(), {"x": [1.0, 2.0]}, on_failure=lambda *_: None)

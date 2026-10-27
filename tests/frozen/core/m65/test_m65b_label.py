@@ -1,5 +1,8 @@
-"""M65 B frozen suite (graphed-core slice): blind partitions label their step, and the
-``SequentialRunner`` formats no label when no monitor is attached. No awkward."""
+"""M65 B frozen suite (graphed-core slice).
+
+Blind partitions label their step, and the ``SequentialRunner`` formats no label when no monitor is
+attached. No awkward.
+"""
 
 from __future__ import annotations
 
@@ -35,7 +38,9 @@ class Recorder:
         return None
 
 
-def test_sequential_runner_formats_no_label_without_a_monitor(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_sequential_runner_formats_no_label_without_a_monitor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     calls: list[Partition] = []
     real = ce.partition_label
 

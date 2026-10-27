@@ -1,7 +1,7 @@
 """`graphed.vary` moved to `graphed.systematics.registration` (m57); this re-exports it.
 
-Every name is the same object as `graphed.systematics.registration`'s, so an `isinstance` check or an
-import through either path means exactly the same thing.
+Every name is the same object as `graphed.systematics.registration`'s, so an `isinstance` check or
+an import through either path means exactly the same thing.
 """
 
 from __future__ import annotations

@@ -1,5 +1,8 @@
-"""m74 T2, in process: what the task key separates and what it keeps equal (plan §2.3, §4.1 T2). Each pair
-is built inside its test so the names do not resolve; the same builder called again is the control."""
+"""m74 T2, in process: what the task key separates and what it keeps equal (plan §2.3, §4.1 T2).
+
+Each pair is built inside its test so the names do not resolve; the same builder called again is
+the control.
+"""
 
 from __future__ import annotations
 
@@ -44,7 +47,9 @@ def test_rebuild_salt_codec_process_and_partition(tmp_path: Path) -> None:
     assert reused(h.Binned(5), tmp_path, codec=NumpyCodec()) == 0
     assert reused(h.Binned(6), tmp_path) == 0
     parts = list(h.partitions())
-    parts[2] = Partition(parts[2].uri, parts[2].tree, parts[2].entry_start, parts[2].entry_stop + 1)
+    parts[2] = Partition(
+        parts[2].uri, parts[2].tree, parts[2].entry_start, parts[2].entry_stop + 1
+    )
     rp = resumable(h.plan_of(h.Binned(5), parts), str(tmp_path))
     assert rp.process.reused == h.T - 1
     assert [t.partition.blob == "" for t in rp.tasks] == [i == 2 for i in range(h.T)]
@@ -124,7 +129,11 @@ def test_lambdas_differing_in_body(tmp_path: Path) -> None:
 
 def test_class_holding_a_module_is_accepted_and_reused(tmp_path: Path) -> None:
     def make() -> Any:
-        return type("Proc", (), {"lib": math, "__call__": lambda self, p, r: self.lib.sqrt(float(p.entry_start))})()
+        return type(
+            "Proc",
+            (),
+            {"lib": math, "__call__": lambda self, p, r: self.lib.sqrt(float(p.entry_start))},
+        )()
 
     fill(make(), tmp_path)
     assert reused(make(), tmp_path) == h.T
@@ -192,7 +201,9 @@ def test_main_defs_whose_try_covers_different_statements(tmp_path: Path) -> None
 
 
 @pytest.mark.parametrize("registered", [False, True])
-def test_runtime_module_global_attribute_change(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, registered: bool) -> None:
+def test_runtime_module_global_attribute_change(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, registered: bool
+) -> None:
     cfg = types.ModuleType("m74_runtime_cfg")
     if registered:
         monkeypatch.setitem(sys.modules, "m74_runtime_cfg", cfg)

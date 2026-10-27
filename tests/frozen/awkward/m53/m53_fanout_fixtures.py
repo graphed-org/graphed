@@ -1,9 +1,9 @@
 """Fixtures for the m53 dependency-driven fanout suite (awkward backend).
 
-The b-tag SF members are computed on the jes-varied jets, so each member DEPENDS on the jes nuisance
-and a plain `graphed.vary` mints the full jes(3) x btag(5) grid automatically — no `points=`, no
-hand-named joint tags. The joint labels are machine-generated `f"{name}_{tag}__{fl}"`, e.g.
-`btag_hf_up__jes_up`.
+The b-tag SF members are computed on the jes-varied jets, so each member DEPENDS on the jes
+nuisance and a plain `graphed.vary` mints the full jes(3) x btag(5) grid automatically — no
+`points=`, no hand-named joint tags. The joint labels are machine-generated
+`f"{name}_{tag}__{fl}"`, e.g. `btag_hf_up__jes_up`.
 
 The auto-fanout is reached only inside the functions the tests call, never at import, so the tree
 COLLECTS against a tree with no m53 implementation and fails at RUN time (TEST_SANITY).
@@ -44,9 +44,7 @@ GRID_POINTS: dict[str, dict[str, str]] = {
 }
 
 #: the eight joint labels, and the pre-m53 union (the seven the collapse produced)
-JOINT_LABELS = tuple(
-    f"btag_{tag}__jes_{d}" for tag in BTAG_TAGS for d in ("up", "down")
-)
+JOINT_LABELS = tuple(f"btag_{tag}__jes_{d}" for tag in BTAG_TAGS for d in ("up", "down"))
 UNION_LABELS = ("nominal", "jes_up", "jes_down", *(f"btag_{tag}" for tag in BTAG_TAGS))
 
 #: {joint label: (btag source key, the inner jes universe it must read)}
@@ -79,8 +77,10 @@ def _jes_context() -> tuple[Session, Any]:
 
 
 def _btag_members(jets: Any) -> tuple[Any, dict[str, Any]]:
-    """A pT-dependent central SF and four systematic siblings on `jets`. Heavy- and light-flavour
-    use distinct pT dependences, so no two universes coincide."""
+    """Return a pT-dependent central SF and four systematic siblings on `jets`.
+
+    Heavy- and light-flavour use distinct pT dependences, so no two universes coincide.
+    """
     rel_hf = 0.01 + 0.05 * gak.where(jets.pt < 100.0, jets.pt / 100.0, 1.0)
     rel_lf = 0.02 + 0.04 * gak.where(jets.pt < 60.0, jets.pt / 60.0, 1.0)
     sf = 0.95 + 0.1 * jets.btag
@@ -95,9 +95,11 @@ def _btag_members(jets: Any) -> tuple[Any, dict[str, Any]]:
 
 
 def fanout_weight(**vary_kwargs: Any) -> FanoutProgram:
-    """A dependent b-tag weight family over jes-varied jets. Extra keywords pass straight through to
-    `graphed.vary` — `composes_as_union=`, `points=`, `max_universes=` — so one builder drives every
-    escalation rung."""
+    """Return a dependent b-tag weight family over jes-varied jets.
+
+    Extra keywords pass straight through to `graphed.vary` — `composes_as_union=`, `points=`,
+    `max_universes=` — so one builder drives every escalation rung.
+    """
     session, shifted = _jes_context()
     jets = shifted.Jet
     good = jets[jets.pt > 25.0]
@@ -106,9 +108,7 @@ def fanout_weight(**vary_kwargs: Any) -> FanoutProgram:
     observable = gak.sum(sgood.pt, axis=1)
 
     central, members = _btag_members(sgood)
-    registered = graphed.vary(
-        sel, "btag", central, is_weight=True, points=members, **vary_kwargs
-    )
+    registered = graphed.vary(sel, "btag", central, is_weight=True, points=members, **vary_kwargs)
     return FanoutProgram(
         session=session,
         context=registered,
@@ -119,8 +119,11 @@ def fanout_weight(**vary_kwargs: Any) -> FanoutProgram:
 
 
 def independent_program() -> tuple[Session, Any]:
-    """jes x jer where the `jer` members are built from NOMINAL pt, so `jer` is INDEPENDENT of `jes`
-    and the combination stays the union — the bound m53 preserves (no fanout)."""
+    """Jes x jer where the `jer` members are built from NOMINAL pt.
+
+    So `jer` is INDEPENDENT of `jes` and the combination stays the union — the bound m53 preserves
+    (no fanout).
+    """
     session = Session(AwkwardBackend())
     ctx = ga.gnano.events(from_awkward(session, "events", EVENTS))
     pt = ctx.Jet.pt

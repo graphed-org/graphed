@@ -1,18 +1,21 @@
-"""The dashboard **server** (M37): a `perspective` ``Server`` hosting the live ``stats`` table (and a
-``tasks`` table fed by the same event stream) over a Tornado app, plus two derived JSON views the
-browser polls — a merged profile **flamegraph** at ``/api/flamegraph.json`` and overall + per-worker
-**progress** at ``/api/progress.json`` (the dask-style progress bars). Browsers connect a
-``<perspective-viewer>`` to the ``/websocket`` endpoint; executors push events to the ``/ingest``
-websocket (see :class:`graphed.debug.dashboard.NetworkMonitor`). It runs its own asyncio/Tornado
-IOLoop in a daemon thread, so it is decoupled from the executor — the same server serves a local *or*
-a remote run.
+"""The dashboard **server** (M37).
+
+A `perspective` ``Server`` hosting the live ``stats`` table (and a ``tasks`` table fed by the same
+event stream) over a Tornado app, plus two derived JSON views the browser polls — a merged
+profile **flamegraph** at ``/api/flamegraph.json`` and overall + per-worker **progress** at
+``/api/progress.json`` (the dask-style progress bars). Browsers connect a ``<perspective-viewer>``
+to the ``/websocket`` endpoint; executors push events to the ``/ingest`` websocket
+(see :class:`graphed.debug.dashboard.NetworkMonitor`). It runs its own asyncio/Tornado IOLoop in a
+daemon thread, so it is decoupled from the executor — the same server serves a local *or* a remote
+run.
 
 With ``control=True`` it also relays run control: ``POST /api/control`` with JSON ``{"cmd": ...}``
 writes the command down every ``/ingest`` connection whose monitor said ``hello`` with
-``control: true`` (a :class:`NetworkMonitor` built with a ``RunControl``), which applies it to the run.
+``control: true`` (a :class:`NetworkMonitor` built with a ``RunControl``), which applies it to the
+run.
 
-perspective/tornado are imported lazily (the ``dashboard`` extra), so ``import graphed.debug`` works
-without them; :meth:`DashboardServer.start` raises a clear error if they are missing.
+perspective/tornado are imported lazily (the ``dashboard`` extra), so ``import graphed.debug``
+works without them; :meth:`DashboardServer.start` raises a clear error if they are missing.
 """
 
 from __future__ import annotations
@@ -31,12 +34,20 @@ from . import _wire
 
 _STATIC = Path(__file__).parent / "static"
 _SUBMITTED, _STARTED, _TERMINAL = 0, 1, 2  # phase classes, in lifecycle order
-_PHASE_CLASS = {"submitted": _SUBMITTED, "started": _STARTED, "finished": _TERMINAL, "errored": _TERMINAL}
+_PHASE_CLASS = {
+    "submitted": _SUBMITTED,
+    "started": _STARTED,
+    "finished": _TERMINAL,
+    "errored": _TERMINAL,
+}
 
 
 class _KeyState:
-    """One task key's ingest state: ``life`` is the set of phase classes its current lifecycle has
-    seen; ``label`` is the ``(partition, n_entries)`` of its latest SUBMITTED, whatever lifecycle."""
+    """One task key's ingest state.
+
+    ``life`` is the set of phase classes its current lifecycle has seen; ``label`` is the
+    ``(partition, n_entries)`` of its latest SUBMITTED, whatever lifecycle.
+    """
 
     __slots__ = ("label", "life")
 
@@ -46,11 +57,13 @@ class _KeyState:
 
 
 class DashboardServer:
-    """Hosts the live Perspective tables and the ingest/viewer websockets. Start it, point one or
-    more executors' :class:`NetworkMonitor` at :attr:`ingest_url`, and open :attr:`url` in a browser.
-    Thread-safe: all Perspective table writes and websocket writes happen on the IOLoop thread;
-    :meth:`snapshot` reads a plain-Python mirror under a lock, and :meth:`stop` closes the ingest
-    connections through the loop."""
+    """Hosts the live Perspective tables and the ingest/viewer websockets.
+
+    Start it, point one or more executors' :class:`NetworkMonitor` at :attr:`ingest_url`, and
+    open :attr:`url` in a browser. Thread-safe: all Perspective table writes and websocket writes
+    happen on the IOLoop thread; :meth:`snapshot` reads a plain-Python mirror under a lock,
+    and :meth:`stop` closes the ingest connections through the loop.
+    """
 
     def __init__(self, host: str = "127.0.0.1", port: int = 0, *, control: bool = False) -> None:
         self._host = host
@@ -58,7 +71,8 @@ class DashboardServer:
         self._control = control
         self._control_state: str | None = RunState.RUNNING.value if control else None
         self._live: set[Any] = set()  # open /ingest handlers (IOLoop thread only)
-        self._listeners: set[Any] = set()  # those whose monitor sent a control hello; mirrored under _lock
+        # those whose monitor sent a control hello; mirrored under _lock
+        self._listeners: set[Any] = set()
         self._thread: threading.Thread | None = None
         self._loop: Any = None
         self._http: Any = None
@@ -68,7 +82,8 @@ class DashboardServer:
         self._stats_table: Any = None
         self._lock = threading.RLock()
         self._stats: dict[str, int] = dict.fromkeys(_wire.STATS_KEYS, 0)
-        self._workers: dict[str, dict[str, Any]] = {}  # worker -> per-worker progress (for the bars)
+        # worker -> per-worker progress (for the bars)
+        self._workers: dict[str, dict[str, Any]] = {}
         # ingest-only state (IOLoop thread): lean derivation and per-key lifecycles
         self._lean = False  # set once any ingest connection says hello with lean: true
         self._keys: dict[Any, _KeyState] = {}
@@ -78,7 +93,8 @@ class DashboardServer:
         self._unlabelled: dict[Any, list[dict[str, Any]]] = {}  # key -> records awaiting a label
         self._n_connections = 0
         self._last_error: dict[str, Any] | None = None
-        self._profile_tree: dict[str, Any] = _sampler._new_node()  # merged sampled stacks -> flamegraph
+        # merged sampled stacks -> flamegraph
+        self._profile_tree: dict[str, Any] = _sampler._new_node()
         self._profile_samples = 0
         self._ready = threading.Event()
         self._error: BaseException | None = None
@@ -144,7 +160,9 @@ class DashboardServer:
             server = perspective.Server()
             self._client = server.new_local_client()
             self._tasks = self._client.table(_wire.TASKS_SCHEMA, index="key", name="tasks")
-            self._stats_table = self._client.table(_wire.STATS_SCHEMA, index="metric", name="stats")
+            self._stats_table = self._client.table(
+                _wire.STATS_SCHEMA, index="metric", name="stats"
+            )
             self._push_stats_table()
 
             owner = self
@@ -165,7 +183,9 @@ class DashboardServer:
                         owner._listeners.discard(self)
 
                 def on_message(self, message: str | bytes) -> None:
-                    owner._ingest(message if isinstance(message, str) else message.decode("utf-8"), self)
+                    owner._ingest(
+                        message if isinstance(message, str) else message.decode("utf-8"), self
+                    )
 
             class _Index(RequestHandler):  # type: ignore[misc]  # tornado base is untyped (Any)
                 def get(self) -> None:
@@ -314,7 +334,10 @@ class DashboardServer:
                 }
             if cls == _SUBMITTED:
                 for rec in self._unlabelled.pop(key, ()):
-                    rec["partition"], rec["n_entries"] = msg.get("partition", ""), msg.get("n_entries", 0)
+                    rec["partition"], rec["n_entries"] = (
+                        msg.get("partition", ""),
+                        msg.get("n_entries", 0),
+                    )
             # per-worker progress for the bars. SUBMITTED is driver-side, so only the worker-side
             # phases populate a worker row. We keep a per-task record (keyed by task key) so the UI
             # can render one hoverable cell PER TASK, not just an aggregate bar — a started task's
@@ -323,11 +346,25 @@ class DashboardServer:
                 self._ingest_worker(msg, ks, cls, worker, t, cid, derived)
 
     def _ingest_worker(
-        self, msg: dict[str, Any], ks: _KeyState, cls: int, worker: str, t: float, cid: int, derived: bool
+        self,
+        msg: dict[str, Any],
+        ks: _KeyState,
+        cls: int,
+        worker: str,
+        t: float,
+        cid: int,
+        derived: bool,
     ) -> None:
         w = self._workers.setdefault(
             worker,
-            {"worker": worker, "started": 0, "finished": 0, "errored": 0, "inflight": 0, "tasks": {}},
+            {
+                "worker": worker,
+                "started": 0,
+                "finished": 0,
+                "errored": 0,
+                "inflight": 0,
+                "tasks": {},
+            },
         )
         phase = msg["phase"]
         w[phase] += 1
@@ -339,7 +376,8 @@ class DashboardServer:
             w["inflight"] = max(0, w["inflight"] - 1)
         key = msg.get("key")
         rec = w["tasks"].get(key)
-        if rec is None:  # STARTED normally creates it; tolerate an out-of-order or lean finish/error
+        # STARTED normally creates it; tolerate an out-of-order or lean finish/error
+        if rec is None:
             rec = {
                 "key": key,
                 "partition": "",
@@ -360,7 +398,8 @@ class DashboardServer:
         if cls == _STARTED:
             rec["t_start"] = t
         else:
-            if derived:  # a lean start: this worker's previous end on this connection, else its own t
+            # a lean start: this worker's previous end on this connection, else its own t
+            if derived:
                 rec["t_start"] = self._last_end.get((cid, worker), t)
             rec["state"] = phase
             rec["t_end"] = t
@@ -400,7 +439,10 @@ class DashboardServer:
     # ---- programmatic read (any thread) ---------------------------------
 
     def flamegraph(self) -> dict[str, Any]:
-        """The merged d3-flame-graph tree (``{name, value, children}``) across all flushes/workers."""
+        """Return the merged d3-flame-graph tree across all flushes/workers.
+
+        The tree is ``{name, value, children}``.
+        """
         with self._lock:
             return _sampler.flamegraph(self._profile_tree)
 
@@ -408,14 +450,20 @@ class DashboardServer:
         return json.dumps(self.flamegraph()).encode("utf-8")
 
     def progress(self) -> dict[str, Any]:
-        """Overall + per-worker progress for the bar chart. ``total`` is the submitted count; the
-        ``overall`` segments (finished/errored/inflight) plus the implicit pending remainder tile it.
-        ``workers`` is one row per worker that has run a task, sorted by id (deterministic order); each
-        carries its aggregate counts plus ``tasks`` — one record per task (sorted by start time, then
-        key) so the UI can render a hoverable cell per task. Records are deep-copied under the lock so
-        JSON encoding (outside the lock) never races a concurrent task update."""
+        """Overall + per-worker progress for the bar chart.
+
+        ``total`` is the submitted count; the ``overall`` segments (finished/errored/inflight) plus
+        the implicit pending remainder tile it. ``workers`` is one row per worker that has run a
+        task, sorted by id (deterministic order); each carries its aggregate counts plus ``tasks``
+        — one record per task (sorted by start time, then key) so the UI can render a hoverable
+        cell per task. Records are deep-copied under the lock so JSON encoding (outside the lock)
+        never races a concurrent task update.
+        """
         with self._lock:
-            overall = {k: self._stats[k] for k in ("submitted", "started", "finished", "errored", "inflight")}
+            overall = {
+                k: self._stats[k]
+                for k in ("submitted", "started", "finished", "errored", "inflight")
+            }
             workers = []
             for name in sorted(self._workers):
                 wd = self._workers[name]
@@ -427,7 +475,12 @@ class DashboardServer:
                     | {"tasks": tasks}
                 )
             control = self._control_state
-        return {"total": overall["submitted"], "overall": overall, "workers": workers, "control": control}
+        return {
+            "total": overall["submitted"],
+            "overall": overall,
+            "workers": workers,
+            "control": control,
+        }
 
     def progress_json(self) -> bytes:
         return json.dumps(self.progress()).encode("utf-8")

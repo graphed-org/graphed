@@ -1,5 +1,7 @@
-"""Shared fixtures for the m49 debug suite: a poisoned toy backend, the merged-key topology, and the
-module-level worker the process-boundary test spawns.
+"""Shared fixtures for the m49 debug suite.
+
+A poisoned toy backend, the merged-key topology, and the module-level worker the process-boundary
+test spawns.
 
 Named ``m49_analyses`` and not ``analyses``: the ``debug`` subtree is collected WHOLE in one pytest
 process (``scripts/run-tests.sh``) and ``m6/analyses.py`` is live, so a bare name would bind to
@@ -35,7 +37,9 @@ class PoisonBackend:
     def op_form(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> str:
         return op
 
-    def eval_stage(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> object:
+    def eval_stage(
+        self, op: str, inputs: Sequence[object], params: Mapping[str, object]
+    ) -> object:
         if op == POISON_OP:
             raise PoisonError(POISON_MESSAGE)
         return inputs[0]
@@ -79,9 +83,9 @@ class Resources:
 def merged_key_program() -> tuple[Session, Array, Array, ListSource]:
     """Two ops recorded at DIFFERENT user lines that the reducer merges onto ONE reduced key.
 
-    ``poisoned + 0.0`` is an additive identity, so equality saturation quotients it onto ``poisoned``
-    and keeps the earlier node. Returns ``(session, output, poisoned, source)``; ``poisoned`` holds
-    the LOWER of the two record ids.
+    ``poisoned + 0.0`` is an additive identity, so equality saturation quotients it onto
+    ``poisoned`` and keeps the earlier node. Returns ``(session, output, poisoned, source)``;
+    ``poisoned`` holds the LOWER of the two record ids.
     """
     session = Session(PoisonBackend())
     src = ListSource()
@@ -107,8 +111,11 @@ def empty_none() -> object:
 
 
 def _key_order(key: tuple[int, int | None]) -> tuple[int, int]:
-    """§8.2(i)'s sort: a bare ``sorted()`` over the keys is a ``TypeError`` once one reduced id
-    carries both an indexed and a ``None`` entry."""
+    """Return §8.2(i)'s sort key.
+
+    A bare ``sorted()`` over the keys is a ``TypeError`` once one reduced id carries both an
+    indexed and a ``None`` entry.
+    """
     return (key[0], -1 if key[1] is None else key[1])
 
 
@@ -145,8 +152,8 @@ def _artifact_values(compiled: object) -> Iterable[object]:
 def artifact_frames(compiled: object) -> dict[tuple[int, int | None], Any]:
     """§8.2(i)'s per-key frame association list, read off the ``CompiledGraph``.
 
-    Located by LAYOUT rather than by name — the field's spelling is pinned by the accessor anchor in
-    ``tests/frozen/frontend/m49`` — and frames travel through as opaque plain data.
+    Located by LAYOUT rather than by name — the field's spelling is pinned by the accessor anchor
+    in ``tests/frozen/frontend/m49`` — and frames travel through as opaque plain data.
     """
     found = [assoc for assoc in map(_frame_assoc, _artifact_values(compiled)) if assoc is not None]
     assert len(found) == 1, (
@@ -158,7 +165,10 @@ def artifact_frames(compiled: object) -> dict[tuple[int, int | None], Any]:
 
 
 def failing_keys(compiled: object) -> set[tuple[int, int | None]]:
-    """The keys of the compiled store's output nodes — where ``POISON_OP`` raises in this fixture."""
+    """Return the keys of the compiled store's output nodes.
+
+    Where ``POISON_OP`` raises in this fixture.
+    """
     outputs = set(graphed.core.GraphStore.deserialize(bytes(compiled.ir)).outputs())  # type: ignore[attr-defined]
     return {key for key in artifact_frames(compiled) if key[0] in outputs}
 
@@ -182,7 +192,7 @@ def hook_labelling_every_key(compiled: object) -> tuple[Any, ...]:
 
 
 def hook_skipping_the_failing_key(compiled: object) -> tuple[Any, ...]:
-    """A populated payload that carries NO entry for the key that fails."""
+    """Return a populated payload that carries NO entry for the key that fails."""
     failing = failing_keys(compiled)
     return _payload(compiled, lambda key: None if key in failing else (OTHER_LABEL,))
 
@@ -203,7 +213,10 @@ def plan_for(
 
 
 def run_labelled_failure_and_raise() -> None:
-    """Module-level worker for ``multiprocessing``: build + run in THIS process and let the attributed
-    ``StageError`` propagate, so the parent receives it pickled across the process boundary."""
+    """Module-level worker for ``multiprocessing``.
+
+    Build + run in THIS process and let the attributed ``StageError`` propagate, so the parent
+    receives it pickled across the process boundary.
+    """
     _session, _out, _poisoned, plan = plan_for(hook_labelling_every_key)
     plan.process(plan.tasks[0].partition, Resources())

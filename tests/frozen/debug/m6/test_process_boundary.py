@@ -1,6 +1,9 @@
-"""The headline guarantee (plan A.3 #8 / M6): a `StageError` raised in a separate worker PROCESS is
-re-raised in the driver as the SAME formatted traceback pointing at the user's analysis line — never
-a raw, opaque worker traceback. This exercises a real pickle-across-a-process-boundary round-trip."""
+"""The headline guarantee (plan A.3 #8 / M6).
+
+A `StageError` raised in a separate worker PROCESS is re-raised in the driver as the SAME formatted
+traceback pointing at the user's analysis line — never a raw, opaque worker traceback. This
+exercises a real pickle-across-a-process-boundary round-trip.
+"""
 
 from __future__ import annotations
 

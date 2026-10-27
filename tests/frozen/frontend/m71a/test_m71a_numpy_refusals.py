@@ -58,5 +58,8 @@ def test_output_type_and_an_explicit_form_are_exclusive() -> None:
         return sn.record_external("map", f, [x], params, descriptor=d, form=fx, output_type="bool")
 
     exc = refusal(call)
-    assert (exc.provenance.filename, exc.provenance.lineno) == (__file__, call.__code__.co_firstlineno + 1)
+    assert (exc.provenance.filename, exc.provenance.lineno) == (
+        __file__,
+        call.__code__.co_firstlineno + 1,
+    )
     assert "exclusive" in exc.detail

@@ -11,7 +11,7 @@ from typing import Any
 
 
 def q(value: Any) -> Any:
-    """A module-level callable named `q` — half of the same-name-different-module pair."""
+    """Return a module-level callable named `q` — half of the same-name-different-module pair."""
     return value + 1
 
 

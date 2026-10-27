@@ -39,14 +39,16 @@ def test_no_node_name_or_params_carries_a_label() -> None:
     assert haystack  # the store was read, not an empty walk
     for label in labels:
         assert not any(label in entry for entry in haystack), (
-            f"label {label!r} entered a NodeKey name/param; §1.2 forbids it, and a label in params "
-            "forks interning so two structurally identical universes stop deduplicating"
+            f"label {label!r} entered a NodeKey name/param; §1.2 forbids it, and a label in "
+            "params forks interning so two structurally identical universes stop deduplicating"
         )
 
 
 def test_renaming_every_label_leaves_the_compiled_ir_byte_identical() -> None:
-    """The clause that subsumes any token wording: it reaches the fused `stage` nodes' members,
-    which the record-time store never carries."""
+    """The clause that subsumes any token wording.
+
+    It reaches the fused `stage` nodes' members, which the record-time store never carries.
+    """
     ir = []
     for name, tags in (("jes", ("up", "down")), ("btag", ("hi", "lo"))):
         s, x = vector_source()
@@ -56,20 +58,28 @@ def test_renaming_every_label_leaves_the_compiled_ir_byte_identical() -> None:
     # non-vacuity: the compared artifact really does carry the fused members, so an implementation
     # leaking a label into a stage member (invisible to the record-time store) is caught here.
     members = [
-        m for n in GraphStore.deserialize(ir[0]).nodes() if n["kind"] == "stage" for m in n["members"]
+        m
+        for n in GraphStore.deserialize(ir[0]).nodes()
+        if n["kind"] == "stage"
+        for m in n["members"]
     ]
     assert members
 
 
 def test_structurally_identical_members_intern_to_one_node() -> None:
-    """§5.2a's dedup witness: arena delta 0 and ONE node id for two structurally equal universes."""
+    """§5.2a's dedup witness: two structurally equal universes intern to ONE node id.
+
+    The arena delta is 0.
+    """
     s, x = vector_source()
     up = x * 1.5
     before = s.node_count()
     down = x * 1.5  # structurally identical to `up`
     varied = graphed.vary(x, "jes", up=up, down=down)
     assert s.node_count() - before == 0
-    assert graphed.universe(varied, "jes_up").node_id == graphed.universe(varied, "jes_down").node_id
+    assert (
+        graphed.universe(varied, "jes_up").node_id == graphed.universe(varied, "jes_down").node_id
+    )
     # positive control on the same counter: a genuinely different member DOES grow the arena, so
     # the delta-0 assertion above is not reading a dead instrument.
     before = s.node_count()
@@ -79,9 +89,12 @@ def test_structurally_identical_members_intern_to_one_node() -> None:
 
 
 def test_unvaried_optimizer_merged_program_still_compiles_and_runs() -> None:
-    """§7.2 SCOPE control: the merge REFUSAL is fill-shaped and varied-only, so an UNVARIED
-    multi-output program whose outputs the optimizer merges must keep working exactly as today
-    (§6.3's "no-variation paths are unchanged"). It needs no fill, so it stays in `graphed`."""
+    """§7.2 SCOPE control.
+
+    The merge REFUSAL is fill-shaped and varied-only, so an UNVARIED multi-output program whose
+    outputs the optimizer merges must keep working exactly as today (§6.3's "no-variation paths are
+    unchanged"). It needs no fill, so it stays in `graphed`.
+    """
     s = graphed.Session(NumpyBackend())
     b = from_array(s, "x", VECTOR) * 2.0
     compiled = compile_ir(s, b, b * 1.0)

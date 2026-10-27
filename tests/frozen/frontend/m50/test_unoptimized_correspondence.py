@@ -2,8 +2,9 @@
 
 Unoptimized, nothing is re-indexed: the correspondence is the identity over the whole record arena
 and a frame reaches every key in record ids. Discriminating against the OPTIMIZED artifact of the
-SAME program, whose fusion re-keys and stamps a member index — an accessor that answered the identity
-there would be wrong, so the identity claim is a real property of `optimize=False`, not a tautology.
+SAME program, whose fusion re-keys and stamps a member index — an accessor that answered the
+identity there would be wrong, so the identity claim is a real property of `optimize=False`, not a
+tautology.
 
 Awkward-free (a list backend + core only): safe under the required 3.14t free-threaded gate.
 """
@@ -29,14 +30,18 @@ def test_the_unoptimized_artifact_is_the_identity_over_record_ids_and_evaluates(
 
     identity = {n: (n, None) for n in range(nodes)}
     assert dict(compiled.correspondence.node_map) == identity
-    assert [key for key, _frame in compiled.correspondence.frames] == [(n, None) for n in range(nodes)]
+    assert [key for key, _frame in compiled.correspondence.frames] == [
+        (n, None) for n in range(nodes)
+    ]
     assert evaluate_ir(compiled, ListBackend(), {"x": [1.0, 2.0]}) == [[2.0, 6.0]]
 
 
 def test_the_optimized_artifact_of_the_same_program_does_not_answer_the_identity() -> None:
-    """The control that makes the identity a claim about `optimize=False`: fusion re-keys the same
-    program and stamps a member index, so a member index is present exactly where the unoptimized
-    arm carries None."""
+    """The control that makes the identity a claim about `optimize=False`.
+
+    Fusion re-keys the same program and stamps a member index, so a member index is present exactly
+    where the unoptimized arm carries None.
+    """
     session, out = _program()
     optimized = dict(compile_ir(session, out).correspondence.node_map)
 

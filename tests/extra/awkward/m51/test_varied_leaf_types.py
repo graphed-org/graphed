@@ -1,6 +1,8 @@
-"""Every universe of a varied skim reads back from `read_varied` with its in-memory type and values: an
-XOR delta stores only same-type `T`/`?T`/`var * T`/`var * ?T` leaves, anything else is stored as-is
-under `"base"`."""
+"""Every universe of a varied skim reads back from `read_varied` as it was in memory.
+
+Type and values both round-trip: an XOR delta stores only same-type `T`/`?T`/`var * T`/`var * ?T`
+leaves, anything else is stored as-is under `"base"`.
+"""
 
 from __future__ import annotations
 
@@ -37,7 +39,10 @@ def _flat(up: Build, nominal: Build = lambda e: e.m) -> Build:
 
 
 def _nested(up: Build, nominal: Build = lambda e: e.Jet.pt) -> Build:
-    """`Jet.pt` beside a jagged `raw`, so a flat member is broadcast into the Jet lists by the zip."""
+    """`Jet.pt` beside a jagged `raw`.
+
+    So a flat member is broadcast into the Jet lists by the zip.
+    """
 
     def build(ev: Any) -> Any:
         pt = graphed.vary(nominal(ev), "s", points={"up": up(ev), "same": nominal(ev) * 2})
@@ -78,9 +83,19 @@ CASES: dict[str, tuple[Build, str, str, str]] = {
     "f64->?f64": (_flat(lambda e: gak.mask(e.m * 3, e.m > 0)), "x", "base", "xor"),
     "?f64->f64": (_flat(lambda e: e.m * 3, lambda e: gak.mask(e.m, e.m > 0)), "x", "base", "xor"),
     "dtype only, equal values": (_flat(lambda e: _f32(e.m)), "x", "base", "xor"),
-    "nested jagged Jet.pt f64->f32": (_nested(lambda e: _f32(e.Jet.pt * 1.05)), "Jet_pt", "base", "xor"),
+    "nested jagged Jet.pt f64->f32": (
+        _nested(lambda e: _f32(e.Jet.pt * 1.05)),
+        "Jet_pt",
+        "base",
+        "xor",
+    ),
     "jagged->flat": (_flat(lambda e: e.m, lambda e: e.Jet.pt), "x", "base", "xor"),
-    "Jet.pt, up a flat f32 broadcast by the zip": (_nested(lambda e: _f32(e.m)), "Jet_pt", "base", "xor"),
+    "Jet.pt, up a flat f32 broadcast by the zip": (
+        _nested(lambda e: _f32(e.m)),
+        "Jet_pt",
+        "base",
+        "xor",
+    ),
     "Jet.pt, nominal a flat broadcast by the zip": (
         _nested(lambda e: e.m * 3, lambda e: e.m),
         "Jet_pt",
@@ -88,7 +103,10 @@ CASES: dict[str, tuple[Build, str, str, str]] = {
         "xor",
     ),
     "?var*f64->?var*f32 with None lists": (
-        _flat(lambda e: _f32(gak.mask(e.Jet.pt * 2, e.m > 100)), lambda e: gak.mask(e.Jet.pt, e.m > 100)),
+        _flat(
+            lambda e: _f32(gak.mask(e.Jet.pt * 2, e.m > 100)),
+            lambda e: gak.mask(e.Jet.pt, e.m > 100),
+        ),
         "x",
         "base",
         "base",
@@ -99,7 +117,12 @@ CASES: dict[str, tuple[Build, str, str, str]] = {
         "base",
         "base",
     ),
-    "regular list": (_flat(lambda e: _regular(e.m * 3), lambda e: _regular(e.m)), "x", "base", "base"),
+    "regular list": (
+        _flat(lambda e: _regular(e.m * 3), lambda e: _regular(e.m)),
+        "x",
+        "base",
+        "base",
+    ),
 }
 
 #: same leaf type, different `None` rows: the XOR delta carries the label's own `None`s.
@@ -113,7 +136,10 @@ NULL_CASES: dict[str, tuple[Build, str]] = {
         "x",
     ),
     "jagged, None in nominal only": (
-        _nested(lambda e: gak.mask(e.Jet.pt * 2, e.Jet.pt > 0), lambda e: gak.mask(e.Jet.pt, e.Jet.pt > 35)),
+        _nested(
+            lambda e: gak.mask(e.Jet.pt * 2, e.Jet.pt > 0),
+            lambda e: gak.mask(e.Jet.pt, e.Jet.pt > 35),
+        ),
         "Jet_pt",
     ),
 }
@@ -122,8 +148,10 @@ NULL_CASES: dict[str, tuple[Build, str]] = {
 def _write_and_check(
     build: Build, tmp_path: Any, *, exact_type: bool = True, behavior: dict[Any, Any] | None = None
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Write, read back, assert every universe equals its in-memory member; return the varied manifest
-    and awkward's own per-column metadata."""
+    """Write, read back, assert every universe equals its in-memory member.
+
+    Return the varied manifest and awkward's own per-column metadata.
+    """
     session = Session(AwkwardBackend(behavior=behavior))
     ev = from_awkward(session, "ev", ak.Array(DATA))
     record = build(ev)
@@ -148,7 +176,8 @@ def test_every_universe_reads_back_with_its_own_type_and_values(case: str, tmp_p
     manifest, _ = _write_and_check(build, tmp_path)
     for label, rep in (("s_up", up_rep), ("s_same", same_rep)):
         assert manifest[label][f"__vary_{label}__{flat}"]["representation"] == rep
-        # a "base" label also carries an xor marker naming no leaf, which a pre-"base" reader refuses
+        # a "base" label also carries an xor marker naming no leaf, which a pre-"base" reader
+        # refuses
         marker = manifest[label].get(f"requires_base__{label}__{flat}")
         assert (marker or {}).get("representation") == ("xor" if rep == "base" else None), label
 
@@ -220,9 +249,15 @@ def _jet_record(pt: Any, ev: Any) -> Any:
 
 #: name -> (record builder, whether s_up's record type differs from nominal's in a parameter)
 PARAM_CASES: dict[str, tuple[Build, bool]] = {
-    "flat, same __doc__": (_flat(lambda e: _doc(e.m * 3, "mass"), lambda e: _doc(e.m, "mass")), False),
+    "flat, same __doc__": (
+        _flat(lambda e: _doc(e.m * 3, "mass"), lambda e: _doc(e.m, "mass")),
+        False,
+    ),
     "?flat, same __doc__": (
-        _flat(lambda e: _doc(gak.mask(e.m * 3, e.m > 0), "m"), lambda e: _doc(gak.mask(e.m, e.m > 0), "m")),
+        _flat(
+            lambda e: _doc(gak.mask(e.m * 3, e.m > 0), "m"),
+            lambda e: _doc(gak.mask(e.m, e.m > 0), "m"),
+        ),
         False,
     ),
     "jagged list, same __doc__": (
@@ -255,7 +290,9 @@ PARAM_CASES: dict[str, tuple[Build, bool]] = {
                     "s",
                     points={
                         "up": gak.with_field(gak.with_name(e.Jet, "Momentum"), e.Jet.pt * 3, "pt"),
-                        "same": gak.with_field(gak.with_name(e.Jet, "Momentum"), e.Jet.pt * 2, "pt"),
+                        "same": gak.with_field(
+                            gak.with_name(e.Jet, "Momentum"), e.Jet.pt * 2, "pt"
+                        ),
                     },
                 ),
                 "m": e.m,
@@ -297,7 +334,9 @@ def test_every_universe_keeps_the_top_records_parameters(
 
 def test_a_varied_field_set_on_the_source_record_reads_back(tmp_path: Any) -> None:
     def build(ev: Any) -> Any:
-        return gak.with_field(ev, graphed.vary(ev.m, "s", points={"up": ev.m * 3, "same": ev.m * 2}), "m")
+        return gak.with_field(
+            ev, graphed.vary(ev.m, "s", points={"up": ev.m * 3, "same": ev.m * 2}), "m"
+        )
 
     manifest, _ = _write_and_check(build, tmp_path)
     assert manifest["s_up"]["__vary_s_up__m"]["representation"] == "xor"
@@ -337,14 +376,18 @@ def _store_snapshots(n_labels: int, tmp_path: Any) -> int:
     session = Session(AwkwardBackend())
     ev = from_awkward(session, "ev", ak.Array(DATA))
     points = {f"p{i}": ev.m * (i + 2) for i in range(n_labels)}
-    record = gak.with_name(gak.with_field(ev, graphed.vary(ev.m, "s", points=points), "m"), "Event")
+    record = gak.with_name(
+        gak.with_field(ev, graphed.vary(ev.m, "s", points=points), "m"), "Event"
+    )
     counting = _CountingStore(session._store)
     session._store = counting  # type: ignore[assignment]
     ga.to_parquet(record, str(tmp_path / f"n{n_labels}"), select={0: ev.m > 0}, compute=False)
     return counting.calls
 
 
-def test_resolving_varied_leaves_snapshots_the_store_independently_of_the_label_count(tmp_path: Any) -> None:
+def test_resolving_varied_leaves_snapshots_the_store_independently_of_the_label_count(
+    tmp_path: Any,
+) -> None:
     assert _store_snapshots(2, tmp_path) == _store_snapshots(8, tmp_path)
 
 
@@ -361,7 +404,11 @@ def test_a_named_record_stores_deltas_only_for_its_varied_leaves(
         return top(gak.zip({"x": x, "n": ev.n, "Jet": ev.Jet}, depth_limit=1))
 
     manifest, _ = _write_and_check(build, tmp_path)
-    values = [col for col in manifest["s_up"] if col.startswith("__vary_s_up__") and "__mask__" not in col]
+    values = [
+        col
+        for col in manifest["s_up"]
+        if col.startswith("__vary_s_up__") and "__mask__" not in col
+    ]
     assert values == ["__vary_s_up__x"]
 
 
@@ -373,12 +420,18 @@ def test_a_scalar_field_equal_in_every_universe_stores_no_delta(
     def build(ev: Any) -> Any:
         rec = _flat(lambda e: e.m * 3)(ev)
         if varied_y:
-            rec = gak.with_field(rec, graphed.vary(ev.m, "s", points={"up": ev.m * 4, "same": ev.m}), "y")
+            rec = gak.with_field(
+                rec, graphed.vary(ev.m, "s", points={"up": ev.m * 4, "same": ev.m}), "y"
+            )
         rec["k"] = scalar
         return rec
 
     manifest, _ = _write_and_check(build, tmp_path)
-    values = [col for col in manifest["s_up"] if col.startswith("__vary_s_up__") and "__mask__" not in col]
+    values = [
+        col
+        for col in manifest["s_up"]
+        if col.startswith("__vary_s_up__") and "__mask__" not in col
+    ]
     assert values == ["__vary_s_up__x", "__vary_s_up__y"][: 1 + varied_y]
 
 
@@ -409,24 +462,39 @@ def _set_jagged(rec: Any, ev: Any) -> Any:
 
 @pytest.mark.parametrize(
     "reshape",
-    [_set_nested, _set_jagged, lambda r, _: gak.without_field(r, "n"), lambda r, _: r[["x", "r", "Jet"]]],
+    [
+        _set_nested,
+        _set_jagged,
+        lambda r, _: gak.without_field(r, "n"),
+        lambda r, _: r[["x", "r", "Jet"]],
+    ],
     ids=["setitem_nested", "setitem_jagged", "without_field", "field_selection"],
 )
 def test_ops_that_pass_fields_through_leave_the_siblings_unvaried(
     reshape: Callable[[Any, Any], Any], tmp_path: Any
 ) -> None:
     manifest, _ = _write_and_check(lambda ev: reshape(_sibling_record(ev), ev), tmp_path)
-    values = [col for col in manifest["s_up"] if col.startswith("__vary_s_up__") and "__mask__" not in col]
+    values = [
+        col
+        for col in manifest["s_up"]
+        if col.startswith("__vary_s_up__") and "__mask__" not in col
+    ]
     assert values == ["__vary_s_up__x"]
 
 
 def test_a_record_masked_by_a_varied_mask_keeps_its_fields_varied(tmp_path: Any) -> None:
     def build(ev: Any) -> Any:
-        keep = graphed.vary(ev.Jet.pt > 0, "s", points={"up": ev.Jet.pt > 35, "same": ev.Jet.pt > 0})
+        keep = graphed.vary(
+            ev.Jet.pt > 0, "s", points={"up": ev.Jet.pt > 35, "same": ev.Jet.pt > 0}
+        )
         return gak.zip({"x": ev.m, "Jet": gak.mask(ev.Jet, keep)}, depth_limit=1)
 
     manifest, _ = _write_and_check(build, tmp_path)
-    values = [col for col in manifest["s_up"] if col.startswith("__vary_s_up__") and "__mask__" not in col]
+    values = [
+        col
+        for col in manifest["s_up"]
+        if col.startswith("__vary_s_up__") and "__mask__" not in col
+    ]
     assert values == ["__vary_s_up__Jet_pt"]
 
 
@@ -444,5 +512,9 @@ def test_a_record_valued_behavior_property_is_walked_as_its_own_node(tmp_path: A
 
     behavior: dict[Any, Any] = {("*", "Pair"): _Pair}
     manifest, _ = _write_and_check(build, tmp_path, behavior=behavior)
-    values = [col for col in manifest["s_up"] if col.startswith("__vary_s_up__") and "__mask__" not in col]
+    values = [
+        col
+        for col in manifest["s_up"]
+        if col.startswith("__vary_s_up__") and "__mask__" not in col
+    ]
     assert values == ["__vary_s_up__x"]

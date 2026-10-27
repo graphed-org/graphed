@@ -1,5 +1,8 @@
-"""M26 suite environment: torch/xgboost/tensorflow each vendor an OpenMP runtime; set the
-coexistence guards BEFORE any of them load (the m9 precedent), harmless when absent."""
+"""M26 suite environment.
+
+torch/xgboost/tensorflow each vendor an OpenMP runtime; set the coexistence guards BEFORE any of
+them load (the m9 precedent), harmless when absent.
+"""
 
 from __future__ import annotations
 

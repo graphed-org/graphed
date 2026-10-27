@@ -1,5 +1,6 @@
-"""m57 §2.1/§2.5: a record that no longer names the composition it named is refused LOUDLY, and a
-refusal that fires after the match leaves the operation list exactly as it found it.
+"""m57 §2.1/§2.5: a record that no longer names the composition it named is refused LOUDLY.
+
+And a refusal that fires after the match leaves the operation list exactly as it found it.
 
 A join that ADDS universes to a nominal member changes the composition an overlay was built over;
 neither side can be re-derived, so both orders of that program are refused, each naming the order
@@ -37,8 +38,11 @@ from graphed import GraphedError
 
 
 def _widening_base() -> tuple[object, object, object, object, object]:
-    """A jes shift, `pu`, and `hf` over the SF on the UNSHIFTED jets; returns the session, that
-    context, the flat central, the jes-varied central (the widening one) and the shifted jets."""
+    """Return a jes shift, `pu`.
+
+    And `hf` over the SF on the UNSHIFTED jets; returns the session, that context, the flat
+    central, the jes-varied central (the widening one) and the shifted jets.
+    """
     session, ctx = m57_base()
     shifted = m57_shifted(ctx, "jes", JES)
     sjets = shifted["Jet"]
@@ -50,9 +54,11 @@ def _widening_base() -> tuple[object, object, object, object, object]:
 
 
 def test_a_union_that_widens_a_nominal_member_an_overlay_covers_is_refused() -> None:
-    """The overlay's members ARE the composition the user read; a join that adds universes under it
-    would change that composition underneath them, so it is refused, naming the overlay and the
-    order that works."""
+    """The overlay's members ARE the composition the user read.
+
+    A join that adds universes under it would change that composition underneath them, so it is
+    refused, naming the overlay and the order that works.
+    """
     session, after, _flat, widening, sjets = _widening_base()
     with_overlay = m57_delta(after, "mu", graphed.weight(after))
     members = m57_table_members(sjets, LF_TABLE)
@@ -67,9 +73,14 @@ def test_a_union_that_widens_a_nominal_member_an_overlay_covers_is_refused() -> 
     assert m57_node_count(session) == before
 
 
-def test_a_handle_read_before_such_a_join_is_refused_with_and_without_an_intervening_read() -> None:
-    """The record is keyed on the whole member map, so a join that leaves the nominal NODE alone is
-    still seen to have moved the slot: the stale handle is refused in either read spelling."""
+def test_a_handle_read_before_such_a_join_is_refused_with_and_without_an_intervening_read() -> (
+    None
+):
+    """The record is keyed on the whole member map.
+
+    So a join that leaves the nominal NODE alone is still seen to have moved the slot: the stale
+    handle is refused in either read spelling.
+    """
     for extra_read in (False, True):
         _session, after, _flat, widening, sjets = _widening_base()
         handle = graphed.weight(after)
@@ -85,9 +96,11 @@ def test_a_handle_read_before_such_a_join_is_refused_with_and_without_an_interve
 
 
 def test_the_handle_read_after_the_join_gives_the_shifted_joint() -> None:
-    """Read after the join, the handle names the widened composition, so the overlay's joint with the
-    shift is the ambient at that shift label rescaled — an SF the shift MOVES, so the joint
-    discriminates."""
+    """Read after the join, the handle names the widened composition.
+
+    So the overlay's joint with the shift is the ambient at that shift label rescaled — an SF the
+    shift MOVES, so the joint discriminates.
+    """
     session, after, _flat, widening, sjets = _widening_base()
     widened = m57_weight(after, "lf", widening, m57_table_members(sjets, LF_TABLE))
     fresh = graphed.weight(widened)
@@ -101,9 +114,11 @@ def test_the_handle_read_after_the_join_gives_the_shifted_joint() -> None:
 
 
 def test_a_refusal_after_the_match_leaves_the_list_and_its_generations_untouched() -> None:
-    """A refusal that fires AFTER the match must leave the operation list, its member nodes and the
-    registries as before the call: a handle read before it is still fresh, and the next read is node-
-    and label-identical to that one."""
+    """A refusal that fires AFTER the match leaves everything as before the call.
+
+    The operation list, its member nodes and the registries are unchanged: a handle read before it
+    is still fresh, and the next read is node- and label-identical to that one.
+    """
     session, ctx = m57_base()
     jets = ctx["Jet"]
     sf, pu = m57_sf(jets), m57_pu(jets)
@@ -130,4 +145,6 @@ def test_a_refusal_after_the_match_leaves_the_list_and_its_generations_untouched
     assert m57_ambient_values(session, weight)["mu_up"] == m57_values(
         session, graphed.member_of(handle, "nominal") * MU["up"]
     )
-    assert m57_ambient_values(session, again) == m57_oracle_values(session, ops, graphed.labels(again))
+    assert m57_ambient_values(session, again) == m57_oracle_values(
+        session, ops, graphed.labels(again)
+    )

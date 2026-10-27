@@ -1,5 +1,7 @@
-"""C3 / design §4.7's frozen §2.4 invariant and §5.3: projection changes WHICH member a label gets,
-never the union ORDER, and the joint program is byte-deterministic.
+"""C3 / design §4.7's frozen §2.4 invariant and §5.3.
+
+Projection changes WHICH member a label gets, never the union ORDER, and the joint program is
+byte-deterministic.
 
 The determinism child is the `frontend/m48` two-seed idiom — two FRESH interpreters under differing
 `PYTHONHASHSEED`, which is the only form that can see a set-ordered label list at all.
@@ -62,9 +64,7 @@ def test_the_union_order_is_unchanged() -> None:
         graphed.member_of(second, JOINT_LABEL).node_id
         == graphed.universe(second, "jes_up").node_id
     )
-    assert (
-        graphed.member_of(second, JOINT_LABEL).node_id != graphed.nominal(second).node_id
-    )
+    assert graphed.member_of(second, JOINT_LABEL).node_id != graphed.nominal(second).node_id
 
 
 def test_the_joint_program_is_byte_deterministic_across_two_runs() -> None:

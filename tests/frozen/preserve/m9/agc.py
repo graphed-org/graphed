@@ -1,11 +1,12 @@
 """The AGC-ttbar-style fixture for the M9 preservation tests.
 
-A reduced AGC ttbar slice recorded through the graphed frontend, exercising the three things the plan
-chose this analysis for: an **ONNX model**, **correctionlib scale factors**, and **systematics** (JES
-kinematic + correctionlib weight up/down). The correction + model are real HEP-standard payloads held
-as in-memory bytes and recorded via the M9 **External plugins** (``record_external`` with the
-correctionlib / ONNX plugins), so each External node carries the plugin's deterministic *content*
-hash (correctionlib contents, ONNX weights) — no file paths leak into the IR.
+A reduced AGC ttbar slice recorded through the graphed frontend, exercising the three things the
+plan chose this analysis for: an **ONNX model**, **correctionlib scale factors**,
+and **systematics** (JES kinematic + correctionlib weight up/down). The correction + model are real
+HEP-standard payloads held as in-memory bytes and recorded via the M9 **External plugins**
+(``record_external`` with the correctionlib / ONNX plugins), so each External node carries the
+plugin's deterministic *content* hash (correctionlib contents, ONNX weights) — no file paths leak
+into the IR.
 """
 
 from __future__ import annotations
@@ -36,7 +37,10 @@ _SF_CONTENT = {
 
 # ---- real HEP-standard payloads (as bytes; no files) --------------------------------------------
 def correctionlib_json(*, scale: float = 1.0) -> bytes:
-    """A valid correctionlib v2 set: an event-level SF binned in njet, with a systematic category."""
+    """Return a valid correctionlib v2 set.
+
+    An event-level SF binned in njet, with a systematic category.
+    """
     content = {
         syst: {
             "nodetype": "binning",
@@ -53,7 +57,10 @@ def correctionlib_json(*, scale: float = 1.0) -> bytes:
             {
                 "name": "event_sf",
                 "version": 1,
-                "inputs": [{"name": "systematic", "type": "string"}, {"name": "x", "type": "real"}],
+                "inputs": [
+                    {"name": "systematic", "type": "string"},
+                    {"name": "x", "type": "real"},
+                ],
                 "output": {"name": "sf", "type": "real"},
                 "data": {
                     "nodetype": "category",
@@ -67,7 +74,10 @@ def correctionlib_json(*, scale: float = 1.0) -> bytes:
 
 
 def onnx_model(*, weight: float = 0.04, bias: float = -0.5) -> bytes:
-    """A tiny real ONNX model: score = Sigmoid(weight * x + bias), one float feature per event."""
+    """Return a tiny real ONNX model.
+
+    Score = Sigmoid(weight * x + bias), one float feature per event.
+    """
     import onnx  # noqa: PLC0415
     from onnx import TensorProto, helper, numpy_helper  # noqa: PLC0415
 
@@ -111,7 +121,11 @@ def record(
     sel = (njet >= 4) & (nb >= region_min_b)
 
     sf = record_external(
-        s, CORRECTIONLIB_PLUGIN, corr_bytes, [njet], params={"name": "event_sf", "systematic": syst}
+        s,
+        CORRECTIONLIB_PLUGIN,
+        corr_bytes,
+        [njet],
+        params={"name": "event_sf", "systematic": syst},
     )
     score = record_external(s, ONNX_PLUGIN, model_bytes, [ht], params={"input_name": "x"})
     weight = sf * score
@@ -128,7 +142,7 @@ def histogram(values: Any, weights: Any) -> np.ndarray:
 
 
 def materialize_reference(session: Session, value: Any, weight: Any) -> np.ndarray:
-    """The build-time histogram, computed in-process via materialize (originals present)."""
+    """Return the build-time histogram, computed in-process via materialize (originals present)."""
     return histogram(session.materialize(value), session.materialize(weight))
 
 
@@ -144,12 +158,17 @@ def build_agc(
     onnx_weight: float = 0.04,
     seed: int = SEED,
 ) -> tuple[Any, np.ndarray]:
-    """Build a full AGC preservation bundle under ``root``; return (bundle, build-time reference)."""
+    """Build a full AGC preservation bundle under ``root``.
+
+    Return (bundle, build-time reference).
+    """
     cfg = dict(config or _DEFAULT_CONFIG)
     corr_bytes = correctionlib_json(scale=sf_scale)
     model_bytes = onnx_model(weight=onnx_weight)
     events = make_events_for(seed)
-    session, value, weight = record(events, config=cfg, corr_bytes=corr_bytes, model_bytes=model_bytes)
+    session, value, weight = record(
+        events, config=cfg, corr_bytes=corr_bytes, model_bytes=model_bytes
+    )
     reference = materialize_reference(session, value, weight)
     payloads = {
         CORRECTIONLIB_PLUGIN.content_hash(corr_bytes): corr_bytes,
@@ -170,8 +189,10 @@ def build_agc(
 
 
 def build_opaque(root: Path) -> Any:
-    """A bundle whose weight is an opaque (cloudpickled) ``map`` node — a preservation risk, for the
-    inspect risk-flagging test."""
+    """Return a bundle whose weight is an opaque (cloudpickled) ``map`` node.
+
+    A preservation risk, for the inspect risk-flagging test.
+    """
     from graphed.awkward import gak  # noqa: PLC0415
 
     s = Session(AwkwardBackend())

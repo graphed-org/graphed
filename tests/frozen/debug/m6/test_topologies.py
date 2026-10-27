@@ -1,6 +1,9 @@
-"""Lowering + error localization through complex topologies (plan M6). A diamond's fan-out apex must
-be a single shared stage head (never duplicated), and an error in ONE branch of a diamond must
-localize to that branch's op — the other branch must not mask or mislocate it."""
+"""Lowering + error localization through complex topologies (plan M6).
+
+A diamond's fan-out apex must be a single shared stage head (never duplicated), and an error in ONE
+branch of a diamond must localize to that branch's op — the other branch must not mask or mislocate
+it.
+"""
 
 from __future__ import annotations
 

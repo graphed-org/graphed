@@ -27,7 +27,11 @@ from graphed.write import PartitionedSource
 
 EVENTS = ak.Array(
     {
-        "Jet": [[{"pt": 50.0, "eta": 0.5}], [], [{"pt": 70.0, "eta": 2.1}, {"pt": 20.0, "eta": 0.0}]],
+        "Jet": [
+            [{"pt": 50.0, "eta": 0.5}],
+            [],
+            [{"pt": 70.0, "eta": 2.1}, {"pt": 20.0, "eta": 0.0}],
+        ],
         "x": [1.0, 2.0, 3.0],
     }
 )
@@ -46,7 +50,9 @@ class ChunkedToySource:
         return self.data
 
     def partitions(self, steps_per_file: int = 1) -> tuple[Partition, ...]:
-        return tuple(Partition.blind("toy://chunks", "", s, steps_per_file) for s in range(steps_per_file))
+        return tuple(
+            Partition.blind("toy://chunks", "", s, steps_per_file) for s in range(steps_per_file)
+        )
 
     def read_partition(self, partition, columns, resources) -> ak.Array:  # type: ignore[no-untyped-def]
         part = partition.resolve(len(self.data))

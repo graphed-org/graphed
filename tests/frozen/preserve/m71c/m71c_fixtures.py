@@ -21,8 +21,8 @@ from graphed.preserve.externals import ExternalPlugin, sha256_bytes
 CSET = (
     b'{"schema_version": 2, "corrections": [{"name": "sf", "version": 1, "inputs": [{"name": '
     b'"systematic", "type": "string"}, {"name": "x", "type": "real"}], "output": {"name": "sf", '
-    b'"type": "real"}, "data": {"nodetype": "category", "input": "systematic", "content": [{"key": '
-    b'"nominal", "value": 1.0}]}}]}'
+    b'"type": "real"}, "data": {"nodetype": "category", "input": "systematic", "content": '
+    b'[{"key": "nominal", "value": 1.0}]}}]}'
 )
 MODEL = (
     b'\x08\t:]\n\x12\n\x01x\n\x01W\n\x01B\x12\x01y"\x04Gemm\x12\x01m*\x0f\x08\x01\x08\x01\x10\x01B'
@@ -39,7 +39,8 @@ EVENTS = ak.zip(
     }
 )
 
-#: every numpy numerical dtype (``np.typecodes`` "AllInteger" + "AllFloat" + bool, fixed-width only)
+#: every numpy numerical dtype (``np.typecodes`` "AllInteger" + "AllFloat" + bool, fixed-width
+#: only)
 NUMERIC = (
     "bool",
     "int8",
@@ -77,12 +78,17 @@ def numpy_recorded() -> tuple[Session, Any]:
 
 
 def plugin(kind: str, dtype: str, **fields: Any) -> ExternalPlugin:
-    """A plugin whose value casts its first input to `dtype`; `fields` carries `output_dtype=`."""
+    """Return a plugin whose value casts its first input to `dtype`.
+
+    `fields` carries `output_dtype=`.
+    """
 
     def evaluate(resource: Any, params: Mapping[str, Any], inputs: Sequence[Any]) -> Any:
         return ak.values_astype(inputs[0], dtype)
 
-    return ExternalPlugin(kind=kind, content_hash=sha256_bytes, evaluate=evaluate, samples=_samples, **fields)
+    return ExternalPlugin(
+        kind=kind, content_hash=sha256_bytes, evaluate=evaluate, samples=_samples, **fields
+    )
 
 
 def describe(session: Session, array: Any) -> str:
@@ -91,7 +97,9 @@ def describe(session: Session, array: Any) -> str:
 
 def same(value: Any, expected: Any) -> bool:
     """Equal values AND equal types."""
-    return bool(ak.to_list(value) == ak.to_list(expected) and str(ak.type(value)) == str(ak.type(expected)))
+    return bool(
+        ak.to_list(value) == ak.to_list(expected) and str(ak.type(value)) == str(ak.type(expected))
+    )
 
 
 def refusal(call: Callable[[], object]) -> GraphedTypeError:
@@ -103,5 +111,5 @@ def refusal(call: Callable[[], object]) -> GraphedTypeError:
 
 
 def here() -> int:
-    """The caller's NEXT line: the line a one-line refused call sits on."""
+    """Return the caller's NEXT line: the line a one-line refused call sits on."""
     return sys._getframe(1).f_lineno + 1

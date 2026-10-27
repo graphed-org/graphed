@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections import Counter
 
-import m49_analyses as A
+import m49_analyses
 
 from graphed.checkpoint import Store, run_resumable
 from graphed.checkpoint.retry import Quarantine, RetryN
@@ -20,11 +20,11 @@ DESCRIPTOR_KEYS = frozenset(
 
 
 def _run(store, *, poison, partitions=None, retry=None):
-    plan, compiled, tags = A.build_plan(poison=poison)
-    dp = A.durable(plan, compiled)
+    plan, compiled, tags = m49_analyses.build_plan(poison=poison)
+    dp = m49_analyses.durable(plan, compiled)
     if partitions is not None:
         dp = dp.with_partitions(partitions)
-    A.READS.clear()
+    m49_analyses.READS.clear()
     return dp, tags, run_resumable(dp, store, retry=retry)
 
 
@@ -44,7 +44,10 @@ def test_one_poisoned_variation_dead_letters_the_whole_composite(tmp_path) -> No
     assert poisoned.report.executed == len(dp.partitions) - 1
     (descriptor,) = poisoned.report.dead_letters
     assert descriptor["task_id"] == dp.task_id(first)
-    assert (descriptor["entry_start"], descriptor["entry_stop"]) == (first.entry_start, first.entry_stop)
+    assert (descriptor["entry_start"], descriptor["entry_stop"]) == (
+        first.entry_start,
+        first.entry_stop,
+    )
 
     # ORACLE: the same plan over the surviving partitions alone. Byte-equality says the composite
     # lost the poisoned partition WHOLE — every universe, not just the guilty one.
@@ -60,11 +63,14 @@ def test_one_poisoned_variation_dead_letters_the_whole_composite(tmp_path) -> No
 
 
 def test_retry_reruns_the_whole_composite_not_the_failing_universe(tmp_path) -> None:
-    """`process` IS the composite, so an attempt reads the WHOLE partition once, `n+1` times over."""
+    """`process` IS the composite, so an attempt reads the WHOLE partition once.
+
+    That is `n+1` times over.
+    """
     _dp, _tags, quarantined = _run(Store(tmp_path / "q"), poison=True, retry=Quarantine())
-    first_reads = Counter(A.READS)
+    first_reads = Counter(m49_analyses.READS)
     dp, _tags2, retried = _run(Store(tmp_path / "r"), poison=True, retry=RetryN(n=2))
-    retried_reads = Counter(A.READS)
+    retried_reads = Counter(m49_analyses.READS)
 
     first = (dp.partitions[0].entry_start, dp.partitions[0].entry_stop)
     assert first_reads[first] == 1

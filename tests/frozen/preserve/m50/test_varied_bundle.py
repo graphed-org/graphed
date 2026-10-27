@@ -1,11 +1,11 @@
 """m50 §9.2 — one bundle preserving N variation universes over the value/weight/spec triple.
 
-A varied ``build_bundle`` (a ``Varied`` weight over the triple ``build_bundle`` already takes) yields
-a bundle whose ``reproduce`` answers ``{label: array}`` — each universe's histogram bit-for-bit vs its
-build-time counts (m9's ``np.array_equal`` comparison). An UNVARIED bundle keeps today's singular shape:
-``reproduce`` returns a BARE array. The manifest's ``format_version`` is the bumped value for the
-varied bundle and still ``1`` for the unvaried control; without both, the bump is invisible.
-``inspect`` lists the labels without executing.
+A varied ``build_bundle`` (a ``Varied`` weight over the triple ``build_bundle`` already takes)
+yields a bundle whose ``reproduce`` answers ``{label: array}`` — each universe's histogram
+bit-for-bit vs its build-time counts (m9's ``np.array_equal`` comparison). An UNVARIED bundle keeps
+today's singular shape: ``reproduce`` returns a BARE array. The manifest's ``format_version`` is
+the bumped value for the varied bundle and still ``1`` for the unvaried control; without both, the
+bump is invisible. ``inspect`` lists the labels without executing.
 
 Freeze-time spellings this suite pins (the implementer inherits them):
 * the varied path is triggered by a ``Varied`` ``value``/``weight`` — no new keyword;
@@ -25,7 +25,7 @@ from graphed_corpus import make_events
 
 from graphed import Session, labels, universe, vary
 from graphed.awkward import AwkwardBackend, from_awkward, gak
-from graphed.preserve import UnresolvedPayload, build_bundle, inspect, reproduce
+from graphed.preserve import UnresolvedPayloadError, build_bundle, inspect, reproduce
 
 HIST = {"name": "w", "bins": 10, "lo": 0.0, "hi": 200.0}
 _BUMPED_FORMAT_VERSION = 2
@@ -41,7 +41,10 @@ def _counts(value: Any, weight: Any) -> np.ndarray:
 
 
 def _record() -> tuple[Session, Any, Any, Any]:
-    """A recorded per-event value and a per-event weight (both flat, so ``_histogram`` can run)."""
+    """Return a recorded per-event value and a per-event weight.
+
+    Both are flat, so ``_histogram`` can run.
+    """
     events = make_events(n_events=200, seed=50)
     s = Session(AwkwardBackend())
     ev = from_awkward(s, "events", events)
@@ -55,10 +58,16 @@ def _build_varied(root: Path) -> tuple[Any, dict[str, np.ndarray], tuple[str, ..
     weight = vary(weight_nom, "sf", up=weight_nom * 1.1, down=weight_nom * 0.9)
     lbls = labels(weight)
     build_time = {
-        label: _counts(s.materialize(value), s.materialize(universe(weight, label))) for label in lbls
+        label: _counts(s.materialize(value), s.materialize(universe(weight, label)))
+        for label in lbls
     }
     bundle = build_bundle(
-        root / "varied", session=s, value=value, weight=weight, datasets={"events": events}, histogram=HIST
+        root / "varied",
+        session=s,
+        value=value,
+        weight=weight,
+        datasets={"events": events},
+        histogram=HIST,
     )
     return bundle, build_time, lbls
 
@@ -67,7 +76,12 @@ def _build_unvaried(root: Path) -> tuple[Any, np.ndarray]:
     s, value, weight, events = _record()
     reference = _counts(s.materialize(value), s.materialize(weight))
     bundle = build_bundle(
-        root / "unvaried", session=s, value=value, weight=weight, datasets={"events": events}, histogram=HIST
+        root / "unvaried",
+        session=s,
+        value=value,
+        weight=weight,
+        datasets={"events": events},
+        histogram=HIST,
     )
     return bundle, reference
 
@@ -111,5 +125,5 @@ def test_inspect_lists_labels_without_executing(tmp_path: Path) -> None:
     # strip the data blob execution needs; inspect still renders, reproduce fails loudly
     (bundle.root / "store" / "objects" / bundle.manifest["sources"]["events"]).unlink()
     assert all(label in inspect(bundle) for label in lbls)
-    with pytest.raises(UnresolvedPayload):
+    with pytest.raises(UnresolvedPayloadError):
         reproduce(bundle)

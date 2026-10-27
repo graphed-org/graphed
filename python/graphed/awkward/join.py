@@ -1,21 +1,21 @@
 """The awkward ``JoinBackend`` relational-join primitives (plan M40 §3.0, §3.3, §2.1).
 
-The M39 exchange half lives in :mod:`graphed.awkward.shuffle`; this is the M40 join half the generic
-radix-hash kernel calls, plus the ``pack_key`` column-builder and the ``join``/``pack_key`` form and
-evaluation dispatch. Semantics are RELATIONAL (SQL/pandas ``merge``): a probe row with k build
-matches yields k aligned pairs — NOT a list-of-matches, NOT a grouped shape (grouped is the
+The M39 exchange half lives in :mod:`graphed.awkward.shuffle`; this is the M40 join half the
+generic radix-hash kernel calls, plus the ``pack_key`` column-builder and the ``join``/``pack_key``
+form and evaluation dispatch. Semantics are RELATIONAL (SQL/pandas ``merge``): a probe row with k
+build matches yields k aligned pairs — NOT a list-of-matches, NOT a grouped shape (grouped is the
 awkward-only ``gak.join(grouped=True)`` post-op).
 
 Load-bearing invariants:
-  * ``take``'s ``-1`` sentinel is a MISS → an awkward OPTION ``None`` row (``ak.mask``), never the last
-    row (an ``np.take``/negative-index gather is plan M40 trap #1);
+  * ``take``'s ``-1`` sentinel is a MISS → an awkward OPTION ``None`` row (``ak.mask``), never the
+    last row (an ``np.take``/negative-index gather is plan M40 trap #1);
   * ``pack_key`` is a deterministic big-endian integer bit-packing — ``run`` most-significant …
-    ``event`` least-significant, 20-bit stride so zero high fields contribute zero bits — NEVER Python
-    ``hash()`` (trap #6, reproducibility §A.3.1); both backends compute it identically;
+    ``event`` least-significant, 20-bit stride so zero high fields contribute zero bits — NEVER
+    Python ``hash()`` (trap #6, reproducibility §A.3.1); both backends compute it identically;
   * ``merge_records`` COALESCES the shared ``on`` key (present side wins; stays NON-option when the
-    coalesced values are null-free, but a GENUINE null in an option-typed key SURVIVES as SQL keeps it)
-    and REJECTS any shared non-key column (F7 — no silent SQL suffixing); the absent side's non-key
-    fields become option ``None``.
+    coalesced values are null-free, but a GENUINE null in an option-typed key SURVIVES as SQL keeps
+    it) and REJECTS any shared non-key column (F7 — no silent SQL suffixing); the absent side's
+    non-key fields become option ``None``.
 """
 
 from __future__ import annotations
@@ -33,12 +33,18 @@ _PACK_STRIDE = 20
 
 
 def on_from_params(params: Mapping[str, Any]) -> list[str]:
-    """The key field names from an op's ``on`` param (comma-encoded, the §A.4 ParamValue rule)."""
+    """Return the key field names from an op's ``on`` param.
+
+    The param is comma-encoded, the §A.4 ParamValue rule.
+    """
     return [f for f in str(params.get("on", "")).split(",") if f]
 
 
 def _key_rows(block: ak.Array, on: Sequence[str]) -> list[tuple[Any, ...]]:
-    """One hashable key tuple per row, over the ``on`` fields (multi-field keys join as a tuple)."""
+    """Return one hashable key tuple per row, over the ``on`` fields.
+
+    Multi-field keys join as a tuple.
+    """
     cols = [np.asarray(ak.to_numpy(block[c])).tolist() for c in on]
     return list(zip(*cols, strict=True))
 
@@ -46,12 +52,15 @@ def _key_rows(block: ak.Array, on: Sequence[str]) -> list[tuple[Any, ...]]:
 def match_indices(
     build: ak.Array, probe: ak.Array, *, on: Sequence[str], how: str = "inner"
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Relationally match two co-partitioned blocks on ``on`` → aligned ``(build_idx, probe_idx)``
-    WITH duplication: a build row with k probe matches yields k aligned pairs (SQL/pandas ``merge``).
-    Pairs are emitted in build-row order (then probe order) — deterministic, and non-decreasing in the
-    build index so ``gak.join(grouped=True)`` can regroup by run-length. ``how=left``/``outer`` keep an
-    unmatched BUILD row as ``(i, -1)``; ``how=right``/``outer`` keep an unmatched PROBE row as
-    ``(-1, j)``. A ``-1`` feeds :func:`take` as an option ``None`` (plan M40 §3.3)."""
+    """Relationally match two co-partitioned blocks on ``on``, WITH duplication.
+
+    The result is aligned ``(build_idx, probe_idx)``: a build row with k probe matches yields k
+    aligned pairs (SQL/pandas ``merge``). Pairs are emitted in build-row order (then probe order) —
+    deterministic, and non-decreasing in the build index so ``gak.join(grouped=True)`` can regroup
+    by run-length. ``how=left``/``outer`` keep an unmatched BUILD row as ``(i, -1)``;
+    ``how=right``/``outer`` keep an unmatched PROBE row as ``(-1, j)``. A ``-1`` feeds :func:`take`
+    as an option ``None`` (plan M40 §3.3).
+    """
     bkeys = _key_rows(build, on)
     pkeys = _key_rows(probe, on)
     pmap: dict[tuple[Any, ...], list[int]] = defaultdict(list)
@@ -79,19 +88,23 @@ def match_indices(
 
 
 def take(block: ak.Array, index: np.ndarray) -> ak.Array:
-    """Gather rows of ``block`` by ``index``. A ``-1`` entry is a MISS → an awkward OPTION ``None``
-    row (``ak.mask``), NEVER the last row — a plain ``block[index]`` would read ``block[-1]`` and pass a
-    row-count check while silently corrupting the value (plan M40 trap #1). A ZERO-ROW ``block`` (a
-    schema-only carrier for a one-sided join dest, or a partition an upstream cut emptied) has no row 0
-    for the clamp-to-0 below to land on, and a gather from an empty block can only be misses — so it
-    short-circuits to ``len(index)`` typed ``None`` rows (the null-fill a left/right/outer join needs).
-    A ZERO-LENGTH ``index`` gathers no row, so no row can miss: it returns ``block[:0]`` with no option,
-    keeping a per-dest join option-typed exactly where the whole join is."""
+    """Gather rows of ``block`` by ``index``.
+
+    A ``-1`` entry is a MISS → an awkward OPTION ``None`` row (``ak.mask``), NEVER the last row — a
+    plain ``block[index]`` would read ``block[-1]`` and pass a row-count check while silently
+    corrupting the value (plan M40 trap #1). A ZERO-ROW ``block`` (a schema-only carrier for a
+    one-sided join dest, or a partition an upstream cut emptied) has no row 0 for the clamp-to-0
+    below to land on, and a gather from an empty block can only be misses — so it short-circuits to
+    ``len(index)`` typed ``None`` rows (the null-fill a left/right/outer join needs). A ZERO-LENGTH
+    ``index`` gathers no row, so no row can miss: it returns ``block[:0]`` with no option, keeping
+    a per-dest join option-typed exactly where the whole join is.
+    """
     idx = np.asarray(index).astype(np.int64)
     if len(idx) == 0:
         return block[:0]
     if len(block) == 0:  # empty carrier -> all-None option column of block's type, length len(idx)
-        # `simplified`: a partitioned zero-row block can be an IndexedArray, which an option cannot wrap
+        # `simplified`: a partitioned zero-row block can be an IndexedArray, which an option cannot
+        # wrap
         return ak.Array(
             ak.contents.IndexedOptionArray.simplified(
                 ak.index.Index64(np.full(len(idx), -1, dtype=np.int64)), block.layout
@@ -105,26 +118,32 @@ def take(block: ak.Array, index: np.ndarray) -> ak.Array:
 
 
 def merge_records(left: ak.Array, right: ak.Array, *, on: Sequence[str]) -> ak.Array:
-    """Flat field-union of two aligned taken blocks. The shared ``on`` key columns are **COALESCED** —
-    the present (non-``None``) side wins, so a left/right/outer miss row keeps the REAL key value, never
-    null (F3); the absent side's NON-key fields stay option ``None``. LEFT contributes its non-shared
-    fields, RIGHT contributes each field LEFT lacks. A shared NON-key column is **rejected** (F7 — no
-    silent SQL-style suffixing; rename it or add it to ``on``)."""
+    """Flat field-union of two aligned taken blocks.
+
+    The shared ``on`` key columns are **COALESCED** — the present (non-``None``) side wins, so a
+    left/right/outer miss row keeps the REAL key value, never null (F3); the absent side's NON-key
+    fields stay option ``None``. LEFT contributes its non-shared fields, RIGHT contributes each
+    field LEFT lacks. A shared NON-key column is **rejected** (F7 — no silent SQL-style suffixing;
+    rename it or add it to ``on``).
+    """
     on_set = {str(c) for c in on}
     lf, rf = ak.fields(left), ak.fields(right)
     shared_nonkey = sorted(f for f in rf if f in lf and f not in on_set)
     if shared_nonkey:
-        raise ValueError(f"merge_records: shared non-key column(s) {shared_nonkey} — rename or add to `on`")
+        raise ValueError(
+            f"merge_records: shared non-key column(s) {shared_nonkey} — rename or add to `on`"
+        )
     fields: dict[str, ak.Array] = {}
     for f in lf:
         if f in on_set and f in rf:  # coalesce the shared key: the present (non-None) side wins
-            # Strip the miss-induced option ONLY when the coalesced column is provably null-free. The
-            # present side being ABSENT (a ``take`` miss) is NOT the same as its key VALUE being null: an
-            # option-typed input key can carry a GENUINE None on a present, unmatched row, and SQL keeps
-            # that row (null matches nothing) — as numpy does. ``drop_none`` would drop/misalign/crash it,
-            # so it runs only when no genuine null survives (the common non-option-key path -> non-option
-            # == op_form == numpy). The typetracer (projection replay) reads no data, so it keeps the
-            # ``ak.where`` form; op_form's key type comes from ``join_form``, not this path.
+            # Strip the miss-induced option ONLY when the coalesced column is provably null-free.
+            # The present side being ABSENT (a ``take`` miss) is NOT the same as its key VALUE
+            # being null: an option-typed input key can carry a GENUINE None on a present,
+            # unmatched row, and SQL keeps that row (null matches nothing) — as numpy does.
+            # ``drop_none`` would drop/misalign/crash it, so it runs only when no genuine null
+            # survives (the common non-option-key path -> non-option
+            # == op_form == numpy). The typetracer (projection replay) reads no data, so it keeps
+            # the ``ak.where`` form; op_form's key type comes from ``join_form``, not this path.
             co = ak.where(ak.is_none(left[f]), right[f], left[f])
             if ak.backend(co) != "typetracer" and not bool(ak.any(ak.is_none(co))):
                 co = ak.drop_none(co)
@@ -138,13 +157,17 @@ def merge_records(left: ak.Array, right: ak.Array, *, on: Sequence[str]) -> ak.A
 
 
 def pack_key(rec: ak.Array, on: Sequence[str]) -> ak.Array:
-    """Add a flat u64 ``__joinkey__`` column to ``rec``, big-endian bit-packed over ``on`` (first field
-    most-significant). Integer bit-ops only — deterministic, process-independent, injective on in-range
-    keys, and ``pack_key(0,…,0,e) == e``. NEVER Python ``hash()`` (plan M40 trap #6; §A.3.1)."""
+    """Add a flat u64 ``__joinkey__`` column to ``rec``, big-endian bit-packed over ``on``.
+
+    The first field is the most significant. Integer bit-ops only — deterministic,
+    process-independent, injective on in-range keys, and ``pack_key(0,…,0,e) == e``. NEVER Python
+    ``hash()`` (plan M40 trap #6; §A.3.1).
+    """
     n = len(on)
     if n == 0:
         raise ValueError("pack_key needs at least one key field")
-    if n * _PACK_STRIDE > 64:  # the packing itself cannot fit u64 (overflow→fixed-width bytes is Phase-2)
+    # the packing itself cannot fit u64 (overflow→fixed-width bytes is Phase-2)
+    if n * _PACK_STRIDE > 64:
         raise ValueError(
             f"pack_key: {n} fields x {_PACK_STRIDE} bits exceeds u64 (overflow->bytes is Phase-2)"
         )
@@ -152,11 +175,12 @@ def pack_key(rec: ak.Array, on: Sequence[str]) -> ak.Array:
     key: ak.Array | None = None
     for i, f in enumerate(on):
         col = ak.values_astype(rec[f], np.uint64)
-        # F8: a field value >= 2**stride bleeds into the adjacent field and silently collides — raise
-        # loudly instead (guard skipped on the typetracer, which carries no data to check).
+        # F8: a field value >= 2**stride bleeds into the adjacent field and silently collides —
+        # raise loudly instead (guard skipped on the typetracer, which carries no data to check).
         if ak.backend(col) != "typetracer" and bool(ak.any(col >= limit)):
             raise ValueError(
-                f"pack_key: field {f!r} has a value >= 2**{_PACK_STRIDE} (overflow->bytes is Phase-2)"
+                f"pack_key: field {f!r} has a value >= 2**{_PACK_STRIDE} (overflow->bytes is "
+                "Phase-2)"
             )
         shifted = col << np.uint64((n - 1 - i) * _PACK_STRIDE)
         key = shifted if key is None else key | shifted
@@ -164,40 +188,53 @@ def pack_key(rec: ak.Array, on: Sequence[str]) -> ak.Array:
 
 
 def _optional(arr: ak.Array) -> ak.Array:
-    """Option-wrap a leaf so its form carries a ``?`` (how=left/outer makes the missing side option-
-    typed). Form-only: on op_form's non-reporting typetracers this reads no data."""
+    """Option-wrap a leaf so its form carries a ``?``.
+
+    how=left/outer makes the missing side option-typed. Form-only: on op_form's non-reporting
+    typetracers this reads no data.
+    """
     return ak.mask(arr, arr == arr)
 
 
 def _is_option(arr: ak.Array) -> bool:
-    """Whether a leaf/array is option-typed (its form carries a ``?``). Structural; reads no data."""
+    """Whether a leaf/array is option-typed (its form carries a ``?``).
+
+    Structural; reads no data.
+    """
     return bool(arr.layout.is_option)
 
 
 def join_form(inputs: Sequence[ak.Array], params: Mapping[str, Any]) -> ak.Array:
-    """The op_form("join") output form: the relational field-union (see :func:`merge_records`) with the
-    missing side option-typed under ``how=left``/``right``/``outer`` and the coalesced ``on`` key
-    option-typed iff EITHER input key is (plan M40 §3.3, a3; §A.3.1 — op_form must not under-declare a
-    key whose null survives). Built structurally on typetracers — no matching, no data read."""
+    """Return the op_form("join") output form.
+
+    The relational field-union (see :func:`merge_records`) with the missing side option-typed under
+    ``how=left``/``right``/``outer`` and the coalesced ``on`` key option-typed iff EITHER input key
+    is (plan M40 §3.3, a3; §A.3.1 — op_form must not under-declare a key whose null survives).
+    Built structurally on typetracers — no matching, no data read.
+    """
     left, right = inputs[0], inputs[1]
     how = str(params.get("how", "inner"))
     on_set = {str(c) for c in on_from_params(params)}
     lf, rf = ak.fields(left), ak.fields(right)
     shared_nonkey = sorted(f for f in rf if f in lf and f not in on_set)
     if shared_nonkey:
-        raise ValueError(f"op_form(join): shared non-key column(s) {shared_nonkey} — rename or add to `on`")
+        raise ValueError(
+            f"op_form(join): shared non-key column(s) {shared_nonkey} — rename or add to `on`"
+        )
     left_opt = how in ("right", "outer")  # left's NON-key fields can be null on a right-only row
     right_opt = how in ("left", "outer")  # right's NON-key fields can be null on a left-only row
     fields: dict[str, ak.Array] = {}
     for f in lf:
-        if f in on_set and f in rf:  # coalesced shared key: OPTION iff EITHER input key is option — the
-            # surviving side of a right/outer join can carry a genuine null, so op_form must NOT
-            # under-declare the key non-option vs the materialised block (§A.3.1 durable-form soundness).
-            # A sound over-approximation: op_form ⊇ materialised (merge_records refines to the exact
-            # runtime type — non-option when no null actually survives).
+        # coalesced shared key: OPTION iff EITHER input key is option — the surviving side of a
+        # right/outer join can carry a genuine null, so op_form must NOT under-declare the key
+        # non-option vs the materialised block (§A.3.1 durable-form soundness). A sound
+        # over-approximation: op_form ⊇ materialised (merge_records refines to the exact runtime
+        # type — non-option when no null actually survives).
+        if f in on_set and f in rf:
             k = left[f]
             fields[f] = k if _is_option(k) else (_optional(k) if _is_option(right[f]) else k)
-        else:  # a non-key left field is null only on the absent (right-only) row of a right/outer join
+        # a non-key left field is null only on the absent (right-only) row of a right/outer join
+        else:
             fields[f] = _optional(left[f]) if left_opt else left[f]
     for f in rf:
         if f not in lf:
@@ -205,13 +242,18 @@ def join_form(inputs: Sequence[ak.Array], params: Mapping[str, Any]) -> ak.Array
     return ak.zip(fields, depth_limit=1)
 
 
-def join_grouped(left: ak.Array, right: ak.Array, *, on: Sequence[str], how: str = "inner") -> ak.Array:
-    """``gak.join(grouped=True)``: the relational result regrouped by a DETERMINISTIC ``ak.unflatten``
-    whose run-lengths are the per-build-row match counts (``match_indices`` emits build-major, so the
-    aligned build-index array run-lengths ARE those counts). Flattening it reproduces the relational
-    result exactly; the outer length is the number of build rows that matched (plan M40 a4). Awkward-
-    only (numpy has no ``gak``). ponytail: grouping is per build row (inner/left); an outer join's
-    trailing unmatched-probe rows group together — fine until an outer grouped join is a real need."""
+def join_grouped(
+    left: ak.Array, right: ak.Array, *, on: Sequence[str], how: str = "inner"
+) -> ak.Array:
+    """``gak.join(grouped=True)``: the relational result regrouped by row.
+
+    The regrouping is a DETERMINISTIC ``ak.unflatten`` whose run-lengths are the per-build-row
+    match counts (``match_indices`` emits build-major, so the aligned build-index array run-lengths
+    ARE those counts). Flattening it reproduces the relational result exactly; the outer length is
+    the number of build rows that matched (plan M40 a4). Awkward- only (numpy has no ``gak``).
+    ponytail: grouping is per build row (inner/left); an outer join's trailing unmatched-probe rows
+    group together — fine until an outer grouped join is a real need.
+    """
     bi, pi = match_indices(left, right, on=on, how=how)
     flat = merge_records(take(left, bi), take(right, pi), on=on)
     counts = ak.run_lengths(ak.Array(bi))

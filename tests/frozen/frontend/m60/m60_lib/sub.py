@@ -14,5 +14,5 @@ def _burst(value: Any) -> Any:
 
 
 def failing(array: Any) -> Any:
-    """An op the library records that raises when it runs — V3's `StageError` source."""
+    """Return an op the library records that raises when it runs — V3's `StageError` source."""
     return array.map(_burst)

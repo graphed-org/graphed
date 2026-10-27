@@ -13,7 +13,9 @@ from typing import Any
 from graphed.core import Partition
 
 
-def dead_letter_descriptor(task_id: str, partition: Partition, exc: BaseException) -> dict[str, Any]:
+def dead_letter_descriptor(
+    task_id: str, partition: Partition, exc: BaseException
+) -> dict[str, Any]:
     """Build a reproducible, JSON-serializable dead-letter record from a failure."""
     desc: dict[str, Any] = {
         "task_id": task_id,

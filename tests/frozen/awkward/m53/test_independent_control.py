@@ -1,7 +1,8 @@
-"""vary-m53 §1: an INDEPENDENT family — members built from NOMINAL — is NOT fanned out; the
-combination stays the union. This is the bound m53 preserves, and the live-harness positive control:
-it passes on the pre-m53 tree too, so a run in which it also failed would prove the harness dead
-rather than the fanout absent.
+"""vary-m53 §1: an INDEPENDENT family.
+
+Members built from NOMINAL — is NOT fanned out; the combination stays the union. This is the bound
+m53 preserves, and the live-harness positive control: it passes on the pre-m53 tree too, so a run
+in which it also failed would prove the harness dead rather than the fanout absent.
 """
 
 from __future__ import annotations

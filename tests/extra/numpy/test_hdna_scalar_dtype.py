@@ -1,4 +1,4 @@
-"""``np.where``/``np.clip`` scalars on a deferred numpy array keep the dtype numpy gives them (GW4)."""
+"""``np.where``/``np.clip`` scalars on a deferred numpy array keep numpy's dtype (GW4)."""
 
 from __future__ import annotations
 
@@ -29,7 +29,9 @@ F32: npt.NDArray[np.float32] = np.arange(6, dtype=np.float32)
     ],
     ids=["where_right", "where_left", "clip_low", "clip_high"],
 )
-def test_a_scalar_operand_keeps_its_numpy_dtype(op: Callable[[Any, Any], Any], arr: Any, scalar: Any) -> None:
+def test_a_scalar_operand_keeps_its_numpy_dtype(
+    op: Callable[[Any, Any], Any], arr: Any, scalar: Any
+) -> None:
     session = Session(NumpyBackend())
     got = np.asarray(session.materialize(op(from_array(session, "x", arr), scalar)))
     want = op(arr, scalar)

@@ -1,6 +1,8 @@
-"""Complex topologies through the frontend (plans M2/M3): a diamond/star/nested graph must intern a
-shared sub-expression to ONE node, and `materialize` must evaluate that shared node EXACTLY once
-(never re-executing a shared sub-graph per consumer — a dask failure mode), with correct results.
+"""Complex topologies through the frontend (plans M2/M3).
+
+A diamond/star/nested graph must intern a shared sub-expression to ONE node, and `materialize` must
+evaluate that shared node EXACTLY once (never re-executing a shared sub-graph per consumer — a dask
+failure mode), with correct results.
 """
 
 from __future__ import annotations
@@ -20,7 +22,9 @@ class _Counting:
     def op_form(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> str:
         return "num"
 
-    def eval_stage(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> object:
+    def eval_stage(
+        self, op: str, inputs: Sequence[object], params: Mapping[str, object]
+    ) -> object:
         self.op_evals += 1
         a = inputs[0]
         if "scalar" in params:  # array OP scalar
@@ -59,7 +63,8 @@ def test_diamond_interns_apex_once_and_evaluates_it_once() -> None:
     # apex interned once: x, y, apex, left(mul), right(add), out(add) = 6 nodes
     assert s.node_count() == 6
     assert s.materialize(out) == 38
-    # 4 op nodes (apex, left, right, out), each evaluated once — the apex is NOT recomputed per branch
+    # 4 op nodes (apex, left, right, out), each evaluated once — the apex is NOT recomputed per
+    # branch
     assert s.backend.op_evals == 4
 
 

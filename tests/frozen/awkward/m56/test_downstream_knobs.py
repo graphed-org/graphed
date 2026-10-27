@@ -1,6 +1,7 @@
-"""m56 §2 item 5 / §4 downstream: the m53 knobs see the cross-kind joints like any other. The union
-flag collapses them, a placement keeps one by name and prunes the rest, and the guard's bound is the
-product of family sizes — this family times EACH foreign family, nominal included.
+"""m56 §2 item 5 / §4 downstream: the m53 knobs see the cross-kind joints like any other.
+
+The union flag collapses them, a placement keeps one by name and prunes the rest, and the guard's
+bound is the product of family sizes — this family times EACH foreign family, nominal included.
 """
 
 from __future__ import annotations

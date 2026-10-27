@@ -43,14 +43,20 @@ def _clean() -> None:
 
 
 def _write(array: Any, dest: Path, name: Any = by_step, metadata: Any = None) -> Any:
-    return graphed.write.PartWrite(array=array, destination=str(dest), name=name, codec=json_codec, metadata=metadata)
+    return graphed.write.PartWrite(
+        array=array, destination=str(dest), name=name, codec=json_codec, metadata=metadata
+    )
 
 
 def test_write_and_reduce_share_one_read_and_one_evaluation(tmp_path: Path) -> None:
     _s, x, src = record(FILES)
     y = x * 2.0
     plan = graphed.aggregate_plan(
-        y.sum(), reduce=first_as_float, combine=add, empty=lambda: 0.0, steps_per_file=3,
+        y.sum(),
+        reduce=first_as_float,
+        combine=add,
+        empty=lambda: 0.0,
+        steps_per_file=3,
         writes=[_write(y, tmp_path)],
     )
     value = SequentialRunner().run(plan).value
@@ -67,8 +73,14 @@ def test_write_and_reduce_share_one_read_and_one_evaluation(tmp_path: Path) -> N
 def test_reduce_sees_todays_values_then_one_path_per_write(tmp_path: Path) -> None:
     _s, x, src = record(FILES)
     a, b, d = x * 2.0, x + 1.0, x * 3.0
-    writes = [_write(a, tmp_path / "wa"), _write(b * 1.0, tmp_path / "wb"), _write(d, tmp_path / "wd")]
-    plan = graphed.aggregate_plan(a, b, a, reduce=spy_reduce, combine=add, empty=zero, writes=writes)
+    writes = [
+        _write(a, tmp_path / "wa"),
+        _write(b * 1.0, tmp_path / "wb"),
+        _write(d, tmp_path / "wd"),
+    ]
+    plan = graphed.aggregate_plan(
+        a, b, a, reduce=spy_reduce, combine=add, empty=zero, writes=writes
+    )
     SequentialRunner().run(plan)
     assert len(SEEN) == len(plan.tasks) == 2
     for task, seen in zip(sorted(plan.tasks, key=lambda t: t.key), SEEN, strict=True):
@@ -76,13 +88,17 @@ def test_reduce_sees_todays_values_then_one_path_per_write(tmp_path: Path) -> No
         assert len(seen) == 5
         np.testing.assert_array_equal(seen[0], 2.0 * chunk)
         np.testing.assert_array_equal(seen[1], chunk + 1.0)
-        assert seen[2:] == [os.path.join(tmp_path / w, by_step(task.partition)) for w in ("wa", "wb", "wd")]
+        assert seen[2:] == [
+            os.path.join(tmp_path / w, by_step(task.partition)) for w in ("wa", "wb", "wd")
+        ]
         assert read_part(seen[2])["values"] == (2.0 * chunk).tolist()
         assert read_part(seen[3])["values"] == (chunk + 1.0).tolist()
         assert read_part(seen[4])["values"] == (3.0 * chunk).tolist()
 
     SEEN.clear()
-    SequentialRunner().run(graphed.aggregate_plan(a, b, a, reduce=spy_reduce, combine=add, empty=zero))
+    SequentialRunner().run(
+        graphed.aggregate_plan(a, b, a, reduce=spy_reduce, combine=add, empty=zero)
+    )
     assert [len(seen) for seen in SEEN] == [2, 2]
     for task, seen in zip(sorted(plan.tasks, key=lambda t: t.key), SEEN, strict=True):
         np.testing.assert_array_equal(seen[0], 2.0 * src.chunk(task.partition))
@@ -102,7 +118,10 @@ def test_part_metadata_holds_this_chunks_reduction(tmp_path: Path) -> None:
     _s, x, src = record(F32)
     static = _Static()
     plan = graphed.aggregate_plan(
-        reduce=paths_only, combine=add, empty=no_paths, steps_per_file=2,
+        reduce=paths_only,
+        combine=add,
+        empty=no_paths,
+        steps_per_file=2,
         writes=[
             _write(x, tmp_path / "meta", metadata={"sumw": x.sum(), "kind": static}),
             _write(x, tmp_path / "none"),
@@ -125,10 +144,18 @@ def test_part_metadata_holds_this_chunks_reduction(tmp_path: Path) -> None:
 
 def test_part_path_is_destination_joined_with_name_of_the_tasks_partition(tmp_path: Path) -> None:
     _s, x, src = record(FILES)
-    explicit = [Partition("fa", "t", 0, 5), Partition("fa", "t", 5, 12), Partition("fb", "t", 0, 6)]
+    explicit = [
+        Partition("fa", "t", 0, 5),
+        Partition("fa", "t", 5, 12),
+        Partition("fb", "t", 0, 6),
+    ]
     dest = tmp_path / "not" / "yet"
     plan = graphed.aggregate_plan(
-        reduce=paths_only, combine=add, empty=no_paths, partitions=explicit, writes=[_write(x, dest, by_range)]
+        reduce=paths_only,
+        combine=add,
+        empty=no_paths,
+        partitions=explicit,
+        writes=[_write(x, dest, by_range)],
     )
     paths = SequentialRunner().run(plan).value
     assert paths == [os.path.join(dest, by_range(p)) for p in explicit]
@@ -137,7 +164,10 @@ def test_part_path_is_destination_joined_with_name_of_the_tasks_partition(tmp_pa
 
     blind_dest = tmp_path / "blind"
     plan = graphed.aggregate_plan(
-        reduce=paths_only, combine=add, empty=no_paths, steps_per_file=2,
+        reduce=paths_only,
+        combine=add,
+        empty=no_paths,
+        steps_per_file=2,
         writes=[_write(x, blind_dest, by_step_in_dir)],
     )
     tasks = sorted(plan.tasks, key=lambda t: t.key)
@@ -153,11 +183,17 @@ def test_colliding_part_names_are_refused_before_any_task_runs(tmp_path: Path) -
     dest = tmp_path / "out"
     with pytest.raises(ValueError, match="write the same part"):
         graphed.aggregate_plan(
-            reduce=paths_only, combine=add, empty=no_paths, steps_per_file=2, writes=[_write(x, dest, by_range)]
+            reduce=paths_only,
+            combine=add,
+            empty=no_paths,
+            steps_per_file=2,
+            writes=[_write(x, dest, by_range)],
         )
     with pytest.raises(ValueError, match="write the same part"):
         graphed.aggregate_plan(
-            reduce=paths_only, combine=add, empty=no_paths,
+            reduce=paths_only,
+            combine=add,
+            empty=no_paths,
             partitions=[Partition("fa", "t", 0, 12)],
             writes=[_write(x, dest, fixed_name), _write(x * 2.0, dest, fixed_name)],
         )
@@ -166,7 +202,11 @@ def test_colliding_part_names_are_refused_before_any_task_runs(tmp_path: Path) -
     assert CODEC_CALLS == []
     explicit = [Partition("fa", "t", 0, 6), Partition("fa", "t", 6, 12)]
     plan = graphed.aggregate_plan(
-        reduce=paths_only, combine=add, empty=no_paths, partitions=explicit, writes=[_write(x, dest, by_range)]
+        reduce=paths_only,
+        combine=add,
+        empty=no_paths,
+        partitions=explicit,
+        writes=[_write(x, dest, by_range)],
     )
     assert len(SequentialRunner().run(plan).value) == 2
 
@@ -175,11 +215,18 @@ def test_write_root_reduction_refused_metadata_reduction_allowed(tmp_path: Path)
     _s, x, src = record(FILES)
     with pytest.raises(GraphedError, match="a partitioned write has no combine step"):
         graphed.aggregate_plan(
-            reduce=paths_only, combine=add, empty=no_paths, writes=[_write(x.sum(), tmp_path / "bad")]
+            reduce=paths_only,
+            combine=add,
+            empty=no_paths,
+            writes=[_write(x.sum(), tmp_path / "bad")],
         )
     assert not (tmp_path / "bad").exists()
     plan = graphed.aggregate_plan(
-        x.sum(), reduce=first_as_float, combine=add, empty=lambda: 0.0, steps_per_file=2,
+        x.sum(),
+        reduce=first_as_float,
+        combine=add,
+        empty=lambda: 0.0,
+        steps_per_file=2,
         writes=[_write(x * 2.0, tmp_path / "ok", metadata={"sumx": x.sum()})],
     )
     assert SequentialRunner().run(plan).value == float(sum(v.sum() for v in FILES.values()))
@@ -192,16 +239,25 @@ def test_refusals(tmp_path: Path) -> None:
     s, x, _src = record(FILES)
     _other, y, _ = record(FILES)
     with pytest.raises(TypeError, match="one session"):
-        graphed.aggregate_plan(x.sum(), reduce=first_as_float, combine=add, empty=zero, writes=[_write(y, tmp_path)])
+        graphed.aggregate_plan(
+            x.sum(), reduce=first_as_float, combine=add, empty=zero, writes=[_write(y, tmp_path)]
+        )
     with pytest.raises(TypeError, match="one session"):
         graphed.aggregate_plan(
-            x.sum(), reduce=first_as_float, combine=add, empty=zero,
+            x.sum(),
+            reduce=first_as_float,
+            combine=add,
+            empty=zero,
             writes=[_write(x, tmp_path, metadata={"s": y.sum()})],
         )
     with pytest.raises(TypeError, match="does not capture writes"):
         graphed.aggregate_plan(
-            x.sum(), reduce=first_as_float, combine=add, empty=zero,
-            store=str(tmp_path / "store"), writes=[_write(x, tmp_path / "w")],
+            x.sum(),
+            reduce=first_as_float,
+            combine=add,
+            empty=zero,
+            store=str(tmp_path / "store"),
+            writes=[_write(x, tmp_path / "w")],
         )
     with pytest.raises(ValueError, match="at least one output"):
         graphed.aggregate_plan(reduce=paths_only, combine=add, empty=no_paths, writes=())
@@ -219,10 +275,15 @@ def test_refusals(tmp_path: Path) -> None:
 
     varied = graphed.vary(x, "jes", up=x * 1.5, down=x * 0.5)
     with pytest.raises(GraphedError, match="does not accept a Varied"):
-        graphed.aggregate_plan(reduce=paths_only, combine=add, empty=no_paths, writes=[_write(varied, tmp_path / "v")])
+        graphed.aggregate_plan(
+            reduce=paths_only, combine=add, empty=no_paths, writes=[_write(varied, tmp_path / "v")]
+        )
     for meta in ({"s": varied}, {"s": [varied]}):
         with pytest.raises(GraphedError, match="does not accept a Varied"):
             graphed.aggregate_plan(
-                reduce=paths_only, combine=add, empty=no_paths, writes=[_write(x, tmp_path / "v", metadata=meta)]
+                reduce=paths_only,
+                combine=add,
+                empty=no_paths,
+                writes=[_write(x, tmp_path / "v", metadata=meta)],
             )
     assert not (tmp_path / "v").exists()

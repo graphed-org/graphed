@@ -73,7 +73,9 @@ def test_field_access_and_projection_work_on_parquet_sources(dataset) -> None:  
     g = gio.from_parquet(s, "events", where)
     expr = (g["x"] * 2.0 + g["n"]).reduce("sum")
     assert gn.project(expr).columns_for("events") == frozenset({"x", "n"})
-    assert float(np.asarray(s.materialize(expr))) == pytest.approx(float((whole["x"] * 2 + whole["n"]).sum()))
+    assert float(np.asarray(s.materialize(expr))) == pytest.approx(
+        float((whole["x"] * 2 + whole["n"]).sum())
+    )
 
 
 def test_columns_filter(dataset) -> None:  # type: ignore[no-untyped-def]

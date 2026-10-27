@@ -1,5 +1,7 @@
-"""m68c §3.2/§3.3: ``resolve_services`` on a V2 plan reaches a ``Resolvable`` ``reduce`` held by its
-gather stage."""
+"""m68c §3.2/§3.3: ``resolve_services`` on a V2 plan reaches a ``Resolvable`` ``reduce``.
+
+The ``reduce`` is held by its gather stage.
+"""
 
 from __future__ import annotations
 

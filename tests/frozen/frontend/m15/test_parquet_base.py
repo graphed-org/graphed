@@ -37,11 +37,13 @@ def files(tmp_path) -> list[str]:  # type: ignore[no-untyped-def]
     return out
 
 
-# ---- discovery -----------------------------------------------------------------------------------
+# ----
+# discovery -----------------------------------------------------------------------------------
 def test_discovery_forms(files: list[str], tmp_path) -> None:  # type: ignore[no-untyped-def]
     assert gpq.discover(files[0]) == (files[0],)
     assert gpq.discover(str(tmp_path)) == tuple(sorted(files))  # directory: sorted
-    assert gpq.discover(os.path.join(tmp_path, "data-*.parquet")) == tuple(sorted(files))  # glob: sorted
+    # glob: sorted
+    assert gpq.discover(os.path.join(tmp_path, "data-*.parquet")) == tuple(sorted(files))
     explicit = [files[2], files[0]]
     assert gpq.discover(explicit) == (files[2], files[0])  # explicit list: caller's order kept
     with pytest.raises(FileNotFoundError):
@@ -54,7 +56,8 @@ def test_num_rows_and_schema_are_metadata_reads(files: list[str]) -> None:
     assert schema.names == ["x", "y"]
 
 
-# ---- partitioning --------------------------------------------------------------------------------
+# ----
+# partitioning --------------------------------------------------------------------------------
 def test_blind_partitioning_opens_no_file() -> None:
     # the witness: these paths DO NOT EXIST, yet blind partitioning must succeed (R15.3/R7.9)
     ghosts = ["/definitely/not/here-0.parquet", "/definitely/not/here-1.parquet"]
@@ -99,7 +102,7 @@ def test_part_index_is_stable_for_blind_and_eager(files: list[str]) -> None:
     assert gpq.part_path("/out", 7) == os.path.join("/out", "part-00007.parquet")
 
 
-# ---- deferred sources ----------------------------------------------------------------------------
+# ---- deferred sources ---------------------------------------------------------------------------
 def test_deferred_source_is_lazy_and_identity_carries_the_dataset(files: list[str]) -> None:
     s = session()
     loader = CountingLoader(value="DATA")
@@ -113,11 +116,13 @@ def test_deferred_source_is_lazy_and_identity_carries_the_dataset(files: list[st
     a = gpq.deferred_source(s2, "events", paths=paths, form=ToyForm("source"), loader=loader)
     b = gpq.deferred_source(s2, "events", paths=paths, form=ToyForm("source"), loader=loader)
     assert a.node_id == b.node_id  # same dataset interns to one source
-    other = gpq.deferred_source(s2, "events", paths=paths[:1], form=ToyForm("source"), loader=loader)
+    other = gpq.deferred_source(
+        s2, "events", paths=paths[:1], form=ToyForm("source"), loader=loader
+    )
     assert other.node_id != a.node_id  # a DIFFERENT file list is a different source identity
 
 
-# ---- the deferred write plan ---------------------------------------------------------------------
+# ---- the deferred write plan --------------------------------------------------------------------
 class _SpyResources:
     def open_once(self, uri: str, opener):  # type: ignore[no-untyped-def]
         return opener(uri)

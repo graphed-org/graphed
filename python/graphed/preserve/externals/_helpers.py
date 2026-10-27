@@ -14,13 +14,18 @@ from ..errors import PreserveError
 
 
 def json_bytes(payload: bytes) -> bytes:
-    """A JSON payload's bytes, gunzipped when gzipped (CMS POGs ship correction sets as .json.gz)."""
+    """Return a JSON payload's bytes, gunzipped when gzipped.
+
+    CMS POGs ship correction sets as .json.gz.
+    """
     return gzip.decompress(payload) if payload[:2] == b"\x1f\x8b" else payload
 
 
 def _canonical_json_hash(domain: bytes, payload: bytes) -> str:
     """sha256 over domain-separated, canonicalized JSON (key order + whitespace = formatting)."""
-    return memoized_model_hash(domain.decode(), payload, lambda p: _canonical_json_hash_impl(domain, p))
+    return memoized_model_hash(
+        domain.decode(), payload, lambda p: _canonical_json_hash_impl(domain, p)
+    )
 
 
 def _canonical_json_hash_impl(domain: bytes, payload: bytes) -> str:
@@ -33,8 +38,10 @@ def _canonical_json_hash_impl(domain: bytes, payload: bytes) -> str:
 
 
 def _stack_feature_columns(inputs: list[Any]) -> Any:
-    """Per-event feature arrays -> one (n_events, n_features) matrix in their common dtype; a
-    framework that needs one dtype casts it to the model's own."""
+    """Per-event feature arrays -> one (n_events, n_features) matrix in their common dtype.
+
+    A framework that needs one dtype casts it to the model's own.
+    """
     import awkward as ak  # noqa: PLC0415
     import numpy as np  # noqa: PLC0415
 
@@ -42,8 +49,10 @@ def _stack_feature_columns(inputs: list[Any]) -> Any:
 
 
 def _as_event_array(out: Any) -> Any:
-    """A model's (n,) or (n, 1) output as one value per event; (n, k, ...) as ``ak.from_numpy``
-    gives it, regular rows of k."""
+    """Return a model's (n,) or (n, 1) output as one value per event.
+
+    (n, k, ...) as ``ak.from_numpy`` gives it, regular rows of k.
+    """
     import awkward as ak  # noqa: PLC0415
     import numpy as np  # noqa: PLC0415
 
@@ -60,7 +69,7 @@ def _strip_config_names(obj: Any) -> Any:
     return obj
 
 
-# ---- M27: variadic call templates ----------------------------------------------------------------
+# ---- M27: variadic call templates ---------------------------------------------------------------
 # params["args"] (positional) / params["kwargs"] (keyword) route a node's graph inputs to the
 # callee's REAL signature. Entries: "$i" (input slot i), ["$i", "$j"] (a group — for ML plugins,
 # stacked into one feature matrix), or — where a plugin allows it — a constant (correctionlib's
@@ -80,18 +89,27 @@ def _decode_spec(value: Any) -> Any:
     return value
 
 
-def _parse_entry(entry: Any, n_inputs: int, *, allow_constants: bool, allow_groups: bool) -> TemplateEntry:
+def _parse_entry(
+    entry: Any, n_inputs: int, *, allow_constants: bool, allow_groups: bool
+) -> TemplateEntry:
     if isinstance(entry, str) and entry.startswith("$"):
         i = int(entry[1:])
         if not 0 <= i < n_inputs:
-            raise PreserveError(f"call template slot {entry} out of range (node has {n_inputs} inputs)")
+            raise PreserveError(
+                f"call template slot {entry} out of range (node has {n_inputs} inputs)"
+            )
         return ("slot", i)
     if isinstance(entry, list):
         if not allow_groups:
-            raise PreserveError("this plugin's callee takes scalar/array arguments, not stacked groups")
+            raise PreserveError(
+                "this plugin's callee takes scalar/array arguments, not stacked groups"
+            )
         return (
             "group",
-            [_parse_entry(e, n_inputs, allow_constants=False, allow_groups=False)[1] for e in entry],
+            [
+                _parse_entry(e, n_inputs, allow_constants=False, allow_groups=False)[1]
+                for e in entry
+            ],
         )
     if allow_constants and isinstance(entry, (str, int, float, bool)):
         return ("const", entry)
@@ -114,13 +132,17 @@ def parse_call_template(
     if raw_kwargs and not allow_kwargs:
         raise PreserveError("this plugin's callee does not take keyword arguments")
     kwargs: dict[str, TemplateEntry] = {
-        str(k): _parse_entry(v, n_inputs, allow_constants=allow_constants, allow_groups=allow_groups)
+        str(k): _parse_entry(
+            v, n_inputs, allow_constants=allow_constants, allow_groups=allow_groups
+        )
         for k, v in (raw_kwargs or {}).items()
     }
     if isinstance(raw_args, dict):
         # the NAMED form (onnx feeds, triton InferInputs): named protocol inputs, not python kwargs
         named = {
-            str(k): _parse_entry(v, n_inputs, allow_constants=allow_constants, allow_groups=allow_groups)
+            str(k): _parse_entry(
+                v, n_inputs, allow_constants=allow_constants, allow_groups=allow_groups
+            )
             for k, v in raw_args.items()
         }
         return ([("named", named)], kwargs)
@@ -141,11 +163,11 @@ def ml_matrix(entry: TemplateEntry, inputs: list[Any]) -> Any:
     raise PreserveError(f"constants are not valid model inputs (got {value!r})")
 
 
-# ---- M36: memoize the EXPENSIVE (model-parsing) content hashes -----------------------------------
+# ---- M36: memoize the EXPENSIVE (model-parsing) content hashes ----------------------------------
 # A model's content hash is computed at record time AND re-verified at bundle-build time; each call
 # re-parses the model (onnx.load, torch.jit.load, keras load, jax deserialize). Cache the result by
-# the payload bytes so the same payload parses once. Bounded FIFO; keyed per (domain, bytes)
-# so distinct plugins never collide. Cold in a fresh process, so the by-value validate subprocess
+# the payload bytes so the same payload parses once. Bounded FIFO; keyed per (domain, bytes) so
+# distinct plugins never collide. Cold in a fresh process, so the by-value validate subprocess
 # still computes correctly.
 # keyed by the payload itself: bytes cache their hash, so a repeat with the same object is O(1)
 _HASH_MEMO: OrderedDict[tuple[str, bytes], Any] = OrderedDict()

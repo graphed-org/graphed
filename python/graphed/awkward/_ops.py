@@ -128,13 +128,16 @@ _AK_TWO_INPUT: dict[str, Any] = {
 
 
 def scalar_param(params: Mapping[str, Any], key: str = "scalar", dtype_key: str = "dtype") -> Any:
-    """The scalar operand a binary op recorded — back in its own dtype when it had one (M59). The
-    frontend cannot build a numpy scalar, so it records the dtype name beside the value, and a
-    value wider than the store's i64 param as text."""
+    """Return the scalar operand a binary op recorded.
+
+    Back in its own dtype when it had one (M59). The frontend cannot build a numpy scalar, so it
+    records the dtype name beside the value, and a value wider than the store's i64 param as text.
+    """
     value = params[key]
     if dtype_key not in params:
         return value
-    return np.dtype(str(params[dtype_key])).type(value)  # the dtype parses the wide int's text itself
+    # the dtype parses the wide int's text itself
+    return np.dtype(str(params[dtype_key])).type(value)
 
 
 def _scalar_operands(operands: Sequence[Any], params: Mapping[str, Any]) -> list[Any]:
@@ -146,7 +149,10 @@ def _scalar_operands(operands: Sequence[Any], params: Mapping[str, Any]) -> list
 
 
 def _leaves(result: Any) -> list[Any]:
-    """A method result's arrays, depth-first — the order its `index` param numbers them in."""
+    """Return a method result's arrays, depth-first.
+
+    That is the order its `index` param numbers them in.
+    """
     if isinstance(result, tuple):
         return [leaf for item in result for leaf in _leaves(item)]
     return [result]
@@ -158,14 +164,19 @@ def _fields(params: Mapping[str, Any]) -> list[str]:
 
 
 def _structure(x: Any) -> str:
-    """A value's type BELOW its outer length — the part a typetracer form and a real partition
-    render identically, so one blame message reads the same on either path."""
+    """Return a value's type BELOW its outer length.
+
+    The part a typetracer form and a real partition render identically, so one blame message reads
+    the same on either path.
+    """
     return str(ak.Array(x).type).split(" * ", 1)[-1]
 
 
 def _broadcast_blame(operands: Sequence[Any], exc: ValueError) -> Exception:
-    """§6.1d: translate awkward's two-anonymous-layouts complaint into a `graphed` error naming the
-    offending FACTOR — the operand `broadcast_like` broadcasts to the value's structure.
+    """§6.1d: translate awkward's two-anonymous-layouts complaint into a `graphed` error.
+
+    The error names the offending FACTOR — the operand `broadcast_like` broadcasts to the value's
+    structure.
 
     One site for both paths: a regular-vs-regular mismatch is decidable from the typetracer forms
     and lands at record time (where `Session.record_op` re-raises this at the user's line), while a
@@ -188,8 +199,11 @@ def _broadcast_blame(operands: Sequence[Any], exc: ValueError) -> Exception:
 
 
 def _decode_call(text: str, operands: Sequence[Any]) -> Any:
-    """Rebuild a `method` op's argument structure: `{"$": i}` becomes operand `i` (M54) and
-    `{"$dtype": name, "v": item}` the numpy scalar it was recorded from."""
+    """Rebuild a `method` op's argument structure.
+
+    `{"$": i}` becomes operand `i` (M54) and `{"$dtype": name, "v": item}` the numpy scalar it was
+    recorded from.
+    """
 
     def walk(value: Any) -> Any:
         if isinstance(value, dict):
@@ -206,7 +220,10 @@ def _decode_call(text: str, operands: Sequence[Any]) -> Any:
 
 
 def apply(
-    op: str, operands: Sequence[Any], params: Mapping[str, Any], behavior: Mapping[str, Any] | None = None
+    op: str,
+    operands: Sequence[Any],
+    params: Mapping[str, Any],
+    behavior: Mapping[str, Any] | None = None,
 ) -> Any:
     if behavior:
         # M54: the backend's behavior dict rides on every operand (with its own attrs), so a
@@ -219,7 +236,8 @@ def apply(
     if op == "pack_key":  # M40 §2.1: add the big-endian-packed u64 __joinkey__ column
         return join.pack_key(operands[0], join.on_from_params(params))
     if op == "exchange":
-        return operands[0]  # a pure data-movement boundary is identity on values in-process (§3.3a)
+        # a pure data-movement boundary is identity on values in-process (§3.3a)
+        return operands[0]
     if op in _UNARY:
         return _UNARY[op](operands[0])
     if op in _BINARY:
@@ -240,7 +258,8 @@ def apply(
         # arrays share this branch, so form inference, projection replay and evaluation agree.
         target = getattr(operands[0], str(params["method"]))
         result = target(
-            *_decode_call(str(params["args"]), operands), **_decode_call(str(params["kwargs"]), operands)
+            *_decode_call(str(params["args"]), operands),
+            **_decode_call(str(params["kwargs"]), operands),
         )
         # M59: a tuple result may be NESTED; `index` numbers its leaves depth-first
         return _leaves(result)[int(params["index"])] if "index" in params else result
@@ -265,7 +284,9 @@ def apply(
     ):
         return _global_extremum(op, operands[0])
     if op in _AK_REDUCERS:
-        return _AK_REDUCERS[op](operands[0], axis=_axis(params), **_reduce_kwargs(op, params, operands))
+        return _AK_REDUCERS[op](
+            operands[0], axis=_axis(params), **_reduce_kwargs(op, params, operands)
+        )
     if op in ("ak.std", "ak.var"):
         if (
             _axis(params) is None
@@ -282,7 +303,10 @@ def apply(
         )
     if op == "ak.moment":
         return ak.moment(
-            operands[0], int(params["n"]), axis=_axis(params), **_reduce_kwargs(op, params, operands)
+            operands[0],
+            int(params["n"]),
+            axis=_axis(params),
+            **_reduce_kwargs(op, params, operands),
         )
     if op == "ak.softmax":
         return ak.softmax(operands[0], axis=int(params.get("axis", 1)))
@@ -309,7 +333,11 @@ def apply(
             **_naming_kwargs(params),
         )
     if op == "ak.zip":
-        zipped = tuple(operands) if params.get("tuple") else dict(zip(_fields(params), operands, strict=True))
+        zipped = (
+            tuple(operands)
+            if params.get("tuple")
+            else dict(zip(_fields(params), operands, strict=True))
+        )
         kw: dict[str, Any] = dict(_naming_kwargs(params))
         if "depth_limit" in params:
             kw["depth_limit"] = int(params["depth_limit"])
@@ -342,7 +370,9 @@ def apply(
         return ak.flatten(operands[0], axis=_axis(params, default=1))
     if op == "ak.fill_none":
         return ak.fill_none(
-            operands[0], scalar_param(params, "value", "value_dtype"), axis=int(params.get("axis", -1))
+            operands[0],
+            scalar_param(params, "value", "value_dtype"),
+            axis=int(params.get("axis", -1)),
         )
     if op == "ak.drop_none":
         ax = params.get("axis")
@@ -433,11 +463,14 @@ def apply(
 
 
 def _global_extremum(op: str, x: Any) -> Any:
-    """axis=None min/max/ptp need typetracer-aware handling: the typetracer's option-scalar
-    (MaybeNone) cannot be formed or subtracted, and upstream ak.ptp(axis=None) indexes its scalar
-    result. On the TYPETRACER path use awkward's own mask_identity=False inference (a plain
-    unknown scalar); the REAL path keeps awkward's default semantics untouched. ptp composes
-    max - min on the typetracer (identical kernels — not hand-rolled inference)."""
+    """axis=None min/max/ptp need typetracer-aware handling.
+
+    The typetracer's option-scalar (MaybeNone) cannot be formed or subtracted, and upstream
+    ak.ptp(axis=None) indexes its scalar result. On the TYPETRACER path use awkward's own
+    mask_identity=False inference (a plain unknown scalar); the REAL path keeps awkward's default
+    semantics untouched. ptp composes max - min on the typetracer (identical kernels — not
+    hand-rolled inference).
+    """
     tracing = ak.backend(x) == "typetracer"
     if op == "ak.ptp":
         if tracing:
@@ -450,13 +483,15 @@ def _global_extremum(op: str, x: Any) -> Any:
 
 
 def _global_moment(op: str, params: Mapping[str, Any], operands: Sequence[Any]) -> Any:
-    """axis=None std/var need the same typetracer-aware handling as _global_extremum: awkward
-    2.13.0's ak_var._impl indexes its mean scalar (`xmean[(0,) * xmean.ndim]`), which to_layout
-    refuses for the tracer's unknown scalar whatever mask_identity says. Compose the abstract
-    result from typetracer-safe kernels with awkward's own dtype rules (float32 promotes to
-    float64 on both paths, measured); the REAL path keeps ak.std/ak.var semantics untouched.
-    A weighted moment needs no special arm: the weight cannot change a scalar reduction's
-    abstract form, and the real path still applies it."""
+    """axis=None std/var need the same typetracer-aware handling as _global_extremum.
+
+    awkward 2.13.0's ak_var._impl indexes its mean scalar (`xmean[(0,) * xmean.ndim]`), which
+    to_layout refuses for the tracer's unknown scalar whatever mask_identity says. Compose the
+    abstract result from typetracer-safe kernels with awkward's own dtype rules (float32 promotes
+    to float64 on both paths, measured); the REAL path keeps ak.std/ak.var semantics untouched. A
+    weighted moment needs no special arm: the weight cannot change a scalar reduction's abstract
+    form, and the real path still applies it.
+    """
     x = operands[0]
     m1 = ak.mean(x, axis=None, mask_identity=False)
     var = ak.mean(x * x, axis=None, mask_identity=False) - m1 * m1
@@ -468,8 +503,10 @@ def _global_moment(op: str, params: Mapping[str, Any], operands: Sequence[Any]) 
 
 
 def _reduce_kwargs(op: str, params: Mapping[str, Any], operands: Sequence[Any]) -> dict[str, Any]:
-    """ak-parity reducer kwargs, present-only in params (ak's own defaults otherwise); a weighted
-    moment carries its weight as the SECOND OPERAND."""
+    """ak-parity reducer kwargs, present-only in params (ak's own defaults otherwise).
+
+    A weighted moment carries its weight as the SECOND OPERAND.
+    """
     kw: dict[str, Any] = {}
     if params.get("keepdims"):
         kw["keepdims"] = True

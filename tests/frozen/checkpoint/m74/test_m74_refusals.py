@@ -1,4 +1,7 @@
-"""m74 T4: plans resume refuses, before any store I/O, and plans it accepts (plan §2.5, §4.1 T4)."""
+"""m74 T4: plans resume refuses, before any store I/O, and plans it accepts.
+
+Plan §2.5, §4.1 T4.
+"""
 
 from __future__ import annotations
 
@@ -28,7 +31,13 @@ def _bare(p: Any, r: Any) -> float:
 
 def _with_services(process: Any, uri: str = "mem://m74/events") -> Plan[Any]:
     plan = h.plan_of(process, h.partitions(uri=uri))
-    return Plan(process=plan.process, combine=plan.combine, empty=plan.empty, tasks=plan.tasks, services=(SPEC,))
+    return Plan(
+        process=plan.process,
+        combine=plan.combine,
+        empty=plan.empty,
+        tasks=plan.tasks,
+        services=(SPEC,),
+    )
 
 
 def refused(plan: Any, root: Path, *needles: str) -> None:
@@ -59,7 +68,12 @@ def test_services_with_a_served_wrapper_is_refused_unpickled(tmp_path: Path) -> 
 
 def test_collated_plan_holding_a_served_wrapper(tmp_path: Path) -> None:
     h.PICKLED.clear()
-    plan = collate({"served": _with_services(h.Served(h.marked)), "plain": _with_services(h.marked, "mem://m74/other")})
+    plan = collate(
+        {
+            "served": _with_services(h.Served(h.marked)),
+            "plain": _with_services(h.marked, "mem://m74/other"),
+        }
+    )
     refused(plan, tmp_path / "store", "checkpointable")
     assert h.PICKLED == []
 
@@ -82,7 +96,11 @@ def test_process_reading_a_main_cache_def(tmp_path: Path, monkeypatch: pytest.Mo
     scale.__module__ = "__main__"
     scale.__qualname__ = "m74_scale"
     monkeypatch.setattr(sys.modules["__main__"], "m74_scale", scale, raising=False)
-    refused(h.plan_of(lambda p, r: scale(float(p.entry_start))), tmp_path / "store", "__main__.m74_scale")
+    refused(
+        h.plan_of(lambda p, r: scale(float(p.entry_start))),
+        tmp_path / "store",
+        "__main__.m74_scale",
+    )
 
 
 def test_already_resumable_plan(tmp_path: Path) -> None:
@@ -107,20 +125,36 @@ def _lambda_plan(paths: list[str]) -> Any:
 
 
 def _aggregate_with_services(paths: list[str]) -> Any:
-    return aggregate_plan(gak.sum(h.service_events(paths)), reduce=h.agg_reduce, combine=h.agg_combine, empty=h.agg_empty)
+    return aggregate_plan(
+        gak.sum(h.service_events(paths)),
+        reduce=h.agg_reduce,
+        combine=h.agg_combine,
+        empty=h.agg_empty,
+    )
 
 
 def _shuffle(paths: list[str]) -> Any:
-    ev = from_parquet(Session(AwkwardBackend()), "events", paths, open_files=False, steps_per_file=2)
-    return shuffle_plan(gak.sum(repartition(ev, n=2).x), reduce=h.agg_reduce, combine=h.agg_combine, empty=h.agg_empty)
+    ev = from_parquet(
+        Session(AwkwardBackend()), "events", paths, open_files=False, steps_per_file=2
+    )
+    return shuffle_plan(
+        gak.sum(repartition(ev, n=2).x),
+        reduce=h.agg_reduce,
+        combine=h.agg_combine,
+        empty=h.agg_empty,
+    )
 
 
 def _write_with_services(paths: list[str]) -> Any:
-    return to_parquet(h.service_events(paths), str(Path(paths[0]).parent / "written"), compute=False)
+    return to_parquet(
+        h.service_events(paths), str(Path(paths[0]).parent / "written"), compute=False
+    )
 
 
 @pytest.mark.parametrize(
-    "build", [_lambda_plan, _aggregate_with_services, _shuffle, _write_with_services], ids=lambda f: f.__name__
+    "build",
+    [_lambda_plan, _aggregate_with_services, _shuffle, _write_with_services],
+    ids=lambda f: f.__name__,
 )
 def test_allowed(tmp_path: Path, paths: list[str], build: Callable[[list[str]], Any]) -> None:
     plan = build(paths)

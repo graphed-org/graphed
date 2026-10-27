@@ -24,7 +24,7 @@ EVENTS = make_events(n_events=200, seed=48)
 
 
 def context_with_root() -> tuple[Session, Any, Any]:
-    """The context AND the context-free root read it wraps, for the seams that need both."""
+    """Return the context AND the context-free root read it wraps, for the seams that need both."""
     session = Session(AwkwardBackend())
     root = from_awkward(session, "events", EVENTS)
     return session, ga.gnano.events(root), root
@@ -46,7 +46,7 @@ def shifted_met(source: Any, factor: float) -> Any:
 
 
 def jes_kwargs(source: Any) -> dict[str, Any]:
-    """The lockstep shift form: Jet and MET move together."""
+    """Return the lockstep shift form: Jet and MET move together."""
     return {
         "Jet": {"up": shifted_jets(source, 1.05), "down": shifted_jets(source, 0.95)},
         "MET": {"up": shifted_met(source, 1.02), "down": shifted_met(source, 0.98)},
@@ -54,7 +54,7 @@ def jes_kwargs(source: Any) -> dict[str, Any]:
 
 
 def shift_kwargs(source: Any, tag: str, factor: float) -> dict[str, Any]:
-    """A one-tag shift, for the collision arms that need the tag spelled to order."""
+    """Return a one-tag shift, for the collision arms that need the tag spelled to order."""
     return {"Jet": {tag: shifted_jets(source, factor)}, "MET": {tag: shifted_met(source, factor)}}
 
 
@@ -71,18 +71,25 @@ def _rows(session: Any, value: Any, label: str) -> int:
 
 
 def _deep_rows(session: Any, value: Any, label: str) -> int:
-    """`label`'s rows through a NESTED container (§2.1's two-level shape), falling back to a
-    level's central universe when it does not carry the label."""
+    """Return `label`'s rows through a NESTED container (§2.1's two-level shape).
+
+    Fall back to a level's central universe when it does not carry the label.
+    """
     while isinstance(value, graphed.Varied):
-        value = graphed.universe(value, label) if label in graphed.labels(value) else graphed.nominal(value)
+        value = (
+            graphed.universe(value, label)
+            if label in graphed.labels(value)
+            else graphed.nominal(value)
+        )
     return len(ak.to_list(session.materialize(value)))
 
 
 # ---- F1: §2.1's one-row-space rule for overload (a) ------------------------------------------
 def test_an_ancestor_handled_target_is_re_indexed_into_the_containers_row_space() -> None:
-    """The target is read at the PARENT and the new member at a mask-derived child, so the
-    container's most-derived handle is the child's. Re-indexing only the new members leaves the
-    nominal universe at the parent's row count — a container advertising a handle it does not
+    """The target is read at the PARENT and the new member at a mask-derived child.
+
+    So the container's most-derived handle is the child's. Re-indexing only the new members leaves
+    the nominal universe at the parent's row count — a container advertising a handle it does not
     honour, which surfaces only at execution as a broadcast error about the wrong thing.
     """
     session, events = events_context()
@@ -97,10 +104,15 @@ def test_an_ancestor_handled_target_is_re_indexed_into_the_containers_row_space(
 
 
 def test_a_vary_identity_link_leaves_the_target_and_its_handle_alone() -> None:
-    """The negative control. A `vary` link keeps the row space fixed, so re-indexing across it
-    would re-stamp nominal's handle and lose the parent identity §2.3e pins."""
+    """The negative control.
+
+    A `vary` link keeps the row space fixed, so re-indexing across it would re-stamp nominal's
+    handle and lose the parent identity §2.3e pins.
+    """
     _s, events = events_context()
-    weighted = graphed.vary(events, "pu", pu_weight(events, 1.0), is_weight=True, up=pu_weight(events, 1.1))
+    weighted = graphed.vary(
+        events, "pu", pu_weight(events, 1.0), is_weight=True, up=pu_weight(events, 1.1)
+    )
     varied = graphed.vary(events.MET.pt, "sf", up=weighted.MET.pt * 1.1)
 
     assert graphed.context_of(varied) is weighted
@@ -109,10 +121,15 @@ def test_a_vary_identity_link_leaves_the_target_and_its_handle_alone() -> None:
 
 
 # ---- F2: the weight form's duplicate-label check --------------------------------------------
-def test_a_weight_label_colliding_with_the_ambient_registry_under_ANOTHER_name_is_refused() -> None:
-    """The cross-name prefix collision: `vary(ctx, "jes_up", x=…)` and `vary(ctx, "jes", up_x=…)`
-    both spell `jes_up_x`. Composing them silently would make one universe differ from nominal in
-    TWO knobs, which §2.1's one-at-a-time rule forbids."""
+def test_a_weight_label_colliding_with_the_ambient_registry_under_another_name_is_refused() -> (
+    None
+):
+    """The cross-name prefix collision.
+
+    `vary(ctx, "jes_up", x=…)` and `vary(ctx, "jes", up_x=…)` both spell `jes_up_x`. Composing them
+    silently would make one universe differ from nominal in TWO knobs, which §2.1's one-at-a-time
+    rule forbids.
+    """
     _s, events = events_context()
     weight = pu_weight(events, 1.0)
     first = graphed.vary(events, "jes_up", weight, is_weight=True, x=weight * 2.0)
@@ -134,10 +151,12 @@ def test_the_same_name_family_check_still_fires_and_a_fresh_label_still_register
 
 
 # ---- F3: the derivation memo must separate two masks that share a nominal --------------------
-def test_two_varied_masks_sharing_a_nominal_derive_DIFFERENT_contexts() -> None:
-    """The memo key covers every member's node id. Keyed on the nominal alone, `ctx[mask_b]`
-    silently answers with `ctx[mask_a]`'s child and every read through it lands in the wrong
-    per-label row space — a wrong histogram with nothing raised."""
+def test_two_varied_masks_sharing_a_nominal_derive_different_contexts() -> None:
+    """The memo key covers every member's node id.
+
+    Keyed on the nominal alone, `ctx[mask_b]` silently answers with `ctx[mask_a]`'s child and every
+    read through it lands in the wrong per-label row space — a wrong histogram with nothing raised.
+    """
     session, events = events_context()
 
     central = four_jets(events.Jet)  # the pt cut is what makes a shift move rows
@@ -159,16 +178,20 @@ def test_two_varied_masks_sharing_a_nominal_derive_DIFFERENT_contexts() -> None:
 
 # ---- F5: the unreached-label diagnostic on a CONTEXT-borne program ---------------------------
 def test_a_shift_varied_context_whose_universes_are_all_filled_reports_nothing() -> None:
-    """Labels must survive `EventContext` projection, or the diagnostic users are told to trust
-    reports labels that DO reach a marked output."""
+    """Labels must survive `EventContext` projection.
+
+    Otherwise the diagnostic users are told to trust reports labels that DO reach a marked output.
+    """
     session, events = events_context()
     shifted = graphed.vary(events, "jes", **jes_kwargs(events))
-    outputs = [gak.sum(graphed.universe(shifted, label).MET.pt) for label in graphed.labels(shifted)]
+    outputs = [
+        gak.sum(graphed.universe(shifted, label).MET.pt) for label in graphed.labels(shifted)
+    ]
     compiled = compile_ir(session, *outputs)
     assert compiled.unreached_labels == ()
 
 
-def test_a_context_borne_label_that_reaches_no_output_IS_reported() -> None:
+def test_a_context_borne_label_that_reaches_no_output_is_reported() -> None:
     """The other direction, on the same channel: registered through a context, never filled."""
     session, events = events_context()
     shifted = graphed.vary(events, "jes", **jes_kwargs(events))
@@ -177,10 +200,12 @@ def test_a_context_borne_label_that_reaches_no_output_IS_reported() -> None:
 
 
 # ---- A-1/D3-1: the weight form's duplicate check keys on family NAME, over all three carriers -
-def test_a_correlated_weight_after_a_shift_is_accepted_in_BOTH_registration_orders() -> None:
-    """The ambient container's members are the §2.4 union — shift and selection labels included —
-    so a check keyed on them refuses `vary(ctx, "jes", up=…)` after a jes SHIFT, which registers
-    nothing under that label and stays one knob per universe."""
+def test_a_correlated_weight_after_a_shift_is_accepted_in_both_registration_orders() -> None:
+    """The ambient container's members are the §2.4 union.
+
+    Shift and selection labels included — so a check keyed on them refuses `vary(ctx, "jes", up=…)`
+    after a jes SHIFT, which registers nothing under that label and stays one knob per universe.
+    """
     _s, events = events_context()
     weight = pu_weight(events, 1.0)
 
@@ -194,9 +219,12 @@ def test_a_correlated_weight_after_a_shift_is_accepted_in_BOTH_registration_orde
     assert set(graphed.labels(graphed.weight(swapped))) >= {"nominal", "pu_up", "jes_up"}
 
 
-def test_a_weight_duplicate_under_another_name_is_STILL_refused_with_a_shift_present() -> None:
-    """The WEIGHT arm of the population. Narrowing the check must not disable it; the shift on the
-    context is what makes this see the axis the union-keyed version could not."""
+def test_a_weight_duplicate_under_another_name_is_still_refused_with_a_shift_present() -> None:
+    """The WEIGHT arm of the population.
+
+    Narrowing the check must not disable it; the shift on the context is what makes this see the
+    axis the union-keyed version could not.
+    """
     _s, events = events_context()
     weight = pu_weight(events, 1.0)
     shifted = graphed.vary(events, "jes", **jes_kwargs(events))
@@ -205,10 +233,12 @@ def test_a_weight_duplicate_under_another_name_is_STILL_refused_with_a_shift_pre
         graphed.vary(first, "sf", weight, is_weight=True, up_x=weight * 3.0)
 
 
-def test_a_SHIFT_carried_label_colliding_under_another_family_is_refused() -> None:
-    """Keyed by carrier KIND, an `sf_up` SHIFT and an `sf` weight both spell `sf_up_x` and compose
-    silently: that universe then differs from nominal in the shift's Jet.pt AND the weight's
-    factor — two knobs on one label, which §2.1's one-at-a-time rule forbids."""
+def test_a_shift_carried_label_colliding_under_another_family_is_refused() -> None:
+    """Keyed by carrier KIND, an `sf_up` SHIFT and an `sf` weight compose silently.
+
+    Both spell `sf_up_x`: that universe then differs from nominal in the shift's Jet.pt AND the
+    weight's factor — two knobs on one label, which §2.1's one-at-a-time rule forbids.
+    """
     _s, events = events_context()
     weight = pu_weight(events, 1.0)
     shifted = graphed.vary(events, "sf_up", **shift_kwargs(events, "x", 1.05))
@@ -217,9 +247,12 @@ def test_a_SHIFT_carried_label_colliding_under_another_family_is_refused() -> No
         graphed.vary(shifted, "sf", weight, is_weight=True, up_x=weight * 3.0)
 
 
-def test_a_SELECTION_carried_label_colliding_under_another_family_is_refused() -> None:
-    """The third carrier: the label reaches the context through a `Varied` MASK alone, registered
-    on neither the ambient weight nor any collection."""
+def test_a_selection_carried_label_colliding_under_another_family_is_refused() -> None:
+    """The third carrier.
+
+    The label reaches the context through a `Varied` MASK alone, registered on neither the ambient
+    weight nor any collection.
+    """
     _s, events = events_context()
     weight = pu_weight(events, 1.0)
     mask = graphed.vary(four_jets(events.Jet), "sf_up", x=four_jets(shifted_jets(events, 1.05)))
@@ -229,9 +262,11 @@ def test_a_SELECTION_carried_label_colliding_under_another_family_is_refused() -
         graphed.vary(sel, "sf", weight, is_weight=True, up_x=weight * 3.0)
 
 
-def test_align_re_indexes_an_ancestor_member_across_a_VARIED_mask_link() -> None:
-    """The F1 witness drives `_align` across an unvaried mask; this drives the varied-mask path,
-    where each label is re-indexed by THAT label's own mask."""
+def test_align_re_indexes_an_ancestor_member_across_a_varied_mask_link() -> None:
+    """The F1 witness drives `_align` across an unvaried mask.
+
+    This drives the varied-mask path, where each label is re-indexed by THAT label's own mask.
+    """
     session, events = events_context()
 
     mask = graphed.vary(four_jets(events.Jet), "jes", up=four_jets(shifted_jets(events, 1.05)))
@@ -248,10 +283,12 @@ def test_align_re_indexes_an_ancestor_member_across_a_VARIED_mask_link() -> None
 
 
 # ---- A-2: the duplicate guard must fire before the row-space maps ----------------------------
-def test_a_duplicate_label_shadowing_a_contexted_member_raises_the_DESIGNED_error() -> None:
-    """Run after `_align`, the collision hides its member's handle from `check_members`; the
-    container is then left with no handle at all and `_align` dies on an internal AttributeError
-    where the duplicate-label error belongs."""
+def test_a_duplicate_label_shadowing_a_contexted_member_raises_the_designed_error() -> None:
+    """Run after `_align`, the collision hides its member's handle from `check_members`.
+
+    The container is then left with no handle at all and `_align` dies on an internal
+    AttributeError where the duplicate-label error belongs.
+    """
     _s, events, root = context_with_root()
     sel = events[gak.num(events.Jet) >= 4]
     # both loose members are read from the SOURCE, so they are context-FREE: once the colliding

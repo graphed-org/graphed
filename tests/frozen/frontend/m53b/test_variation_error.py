@@ -1,11 +1,13 @@
-"""vary-m53u / design §4: the unified-grammar misuse situations raise ``graphed.PointError``
-— a ``GraphedError`` subclass carrying a ``situation`` discriminator — not a bare ``GraphedError``.
+"""vary-m53u / design §4.
+
+The unified-grammar misuse situations raise ``graphed.PointError`` — a ``GraphedError`` subclass
+carrying a ``situation`` discriminator — not a bare ``GraphedError``.
 
 Each situation is a CLASS with a member at each end: one entry the situation MUST refuse (asserting
 ``PointError`` AND ``GraphedError``, the ``situation`` string §4 pins, and the message substring
 the pre-unification raise carried) and a neighbouring valid entry it MUST admit, so the class is
-neither over- nor under-broad. A malformed entry (neither declare-tuple nor placement-Mapping) is an
-ill-typed input → ``GraphedTypeError``, not a situation.
+neither over- nor under-broad. A malformed entry (neither declare-tuple nor placement-Mapping) is
+an ill-typed input → ``GraphedTypeError``, not a situation.
 
 Numpy-idiom, awkward-free (the required free-threaded frontend job collects with only pytest +
 numpy). COLLECTION safety: ``PointError`` is reached only as ``graphed.PointError`` inside
@@ -34,13 +36,16 @@ from graphed.numpy import NumpyBackend, from_record
 
 
 def _dependent() -> tuple[Any, Any]:
-    """A jes-dependent ``corr`` member (fans out over jes) on a jes+jer context."""
+    """Return a jes-dependent ``corr`` member (fans out over jes) on a jes+jer context."""
     _session, ctx = two_axis_context()
     return ctx, ctx["pt"] * 0.5  # read off the jes-varied pt
 
 
 def _independent() -> tuple[Any, Any]:
-    """An independent ``corr`` member (off the nominal) on a jes+jer context — re-pointed additively."""
+    """Return an independent ``corr`` member (off the nominal) on a jes+jer context.
+
+    The member is re-pointed additively.
+    """
     _session, ctx = two_axis_context()
     return ctx, independent_weight(ctx)
 
@@ -53,9 +58,12 @@ def _two_containers() -> tuple[Any, Any]:
 
 
 def test_the_declare_channel_is_live_positive_control() -> None:
-    """Positive control — no unified-grammar feature is touched: a pure-declare dict ``vary`` mints
-    and reports its point on the current tree, so a green line here proves this file's fixtures and
-    ``graphed`` are live, distinguishing the feature-absence failures below from a dead instrument."""
+    """Positive control — no unified-grammar feature is touched.
+
+    A pure-declare dict ``vary`` mints and reports its point on the current tree, so a green line
+    here proves this file's fixtures and ``graphed`` are live, distinguishing the feature-absence
+    failures below from a dead instrument.
+    """
     ctx, ind = _independent()
     registered = graphed.vary(ctx, "corr", ind, is_weight=True, points={"a": ind * 3.0})
     reported = graphed.points(graphed.weight(registered))
@@ -68,7 +76,10 @@ def test_e1_no_derived_joint_is_unresolved() -> None:
     ctx, dep = _dependent()  # jes-dependent → the grid is over jes only
     with pytest.raises(graphed.PointError) as caught:
         graphed.vary(
-            ctx, "corr", dep, is_weight=True,
+            ctx,
+            "corr",
+            dep,
+            is_weight=True,
             points=[("a", dep * 1.3), {"corr": "a", "jer": "up"}],  # jer is not in the jes grid
         )
     exc = caught.value
@@ -80,7 +91,10 @@ def test_e1_no_derived_joint_is_unresolved() -> None:
     # admitted: the same member, a coordinate the fanout DOES derive
     ctx2, dep2 = _dependent()
     graphed.vary(
-        ctx2, "corr", dep2, is_weight=True,
+        ctx2,
+        "corr",
+        dep2,
+        is_weight=True,
         points=[("a", dep2 * 1.3), {"corr": "a", "jes": "up"}],
     )
 
@@ -90,7 +104,10 @@ def test_e3_unknown_nuisance_is_unresolved() -> None:
     ctx, dep = _dependent()
     with pytest.raises(graphed.PointError) as caught:
         graphed.vary(
-            ctx, "corr", dep, is_weight=True,
+            ctx,
+            "corr",
+            dep,
+            is_weight=True,
             points=[("a", dep * 3.0), {"corr": "a", "nosuch": "up"}],
         )
     exc = caught.value
@@ -102,7 +119,10 @@ def test_e3_unknown_nuisance_is_unresolved() -> None:
     # admitted: a reachable foreign nuisance
     ctx2, dep2 = _dependent()
     graphed.vary(
-        ctx2, "corr", dep2, is_weight=True,
+        ctx2,
+        "corr",
+        dep2,
+        is_weight=True,
         points=[("a", dep2 * 3.0), {"corr": "a", "jes": "up"}],
     )
 
@@ -112,7 +132,10 @@ def test_e3_unknown_own_tag_is_unresolved() -> None:
     ctx, dep = _dependent()
     with pytest.raises(graphed.PointError) as caught:
         graphed.vary(
-            ctx, "corr", dep, is_weight=True,
+            ctx,
+            "corr",
+            dep,
+            is_weight=True,
             points=[("up", dep * 3.0), {"corr": "down", "jes": "up"}],  # 'down' is not declared
         )
     exc = caught.value
@@ -124,17 +147,26 @@ def test_e3_unknown_own_tag_is_unresolved() -> None:
     # admitted: the own coordinate IS a declared tag
     ctx2, dep2 = _dependent()
     graphed.vary(
-        ctx2, "corr", dep2, is_weight=True,
+        ctx2,
+        "corr",
+        dep2,
+        is_weight=True,
         points=[("up", dep2 * 3.0), {"corr": "up", "jes": "up"}],
     )
 
 
 def test_e4_unreachable_foreign_tag_is_unreachable() -> None:
-    """E4: an off-grid additive pin whose foreign coordinate is not a registered tag of its axis."""
+    """E4: an off-grid additive pin whose foreign coordinate is not a registered tag.
+
+    It is not a tag registered on its axis.
+    """
     ctx, ind = _independent()
     with pytest.raises(graphed.PointError) as caught:
         graphed.vary(
-            ctx, "corr", ind, is_weight=True,
+            ctx,
+            "corr",
+            ind,
+            is_weight=True,
             points=[("a", ind * 3.0), {"corr": "a", "jes": "up", "jer": "sideways"}],
         )
     exc = caught.value
@@ -147,7 +179,10 @@ def test_e4_unreachable_foreign_tag_is_unreachable() -> None:
     # admitted: the same shape with a reachable jer tag re-points cleanly
     ctx2, ind2 = _independent()
     graphed.vary(
-        ctx2, "corr", ind2, is_weight=True,
+        ctx2,
+        "corr",
+        ind2,
+        is_weight=True,
         points=[("a", ind2 * 3.0), {"corr": "a", "jes": "up", "jer": "up"}],
     )
 
@@ -165,7 +200,8 @@ def test_e5_duplicate_label_is_duplicate() -> None:
     assert "jes_btag_up" in str(exc)  # names the colliding label
 
     # admitted (adversarial): the SAME label at the SAME point, minted twice on independent
-    # containers of one Session, is idempotent — a blanket "refuse every re-mint" wrongly rejects it
+    # containers of one Session, is idempotent — a blanket "refuse every re-mint" wrongly rejects
+    # it
     x2, y2 = _two_containers()
     graphed.vary(x2, "jes", up=x2 * 1.1)
     graphed.vary(y2, "jes", up=y2 * 1.1)
@@ -176,7 +212,10 @@ def test_e6_empty_own_only_is_empty() -> None:
     ctx, ind = _independent()
     with pytest.raises(graphed.PointError) as caught:
         graphed.vary(
-            ctx, "corr", ind, is_weight=True,
+            ctx,
+            "corr",
+            ind,
+            is_weight=True,
             points=[("a", ind * 3.0), {"corr": "a"}],  # only its own coordinate — empty
         )
     exc = caught.value
@@ -190,7 +229,10 @@ def test_e6_empty_own_only_is_empty() -> None:
     _session, num_ctx, pt = triple_numeric()
     base = pt * 0.5  # independent
     graphed.vary(
-        num_ctx, "corr", base, is_weight=True,
+        num_ctx,
+        "corr",
+        base,
+        is_weight=True,
         points=[("a", base * 1.1), {"corr": "a", "jes": 1, "btag": -1, "jer": 0}],
     )
 
@@ -200,7 +242,10 @@ def test_ec_union_plus_placement_is_conflict() -> None:
     ctx, dep = _dependent()
     with pytest.raises(graphed.PointError) as caught:
         graphed.vary(
-            ctx, "corr", dep, is_weight=True,
+            ctx,
+            "corr",
+            dep,
+            is_weight=True,
             points=[("a", dep * 1.3), {"corr": "a", "jes": "up"}],
             composes_as_union=True,
         )
@@ -212,29 +257,40 @@ def test_ec_union_plus_placement_is_conflict() -> None:
 
     # admitted #1: composes_as_union WITHOUT a placement collapses cleanly (pure-declare dict form)
     ctx2, dep2 = _dependent()
-    graphed.vary(ctx2, "corr", dep2, is_weight=True, points={"a": dep2 * 1.3}, composes_as_union=True)
+    graphed.vary(
+        ctx2, "corr", dep2, is_weight=True, points={"a": dep2 * 1.3}, composes_as_union=True
+    )
 
     # admitted #2: the SAME placement WITHOUT composes_as_union is a valid select — the conflict is
     # exactly the intersection, neither leg alone
     ctx3, dep3 = _dependent()
     graphed.vary(
-        ctx3, "corr", dep3, is_weight=True,
+        ctx3,
+        "corr",
+        dep3,
+        is_weight=True,
         points=[("a", dep3 * 1.3), {"corr": "a", "jes": "up"}],
     )
 
 
 def test_a_malformed_entry_raises_graphed_type_error() -> None:
-    """A list entry that is neither a 2-tuple declare nor a Mapping placement is ill-typed input."""
+    """A list entry that is neither a 2-tuple declare nor a Mapping placement is ill-typed."""
     ctx, dep = _dependent()
     with pytest.raises(GraphedTypeError):
         graphed.vary(
-            ctx, "corr", dep, is_weight=True,
+            ctx,
+            "corr",
+            dep,
+            is_weight=True,
             points=[("a", dep * 1.3), 42],  # 42 is neither a declare-tuple nor a placement
         )
 
     # admitted: a well-formed declare tuple beside a valid placement does not raise
     ctx2, dep2 = _dependent()
     graphed.vary(
-        ctx2, "corr", dep2, is_weight=True,
+        ctx2,
+        "corr",
+        dep2,
+        is_weight=True,
         points=[("a", dep2 * 1.3), {"corr": "a", "jes": "up"}],
     )

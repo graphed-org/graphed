@@ -11,9 +11,9 @@ which cannot append in place: each log file becomes a prefix of one-record objec
   within a writer and follows creation time across writers.
 
 A blob write is one whole-object write, and ``get`` verifies the bytes against the name. A torn or
-tampered object is therefore never served. ``put`` of a present blob costs one ``info`` request, not
-a read, and rewrites a copy of the wrong size or one this instance's ``get`` refused; a same-size
-corruption that no instance has read stays until a ``get`` refuses it.
+tampered object is therefore never served. ``put`` of a present blob costs one ``info`` request,
+not a read, and rewrites a copy of the wrong size or one this instance's ``get`` refused; a
+same-size corruption that no instance has read stays until a ``get`` refuses it.
 Identical-content writers need no exclusion, because they write the same bytes to the same name.
 """
 
@@ -39,7 +39,8 @@ from .store import (
     _replay,
 )
 
-# a record object is written once and never changes, so a parsed one is kept for every later listing
+# a record object is written once and never changes, so a parsed one is kept for every later
+# listing
 _RECORDS: dict[tuple[Any, str], Any] = {}
 _RECORDS_LOCK = threading.Lock()
 
@@ -54,6 +55,7 @@ class FsspecStore:
     """
 
     def __init__(self, url: str, node: str | None = None, **storage_options: Any) -> None:
+        """Open the store at ``url``; ``node`` names this writer's own journal."""
         self.url = url
         self.node = node
         # a caching backend (s3) would serve a listing taken before another process wrote
@@ -89,7 +91,10 @@ class FsspecStore:
         return size
 
     def get(self, digest: str) -> bytes | None:
-        """The blob named ``digest``, or ``None`` when it is absent or its bytes do not hash to it."""
+        """Return the blob named ``digest``.
+
+        ``None`` when it is absent or its bytes do not hash to it.
+        """
         try:
             data: bytes = self.fs.cat_file(f"{self.objects}/{digest}")
         except FileNotFoundError:
@@ -109,6 +114,7 @@ class FsspecStore:
         stage: str = "",
         deps: tuple[str, ...] = (),
     ) -> None:
+        """Journal ``task_id`` as done with its result blob."""
         self._append(self.journal_path, _done_record(task_id, partition, blob, stage, deps))
 
     def record_environment(self, task_id: str, blob: str) -> None:
@@ -120,13 +126,17 @@ class FsspecStore:
     def completed(self) -> Completed:
         """Replay the union of every writer's journal prefix into ``task_id -> JournalEntry``."""
         present = {path.rsplit("/", 1)[-1] for path in self.fs.find(self.objects)}
-        return _replay(self._records(f"{glob.escape(self.root)}/journal*.log/*"), present.__contains__)
+        return _replay(
+            self._records(f"{glob.escape(self.root)}/journal*.log/*"), present.__contains__
+        )
 
     # ---- dead-letter set ------------------------------------------------------------------------
     def record_dead(self, descriptor: Mapping[str, object]) -> None:
+        """Append ``descriptor`` to the dead-letter log."""
         self._append(self.dead_letter_path, dict(descriptor))
 
     def dead_letters(self) -> list[dict[str, object]]:
+        """Return every dead-letter record."""
         return copy.deepcopy(self._records(f"{glob.escape(self.dead_letter_path)}/*"))
 
     # ---- internals ------------------------------------------------------------------------------
@@ -151,13 +161,16 @@ class FsspecStore:
         if not paths:
             return []
         # async fsspec (2025.9 and older) returns a failed read in the list whatever on_error says
-        # a record is one small object: s3fs's concurrent-read path would spend a HEAD on each to size it
+        # a record is one small object: s3fs's concurrent-read path would spend a HEAD on each to
+        # size it
         opts = {"max_concurrency": 1} if hasattr(self.fs, "max_concurrency") else {}
         keys = [(self._protocol, path) for path in paths]
         with _RECORDS_LOCK:
             missing = [path for path, key in zip(paths, keys, strict=True) if key not in _RECORDS]
         if missing:
-            data = self.fs.cat_ranges(missing, [None] * len(missing), [None] * len(missing), **opts)
+            data = self.fs.cat_ranges(
+                missing, [None] * len(missing), [None] * len(missing), **opts
+            )
             for raw in data:
                 if isinstance(raw, Exception):
                     raise raw

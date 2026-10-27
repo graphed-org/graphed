@@ -55,15 +55,22 @@ def test_a_frame_is_one_update() -> None:
             _wait(server, "submitted", N)
             # label-less terminals beside labelled submits: the terminals keep their labels
             fin = [TaskEvent(TaskPhase.FINISHED, k, "w0", 1.0, "", 0) for k in range(N)]
-            conn.send(_frame(fin + [TaskEvent(sub, k, "driver", 0.0, f"L{k}", k) for k in range(N, 2 * N)]))
+            conn.send(
+                _frame(
+                    fin + [TaskEvent(sub, k, "driver", 0.0, f"L{k}", k) for k in range(N, 2 * N)]
+                )
+            )
             _wait(server, "finished", N)
         finally:
             conn.close()
         assert counting.sizes == [N, 2 * N]
         rows = {r["key"]: r for r in counting.view().to_records()}
-        assert all((rows[k]["phase"], rows[k]["partition"]) == ("finished", f"L{k}") for k in range(N))
         assert all(
-            (rows[k]["phase"], rows[k]["partition"]) == ("submitted", f"L{k}") for k in range(N, 2 * N)
+            (rows[k]["phase"], rows[k]["partition"]) == ("finished", f"L{k}") for k in range(N)
+        )
+        assert all(
+            (rows[k]["phase"], rows[k]["partition"]) == ("submitted", f"L{k}")
+            for k in range(N, 2 * N)
         )
     finally:
         server.stop()

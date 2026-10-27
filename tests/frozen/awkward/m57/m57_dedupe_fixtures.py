@@ -7,10 +7,10 @@ the SF counts jets over a pT threshold (powers of two), the systematic tables an
 exact binary fractions — so every product of operations is exact whatever association the
 composition picks, and an oracle folded here compares bit-for-bit against the ambient's own tree.
 
-Every m57-new outcome (the join, the overlay, the refusals, `ambient_entries`, `explain`) is reached
-only inside test bodies, so the tree COLLECTS against a pre-m57 tree and fails at RUN time. The
-`m57_` prefix is load-bearing: pytest's prepend import mode publishes these helpers under a global
-name.
+Every m57-new outcome (the join, the overlay, the refusals, `ambient_entries`, `explain`) is
+reached only inside test bodies, so the tree COLLECTS against a pre-m57 tree and fails at RUN time.
+The `m57_` prefix is load-bearing: pytest's prepend import mode publishes these helpers under a
+global name.
 """
 
 from __future__ import annotations
@@ -30,8 +30,8 @@ from graphed.context import EventContext
 #: one synthetic dataset for the whole tree; six events keep every materialised list readable
 EVENTS = make_events(n_events=6, seed=57)
 
-#: the SF counts jets above this pT, so a jes shift MOVES it (§4's "a weight the shift moves") while
-#: every central value stays a power of two
+#: the SF counts jets above this pT, so a jes shift MOVES it (§4's "a weight the shift moves")
+#: while every central value stays a power of two
 PT_CUT = 20.0
 
 #: the two-tag up/down shape every family in the tree has
@@ -62,7 +62,9 @@ HT_CUT = 90.0
 
 # ---- the toy's per-event weights -------------------------------------------------------------
 def m57_sf(jets: Any, table: float = 1.0) -> Any:
-    """The b-tag SF over `jets`: one step per jet above `PT_CUT`, scaled by the systematic table.
+    """Return the b-tag SF over `jets`.
+
+    One step per jet above `PT_CUT`, scaled by the systematic table.
 
     `table=1.0` is the central. A pT shift moves which jets pass the cut, so wherever `jets` is
     varied the central itself carries that nuisance's universes.
@@ -71,12 +73,15 @@ def m57_sf(jets: Any, table: float = 1.0) -> Any:
 
 
 def m57_pu(jets: Any) -> Any:
-    """A pure-weight pileup factor off the jet MULTIPLICITY, which no pT shift moves."""
+    """Return a pure-weight pileup factor off the jet MULTIPLICITY, which no pT shift moves."""
     return 1.0 + 0.25 * gak.num(jets)
 
 
 def m57_trig(met: Any) -> Any:
-    """A second pure-weight factor, off the MET — the factor the tree registers after an overlay."""
+    """Return a second pure-weight factor, off the MET.
+
+    The factor the tree registers after an overlay.
+    """
     return gak.where(met.pt > MET_CUT, 1.5, 1.25)
 
 
@@ -86,18 +91,18 @@ def m57_scaled(value: Any, scale: Mapping[str, float]) -> dict[str, Any]:
 
 
 def m57_table_members(jets: Any, table: Mapping[str, float]) -> dict[str, Any]:
-    """The systematic members of a family whose central is `m57_sf(jets)`."""
+    """Return the systematic members of a family whose central is `m57_sf(jets)`."""
     return {tag: m57_sf(jets, factor) for tag, factor in table.items()}
 
 
 def m57_scale(record: Any, factor: float) -> Any:
-    """A record whose `pt` is scaled — the toy's one shift shape, for jets and MET alike."""
+    """Return a record whose `pt` is scaled — the toy's one shift shape, for jets and MET alike."""
     return gak.with_field(record, record.pt * factor, "pt")
 
 
 # ---- the toy's contexts ----------------------------------------------------------------------
 def m57_base() -> tuple[Session, Any]:
-    """A fresh Session and a root context carrying `Jet` and `MET`, nothing registered."""
+    """Return a fresh Session and a root context carrying `Jet` and `MET`, nothing registered."""
     session = Session(AwkwardBackend())
     root = from_awkward(session, "events", EVENTS)
     ctx = EventContext(session, root, collections={"Jet": root.Jet, "MET": root.MET})
@@ -123,7 +128,10 @@ def m57_weight(ctx: Any, name: str, central: Any, members: Mapping[str, Any], **
 
 
 def m57_delta(ctx: Any, name: str, handle: Any, scale: Mapping[str, float] = MU) -> Any:
-    """The relative-delta idiom: an ambient read as the nominal, the whole ambient rescaled."""
+    """Return the relative-delta idiom.
+
+    An ambient is read as the nominal and the whole ambient rescaled.
+    """
     return m57_weight(ctx, name, handle, m57_scaled(handle, scale))
 
 
@@ -145,12 +153,17 @@ class Op:
 
 
 def m57_by_label(name: str, members: Mapping[str, Any]) -> dict[str, Any]:
-    """A family's `{tag: member}` re-keyed to the `{label: member}` form the oracle reads."""
+    """Return a family's `{tag: member}` re-keyed to the `{label: member}` form.
+
+    That is the form the oracle reads.
+    """
     return {f"{name}_{tag}": member for tag, member in members.items()}
 
 
 def m57_factor(name: str, nominal: Any, members: Mapping[str, Any], **labels: Any) -> Op:
-    """A factor: it multiplies its member at each label it declares, its nominal everywhere else.
+    """Return a factor.
+
+    It multiplies its member at each label it declares, its nominal everywhere else.
 
     `labels` carries the entries whose key is a label rather than a tag — a machine-minted cross
     member, a placed universe, or a second family's members on a joined container.
@@ -159,14 +172,19 @@ def m57_factor(name: str, nominal: Any, members: Mapping[str, Any], **labels: An
 
 
 def m57_overlay(name: str, members: Mapping[str, Any], **labels: Any) -> Op:
-    """An overlay: it REPLACES the running product at the labels its family covers and contributes
-    nothing anywhere else, its nominal being that product already."""
+    """Return an overlay.
+
+    It REPLACES the running product at the labels its family covers and contributes nothing
+    anywhere else, its nominal being that product already.
+    """
     return Op(None, {**m57_by_label(name, members), **labels}, overlay=True)
 
 
 def m57_reindexed(op: Op, ctx: Any) -> Op:
-    """`op` with its nominal and every member re-indexed into `ctx`'s row space — what a row-space
-    change does to an entry the child's list inherits."""
+    """`op` with its nominal and every member re-indexed into `ctx`'s row space.
+
+    What a row-space change does to an entry the child's list inherits.
+    """
     return Op(
         None if op.nominal is None else graphed.reindex_to(op.nominal, ctx),
         {label: graphed.reindex_to(member, ctx) for label, member in op.members.items()},
@@ -180,13 +198,18 @@ def m57_joined(op: Op, name: str, members: Mapping[str, Any], **labels: Any) -> 
 
 
 def m57_at(value: Any, label: str) -> Any:
-    """`value` as an operation contributes it at `label`: its own member there, then that member's
-    own — a member built over shifted objects carries its dependence one level down."""
+    """`value` as an operation contributes it at `label`.
+
+    Its own member there, then that member's own — a member built over shifted objects carries its
+    dependence one level down.
+    """
     return graphed.member_of(graphed.member_of(value, label), label)
 
 
 def m57_ambient(ops: Sequence[Op], label: str) -> Any:
-    """The one-SF oracle: the ambient at `label`, folded from the operands the test itself holds.
+    """Return the one-SF oracle.
+
+    The ambient at `label`, folded from the operands the test itself holds.
 
     A left fold, which is exact for this toy's dyadic values whatever association the composition
     chooses.
@@ -202,18 +225,23 @@ def m57_ambient(ops: Sequence[Op], label: str) -> Any:
     return product
 
 
-def m57_oracle_values(session: Session, ops: Sequence[Op], labels: Sequence[str]) -> dict[str, list[Any]]:
+def m57_oracle_values(
+    session: Session, ops: Sequence[Op], labels: Sequence[str]
+) -> dict[str, list[Any]]:
     """`{label: the one-SF oracle's value there}` over `labels`."""
     return {label: m57_values(session, m57_ambient(ops, label)) for label in labels}
 
 
 def m57_ambient_values(session: Session, weight: Any) -> dict[str, list[Any]]:
     """`{label: the ambient's value there}` for every label the ambient carries."""
-    return {label: m57_values(session, graphed.member_of(weight, label)) for label in graphed.labels(weight)}
+    return {
+        label: m57_values(session, graphed.member_of(weight, label))
+        for label in graphed.labels(weight)
+    }
 
 
 def m57_node(weight: Any, label: str = "nominal") -> int:
-    """The node id the ambient resolves to at `label` — the node legs' instrument."""
+    """Return the node id the ambient resolves to at `label` — the node legs' instrument."""
     return int(graphed.member_of(weight, label).node_id)
 
 
@@ -266,8 +294,11 @@ def m57_two_factors() -> Base:
 
 @dataclass(frozen=True)
 class Tour:
-    """§1's chain: `pu`, `hf` on the SF central, the overlay `mu` read over both, `lf` on the same
-    central behind the overlay, and `lf`'s diagonal placement at `{hf: up, mu: up}`."""
+    """§1's chain of registrations.
+
+    `pu`, `hf` on the SF central, the overlay `mu` read over both, `lf` on the same central behind
+    the overlay, and `lf`'s diagonal placement at `{hf: up, mu: up}`.
+    """
 
     session: Session
     ctx: Any
@@ -299,9 +330,9 @@ def m57_tour(*, place: bool = True, offset: int = 0) -> Tour:
     """§1's chain: `pu`, `hf` on `sf`, `mu` read over both, then `lf` on `sf` behind the overlay.
 
     `lf` also PLACES its `up` universe at the diagonal point carrying `hf`'s and `mu`'s `up`
-    coordinates — the tour's `scale_upup`. `place=False` drops the placement, so a leg that must see
-    `lf_up` on its own axis can have it. `offset` mints that many unrelated nodes before the program,
-    so two Sessions' node ids for the same program cannot coincide.
+    coordinates — the tour's `scale_upup`. `place=False` drops the placement, so a leg that must
+    see `lf_up` on its own axis can have it. `offset` mints that many unrelated nodes before the
+    program, so two Sessions' node ids for the same program cannot coincide.
     """
     session, ctx = m57_base()
     jets = ctx["Jet"]
@@ -315,7 +346,9 @@ def m57_tour(*, place: bool = True, offset: int = 0) -> Tour:
     handle = graphed.weight(after)
     mu_members = m57_scaled(handle, MU)
     after = m57_delta(after, "mu", handle)
-    lf_points: Any = [*lf_members.items(), {"lf": "up", "hf": "up", "mu": "up"}] if place else lf_members
+    lf_points: Any = (
+        [*lf_members.items(), {"lf": "up", "hf": "up", "mu": "up"}] if place else lf_members
+    )
     after = graphed.vary(after, "lf", sf, is_weight=True, points=lf_points)
     return Tour(
         session=session,
@@ -337,7 +370,7 @@ def m57_node_count(session: Session) -> int:
     return int(session._store.node_count())
 
 
-class m57_OpSpy:
+class M57OpSpy:
     """Counts CALLS to `Session.record_op` — the cost-class leg's instrument.
 
     Minted-node counts are blind to a walk that re-derives an interned product, so the work a
@@ -350,7 +383,7 @@ class m57_OpSpy:
         self._inner = session.record_op
         self.calls = 0
 
-    def __enter__(self) -> m57_OpSpy:
+    def __enter__(self) -> M57OpSpy:
         def counting(*args: Any, **kwargs: Any) -> Any:
             self.calls += 1
             return self._inner(*args, **kwargs)
@@ -363,22 +396,31 @@ class m57_OpSpy:
 
 
 def m57_explain(ctx: Any) -> Any:
-    """`graphed.systematics.explain(ctx)`, imported HERE so the tree still collects on a pre-m57
-    tree: the package does not exist there and the call raises at run time."""
+    """Return `graphed.systematics.explain(ctx)`, imported HERE.
+
+    So the tree still collects on a pre-m57 tree: the package does not exist there and the call
+    raises at run time.
+    """
     from graphed.systematics import explain  # noqa: PLC0415
 
     return explain(ctx)
 
 
 def m57_entries(ctx: Any) -> Any:
-    """`graphed.systematics.ambient_entries(ctx)` — the `(slot, rider, entry)` records in the order
-    the composition applies them. Imported inside the call, as `m57_explain` is."""
+    """Return `graphed.systematics.ambient_entries(ctx)`.
+
+    These are the `(slot, rider, entry)` records in the order the composition applies them.
+    Imported inside the call, as `m57_explain` is.
+    """
     from graphed.systematics import ambient_entries  # noqa: PLC0415
 
     return ambient_entries(ctx)
 
 
 def m57_ir(session: Session, weight: Any) -> bytes:
-    """The serialized IR of every universe the ambient carries — the determinism legs' bytes."""
+    """Return the serialized IR of every universe the ambient carries.
+
+    The determinism legs' bytes.
+    """
     outputs = [graphed.member_of(weight, label) for label in graphed.labels(weight)]
     return bytes(session.serialized_ir(*outputs))

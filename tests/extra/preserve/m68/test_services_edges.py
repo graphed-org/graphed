@@ -1,7 +1,9 @@
-"""Service-surface edges the frozen m68 suite leaves untaken: pickling (specs ride a stdlib-pickled
-``Plan`` to a driver job; ``UnboundService`` crosses back from a worker), two more refused endpoint
-forms, a literal Triton url whose scheme no client speaks, a hashable spec with a recipe, and a
-``RunReport`` pickled before it had ``endpoints``."""
+"""Service-surface edges the frozen m68 suite leaves untaken.
+
+Pickling (specs ride a stdlib-pickled ``Plan`` to a driver job; ``UnboundServiceError`` crosses
+back from a worker), two more refused endpoint forms, a literal Triton url whose scheme no client
+speaks, a hashable spec with a recipe, and a ``RunReport`` pickled before it had ``endpoints``.
+"""
 
 from __future__ import annotations
 
@@ -13,7 +15,7 @@ import pytest
 from graphed.core import Partition, Plan, WorkerResources
 from graphed.preserve import PreserveError
 from graphed.preserve.externals.triton_external import load_triton
-from graphed.services import Launch, ServiceSpec, UnboundService, split_endpoint
+from graphed.services import Launch, ServiceSpec, UnboundServiceError, split_endpoint
 
 
 def _process(partition: Partition, resources: WorkerResources) -> list[int]:
@@ -25,7 +27,9 @@ def _combine(a: list[int], b: list[int]) -> list[int]:
 
 
 def test_a_plan_with_a_recipe_pickles() -> None:
-    spec = ServiceSpec("svc", "http", launch=Launch(argv=("serve",), env={"A": "1"}, resources={"cpus": 2.0}))
+    spec = ServiceSpec(
+        "svc", "http", launch=Launch(argv=("serve",), env={"A": "1"}, resources={"cpus": 2.0})
+    )
     plan: Plan[list[int]] = Plan(process=_process, combine=_combine, empty=list, services=(spec,))
     back: Plan[Any] = pickle.loads(pickle.dumps(plan))
     assert back.services == (spec,)
@@ -36,12 +40,14 @@ def test_a_plan_with_a_recipe_pickles() -> None:
 
 
 def test_unbound_service_pickles_with_its_name() -> None:
-    err = pickle.loads(pickle.dumps(UnboundService("svc")))
+    err = pickle.loads(pickle.dumps(UnboundServiceError("svc")))
     assert err.name == "svc"
-    assert str(err) == str(UnboundService("svc"))
+    assert str(err) == str(UnboundServiceError("svc"))
 
 
-@pytest.mark.parametrize("endpoint", ["http://h:99999", "http://user@h:8000"], ids=["port-range", "userinfo"])
+@pytest.mark.parametrize(
+    "endpoint", ["http://h:99999", "http://user@h:8000"], ids=["port-range", "userinfo"]
+)
 def test_split_endpoint_refuses_a_bad_port_and_userinfo(endpoint: str) -> None:
     with pytest.raises(ValueError, match="scheme://host:port"):
         split_endpoint(endpoint)
@@ -57,7 +63,8 @@ def test_a_run_report_with_endpoints_pickles() -> None:
     from graphed.debug import RunRecorder  # noqa: PLC0415
 
     report = RunRecorder().report(
-        result=ExecResult(value=0, n_partitions=0, n_combines=0), endpoints={"svc": "grpc://h:8001"}
+        result=ExecResult(value=0, n_partitions=0, n_combines=0),
+        endpoints={"svc": "grpc://h:8001"},
     )
     back = pickle.loads(pickle.dumps(report))
     assert back == report and dict(back.endpoints) == {"svc": "grpc://h:8001"}
@@ -70,7 +77,12 @@ def test_reproduce_refuses_a_node_that_calls_a_service(tmp_path: Any) -> None:
 
     from graphed import Session  # noqa: PLC0415
     from graphed.awkward import AwkwardBackend, from_awkward  # noqa: PLC0415
-    from graphed.preserve import TRITON_PLUGIN, build_bundle, record_external, reproduce  # noqa: PLC0415
+    from graphed.preserve import (  # noqa: PLC0415
+        TRITON_PLUGIN,
+        build_bundle,
+        record_external,
+        reproduce,
+    )
 
     s = Session(AwkwardBackend())
     s.declare_service(ServiceSpec("tagger", "triton"))
@@ -104,7 +116,10 @@ def test_a_spec_with_a_recipe_hashes() -> None:
 
 
 class _Pickled:
-    """Pickles to a stream that builds ``cls`` from ``state`` without ``__init__``, as 0.0.6 wrote it."""
+    """Pickles to a stream that builds ``cls`` from ``state`` without ``__init__``.
+
+    As 0.0.6 wrote it.
+    """
 
     def __init__(self, cls: type, state: dict[str, Any]) -> None:
         self.cls, self.state = cls, state

@@ -26,7 +26,9 @@ def all_fixtures() -> dict[str, Callable[[ak.Array], Hist]]:
     for q, fn in ADL_QUERIES.items():
         reg[f"adl_{q}"] = fn
     for name, (region, var) in TTBAR_FIXTURES.items():
-        reg[name] = lambda ev, region=region, var=var: ttbar_region(ev, region=region, variation=var)
+        reg[name] = lambda ev, region=region, var=var: ttbar_region(
+            ev, region=region, variation=var
+        )
     for name, var in TTGAMMA_FIXTURES.items():
         reg[name] = lambda ev, var=var: ttgamma_region(ev, variation=var)
     return reg

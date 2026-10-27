@@ -75,7 +75,9 @@ def _feed(store) -> None:
     blob = store.put(b"partial-A")
     store.record_done("task-A", "uri@0:10", blob, stage="map_write", deps=("d0", "d1"))
     store.record_done("task-B", "uri@10:20", store.put(b"partial-B"))
-    store.record_dead({"task_id": "t1", "error_type": "ValueError", "detail": {"b": 2, "a": [1, "x"]}})
+    store.record_dead(
+        {"task_id": "t1", "error_type": "ValueError", "detail": {"b": 2, "a": [1, "x"]}}
+    )
     store.record_dead({"task_id": "t2", "error_type": "MemoryError"})
 
 
@@ -102,7 +104,9 @@ def test_dead_letters_keep_insertion_order(store_url) -> None:
     for i in range(13):
         store.record_dead({"task_id": f"t{i}", "error_type": "ValueError"})
     assert [d["task_id"] for d in store.dead_letters()] == [f"t{i}" for i in range(13)]
-    assert [d["task_id"] for d in FsspecStore(store_url).dead_letters()] == [f"t{i}" for i in range(13)]
+    assert [d["task_id"] for d in FsspecStore(store_url).dead_letters()] == [
+        f"t{i}" for i in range(13)
+    ]
 
 
 def test_node_writers_replay_as_a_union(store_url) -> None:
@@ -130,10 +134,16 @@ def test_concurrent_record_dead_loses_nothing(store_url) -> None:
     with ThreadPoolExecutor(8) as pool:
         list(pool.map(write, range(8)))
     got = Counter(json.dumps(d, sort_keys=True) for d in FsspecStore(store_url).dead_letters())
-    want = Counter({json.dumps({"error_type": "RuntimeError", "task_id": "same"}, sort_keys=True): 40})
+    want = Counter(
+        {json.dumps({"error_type": "RuntimeError", "task_id": "same"}, sort_keys=True): 40}
+    )
     for worker in range(8):
         for i in range(5):
-            want[json.dumps({"error_type": "ValueError", "task_id": f"w{worker}-{i}"}, sort_keys=True)] = 1
+            want[
+                json.dumps(
+                    {"error_type": "ValueError", "task_id": f"w{worker}-{i}"}, sort_keys=True
+                )
+            ] = 1
     assert got == want
     assert len(store.fs.find(store.dead_letter_path)) == 80
 

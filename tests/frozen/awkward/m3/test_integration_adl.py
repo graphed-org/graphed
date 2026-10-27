@@ -44,8 +44,12 @@ def test_adl_query_runs_end_to_end_and_reproduces_corpus(name: str, adl_events: 
     produced = hist1d(
         values, bins=axis.size, start=float(axis.edges[0]), stop=float(axis.edges[-1]), name=name
     )
-    assert int(sum(bin_values(reference))) > 0, f"{name}: reference histogram is empty (not a real test)"
-    assert bin_values(produced) == bin_values(reference), f"{name}: graphed histogram differs from corpus"
+    assert int(sum(bin_values(reference))) > 0, (
+        f"{name}: reference histogram is empty (not a real test)"
+    )
+    assert bin_values(produced) == bin_values(reference), (
+        f"{name}: graphed histogram differs from corpus"
+    )
 
 
 def test_all_eight_adl_queries_are_covered() -> None:

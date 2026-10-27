@@ -23,5 +23,5 @@ def canonical_bytes(manifest: Mapping[str, Any]) -> bytes:
 
 
 def fingerprint(manifest: Mapping[str, Any]) -> str:
-    """The bundle's top-level content hash (SHA-256 of the canonical manifest)."""
+    """Return the bundle's top-level content hash (SHA-256 of the canonical manifest)."""
     return "sha256:" + hashlib.sha256(canonical_bytes(manifest)).hexdigest()

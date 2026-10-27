@@ -16,7 +16,8 @@ def test_external_payload_describes_opaque_callable() -> None:
     assert desc.kind == "opaque_callable"
     assert "myfn" in desc.content_hash
     assert desc.framework == "python"
-    # the descriptor's kind/hash mark it un-content-addressed -> a preservation risk (M9 fixes this)
+    # the descriptor's kind/hash mark it un-content-addressed -> a preservation risk (M9 fixes
+    # this)
     assert desc.content_hash.startswith("unhashed-opaque:")
 
 

@@ -4,7 +4,7 @@
 no frozen anchor reaches it. A failure raised INSIDE an External evaluator, at a key the worker's
 label channel has an ENTRY for, must become a LABELLED `StageError`; a key with no entry re-raises
 the original untouched. Freezes existing behaviour — the mutant is dropping attribution at the
-External arm, which makes the labelled anchor go red (raw `Boom` instead of `StageError`).
+External arm, which makes the labelled anchor go red (raw `BoomError` instead of `StageError`).
 """
 
 from __future__ import annotations
@@ -24,16 +24,16 @@ KIND = "probe"
 FRAME = ("analysis.py", 42, "run", "h.fill(ev.x, weight=w)")
 
 
-class Boom(RuntimeError):
+class BoomError(RuntimeError):
     pass
 
 
 def _boom(*ins: object) -> object:
-    raise Boom("the payload failed")
+    raise BoomError("the payload failed")
 
 
 def _compiled_external() -> tuple[object, int]:
-    """One External node marked as the output, over a list source; returns the reduced output id."""
+    """Return one External node marked as the output, over a list source, and its reduced id."""
     session = Session(ListBackend())
     x = from_list(session, "x", [1.0, 2.0])
     node = session.record_external(
@@ -55,8 +55,10 @@ def _compiled_external() -> tuple[object, int]:
 
 
 def _worker_hook(entries: tuple[object, ...]) -> object:
-    """The shipped §8.2(ii) worker wrap. `_attribute` reads only the label channel; the closure's
-    other fields are inert here."""
+    """Return the shipped §8.2(ii) worker wrap.
+
+    `_attribute` reads only the label channel; the closure's other fields are inert here.
+    """
     return _PartitionReduce(
         ir=b"",
         source_name="x",
@@ -98,5 +100,5 @@ def test_external_failure_with_no_entry_for_its_key_re_raises_untouched() -> Non
     _, output = _compiled_external()
     other_key: Key = (output + 999, None)
     hook = _worker_hook(((other_key, (("jes_up",), FRAME)),))
-    with pytest.raises(Boom):
+    with pytest.raises(BoomError):
         _run(hook)

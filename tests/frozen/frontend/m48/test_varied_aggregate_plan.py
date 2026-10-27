@@ -26,7 +26,13 @@ def _build(on_compiled: Any = None) -> Any:
     out1, out2, _src = m5_two_outputs(s)
     kwargs = {} if on_compiled is None else {"on_compiled": on_compiled}
     return aggregate_plan(
-        out1, out2, reduce=sum_each, combine=add_pairs, empty=lambda: [0, 0], steps_per_file=4, **kwargs
+        out1,
+        out2,
+        reduce=sum_each,
+        combine=add_pairs,
+        empty=lambda: [0, 0],
+        steps_per_file=4,
+        **kwargs,
     )
 
 
@@ -53,9 +59,12 @@ def test_the_hooked_plan_runs_to_the_hookless_value() -> None:
 
 
 def test_the_hook_return_value_is_carried_onto_the_shipped_closure() -> None:
-    """(beta) is the RETURN channel: the payload it carries is produced inside the call, so no
-    call-time parameter could supply it. `()` is a well-typed NON-DEFAULT value of §8.2(i)'s
-    declared `tuple[..., ...] | None` field — `None` is indistinguishable from the default."""
+    """(beta) is the RETURN channel.
+
+    The payload it carries is produced inside the call, so no call-time parameter could supply it.
+    `()` is a well-typed NON-DEFAULT value of §8.2(i)'s declared `tuple[..., ...] | None` field —
+    `None` is indistinguishable from the default.
+    """
     process = _build(lambda compiled: ()).process
     # `Plan.process` is declared `Callable[[Partition, WorkerResources], R]`, which has no such
     # field; the narrowing is also the runtime discriminator of the concrete closure.

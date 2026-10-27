@@ -1,5 +1,6 @@
-"""M10 — the sound rule set covers every symmetric op in the vocabulary (finding C.7), and the
-optimizer token encoding is injective (latent collision bug).
+"""M10 — the sound rule set covers every symmetric op in the vocabulary (finding C.7).
+
+And the optimizer token encoding is injective (latent collision bug).
 
 Before this milestone only `add`/`mul` had commute rules, so `a & b` vs `b & a` (etc.) never
 merged. And `ParamMap::token()` was NOT injective: `{a: "x;b=i1"}` and `{a: "x", b: 1}` encoded to

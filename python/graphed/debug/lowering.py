@@ -2,14 +2,15 @@
 
 ``lower(session, array, opt_level=...)`` walks the recorded graph and produces a `LoweredGraph`:
 
-- ``opt_level == 0``: **1:1 op↔node** — every recorded op is its own single-member stage, no fusion;
-  the debug runner additionally runs inter-op consistency assertions. This is the canonical mode for
-  pinpointing where a value first goes wrong.
+- ``opt_level == 0``: **1:1 op↔node** — every recorded op is its own single-member stage, no
+  fusion; the debug runner additionally runs inter-op consistency assertions. This is the canonical
+  mode for pinpointing where a value first goes wrong.
 - ``opt_level >= 1``: maximal runs of ops between boundaries are **fused** into multi-member stages
   (the same boundary rule as the M4 optimizer), so the structure matches what actually executes.
 
 Either way each op keeps its exact user provenance, so an error maps to the same analysis line
-regardless of opt level. Lowering uses only the frontend's public surface (``walk`` + ``provenance``
+regardless of opt level. Lowering uses only the frontend's public surface (``walk`` +
+``provenance``
 + ``form`` + ``backend.boundary_ops``); it does not reach into Session internals.
 """
 
@@ -26,6 +27,8 @@ from .errors import SourceFrame
 
 @dataclass(frozen=True)
 class LoweredOp:
+    """One lowered op with the user frame that recorded it."""
+
     node_id: int
     op: str
     kind: str  # "source" | "op" | "external"
@@ -37,37 +40,47 @@ class LoweredOp:
 
 @dataclass(frozen=True)
 class LoweredStage:
+    """One stage of a lowered graph: its ordered ops."""
+
     index: int
     members: tuple[LoweredOp, ...]  # ordered; exactly one for opt_level=0
 
     @property
     def head(self) -> LoweredOp:
+        """The stage's last op, which produces its value."""
         return self.members[-1]
 
     @property
     def boundary(self) -> bool:
+        """Whether the stage ends at a boundary op."""
         return self.head.boundary
 
     @property
     def node_id(self) -> int:
+        """The node id of the stage's head op."""
         return self.head.node_id
 
 
 @dataclass(frozen=True)
 class LoweredGraph:
+    """A graph lowered at one ``opt_level``."""
+
     opt_level: int
     stages: tuple[LoweredStage, ...]
     output_id: int
 
     @property
     def ops(self) -> tuple[LoweredOp, ...]:
+        """Every op of every stage, in order."""
         return tuple(m for s in self.stages for m in s.members)
 
     @property
     def one_to_one(self) -> bool:
+        """Whether every stage holds exactly one op."""
         return all(len(s.members) == 1 for s in self.stages)
 
     def op_for(self, node_id: int) -> LoweredOp:
+        """Return the lowered op of node ``node_id``."""
         for op in self.ops:
             if op.node_id == node_id:
                 return op
@@ -93,7 +106,9 @@ def _collect(session: Session, array: Array) -> list[LoweredOp]:
 
     def on_source(nid: int) -> int:
         # a source's "op" is its name, so visualization/projection can key off it
-        ops.append(LoweredOp(nid, session.source_name(nid), "source", frame(nid), (), form(nid), True))
+        ops.append(
+            LoweredOp(nid, session.source_name(nid), "source", frame(nid), (), form(nid), True)
+        )
         return nid
 
     def on_op(nid: int, name: str, ins: list[object], _params: Mapping[str, object]) -> int:
@@ -111,8 +126,10 @@ def _collect(session: Session, array: Array) -> list[LoweredOp]:
 
 
 def _fuse(ops: list[LoweredOp]) -> list[LoweredStage]:
-    """Group maximal runs of non-boundary ops that chain (single use) into one stage. Mirrors the M4
-    boundary rule so the lowered structure matches what executes."""
+    """Group maximal runs of non-boundary ops that chain (single use) into one stage.
+
+    Mirrors the M4 boundary rule so the lowered structure matches what executes.
+    """
     by_id = {op.node_id: op for op in ops}
     uses: dict[int, int] = dict.fromkeys(by_id, 0)
     for op in ops:

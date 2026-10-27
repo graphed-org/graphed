@@ -1,6 +1,8 @@
-"""Awkward-free fixtures for the m72 frontend suite (the free-threaded job collects
-`tests/frozen/frontend` with only numpy installed). Everything a plan ships is module level, so a
-spawned worker can import it."""
+"""Awkward-free fixtures for the m72 frontend suite.
+
+The free-threaded job collects `tests/frozen/frontend` with only numpy installed. Everything a plan
+ships is module level, so a spawned worker can import it.
+"""
 
 from __future__ import annotations
 
@@ -33,7 +35,9 @@ def reset() -> None:
 
 
 class CountingBackend(NumpyBackend):
-    def eval_stage(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> object:
+    def eval_stage(
+        self, op: str, inputs: Sequence[object], params: Mapping[str, object]
+    ) -> object:
         EVALS[op] += 1
         return super().eval_stage(op, inputs, params)
 
@@ -78,7 +82,7 @@ def record(files: dict[str, np.ndarray], *, tree: str = "t") -> tuple[Session, A
 
 
 def json_codec(value: object, path: str, kv: Mapping[str, str] | None) -> None:
-    """The toy codec: one JSON document per part; byte-deterministic for equal input."""
+    """Write one JSON document per part, byte-deterministic for equal input (the toy codec)."""
     CODEC_CALLS.append((path, None if kv is None else dict(kv)))
     doc = {"kv": None if kv is None else dict(kv), "values": np.asarray(value).tolist()}
     with open(path, "w") as handle:
@@ -138,7 +142,9 @@ def mc_reduce(values: list[Any]) -> tuple[int, list[int], list[str]]:
     return int(values[0]), [int(values[1])], [v for v in values[2:] if isinstance(v, str)]
 
 
-def mc_combine(a: tuple[int, list[int], list[str]], b: tuple[int, list[int], list[str]]) -> tuple[int, list[int], list[str]]:
+def mc_combine(
+    a: tuple[int, list[int], list[str]], b: tuple[int, list[int], list[str]]
+) -> tuple[int, list[int], list[str]]:
     return a[0] + b[0], a[1] + b[1], a[2] + b[2]
 
 
@@ -160,30 +166,63 @@ def data_empty() -> tuple[int, list[str]]:
 
 MC_FILES = {"mc-a": np.arange(0, 12, dtype=np.int64), "mc-b": np.arange(100, 108, dtype=np.int64)}
 #: `mc-a` again, under another tree: routing must key on (uri, tree), not uri
-DATA_FILES = {"mc-a": np.arange(1000, 1010, dtype=np.int64), "data-b": np.arange(50, 56, dtype=np.int64)}
+DATA_FILES = {
+    "mc-a": np.arange(1000, 1010, dtype=np.int64),
+    "data-b": np.arange(50, 56, dtype=np.int64),
+}
 
 
 def mc_plan(steps: int, destination: str | None = None) -> tuple[Any, FileSource]:
-    """The "MC" graph: a weight-like reduction (`2x`) beside the plain sum, optionally writing `2x`."""
+    """Return the "MC" graph.
+
+    A weight-like reduction (`2x`) beside the plain sum, optionally writing `2x`.
+    """
     _s, x, src = record(MC_FILES, tree="Events")
     w = x * 2
     writes: tuple[Any, ...] = ()
     if destination is not None:
-        writes = (graphed.write.PartWrite(array=w, destination=destination, name=by_step, codec=json_codec, metadata={"sumw": w.sum()}),)
+        writes = (
+            graphed.write.PartWrite(
+                array=w,
+                destination=destination,
+                name=by_step,
+                codec=json_codec,
+                metadata={"sumw": w.sum()},
+            ),
+        )
     plan = graphed.aggregate_plan(
-        x.sum(), w.sum(), reduce=mc_reduce, combine=mc_combine, empty=mc_empty, steps_per_file=steps, writes=writes
+        x.sum(),
+        w.sum(),
+        reduce=mc_reduce,
+        combine=mc_combine,
+        empty=mc_empty,
+        steps_per_file=steps,
+        writes=writes,
     )
     return plan, src
 
 
 def data_plan(steps: int, destination: str | None = None) -> tuple[Any, FileSource]:
-    """The "data" graph: no weight, a static KV."""
+    """Return the "data" graph: no weight, a static KV."""
     _s, x, src = record(DATA_FILES, tree="Runs")
     writes: tuple[Any, ...] = ()
     if destination is not None:
-        writes = (graphed.write.PartWrite(array=x, destination=destination, name=by_step, codec=json_codec, metadata={"kind": "Data"}),)
+        writes = (
+            graphed.write.PartWrite(
+                array=x,
+                destination=destination,
+                name=by_step,
+                codec=json_codec,
+                metadata={"kind": "Data"},
+            ),
+        )
     plan = graphed.aggregate_plan(
-        x.sum(), reduce=data_reduce, combine=data_combine, empty=data_empty, steps_per_file=steps, writes=writes
+        x.sum(),
+        reduce=data_reduce,
+        combine=data_combine,
+        empty=data_empty,
+        steps_per_file=steps,
+        writes=writes,
     )
     return plan, src
 

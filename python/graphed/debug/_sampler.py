@@ -1,18 +1,21 @@
-"""The M37 statistical sampler: an **off-thread** stack sampler implementing the
-``graphed.core.execution.WorkerProfiler`` protocol.
+"""The M37 statistical sampler.
+
+An **off-thread** stack sampler implementing the ``graphed.core.execution.WorkerProfiler``
+protocol.
 
 Unlike a per-call profiler (pyinstrument hooks every Python call → ~3x overhead on call-heavy HEP
 code, regardless of sample rate), this samples the worker's *task thread* from a **separate daemon
 thread** via ``sys._current_frames()`` on a timer. The task thread is never hooked, so the
 data-processing path pays ~nothing; the only cost is the sampler thread briefly taking the GIL to
-read + fold a stack every ``interval`` (and array kernels release the GIL anyway). It is pure stdlib
-(no third-party dependency) and needs no privileges — the technique is dask's ``distributed.profile``.
+read + fold a stack every ``interval`` (and array kernels release the GIL anyway). It is pure
+stdlib (no third-party dependency) and needs no privileges — the technique is dask's
+``distributed.profile``.
 
 A sample folds the stack into a nested **count tree** (``{name, count, children}``) keyed by
 ``func;file;line``; counts are *inclusive* (every frame on the stack is incremented), so a parent's
 count always covers its children's — exactly the d3-flame-graph invariant. ``flush`` serialises the
-tree accumulated since the last flush (then resets); the dashboard server merges trees across flushes
-and workers into one live flamegraph.
+tree accumulated since the last flush (then resets); the dashboard server merges trees across
+flushes and workers into one live flamegraph.
 """
 
 from __future__ import annotations
@@ -41,8 +44,10 @@ def _new_node(name: str = "all") -> dict[str, Any]:
 
 
 def _fold(leaf: Any, root: dict[str, Any]) -> None:
-    """Fold one sampled stack (root→leaf) into the count tree, incrementing every frame's inclusive
-    count. Iterative (no recursion on deep stacks)."""
+    """Fold one sampled stack (root→leaf) into the count tree.
+
+    Every frame's inclusive count is incremented. Iterative (no recursion on deep stacks).
+    """
     stack = []
     frame: Any = leaf
     depth = 0
@@ -64,14 +69,19 @@ def _fold(leaf: Any, root: dict[str, Any]) -> None:
 
 
 class StackSampler:
-    """A ``WorkerProfiler`` that samples its starting thread's stack from a background daemon thread.
+    """A ``WorkerProfiler`` that samples its starting thread's stack.
 
-    ``start`` is called on the worker's task thread (the thread it then samples); ``flush``/``stop``
-    return the accumulated count tree as JSON bytes, or ``None`` if nothing was sampled."""
+    The sampling runs on a background daemon thread.
+
+    ``start`` is called on the worker's task thread (the thread it then samples);
+    ``flush``/``stop`` return the accumulated count tree as JSON bytes, or ``None`` if nothing was
+    sampled.
+    """
 
     def __init__(self, interval: float = 0.01) -> None:
         self._interval = interval
-        self._tid: int = -1  # the task thread's id; set on start(). -1 is no thread -> .get() misses.
+        # the task thread's id; set on start(). -1 is no thread -> .get() misses.
+        self._tid: int = -1
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
@@ -80,13 +90,16 @@ class StackSampler:
     def start(self) -> None:
         self._tid = threading.get_ident()  # the worker's task thread (the caller)
         self._stop.clear()
-        self._thread = threading.Thread(target=self._run, name="graphed-profile-sampler", daemon=True)
+        self._thread = threading.Thread(
+            target=self._run, name="graphed-profile-sampler", daemon=True
+        )
         self._thread.start()
 
     def _run(self) -> None:
         tid = self._tid
         while not self._stop.is_set():
-            frame = sys._current_frames().get(tid)  # the task thread's CURRENT stack; we don't own it
+            # the task thread's CURRENT stack; we don't own it
+            frame = sys._current_frames().get(tid)
             if frame is not None:
                 with self._lock:
                     _fold(frame, self._tree)
@@ -110,7 +123,10 @@ class StackSampler:
 
 
 def sampler_available() -> bool:
-    """The sampler is pure stdlib — always available (kept for symmetry with the old optional dep)."""
+    """Return the sampler is pure stdlib.
+
+    Always available (kept for symmetry with the old optional dep).
+    """
     return True
 
 
@@ -135,8 +151,10 @@ def merge_into(acc: dict[str, Any], tree: dict[str, Any]) -> None:
 
 
 def flamegraph(tree: dict[str, Any]) -> dict[str, Any]:
-    """Convert the count tree to a d3-flame-graph ``{name, value, children}`` tree (value = inclusive
-    sample count, so a parent always covers its children)."""
+    """Convert the count tree to a d3-flame-graph ``{name, value, children}`` tree.
+
+    The value is the inclusive sample count, so a parent always covers its children.
+    """
 
     def conv(node: dict[str, Any]) -> dict[str, Any]:
         return {
@@ -153,5 +171,8 @@ def flamegraph(tree: dict[str, Any]) -> dict[str, Any]:
 
 
 def make_worker_profiler() -> StackSampler:
-    """A module-level, **picklable** factory shipped to ``ProcessExecutor`` workers (M37)."""
+    """Return a module-level, **picklable** factory.
+
+    It is shipped to ``ProcessExecutor`` workers (M37).
+    """
     return StackSampler()

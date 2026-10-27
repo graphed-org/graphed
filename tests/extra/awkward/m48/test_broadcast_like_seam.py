@@ -12,7 +12,9 @@ import graphed
 from graphed import Session
 from graphed.awkward import AwkwardBackend, from_awkward
 
-EVENTS = ak.Array([{"Jet": [{"pt": 30.0}, {"pt": 12.0}], "w": 1.5}, {"Jet": [{"pt": 40.0}], "w": 0.5}])
+EVENTS = ak.Array(
+    [{"Jet": [{"pt": 30.0}, {"pt": 12.0}], "w": 1.5}, {"Jet": [{"pt": 40.0}], "w": 0.5}]
+)
 
 
 def _session() -> tuple[Session, graphed.Array]:
@@ -38,4 +40,7 @@ def test_the_seam_maps_over_the_universes_of_a_varied_factor() -> None:
     spread = graphed.broadcast_like(jagged, factor)
     assert isinstance(spread, graphed.Varied)
     assert list(graphed.labels(spread)) == ["nominal", "pu_up"]
-    assert ak.to_list(session.materialize(graphed.universe(spread, "pu_up"))) == [[3.0, 3.0], [1.0]]
+    assert ak.to_list(session.materialize(graphed.universe(spread, "pu_up"))) == [
+        [3.0, 3.0],
+        [1.0],
+    ]

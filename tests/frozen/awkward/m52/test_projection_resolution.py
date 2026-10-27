@@ -1,4 +1,6 @@
-"""C3 / design §4.6, §8-d: at combination a container contributes the member whose point equals
+"""C3 / design §4.6, §8-d.
+
+At combination a container contributes the member whose point equals
 `restrict(point(L), axes(container))`, else its `"nominal"` member.
 
 Node ids are fixture-dependent — the same program numbers differently under `from_record` and
@@ -15,8 +17,11 @@ import graphed
 
 
 def test_a_joint_label_resolves_to_the_shifted_member_not_the_nominal_one() -> None:
-    """§8-d. Today the joint label gets the `jes`-only container's NOMINAL member — wrong by the
-    full size of the shift, the silent wrong number this arc exists to eliminate."""
+    """§8-d.
+
+    Today the joint label gets the `jes`-only container's NOMINAL member — wrong by the full size
+    of the shift, the silent wrong number this arc exists to eliminate.
+    """
     program = joint_weight_program()
     jes_only = program.jes_only
 
@@ -44,9 +49,11 @@ def test_a_joint_label_resolves_to_the_shifted_member_not_the_nominal_one() -> N
 
 
 def test_the_fast_path_returns_the_containers_own_member_by_identity() -> None:
-    """§4.6's theorem: a label the container carries is not a special case, since
+    """§4.6's theorem: a label the container carries is not a special case.
+
     `keys(point(L)) ⊆ axes(C)` makes the restriction the identity and point→label is unique
-    (§4.11-2). Object identity pins that the fast path was kept."""
+    (§4.11-2). Object identity pins that the fast path was kept.
+    """
     program = joint_weight_program()
 
     for container in (program.jes_only, program.ambient):

@@ -1,5 +1,8 @@
-"""m74 T1, T5-T10: resuming a plan on SequentialRunner and through direct ``process`` calls (plan §2.2,
-§2.4, §2.6, §2.9, §4.1)."""
+"""m74 T1, T5-T10.
+
+Resuming a plan on SequentialRunner and through direct ``process`` calls (plan §2.2, §2.4, §2.6,
+§2.9, §4.1).
+"""
 
 from __future__ import annotations
 
@@ -20,7 +23,7 @@ import pytest
 from graphed import Session, repartition, shuffle_plan
 from graphed.awkward import AwkwardBackend, gak
 from graphed.awkward.io import from_parquet
-from graphed.checkpoint import Store, StoreUnavailable, resumable, run_resumable
+from graphed.checkpoint import Store, StoreUnavailableError, resumable, run_resumable
 from graphed.checkpoint.runner import _SimulatedInterrupt
 from graphed.core import DurablePlanV2, LocalResources, Partition, Plan, SequentialRunner
 from graphed.services import bind_services, resolve_services
@@ -43,7 +46,9 @@ def test_resume_runs_only_the_tasks_not_done(tmp_path: Path) -> None:
     assert rp.process.reused == k
     value = SequentialRunner().run(rp).value
     assert sorted(h.marks(marker)) == sorted(str(p.entry_start) for p in h.partitions()[k:])
-    assert value == SequentialRunner().run(h.plan_of(h.Marker(str(tmp_path / "reference.txt")))).value
+    assert (
+        value == SequentialRunner().run(h.plan_of(h.Marker(str(tmp_path / "reference.txt")))).value
+    )
 
 
 def test_inner_process_sees_the_original_partitions(tmp_path: Path) -> None:
@@ -103,7 +108,11 @@ def test_three_live_threads_write_three_journals(tmp_path: Path, kind: str) -> N
         values = list(pool.map(lambda t: rp.process(t.partition, resources), rp.tasks))
     assert values == [0.0, 10.0, 20.0]
     journals = h.journal_records(root)
-    writers = [name for name, records in journals.items() if any(r.get("stage") != "environment" for r in records)]
+    writers = [
+        name
+        for name, records in journals.items()
+        if any(r.get("stage") != "environment" for r in records)
+    ]
     assert len(writers) == 3
 
 
@@ -140,9 +149,15 @@ def _stage_payloads(plan: DurablePlanV2) -> list[list[bytes]]:
 def test_shuffle_plan_interrupted_resumes_with_identical_gather_payloads(tmp_path: Path) -> None:
     # T7
     pytest.importorskip("pyarrow")
-    ev = from_parquet(Session(AwkwardBackend()), "events", h.events(tmp_path), open_files=False, steps_per_file=2)
+    ev = from_parquet(
+        Session(AwkwardBackend()), "events", h.events(tmp_path), open_files=False, steps_per_file=2
+    )
     plan = shuffle_plan(
-        gak.sum(repartition(ev, n=2).x), reduce=h.StopReduce(), combine=h.agg_combine, empty=h.agg_empty, steps_per_file=2
+        gak.sum(repartition(ev, n=2).x),
+        reduce=h.StopReduce(),
+        combine=h.agg_combine,
+        empty=h.agg_empty,
+        steps_per_file=2,
     )
     root = str(tmp_path / "store")
     n_map = len(plan.stages[0].tasks)
@@ -183,11 +198,11 @@ def test_store_unavailable_wraps_store_calls_only(tmp_path: Path) -> None:
     worker.join(60)
     assert len(caught) == 1
     err = caught[0]
-    assert isinstance(err, StoreUnavailable)
+    assert isinstance(err, StoreUnavailableError)
     assert isinstance(err, RuntimeError)
     assert str(root) in str(err)
     back = pickle.loads(pickle.dumps(err))
-    assert type(back) is StoreUnavailable
+    assert type(back) is StoreUnavailableError
     assert str(back) == str(err)
 
     failing = resumable(h.plan_of(h.raising), str(tmp_path / "healthy"))
@@ -237,7 +252,9 @@ def test_run_resumable_folds_partials_as_they_come(tmp_path: Path) -> None:
     fresh = run_resumable(floats, Store(tmp_path / "fresh")).value
     assert struct.pack("<d", resumed) == struct.pack("<d", fresh) == struct.pack("<d", expected)
 
-    partials = h.durable("m74_helpers:partial_of", "m74_helpers:add_partials", "m74_helpers:no_partial", n=8)
+    partials = h.durable(
+        "m74_helpers:partial_of", "m74_helpers:add_partials", "m74_helpers:no_partial", n=8
+    )
     for kill in (None, 3):
         where = tmp_path / f"partials-{kill}"
         if kill is not None:

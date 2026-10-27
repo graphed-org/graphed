@@ -29,3 +29,9 @@ format-clean.
 > NOTE: this commit does NOT address the separate, pre-existing rust CI breakage on this repo (a
 > non-exhaustive `NodeKey::Join` match in the lib TEST build, introduced by the M40 rust join work — breaks
 > `cargo clippy`/`cargo test`/`cargo llvm-cov`). That is M40-scope and tracked separately.
+
+## Resolved (0.0.10 PEP 8 / PEP 257 restyle)
+
+Owner ruling 2026-10-20 allowed restyling `tests/frozen/**`. The frozen tree is now `ruff format`-clean
+and lint-clean, the `[tool.ruff.format]` exclude is gone, and each touched milestone is re-tagged
+`freeze-<mx>-fixup<N>` on the restyle commit.

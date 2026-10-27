@@ -1,20 +1,23 @@
 """FROZEN golden routing vectors for the M39 shuffle hash-route conformance theme (a-golden).
 
-Every ``ShuffleBackend.partition`` (awkward AND numpy) MUST place a single-key block into exactly the
-dest tabulated here. The vectors are PRECOMPUTED (not derived in-test) from the pinned rule of plan
-§4/§3.0::
+Every ``ShuffleBackend.partition`` (awkward AND numpy) MUST place a single-key block into exactly
+the dest tabulated here. The vectors are PRECOMPUTED (not derived in-test) from the pinned rule of
+plan §4/§3.0::
 
     route(key, P) = int.from_bytes(sha256(key.to_bytes(8, "big")).digest()[:8], "big") % P
 
 with ``salt=0`` (no bytes appended). They were generated with CPython ``hashlib`` and committed as
-literals so the routing rule cannot be changed and the test updated in tandem — the table is the pin.
+literals so the routing rule cannot be changed and the test updated in tandem — the table is the
+pin.
 
-DISCRIMINATION (measured at authoring time): of these 96 vectors, sha256 and blake2b-of-the-same-key
-disagree on 81. A backend that substitutes ANY other process-independent hash (blake2b, xxhash)
-passes the B2 cross-process-invariance witness yet FAILS these vectors — which is the whole point
-(ADV-r5.3: ``@runtime_checkable`` cannot witness the routing rule; these vectors do).
+DISCRIMINATION (measured at authoring time): of these 96 vectors, sha256 and
+blake2b-of-the-same-key disagree on 81. A backend that substitutes ANY other process-independent
+hash (blake2b, xxhash) passes the B2 cross-process-invariance witness yet FAILS these vectors —
+which is the whole point (ADV-r5.3: ``@runtime_checkable`` cannot witness the routing rule; these
+vectors do).
 
-``key`` is the packed u64 ``__joinkey__`` value; ``canonical_be`` is its 8-byte big-endian encoding.
+``key`` is the packed u64 ``__joinkey__`` value; ``canonical_be`` is its 8-byte big-endian
+encoding.
 """
 
 from __future__ import annotations
@@ -123,11 +126,14 @@ GOLDEN: list[tuple[int, int, int]] = [
 
 
 def canonical_be(key: int) -> bytes:
-    """The pinned canonical big-endian encoding of a packed-u64 join key (plan §4)."""
+    """Return the pinned canonical big-endian encoding of a packed-u64 join key (plan §4)."""
     return int(key).to_bytes(8, "big")
 
 
 def reference_route(key: int, parts: int) -> int:
-    """The pinned §4 routing rule, recomputed — used ONLY to prove the frozen table is self-consistent,
-    never as the conformance oracle (the frozen literals above are the oracle)."""
+    """Return the pinned §4 routing rule, recomputed.
+
+    Used ONLY to prove the frozen table is self-consistent, never as the conformance oracle (the
+    frozen literals above are the oracle).
+    """
     return int.from_bytes(hashlib.sha256(canonical_be(key)).digest()[:8], "big") % parts

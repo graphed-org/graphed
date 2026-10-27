@@ -1,4 +1,7 @@
-"""to_dot determinism + M1 guardrails (graph lives in Rust; graphed-core must not import awkward)."""
+"""to_dot determinism + M1 guardrails.
+
+The graph lives in Rust; graphed-core must not import awkward.
+"""
 
 from __future__ import annotations
 

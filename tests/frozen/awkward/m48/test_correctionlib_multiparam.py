@@ -41,9 +41,13 @@ def _varied_scale_factor() -> tuple[graphed.Session, graphed.Varied]:
     return session, varied
 
 
-def _external_nodes(session: graphed.Session, varied: graphed.Varied) -> dict[str, dict[str, object]]:
+def _external_nodes(
+    session: graphed.Session, varied: graphed.Varied
+) -> dict[str, dict[str, object]]:
     nodes = session._store.nodes()
-    return {label: nodes[graphed.universe(varied, label).node_id] for label in graphed.labels(varied)}
+    return {
+        label: nodes[graphed.universe(varied, label).node_id] for label in graphed.labels(varied)
+    }
 
 
 def test_all_labels_share_one_payload_content_hash() -> None:
@@ -66,8 +70,11 @@ def test_the_labels_differ_only_in_the_systematic_param() -> None:
 
 
 def test_the_three_universes_are_distinct_nodes_over_one_input() -> None:
-    """Only a real content difference forks identity (§1.2): the `systematic=` param is one, so
-    the nodes differ — while their single shared input proves nothing upstream was recomputed."""
+    """Only a real content difference forks identity (§1.2).
+
+    The `systematic=` param is one, so the nodes differ — while their single shared input proves
+    nothing upstream was recomputed.
+    """
     session, varied = _varied_scale_factor()
     nodes = _external_nodes(session, varied)
     assert len({graphed.universe(varied, label).node_id for label in graphed.labels(varied)}) == 3

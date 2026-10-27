@@ -90,7 +90,9 @@ def _is_sequence(value: object) -> bool:
     return isinstance(value, Sequence) and not isinstance(value, str | bytes)
 
 
-def impact_by_label(outputs: Sequence[Varied] | Mapping[str, Sequence[Array]]) -> dict[str, tuple[int, ...]]:
+def impact_by_label(
+    outputs: Sequence[Varied] | Mapping[str, Sequence[Array]],
+) -> dict[str, tuple[int, ...]]:
     """§3.4: per label, the record node ids that label reaches and `"nominal"` does not, sorted.
 
     The reachability DIFFERENCE, not an id watermark: interleaved broadcast recording makes
@@ -99,7 +101,8 @@ def impact_by_label(outputs: Sequence[Varied] | Mapping[str, Sequence[Array]]) -
     """
     per_label = _per_label("graphed.impact_by_label", outputs)
     central = _reach(per_label.get("nominal", []))
-    # `nominal` is `central - central`: answer it from the walk already done rather than repeating it
+    # `nominal` is `central - central`: answer it from the walk already done rather than repeating
+    # it
     return {
         label: () if label == "nominal" else tuple(sorted(_reach(arrays) - central))
         for label, arrays in per_label.items()
@@ -121,9 +124,10 @@ def _ignore(*_args: object) -> None:
 def read_columns_by_label(
     outputs: Sequence[Varied] | Mapping[str, Sequence[Array]], source_nid: int
 ) -> dict[str, tuple[str, ...] | None]:
-    """§5.3: per label, that label's sorted read set on source `source_nid`, making the read-width
-    cost of a shift visible. `None` is `read_columns`' own conservative answer — "read every
-    column" — and must never merge with `()`, which says the opposite.
+    """§5.3: per label, that label's sorted read set on source `source_nid`.
+
+    This makes the read-width cost of a shift visible. `None` is `read_columns`' own conservative
+    answer — "read every column" — and must never merge with `()`, which says the opposite.
     """
     per_label = _per_label("graphed.read_columns_by_label", outputs)
     return {label: read_columns(arrays, source_nid) for label, arrays in per_label.items()}

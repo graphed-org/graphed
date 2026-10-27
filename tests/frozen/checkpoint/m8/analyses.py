@@ -1,9 +1,9 @@
 """Picklable analysis glue for the M8 checkpoint suite.
 
-All process/combine/empty callables are **module-level** (so a ``DurablePlan`` can reference them by
-import path and resolve them on a source-free machine), and all are deterministic (so a resumed run
-matches an uninterrupted run bit-for-bit). A small representative IR is attached to each plan so the
-content-addressed ``task_id`` is meaningful.
+All process/combine/empty callables are **module-level** (so a ``DurablePlan`` can reference them
+by import path and resolve them on a source-free machine), and all are deterministic (so a resumed
+run matches an uninterrupted run bit-for-bit). A small representative IR is attached to each plan
+so the content-addressed ``task_id`` is meaningful.
 """
 
 from __future__ import annotations
@@ -59,7 +59,8 @@ def always_fail(partition: Partition, resources: Any) -> np.ndarray:
 
 
 def fails_on_bad_worker(partition: Partition, resources: Any) -> np.ndarray:
-    # models a flaky worker: fails while running on the "bad" context, succeeds once moved elsewhere
+    # models a flaky worker: fails while running on the "bad" context, succeeds once moved
+    # elsewhere
     if resources and resources.get("bad"):
         raise RuntimeError("bad worker")
     return histogram_chunk(partition, resources)
@@ -107,7 +108,8 @@ def _ir() -> bytes:
 def partitions(n_chunks: int) -> tuple[Partition, ...]:
     edges = np.linspace(0, N_VALUES, n_chunks + 1, dtype=int)
     return tuple(
-        Partition("corpus://values", "Events", int(edges[i]), int(edges[i + 1])) for i in range(n_chunks)
+        Partition("corpus://values", "Events", int(edges[i]), int(edges[i + 1]))
+        for i in range(n_chunks)
     )
 
 
@@ -124,11 +126,11 @@ def build_plan(process_ref: str, n_chunks: int, *, error_budget: int | None = No
 
 
 def reference() -> np.ndarray:
-    """The single-pass histogram of the whole dataset (the bit-for-bit target)."""
+    """Return the single-pass histogram of the whole dataset (the bit-for-bit target)."""
     return _hist(_all_values())
 
 
-# ---- a realistic HEP analysis recorded through graphed + executed per chunk ----------------------
+# ---- a realistic HEP analysis recorded through graphed + executed per chunk ---------------------
 N_EVENTS_HEP = 3000
 SEED_HEP = 7
 HEP_BINS, HEP_LO, HEP_HI = 20, 0.0, 200.0
@@ -142,13 +144,18 @@ def _met_counts(values: object) -> np.ndarray:
 
 
 def met_chunk(partition: Partition, resources: Any) -> np.ndarray:
-    """Record + execute the ADL-q1 MET-pt histogram on one event chunk (a real graphed analysis)."""
+    """Record + execute the ADL-q1 MET-pt histogram on one event chunk.
+
+    This is a real graphed analysis.
+    """
     from graphed_corpus import make_events  # noqa: PLC0415
 
     from graphed import Session  # noqa: PLC0415
     from graphed.awkward import AwkwardBackend, from_awkward  # noqa: PLC0415
 
-    events = make_events(n_events=N_EVENTS_HEP, seed=SEED_HEP)[partition.entry_start : partition.entry_stop]
+    events = make_events(n_events=N_EVENTS_HEP, seed=SEED_HEP)[
+        partition.entry_start : partition.entry_stop
+    ]
     s = Session(AwkwardBackend())
     ev = from_awkward(s, "events", events)
     return _met_counts(s.materialize(ev.MET.pt))
@@ -168,7 +175,8 @@ def met_reference() -> np.ndarray:
 def met_partitions(n_chunks: int) -> tuple[Partition, ...]:
     edges = np.linspace(0, N_EVENTS_HEP, n_chunks + 1, dtype=int)
     return tuple(
-        Partition("corpus://events", "Events", int(edges[i]), int(edges[i + 1])) for i in range(n_chunks)
+        Partition("corpus://events", "Events", int(edges[i]), int(edges[i + 1]))
+        for i in range(n_chunks)
     )
 
 

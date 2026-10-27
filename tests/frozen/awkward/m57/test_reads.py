@@ -1,9 +1,9 @@
 """m57 §2.1/§2.3: the handle's READ decides nothing on its own.
 
-Every composition handed out is recorded the moment it exists — a fresh composition, a memo hit, the
-member an adoption hands the child — so inserting or removing a `graphed.weight()` read between
-registrations changes no decision and no value, and the order of two relative-delta registrations on
-handles read at different times changes nothing either.
+Every composition handed out is recorded the moment it exists — a fresh composition, a memo hit,
+the member an adoption hands the child — so inserting or removing a `graphed.weight()` read between
+registrations changes no decision and no value, and the order of two relative-delta registrations
+on handles read at different times changes nothing either.
 """
 
 from __future__ import annotations
@@ -39,8 +39,11 @@ import graphed
 
 
 def test_a_handle_read_before_a_join_decides_and_values_as_one_read_after_it() -> None:
-    """A join leaves the nominal member alone, so a handle read before it is still the composition
-    it names: both read spellings give the same one-SF universes and the same nominal node."""
+    """A join leaves the nominal member alone.
+
+    So a handle read before it is still the composition it names: both read spellings give the same
+    one-SF universes and the same nominal node.
+    """
 
     def program(extra_read: bool) -> tuple[Any, Any, list[Any]]:
         session, ctx = m57_base()
@@ -74,8 +77,11 @@ def test_a_handle_read_before_a_join_decides_and_values_as_one_read_after_it() -
 
 
 def test_a_handle_read_over_a_prefix_anchors_after_that_prefix() -> None:
-    """The overlay sits right after the last factor it was read over, so a factor registered after
-    the read multiplies its result and keeps its own universe untouched."""
+    """The overlay sits right after the last factor it was read over.
+
+    So a factor registered after the read multiplies its result and keeps its own universe
+    untouched.
+    """
     session, ctx = m57_base()
     jets, met = ctx["Jet"], ctx["MET"]
     sf, pu, trig = m57_sf(jets), m57_pu(jets), m57_trig(met)
@@ -94,12 +100,17 @@ def test_a_handle_read_over_a_prefix_anchors_after_that_prefix() -> None:
         m57_factor("trig", trig, trig_members),
     ]
 
-    assert m57_ambient_values(session, weight) == m57_oracle_values(session, ops, graphed.labels(weight))
+    assert m57_ambient_values(session, weight) == m57_oracle_values(
+        session, ops, graphed.labels(weight)
+    )
 
 
 def test_two_relative_delta_families_agree_in_both_orders_and_prefix_lengths() -> None:
-    """Each overlay is anchored by the composition its own handle names, so neither the registration
-    order of the two nor how long the older handle's prefix is can move a universe."""
+    """Each overlay is anchored by the composition its own handle names.
+
+    So neither the registration order of the two nor how long the older handle's prefix is can move
+    a universe.
+    """
 
     def program(*, delta_first: bool, early: bool, extra_read: bool) -> tuple[Any, Any, list[Any]]:
         session, ctx = m57_base()
@@ -149,9 +160,11 @@ def test_two_relative_delta_families_agree_in_both_orders_and_prefix_lengths() -
 
 
 def test_an_overlay_insertion_leaves_a_whole_list_handle_fresh() -> None:
-    """Inserting an overlay widens no factor's nominal member, so a handle read over the whole list
-    before that registration is still fresh after it — the relative-delta family it nominates is
-    accepted and reads the composition it named."""
+    """Inserting an overlay widens no factor's nominal member.
+
+    So a handle read over the whole list before that registration is still fresh after it — the
+    relative-delta family it nominates is accepted and reads the composition it named.
+    """
     session, ctx = m57_base()
     jets = ctx["Jet"]
     sf, pu = m57_sf(jets), m57_pu(jets)
@@ -172,13 +185,17 @@ def test_an_overlay_insertion_leaves_a_whole_list_handle_fresh() -> None:
         m57_overlay("nu", m57_scaled(whole, NU)),
     ]
 
-    assert m57_ambient_values(session, weight) == m57_oracle_values(session, ops, graphed.labels(weight))
+    assert m57_ambient_values(session, weight) == m57_oracle_values(
+        session, ops, graphed.labels(weight)
+    )
 
 
 def test_at_a_masked_child_the_adopted_read_anchors_the_overlay_after_the_head() -> None:
-    """The adoption records the adopted member as the child's own read, so a handle read at the child
-    before anything is registered there anchors right after the head — with a factor registered at
-    the child after it multiplying its result."""
+    """The adoption records the adopted member as the child's own read.
+
+    So a handle read at the child before anything is registered there anchors right after the head
+    — with a factor registered at the child after it multiplying its result.
+    """
     session, ctx = m57_base()
     jets, met = ctx["Jet"], ctx["MET"]
     sf, pu, trig = m57_sf(jets), m57_pu(jets), m57_trig(met)
@@ -198,13 +215,17 @@ def test_at_a_masked_child_the_adopted_read_anchors_the_overlay_after_the_head()
         m57_factor("trig", child_trig, m57_scaled(child_trig, TRIG)),
     ]
 
-    assert m57_ambient_values(session, weight) == m57_oracle_values(session, ops, graphed.labels(weight))
+    assert m57_ambient_values(session, weight) == m57_oracle_values(
+        session, ops, graphed.labels(weight)
+    )
 
 
 def test_at_the_nominal_projection_a_child_factor_makes_both_orders_agree() -> None:
-    """At `graphed.nominal(ctx)` the read returns the adopted member itself; with a factor registered
-    at the projection, the two registration orders of the crossed handle and that factor agree on
-    the label set and on every value."""
+    """At `graphed.nominal(ctx)` the read returns the adopted member itself.
+
+    With a factor registered at the projection, the two registration orders of the crossed handle
+    and that factor agree on the label set and on every value.
+    """
 
     def program(delta_first: bool) -> tuple[Any, Any]:
         session, ctx = m57_base()
@@ -235,13 +256,19 @@ def test_at_the_nominal_projection_a_child_factor_makes_both_orders_agree() -> N
 
     assert set(graphed.labels(delta_first)) == set(graphed.labels(factor_first))
     assert {"mu_up", "trig_up"} <= set(graphed.labels(delta_first))
-    assert m57_ambient_values(delta_session, delta_first) == m57_ambient_values(factor_session, factor_first)
+    assert m57_ambient_values(delta_session, delta_first) == m57_ambient_values(
+        factor_session, factor_first
+    )
 
 
-def test_without_a_child_factor_the_orders_label_sets_differ_but_every_shared_value_agrees() -> None:
-    """At the nominal projection the crossed handle's members carry the parent's labels, which the
-    projected context no longer composes, so the two orders' label sets differ while every label
-    they share has the same value."""
+def test_without_a_child_factor_the_orders_label_sets_differ_but_every_shared_value_agrees() -> (
+    None
+):
+    """At the nominal projection the crossed handle's members carry the parent's labels.
+
+    Which the projected context no longer composes, so the two orders' label sets differ while
+    every label they share has the same value.
+    """
 
     def program(delta_first: bool) -> tuple[Any, Any]:
         session, ctx = m57_base()
@@ -285,8 +312,11 @@ def test_without_a_child_factor_the_orders_label_sets_differ_but_every_shared_va
 
 
 def test_an_ancestor_factor_join_after_the_overlay_leaves_its_universe_unchanged() -> None:
-    """The expansion rebuilds the child's list from provenance, so an overlay anchored after the head
-    stays before a factor the child registered earlier and its universe does not change."""
+    """The expansion rebuilds the child's list from provenance.
+
+    So an overlay anchored after the head stays before a factor the child registered earlier and
+    its universe does not change.
+    """
     for projected in (False, True):
         session, ctx = m57_base()
         jets, met = ctx["Jet"], ctx["MET"]
@@ -310,4 +340,6 @@ def test_an_ancestor_factor_join_after_the_overlay_leaves_its_universe_unchanged
 
         assert after_values["mu_up"] == before["mu_up"], projected
         assert after_values["mu_down"] == before["mu_down"], projected
-        assert m57_node(graphed.weight(expanded)) == m57_node(graphed.weight(with_overlay)), projected
+        assert m57_node(graphed.weight(expanded)) == m57_node(graphed.weight(with_overlay)), (
+            projected
+        )

@@ -145,7 +145,7 @@ bytes. A run's endpoints are provenance of that run: ``RunReport.endpoints`` kee
 the bundle's fingerprint. ``graphed`` never starts a service itself; a runner in
 ``graphed-executors`` finds an endpoint for each spec — a user endpoint, a site's, or one it starts
 from the recipe — and binds them before the first task. Binding adds endpoints: a part bound earlier keeps
-its own. An External raises ``UnboundService`` when binding leaves it without an endpoint; a
+its own. An External raises ``UnboundServiceError`` when binding leaves it without an endpoint; a
 ``reduce`` that calls a service must give itself a ``bind_services`` hook that does the same
 (``graphed.services.Bindable``), and a reduce without such a hook is not checked.
 ``graphed.services.resolve_services(plan, value)`` hands a run's value back through the same
@@ -156,7 +156,7 @@ it to its ``reduce``, and ``collate``'s to each plan's process with that plan's 
 entry. A part without the hook keeps its value, and a name absent from the value is not called.
 ``SequentialRunner`` does not call it; a runner that brings services up must, before it closes them.
 ``SequentialRunner`` calls ``graphed.services.require_bound(plan)`` before its first task, so a
-plan with a service left unbound raises ``UnboundService`` naming every such service before any
+plan with a service left unbound raises ``UnboundServiceError`` naming every such service before any
 task runs or any part is written; a plan without services skips the check. A runner with its own
 task loop must make the same call before its first task; the ``graphed-executors`` runners do not
 yet.

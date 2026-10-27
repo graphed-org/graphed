@@ -67,7 +67,9 @@ def test_reach_walks_a_shared_sub_dag_once(monkeypatch: pytest.MonkeyPatch) -> N
             return note
 
         names = ("source", "op", "external")
-        return walk(self, array, **{k: counted(h) if k in names else h for k, h in handlers.items()})
+        return walk(
+            self, array, **{k: counted(h) if k in names else h for k, h in handlers.items()}
+        )
 
     monkeypatch.setattr(Session, "walk", counting_walk)
     assert by_label._reach(outputs) == union

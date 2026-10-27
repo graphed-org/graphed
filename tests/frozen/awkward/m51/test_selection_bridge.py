@@ -1,8 +1,8 @@
 """m51 anchor C — the `graphed.selection(ctx)` bridge (§6.4a, §9.1).
 
-Contexts expose no mask accessor (§2.2/§9.1 list `labels`/`universe`/`nominal`/`weight`/`variations`
-only), so a §2.6-context skim reaches `select=` through `graphed.selection(ctx)`, which implements
-§9.1's FULL three-case contract:
+Contexts expose no mask accessor (§2.2/§9.1 list
+`labels`/`universe`/`nominal`/`weight`/`variations` only), so a §2.6-context skim reaches `select=`
+through `graphed.selection(ctx)`, which implements §9.1's FULL three-case contract:
 
   * ROOT context           → `None` (the sink is then reachable only from the loose §2.1a style);
   * mask-derived context   → the `Varied`/Array mask that derived it from its parent (case 1);
@@ -14,8 +14,8 @@ only), so a §2.6-context skim reaches `select=` through `graphed.selection(ctx)
     link, so this half fails until the real case-2 walk exists).
 
 Bridge writes round-trip identically to the same skim written with the mask passed by hand. The
-`vary`-link discriminator and the re-recorded-mask control pin §6.4a(2a)'s admission rule against the
-two obvious wrong implementations (bare handle `is`, and Array/object `is`).
+`vary`-link discriminator and the re-recorded-mask control pin §6.4a(2a)'s admission rule against
+the two obvious wrong implementations (bare handle `is`, and Array/object `is`).
 """
 
 from __future__ import annotations
@@ -35,7 +35,10 @@ pytest.importorskip("pyarrow")
 
 
 def _event_mask(events: Any) -> Any:
-    """A flat per-event predicate read THROUGH the context (carries the context's handle)."""
+    """Return a flat per-event predicate read THROUGH the context.
+
+    It carries the context's handle.
+    """
     return gak.num(events.Jet) >= 2
 
 
@@ -83,14 +86,21 @@ def test_bridge_walks_vary_identity_links_and_roundtrips_the_prevary_spelling(tm
 
 
 def test_bridge_admits_a_vary_link_between_record_and_mask_handles(tmp_path) -> None:  # type: ignore[no-untyped-def]
-    """The discriminator §6.4a(2a) needs: record handle `E1`, mask handle `E2`, joined ONLY by a
-    `vary` identity link. A bare `context_of(mask) is context_of(record)` implementation REFUSES this
-    legal configuration; the vary-link walk ACCEPTS it. Both spellings write the same rows."""
+    """The discriminator §6.4a(2a) needs.
+
+    Record handle `E1`, mask handle `E2`, joined ONLY by a `vary` identity link. A bare
+    `context_of(mask) is context_of(record)` implementation REFUSES this legal configuration; the
+    vary-link walk ACCEPTS it. Both spellings write the same rows.
+    """
     _session, e1 = events_context()
     w = gak.prod(1.0 + e1.Jet.btag, axis=1)
     e2 = graphed.vary(
-        e1, "pu", w, is_weight=True,
-        up=gak.prod(1.0 + e1.Jet.btag * 1.1, axis=1), down=gak.prod(1.0 + e1.Jet.btag * 0.9, axis=1),
+        e1,
+        "pu",
+        w,
+        is_weight=True,
+        up=gak.prod(1.0 + e1.Jet.btag * 1.1, axis=1),
+        down=gak.prod(1.0 + e1.Jet.btag * 0.9, axis=1),
     )
     mask = gak.num(e2.Jet) >= 2
     sel = e2[mask]
@@ -103,8 +113,11 @@ def test_bridge_admits_a_vary_link_between_record_and_mask_handles(tmp_path) -> 
 
 
 def test_bridge_accepts_a_re_recorded_equal_mask_expression(tmp_path) -> None:  # type: ignore[no-untyped-def]
-    """§6.4a(2a) is handle equality, not Array/object identity: a mask RE-RECORDED as a distinct
-    Python object (same context handle, same interned node id) must be accepted."""
+    """§6.4a(2a) is handle equality, not Array/object identity.
+
+    A mask RE-RECORDED as a distinct Python object (same context handle, same interned node id)
+    must be accepted.
+    """
     _session, events = events_context()
     sel = events[_event_mask(events)]
     re_recorded = _event_mask(events)  # a fresh recording; hash-consing gives it the same node id
@@ -114,11 +127,16 @@ def test_bridge_accepts_a_re_recorded_equal_mask_expression(tmp_path) -> None:  
     assert as_list(out["nominal"]) == as_list(_eager_jets_selected())
 
 
-def test_selection_on_a_universe_nominal_context_is_a_grandparent_array_and_refuses_downstream(tmp_path) -> None:  # type: ignore[no-untyped-def]
-    """Case 2: `graphed.selection(graphed.nominal(sel))` returns that label's member of `sel`'s own
-    selection — an UNVARIED Array in the GRANDparent's row space (here `sel`'s parent selection mask),
-    `None` for a root argument. Passing it as `select=` for a record read from `sel` is REFUSED by
-    (2a): a universe/nominal projection link is not admitted, so the mask lives one row space up."""
+def test_selection_on_a_universe_nominal_context_is_a_grandparent_array_and_refuses_downstream(
+    tmp_path,
+) -> None:
+    """Case 2: `graphed.selection(graphed.nominal(sel))` is a GRANDparent's array.
+
+    It returns that label's member of `sel`'s own selection — an UNVARIED Array in the
+    GRANDparent's row space (here `sel`'s parent selection mask), `None` for a root argument.
+    Passing it as `select=` for a record read from `sel` is REFUSED by (2a): a universe/nominal
+    projection link is not admitted, so the mask lives one row space up.
+    """
     session, events = events_context()
     mask = _event_mask(events)
     sel = events[mask]
@@ -129,6 +147,7 @@ def test_selection_on_a_universe_nominal_context_is_a_grandparent_array_and_refu
     assert as_list(session.materialize(projected)) == as_list(session.materialize(mask))
     assert graphed.selection(graphed.nominal(events)) is None  # type: ignore[attr-defined]  # root argument
 
-    # (b): the projected mask lives one row space above a record read from `sel` -> record-time refuse
+    # (b): the projected mask lives one row space above a record read from `sel` -> record-time
+    # refuse
     with pytest.raises(GraphedError):
         ga.to_parquet(sel.Jet, str(tmp_path / "nope"), select=projected)  # type: ignore[call-arg]

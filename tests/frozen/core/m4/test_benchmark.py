@@ -1,5 +1,8 @@
-"""The super-linear guard: reduction wall time must NOT grow super-linearly with graph size across
-{1k, 2k, 4k, 8k} — the single most important guard against re-introducing dask's O(N^2) (plan M4)."""
+"""The super-linear guard.
+
+Reduction wall time must NOT grow super-linearly with graph size across {1k, 2k, 4k, 8k} — the
+single most important guard against re-introducing dask's O(N^2) (plan M4).
+"""
 
 from __future__ import annotations
 
@@ -40,7 +43,9 @@ def test_reduction_is_subquadratic() -> None:
     base = max(times[SIZES[0]], 1e-4)  # floor to avoid divide-by-noise on tiny times
     growth = times[SIZES[-1]] / base  # size grows 8x from 1k -> 8k
     # linear => ~8x; quadratic => ~64x. Fail well below quadratic; allow generous overhead.
-    assert growth < 24.0, f"reduction scaling looks super-linear: 8x size -> {growth:.1f}x time {times}"
+    assert growth < 24.0, (
+        f"reduction scaling looks super-linear: 8x size -> {growth:.1f}x time {times}"
+    )
 
 
 def test_each_size_reduces_within_budget() -> None:

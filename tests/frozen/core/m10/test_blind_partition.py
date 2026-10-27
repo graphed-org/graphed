@@ -35,7 +35,9 @@ def test_blind_validation() -> None:
 def test_resolve_covers_every_entry_exactly_once() -> None:
     for num_entries in (0, 1, 7, 100, 101):
         for n_steps in (1, 2, 3, 7):
-            ranges = [Partition.blind("f", "t", k, n_steps).resolve(num_entries) for k in range(n_steps)]
+            ranges = [
+                Partition.blind("f", "t", k, n_steps).resolve(num_entries) for k in range(n_steps)
+            ]
             covered: list[int] = []
             for r in ranges:
                 assert not r.is_blind
@@ -65,4 +67,6 @@ def test_durable_codec_round_trips_blind_partitions() -> None:
 def test_non_blind_plan_bytes_are_unchanged() -> None:
     # the M8 determinism pin: adding blind support must not move a single byte of existing plans
     p = Partition("f.root", "events", 0, 100)
-    assert _partition_bytes(p) == b'{"entry_start":0,"entry_stop":100,"tree":"events","uri":"f.root"}'
+    assert (
+        _partition_bytes(p) == b'{"entry_start":0,"entry_stop":100,"tree":"events","uri":"f.root"}'
+    )

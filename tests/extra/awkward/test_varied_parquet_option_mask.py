@@ -1,5 +1,8 @@
-"""A `None` in an option-typed `select=` mask indexes as ak does: a `None` row (or object) in every
-universe whose mask holds it, round-tripped through `read_varied` (graphed#77)."""
+"""A `None` in an option-typed `select=` mask indexes as ak does.
+
+A `None` row (or object) in every universe whose mask holds it, round-tripped through `read_varied`
+(graphed#77).
+"""
 
 from __future__ import annotations
 
@@ -55,14 +58,20 @@ CASES: dict[str, tuple[Callable[[Any], Any], Select]] = {
     "level 0": (_record, lambda ev: {0: _event_mask(ev)}),
     "level 0, varied mask": (_record, lambda ev: {0: _varied_event_mask(ev)}),
     "level 0, named record": (_named, lambda ev: {0: _event_mask(ev)}),
-    "level 0 option, level 1 plain": (_record, lambda ev: {0: _event_mask(ev), ("Jet", 1): ev.Jet.pt > 30}),
+    "level 0 option, level 1 plain": (
+        _record,
+        lambda ev: {0: _event_mask(ev), ("Jet", 1): ev.Jet.pt > 30},
+    ),
     "level 1 option objects": (_record, lambda ev: {0: ev.m > 100, ("Jet", 1): _jet_mask(ev)}),
     "level 1 option rows": (_record, lambda ev: {0: ev.m > 100, ("Jet", 1): _jet_rows_mask(ev)}),
 }
 
 
 def _expected(member: ak.Array, masks: dict[Any, ak.Array]) -> ak.Array:
-    """The analyst's eager selection: rows by the level-0 mask, then each collection's objects."""
+    """Return the analyst's eager selection.
+
+    Rows by the level-0 mask, then each collection's objects.
+    """
     m0 = masks.get(0)
     out = member if m0 is None else member[m0]
     for key, mask in masks.items():
@@ -96,11 +105,17 @@ def test_an_option_mask_is_stored_as_is_and_a_plain_one_as_packbits(tmp_path: An
     session = Session(AwkwardBackend())
     ev = from_awkward(session, "ev", ak.Array(DATA))
     paths = ga.to_parquet(
-        _record(ev), str(tmp_path / "skim"), select={0: _event_mask(ev), ("Jet", 1): ev.Jet.pt > 30}
+        _record(ev),
+        str(tmp_path / "skim"),
+        select={0: _event_mask(ev), ("Jet", 1): ev.Jet.pt > 30},
     )
     assert isinstance(paths, list)
     (path,) = paths
     manifest = json.loads(pq.ParquetFile(path).metadata.metadata[b"graphed.variations"])
-    reps = {col: info["representation"] for col, info in manifest["nominal"].items() if "__mask__" in col}
+    reps = {
+        col: info["representation"]
+        for col, info in manifest["nominal"].items()
+        if "__mask__" in col
+    }
     assert reps == {"__vary_nominal__mask__0": "option", "__vary_nominal__mask__Jet_1": "packbits"}
     assert len(ak.from_parquet(path)) == 4  # the row whose mask is None in every universe is kept

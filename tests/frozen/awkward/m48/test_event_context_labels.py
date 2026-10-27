@@ -33,8 +33,11 @@ def test_term_a_and_term_c_together_the_union_is_not_the_masks_labels_alone() ->
 
 
 def test_term_b_alone_a_shift_varied_collection_with_an_UNVARIED_derivation_mask() -> None:
-    """The collection is the only label source: nothing is registered and the mask carries no
-    labels, so an implementation reading only the mask answers with nothing at all."""
+    """The collection is the only label source.
+
+    Nothing is registered and the mask carries no labels, so an implementation reading only the
+    mask answers with nothing at all.
+    """
     _s, events = events_context()
     shifted = graphed.vary(events, "jes", Jet=jes_kwargs(events)["Jet"])
     unvaried_mask = shifted.MET.pt > 20.0
@@ -45,8 +48,11 @@ def test_term_b_alone_a_shift_varied_collection_with_an_UNVARIED_derivation_mask
 
 
 def test_term_c_alone_a_mask_varied_through_the_LOOSE_primitive() -> None:
-    """Terms (a) and (b) are both EMPTY here — no weight is registered and no shift-form `vary`
-    touched the context — so this is the only program that isolates the third term."""
+    """Terms (a) and (b) are both EMPTY here.
+
+    No weight is registered and no shift-form `vary` touched the context — so this is the only
+    program that isolates the third term.
+    """
     _s, events = events_context()
     mask = (
         gak.num(

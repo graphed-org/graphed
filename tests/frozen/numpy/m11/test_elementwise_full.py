@@ -109,7 +109,9 @@ def test_unary_matches_numpy(fn: np.ufunc, data: np.ndarray) -> None:
     np.testing.assert_array_equal(np.asarray(s.materialize(fn(a))), fn(data))
 
 
-@pytest.mark.parametrize(("fn", "x", "y"), BINARY_CASES, ids=[f.__name__ for f, *_ in BINARY_CASES])
+@pytest.mark.parametrize(
+    ("fn", "x", "y"), BINARY_CASES, ids=[f.__name__ for f, *_ in BINARY_CASES]
+)
 def test_binary_matches_numpy(fn: np.ufunc, x: np.ndarray, y: np.ndarray) -> None:
     s = Session(NumpyBackend())
     a = from_array(s, "a", x)
@@ -117,7 +119,9 @@ def test_binary_matches_numpy(fn: np.ufunc, x: np.ndarray, y: np.ndarray) -> Non
     np.testing.assert_array_equal(np.asarray(s.materialize(fn(a, b))), fn(x, y))
 
 
-@pytest.mark.parametrize(("fn", "x", "y"), BINARY_CASES, ids=[f.__name__ for f, *_ in BINARY_CASES])
+@pytest.mark.parametrize(
+    ("fn", "x", "y"), BINARY_CASES, ids=[f.__name__ for f, *_ in BINARY_CASES]
+)
 def test_binary_with_scalar_matches_numpy(fn: np.ufunc, x: np.ndarray, y: np.ndarray) -> None:
     s = Session(NumpyBackend())
     a = from_array(s, "a", x)
@@ -135,7 +139,9 @@ def test_comparisons_materialize_to_bool_arrays() -> None:
     np.testing.assert_array_equal(np.asarray(s.materialize(a <= b)), F <= G)
     np.testing.assert_array_equal(np.asarray(s.materialize(a == b)), F == G)
     np.testing.assert_array_equal(np.asarray(s.materialize(a != b)), F != G)
-    np.testing.assert_array_equal(np.asarray(s.materialize((a > 0.4) & (b < 2.5))), (F > 0.4) & (G < 2.5))
+    np.testing.assert_array_equal(
+        np.asarray(s.materialize((a > 0.4) & (b < 2.5))), (F > 0.4) & (G < 2.5)
+    )
 
 
 def test_operator_dunders_match_numpy() -> None:

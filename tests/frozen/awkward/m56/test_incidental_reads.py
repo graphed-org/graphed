@@ -1,6 +1,8 @@
-"""m56 §2 item 4 / §4 inclusion legs: reading a factor whose member at the label is its NOMINAL node
-carries nothing of that label, so the member's coordinate still fans out — exactly as the bare
-`SF(varied jets)` sibling registered in the same program does.
+"""m56 §2 item 4 / §4 inclusion legs.
+
+Reading a factor whose member at the label is its NOMINAL node carries nothing of that label, so
+the member's coordinate still fans out — exactly as the bare `SF(varied jets)` sibling registered
+in the same program does.
 """
 
 from __future__ import annotations

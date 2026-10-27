@@ -45,8 +45,8 @@ from .varied import SURFACE_DISPOSITIONS, Varied, broadcasting, expand, expandin
 from .vary import vary
 
 #: How each public `Array`-consuming module verb treats a `Varied` container: expand it per label,
-#: broadcast against it, read its metadata eagerly, or refuse it. `vary` is absent by construction —
-#: it PRODUCES containers — and `evaluate_ir`/`unify_contexts` never take an `Array`.
+#: broadcast against it, read its metadata eagerly, or refuse it. `vary` is absent by construction
+#: — it PRODUCES containers — and `evaluate_ir`/`unify_contexts` never take an `Array`.
 VERB_DISPOSITIONS: dict[str, str] = {
     "aggregate_plan": "refusing",
     "apply": "expanding",

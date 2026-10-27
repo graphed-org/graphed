@@ -94,9 +94,9 @@ def opaque_callable_descriptor(fn_name: str) -> PayloadDescriptor:
     )
 
 
-# ---- M28: content-identity descriptors, aligned with the graphed-preserve plugin conventions ------
-# (identical domain strings + algorithms, so descriptor.content_hash == plugin.content_hash(payload)
-# and gak-recorded Externals pass a bundle's payload-integrity check)
+# ---- M28: content-identity descriptors, aligned with the graphed-preserve plugin conventions ----
+# (identical domain strings + algorithms, so descriptor.content_hash ==
+# plugin.content_hash(payload) and gak-recorded Externals pass a bundle's payload-integrity check)
 def correctionlib_contents_hash(payload: bytes) -> str:
     """sha256 of the correction set's CONTENTS (canonical JSON) — formatting is not identity."""
     from graphed.preserve.externals._helpers import json_bytes  # noqa: PLC0415
@@ -132,6 +132,7 @@ def _correctionlib_identity(payload: bytes) -> tuple[str, str]:
 
 
 def correctionlib_contents_descriptor(payload: bytes, correction_name: str) -> PayloadDescriptor:
+    """Describe correction ``correction_name`` of a correctionlib payload's bytes."""
     from graphed.preserve.externals._helpers import memoized_model_hash  # noqa: PLC0415
 
     # one set is recorded once per call (e.g. per systematic universe): parse it once
@@ -149,9 +150,12 @@ def correctionlib_contents_descriptor(payload: bytes, correction_name: str) -> P
 
 
 def onnx_weights_descriptor(payload: bytes) -> PayloadDescriptor:
+    """Describe an ONNX model payload's bytes."""
     from graphed.preserve.externals._helpers import memoized_model_hash  # noqa: PLC0415
 
-    content_hash, opset, io_schema = memoized_model_hash("onnx-descriptor", payload, _onnx_identity)
+    content_hash, opset, io_schema = memoized_model_hash(
+        "onnx-descriptor", payload, _onnx_identity
+    )
     return PayloadDescriptor(
         kind="onnx_model",
         content_hash=content_hash,

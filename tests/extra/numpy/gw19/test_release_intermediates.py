@@ -1,4 +1,7 @@
-"""evaluate_ir drops each intermediate after its last consumer, inside a fused stage and across nodes."""
+"""evaluate_ir drops each intermediate after its last consumer.
+
+Inside a fused stage and across nodes.
+"""
 
 from __future__ import annotations
 

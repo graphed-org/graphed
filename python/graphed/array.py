@@ -120,8 +120,11 @@ _UFUNC_TO_OP: dict[str, str] = {
 
 
 def _is_full_slice(value: object) -> bool:
-    """``:`` — the only axis-0 member a tuple key may carry (checked structurally: an operand's
-    ``__eq__`` would RECORD a comparison instead of answering one)."""
+    """Whether ``key`` is ``:``, the only axis-0 member a tuple key may carry.
+
+    Checked structurally: an operand's ``__eq__`` would RECORD a comparison instead of answering
+    one.
+    """
     return isinstance(value, slice) and (value.start, value.stop, value.step) == (None, None, None)
 
 
@@ -131,13 +134,18 @@ def _refuse_axis0(first: object) -> TypeError:
         # `start:stop` always, `:step` only when there is one — rstrip would turn `1::` into `1`,
         # an integer index, which is a different op
         spell = ":".join(bits if first.step is not None else bits[:2])
-        return TypeError(f"a tuple key must leave the partitioned axis whole; chain it: a[{spell}][:, ...]")
-    return TypeError("a tuple key must keep the partitioned axis 0 whole: a[:, inner...], a[..., inner]")
+        return TypeError(
+            f"a tuple key must leave the partitioned axis whole; chain it: a[{spell}][:, ...]"
+        )
+    return TypeError(
+        "a tuple key must keep the partitioned axis 0 whole: a[:, inner...], a[..., inner]"
+    )
 
 
 def encode_subscript(key: tuple[object, ...]) -> str:
-    """Canonical injective spec for an inner (partition-local) tuple key — M13's numpy subscript,
-    widened in M59 to the kinds both array idioms share.
+    """Canonical injective spec for an inner (partition-local) tuple key.
+
+    M13's numpy subscript, widened in M59 to the kinds both array idioms share.
 
     Members are ``slice``s with int fields, ints, ``None`` (newaxis) and at most one ``Ellipsis``;
     axis 0 must be left whole (``:`` or a leading ``...``), since anything that consumes or
@@ -174,7 +182,7 @@ def encode_subscript(key: tuple[object, ...]) -> str:
 
 
 def check_leading_ellipsis(key: tuple[object, ...], depth: int) -> None:
-    """A leading ``...`` must absorb at least the partitioned axis (M59).
+    """Check that a leading ``...`` absorbs at least the partitioned axis (M59).
 
     ``[..., 0]`` leaves axis 0 whole only while the receiver is deeper than the members after the
     Ellipsis: on a flat array the Ellipsis absorbs nothing and the key indexes axis 0. Only the
@@ -195,7 +203,7 @@ def check_leading_ellipsis(key: tuple[object, ...], depth: int) -> None:
 
 
 def decode_subscript(spec: object) -> tuple[object, ...]:
-    """The inverse of :func:`encode_subscript`, for the backends that evaluate the key."""
+    """Return the inverse of :func:`encode_subscript`, for the backends that evaluate the key."""
     out: list[object] = []
     for part in str(spec).split(","):
         if part == "N":
@@ -217,8 +225,10 @@ def _as_param(value: object) -> ParamValue:
     raise TypeError(f"unsupported scalar operand {value!r}")
 
 
-def _scalar_params(value: object, key: str = "scalar", dtype_key: str = "dtype") -> dict[str, ParamValue]:
-    """The params a scalar operand records (M59).
+def _scalar_params(
+    value: object, key: str = "scalar", dtype_key: str = "dtype"
+) -> dict[str, ParamValue]:
+    """Return the params a scalar operand records (M59).
 
     A value carrying a ``dtype`` — a numpy scalar — keeps BOTH halves of what it imposes on the
     result: the dtype, as a ``str`` param read off the object (the frontend never imports numpy),
@@ -235,7 +245,10 @@ def _scalar_params(value: object, key: str = "scalar", dtype_key: str = "dtype")
 
 
 def no_eager_value(op: str, missing: str) -> GraphedTypeError:
-    """The refusal for ``bool()``/``np.asarray()`` on a deferred value, located at the user's line."""
+    """Return the refusal for ``bool()``/``np.asarray()`` on a deferred value.
+
+    It is located at the user's line.
+    """
     from .errors import GraphedTypeError  # noqa: PLC0415  (cycle: errors -> provenance -> array)
     from .provenance import capture  # noqa: PLC0415
 
@@ -253,12 +266,15 @@ class Array:
     # performed through, `_labels` the variation labels flowing into this expression. Both are
     # underscore-prefixed so `__getattr__`'s guard keeps them out of field access, and NEITHER
     # reaches NodeKey params/tokens/hashes — interning and §1.2 stay intact.
+    """A deferred array: a proxy for one node of a Session's recorded graph."""
+
     __slots__ = ("_context", "_labels", "_node_id", "_session")
 
     # let numpy defer to us for ufuncs (np.cos(array), np.hypot(a, b), ...)
     __array_priority__ = 1000.0
 
     def __init__(self, session: Session, node_id: int) -> None:
+        """Wrap node ``node_id`` of ``session``."""
         self._session = session
         self._node_id = node_id
         self._context: object = None
@@ -266,10 +282,12 @@ class Array:
 
     @property
     def node_id(self) -> int:
+        """The id of the node this proxy stands for."""
         return self._node_id
 
     @property
     def session(self) -> Session:
+        """The Session this array records into."""
         return self._session
 
     # ---- elementwise recording -------------------------------------------------
@@ -281,13 +299,17 @@ class Array:
         if isinstance(other, Array):
             inputs = [other, self] if reflected else [self, other]
             return self._session.record_op(op, inputs)
-        params: dict[str, ParamValue] = {**_scalar_params(other), "side": "l" if reflected else "r"}
+        params: dict[str, ParamValue] = {
+            **_scalar_params(other),
+            "side": "l" if reflected else "r",
+        }
         return self._session.record_op(op, [self], params)
 
     def _unary(self, op: str) -> Array:
         return self._session.record_op(op, [self])
 
     def __array_ufunc__(self, ufunc: Any, method: str, *inputs: object, **kwargs: object) -> Any:
+        """Record a supported numpy ufunc call over this array as its graph op."""
         if method != "__call__" or kwargs:
             return NotImplemented
         op = _UFUNC_TO_OP.get(getattr(ufunc, "__name__", ""))
@@ -304,109 +326,143 @@ class Array:
 
     # arithmetic
     def __add__(self, other: object) -> Array:
+        """Record ``self + other`` as a ``add`` node."""
         return self._binary("add", other)
 
     def __radd__(self, other: object) -> Array:
+        """Record ``other + self`` as a ``add`` node."""
         return self._binary("add", other, reflected=True)
 
     def __sub__(self, other: object) -> Array:
+        """Record ``self - other`` as a ``sub`` node."""
         return self._binary("sub", other)
 
     def __rsub__(self, other: object) -> Array:
+        """Record ``other - self`` as a ``sub`` node."""
         return self._binary("sub", other, reflected=True)
 
     def __mul__(self, other: object) -> Array:
+        """Record ``self * other`` as a ``mul`` node."""
         return self._binary("mul", other)
 
     def __rmul__(self, other: object) -> Array:
+        """Record ``other * self`` as a ``mul`` node."""
         return self._binary("mul", other, reflected=True)
 
     def __truediv__(self, other: object) -> Array:
+        """Record ``self / other`` as a ``div`` node."""
         return self._binary("div", other)
 
     def __rtruediv__(self, other: object) -> Array:
+        """Record ``other / self`` as a ``div`` node."""
         return self._binary("div", other, reflected=True)
 
     def __pow__(self, other: object) -> Array:
+        """Record ``self ** other`` as a ``power`` node."""
         return self._binary("power", other)
 
     def __rpow__(self, other: object) -> Array:
+        """Record ``other ** self`` as a ``power`` node."""
         return self._binary("power", other, reflected=True)
 
     def __floordiv__(self, other: object) -> Array:
+        """Record ``self // other`` as a ``floordiv`` node."""
         return self._binary("floordiv", other)
 
     def __rfloordiv__(self, other: object) -> Array:
+        """Record ``other // self`` as a ``floordiv`` node."""
         return self._binary("floordiv", other, reflected=True)
 
     def __mod__(self, other: object) -> Array:
+        """Record ``self % other`` as a ``mod`` node."""
         return self._binary("mod", other)
 
     def __rmod__(self, other: object) -> Array:
+        """Record ``other % self`` as a ``mod`` node."""
         return self._binary("mod", other, reflected=True)
 
     def __abs__(self) -> Array:
+        """Record ``abs(self)``."""
         return self._unary("abs")
 
     def __neg__(self) -> Array:
+        """Record ``-self``."""
         return self._unary("neg")
 
     def __pos__(self) -> Array:
+        """Record ``+self``."""
         return self._unary("pos")
 
     # comparisons (deferred -> Array, not bool)
     def __gt__(self, other: object) -> Array:
+        """Record ``self > other`` as a ``gt`` node."""
         return self._binary("gt", other)
 
     def __lt__(self, other: object) -> Array:
+        """Record ``self < other`` as a ``lt`` node."""
         return self._binary("lt", other)
 
     def __ge__(self, other: object) -> Array:
+        """Record ``self >= other`` as a ``ge`` node."""
         return self._binary("ge", other)
 
     def __le__(self, other: object) -> Array:
+        """Record ``self <= other`` as a ``le`` node."""
         return self._binary("le", other)
 
     def __eq__(self, other: object) -> Array:  # type: ignore[override]
+        """Record ``self == other`` as a ``eq`` node."""
         return self._binary("eq", other)
 
     def __ne__(self, other: object) -> Array:  # type: ignore[override]
+        """Record ``self != other`` as a ``ne`` node."""
         return self._binary("ne", other)
 
     __hash__ = None  # type: ignore[assignment]  # deferred __eq__ makes Array unhashable
 
     # boolean / bitwise combination
     def __and__(self, other: object) -> Array:
+        """Record ``self & other`` as a ``and`` node."""
         return self._binary("and", other)
 
     def __rand__(self, other: object) -> Array:
+        """Record ``other & self`` as a ``and`` node."""
         return self._binary("and", other, reflected=True)
 
     def __or__(self, other: object) -> Array:
+        """Record ``self | other`` as a ``or`` node."""
         return self._binary("or", other)
 
     def __ror__(self, other: object) -> Array:
+        """Record ``other | self`` as a ``or`` node."""
         return self._binary("or", other, reflected=True)
 
     def __xor__(self, other: object) -> Array:
+        """Record ``self ^ other`` as a ``xor`` node."""
         return self._binary("xor", other)
 
     def __rxor__(self, other: object) -> Array:
+        """Record ``other ^ self`` as a ``xor`` node."""
         return self._binary("xor", other, reflected=True)
 
     def __lshift__(self, other: object) -> Array:
+        """Record ``self << other`` as a ``lshift`` node."""
         return self._binary("lshift", other)
 
     def __rlshift__(self, other: object) -> Array:
+        """Record ``other << self`` as a ``lshift`` node."""
         return self._binary("lshift", other, reflected=True)
 
     def __rshift__(self, other: object) -> Array:
+        """Record ``self >> other`` as a ``rshift`` node."""
         return self._binary("rshift", other)
 
     def __rrshift__(self, other: object) -> Array:
+        """Record ``other >> self`` as a ``rshift`` node."""
         return self._binary("rshift", other, reflected=True)
 
     def __invert__(self) -> Array:
+        """Record ``~self``."""
         return self._unary("invert")
 
     # ---- shared backend-proxy infrastructure (M11/M12, dask.array parity P0/P1) -
@@ -415,16 +471,21 @@ class Array:
     # in its function namespace (graphed.awkward.gak — awkward arrays never grow methods). These
     # protected helpers are the infrastructure those surfaces are built from.
     def _form_meta(self, name: str) -> Any:
-        """Answer array metadata from the node's form when the backend models it; otherwise fall
-        back to recording a field op, preserving the M3 attribute-access semantics for backends
-        whose records may genuinely contain a column of that name."""
+        """Answer array metadata from the node's form when the backend models it.
+
+        Otherwise fall back to recording a field op, preserving the M3 attribute-access semantics
+        for backends whose records may genuinely contain a column of that name.
+        """
         form = self._session.form(self)
         if hasattr(form, name):
             return getattr(form, name)
         return self._session.record_op("field", [self], {"field": name})
 
     def _norm_axis(self, axis: int | None) -> int | None:
-        """Resolve a (possibly negative) axis against the form's ndim, when the backend models it."""
+        """Resolve a (possibly negative) axis against the form's ndim.
+
+        Only when the backend models it.
+        """
         if axis is None:
             return None
         if isinstance(axis, bool) or not isinstance(axis, int):
@@ -441,9 +502,11 @@ class Array:
     def _reduction(
         self, kind: str, axis: int | None = None, *, keepdims: bool = False, ddof: int = 0
     ) -> Array:
-        """Record one reduction with THE structural rule of M12 (dask.array parity P1.4):
-        reducing over the partitioned axis (``axis`` None or 0) is a stage boundary executed by
-        the M7 tree reduction; an inner axis is partition-local and fusible."""
+        """Record one reduction with THE structural rule of M12 (dask.array parity P1.4).
+
+        Reducing over the partitioned axis (``axis`` None or 0) is a stage boundary executed by the
+        M7 tree reduction; an inner axis is partition-local and fusible.
+        """
         axis = self._norm_axis(axis)
         params: dict[str, ParamValue] = {}
         if axis is not None:
@@ -464,6 +527,7 @@ class Array:
 
     # ---- structural access -----------------------------------------------------
     def __getattr__(self, name: str) -> Any:
+        """Record a field read, or hand back the behavior method the backend names."""
         if name.startswith("_"):
             raise AttributeError(name)
         # M54: a backend that can tell a behavior METHOD from a field or property answers here;
@@ -492,17 +556,22 @@ class Array:
     def __iter__(self) -> Any:
         # int __getitem__ (M13) would otherwise make Array INFINITELY iterable through Python's
         # legacy iteration protocol (a[0], a[1], ... never raises IndexError on a deferred graph)
+        """Refuse iteration: a deferred array has no known length."""
         raise TypeError(
-            "deferred graphed arrays are not iterable (unknown partitioned length); materialize first"
+            "deferred graphed arrays are not iterable (unknown partitioned length); materialize "
+            "first"
         )
 
     def __bool__(self) -> bool:
+        """Refuse a truth value: a deferred value has none."""
         raise no_eager_value("bool(...)", "truth value")
 
     def __array__(self, dtype: object = None, copy: object = None) -> Any:
+        """Refuse an eager numpy value: a deferred value has none."""
         raise no_eager_value("np.asarray(...)", "numpy value")
 
     def __getitem__(self, key: object) -> Array:
+        """Record a subscript: a mask, a field name, a field list or a tuple key."""
         if getattr(key, "_varied_container", False):  # a Varied mask selects PER UNIVERSE
             from .varied import expand  # noqa: PLC0415  (`varied` imports `Array`)
 
@@ -544,6 +613,7 @@ class Array:
 
     # ---- M2 methods (kept) -----------------------------------------------------
     def filter(self, mask: Array) -> Array:
+        """Record the selection of this array's rows where ``mask`` is true."""
         if getattr(mask, "_varied_container", False):
             from .varied import expand  # noqa: PLC0415  (`varied` imports `Array`)
 
@@ -551,10 +621,15 @@ class Array:
         return self._session.record_op("filter", [self, mask])
 
     def map(
-        self, fn: Callable[[object], object], *, name: str | None = None, output_type: object = None
+        self,
+        fn: Callable[[object], object],
+        *,
+        name: str | None = None,
+        output_type: object = None,
     ) -> Array:
-        """Record ``fn`` over this array as one opaque External node (the callable is a flagged
-        preservation risk, plan A.3.1).
+        """Record ``fn`` over this array as one opaque External node.
+
+        The callable is a flagged preservation risk, plan A.3.1.
 
         Without ``name=`` two distinct callables that derive one ``__name__`` are told apart by a
         per-Session ordinal. Pass ``name=`` to declare the identity yourself: a declared name IS
@@ -564,33 +639,41 @@ class Array:
 
         ``output_type=`` declares the type of each element of ``fn``'s result (a type string, a
         dtype or a Python type, as the backend accepts); it becomes the recorded form and is part
-        of the node's identity. It is a claim, never a cast."""
+        of the node's identity. It is a claim, never a cast.
+        """
         return self._session.record_external(
             "map", fn, [self], {"fn": self._session._fn_name(fn, name)}, output_type=output_type
         )
 
     def reduce(self, kind: str = "sum") -> Array:
+        """Record a ``kind`` reduction of this array."""
         return self._session.record_op(kind, [self], reduction=True)
 
     def repartition(self, *, n: int | None = None, target_bytes: int | None = None) -> Array:
-        """Physically rebalance this array's partitions (M39): by count (``n``) or by measured size
-        (``target_bytes``). Rebalancing MOVES rows without reinterpreting them — a physical,
-        backend-neutral operation (no array idiom) — so it stays on ``Array`` (the keyed/join
-        repartition is the neutral module verb ``graphed.repartition``, per the factorization rule)."""
+        """Physically rebalance this array's partitions (M39).
+
+        By count (``n``) or by measured size (``target_bytes``). Rebalancing MOVES rows without
+        reinterpreting them — a physical, backend-neutral operation (no array idiom) — so it stays
+        on ``Array`` (the keyed/join repartition is the neutral module verb
+        ``graphed.repartition``, per the factorization rule).
+        """
         from .shuffle import repartition as _repartition  # noqa: PLC0415  (avoid an import cycle)
 
         return _repartition(self, n=n, target_bytes=target_bytes)
 
     def __repr__(self) -> str:
+        """Show the node id this proxy stands for."""
         return f"Array(node_id={self._node_id})"
 
 
 def apply(
     fn: Callable[..., object], *arrays: Array, name: str | None = None, output_type: object = None
 ) -> Array:
-    """Record ``fn`` over several deferred arrays as ONE multi-input External node (M14, parity
-    P3.8 — the blockwise/map_blocks analogue). A function over arrays, so it is idiom-neutral
-    (awkward style); the numpy-specific signature-aware form is ``graphed.numpy.apply_gufunc``.
+    """Record ``fn`` over several deferred arrays as ONE multi-input External node.
+
+    M14, parity P3.8 — the blockwise/map_blocks analogue. A function over arrays, so it is
+    idiom-neutral (awkward style); the numpy-specific signature-aware form is
+    ``graphed.numpy.apply_gufunc``.
 
     The node carries the backend's ``PayloadDescriptor``: the opaque callable stays a flagged
     preservation risk (plan A.3.1). With one array this IS ``Array.map`` (interns with it).
@@ -600,11 +683,14 @@ def apply(
     identity, so declaring a name another callable already wears — declared or derived — means
     that same node, and the name must encode everything that changes the callable's behaviour.
 
-    ``output_type=`` declares the result's element type, as for ``Array.map``."""
+    ``output_type=`` declares the result's element type, as for ``Array.map``.
+    """
     from .varied import containers_in, expand  # noqa: PLC0415  (`varied` imports `Array`)
 
     if containers_in(*arrays):  # §2.3d *expanding*: one External per universe
-        return expand(lambda *members: apply(fn, *members, name=name, output_type=output_type), arrays, {})  # type: ignore[no-any-return]  # a Varied in, a Varied out
+        return expand(  # type: ignore[no-any-return]  # a Varied in, a Varied out
+            lambda *members: apply(fn, *members, name=name, output_type=output_type), arrays, {}
+        )
     if not arrays or not all(isinstance(a, Array) for a in arrays):
         raise TypeError("apply needs at least one deferred Array operand")
     session = arrays[0].session
@@ -626,13 +712,16 @@ class BoundMethod:
     __slots__ = ("_name", "_receiver")
 
     def __init__(self, receiver: Any, name: str) -> None:
+        """Bind behavior method ``name`` to ``receiver``."""
         self._receiver = receiver
         self._name = name
 
     def __repr__(self) -> str:
+        """Show the method name and its receiver."""
         return f"BoundMethod({self._name!r} of {self._receiver!r})"
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        """Record the method call, mapped over the label union when an operand is varied."""
         from .varied import containers_in, expand, expand_tuple, narrow  # noqa: PLC0415  (cycle)
 
         if containers_in(self._receiver, *args, *kwargs.values()):
@@ -652,7 +741,9 @@ class BoundMethod:
         return _record_method(self._receiver, self._name, args, kwargs)
 
 
-def _record_method(receiver: Array, name: str, args: tuple[Any, ...], kwargs: dict[str, Any]) -> Any:
+def _record_method(
+    receiver: Array, name: str, args: tuple[Any, ...], kwargs: dict[str, Any]
+) -> Any:
     """Record `receiver.<name>(*args, **kwargs)` as one `method` op per output.
 
     Every `Array` among the arguments joins the input list and stands in the JSON as its input
@@ -684,9 +775,15 @@ def _record_method(receiver: Array, name: str, args: tuple[Any, ...], kwargs: di
         if isinstance(value, dict):
             if not all(isinstance(key, str) for key in value):
                 raise refuse(where, value)
-            if set(value) in ({"$"}, {"$dtype", "v"}):  # the array-reference and typed-scalar shapes
+            # the array-reference and typed-scalar shapes
+            if set(value) in (
+                {"$"},
+                {"$dtype", "v"},
+            ):
                 raise GraphedTypeError(
-                    "method", prov, f"{name}(): {where} is a dict of the reserved shape {sorted(value)}"
+                    "method",
+                    prov,
+                    f"{name}(): {where} is a dict of the reserved shape {sorted(value)}",
                 )
             # sorted at every level: nested array inputs join in key order, not spelling order
             return {key: encode(value[key], f"{where}[{key!r}]") for key in sorted(value)}
@@ -713,7 +810,9 @@ def _record_method(receiver: Array, name: str, args: tuple[Any, ...], kwargs: di
     }
     outputs = getattr(session.backend, "method_outputs", None)
     if outputs is None:
-        raise GraphedTypeError("method", prov, f"{name}(): this backend records no behavior methods")
+        raise GraphedTypeError(
+            "method", prov, f"{name}(): this backend records no behavior methods"
+        )
     try:
         shape = outputs([session.form(a) for a in inputs], params)
     except Exception as exc:  # the typetracer refused the call -> located at the user's line

@@ -48,7 +48,10 @@ def test_collate_value_equals_each_plan_run_alone() -> None:
     data, _ = data_plan(3)
     collated = graphed.collate({"mc": mc, "data": data})
     value = SequentialRunner().run(collated).value
-    alone = {"mc": SequentialRunner().run(mc_plan(2)[0]).value, "data": SequentialRunner().run(data_plan(3)[0]).value}
+    alone = {
+        "mc": SequentialRunner().run(mc_plan(2)[0]).value,
+        "data": SequentialRunner().run(data_plan(3)[0]).value,
+    }
     assert value == alone
     assert value["mc"][1] and len(value["mc"][1]) == len(mc.tasks)
     assert _fold(collated) == value
@@ -76,7 +79,9 @@ def test_collate_routes_each_task_to_its_own_graph() -> None:
     ordered = _key_ordered(collated)
     assert [t.key for t in ordered] == [0, 1, 2]
     assert [t.partition for t in ordered] == [
-        Partition("u1", "", 1, 2), Partition("u1", "", 0, 1), Partition("u2", "", 0, 1)
+        Partition("u1", "", 1, 2),
+        Partition("u1", "", 0, 1),
+        Partition("u2", "", 0, 1),
     ]
     assert SequentialRunner().run(collated).value == {"z": ["u1:1", "u1:0"], "a": ["u2:0"]}
 
@@ -127,12 +132,16 @@ def test_collated_plan_with_writes_runs_across_processes(tmp_path: Path) -> None
     sequential = SequentialRunner().run(plan).value
     written = part_bytes(str(parts))
     assert len(written) == len(plan.tasks)
-    assert sorted(sequential["mc"][2] + sequential["data"][1]) == sorted(str(parts / p) for p in written)
+    assert sorted(sequential["mc"][2] + sequential["data"][1]) == sorted(
+        str(parts / p) for p in written
+    )
     assert all(read_part(p)["kv"] == {"kind": "Data"} for p in sequential["data"][1])
     shutil.rmtree(parts)
 
     with ProcessPoolExecutor(2, mp_context=multiprocessing.get_context("spawn")) as pool:
-        futures = {t.key: pool.submit(plan.process, t.partition, LocalResources()) for t in plan.tasks}
+        futures = {
+            t.key: pool.submit(plan.process, t.partition, LocalResources()) for t in plan.tasks
+        }
         partials = [futures[k].result() for k in sorted(futures)]
     assert tree_fold(plan.combine, partials) == sequential
     assert part_bytes(str(parts)) == written

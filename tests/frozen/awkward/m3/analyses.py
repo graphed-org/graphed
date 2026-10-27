@@ -89,7 +89,9 @@ def q7(events: Array) -> Array:
 
 def q8(events: Array) -> Array:
     muons = gak.with_field(events.Muon, gak.zeros_like(events.Muon.pt, dtype="int64"), "flavor")
-    eles = gak.with_field(events.Electron, gak.ones_like(events.Electron.pt, dtype="int64"), "flavor")
+    eles = gak.with_field(
+        events.Electron, gak.ones_like(events.Electron.pt, dtype="int64"), "flavor"
+    )
     lep = gak.concatenate([muons, eles], axis=1)
     lep = lep[gak.argsort(lep.pt, axis=1, ascending=False)]
     # compute the >=3-lepton mask ONCE and apply it to both lep and met (mirrors the corpus)

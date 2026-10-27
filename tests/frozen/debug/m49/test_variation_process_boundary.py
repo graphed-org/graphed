@@ -1,9 +1,11 @@
-"""§8.2(ii)/(iii) across a REAL process boundary: the label and the user's analysis line survive the
-pickle round-trip, so the M6 guarantee (plan A.3 #8) is EXTENDED by attribution, never narrowed.
+"""§8.2(ii)/(iii) across a REAL process boundary.
 
-The worker builds and runs the failing plan in a genuinely separate spawned interpreter and lets the
-attributed ``StageError`` propagate; the parent rebuilds the same program only to read the expected
-line out of the sourcemap.
+The label and the user's analysis line survive the pickle round-trip, so the M6 guarantee (plan
+A.3 #8) is EXTENDED by attribution, never narrowed.
+
+The worker builds and runs the failing plan in a genuinely separate spawned interpreter and lets
+the attributed ``StageError`` propagate; the parent rebuilds the same program only to read the
+expected line out of the sourcemap.
 """
 
 from __future__ import annotations
@@ -36,4 +38,6 @@ def test_a_labelled_stage_error_survives_a_spawned_worker_process() -> None:
             # the driver renders the USER source, not a worker/multiprocessing traceback
             assert "multiprocessing" not in out and "site-packages" not in out
         else:
-            raise AssertionError("expected a labelled StageError re-raised from the worker process")
+            raise AssertionError(
+                "expected a labelled StageError re-raised from the worker process"
+            )

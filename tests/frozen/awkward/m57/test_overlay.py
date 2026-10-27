@@ -1,5 +1,7 @@
-"""m57 §2.1 "overlay": a nominal that is the nominal of a composition this lineage has READ makes
-the family's members that composition in their universes — a replacement, never another factor.
+"""m57 §2.1 "overlay".
+
+A nominal that is the nominal of a composition this lineage has READ makes the family's members
+that composition in their universes — a replacement, never another factor.
 
 The failing direction is the squared ambient: pre-m57 the handle is appended as a new factor and
 every universe is multiplied by the whole composition again.
@@ -36,8 +38,11 @@ import graphed
 
 
 def test_the_ambient_as_nominal_leaves_every_earlier_universe_untouched() -> None:
-    """The overlay's own universe is its member node; every label the ambient already carried keeps
-    the node and the value it had before the registration."""
+    """The overlay's own universe is its member node.
+
+    Every label the ambient already carried keeps the node and the value it had before the
+    registration.
+    """
     base = m57_two_factors()
     handle = graphed.weight(base.ctx)
     before_nodes = m57_ambient_nodes(handle)
@@ -56,9 +61,11 @@ def test_the_ambient_as_nominal_leaves_every_earlier_universe_untouched() -> Non
 
 
 def test_a_join_and_a_new_factor_around_the_overlay_give_the_one_sf_oracle() -> None:
-    """§1(e)'s two idioms in sequence: the overlay keeps the names of the factors it was read over,
-    a factor registered after it multiplies its result, and a later family joining one of the
-    absorbed centrals is still one SF."""
+    """§1(e)'s two idioms in sequence.
+
+    The overlay keeps the names of the factors it was read over, a factor registered after it
+    multiplies its result, and a later family joining one of the absorbed centrals is still one SF.
+    """
     session, ctx = m57_base()
     jets, met = ctx["Jet"], ctx["MET"]
     sf, pu, trig = m57_sf(jets), m57_pu(jets), m57_trig(met)
@@ -78,13 +85,17 @@ def test_a_join_and_a_new_factor_around_the_overlay_give_the_one_sf_oracle() -> 
         m57_factor("trig", trig, trig_members),
     ]
 
-    assert m57_ambient_values(session, weight) == m57_oracle_values(session, ops, graphed.labels(weight))
+    assert m57_ambient_values(session, weight) == m57_oracle_values(
+        session, ops, graphed.labels(weight)
+    )
 
 
 def test_relative_delta_members_over_another_familys_labels_compose() -> None:
-    """The members are built FROM the ambient, so their coordinate on the other family is
-    composition: no joint is minted, the overlay's universe is exact and the other family's is
-    untouched."""
+    """The members are built FROM the ambient.
+
+    So their coordinate on the other family is composition: no joint is minted, the overlay's
+    universe is exact and the other family's is untouched.
+    """
     base = m57_two_factors()
     handle = graphed.weight(base.ctx)
     before = m57_ambient_values(base.session, handle)

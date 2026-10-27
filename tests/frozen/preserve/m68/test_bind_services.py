@@ -1,6 +1,9 @@
-"""m68 D2/§3.2 — ``bind_services(plan, endpoints)`` returns a plan whose External evaluators (and a
-``reduce`` with the hook) carry the endpoints; the original plan is untouched and still unbound. An
-endpoint is ``scheme://host:port`` (``split_endpoint``), checked for every endpoint before binding."""
+"""m68 D2/§3.2 — ``bind_services(plan, endpoints)`` returns a plan carrying the endpoints.
+
+Its External evaluators (and a ``reduce`` with the hook) carry them; the original plan is untouched
+and still unbound. An endpoint is ``scheme://host:port`` (``split_endpoint``), checked for every
+endpoint before binding.
+"""
 
 from __future__ import annotations
 
@@ -13,7 +16,7 @@ import pytest
 from m68_services_fixtures import _rows, descriptor, expected, mark, new_events, score, values_plan
 
 from graphed.core import Plan, SequentialRunner
-from graphed.services import ServiceSpec, UnboundService, bind_services, split_endpoint
+from graphed.services import ServiceSpec, UnboundServiceError, bind_services, split_endpoint
 
 
 def _endpoints(plan: Plan[Any]) -> list[str | None]:
@@ -38,7 +41,7 @@ def test_a_bound_plan_carries_the_endpoint_and_the_original_stays_unbound() -> N
     (row,) = SequentialRunner().run(bound).value
     assert np.allclose(row, expected(0.45, -0.1), rtol=1e-6)
     assert server.infer_calls > 0
-    with pytest.raises(UnboundService, match="scorer-svc"):
+    with pytest.raises(UnboundServiceError, match="scorer-svc"):
         SequentialRunner().run(plan)
 
 
@@ -51,9 +54,9 @@ def test_any_external_kind_is_bound() -> None:
 
 
 def test_a_missing_endpoint_raises_naming_the_service() -> None:
-    with pytest.raises(UnboundService, match="scorer-svc"):
+    with pytest.raises(UnboundServiceError, match="scorer-svc"):
         bind_services(_served("bind-missing"), {"other-svc": "grpc://other:8000"})
-    with pytest.raises(UnboundService, match="scorer-svc"):
+    with pytest.raises(UnboundServiceError, match="scorer-svc"):
         bind_services(_served("r4-empty"), {})
 
 
@@ -76,7 +79,8 @@ def test_a_reduce_with_the_hook_is_bound_too() -> None:
     assert plan.process.reduce.endpoints is None
 
 
-def test_a_reduce_only_service_is_bound() -> None:  # D8: histserv lives on the reduce, no External names it
+# D8: histserv lives on the reduce, no External names it
+def test_a_reduce_only_service_is_bound() -> None:
     ev = new_events()
     ev.session.declare_service(ServiceSpec("hist-svc", "histserv"))
     plan = values_plan(ev.x, reduce=_BindableReduce(), services=("hist-svc",))
@@ -105,7 +109,9 @@ def test_a_plan_without_services_binds_to_an_equal_process() -> None:
         ("grpc://[::1]:8001", ("grpc", "[::1]:8001")),
     ],
 )
-def test_split_endpoint_gives_the_scheme_and_host_port(endpoint: str, split: tuple[str, str]) -> None:
+def test_split_endpoint_gives_the_scheme_and_host_port(
+    endpoint: str, split: tuple[str, str]
+) -> None:
     assert split_endpoint(endpoint) == split
 
 

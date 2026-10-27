@@ -1,9 +1,10 @@
 """M9 support — `GraphStore.nodes()` exposes the interned IR as structured, read-only data.
 
 The M9 preservation bundle both *renders* the IR (``inspect``) and *interprets* it (``reproduce``);
-both need to walk the graph as plain data — node kind, op name, params, inputs, output flag, and the
-``External`` payload descriptor. These tests pin that introspection (which must agree with the rest
-of the IR surface — ``to_dot`` / ``serialize`` / a deserialized round trip)."""
+both need to walk the graph as plain data — node kind, op name, params, inputs, output flag, and
+the ``External`` payload descriptor. These tests pin that introspection (which must agree with the
+rest of the IR surface — ``to_dot`` / ``serialize`` / a deserialized round trip).
+"""
 
 from __future__ import annotations
 

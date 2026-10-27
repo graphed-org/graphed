@@ -47,7 +47,8 @@ def test_materialize_reads_only_the_columns_its_arrays_use(tmp_path, monkeypatch
     for i in range(2):
         paths.append(os.path.join(tmp_path, f"events{i}.parquet"))
         ak.to_parquet(
-            ak.Array({"pt": [[1.0 + i, 2.0], [3.0]], "eta": [[0.1], []], "phi": [[0.0], []]}), paths[-1]
+            ak.Array({"pt": [[1.0 + i, 2.0], [3.0]], "eta": [[0.1], []], "phi": [[0.0], []]}),
+            paths[-1],
         )
     s = Session(AwkwardBackend())
     events = from_parquet(s, "events", paths)
@@ -68,7 +69,9 @@ def test_materialize_reads_only_the_columns_its_arrays_use(tmp_path, monkeypatch
     monkeypatch.setattr(kind, "__call__", logged_load)
     other = from_awkward(Session(AwkwardBackend()), "other", ak.Array({"x": [5.0]}))
 
-    got = graphed.materialize({"sum": gak.sum(events.pt), "n": gak.num(events.eta, axis=1), "x": other.x})
+    got = graphed.materialize(
+        {"sum": gak.sum(events.pt), "n": gak.num(events.eta, axis=1), "x": other.x}
+    )
     assert (got["sum"], got["n"].to_list(), got["x"].to_list()) == (13.0, [1, 0, 1, 0], [5.0])
     assert reads == [("eta", "pt"), ("eta", "pt")]
 

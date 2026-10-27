@@ -45,10 +45,13 @@ def _record(*, eta: bool = False) -> tuple[Session, Any]:
     return session, from_record(session, "ev", pt=VECTOR)
 
 
-# ---- two-axis carriers: jes + jer registered, an independent member re-pointed over both ----------
+# ---- two-axis carriers: jes + jer registered, an independent member re-pointed over both --------
 def two_axis_loose() -> tuple[Session, Varied]:
-    """The loose form's carrier is ``target._tags``: a loose ``Varied`` over ``jes`` and ``jer``.
-    An independent member is read off ``graphed.nominal(target)`` (it carries neither family)."""
+    """Return the loose form's carrier is ``target._tags``.
+
+    A loose ``Varied`` over ``jes`` and ``jer``. An independent member is read off
+    ``graphed.nominal(target)`` (it carries neither family).
+    """
     session, record = _record()
     pt = record["pt"]
     first = graphed.vary(pt, "jes", up=pt * JES_UP, down=pt * JES_DOWN)
@@ -57,9 +60,11 @@ def two_axis_loose() -> tuple[Session, Varied]:
 
 
 def two_axis_context() -> tuple[Session, EventContext]:
-    """``jes`` on the ``pt`` collection and ``jer`` on ``eta`` — the carriers a weight/shift-form
-    additive point ``{jes: up, jer: up}`` reaches. An independent member is read off
-    ``graphed.nominal(ctx["pt"])``."""
+    """``jes`` on the ``pt`` collection and ``jer`` on ``eta``.
+
+    The carriers a weight/shift-form additive point ``{jes: up, jer: up}`` reaches. An independent
+    member is read off ``graphed.nominal(ctx["pt"])``.
+    """
     session, record = _record(eta=True)
     pt = record["pt"]
     ctx = EventContext(session, pt, collections={"pt": pt, "eta": record["eta"]})
@@ -73,20 +78,28 @@ def two_axis_context() -> tuple[Session, EventContext]:
 
 
 def independent_weight(carrier: Any, factor: float = 0.5) -> Any:
-    """A weight read off the NOMINAL of a carrier's ``pt`` — independent of every registered
-    family, so a plain ``vary`` mints it one-at-a-time and ``points=`` must RE-POINT it."""
+    """Return a weight read off the NOMINAL of a carrier's ``pt``.
+
+    Independent of every registered family, so a plain ``vary`` mints it one-at-a-time and
+    ``points=`` must RE-POINT it.
+    """
     return graphed.nominal(carrier["pt"]) * factor
 
 
-# ---- numeric grids: μRxμF (2 / 0.5) and the prescribed off-diagonal (1 / -1) ----------------------
+# ---- numeric grids: μRxμF (2 / 0.5) and the prescribed off-diagonal (1 / -1) --------------------
 def scale_grid() -> tuple[Session, EventContext, Any]:
-    """``muR`` and ``muF`` as INDEPENDENT weight families (numeric tags ``2`` / ``0.5``), each
-    one-at-a-time (no fanout), plus the plain ``pt`` a scale member is read off. The tour's μRxμF
-    7-point grid is the 4 axis-aligned universes these mint, the nominal, and 2 additive diagonals."""
+    """Return ``muR`` and ``muF`` as INDEPENDENT weight families (numeric tags ``2`` / ``0.5``).
+
+    Each is one-at-a-time (no fanout); the plain ``pt`` a scale member is read off comes with them.
+    The tour's μRxμF 7-point grid is the 4 axis-aligned universes these mint, the nominal, and 2
+    additive diagonals.
+    """
     session, record = _record()
     pt = record["pt"]
     ctx = EventContext(session, pt, collections={"pt": pt})
-    mu_r = graphed.vary(ctx, "muR", pt * 0.5, is_weight=True, points={"2": pt * 0.6, "0.5": pt * 0.4})
+    mu_r = graphed.vary(
+        ctx, "muR", pt * 0.5, is_weight=True, points={"2": pt * 0.6, "0.5": pt * 0.4}
+    )
     ambient = graphed.weight(mu_r)
     mu_f = graphed.vary(
         mu_r, "muF", ambient, is_weight=True, points={"2": ambient * 1.3, "0.5": ambient * 0.7}
@@ -95,12 +108,16 @@ def scale_grid() -> tuple[Session, EventContext, Any]:
 
 
 def offdiag_axes() -> tuple[Session, EventContext, Any]:
-    """``jes`` and ``btag`` as INDEPENDENT weight families with numeric tags ``1`` / ``-1`` — the
-    carriers the prescribed off-diagonal ``{jes: 1, btag: -1}`` reaches."""
+    """``jes`` and ``btag`` as INDEPENDENT weight families with numeric tags ``1`` / ``-1``.
+
+    The carriers the prescribed off-diagonal ``{jes: 1, btag: -1}`` reaches.
+    """
     session, record = _record()
     pt = record["pt"]
     ctx = EventContext(session, pt, collections={"pt": pt})
-    jes = graphed.vary(ctx, "jes", pt * 0.5, is_weight=True, points={"1": pt * 0.6, "-1": pt * 0.4})
+    jes = graphed.vary(
+        ctx, "jes", pt * 0.5, is_weight=True, points={"1": pt * 0.6, "-1": pt * 0.4}
+    )
     ambient = graphed.weight(jes)
     btag = graphed.vary(
         jes, "btag", ambient, is_weight=True, points={"1": ambient * 1.3, "-1": ambient * 0.7}
@@ -109,20 +126,28 @@ def offdiag_axes() -> tuple[Session, EventContext, Any]:
 
 
 def unregistered_context() -> tuple[Session, EventContext, Any]:
-    """No foreign family registered — the context ``{jes: 1, btag: -1}`` must be refused against by
-    carrier-reachability, naming what IS registered."""
+    """No foreign family registered.
+
+    The context ``{jes: 1, btag: -1}`` must be refused against by carrier-reachability, naming what
+    IS registered.
+    """
     session, record = _record()
     pt = record["pt"]
     return session, EventContext(session, pt, collections={"pt": pt}), pt
 
 
 def triple_numeric() -> tuple[Session, EventContext, Any]:
-    """Three INDEPENDENT numeric weight families ``jes`` / ``btag`` / ``jer`` (tags ``1`` / ``-1``),
-    so a zero coordinate can drop and still leave a legal TWO-coordinate additive point behind."""
+    """Return three INDEPENDENT numeric weight families ``jes`` / ``btag`` / ``jer``.
+
+    Their tags are ``1`` / ``-1``, so a zero coordinate can drop and still leave a legal
+    TWO-coordinate additive point behind.
+    """
     session, record = _record()
     pt = record["pt"]
     ctx = EventContext(session, pt, collections={"pt": pt})
-    jes = graphed.vary(ctx, "jes", pt * 0.5, is_weight=True, points={"1": pt * 0.6, "-1": pt * 0.4})
+    jes = graphed.vary(
+        ctx, "jes", pt * 0.5, is_weight=True, points={"1": pt * 0.6, "-1": pt * 0.4}
+    )
     w1 = graphed.weight(jes)
     btag = graphed.vary(jes, "btag", w1, is_weight=True, points={"1": w1 * 1.3, "-1": w1 * 0.7})
     w2 = graphed.weight(btag)

@@ -38,7 +38,9 @@ def _descriptor(s: Session, arr: Any) -> dict[str, Any]:
     return dict(node["descriptor"])
 
 
-def _count_parses(monkeypatch: pytest.MonkeyPatch, module: Any, name: str, payload: bytes) -> list[None]:
+def _count_parses(
+    monkeypatch: pytest.MonkeyPatch, module: Any, name: str, payload: bytes
+) -> list[None]:
     """Patch ``module.name`` to log each call whose first argument is ``payload``."""
     calls: list[None] = []
     real: Callable[..., Any] = getattr(module, name)
@@ -54,12 +56,12 @@ def _count_parses(monkeypatch: pytest.MonkeyPatch, module: Any, name: str, paylo
 
 def _onnx_model(weight: float) -> bytes:
     onnx = pytest.importorskip("onnx")
-    helper, numpy_helper, TensorProto = onnx.helper, onnx.numpy_helper, onnx.TensorProto
+    helper, numpy_helper = onnx.helper, onnx.numpy_helper
 
     w = numpy_helper.from_array(np.array([[weight]], dtype=np.float32), name="W")
     b = numpy_helper.from_array(np.array([0.0], dtype=np.float32), name="B")
-    x = helper.make_tensor_value_info("x", TensorProto.FLOAT, [None, 1])
-    y = helper.make_tensor_value_info("y", TensorProto.FLOAT, [None, 1])
+    x = helper.make_tensor_value_info("x", onnx.TensorProto.FLOAT, [None, 1])
+    y = helper.make_tensor_value_info("y", onnx.TensorProto.FLOAT, [None, 1])
     graph = helper.make_graph(
         [helper.make_node("Gemm", ["x", "W", "B"], ["y"])], "m", [x], [y], initializer=[w, b]
     )
@@ -68,12 +70,17 @@ def _onnx_model(weight: float) -> bytes:
     return out
 
 
-def test_apply_correction_parses_a_set_once_across_recorded_calls(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_apply_correction_parses_a_set_once_across_recorded_calls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     s, x = _x()
     parses = _count_parses(monkeypatch, json, "loads", CSET)
     first = gak.apply_correction(CSET, "src0", [x], lambda *a: a[0], args=["$0"])
     after_one = len(parses)
-    rest = [gak.apply_correction(CSET, f"src{i}", [x], lambda *a: a[0], args=["$0"]) for i in range(1, N)]
+    rest = [
+        gak.apply_correction(CSET, f"src{i}", [x], lambda *a: a[0], args=["$0"])
+        for i in range(1, N)
+    ]
 
     assert after_one > 0
     assert len(parses) == after_one
@@ -97,7 +104,9 @@ def test_a_different_correction_set_gets_its_own_identity() -> None:
     assert ha != hb
 
 
-def test_onnx_inference_loads_a_model_once_across_recorded_calls(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_onnx_inference_loads_a_model_once_across_recorded_calls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     onnx = pytest.importorskip("onnx")
     model, other = _onnx_model(0.5), _onnx_model(2.0)
     s, x = _x()
@@ -110,7 +119,11 @@ def test_onnx_inference_loads_a_model_once_across_recorded_calls(monkeypatch: py
     assert after_one > 0
     assert len(loads) == after_one
     assert {_descriptor(s, a)["content_hash"] for a in arrs} == {onnx_weights_hash(model)}
-    assert _descriptor(s, distinct)["content_hash"] == onnx_weights_hash(other) != onnx_weights_hash(model)
+    assert (
+        _descriptor(s, distinct)["content_hash"]
+        == onnx_weights_hash(other)
+        != onnx_weights_hash(model)
+    )
 
 
 @pytest.mark.parametrize(
@@ -127,7 +140,10 @@ def test_record_external_hashes_a_payload_once_across_recorded_calls(
     parses = _count_parses(monkeypatch, json, "loads", CSET)
     record_external(s, plugin, CSET, [x], params=params, output_type="float64")
     after_one = len(parses)
-    arrs = [record_external(s, plugin, CSET, [x], params=params, output_type="float64") for _ in range(N)]
+    arrs = [
+        record_external(s, plugin, CSET, [x], params=params, output_type="float64")
+        for _ in range(N)
+    ]
     other = record_external(s, plugin, OTHER_CSET, [x], params=params, output_type="float64")
 
     assert after_one > 0
@@ -141,10 +157,14 @@ def test_apply_correction_digests_one_payload_object_once(monkeypatch: pytest.Mo
     s, x = _x()
     digests = _count_parses(monkeypatch, hashlib, "sha256", payload)
     identities = _count_parses(monkeypatch, payloads, "_correctionlib_identity", payload)
-    arrs = [gak.apply_correction(payload, "sf", [x], lambda *a: a[0], args=["$0"]) for _ in range(N)]
+    arrs = [
+        gak.apply_correction(payload, "sf", [x], lambda *a: a[0], args=["$0"]) for _ in range(N)
+    ]
 
     assert (len(digests), len(identities)) == (0, 1)
-    assert {_descriptor(s, a)["content_hash"] for a in arrs} == {correctionlib_contents_hash(payload)}
+    assert {_descriptor(s, a)["content_hash"] for a in arrs} == {
+        correctionlib_contents_hash(payload)
+    }
 
 
 def test_apply_correction_parses_its_output_type_once(monkeypatch: pytest.MonkeyPatch) -> None:

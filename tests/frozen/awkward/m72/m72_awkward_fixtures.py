@@ -1,5 +1,8 @@
-"""Fixtures for awkward/m72. Module level so a built plan pickles; `m72_` prefixed so the bare
-name is unique under prepend import."""
+"""Fixtures for awkward/m72.
+
+Module level so a built plan pickles; `m72_` prefixed so the bare name is unique under prepend
+import.
+"""
 
 from __future__ import annotations
 
@@ -23,7 +26,18 @@ EVENTS = ak.Array(
     {
         "w": W,
         "n": np.array([0, 2, 3, 1, 5, 2, 0, 4, 2, 3], dtype=np.int64),
-        "pt": [[1.5, 2.0], [], [3.25], [4.0, 0.5, 1.0], [2.0], [], [7.0], [1.0, 1.0], [0.25], [9.0]],
+        "pt": [
+            [1.5, 2.0],
+            [],
+            [3.25],
+            [4.0, 0.5, 1.0],
+            [2.0],
+            [],
+            [7.0],
+            [1.0, 1.0],
+            [0.25],
+            [9.0],
+        ],
     }
 )
 
@@ -48,12 +62,17 @@ def resolved_chunk(events: ak.Array, p: Partition) -> ak.Array:
 
 def option_record(ev: Any, zip_: Any, mask: Any) -> Any:
     """?{num, jag, nest} with fields given unsorted; `zip_`/`mask` are gak's or ak's."""
-    rec = zip_({"num": ev.w, "jag": ev.pt, "nest": zip_({"b": ev.n, "a": ev.w * 2})}, depth_limit=1)
+    rec = zip_(
+        {"num": ev.w, "jag": ev.pt, "nest": zip_({"b": ev.n, "a": ev.w * 2})}, depth_limit=1
+    )
     return mask(rec, ev.n > 1)
 
 
 def dump_to_parquet(chunk: ak.Array, path: str, metadata: dict[str, str]) -> None:
-    """The original's writer (HiggsDNA `dump_ak_array` / inclusive_processor.dump_to_parquet)."""
+    """Write as the original's writer does.
+
+    That writer is HiggsDNA `dump_ak_array` / inclusive_processor.dump_to_parquet.
+    """
     table = ak.to_arrow_table(chunk, extensionarray=False)
     names = sorted(table.schema.names)
     table = pa.table([table.column(n) for n in names], names=names)
@@ -105,7 +124,11 @@ def data_zero() -> tuple[int]:
 
 def json_codec(value: object, path: str, kv: Any) -> None:
     with open(path, "w") as handle:
-        json.dump({"kv": None if kv is None else dict(kv), "values": ak.to_list(value)}, handle, sort_keys=True)
+        json.dump(
+            {"kv": None if kv is None else dict(kv), "values": ak.to_list(value)},
+            handle,
+            sort_keys=True,
+        )
 
 
 def part_bytes(root: Path) -> dict[str, bytes]:
@@ -118,7 +141,10 @@ def part_bytes(root: Path) -> dict[str, bytes]:
 
 
 class RecordingSource:
-    """A `PartitionedSource` over an in-memory record array that records every `columns` argument."""
+    """A `PartitionedSource` over an in-memory record array.
+
+    It records every `columns` argument.
+    """
 
     def __init__(self, data: ak.Array) -> None:
         self.data = data
@@ -128,7 +154,9 @@ class RecordingSource:
         raise AssertionError("the whole-dataset loader must never run inside a plan")
 
     def partitions(self, steps_per_file: int = 1) -> tuple[Partition, ...]:
-        return tuple(Partition.blind("mem://m72", "", s, steps_per_file) for s in range(steps_per_file))
+        return tuple(
+            Partition.blind("mem://m72", "", s, steps_per_file) for s in range(steps_per_file)
+        )
 
     def read_partition(self, partition: Partition, columns: Any, resources: Any) -> ak.Array:
         self.seen.append(columns)
@@ -140,4 +168,3 @@ def recorded(src: RecordingSource) -> Array:
     session = Session(AwkwardBackend())
     tracer = ak.Array(src.data.layout.to_typetracer(forget_length=True))
     return session.source("events", form=AwkwardForm(tracer), data=src, uri="mem://m72")
-

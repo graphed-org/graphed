@@ -1,12 +1,14 @@
-"""vary-m53b §3.4, §5: an additive ``points=`` entry over an INDEPENDENT member RE-POINTS its
-one-at-a-time label from the default ``{name: tag}`` to the foreign-only point, DROPPING the own
-axis. The label is unchanged (``f"{name}_{tag}"``), no new member is minted, and the entry routes
-this way on all three ``vary`` overloads (loose / weight / shift).
+"""vary-m53b §3.4, §5.
 
-Non-vacuity: the off-grid entry over an independent member is refused on the current tree ("names no
-joint the fanout of 'corr' derives; the derived joints are []" — probe "(b)"), so every assertion
-here fails at the ``vary`` call for feature-absence. The witness is ``graphed.points()`` showing the
-annotated two-axis point, NOT the default ``{corr: a}`` a bare mint would leave.
+An additive ``points=`` entry over an INDEPENDENT member RE-POINTS its one-at-a-time label from the
+default ``{name: tag}`` to the foreign-only point, DROPPING the own axis. The label is unchanged
+(``f"{name}_{tag}"``), no new member is minted, and the entry routes this way on all three ``vary``
+overloads (loose / weight / shift).
+
+Non-vacuity: the off-grid entry over an independent member is refused on the current tree ("names
+no joint the fanout of 'corr' derives; the derived joints are []" — probe "(b)"), so every
+assertion here fails at the ``vary`` call for feature-absence. The witness is ``graphed.points()``
+showing the annotated two-axis point, NOT the default ``{corr: a}`` a bare mint would leave.
 """
 
 from __future__ import annotations
@@ -54,13 +56,19 @@ def test_additive_repoints_on_the_weight_overload() -> None:
 
 
 def test_additive_repoints_on_the_shift_overload() -> None:
-    """The shift form re-points on the varied COLLECTION; an implementation that routes the keyword
-    only through the weight form silently ignores a shift additive point."""
+    """The shift form re-points on the varied COLLECTION.
+
+    An implementation that routes the keyword only through the weight form silently ignores a shift
+    additive point.
+    """
     _session, ctx = two_axis_context()
     independent = graphed.nominal(ctx["pt"]) * 3.0  # off the nominal → carries no jes / jer
 
     registered = graphed.vary(
-        ctx, "corr", collections={"pt": {"a": independent}}, points=[{"corr": "a", "jes": "up", "jer": "up"}]
+        ctx,
+        "corr",
+        collections={"pt": {"a": independent}},
+        points=[{"corr": "a", "jes": "up", "jer": "up"}],
     )
 
     point = graphed.points(registered)["corr_a"]

@@ -42,8 +42,10 @@ def test_unzip_returns_a_tuple_of_varied() -> None:
 
 
 def test_the_eager_metadata_verbs_answer_on_the_nominal_member() -> None:
-    """Sound because §2.1 requires form compatibility across members — the same argument §2.2 uses
-    for the form-answered properties."""
+    """Sound because §2.1 requires form compatibility across members.
+
+    The same argument §2.2 uses for the form-answered properties.
+    """
     _s, root, varied = _varied_pt()
     zipped = gak.zip({"pt": varied, "eta": root.Jet.eta})
     assert gak.fields(zipped) == gak.fields(gak.zip({"pt": root.Jet.pt, "eta": root.Jet.eta}))
@@ -58,12 +60,17 @@ def test_a_varied_meeting_one_derived_from_itself_stays_label_aligned() -> None:
     assert list(graphed.labels(selected)) == list(graphed.labels(varied))
     for label in graphed.labels(varied):
         member = graphed.universe(varied, label)
-        assert graphed.universe(selected, label).node_id == member[graphed.universe(mask, label)].node_id
+        assert (
+            graphed.universe(selected, label).node_id
+            == member[graphed.universe(mask, label)].node_id
+        )
 
 
 def test_the_union_order_is_the_first_operands_then_the_seconds() -> None:
-    """§3.2's determinism gate and §6.1c's positional layout both depend on this order, and an
-    unbound one would let two conforming implementations disagree."""
+    """§3.2's determinism gate and §6.1c's positional layout both depend on this order.
+
+    And an unbound one would let two conforming implementations disagree.
+    """
     _s, root, jes = _varied_pt()
     jer = graphed.vary(root.Jet.pt, "jer", hi=root.Jet.pt * 1.02, lo=root.Jet.pt * 0.98)
     assert list(graphed.labels(jes * jer)) == ["nominal", "jes_up", "jes_down", "jer_hi", "jer_lo"]
@@ -71,8 +78,10 @@ def test_the_union_order_is_the_first_operands_then_the_seconds() -> None:
 
 
 def test_a_label_absent_from_one_operand_takes_that_operands_nominal_member() -> None:
-    """One-at-a-time: cross products can never arise implicitly, since §2.1 makes each label belong
-    to exactly one knob."""
+    """One-at-a-time: cross products can never arise implicitly.
+
+    §2.1 makes each label belong to exactly one knob.
+    """
     _s, root, jes = _varied_pt()
     jer = graphed.vary(root.Jet.pt, "jer", hi=root.Jet.pt * 1.02)
     combined = jes * jer
@@ -95,8 +104,10 @@ def test_a_form_incompatible_member_is_a_construction_time_error_naming_the_labe
 
 
 def test_members_from_another_session_or_another_source_are_refused() -> None:
-    """`aggregate_plan`'s single-source check is the otherwise-deferred failure surface, which is
-    why this is checked at construction instead."""
+    """`aggregate_plan`'s single-source check is the otherwise-deferred failure surface.
+
+    Which is why this is checked at construction instead.
+    """
     _s1, root1, _varied = _varied_pt()
     _s2, root2 = awkward_session()
     with pytest.raises(GraphedError):

@@ -1,5 +1,6 @@
-"""Fixtures for the frontend m53 policy suite — the `composes_as_union`, `points=` and
-`max_universes` knobs on `graphed.vary`.
+"""Fixtures for the frontend m53 policy suite.
+
+The `composes_as_union`, `points=` and `max_universes` knobs on `graphed.vary`.
 
 Numpy-idiom and awkward-free: the REQUIRED free-threaded CI job collects `tests/frozen/frontend`
 whole with only `pytest hypothesis numpy` installed, so nothing here may import `graphed.awkward`,
@@ -31,9 +32,7 @@ BTAG_FACTOR = {"hf_up": 1.03, "hf_down": 0.97, "lf_up": 1.05, "lf_down": 0.95}
 
 #: the pre-m53 union (seven the collapse produced) and the eight machine-named joints
 UNION_LABELS = ("nominal", "jes_up", "jes_down", *(f"btag_{tag}" for tag in BTAG_TAGS))
-JOINT_LABELS = tuple(
-    f"btag_{tag}__jes_{d}" for tag in BTAG_TAGS for d in ("up", "down")
-)
+JOINT_LABELS = tuple(f"btag_{tag}__jes_{d}" for tag in BTAG_TAGS for d in ("up", "down"))
 
 #: every label the full grid mints -> its point (the jes(3) x btag(5) = 15 universes)
 GRID_POINTS: dict[str, dict[str, str]] = {
@@ -61,9 +60,12 @@ def _jes_context() -> tuple[Session, EventContext]:
 
 
 def fanout_weight(*, points: Any = None, **vary_kwargs: Any) -> tuple[Session, EventContext, Any]:
-    """A jes-dependent b-tag weight family: jes(3) x btag(5) = 15. ``points`` (placement entries)
-    merge into the unified ``points=`` list; a pure-declare call (``points is None``) keeps the
-    dict channel. Extra keywords (``composes_as_union=``, ``max_universes=``) pass through."""
+    """Return a jes-dependent b-tag weight family: jes(3) x btag(5) = 15.
+
+    ``points`` (placement entries) merge into the unified ``points=`` list; a pure-declare call
+    (``points is None``) keeps the dict channel. Extra keywords (``composes_as_union=``,
+    ``max_universes=``) pass through.
+    """
     session, shifted = _jes_context()
     pt = shifted["pt"]  # jes-varied
     central = pt * 1.0
@@ -76,8 +78,11 @@ def fanout_weight(*, points: Any = None, **vary_kwargs: Any) -> tuple[Session, E
 
 
 def numeric_fanout(*, points: Any = None, **vary_kwargs: Any) -> EventContext:
-    """A jes-dependent weight family over NUMERICALLY tagged jes universes ('2' / '0p5'), for a
-    precision (numeric-coordinate) placement. ``points`` merges into the ``points=`` list."""
+    """Return a jes-dependent weight family over NUMERICALLY tagged jes universes.
+
+    The tags are '2' / '0p5', for a precision (numeric-coordinate) placement. ``points`` merges
+    into the ``points=`` list.
+    """
     session = Session(NumpyBackend())
     record = from_record(session, "ev", pt=VECTOR)
     pt = record["pt"]

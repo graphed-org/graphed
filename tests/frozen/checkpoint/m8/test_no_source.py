@@ -55,10 +55,9 @@ def test_serialized_plan_runs_with_no_user_source(tmp_path) -> None:  # type: ig
     store_dir = tmp_path / "store"
 
     child = (
-        "import sys; from graphed.core import DurablePlan; from graphed.checkpoint import Store, run_resumable;"
-        "p=DurablePlan.from_bytes(open(sys.argv[1],'rb').read());"
-        "r=run_resumable(p, Store(sys.argv[2]));"
-        "print(int(r.value.sum()), r.report.executed)"
+        "import sys; from graphed.core import DurablePlan; from graphed.checkpoint import Store, "
+        "run_resumable;p=DurablePlan.from_bytes(open(sys.argv[1],'rb').read());r=run_resumable(p, "
+        "Store(sys.argv[2]));print(int(r.value.sum()), r.report.executed)"
     )
     proc = subprocess.run(
         [sys.executable, "-c", child, str(blob), str(store_dir)],
@@ -81,10 +80,9 @@ def test_resumed_subprocess_plan_skips_completed_work(tmp_path) -> None:  # type
     blob.write_bytes(plan.to_bytes())
 
     child = (
-        "import sys; from graphed.core import DurablePlan; from graphed.checkpoint import Store, run_resumable;"
-        "p=DurablePlan.from_bytes(open(sys.argv[1],'rb').read());"
-        "r=run_resumable(p, Store(sys.argv[2]));"
-        "print(r.report.executed, r.report.skipped)"
+        "import sys; from graphed.core import DurablePlan; from graphed.checkpoint import Store, "
+        "run_resumable;p=DurablePlan.from_bytes(open(sys.argv[1],'rb').read());r=run_resumable(p, "
+        "Store(sys.argv[2]));print(r.report.executed, r.report.skipped)"
     )
     proc = subprocess.run(
         [sys.executable, "-c", child, str(blob), str(store_dir)],

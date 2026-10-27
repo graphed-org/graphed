@@ -1,8 +1,8 @@
 """m57 §2.5: `points=` placements keep their DECLARED member.
 
-A placed universe is the user's value for that point: the memoised composition must not freeze it at
-nominal when the placement is minted after an ambient read, and an overlay must not replace it just
-because the point carries the overlay's coordinate.
+A placed universe is the user's value for that point: the memoised composition must not freeze it
+at nominal when the placement is minted after an ambient read, and an overlay must not replace it
+just because the point carries the overlay's coordinate.
 """
 
 from __future__ import annotations
@@ -32,9 +32,11 @@ import graphed
 
 
 def test_a_placement_minted_after_an_ambient_read_keeps_its_declared_member() -> None:
-    """A placement whose point names two earlier factors' coordinates resolves to its point with and
-    without an intervening read: the fold onto the memoised composition must not freeze it at
-    nominal."""
+    """A placement whose point names two earlier factors' coordinates resolves to its point.
+
+    It resolves with and without an intervening read: the fold onto the memoised composition must
+    not freeze it at nominal.
+    """
     results = []
     for extra_read in (False, True):
         base = m57_two_factors()
@@ -66,9 +68,11 @@ def test_a_placement_minted_after_an_ambient_read_keeps_its_declared_member() ->
 
 
 def test_a_placement_at_a_point_carrying_the_overlays_coordinate_keeps_its_member() -> None:
-    """An overlay replaces the running product at its family's labels, never at a universe another
-    family PLACED at a point that carries its coordinate — at either prefix length — while the
-    overlay's own universe is still its own member."""
+    """An overlay replaces the running product at its family's labels only.
+
+    Never at a universe another family PLACED at a point that carries its coordinate — at either
+    prefix length — while the overlay's own universe is still its own member.
+    """
     for prefix_length in (1, 2):
         session, ctx = m57_base()
         jets = ctx["Jet"]
@@ -102,16 +106,20 @@ def test_a_placement_at_a_point_carrying_the_overlays_coordinate_keeps_its_membe
             session, ops, graphed.labels(weight)
         ), prefix_length
         own = m57_at(m57_scaled(handle, MU)["up"], "mu_up")
-        if prefix_length == 1:  # the `hf` factor was registered AFTER the overlay, so it multiplies
+        # the `hf` factor was registered AFTER the overlay, so it multiplies
+        if prefix_length == 1:
             own = own * m57_at(sf, "mu_up")
-        assert m57_values(session, graphed.member_of(weight, "mu_up")) == m57_values(session, own), (
-            prefix_length
-        )
+        assert m57_values(session, graphed.member_of(weight, "mu_up")) == m57_values(
+            session, own
+        ), prefix_length
 
 
 def test_the_overlay_family_placing_its_own_universe_off_its_axis_keeps_that_member() -> None:
-    """The overlay's own universes are told apart by membership in its container, not by their points:
-    a universe it placed at a point made only of other families' coordinates is still its member."""
+    """The overlay's own universes are told apart by membership in its container.
+
+    They are not told apart by their points: a universe it placed at a point made only of other
+    families' coordinates is still its member.
+    """
     base = m57_two_factors()
     handle = graphed.weight(base.ctx)
     members = m57_scaled(handle, MU)

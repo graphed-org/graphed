@@ -31,8 +31,10 @@ pytest.importorskip("pyarrow")
 
 
 def _optimizer_mergeable_record(events: Any) -> tuple[Any, Any]:
-    """A weight family with a `w * 1.0` member: distinct record id, but the M4 optimizer merges it
-    with nominal's `w` into ONE compiled output."""
+    """Return a weight family with a `w * 1.0` member.
+
+    Distinct record id, but the M4 optimizer merges it with nominal's `w` into ONE compiled output.
+    """
     w = gak.prod(1.0 + events.Jet.btag, axis=1)
     ctx = graphed.vary(events, "sys", w, is_weight=True, points={"one": w * 1.0})
     record = gak.zip({"met": events.MET.pt, "w": graphed.weight(ctx)}, depth_limit=1)
@@ -48,8 +50,11 @@ def test_optimizer_mergeable_label_is_refused_at_the_call(tmp_path) -> None:  # 
 
 
 def test_unvaried_write_path_is_unchanged(tmp_path) -> None:  # type: ignore[no-untyped-def]
-    """§6.3 scope control: an unvaried write compiles and writes exactly as today — the merge check
-    is varied-only, so a program whose outputs the optimizer merges must keep working."""
+    """§6.3 scope control.
+
+    An unvaried write compiles and writes exactly as today — the merge check is varied-only, so a
+    program whose outputs the optimizer merges must keep working.
+    """
     _s, events = events_context()
     paths = ga.to_parquet(events.Jet, str(tmp_path / "plain"))
     assert len(paths) == 1

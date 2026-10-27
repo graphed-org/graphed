@@ -109,7 +109,9 @@ def _keras_bytes(weight: float, *, extra_layer: bool = False) -> bytes:
     if extra_layer:
         layers.append(keras.layers.Activation("sigmoid"))  # parameter-free architecture change
     model = keras.Sequential(layers)
-    model.layers[0].set_weights([np.array([[weight]], dtype="float32"), np.array([0.1], dtype="float32")])
+    model.layers[0].set_weights(
+        [np.array([[weight]], dtype="float32"), np.array([0.1], dtype="float32")]
+    )
     path = pathlib.Path(tempfile.mkdtemp()) / "model.keras"
     model.save(path)
     return path.read_bytes()

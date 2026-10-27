@@ -24,8 +24,10 @@ Handler = Callable[["NumpyArray", tuple[object, ...], dict[str, object]], Any]
 
 
 def _i(value: object) -> int:
-    """Coerce a graph param (an int|float|bool|str value typed as object) to int -- the one
-    unavoidable builtins-overload gap for param coercion, centralized here."""
+    """Coerce a graph param (an int|float|bool|str value typed as object) to int.
+
+    The one unavoidable builtins-overload gap for param coercion, centralized here.
+    """
     return int(value)  # type: ignore[call-overload, no-any-return]
 
 
@@ -51,56 +53,72 @@ class NumpyArray(Array):
     # ---- array metadata (answered from the form; never recorded) ----------------
     @property
     def shape(self) -> Any:
+        """The array's shape, read from its form."""
         return self._form_meta("shape")
 
     @property
     def dtype(self) -> Any:
+        """The array's dtype, read from its form."""
         return self._form_meta("dtype")
 
     @property
     def ndim(self) -> Any:
+        """The array's number of dimensions, read from its form."""
         return self._form_meta("ndim")
 
     # ---- reductions & scans (M12, dask.array parity P1.4) ------------------------
     # numpy's METHOD idiom over the base class's _reduction/_scan infrastructure (the structural
     # rule — axis None/0 is a boundary reduction, an inner axis is fusible — lives there).
     def sum(self, axis: int | None = None, *, keepdims: bool = False) -> Array:
+        """Record ``numpy.sum`` along ``axis``."""
         return self._reduction("sum", axis, keepdims=keepdims)
 
     def prod(self, axis: int | None = None, *, keepdims: bool = False) -> Array:
+        """Record ``numpy.prod`` along ``axis``."""
         return self._reduction("prod", axis, keepdims=keepdims)
 
     def mean(self, axis: int | None = None, *, keepdims: bool = False) -> Array:
+        """Record ``numpy.mean`` along ``axis``."""
         return self._reduction("mean", axis, keepdims=keepdims)
 
     def std(self, axis: int | None = None, *, keepdims: bool = False, ddof: int = 0) -> Array:
+        """Record ``numpy.std`` along ``axis``."""
         return self._reduction("std", axis, keepdims=keepdims, ddof=ddof)
 
     def var(self, axis: int | None = None, *, keepdims: bool = False, ddof: int = 0) -> Array:
+        """Record ``numpy.var`` along ``axis``."""
         return self._reduction("var", axis, keepdims=keepdims, ddof=ddof)
 
     def min(self, axis: int | None = None, *, keepdims: bool = False) -> Array:
+        """Record ``numpy.min`` along ``axis``."""
         return self._reduction("min", axis, keepdims=keepdims)
 
     def max(self, axis: int | None = None, *, keepdims: bool = False) -> Array:
+        """Record ``numpy.max`` along ``axis``."""
         return self._reduction("max", axis, keepdims=keepdims)
 
     def any(self, axis: int | None = None, *, keepdims: bool = False) -> Array:
+        """Record ``numpy.any`` along ``axis``."""
         return self._reduction("any", axis, keepdims=keepdims)
 
     def all(self, axis: int | None = None, *, keepdims: bool = False) -> Array:
+        """Record ``numpy.all`` along ``axis``."""
         return self._reduction("all", axis, keepdims=keepdims)
 
     def argmin(self, axis: int | None = None, *, keepdims: bool = False) -> Array:
+        """Record ``numpy.argmin`` along ``axis``."""
         return self._reduction("argmin", axis, keepdims=keepdims)
 
     def argmax(self, axis: int | None = None, *, keepdims: bool = False) -> Array:
+        """Record ``numpy.argmax`` along ``axis``."""
         return self._reduction("argmax", axis, keepdims=keepdims)
 
     def cumsum(self, axis: int | None = None) -> Array:
+        """Record ``numpy.cumsum`` along ``axis``."""
         return self._scan("cumsum", axis)
 
     def cumprod(self, axis: int | None = None) -> Array:
+        """Record ``numpy.cumprod`` along ``axis``."""
         return self._scan("cumprod", axis)
 
     # indexing (M13, dask.array parity P2.6) is entirely the base class's: the tuple subscript
@@ -108,13 +126,16 @@ class NumpyArray(Array):
 
     # ---- manipulation (M13, dask.array parity P2.6) ------------------------------
     def reshape(self, *shape: int | tuple[int, ...]) -> Array:
+        """Record a reshape to ``shape``."""
         dims = shape[0] if len(shape) == 1 and isinstance(shape[0], tuple) else shape
         return self._session.record_op("reshape", [self], {"shape": _encode_dims(dims)})  # type: ignore[arg-type]
 
     def ravel(self) -> Array:
+        """Record ``ravel``."""
         return self._session.record_op("ravel", [self])
 
     def squeeze(self, axis: int | None = None) -> Array:
+        """Record ``squeeze`` of one explicit inner ``axis``."""
         if axis is None:
             raise TypeError(
                 "squeeze needs an explicit inner axis: squeezing ALL size-1 dims could silently "
@@ -123,21 +144,28 @@ class NumpyArray(Array):
         return self._session.record_op("squeeze", [self], {"axis": self._subaxis(axis)})
 
     def transpose(self, *axes: int | tuple[int, ...]) -> Array:
+        """Record a transpose, reversing the axes or permuting them by ``axes``."""
         flat = axes[0] if len(axes) == 1 and isinstance(axes[0], tuple) else axes
         params: dict[str, ParamValue] = {"axes": _encode_dims(flat)} if flat else {}  # type: ignore[arg-type]
         return self._session.record_op("transpose", [self], params)
 
     @property
-    def T(self) -> Array:  # numpy parity name
+    def T(self) -> Array:  # noqa: N802 - numpy parity name
+        """The transpose, as numpy's ``.T``."""
         return self.transpose()
 
     def swapaxes(self, a1: int, a2: int) -> Array:
-        return self._session.record_op("swapaxes", [self], {"a1": self._subaxis(a1), "a2": self._subaxis(a2)})
+        """Record ``swapaxes`` of two inner axes."""
+        return self._session.record_op(
+            "swapaxes", [self], {"a1": self._subaxis(a1), "a2": self._subaxis(a2)}
+        )
 
     def astype(self, dtype: object) -> Array:
+        """Record a cast to ``dtype``."""
         return self._session.record_op("astype", [self], {"dtype": np.dtype(dtype).str})
 
     def clip(self, lo: object = None, hi: object = None) -> Array:
+        """Record ``clip`` to ``[lo, hi]``; one bound may be ``None``."""
         if lo is None and hi is None:
             raise TypeError("clip needs at least one bound")
         params: dict[str, ParamValue] = {}
@@ -148,14 +176,18 @@ class NumpyArray(Array):
         return self._session.record_op("clip", [self], params)
 
     def round(self, decimals: int = 0) -> Array:
+        """Record ``round`` to ``decimals`` places."""
         params: dict[str, ParamValue] = {"decimals": int(decimals)} if decimals else {}
         return self._session.record_op("round", [self], params)
 
     def take(self, indices: Array, axis: int | None = None) -> Array:
+        """Record ``take`` of ``indices`` along ``axis``."""
         axis = self._norm_axis(axis)
         params: dict[str, ParamValue] = {} if axis is None else {"axis": axis}
         # gathering by global index along the partitioned axis crosses partitions: boundary
-        return self._session.record_op("take", [self, indices], params, reduction=axis is None or axis == 0)
+        return self._session.record_op(
+            "take", [self, indices], params, reduction=axis is None or axis == 0
+        )
 
     def _subaxis(self, axis: int) -> int:
         """Normalize an axis that must end up addressing an INNER (non-partitioned) dimension."""
@@ -167,6 +199,7 @@ class NumpyArray(Array):
     def __array_function__(
         self, func: Any, types: object, args: tuple[object, ...], kwargs: dict[str, object]
     ) -> Any:
+        """Record a supported numpy function call over this array."""
         handler = _NUMPY_FUNCTIONS.get(getattr(func, "__name__", ""))
         if handler is None:
             return NotImplemented  # numpy raises TypeError naming the unsupported function
@@ -181,7 +214,9 @@ def _take_axis(
     rest = args[1:]
     if rest:
         if len(rest) > 1 or "axis" in kw:
-            raise TypeError(f"graphed np.{kind} takes at most one positional argument after the array")
+            raise TypeError(
+                f"graphed np.{kind} takes at most one positional argument after the array"
+            )
         kw["axis"] = rest[0]
     axis = kw.pop("axis", None)
     if axis is not None and (isinstance(axis, bool) or not isinstance(axis, int)):
@@ -244,10 +279,12 @@ _NUMPY_FUNCTIONS: dict[str, Handler] = {
 _NUMPY_FUNCTIONS.update(
     {name: _make_reduction(name, allow_ddof=True) for name in ("std", "var", "nanstd", "nanvar")}
 )
-_NUMPY_FUNCTIONS.update({name: _make_scan(name) for name in ("cumsum", "cumprod", "nancumsum", "nancumprod")})
+_NUMPY_FUNCTIONS.update(
+    {name: _make_scan(name) for name in ("cumsum", "cumprod", "nancumsum", "nancumprod")}
+)
 
 
-# ---- M13: manipulation + combination handlers (dask.array parity P2) ------------------------------
+# ---- M13: manipulation + combination handlers (dask.array parity P2) ----------------------------
 def _one_array(kind: str, args: tuple[object, ...]) -> NumpyArray:
     if not args or not isinstance(args[0], NumpyArray):
         raise TypeError(f"graphed np.{kind}: the first argument must be the deferred array")
@@ -255,7 +292,11 @@ def _one_array(kind: str, args: tuple[object, ...]) -> NumpyArray:
 
 
 def _two_arrays(kind: str, args: tuple[object, ...]) -> tuple[NumpyArray, NumpyArray]:
-    if len(args) != 2 or not isinstance(args[0], NumpyArray) or not isinstance(args[1], NumpyArray):
+    if (
+        len(args) != 2
+        or not isinstance(args[0], NumpyArray)
+        or not isinstance(args[1], NumpyArray)
+    ):
         raise TypeError(f"graphed np.{kind} takes two deferred arrays")
     return args[0], args[1]
 
@@ -461,7 +502,9 @@ def _fn_histogram(arr: NumpyArray, args: tuple[object, ...], kwargs: dict[str, o
     if kwargs or len(args) > 2:
         raise TypeError("graphed np.histogram takes (array, bins, range=)")
     nbins, (lo, hi) = _hist_bins_range("histogram", bins, rng)
-    counts = a.session.record_op("histogram", [a], {"bins": nbins, "lo": lo, "hi": hi}, reduction=True)
+    counts = a.session.record_op(
+        "histogram", [a], {"bins": nbins, "lo": lo, "hi": hi}, reduction=True
+    )
     return counts, np.histogram_bin_edges(np.empty(0), bins=nbins, range=(lo, hi))
 
 
@@ -493,7 +536,9 @@ def _fn_histogramdd(arr: NumpyArray, args: tuple[object, ...], kwargs: dict[str,
     if kwargs or len(args) > 1:
         raise TypeError("graphed np.histogramdd takes (sample array, bins=, range=)")
     if isinstance(bins, bool) or not isinstance(bins, int) or rng is None:
-        raise TypeError("graphed np.histogramdd needs an int `bins` and an explicit per-dim `range`")
+        raise TypeError(
+            "graphed np.histogramdd needs an int `bins` and an explicit per-dim `range`"
+        )
     if not isinstance(rng, list | tuple):
         raise TypeError("graphed np.histogramdd needs a per-dim range sequence")
     pairs = [(float(lo), float(hi)) for lo, hi in rng]

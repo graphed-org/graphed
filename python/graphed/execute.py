@@ -73,8 +73,11 @@ class Correspondence:
 
 @dataclass(frozen=True)
 class CompiledGraph:
-    """A compiled analysis: the reduced canonical IR plus the source names it reads. Picklable and
-    self-contained — exactly what ships to an executor worker (no Session, no analysis function)."""
+    """A compiled analysis: the reduced canonical IR plus the source names it reads.
+
+    Picklable and self-contained — exactly what ships to an executor worker (no Session, no
+    analysis function).
+    """
 
     checkpoint_ignore: ClassVar[tuple[str, ...]] = ("correspondence",)
 
@@ -104,6 +107,7 @@ class CompiledGraph:
         *,
         externals: Mapping[str, Callable[..., object]] | None = None,
     ) -> list[object]:
+        """Evaluate this graph on ``backend`` over ``sources``."""
         return evaluate_ir(self, backend, sources, externals=externals)
 
 
@@ -118,7 +122,8 @@ def compile_ir(
     Reduction runs once, here — workers receive the already-reduced bytes. An incremental session
     finishes from its maintained canonical view (per-step work already paid at record time).
     The artifact carries EXACTLY the requested outputs (M22), so compiling different
-    expressions sequentially from one session never cross-talks."""
+    expressions sequentially from one session never cross-talks.
+    """
     refuse_container("graphed.compile_ir", *outputs)
     session._mine(outputs)  # m60: a node id only means something in its own store
     if maximal_fusion and not optimize:
@@ -132,7 +137,9 @@ def compile_ir(
         landings: list[Key | None] = [(nid, None) for nid in range(session._store.node_count())]
     else:
         reduced = (
-            session._reducer.finalize(session._store, maximal_fusion=maximal_fusion, outputs=ids)[0]
+            session._reducer.finalize(session._store, maximal_fusion=maximal_fusion, outputs=ids)[
+                0
+            ]
             if session._reducer is not None
             else session._store.reduce(maximal_fusion=maximal_fusion, outputs=ids)[0]
         )
@@ -141,8 +148,11 @@ def compile_ir(
 
 
 def _compile_cone(session: Session, *outputs: Any) -> CompiledGraph:
-    """``opt_level=0``'s plan IR: the 1:1 cone of ``outputs`` (M6), M4's DCE without the rewrites,
-    keyed and framed as :func:`compile_ir`'s optimized branch keys the reduced store."""
+    """``opt_level=0``'s plan IR.
+
+    The 1:1 cone of ``outputs`` (M6), M4's DCE without the rewrites, keyed and framed
+    as :func:`compile_ir`'s optimized branch keys the reduced store.
+    """
     refuse_container("graphed.compile_ir", *outputs)
     session._mine(outputs)
     cone = session._store.cone(outputs=[arr.node_id for arr in outputs])
@@ -168,7 +178,9 @@ def _compiled(
         # artifact. Without the filter a sound program reports a sibling program's violation.
         shift_after_weight=tuple(
             sorted(
-                pair for pair, nodes in session._shift_after_weight.items() if not nodes.isdisjoint(node_map)
+                pair
+                for pair, nodes in session._shift_after_weight.items()
+                if not nodes.isdisjoint(node_map)
             )
         ),
     )
@@ -188,7 +200,9 @@ def _frames_by_key(session: Session, node_map: dict[int, Key]) -> tuple[tuple[Ke
         if prov is None or node_map[nid] in chosen:
             continue
         chosen[node_map[nid]] = (prov.filename, prov.lineno, prov.function, prov.source)
-    return tuple(sorted(chosen.items(), key=lambda e: (e[0][0], -1 if e[0][1] is None else e[0][1])))
+    return tuple(
+        sorted(chosen.items(), key=lambda e: (e[0][0], -1 if e[0][1] is None else e[0][1]))
+    )
 
 
 def _dispatch(
@@ -216,15 +230,18 @@ def _dispatch(
 
 
 def external_key(node: Mapping[str, Any]) -> str:
-    """The execution-resolution key for an External node: its payload ``content_hash`` PLUS a
-    canonical digest of its ``params``.
+    """Return the execution-resolution key for an External node.
 
-    An External's ``descriptor.content_hash`` is over the payload BYTES alone, so several nodes that
-    share one payload but differ in HOW it is evaluated — the canonical case being N systematic
-    universes off one correctionlib CorrectionSet, distinguished only by ``params["systematic"]`` /
-    ``params["args"]`` — collide on that hash. Keying execution by ``(content_hash, params)`` gives
-    each its OWN evaluator while leaving the preservation ``content_hash`` shared (§A.3.1). Two nodes
-    that agree on both genuinely evaluate identically, so sharing one evaluator is correct."""
+    Its payload ``content_hash`` PLUS a canonical digest of its ``params``.
+
+    An External's ``descriptor.content_hash`` is over the payload BYTES alone, so several nodes
+    that share one payload but differ in HOW it is evaluated — the canonical case being N
+    systematic universes off one correctionlib CorrectionSet, distinguished only by
+    ``params["systematic"]`` / ``params["args"]`` — collide on that hash. Keying execution by
+    ``(content_hash, params)`` gives each its OWN evaluator while leaving the preservation
+    ``content_hash`` shared (§A.3.1). Two nodes that agree on both genuinely evaluate identically,
+    so sharing one evaluator is correct.
+    """
     descriptor = node["descriptor"]
     params = node.get("params") or {}
     chash: str = descriptor["content_hash"]
@@ -241,19 +258,21 @@ def evaluate_ir(
     outputs: Sequence[int] | None = None,
     given: Mapping[int, object] | None = None,
 ) -> list[object]:
-    """Evaluate a compiled (reduced) IR: one backend dispatch per reduced node, fused stage members
-    inline. ``sources`` binds each source name to its data (or a zero-arg loader); ``externals``
-    binds each External payload's evaluator, keyed by :func:`external_key` (preferred, so N
-    systematic universes off one payload stay distinct) or by its bare ``content_hash``. Returns the
-    outputs in mark order.
+    """Evaluate a compiled (reduced) IR.
+
+    One backend dispatch per reduced node, fused stage members inline. ``sources`` binds each
+    source name to its data (or a zero-arg loader); ``externals`` binds each External payload's
+    evaluator, keyed by :func:`external_key` (preferred, so N systematic universes off one payload
+    stay distinct) or by its bare ``content_hash``. Returns the outputs in mark order.
 
     ``on_failure`` is §8.2(iii)'s attribution hook: it sees the reduced address of the failing
     dispatch — ``(node_id, member_index)``, the member index being ``None`` outside a fused stage —
     and returns the exception to raise instead, or ``None`` to let the original propagate.
 
-    ``outputs`` (reduced node ids) replaces the marked outputs, and ``given`` (``{node id: value}``)
-    supplies those nodes' values; either one restricts evaluation to the cone of the outputs, cut at
-    the given nodes (a V2 stage evaluates its side of a barrier this way)."""
+    ``outputs`` (reduced node ids) replaces the marked outputs, and ``given`` (``{node id:
+    value}``) supplies those nodes' values; either one restricts evaluation to the cone of the
+    outputs, cut at the given nodes (a V2 stage evaluates its side of a barrier this way).
+    """
     blob = compiled.ir if isinstance(compiled, CompiledGraph) else compiled
     store = graphed.core.GraphStore.deserialize(bytes(blob))
     nodes = store.nodes()
@@ -261,7 +280,9 @@ def evaluate_ir(
     cone = None if outputs is None and given is None else ir_cone(nodes, wanted, stop=given or ())
     # a value is dropped once its last consumer has run, so a task holds only live intermediates
     skipped = (
-        set() if cone is None else {nid for nid in range(len(nodes)) if nid not in cone} | set(given or ())
+        set()
+        if cone is None
+        else {nid for nid in range(len(nodes)) if nid not in cone} | set(given or ())
     )
     release = _last_consumers(
         [() if nid in skipped else nd["inputs"] for nid, nd in enumerate(nodes)], keep=set(wanted)
@@ -283,7 +304,8 @@ def evaluate_ir(
             value = sources[name]
             vals.append(value() if callable(value) else value)
         elif kind in ("op", "reduction", "exchange", "join"):
-            # a boundary is evaluated by its backend reference kernel, as `Session.materialize` does
+            # a boundary is evaluated by its backend reference kernel, as `Session.materialize`
+            # does
             name = nd["name"] if kind in ("op", "reduction") else kind
             call = partial(backend.eval_stage, name, ins, nd["params"])
             vals.append(_dispatch(call, name, ins, (nid, None), on_failure))
@@ -307,7 +329,11 @@ def evaluate_ir(
             # Fall back to the bare `content_hash` so a direct `evaluate_ir` caller may key by it
             # (the single-payload case, and the frozen attribution contract).
             chash = nd["descriptor"]["content_hash"]
-            fn = None if externals is None else (externals.get(external_key(nd)) or externals.get(chash))
+            fn = (
+                None
+                if externals is None
+                else (externals.get(external_key(nd)) or externals.get(chash))
+            )
             if fn is None:
                 raise _unbound_external(chash)
             # An External node carries no `name` — its identity is the descriptor — so an
@@ -323,8 +349,11 @@ def evaluate_ir(
 
 
 def _last_consumers(inputs: Sequence[Sequence[int]], *, keep: set[int]) -> dict[int, list[int]]:
-    """``{consumer: [values it is the last to read]}`` over ``inputs`` (each consumer's input
-    indices, in evaluation order), leaving out the indices in ``keep``."""
+    """Return ``{consumer: [values it is the last to read]}`` over ``inputs``.
+
+    ``inputs`` holds each consumer's input indices, in evaluation order; the indices in ``keep``
+    are left out.
+    """
     last: dict[int, int] = {}
     for consumer, used in enumerate(inputs):
         for i in used:
@@ -339,7 +368,10 @@ def _last_consumers(inputs: Sequence[Sequence[int]], *, keep: set[int]) -> dict[
 def ir_cone(
     nodes: Sequence[Mapping[str, Any]], roots: Collection[int], stop: Collection[int] = ()
 ) -> set[int]:
-    """The node ids ``roots`` depend on, ``roots`` included, not walking past a ``stop`` node."""
+    """Return the node ids ``roots`` depend on, ``roots`` included.
+
+    The walk does not go past a ``stop`` node.
+    """
     seen: set[int] = set()
     todo = list(roots)
     while todo:
@@ -364,13 +396,18 @@ def _unbound_external(chash: str) -> GraphedError:
     )
 
 
-def refuse_chunk_partials(compiled: CompiledGraph | bytes, *, as_outputs: bool | Collection[int]) -> None:
-    """A partition-wise driver evaluates ``compiled`` once per chunk, so a reduction node — an
-    axis-0 slice or index, an ``axis=None`` reduce — yields a chunk PARTIAL. A partial is sound
-    only as a plan output the driver's ``combine`` folds; consumed by another node it is silently
-    the wrong number (``sum(x[2:8])`` over two chunks). ``as_outputs=True`` refuses partials as
-    outputs as well: a writer has no combine, and every row it writes is a row of the dataset. A
-    collection of compiled output ids refuses partials at exactly those outputs (a plan's writes)."""
+def refuse_chunk_partials(
+    compiled: CompiledGraph | bytes, *, as_outputs: bool | Collection[int]
+) -> None:
+    """Refuse a reduction node's chunk PARTIAL wherever it is not sound.
+
+    A partition-wise driver evaluates ``compiled`` once per chunk, so a reduction node — an axis-0
+    slice or index, an ``axis=None`` reduce — yields a chunk PARTIAL. A partial is sound only as a
+    plan output the driver's ``combine`` folds; consumed by another node it is silently the wrong
+    number (``sum(x[2:8])`` over two chunks). ``as_outputs=True`` refuses partials as outputs as
+    well: a writer has no combine, and every row it writes is a row of the dataset. A collection of
+    compiled output ids refuses partials at exactly those outputs (a plan's writes).
+    """
     blob = compiled.ir if isinstance(compiled, CompiledGraph) else compiled
     store = graphed.core.GraphStore.deserialize(bytes(blob))
     nodes = store.nodes()
@@ -381,9 +418,10 @@ def refuse_chunk_partials(compiled: CompiledGraph | bytes, *, as_outputs: bool |
             continue
         if nid in consumed:
             raise GraphedError(
-                f"{nd['name']!r} reduces the partitioned axis and feeds another node: a partitioned"
-                " run evaluates it per chunk, so what follows would see a per-chunk partial, not the"
-                " dataset-wide value. Make the reduction the plan's output and fold it in `combine`"
+                f"{nd['name']!r} reduces the partitioned axis and feeds another node: a "
+                "partitioned run evaluates it per chunk, so what follows would see a per-chunk "
+                "partial, not the dataset-wide value. Make the reduction the plan's output and "
+                "fold it in `combine`"
             )
         if nid in refused:
             raise GraphedError(

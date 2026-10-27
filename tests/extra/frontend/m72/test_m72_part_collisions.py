@@ -33,7 +33,9 @@ def by_uri_step(p: Partition) -> str:
 def _plan(files: dict[str, Any], tree: str, destination: Path) -> tuple[Any, Any, FileSource]:
     _s, x, src = record(files, tree=tree)
     write = PartWrite(array=x, destination=str(destination), name=by_uri_step, codec=json_codec)
-    plan = graphed.aggregate_plan(x.sum(), reduce=paths_only, combine=add, empty=no_paths, writes=[write])
+    plan = graphed.aggregate_plan(
+        x.sum(), reduce=paths_only, combine=add, empty=no_paths, writes=[write]
+    )
     return plan, x, src
 
 
@@ -52,7 +54,11 @@ def test_collated_plans_writing_one_part_are_refused(tmp_path: Path) -> None:
 def test_collated_plans_with_distinct_parts_build_and_write_each(tmp_path: Path) -> None:
     mc, _, _ = _plan(MC_FILES, "Events", tmp_path / "mc")
     data, _, _ = _plan(DATA_FILES, "Runs", tmp_path / "data")
-    value = SequentialRunner().run(graphed.collate({"mc": graphed.collate({"mc": mc}), "data": data})).value
+    value = (
+        SequentialRunner()
+        .run(graphed.collate({"mc": graphed.collate({"mc": mc}), "data": data}))
+        .value
+    )
     assert value == {
         "mc": {"mc": [str(tmp_path / "mc" / f"{uri}-0.json") for uri in MC_FILES]},
         "data": [str(tmp_path / "data" / f"{uri}-0.json") for uri in DATA_FILES],

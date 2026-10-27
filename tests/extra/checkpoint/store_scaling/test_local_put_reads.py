@@ -22,7 +22,9 @@ def _count_reads(monkeypatch: pytest.MonkeyPatch) -> list[int]:
     return sizes
 
 
-def test_put_of_a_present_blob_reads_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_put_of_a_present_blob_reads_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     store = Store(tmp_path)
     data = b"x" * 4096
     digest = store.put(data)

@@ -6,8 +6,8 @@ through the graphed frontend **once** and serialized to an **optimized, interned
 datasets** (distinct per uri) via `DurablePlan.for_dataset`, and run through the checkpoint runner.
 
 All process/combine/empty callables are module-level so the plan can reference them by import path.
-Each dataset's events are derived deterministically from its uri, so per-dataset results are distinct
-and independently reproducible.
+Each dataset's events are derived deterministically from its uri, so per-dataset results are
+distinct and independently reproducible.
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ TOTAL_BINS = sum(b for _, b, _, _ in _AXES)
 DATASETS = [Dataset(f"corpus://ttbar_{i}", n_events=N_EVENTS, name=f"ttbar_{i}") for i in range(3)]
 
 
-# ---- per-dataset synthetic events (deterministic from the uri) -----------------------------------
+# ---- per-dataset synthetic events (deterministic from the uri) ----------------------------------
 def _seed_for(uri: str) -> int:
     return int.from_bytes(hashlib.sha256(uri.encode()).digest()[:4], "big")
 
@@ -48,7 +48,7 @@ def _events_for(uri: str) -> Any:
     return make_events(n_events=N_EVENTS, seed=_seed_for(uri))
 
 
-# ---- the analysis graph (recorded through the frontend) ------------------------------------------
+# ---- the analysis graph (recorded through the frontend) -----------------------------------------
 def _pair_mass(o1: Any, o2: Any) -> Any:
     """Invariant mass of an object pair (the dimuon-mass calc — a deep arithmetic sub-DAG)."""
     px = o1.pt * np.cos(o1.phi) + o2.pt * np.cos(o2.phi)
@@ -61,9 +61,12 @@ def _pair_mass(o1: Any, o2: Any) -> Any:
 
 
 def _record_observables(ev: Any) -> list[Any]:
-    """Record the multi-observable analysis on a graphed Array ``ev``; return the observable Arrays
-    in ``_AXES`` order. Shared object selections (jets, muons) intern once, and the dimuon-mass calc
-    adds a deep arithmetic sub-DAG -> a graph of realistic analysis complexity."""
+    """Record the multi-observable analysis on a graphed Array ``ev``.
+
+    Return the observable Arrays in ``_AXES`` order. Shared object selections (jets, muons) intern
+    once, and the dimuon-mass calc adds a deep arithmetic sub-DAG -> a graph of realistic analysis
+    complexity.
+    """
     from graphed.awkward import gak  # noqa: PLC0415
 
     jets = ev.Jet[ev.Jet.pt > 30]
@@ -83,7 +86,9 @@ def _record_observables(ev: Any) -> list[Any]:
 def _counts(values: Any, bins: int, lo: float, hi: float) -> np.ndarray:
     from graphed_corpus.histograms import hist1d  # noqa: PLC0415
 
-    return np.asarray(hist1d(values, bins=bins, start=lo, stop=hi, name="x").values(), dtype=np.int64)
+    return np.asarray(
+        hist1d(values, bins=bins, start=lo, stop=hi, name="x").values(), dtype=np.int64
+    )
 
 
 def _concat(materialized: list[Any]) -> np.ndarray:
@@ -116,8 +121,9 @@ def hist_empty() -> np.ndarray:
 def compiled_ir() -> bytes:
     """Record the analysis once and serialize the OPTIMIZED, interned graph (the durable artifact).
 
-    Cached: the compile step happens once per process, mirroring the deployment pattern (and keeping
-    the suite responsive)."""
+    Cached: the compile step happens once per process, mirroring the deployment pattern (and
+    keeping the suite responsive).
+    """
     from graphed import Session  # noqa: PLC0415
     from graphed.awkward import AwkwardBackend, from_awkward  # noqa: PLC0415
 
@@ -128,7 +134,10 @@ def compiled_ir() -> bytes:
 
 @functools.cache
 def graph_complexity() -> tuple[int, int]:
-    """(unreduced, optimized) node counts of the recorded analysis — for the complexity assertion."""
+    """Return the (unreduced, optimized) node counts of the recorded analysis.
+
+    They feed the complexity assertion.
+    """
     from graphed import Session  # noqa: PLC0415
     from graphed.awkward import AwkwardBackend, from_awkward  # noqa: PLC0415
     from graphed.core import GraphStore  # noqa: PLC0415
@@ -142,7 +151,7 @@ def graph_complexity() -> tuple[int, int]:
 
 
 def compile_plan() -> DurablePlan:
-    """The compiled analysis as a partition-less DurablePlan, ready to target datasets."""
+    """Return the compiled analysis as a partition-less DurablePlan, ready to target datasets."""
     return DurablePlan(
         ir=compiled_ir(),
         process=OpSpec.from_ref("deployment:analysis_chunk"),
@@ -154,7 +163,10 @@ def compile_plan() -> DurablePlan:
 
 @functools.cache
 def reference_for(uri: str) -> np.ndarray:
-    """The single-pass result for one dataset (the bit-for-bit target for a chunked deployment)."""
+    """Return the single-pass result for one dataset.
+
+    It is the bit-for-bit target for a chunked deployment.
+    """
     from graphed import Session  # noqa: PLC0415
     from graphed.awkward import AwkwardBackend, from_awkward  # noqa: PLC0415
 

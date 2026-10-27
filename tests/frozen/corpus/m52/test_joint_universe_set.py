@@ -1,5 +1,6 @@
-"""vary-m53 — design §2, §4.10: a plain `vary` over dependent members mints the full grid, all
-distinct.
+"""vary-m53 — design §2, §4.10.
+
+A plain `vary` over dependent members mints the full grid, all distinct.
 
 The b-tag SF members depend on the jes-varied jets, so the default is the whole jes(3) x btag(5)
 grid — the fifteen universes `EXPECTED_POINTS` names, eight of them machine-minted joints. The

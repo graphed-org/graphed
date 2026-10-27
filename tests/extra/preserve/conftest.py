@@ -1,7 +1,10 @@
-"""torch and xgboost each vendor an OpenMP runtime; allow both to load in one process (as m26 does).
+"""torch and xgboost each vendor an OpenMP runtime.
+
+Allow both to load in one process (as m26 does).
 
 Every test here starts and ends with the built-in plugin registry: a frozen preserve test that ran
-earlier in the process may have replaced a built-in kind (m9 registers its own ``triton_model``)."""
+earlier in the process may have replaced a built-in kind (m9 registers its own ``triton_model``).
+"""
 
 from __future__ import annotations
 

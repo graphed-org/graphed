@@ -2,8 +2,8 @@
 
 Plan M8 contract: "An injected per-partition failure lands in the dead-letter set with a
 reproducible descriptor; `retry_smaller_chunk` succeeds where the original OOMed (simulated)."
-Plus the policies `retry_n | retry_smaller_chunk | retry_elsewhere | quarantine` and an error budget
-as a stopping condition.
+Plus the policies `retry_n | retry_smaller_chunk | retry_elsewhere | quarantine` and an error
+budget as a stopping condition.
 """
 
 from __future__ import annotations
@@ -32,7 +32,8 @@ def test_injected_failure_lands_in_dead_letter_with_reproducible_descriptor(tmp_
     assert dl["stage_error"]["op"] == "jet_pt"
     assert dl["stage_error"]["user_file"] == "analysis.py"
     assert dl["stage_error"]["user_line"] == 42
-    # reproducible: the recorded task_id is exactly the plan's content-addressed id for that partition
+    # reproducible: the recorded task_id is exactly the plan's content-addressed id for that
+    # partition
     poison = next(p for p in plan.partitions if p.entry_start == 1000)
     assert dl["task_id"] == plan.task_id(poison)
 
@@ -44,7 +45,11 @@ def test_dead_lettered_partition_does_not_corrupt_the_rest(tmp_path) -> None:  #
     poison = next(p for p in plan.partitions if p.entry_start == 1000)
     expected = analyses._hist(
         np.concatenate(
-            [analyses._all_values()[p.entry_start : p.entry_stop] for p in plan.partitions if p is not poison]
+            [
+                analyses._all_values()[p.entry_start : p.entry_stop]
+                for p in plan.partitions
+                if p is not poison
+            ]
         )
     )
     assert np.array_equal(res.value, expected)
@@ -65,7 +70,9 @@ def test_retry_smaller_chunk_succeeds_where_whole_chunk_oomed(tmp_path) -> None:
     bare = run_resumable(plan, Store(tmp_path / "bare"), retry=Quarantine())
     assert bare.report.dead == 2 and bare.report.executed == 0
     # retry_smaller_chunk splits until each sub-chunk fits, then recombines -> single-pass result
-    fixed = run_resumable(plan, Store(tmp_path / "fixed"), retry=RetrySmallerChunk(splits=2, min_size=1))
+    fixed = run_resumable(
+        plan, Store(tmp_path / "fixed"), retry=RetrySmallerChunk(splits=2, min_size=1)
+    )
     assert fixed.report.dead == 0
     assert np.array_equal(fixed.value, analyses.reference())
 
@@ -85,7 +92,8 @@ def test_exhausted_retries_still_dead_letter(tmp_path) -> None:  # type: ignore[
 
 
 def test_smaller_chunk_gives_up_on_a_non_size_failure(tmp_path) -> None:  # type: ignore[no-untyped-def]
-    # RetrySmallerChunk splits down to size 1; a failure that is not about size is still dead-lettered
+    # RetrySmallerChunk splits down to size 1; a failure that is not about size is still
+    # dead-lettered
     plan = analyses.build_plan("analyses:always_fail", 2)
     res = run_resumable(plan, Store(tmp_path), retry=RetrySmallerChunk(splits=2, min_size=1))
     assert res.report.dead == 2 and res.report.executed == 0

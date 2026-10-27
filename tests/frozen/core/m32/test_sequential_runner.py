@@ -63,7 +63,8 @@ def test_key_order_is_independent_of_task_order() -> None:
             tasks=tuple(Task(i, parts[i]) for i in (2, 0, 3, 1)),
         )
     )
-    assert forward.value == shuffled.value == [0, 1, 2, 3]  # deterministic by key, not submit order
+    # deterministic by key, not submit order
+    assert forward.value == shuffled.value == [0, 1, 2, 3]
 
 
 def test_local_resources_opens_each_uri_once() -> None:

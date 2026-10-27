@@ -32,7 +32,9 @@ def _sources(session: Session) -> tuple[object, object]:
         ak.Array({"run": [1, 1, 1], "lumi": [1, 1, 1], "event": [1, 2, 2], "lv": [10, 20, 21]}),
     )
     right = from_awkward(
-        session, "right", ak.Array({"run": [1, 1], "lumi": [1, 1], "event": [2, 2], "rv": [200, 201]})
+        session,
+        "right",
+        ak.Array({"run": [1, 1], "lumi": [1, 1], "event": [2, 2], "rv": [200, 201]}),
     )
     return left, right
 
@@ -54,8 +56,11 @@ def test_grouped_join_is_the_relational_result_regrouped_by_unflatten() -> None:
     # grouped: one sublist per matching BUILD row (2), run-lengths = match counts (2, 2) — NOT a
     # flat 4-row array (which is what an ungrouped impl would return for grouped=True).
     assert len(gr) == 2, "grouped by build row: 2 sublists, not 4 flat rows"
-    assert sorted(ak.num(gr, axis=1).to_list()) == [2, 2], "run-lengths are the per-build match counts"
+    assert sorted(ak.num(gr, axis=1).to_list()) == [2, 2], (
+        "run-lengths are the per-build match counts"
+    )
 
-    # flattening the grouping reproduces the relational result bit-for-bit (deterministic unflatten).
+    # flattening the grouping reproduces the relational result bit-for-bit (deterministic
+    # unflatten).
     gflat = ak.flatten(gr, axis=1)
     assert sorted(zip(gflat["lv"].to_list(), gflat["rv"].to_list(), strict=True)) == flat_pairs
