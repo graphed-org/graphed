@@ -38,6 +38,14 @@ Exceptions are named ``…Error``
   ``UnboundServiceError`` (``graphed.services``) and ``UnresolvedPayloadError``
   (``graphed.preserve``). The first three keep their old names as aliases.
 
+Fixes
+~~~~~
+
+* ``GraphStore.reduce`` on an already-reduced store keeps every stage: two stages with the same
+  number of members were merged into one and an output was dropped. Two ``External`` nodes whose
+  descriptors differ only by a ``|`` in a field, or by ``preprocessing_ref="-"`` against none,
+  stay apart too (#104).
+
 0.0.9
 -----
 
