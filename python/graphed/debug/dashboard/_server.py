@@ -247,7 +247,7 @@ class DashboardServer:
     def _ingest(self, message: str, conn: Any = None) -> None:
         try:
             msg = json.loads(message)
-        except Exception:
+        except ValueError:
             return
         cid = getattr(conn, "cid", 0)
         # held across the frame so a reader waiting on a count also sees the rows written below

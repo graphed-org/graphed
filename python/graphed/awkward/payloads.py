@@ -33,7 +33,7 @@ def correctionlib_descriptor(json_path: str, correction_name: str) -> PayloadDes
     try:
         data = json.loads(Path(json_path).read_text(encoding="utf-8"))
         schema_version = str(data.get("schema_version", "unknown"))
-    except Exception:  # pragma: no cover - malformed JSON still gets a hash
+    except (OSError, ValueError, AttributeError):  # pragma: no cover - malformed: still hashed
         pass
     return PayloadDescriptor(
         kind="correctionlib",
@@ -160,15 +160,11 @@ def onnx_weights_descriptor(payload: bytes) -> PayloadDescriptor:
 
 
 def _onnx_identity(payload: bytes) -> tuple[str, str, str]:
-    opset, io_schema = "unknown", "opaque"
-    try:
-        import onnx
+    content_hash = onnx_weights_hash(payload)  # a model onnx cannot load raises here
+    import onnx
 
-        model = onnx.load_from_string(payload)
-        opset = ",".join(str(o.version) for o in model.opset_import)
-        ins = ",".join(i.name for i in model.graph.input)
-        outs = ",".join(o.name for o in model.graph.output)
-        io_schema = f"{ins}->{outs}"
-    except Exception:  # pragma: no cover
-        pass
-    return onnx_weights_hash(payload), opset, io_schema
+    model = onnx.load_from_string(payload)
+    opset = ",".join(str(o.version) for o in model.opset_import)
+    ins = ",".join(i.name for i in model.graph.input)
+    outs = ",".join(o.name for o in model.graph.output)
+    return content_hash, opset, f"{ins}->{outs}"
