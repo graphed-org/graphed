@@ -35,10 +35,10 @@ The systematics internals, reorganized
   registries are one ``Session.systematics`` object, an event context's ambient weight is one
   record that ``graphed.systematics.ambient`` alone builds, and a value's context stamping lives
   in ``graphed.systematics.handles``. What ``vary``, the readers and the plans produce is
-  unchanged.
+  unchanged (#113).
 * ``graphed.vary`` on a Session shared between threads is atomic: a failing ``vary`` in one
   thread rolled back the registry to its own snapshot, erasing a ``vary`` another thread had
-  minted meanwhile, and ``graphed.explain`` could raise while another thread minted.
+  minted meanwhile, and ``graphed.explain`` could raise while another thread minted (#113).
 * ``Session.reachable_sources(node_id)`` and ``Session.recorded_op(node_id)`` answer which sources
   a node reads and what op recorded it.
 * ``graphed.write.sources_read`` refuses outputs from more than one Session with a
