@@ -20,6 +20,7 @@ works without them; :meth:`DashboardServer.start` raises a clear error if they a
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import contextlib
 import json
@@ -145,8 +146,6 @@ class DashboardServer:
 
     def _run(self) -> None:
         try:
-            import asyncio  # noqa: PLC0415
-
             import perspective  # noqa: PLC0415
             from perspective.handlers.tornado import PerspectiveTornadoHandler  # noqa: PLC0415
             from tornado.httpserver import HTTPServer  # noqa: PLC0415

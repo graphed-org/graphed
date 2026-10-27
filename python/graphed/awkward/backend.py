@@ -18,11 +18,14 @@ import numpy as np
 from awkward.types._awkward_datashape_parser import LarkError
 
 from graphed import Array, Session
+from graphed.aggregate import _resolved
 from graphed.backend import PYTHON_TYPES, Form
 from graphed.core import PayloadDescriptor
+from graphed.shuffle import join_blocks
 
 from . import join, payloads, shuffle
 from ._ops import apply
+from .array import AwkwardArray
 
 
 @dataclass(frozen=True)
@@ -61,9 +64,6 @@ class _BehaviorByRef(dict[Any, Any]):
 
 
 def _behavior_from(ref: str) -> Any:
-    # aggregate imports this module's users
-    from graphed.aggregate import _resolved  # noqa: PLC0415
-
     return _resolved(ref)._behavior
 
 
@@ -302,9 +302,6 @@ class AwkwardBackend:
 
         Sessions return ``AwkwardArray``, so ``ak.<fn>`` records ``gak.<fn>``.
         """
-        # array imports gak, which imports this module
-        from .array import AwkwardArray  # noqa: PLC0415
-
         return AwkwardArray
 
     def op_form(
@@ -453,10 +450,7 @@ class AwkwardBackend:
         # gak.join(grouped=True): awkward-only regroup post-op
         if bool(params.get("grouped", False)):
             return join.join_grouped(left, right, on=on, how=how)
-        # the shared radix-hash kernel (JoinBackend prims only); local import avoids an import
-        # cycle.
-        from graphed.shuffle import join_blocks  # noqa: PLC0415
-
+        # the shared radix-hash kernel (JoinBackend prims only)
         return join_blocks(self, left, right, on=on, how=how)
 
     def boundary_ops(self) -> frozenset[str]:

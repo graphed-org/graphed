@@ -15,6 +15,7 @@ import awkward as ak
 import numpy as np
 
 from graphed.array import check_leading_ellipsis, decode_subscript
+from graphed.errors import GraphedError
 
 from . import join
 
@@ -182,8 +183,6 @@ def _broadcast_blame(operands: Sequence[Any], exc: ValueError) -> Exception:
     and lands at record time (where `Session.record_op` re-raises this at the user's line), while a
     jagged pair whose counts differ only in the data lands at execution time.
     """
-    from graphed.errors import GraphedError  # noqa: PLC0415  (graphed.errors imports no backend)
-
     value, factors = _structure(operands[0]), [_structure(f) for f in operands[1:]]
     # Two LEAF structures can only disagree on outer length, which is the already-flattened-value
     # case §6.1d names: a per-event factor against a per-object value someone flattened first.

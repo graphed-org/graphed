@@ -14,6 +14,7 @@ specializes this for boost histograms; any other partition-wise reduction reuses
 from __future__ import annotations
 
 import functools
+import importlib
 import os
 import types
 from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -142,8 +143,6 @@ def resolve_backend(ref: Callable[[], Any] | str) -> Any:
     never by pickling, so losing them is loud, not silent.
     """
     if isinstance(ref, str):
-        import importlib  # noqa: PLC0415
-
         mod_name, _, attr = ref.partition(":")
         target = getattr(importlib.import_module(mod_name), attr)
         backend = target() if callable(target) else target

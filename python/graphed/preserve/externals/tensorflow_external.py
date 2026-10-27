@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import tempfile
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 from ._base import ExternalPlugin
@@ -41,9 +43,6 @@ def _tensorflow_content_hash_impl(payload: bytes) -> str:
 
 
 def _keras_load_from_bytes(payload: bytes) -> Any:
-    import tempfile  # noqa: PLC0415
-    from pathlib import Path  # noqa: PLC0415
-
     import keras  # noqa: PLC0415
 
     with tempfile.TemporaryDirectory() as tmp:  # keras loads from a path; fully in-memory after
@@ -73,9 +72,6 @@ def eval_tensorflow(model: Any, params: Mapping[str, Any], inputs: list[Any]) ->
 
 
 def _tensorflow_samples() -> list[bytes]:
-    import tempfile  # noqa: PLC0415
-    from pathlib import Path  # noqa: PLC0415
-
     import keras  # noqa: PLC0415
     import numpy as np  # noqa: PLC0415
 

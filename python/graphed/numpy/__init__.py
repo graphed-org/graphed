@@ -23,6 +23,7 @@ import numpy as np
 from graphed import Array, Session
 from graphed.array import check_leading_ellipsis, decode_subscript
 from graphed.core import PayloadDescriptor
+from graphed.shuffle import join_blocks
 
 from . import shuffle
 from .array import NumpyArray, _f, _i
@@ -523,9 +524,6 @@ class NumpyBackend:
         if op == "pack_key":
             return shuffle.pack_key(inputs[0], _decode_on(params["on"]))
         if op == "join":
-            # local: avoid import-order coupling
-            from graphed.shuffle import join_blocks  # noqa: PLC0415
-
             return join_blocks(
                 self,
                 inputs[0],

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 from collections.abc import Mapping
 from typing import Any
 
@@ -23,8 +24,6 @@ def pytorch_content_hash(payload: bytes) -> str:
 
 def _pytorch_content_hash_impl(payload: bytes) -> str:
     """Weights (sorted state_dict) + TorchScript code — stable across re-saves of one model."""
-    import io  # noqa: PLC0415
-
     import torch  # noqa: PLC0415
 
     model = torch.jit.load(io.BytesIO(payload), map_location="cpu")
@@ -38,8 +37,6 @@ def _pytorch_content_hash_impl(payload: bytes) -> str:
 
 def load_pytorch(payload: bytes, params: Mapping[str, Any]) -> Any:
     """Load a TorchScript payload on the CPU, in eval mode."""
-    import io  # noqa: PLC0415
-
     import torch  # noqa: PLC0415
 
     model = torch.jit.load(io.BytesIO(payload), map_location="cpu")
@@ -72,8 +69,6 @@ def eval_pytorch(model: Any, params: Mapping[str, Any], inputs: list[Any]) -> An
 
 
 def _pytorch_samples() -> list[bytes]:
-    import io  # noqa: PLC0415
-
     import torch  # noqa: PLC0415
 
     def _model(weight: float) -> bytes:
