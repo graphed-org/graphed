@@ -274,7 +274,7 @@ impl GraphStore {
     /// `(cone id, None)`.
     pub(crate) fn cone(&self, outputs: &[NodeId]) -> Result<Self, BadNodeId> {
         let nodes = self.arena_holding(outputs)?;
-        let (kept, outs, remap) = optimizer::dead_code_elimination(&nodes, outputs);
+        let (kept, outs, remap) = optimizer::dead_code_elimination(&nodes, outputs, None);
         let reduced = optimizer::Reduced {
             nodes: kept,
             outputs: outs.into_iter().map(|o| o as NodeId).collect(),
@@ -419,6 +419,25 @@ mod tests {
                 optimizer::FusionMode::SingleUse
             )
             .is_err());
+    }
+
+    #[test]
+    fn reducing_a_reduced_store_keeps_distinct_same_size_stages() {
+        use crate::optimizer::EggEngine;
+        let s = GraphStore::new();
+        let src = s.add_source("e".into(), pm(vec![]));
+        let a = s.add_op("neg".into(), vec![src], pm(vec![])).unwrap();
+        let b = s.add_op("abs".into(), vec![src], pm(vec![])).unwrap();
+        s.mark_output(a).unwrap();
+        s.mark_output(b).unwrap();
+        let (once, _) = s.reduce(&EggEngine::default());
+        let (twice, _) = once.reduce(&EggEngine::default());
+        assert_eq!((once.node_count(), once.outputs()), (3, vec![1, 2]));
+        assert_eq!(
+            crate::serialize::serialize(&twice).unwrap(),
+            crate::serialize::serialize(&once).unwrap(),
+            "a reduced store is a fixed point of reduce"
+        );
     }
 
     #[test]
