@@ -230,12 +230,14 @@ class PartitionedSource(Protocol):
 def sources_read(outputs: Sequence[Any]) -> dict[int, object]:
     """Return the sources ``outputs`` read, by node id.
 
-    Their one Session may record several datasets.
+    Their one Session may record several datasets; outputs from more than one are refused.
     """
-    from .systematics.registration import _source_ids  # noqa: PLC0415  (import cycle)
-
     session = outputs[0].session
-    reached = frozenset[int]().union(*(_source_ids(session, a) for a in outputs))
+    if any(a.session is not session for a in outputs):
+        raise TypeError(
+            "all outputs of sources_read must record into one session; call it once per Session"
+        )
+    reached = frozenset[int]().union(*(session.reachable_sources(a.node_id) for a in outputs))
     return {nid: data for nid, data in session.sources().items() if nid in reached}
 
 

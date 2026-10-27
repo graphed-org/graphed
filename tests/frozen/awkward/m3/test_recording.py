@@ -6,6 +6,8 @@ Any catalog op the frontend cannot record is a failure, not a silent gap — hen
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, cast
+
 import numpy as np
 import pytest
 from analyses import ADL, agc_object_selection, record
@@ -13,6 +15,9 @@ from graphed_corpus import make_events
 
 from graphed import Session
 from graphed.awkward import AwkwardBackend, from_awkward, gak
+
+if TYPE_CHECKING:
+    from graphed.awkward import AwkwardForm
 
 ALL = {**ADL, "agc": agc_object_selection}
 
@@ -36,7 +41,7 @@ def test_dimuon_smoke_records_correct_forms() -> None:
     # forms correct at each step, all metadata-only
     assert "var * float64" in s.form(mass).describe()
     assert "var * bool" in s.form(inwin).describe()
-    assert s.form(mass).is_typetracer
+    assert cast("AwkwardForm", s.form(mass)).is_typetracer
 
 
 def test_repeated_subexpression_interns() -> None:

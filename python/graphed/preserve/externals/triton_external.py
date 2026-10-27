@@ -47,7 +47,7 @@ def _check_triton_params(params: Mapping[str, Any]) -> None:
 
 def triton_http_transport(params: Mapping[str, Any]) -> Any:
     """Return a tritonclient HTTP connection to params['url'], passed as given."""
-    import tritonclient.http as triton_http  # noqa: PLC0415
+    import tritonclient.http as triton_http
 
     return triton_http.InferenceServerClient(url=str(params["url"]))
 
@@ -80,7 +80,7 @@ def _transport_module_and_factory(params: Mapping[str, Any]) -> tuple[Any, Any]:
         return module, getattr(module, attr)
     url = str(params.get("url", ""))
     if "://" not in url:
-        import tritonclient.http as triton_http  # noqa: PLC0415
+        import tritonclient.http as triton_http
 
         return triton_http, triton_http_transport
     return importlib.import_module(_wire(url)[0]), triton_transport

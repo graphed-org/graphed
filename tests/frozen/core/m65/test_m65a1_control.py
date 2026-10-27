@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -66,27 +66,27 @@ def test_run_control_state_machine() -> None:
     c = gc.RunControl()
     assert c.state is gc.RunState.RUNNING
     c.pause()
-    assert c.state is gc.RunState.PAUSED
+    assert cast(gc.RunState, c.state) is gc.RunState.PAUSED
     c.resume()
-    assert c.state is gc.RunState.RUNNING
+    assert cast(gc.RunState, c.state) is gc.RunState.RUNNING
     c.cancel()
-    assert c.state is gc.RunState.CANCELLED
+    assert cast(gc.RunState, c.state) is gc.RunState.CANCELLED
     c.pause()
-    assert c.state is gc.RunState.CANCELLED
+    assert cast(gc.RunState, c.state) is gc.RunState.CANCELLED
     c.resume()
-    assert c.state is gc.RunState.CANCELLED
+    assert cast(gc.RunState, c.state) is gc.RunState.CANCELLED
     c.reset()
-    assert c.state is gc.RunState.RUNNING
+    assert cast(gc.RunState, c.state) is gc.RunState.RUNNING
 
     a = gc.RunControl()
     a.apply("pause")
     assert a.state is gc.RunState.PAUSED
     a.apply("resume")
-    assert a.state is gc.RunState.RUNNING
+    assert cast(gc.RunState, a.state) is gc.RunState.RUNNING
     a.apply("cancel")
-    assert a.state is gc.RunState.CANCELLED
+    assert cast(gc.RunState, a.state) is gc.RunState.CANCELLED
     a.apply("resume")
-    assert a.state is gc.RunState.CANCELLED
+    assert cast(gc.RunState, a.state) is gc.RunState.CANCELLED
     with pytest.raises(ValueError, match="'stop'"):
         a.apply("stop")
     assert [s.value for s in gc.RunState] == ["running", "paused", "cancelled"]

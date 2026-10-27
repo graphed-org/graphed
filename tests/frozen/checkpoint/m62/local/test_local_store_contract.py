@@ -9,6 +9,7 @@ import stat
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import Any
 
 import analyses
 import numpy as np
@@ -19,12 +20,12 @@ from graphed.checkpoint import CheckpointStore, Store, run_resumable
 _SIX = ("completed", "get", "put", "record_done", "record_dead", "dead_letters")
 
 
-def _method(self, *args, **kwargs):
+def _method(self: object, *args: object, **kwargs: object) -> None:
     return None
 
 
 @pytest.mark.parametrize("omitted", _SIX)
-def test_store_satisfies_the_protocol(tmp_path, omitted) -> None:
+def test_store_satisfies_the_protocol(tmp_path: Path, omitted: str) -> None:
     assert isinstance(Store(tmp_path), CheckpointStore)
     five = type("Five", (), {name: _method for name in _SIX if name != omitted})
     six = type("Six", (), dict.fromkeys(_SIX, _method))
@@ -32,7 +33,7 @@ def test_store_satisfies_the_protocol(tmp_path, omitted) -> None:
     assert isinstance(six(), CheckpointStore)
 
 
-def test_get_refuses_bytes_that_do_not_hash_to_their_name(tmp_path) -> None:
+def test_get_refuses_bytes_that_do_not_hash_to_their_name(tmp_path: Path) -> None:
     s = Store(tmp_path)
     h = s.put(b"true bytes")
     (s.objects / h).write_bytes(b"evil bytes")
@@ -42,7 +43,7 @@ def test_get_refuses_bytes_that_do_not_hash_to_their_name(tmp_path) -> None:
     assert (s.objects / h).read_bytes() == b"true bytes"
 
 
-def test_resume_recomputes_a_corrupted_partial_and_heals_it(tmp_path) -> None:
+def test_resume_recomputes_a_corrupted_partial_and_heals_it(tmp_path: Path) -> None:
     plan = analyses.build_plan("analyses:histogram_chunk", 6)
     first = run_resumable(plan, Store(tmp_path))
     assert first.report.executed == 6
@@ -62,7 +63,7 @@ def test_resume_recomputes_a_corrupted_partial_and_heals_it(tmp_path) -> None:
     assert np.array_equal(again.value, analyses.reference())
 
 
-def test_concurrent_identical_puts_never_fail(tmp_path) -> None:
+def test_concurrent_identical_puts_never_fail(tmp_path: Path) -> None:
     for trial in range(20):
         s = Store(tmp_path / f"t{trial}")
         data = random.Random(trial).randbytes(1 << 20)
@@ -84,7 +85,7 @@ def test_concurrent_identical_puts_never_fail(tmp_path) -> None:
 
 @pytest.mark.parametrize("copy_present", [True, False], ids=["present-copy", "no-copy"])
 def test_put_survives_losing_the_rename_race_to_a_present_copy(
-    tmp_path, monkeypatch, copy_present
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, copy_present: bool
 ) -> None:
     data = b"the committed partial"
     h = Store.content_hash(data)
@@ -92,7 +93,7 @@ def test_put_survives_losing_the_rename_race_to_a_present_copy(
     calls: list[str] = []
     lost = PermissionError(13, "sharing violation")
 
-    def fake(src, dst, *args, **kwargs):
+    def fake(src: Any, dst: Any, *args: Any, **kwargs: Any) -> None:
         calls.append(Path(dst).name)
         if copy_present:
             Path(dst).write_bytes(data)
@@ -115,7 +116,7 @@ def test_put_survives_losing_the_rename_race_to_a_present_copy(
     assert set(calls) == {h}
 
 
-def test_put_keeps_the_default_file_mode(tmp_path) -> None:
+def test_put_keeps_the_default_file_mode(tmp_path: Path) -> None:
     old = os.umask(0o022)
     try:
         s = Store(tmp_path / "store")

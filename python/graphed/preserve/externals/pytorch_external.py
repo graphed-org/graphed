@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 from collections.abc import Mapping
 from typing import Any
 
@@ -23,9 +24,7 @@ def pytorch_content_hash(payload: bytes) -> str:
 
 def _pytorch_content_hash_impl(payload: bytes) -> str:
     """Weights (sorted state_dict) + TorchScript code — stable across re-saves of one model."""
-    import io  # noqa: PLC0415
-
-    import torch  # noqa: PLC0415
+    import torch
 
     model = torch.jit.load(io.BytesIO(payload), map_location="cpu")
     h = hashlib.sha256(b"torch-weights-code-v1")
@@ -38,9 +37,7 @@ def _pytorch_content_hash_impl(payload: bytes) -> str:
 
 def load_pytorch(payload: bytes, params: Mapping[str, Any]) -> Any:
     """Load a TorchScript payload on the CPU, in eval mode."""
-    import io  # noqa: PLC0415
-
-    import torch  # noqa: PLC0415
+    import torch
 
     model = torch.jit.load(io.BytesIO(payload), map_location="cpu")
     model.eval()
@@ -49,7 +46,7 @@ def load_pytorch(payload: bytes, params: Mapping[str, Any]) -> Any:
 
 def eval_pytorch(model: Any, params: Mapping[str, Any], inputs: list[Any]) -> Any:
     """Run the TorchScript model on ``inputs``, one value per event."""
-    import torch  # noqa: PLC0415
+    import torch
 
     template = parse_call_template(params, len(inputs))
     # TorchScript takes no implicit cast: feed the dtype the model's weights declare
@@ -72,9 +69,7 @@ def eval_pytorch(model: Any, params: Mapping[str, Any], inputs: list[Any]) -> An
 
 
 def _pytorch_samples() -> list[bytes]:
-    import io  # noqa: PLC0415
-
-    import torch  # noqa: PLC0415
+    import torch
 
     def _model(weight: float) -> bytes:
         m = torch.nn.Sequential(torch.nn.Linear(1, 1), torch.nn.Sigmoid())

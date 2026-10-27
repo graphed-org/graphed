@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import numpy as np
 
 from graphed import Session
@@ -26,7 +28,7 @@ def test_twenty_line_program_builds_correct_graph_and_evaluates() -> None:
     assert isinstance(s.form(total), NumpyForm)
 
     # scaled=[10,40,25,5]; shifted=[10.1,38,26.5,5.3]; selected(mask)=[38,26.5]
-    assert np.isclose(float(s.materialize(total)), 64.5)
+    assert np.isclose(float(cast(Any, s.materialize(total))), 64.5)
     assert np.allclose(s.materialize(doubled), [76.0, 53.0])
 
 

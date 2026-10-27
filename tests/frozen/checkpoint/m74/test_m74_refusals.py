@@ -10,7 +10,7 @@ import sys
 import threading
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import m74_helpers as h
 import pytest
@@ -111,7 +111,7 @@ def test_already_resumable_plan(tmp_path: Path) -> None:
 @pytest.fixture(scope="module")
 def paths(tmp_path_factory: pytest.TempPathFactory) -> list[str]:
     pytest.importorskip("pyarrow")
-    return h.events(tmp_path_factory.mktemp("m74refusals"))
+    return cast("list[str]", h.events(tmp_path_factory.mktemp("m74refusals")))
 
 
 def _keyed(plan: Any) -> list[Partition]:
@@ -164,4 +164,4 @@ def test_allowed(tmp_path: Path, paths: list[str], build: Callable[[list[str]], 
     rp = resumable(plan, str(tmp_path / "store"))
     keyed = _keyed(rp)
     assert keyed
-    assert all(type(p) is not Partition and p.task_id for p in keyed)
+    assert all(type(p) is not Partition and cast(Any, p).task_id for p in keyed)

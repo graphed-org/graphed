@@ -14,7 +14,7 @@ import pickle
 import sys
 import typing
 import weakref
-from typing import Any
+from typing import Any, cast
 
 import awkward as ak
 import cloudpickle
@@ -42,6 +42,8 @@ def plain(value: Any) -> Any:
 def finish(plan: Any, **extra: Any) -> None:
     rp = resumable(plan, STORE)
     value = SequentialRunner().run(rp).value
+    reused: Any
+    tasks: Any
     if isinstance(rp, DurablePlanV2):
         reused, tasks = h.stage_reused(rp), [len(stage.tasks) for stage in rp.stages]
     else:
@@ -101,7 +103,7 @@ plan = aggregate_plan(
 elif LEG == "shuffle_cell":
     # (iv) and (v): ARGS = [cell filename, "class" | "def" | "load", plan file to write or load]
     if ARGS[1] == "load":
-        with open(ARGS[2], "rb") as f:
+        with cast(Any, open(ARGS[2], "rb")) as f:
             finish(pickle.load(f))
     else:
         variant = ARGS[1]
@@ -121,7 +123,7 @@ def emp():
             ARGS[0],
         )
         reduce = ns["red"] if variant == "def" else ns["Red"]()
-        plan = shuffle_plan(
+        plan: Any = shuffle_plan(
             gak.sum(repartition(ns["ev"], n=2).x),
             reduce=reduce,
             combine=ns["comb"],
@@ -139,7 +141,7 @@ elif LEG == "defaults":
         weights: list[float] = dataclasses.field(default_factory=lambda: [1.0, 2.0])
 
         def __call__(self, p: Any, r: Any) -> float:
-            return len(self.names) * self.weights[1] + p.entry_start
+            return cast("float", len(self.names) * self.weights[1] + p.entry_start)
 
     finish(h.plan_of(Cut()))
 
@@ -262,7 +264,11 @@ elif LEG == "result_class":
     first = SequentialRunner().run(resumable(build(), STORE)).value
     again = resumable(build(), STORE)
     second = SequentialRunner().run(again).value
-    print(json.dumps({"reused": again.process.reused, "value": [first.total, second.total]}))
+    print(
+        json.dumps(
+            {"reused": cast(Any, again.process).reused, "value": [first.total, second.total]}
+        )
+    )
 
 elif LEG == "mixin":
     # (xiii): ARGS = [variant, V, destination]
@@ -293,14 +299,17 @@ elif LEG == "mixin":
                 evs, "murf", w, is_weight=True, points={"1": w, "0.5": w * 0.5, "2": w * 2.0}
             )
             rec = gak.zip(
-                {"m": gak.zip({"x": ctx.x}, with_name="Point").mag, "w": graphed.weight(ctx)},
+                {
+                    "m": gak.zip({"x": ctx.x}, with_name="Point").mag,
+                    "w": cast(Any, graphed.weight(ctx)),
+                },
                 depth_limit=1,
             )
             plan = to_parquet(
                 rec, dest, compute=False, behavior="m74_helpers:behavior", select={0: ctx.x > 10}
             )
             column = "m"
-        rp = resumable(plan, STORE)
+        rp: Any = resumable(plan, STORE)
         files = SequentialRunner().run(rp).value
         written = sum(float(ak.sum(ak.from_parquet(f)[column])) for f in files)
         print(
@@ -335,7 +344,7 @@ elif LEG == "uuid_helper":
     from m74_helpers import KERNEL
 
     def kernel_proc(p: Any, r: Any) -> float:
-        return KERNEL(float(p.entry_start))
+        return cast("float", KERNEL(float(p.entry_start)))
 
     finish(
         h.plan_of(kernel_proc),

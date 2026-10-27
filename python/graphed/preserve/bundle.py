@@ -27,6 +27,7 @@ from graphed.errors import OutputTypeError
 from graphed.provenance import Provenance
 from graphed.services import referenced_services
 from graphed.session import CheckedExternal
+from graphed.varied import Varied, member_of, union_labels
 
 from .errors import PreserveError, UnresolvedPayloadError
 from .externals import ResourceCache, evaluate_external, get_plugin
@@ -211,8 +212,6 @@ def build_bundle(
     ``content_hash`` to the correction/model file bytes; ``histogram`` is the ``{name, bins, lo,
     hi}`` spec applied to ``value`` weighted by ``weight``.
     """
-    from graphed.varied import Varied, member_of, union_labels  # noqa: PLC0415  (import cycle)
-
     if (weight is None) != (histogram is None):
         raise PreserveError(
             "weight= and histogram= must be given together (the value/weight/spec triple) or both "

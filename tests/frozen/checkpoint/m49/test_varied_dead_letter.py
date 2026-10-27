@@ -8,18 +8,24 @@ every universe loses it, not only the guilty one. The LABEL that surface names r
 from __future__ import annotations
 
 from collections import Counter
+from typing import TYPE_CHECKING, Any
 
 import m49_analyses
 
 from graphed.checkpoint import Store, run_resumable
 from graphed.checkpoint.retry import Quarantine, RetryN
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
 DESCRIPTOR_KEYS = frozenset(
     {"task_id", "uri", "tree", "entry_start", "entry_stop", "error_type", "error_message"}
 )
 
 
-def _run(store, *, poison, partitions=None, retry=None):
+def _run(
+    store: Store, *, poison: bool, partitions: Any = None, retry: Any = None
+) -> tuple[Any, Any, Any]:
     plan, compiled, tags = m49_analyses.build_plan(poison=poison)
     dp = m49_analyses.durable(plan, compiled)
     if partitions is not None:
@@ -28,7 +34,7 @@ def _run(store, *, poison, partitions=None, retry=None):
     return dp, tags, run_resumable(dp, store, retry=retry)
 
 
-def test_a_poison_free_twin_dead_letters_nothing(tmp_path) -> None:
+def test_a_poison_free_twin_dead_letters_nothing(tmp_path: Path) -> None:
     """Positive control: the fixture's shape, minus the poison, runs every partition clean."""
     dp, tags, res = _run(Store(tmp_path), poison=False)
     assert res.report.dead == 0 and res.report.dead_letters == []
@@ -36,7 +42,7 @@ def test_a_poison_free_twin_dead_letters_nothing(tmp_path) -> None:
     assert len(set(res.value.tolist())) == len(tags)
 
 
-def test_one_poisoned_variation_dead_letters_the_whole_composite(tmp_path) -> None:
+def test_one_poisoned_variation_dead_letters_the_whole_composite(tmp_path: Path) -> None:
     dp, _tags, poisoned = _run(Store(tmp_path / "poisoned"), poison=True)
     first, rest = dp.partitions[0], dp.partitions[1:]
 
@@ -62,7 +68,7 @@ def test_one_poisoned_variation_dead_letters_the_whole_composite(tmp_path) -> No
     assert poisoned.value[nominal] != clean.value[nominal]
 
 
-def test_retry_reruns_the_whole_composite_not_the_failing_universe(tmp_path) -> None:
+def test_retry_reruns_the_whole_composite_not_the_failing_universe(tmp_path: Path) -> None:
     """`process` IS the composite, so an attempt reads the WHOLE partition once.
 
     That is `n+1` times over.
@@ -84,7 +90,9 @@ def test_retry_reruns_the_whole_composite_not_the_failing_universe(tmp_path) -> 
     assert quarantined.value.tobytes() == retried.value.tobytes()
 
 
-def test_the_descriptor_keeps_its_fixed_key_list_and_gains_no_variation_key(tmp_path) -> None:
+def test_the_descriptor_keeps_its_fixed_key_list_and_gains_no_variation_key(
+    tmp_path: Path,
+) -> None:
     _dp, _tags, res = _run(Store(tmp_path), poison=True)
     (descriptor,) = res.report.dead_letters
     # §8.2(ii): the poison is attributed, so M8's `stage_error` sub-descriptor rides along; the

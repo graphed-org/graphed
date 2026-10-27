@@ -7,14 +7,19 @@ it.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 
 import graphed.debug as gd
 import graphed.numpy as gn
 from graphed import Session
 
+if TYPE_CHECKING:
+    from graphed import Array
 
-def _events(s: Session) -> object:
+
+def _events(s: Session) -> Array:
     return gn.from_record(s, "events", pt=np.arange(1.0, 5.0), eta=np.linspace(0, 1, 4))
 
 
@@ -44,7 +49,7 @@ def test_star_hub_is_shared_in_lowering() -> None:
     assert sum(1 for op in g.ops if op.node_id == hub.node_id) == 1  # one shared hub node
 
 
-def _diamond_with_bad_branch(s: Session) -> object:
+def _diamond_with_bad_branch(s: Session) -> Array:
     # the bad branch is a shape-mismatch add (numeric form at record time, raises at eval), so both
     # branches re-converge numerically; apex fans out to the good and the bad branch.
     ev = _events(s)

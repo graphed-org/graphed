@@ -12,10 +12,17 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from ..errors import GraphedError
-from .ambient import _live_factors, _live_riders, _Registration, _row_links, ambient_entries
+from .ambient import (
+    Registration,
+    ambient_entries,
+    live_factors,
+    live_riders,
+    row_links,
+    weight_of,
+)
 from .kinds import Kind
-from .registration import _member_nodes
-from .varied import labels_of
+from .lineage import ContextNode, ambient_of, collections_of, context_session, parent_of
+from .varied import labels_of, member_nodes
 
 if TYPE_CHECKING:
     from ..context import EventContext
@@ -198,14 +205,15 @@ def _link_name(link: tuple[str, str | None]) -> str:
     return "nominal" if label == "nominal" else f"universe:{label}"
 
 
-def _lineage_registrations(ctx: EventContext) -> tuple[_Registration, ...]:
+def _lineage_registrations(ctx: EventContext) -> tuple[Registration, ...]:
     """Every `graphed.vary` call on this lineage, oldest first (§2.7)."""
-    found: list[_Registration] = []
+    found: list[Registration] = []
     node: EventContext | None = ctx
     while node is not None:
-        if node._registration is not None:
-            found.append(node._registration)
-        node = node._parent
+        registration = ambient_of(node).registration
+        if registration is not None:
+            found.append(registration)
+        node = parent_of(node)
     return tuple(reversed(found))
 
 
@@ -220,18 +228,16 @@ def explain(ctx: EventContext) -> Explanation:
     its registered point against those families. The ambient is read exactly as `graphed.weight`
     reads it and nothing else is composed, so a call mints no node a `weight` read would not.
     """
-    from ..context import EventContext  # noqa: PLC0415  (import cycle: the class it guards)
-
-    if not isinstance(ctx, EventContext):
+    if not isinstance(ctx, ContextNode):
         raise GraphedError("graphed.explain reads an event context")
     registrations = _lineage_registrations(ctx)
-    ambient = ctx._ambient_weight()
+    ambient = weight_of(ctx)
     # a row-space change hands its child ONE composed member, which carries no labels of its own:
     # the universe this context is inside is its nominal, and that is the universe it carries
     carried: dict[str, None] = dict.fromkeys(labels_of(ambient) or ("nominal",))
-    for collection in ctx._collections.values():
+    for collection in collections_of(ctx).values():
         carried.update(dict.fromkeys(labels_of(collection)))
-    points = ctx._session._points
+    points = context_session(ctx).systematics.points
     variations: dict[str, Variation] = {}
     for label in carried:
         point = tuple((name, tag) for name, tag in points.get(label, ()))
@@ -265,15 +271,15 @@ def explain(ctx: EventContext) -> Explanation:
     # Read off the LIVE operations, never the listing, which shows an adopted head's product run as
     # the one operation its node is: a run is a product, and its families share nothing.
     shared: dict[str, tuple[str, ...]] = {}
-    riders = _live_riders(ctx)
-    for slot in _live_factors(ctx)[1]:
+    riders = live_riders(ctx)
+    for slot in live_factors(ctx)[1]:
         on_slot = riders[slot].families
         for name in on_slot:
             shared[name] = tuple(other for other in on_slot if other != name)
     # §2.5's registry, by (weight family, collection): the shift that moved the objects a weight
     # family had already read, which is neither fanning out nor independence
     flagged: dict[str, tuple[str, ...]] = {}
-    for family_name, collection in ctx._session._shift_after_weight:
+    for family_name, collection in context_session(ctx).systematics.shift_after_weight:
         flagged[family_name] = tuple(
             dict.fromkeys(
                 (
@@ -297,7 +303,7 @@ def explain(ctx: EventContext) -> Explanation:
             registration.name,
             registration.kind,
             registration.tags,
-            _row_links(registration.context),
+            row_links(registration.context),
             Entry(registration.form, registration.names, registration.varies),
             tuple(
                 variation.point
@@ -315,7 +321,7 @@ def explain(ctx: EventContext) -> Explanation:
             rider.kind,
             dict(rider.families),
             rider.links,
-            _member_nodes(entry),
+            member_nodes(entry),
             rider.fixed,
             rider.fixed_at,
         )
@@ -325,7 +331,7 @@ def explain(ctx: EventContext) -> Explanation:
 
 
 def _origin_of(
-    label: str, point: tuple[tuple[str, str], ...], registrations: Sequence[_Registration]
+    label: str, point: tuple[tuple[str, str], ...], registrations: Sequence[Registration]
 ) -> Variation:
     """§2.7: where one universe came from.
 
@@ -355,7 +361,7 @@ def _origin_of(
     )
 
 
-def _minted_by(label: str, registrations: Sequence[_Registration]) -> _Registration | None:
+def _minted_by(label: str, registrations: Sequence[Registration]) -> Registration | None:
     """Return the family whose coordinate SPELLS `label`.
 
     Its own universe first, then a joint of it — or `None` for a label no registration on this
@@ -371,7 +377,7 @@ def _minted_by(label: str, registrations: Sequence[_Registration]) -> _Registrat
 
 
 def _relations(
-    registration: _Registration,
+    registration: Registration,
     kinds: Mapping[str, Kind],
     minted: Mapping[str, set[str]],
     variations: Sequence[Variation],

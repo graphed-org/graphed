@@ -8,7 +8,7 @@ so the content-addressed ``task_id`` is meaningful.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 
@@ -23,11 +23,11 @@ LO, HI = 0.0, 100.0
 # ---- a deterministic global dataset; a partition is a contiguous slice of it --------------------
 def _all_values() -> np.ndarray:
     rng = np.random.default_rng(SEED)
-    return rng.uniform(LO, HI, size=N_VALUES)
+    return cast("np.ndarray", rng.uniform(LO, HI, size=N_VALUES))
 
 
 def _hist(values: np.ndarray) -> np.ndarray:
-    return np.histogram(values, bins=BINS, range=(LO, HI))[0].astype(np.int64)
+    return cast("np.ndarray", np.histogram(values, bins=BINS, range=(LO, HI))[0].astype(np.int64))
 
 
 # ---- reduction spec (all picklable, all importable by ref) --------------------------------------
@@ -46,7 +46,7 @@ def oom_if_big(partition: Partition, resources: Any) -> np.ndarray:
 def flaky_twice(partition: Partition, resources: Any) -> np.ndarray:
     # transient failure: fails until it has been attempted twice for this partition (state lives in
     # the resources dict, which RetryN reuses across attempts)
-    counts = resources.setdefault("attempts", {})  # type: ignore[union-attr]
+    counts = resources.setdefault("attempts", {})
     key = (partition.entry_start, partition.entry_stop)
     counts[key] = counts.get(key, 0) + 1
     if counts[key] < 2:
@@ -88,7 +88,7 @@ def poison_one(partition: Partition, resources: Any) -> np.ndarray:
 
 
 def hist_add(a: np.ndarray, b: np.ndarray) -> np.ndarray:
-    return a + b
+    return cast("np.ndarray", a + b)
 
 
 def hist_empty() -> np.ndarray:
@@ -106,7 +106,7 @@ def _ir() -> bytes:
 
 
 def partitions(n_chunks: int) -> tuple[Partition, ...]:
-    edges = np.linspace(0, N_VALUES, n_chunks + 1, dtype=int)
+    edges: np.ndarray = np.linspace(0, N_VALUES, n_chunks + 1, dtype=int)
     return tuple(
         Partition("corpus://values", "Events", int(edges[i]), int(edges[i + 1]))
         for i in range(n_chunks)
@@ -140,7 +140,7 @@ def _met_counts(values: object) -> np.ndarray:
     from graphed_corpus.histograms import hist1d  # noqa: PLC0415
 
     h = hist1d(values, bins=HEP_BINS, start=HEP_LO, stop=HEP_HI, name="MET")
-    return np.asarray(h.values(), dtype=np.int64)
+    return cast("np.ndarray", np.asarray(h.values(), dtype=np.int64))
 
 
 def met_chunk(partition: Partition, resources: Any) -> np.ndarray:
@@ -173,7 +173,7 @@ def met_reference() -> np.ndarray:
 
 
 def met_partitions(n_chunks: int) -> tuple[Partition, ...]:
-    edges = np.linspace(0, N_EVENTS_HEP, n_chunks + 1, dtype=int)
+    edges: np.ndarray = np.linspace(0, N_EVENTS_HEP, n_chunks + 1, dtype=int)
     return tuple(
         Partition("corpus://events", "Events", int(edges[i]), int(edges[i + 1]))
         for i in range(n_chunks)

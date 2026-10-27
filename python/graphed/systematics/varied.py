@@ -15,8 +15,9 @@ import functools
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from typing import Any
 
-from ..array import Array, BoundMethod, no_eager_value
+from ..array import Array, BoundMethod, handle_of, no_eager_value
 from ..errors import GraphedError
+from .lineage import unify_contexts
 from .points import Point, restrict
 
 #: §2.2's reserved names: resolving them as label-mapped field access would let
@@ -156,6 +157,45 @@ class Varied:
         return f"Varied(labels={list(self._members)})"
 
 
+# ---- what other modules read of a container -------------------------------------------------
+def members_of(value: object) -> Mapping[str, Member]:
+    """Return a container's `{label: member}`, or `{"nominal": value}` for anything else."""
+    return value._members if isinstance(value, Varied) else {"nominal": value}
+
+
+def tags_of(value: object) -> Mapping[str, tuple[str, ...]]:
+    """Return a container's §1.1 `{family: tags}` map, or `{}` for anything else."""
+    return value._tags if isinstance(value, Varied) else {}
+
+
+def key_for(container: Varied, label: str) -> str:
+    """Return the key of the member §4.6 resolves `label` to."""
+    return container._key_for(label)
+
+
+def member_exact(container: Varied, label: str) -> Member:
+    """Return the member carried under `label`; a `KeyError` names the carried labels."""
+    return container._universe(label)
+
+
+def member_nodes(value: Any) -> tuple[int, ...]:
+    """Return a member's node ids, resolving §2.2's one legal level of nesting."""
+    if not isinstance(value, Varied):
+        return (value.node_id,)
+    return tuple(nid for inner in value._members.values() for nid in member_nodes(inner))
+
+
+def context_of(value: object) -> Any:
+    """Return the §2.3e context handle this value was read through, `None` when it is context-free.
+
+    On a `Varied` it answers with the CONTAINER's handle — the most-derived member handle §2.1
+    binds — which may belong to a non-nominal member.
+    """
+    if isinstance(value, Varied):
+        return value._context
+    return handle_of(value) if isinstance(value, Array) else None
+
+
 # ---- §4.5's Session label -> point registry, read through the nominal member ----------------
 def session_of(value: object) -> Any:
     """Return the Session `value` records into, `None` when it is not a recorded value.
@@ -171,7 +211,7 @@ def session_of(value: object) -> Any:
 def point_registry(value: object) -> Mapping[str, Point]:
     """Return the `{label: point}` registry of the Session `value` records into (§4.5)."""
     session = session_of(value)
-    return {} if session is None else session._points
+    return {} if session is None else session.systematics.points
 
 
 def registered_points(container: Varied) -> dict[str, Point]:
@@ -267,8 +307,6 @@ def most_derived_context(*values: Any) -> object:
 
     `None` when all are context-free.
     """
-    from .accessors import context_of, unify_contexts  # noqa: PLC0415  (import cycle)
-
     return unify_contexts(*(context_of(value) for value in values))
 
 

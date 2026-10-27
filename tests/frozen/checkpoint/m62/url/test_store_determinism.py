@@ -15,7 +15,9 @@ import pytest
 from graphed.checkpoint import FsspecStore, Store, run_resumable
 
 
-def test_plan_bytes_and_task_ids_do_not_depend_on_the_store(store_url, tmp_path) -> None:
+def test_plan_bytes_and_task_ids_do_not_depend_on_the_store(
+    store_url: str, tmp_path: Path
+) -> None:
     plan = h.hist_plan(6)
     before = plan.to_bytes()
     assert before == h.hist_plan(6).to_bytes()
@@ -34,7 +36,7 @@ def test_plan_bytes_and_task_ids_do_not_depend_on_the_store(store_url, tmp_path)
     assert remote_value.tobytes() == local_value.tobytes()
 
 
-def test_import_does_not_load_fsspec(tmp_path) -> None:
+def test_import_does_not_load_fsspec(tmp_path: Path) -> None:
     child = (
         "import sys\n"
         "import graphed.checkpoint\n"
@@ -54,7 +56,7 @@ def test_import_does_not_load_fsspec(tmp_path) -> None:
     assert proc.stdout.split() == ["False", "True"]
 
 
-def test_missing_fsspec_names_the_extra(monkeypatch) -> None:
+def test_missing_fsspec_names_the_extra(monkeypatch: pytest.MonkeyPatch) -> None:
     for name in [k for k in sys.modules if k == "fsspec" or k.startswith("fsspec.")]:
         monkeypatch.setitem(sys.modules, name, None)
     monkeypatch.setitem(sys.modules, "fsspec", None)

@@ -3,9 +3,9 @@
 A **coordinate** is a canonical tag. Three input spellings share one value space — an identifier
 token kept verbatim, a numeric string, and a number (`int`/`float`/`Fraction`, or a numpy scalar,
 read through `numbers` by `tags.python_number`), which is decomposed to an exact (sign, digits,
-power-of-ten) triple and rendered by `tags._render`, the same path a numeric string takes. A number
-is never `str()`-ed into a tag (`str(Fraction(1, 2))` is `"1/2"`, which is
-no tag at all) and coordinates are never compared as floats.
+power-of-ten) triple and rendered by `tags.spell_number`, the same path a numeric string takes.
+A number is never `str()`-ed into a tag (`str(Fraction(1, 2))` is `"1/2"`, which is no tag at
+all) and coordinates are never compared as floats.
 
 A **point** is `{nuisance -> coordinate}` stored as a tuple of pairs sorted by nuisance name, so a
 point is hashable, comparable, and orders deterministically (§5.3). Numeric coordinates are stored
@@ -21,7 +21,7 @@ from collections.abc import Iterable, Mapping
 from fractions import Fraction
 
 from ..errors import GraphedError
-from .tags import _normalize, _render, canonical_tag, numeric_value, python_number
+from .tags import canonical_tag, normalize, numeric_value, python_number, spell_number
 
 
 class Point(tuple[tuple[str, str], ...]):
@@ -114,4 +114,4 @@ def _decimal(value: Fraction, source: object) -> str:
         )
     scale = max(twos, fives)
     digits = value.numerator * 10**scale // value.denominator
-    return _render(*_normalize(digits < 0, str(abs(digits)), -scale), f"{value}")
+    return spell_number(*normalize(digits < 0, str(abs(digits)), -scale), f"{value}")

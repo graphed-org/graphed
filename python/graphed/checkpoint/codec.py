@@ -44,7 +44,7 @@ class NumpyCodec:
 
     def encode(self, value: Any) -> bytes:
         """Save ``value`` as ``.npy`` bytes, without pickling."""
-        import numpy as np  # noqa: PLC0415
+        import numpy as np
 
         buf = io.BytesIO()
         np.save(buf, np.asarray(value), allow_pickle=False)
@@ -52,6 +52,6 @@ class NumpyCodec:
 
     def decode(self, data: bytes) -> Any:
         """Load ``.npy`` bytes, without unpickling."""
-        import numpy as np  # noqa: PLC0415
+        import numpy as np
 
         return np.load(io.BytesIO(data), allow_pickle=False)

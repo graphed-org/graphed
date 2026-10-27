@@ -13,6 +13,8 @@ DurablePlanV2``.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, cast
+
 import pytest
 from shuffle_backends import ListSource, ToyBackend
 
@@ -20,9 +22,16 @@ import graphed
 from graphed import Session, aggregate_plan
 from graphed.core import DurablePlanV2
 
+if TYPE_CHECKING:
+    from graphed import Form
+
 
 def _repartitioned(s: Session):  # type: ignore[no-untyped-def]
-    src = s.source("x", form="f", data=ListSource([{"__joinkey__": i, "v": i} for i in range(12)]))
+    src = s.source(
+        "x",
+        form=cast("Form", "f"),
+        data=ListSource([{"__joinkey__": i, "v": i} for i in range(12)]),
+    )
     return graphed.repartition(src, by="__joinkey__").reduce("sum")
 
 
@@ -63,7 +72,7 @@ def test_single_source_aggregate_plan_is_unchanged() -> None:
     # control: the single-source builder still rejects two partitioned sources (not silently
     # widened).
     s = Session(ToyBackend())
-    a = s.source("a", form="f", data=ListSource([{"__joinkey__": 1}]))
-    b = s.source("b", form="f", data=ListSource([{"__joinkey__": 2}]))
+    a = s.source("a", form=cast("Form", "f"), data=ListSource([{"__joinkey__": 1}]))
+    b = s.source("b", form=cast("Form", "f"), data=ListSource([{"__joinkey__": 2}]))
     with pytest.raises(TypeError, match="partitioned source"):
         aggregate_plan(a, b, reduce=lambda vs: vs, combine=lambda x, y: x, empty=lambda: None)

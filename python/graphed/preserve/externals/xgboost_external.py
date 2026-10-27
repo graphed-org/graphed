@@ -24,7 +24,7 @@ def xgboost_content_hash(payload: bytes) -> str:
 
 def load_xgboost(payload: bytes, params: Mapping[str, Any]) -> Any:
     """Load an XGBoost booster from its JSON payload."""
-    import xgboost as xgb  # noqa: PLC0415
+    import xgboost as xgb
 
     booster = xgb.Booster()
     booster.load_model(bytearray(json_bytes(payload)))
@@ -44,7 +44,7 @@ def eval_xgboost(booster: Any, params: Mapping[str, Any], inputs: list[Any]) -> 
         matrix = ml_matrix(args[0], inputs)
     else:
         matrix = _stack_feature_columns(inputs)
-    import xgboost as xgb  # noqa: PLC0415
+    import xgboost as xgb
 
     return _as_event_array(booster.predict(xgb.DMatrix(matrix)))
 

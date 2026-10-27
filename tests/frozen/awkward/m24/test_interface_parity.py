@@ -13,6 +13,7 @@ concerns) and behavior (backend-owned, M18 — never a per-call kwarg).
 from __future__ import annotations
 
 import inspect
+from typing import cast
 
 import awkward as ak
 import numpy as np
@@ -246,6 +247,6 @@ def test_new_parameters_are_deterministic_in_the_ir() -> None:
         s, (a, b) = _session(JAGGED, JAGGED)
         rec = gak.zip({"x": a, "y": b}, with_name="p", parameters={"k": "v"})
         out = gak.sum(gak.combinations(rec, 2, replacement=True)["0"].x, axis=1, keepdims=True)
-        return s.serialized_ir(out)
+        return cast("bytes", s.serialized_ir(out))
 
     assert build() == build()

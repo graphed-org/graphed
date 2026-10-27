@@ -9,6 +9,8 @@ against a tree with no m53 implementation (TEST_SANITY §5-1).
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, cast
+
 import pytest
 from m52_point_fixtures import (
     DEFAULT_POINT_MAPS,
@@ -22,6 +24,9 @@ from m52_point_fixtures import (
 )
 
 import graphed
+
+if TYPE_CHECKING:
+    from graphed import Varied
 
 
 @pytest.mark.parametrize("shape", EXISTING_SHAPES)
@@ -48,7 +53,9 @@ def test_the_ambient_weights_axes_include_the_inherited_shift_family() -> None:
     ambient = graphed.weight(ctx)
 
     assert "jes_up" in graphed.labels(ambient)
-    assert "jes" not in ambient._tags  # the witness that `_tags` is the wrong source
+    assert (
+        "jes" not in cast("Varied", ambient)._tags
+    )  # the witness that `_tags` is the wrong source
 
     reported = graphed.points(ambient)
     assert reported["jes_up"] == {"jes": "up"}

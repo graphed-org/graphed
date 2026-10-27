@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import awkward as ak
 from graphed_corpus import make_events
@@ -138,7 +138,7 @@ def m57_delta(ctx: Any, name: str, handle: Any, scale: Mapping[str, float] = MU)
 # ---- the oracle ------------------------------------------------------------------------------
 def m57_values(session: Session, value: Any) -> list[Any]:
     """`value` materialised as a Python list — the comparison every value leg makes."""
-    return ak.to_list(session.materialize(value))
+    return cast("list[Any]", ak.to_list(session.materialize(value)))
 
 
 @dataclass(frozen=True)
@@ -392,7 +392,7 @@ class M57OpSpy:
         return self
 
     def __exit__(self, *exc: object) -> None:
-        del self._session.record_op  # type: ignore[attr-defined]
+        del self._session.record_op
 
 
 def m57_explain(ctx: Any) -> Any:

@@ -8,13 +8,18 @@ program serialize to byte-identical reduced IR.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 
 import graphed.numpy as gn
 from graphed import Session
 
+if TYPE_CHECKING:
+    from graphed import Array
 
-def _events(s: Session) -> object:
+
+def _events(s: Session) -> Array:
     return gn.from_record(
         s,
         "events",

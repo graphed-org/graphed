@@ -131,7 +131,7 @@ class NetworkMonitor:
         self._buf.append(item)
 
     def _connect(self) -> Any:
-        import websocket  # noqa: PLC0415 (optional dep, imported lazily)
+        import websocket
 
         conn = websocket.create_connection(self._url, timeout=5)
         if self._control is not None or self.lean_events:
@@ -153,7 +153,7 @@ class NetworkMonitor:
         return conn
 
     def _reader(self, conn: Any) -> None:
-        import websocket  # noqa: PLC0415 (optional dep, imported lazily)
+        import websocket
 
         assert self._control is not None
         # any recv() failure but a timeout ends this connection

@@ -7,6 +7,8 @@ that unused sibling columns / collections are absent.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any, cast
+
 import numpy as np
 import pytest
 from graphed_corpus import make_events
@@ -14,6 +16,9 @@ from graphed_corpus import make_events
 from graphed import Session
 from graphed.awkward import AwkwardBackend, from_awkward, gak
 from graphed.awkward.projection import project
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 # the synthetic record's 20 leaf columns, grouped by collection
 ALL_COLUMNS = {
@@ -29,10 +34,10 @@ ALL_COLUMNS = {
 }
 
 
-def _read(build) -> frozenset[str]:
+def _read(build: Callable[[Any], Any]) -> frozenset[str]:
     s = Session(AwkwardBackend())
     events = from_awkward(s, "events", make_events(n_events=200))
-    return project(build(events)).columns_for("events")
+    return cast("frozenset[str]", project(build(events)).columns_for("events"))
 
 
 def test_single_column_reads_exactly_that_column() -> None:
@@ -63,7 +68,7 @@ def test_met_pt_does_not_touch_met_phi() -> None:
 
 
 def test_dimuon_does_not_touch_unused_muon_mass_or_other_collections() -> None:
-    def dimuon(e: object) -> object:
+    def dimuon(e: Any) -> object:
         pairs = gak.combinations(e.Muon, 2, fields=["a", "b"])
         a, b = pairs.a, pairs.b
         mass = np.sqrt(2 * a.pt * b.pt * (np.cosh(a.eta - b.eta) - np.cos(a.phi - b.phi)))
@@ -88,7 +93,7 @@ def test_dimuon_does_not_touch_unused_muon_mass_or_other_collections() -> None:
         ),
     ],
 )
-def test_read_set_is_minimal(build, expected: set[str]) -> None:
+def test_read_set_is_minimal(build: Callable[[Any], Any], expected: set[str]) -> None:
     read = _read(build)
     assert read == frozenset(expected)
     assert not (read - frozenset(expected)), f"over-touched: {sorted(read - frozenset(expected))}"

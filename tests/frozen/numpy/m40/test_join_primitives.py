@@ -11,6 +11,8 @@ blocks (the corpus-skim bit-for-bit test lives in ``frozen/frontend/m40``).
 
 from __future__ import annotations
 
+from typing import cast
+
 import numpy as np
 
 from graphed.numpy import NumpyBackend, shuffle
@@ -21,7 +23,7 @@ _KEY = "__joinkey__"
 def _rec(keys: list[int], **cols: object) -> np.ndarray:
     """Return a record block: the u64 ``__joinkey__`` column plus named data columns."""
     dt = [(_KEY, np.uint64), *[(k, np.asarray(v).dtype) for k, v in cols.items()]]
-    a = np.zeros(len(keys), dtype=dt)
+    a: np.ndarray = np.zeros(len(keys), dtype=dt)
     a[_KEY] = np.asarray(keys, dtype=np.uint64)
     for k, v in cols.items():
         a[k] = np.asarray(v)
@@ -78,7 +80,7 @@ def test_merge_records_is_union_of_fields_minus_duplicate_key() -> None:
 def _inner_join(be: NumpyBackend, left: np.ndarray, right: np.ndarray) -> np.ndarray:
     """Return the generic kernel composed from the numpy primitives (§B-14 shape)."""
     b, p = be.match_indices(left, right, on=[_KEY], how="inner")
-    return be.merge_records(be.take(left, b), be.take(right, p), on=[_KEY])
+    return cast(np.ndarray, be.merge_records(be.take(left, b), be.take(right, p), on=[_KEY]))
 
 
 def test_inner_join_matches_a_duplicating_sql_baseline() -> None:

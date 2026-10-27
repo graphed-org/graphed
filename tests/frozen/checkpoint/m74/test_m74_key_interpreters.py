@@ -7,7 +7,7 @@ ones under another ``PYTHONHASHSEED`` (plan §4.1 T2 (i)-(xv)).
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import m74_helpers as h
 import pytest
@@ -26,7 +26,9 @@ def data(tmp_path_factory: pytest.TempPathFactory) -> str:
 
 
 def leg(name: str, store: Path, data: str, *args: str, seed: str = "1") -> dict[str, Any]:
-    return h.run_script("m74_xleg.py", name, str(store), data, *args, seed=seed)
+    return cast(
+        "dict[str, Any]", h.run_script("m74_xleg.py", name, str(store), data, *args, seed=seed)
+    )
 
 
 def filled_then_reused(name: str, store: Path, data: str, *args: str) -> dict[str, Any]:

@@ -38,6 +38,7 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from ...services import UnboundServiceError
+from ...varied import containers_in, expand
 from ..errors import PreserveError
 
 ContentHash = Callable[[bytes], str]
@@ -277,8 +278,6 @@ def record_external(
     session's backend accepts, see ``Session.record_external``); it is recorded as the node's form
     and its canonical string joins the node's params.
     """
-    from ...varied import containers_in, expand  # noqa: PLC0415  (`varied` imports `Array`)
-
     if containers_in(*inputs):  # one External per universe, as `graphed.apply` records
         return expand(
             lambda *members: record_external(

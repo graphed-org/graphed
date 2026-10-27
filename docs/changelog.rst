@@ -21,6 +21,12 @@ Several datasets in one Session
   source columns those Arrays use, as a plan over them would. A plan over several Sessions is
   ``graphed.collate``, which ``aggregate_plan``'s refusal now names (#103).
 
+Interrupts stop a resumable run
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``run_resumable`` lets a ``KeyboardInterrupt`` or ``SystemExit`` raised inside a task stop the
+  run: it recorded them as dead letters and carried on with the next partition (#111).
+
 A plan finalizes its value on the driver
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -56,6 +62,26 @@ Fixes
 * Those two orderings change the optimized IR bytes against 0.0.9 for some programs, so a 0.0.9
   checkpoint of such a program recomputes on resume under 0.0.10; results are unchanged
   (#105, #117).
+
+The systematics internals, reorganized
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``graphed.systematics`` is split by owner, and its imports run one way: a Session's variation
+  registries are one ``Session.systematics`` object, an event context's ambient weight is one
+  record that ``graphed.systematics.ambient`` alone builds, and a value's context stamping lives
+  in ``graphed.systematics.handles``. What ``vary``, the readers and the plans produce is
+  unchanged (#113).
+* ``graphed.vary`` on a Session shared between threads is atomic: a failing ``vary`` in one
+  thread rolled back the registry to its own snapshot, erasing a ``vary`` another thread had
+  minted meanwhile, and ``graphed.explain`` could raise while another thread minted (#113).
+* ``Session.reachable_sources(node_id)`` and ``Session.recorded_op(node_id)`` answer which sources
+  a node reads and what op recorded it.
+* ``graphed.write.sources_read`` refuses outputs from more than one Session with a
+  ``TypeError``; it answered with the first output's Session's sources alone.
+* ``graphed.systematics.registration.vary`` is ``graphed.systematics.verb.vary``;
+  ``graphed.vary`` and ``graphed.systematics.vary`` are unchanged. The compatibility modules
+  (``graphed.vary``, ``graphed.varied``, ``graphed.accessors``, ``graphed.context`` and the rest)
+  keep every public name and stop re-exporting private ones.
 
 0.0.9
 -----

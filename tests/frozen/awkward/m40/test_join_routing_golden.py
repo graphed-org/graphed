@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Any
 
 import awkward as ak
 import numpy as np
@@ -64,7 +65,7 @@ def test_pack_key_zero_high_fields_routes_per_the_m39_golden_vectors() -> None:
         ),
     )
     packed = graphed.pack_key(src, on=("run", "lumi", "event"))
-    out = s.materialize(packed)
+    out: Any = s.materialize(packed)
     got = dict(zip(_SMALL_EVENTS, (int(v) for v in out["__joinkey__"].to_list()), strict=True))
 
     for e in _SMALL_EVENTS:

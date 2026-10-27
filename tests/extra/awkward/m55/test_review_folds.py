@@ -33,7 +33,7 @@ def _weighted_jes_context() -> tuple[Any, Any]:
 
 
 def _diagnostics(session: Any) -> tuple[dict[Any, Any], list[Any]]:
-    return dict(session._shift_after_weight), list(session._weight_factors)
+    return dict(session.systematics.shift_after_weight), list(session.systematics.weight_factors)
 
 
 def test_the_kwargs_spelling_takes_a_varied_member() -> None:

@@ -14,6 +14,8 @@ stays here is the frontend-observable core those assertions are a companion to.
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from vary_ctx_fixtures import events_context, jes_kwargs, pu_weight
 
@@ -22,7 +24,7 @@ from graphed import GraphedError
 from graphed.awkward import gak
 
 
-def _weighted(ctx: object, name: str = "pu") -> object:
+def _weighted(ctx: Any, name: str = "pu") -> Any:
     return graphed.vary(
         ctx,
         name,

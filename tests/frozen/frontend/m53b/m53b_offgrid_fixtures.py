@@ -100,7 +100,7 @@ def scale_grid() -> tuple[Session, EventContext, Any]:
     mu_r = graphed.vary(
         ctx, "muR", pt * 0.5, is_weight=True, points={"2": pt * 0.6, "0.5": pt * 0.4}
     )
-    ambient = graphed.weight(mu_r)
+    ambient: Any = graphed.weight(mu_r)
     mu_f = graphed.vary(
         mu_r, "muF", ambient, is_weight=True, points={"2": ambient * 1.3, "0.5": ambient * 0.7}
     )
@@ -118,7 +118,7 @@ def offdiag_axes() -> tuple[Session, EventContext, Any]:
     jes = graphed.vary(
         ctx, "jes", pt * 0.5, is_weight=True, points={"1": pt * 0.6, "-1": pt * 0.4}
     )
-    ambient = graphed.weight(jes)
+    ambient: Any = graphed.weight(jes)
     btag = graphed.vary(
         jes, "btag", ambient, is_weight=True, points={"1": ambient * 1.3, "-1": ambient * 0.7}
     )
@@ -148,8 +148,8 @@ def triple_numeric() -> tuple[Session, EventContext, Any]:
     jes = graphed.vary(
         ctx, "jes", pt * 0.5, is_weight=True, points={"1": pt * 0.6, "-1": pt * 0.4}
     )
-    w1 = graphed.weight(jes)
+    w1: Any = graphed.weight(jes)
     btag = graphed.vary(jes, "btag", w1, is_weight=True, points={"1": w1 * 1.3, "-1": w1 * 0.7})
-    w2 = graphed.weight(btag)
+    w2: Any = graphed.weight(btag)
     jer = graphed.vary(btag, "jer", w2, is_weight=True, points={"1": w2 * 1.1, "-1": w2 * 0.9})
     return session, jer, pt

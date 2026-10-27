@@ -17,7 +17,7 @@ def test_pickle_codec_roundtrips_and_is_deterministic() -> None:
 
 def test_numpy_codec_roundtrips_and_is_deterministic() -> None:
     c = NumpyCodec()
-    arr = np.arange(12, dtype=np.int64).reshape(3, 4)
+    arr: np.ndarray = np.arange(12, dtype=np.int64).reshape(3, 4)
     out = c.decode(c.encode(arr))
     assert np.array_equal(out, arr)
     assert c.encode(arr) == c.encode(arr)

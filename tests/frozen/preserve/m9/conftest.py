@@ -12,7 +12,7 @@ import os
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 
-from typing import Any
+from typing import Any, cast
 
 import agc
 import numpy as np
@@ -26,4 +26,4 @@ def agc_bundle(tmp_path_factory: pytest.TempPathFactory) -> tuple[Any, np.ndarra
     It is reused by read-only tests.
     """
     root = tmp_path_factory.mktemp("agc_bundle")
-    return agc.build_agc(root)
+    return cast("tuple[Any, np.ndarray]", agc.build_agc(root))

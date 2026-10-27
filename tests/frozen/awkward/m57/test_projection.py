@@ -59,7 +59,7 @@ def test_naming_a_factor_that_does_not_own_the_label_joins_it_and_keeps_the_univ
     """
     base = m57_two_factors()
     projected = graphed.universe(base.ctx, "hf_up")
-    adopted = graphed.weight(projected)
+    adopted: Any = graphed.weight(projected)
     pu2 = m57_scaled(base.pu, NU)
 
     registered = m57_weight(projected, "pu2", _at(base.pu, projected), _members_at(pu2, projected))
@@ -276,7 +276,7 @@ def test_at_a_shift_label_the_re_derived_sf_joins_the_shift_dependent_factor() -
     after = m57_weight(shifted, "pu", pu, m57_scaled(pu, PU))
     after = m57_weight(after, "hf", central, m57_table_members(sjets, HF_TABLE))
     projected = graphed.universe(after, "jes_up")
-    adopted = graphed.weight(projected)
+    adopted: Any = graphed.weight(projected)
     recorded = m57_sf(projected["Jet"])
     assert recorded.node_id == graphed.member_of(central, "jes_up").node_id
 
@@ -307,7 +307,7 @@ def test_at_a_shift_label_a_join_without_that_coordinate_keeps_the_other_factors
     after = m57_weight(shifted, "pu", pu, m57_scaled(pu, PU))
     after = m57_weight(after, "hf", central, m57_table_members(sjets, HF_TABLE))
     projected = graphed.universe(after, "jes_up")
-    adopted = graphed.weight(projected)
+    adopted: Any = graphed.weight(projected)
     shifted_sf = m57_sf(projected["Jet"])
 
     joined = m57_weight(
@@ -348,7 +348,7 @@ def test_inside_an_overlays_universe_a_post_overlay_join_multiplies_and_a_covere
     after = m57_delta(after, "mu", prefix)
     after = m57_weight(after, "trig", trig, m57_scaled(trig, TRIG))
     projected = graphed.universe(after, "mu_up")
-    adopted = graphed.weight(projected)
+    adopted: Any = graphed.weight(projected)
     probe = m57_table_members(jets, MF_TABLE)
 
     # a family joining the factor registered AFTER the overlay multiplies the overlay's result
@@ -396,7 +396,7 @@ def test_below_a_further_projection_the_post_overlay_join_keeps_the_overlays_fac
         outer, "mf", m57_sf(jets, 0.5) * 1.0, _members_at(m57_table_members(jets, MF_TABLE), outer)
     )
     inner = graphed.universe(deeper, "mf_up")
-    adopted = graphed.weight(inner)
+    adopted: Any = graphed.weight(inner)
 
     joined = m57_weight(inner, "trig2", _at(trig, inner), _members_at(m57_scaled(trig, NU), inner))
     assert m57_node(graphed.weight(joined)) == adopted.node_id
@@ -424,7 +424,7 @@ def test_a_fixed_overlay_stays_fixed_through_a_further_row_space_link() -> None:
     after = m57_delta(after, "mu", prefix)
     after = m57_weight(after, "trig", trig, m57_scaled(trig, TRIG))
     projected = graphed.universe(after, "mu_up")
-    adopted = graphed.weight(projected)
+    adopted: Any = graphed.weight(projected)
     expanded = m57_weight(
         projected, "trig2", _at(trig, projected), _members_at(m57_scaled(trig, NU), projected)
     )
@@ -457,7 +457,7 @@ def test_a_parent_built_projected_nominal_is_an_overlay_after_the_head() -> None
         projected = graphed.universe(base.ctx, "hf_up")
         if extra_read:
             graphed.weight(projected)
-        adopted = graphed.weight(projected)
+        adopted: Any = graphed.weight(projected)
         registered = m57_delta(projected, "mu", _at(parent_member, projected))
         weight = graphed.weight(registered)
         assert m57_node(weight) == adopted.node_id, extra_read
@@ -507,7 +507,7 @@ def test_at_the_nominal_projection_a_re_derived_central_joins_while_a_weight_lab
     )
 
     projected = graphed.universe(base.ctx, "hf_up")
-    adopted = graphed.weight(projected)
+    adopted: Any = graphed.weight(projected)
     weight_probe = m57_table_members(projected["Jet"], LF_TABLE)
     factored = m57_weight(projected, "lf", m57_sf(projected["Jet"], 0.5) * 1.0, weight_probe)
     factor_ops = [

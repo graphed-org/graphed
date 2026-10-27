@@ -17,7 +17,7 @@ control.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from m51_write_fixtures import events_context
@@ -37,7 +37,7 @@ def _optimizer_mergeable_record(events: Any) -> tuple[Any, Any]:
     """
     w = gak.prod(1.0 + events.Jet.btag, axis=1)
     ctx = graphed.vary(events, "sys", w, is_weight=True, points={"one": w * 1.0})
-    record = gak.zip({"met": events.MET.pt, "w": graphed.weight(ctx)}, depth_limit=1)
+    record = gak.zip({"met": events.MET.pt, "w": cast(Any, graphed.weight(ctx))}, depth_limit=1)
     return record, events.MET.pt > 0.0
 
 
@@ -46,7 +46,7 @@ def test_optimizer_mergeable_label_is_refused_at_the_call(tmp_path) -> None:  # 
     record, evt_mask = _optimizer_mergeable_record(events)
     # record-time: the shortfall is caught at the call, so even compute=False raises
     with pytest.raises(GraphedError, match=r"merge|optimiz"):
-        ga.to_parquet(record, str(tmp_path / "merge"), select={0: evt_mask}, compute=False)  # type: ignore[call-arg]
+        ga.to_parquet(record, str(tmp_path / "merge"), select={0: evt_mask}, compute=False)
 
 
 def test_unvaried_write_path_is_unchanged(tmp_path) -> None:  # type: ignore[no-untyped-def]

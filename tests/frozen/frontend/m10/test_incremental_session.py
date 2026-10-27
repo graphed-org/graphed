@@ -8,6 +8,8 @@ the node count regardless of build shape), and that the default session is untou
 
 from __future__ import annotations
 
+from typing import cast
+
 from m10_toy import CountingListBackend, from_list
 
 from graphed import Array, Session, compile_ir
@@ -19,7 +21,7 @@ def _build(session: Session, n: int = 30) -> Array:
     cur = a + b
     for _ in range(n):
         cur = (cur * 1.0) + (b + a)  # identity + commuted-twin chaff, folded as it is recorded
-    return cur.reduce("sum")
+    return cast(Array, cur.reduce("sum"))
 
 
 def test_incremental_serialized_ir_is_byte_identical_to_one_shot() -> None:

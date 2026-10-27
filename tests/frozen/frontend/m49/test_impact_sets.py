@@ -5,6 +5,8 @@ And the two-form operand rejection both m49 verbs share (§3.4, §12.4(1)).
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from m49_vary_fixtures import (
     flat_projection_program,
@@ -21,7 +23,7 @@ from graphed.numpy import NumpyBackend
 VERBS = ("impact_by_label", "read_columns_by_label")
 
 
-def _call(verb: str, operand: object) -> object:
+def _call(verb: str, operand: Any) -> object:
     """Both m49 verbs over one operand.
 
     The stats verb additionally takes `read_columns`' own `source_nid`, which the rejection must

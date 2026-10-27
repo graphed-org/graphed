@@ -10,6 +10,8 @@ coordinate to be a registered tag of its nuisance, which means the default label
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
+
 import pytest
 from m52_point_fixtures import (
     JOINT_FACTOR,
@@ -25,6 +27,9 @@ import graphed
 from graphed.context import EventContext
 from graphed.errors import GraphedError
 from graphed.varied import rebuild
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 def test_r2_verbatim_against_numerically_tagged_families() -> None:
@@ -156,7 +161,7 @@ def test_a_joint_point_registered_before_its_axis_exists_is_refused() -> None:
     }
 
 
-def _ambient_carrier() -> tuple[EventContext, object]:
+def _ambient_carrier() -> tuple[EventContext, Any]:
     """Return a context whose ambient WEIGHT carries `jes` while its `_tags` is EMPTY (§8-g).
 
     The corr member is read off that weight, so it CARRIES the jes universes a `_tags` walk cannot
@@ -171,7 +176,7 @@ def _ambient_carrier() -> tuple[EventContext, object]:
     return ctx, graphed.weight(ctx)
 
 
-def _collection_carrier() -> tuple[EventContext, object]:
+def _collection_carrier() -> tuple[EventContext, Any]:
     """Return a context whose Varied COLLECTION carries `jer`; the corr member is read off it."""
     session, record = source()
     pt = record["pt"]
@@ -184,7 +189,9 @@ def _collection_carrier() -> tuple[EventContext, object]:
     ("builder", "nuisance"),
     [(_ambient_carrier, "jes"), (_collection_carrier, "jer")],
 )
-def test_the_reachability_walk_reads_carried_labels_not_tags(builder, nuisance: str) -> None:
+def test_the_reachability_walk_reads_carried_labels_not_tags(
+    builder: Callable[[], tuple[EventContext, Any]], nuisance: str
+) -> None:
     """§8-g / §4.11-4.
 
     A coordinate is reachable when the MEMBER carries that universe, even when the carrier's

@@ -76,7 +76,7 @@ def _calls(own: Session, mine: Any, foreign: Any) -> dict[str, Callable[[], obje
         "materialize": lambda: own.materialize(foreign),
         "provenance": lambda: own.provenance(foreign),
         "serialized_ir": lambda: own.serialized_ir(foreign, optimize=False),
-        "walk": lambda: own.walk(foreign, **walk_handlers()),  # type: ignore[arg-type]
+        "walk": lambda: own.walk(foreign, **walk_handlers()),
     }
 
 

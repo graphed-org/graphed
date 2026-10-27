@@ -16,7 +16,7 @@ Freeze-time spellings this suite pins (the implementer inherits them):
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import awkward as ak
 import numpy as np
@@ -27,7 +27,7 @@ from graphed import Session, labels, universe, vary
 from graphed.awkward import AwkwardBackend, from_awkward, gak
 from graphed.preserve import UnresolvedPayloadError, build_bundle, inspect, reproduce
 
-HIST = {"name": "w", "bins": 10, "lo": 0.0, "hi": 200.0}
+HIST: dict[str, Any] = {"name": "w", "bins": 10, "lo": 0.0, "hi": 200.0}
 _BUMPED_FORMAT_VERSION = 2
 _MANIFEST_LABEL_KEY = "variations"  # under manifest["analysis"]
 _STABLE_DECIMALS = 6  # mirrors preserve._histogram's cross-platform rounding
@@ -37,7 +37,7 @@ def _counts(value: Any, weight: Any) -> np.ndarray:
     v = np.asarray(ak.to_numpy(ak.Array(value)), dtype="float64")
     w = np.asarray(ak.to_numpy(ak.Array(weight)), dtype="float64")
     c, _ = np.histogram(v, bins=HIST["bins"], range=(HIST["lo"], HIST["hi"]), weights=w)
-    return np.round(c, _STABLE_DECIMALS)
+    return cast("np.ndarray", np.round(c, _STABLE_DECIMALS))
 
 
 def _record() -> tuple[Session, Any, Any, Any]:

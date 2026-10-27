@@ -666,6 +666,29 @@ class Array:
         return f"Array(node_id={self._node_id})"
 
 
+# ---- the two §2.3e slots, for the systematics layers ---------------------------------------
+def handle_of(array: Array) -> object:
+    """Return the event-context handle ``array`` was read through, ``None`` when it has none."""
+    return array._context
+
+
+def labels_carried(array: Array) -> frozenset[str] | None:
+    """Return the variation labels flowing into ``array``, ``None`` when none do."""
+    return array._labels
+
+
+def attach(array: Array, context: object, labels: frozenset[str] | None) -> Array:
+    """Give a freshly built ``array`` its context handle and carried labels; return it."""
+    array._context = context
+    array._labels = labels
+    return array
+
+
+def add_labels(array: Array, labels: frozenset[str]) -> None:
+    """Add ``labels`` to the variation labels ``array`` carries."""
+    array._labels = (array._labels or frozenset()) | labels
+
+
 def apply(
     fn: Callable[..., object], *arrays: Array, name: str | None = None, output_type: object = None
 ) -> Array:

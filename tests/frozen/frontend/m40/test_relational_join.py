@@ -18,6 +18,8 @@ Pre-implementation these fail for the right reason: ``graphed`` exposes no ``joi
 
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 from shuffle_backends import COLUMNS, ON, REAL_BACKENDS, BackendCase, pandas_reference, skim_tables
 
@@ -37,7 +39,7 @@ def _join_rows(case: BackendCase, *, how: str = "inner") -> list[tuple[int, ...]
     left = case.make_source(s, "left", left_cols)
     right = case.make_source(s, "right", right_cols)
     joined = graphed.join(left, right, on=ON, how=how)
-    return case.to_rows(s.materialize(joined))
+    return cast("list[tuple[int, ...]]", case.to_rows(s.materialize(joined)))
 
 
 def test_graphed_join_is_a_neutral_module_verb() -> None:

@@ -17,13 +17,15 @@ relational (see ``test_join_primitives.py``), so this convenience is correctly A
 
 from __future__ import annotations
 
+from typing import Any
+
 import awkward as ak
 
 from graphed import Session
 from graphed.awkward import AwkwardBackend, from_awkward, gak
 
 
-def _sources(session: Session) -> tuple[object, object]:
+def _sources(session: Session) -> tuple[Any, Any]:
     # key = (run, lumi, event); left row0 = key(1,1,1) has NO right match, rows1,2 = key(1,1,2)
     # each match BOTH right rows (also key(1,1,2)) -> inner: 0 + 2x2 = 4 output rows, 2 build rows.
     left = from_awkward(
@@ -45,8 +47,8 @@ def test_grouped_join_is_the_relational_result_regrouped_by_unflatten() -> None:
     flat = gak.join(left, right, on=["run", "lumi", "event"], how="inner")
     grouped = gak.join(left, right, on=["run", "lumi", "event"], how="inner", grouped=True)
 
-    fr = s.materialize(flat)
-    gr = s.materialize(grouped)
+    fr: Any = s.materialize(flat)
+    gr: Any = s.materialize(grouped)
 
     # relational baseline: 4 duplicated rows for the matched key.
     assert len(fr) == 4

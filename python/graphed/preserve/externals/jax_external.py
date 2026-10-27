@@ -29,7 +29,7 @@ def jax_content_hash(payload: bytes) -> str:
 
 def _jax_content_hash_impl(payload: bytes) -> str:
     """Location-stripped StableHLO + input/output avals — stable across re-exports of one fn."""
-    from jax import export  # noqa: PLC0415
+    from jax import export
 
     exported = export.deserialize(bytearray(payload))
     h = hashlib.sha256(b"jax-mlir-avals-v1")
@@ -41,7 +41,7 @@ def _jax_content_hash_impl(payload: bytes) -> str:
 
 def load_jax(payload: bytes, params: Mapping[str, Any]) -> Any:
     """Deserialize a ``jax.export`` payload."""
-    from jax import export  # noqa: PLC0415
+    from jax import export
 
     return export.deserialize(bytearray(payload))
 
@@ -58,8 +58,8 @@ def eval_jax(exported: Any, params: Mapping[str, Any], inputs: list[Any]) -> Any
 
 
 def _jax_samples() -> list[bytes]:
-    import jax  # noqa: PLC0415
-    from jax import export  # noqa: PLC0415
+    import jax
+    from jax import export
 
     def _artifact(weight: float) -> bytes:
         def f(x: Any) -> Any:

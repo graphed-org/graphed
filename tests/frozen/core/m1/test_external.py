@@ -5,8 +5,8 @@ from __future__ import annotations
 import graphed.core as gc
 
 
-def _descriptor(**overrides: str) -> dict[str, str]:
-    base = {
+def _descriptor(**overrides: str) -> dict[str, str | None]:
+    base: dict[str, str | None] = {
         "kind": "onnx_model",
         "content_hash": "sha256:abc123",
         "framework": "onnxruntime",

@@ -30,6 +30,7 @@ COALESCE semantics (key never null => non-option), never from the code under tes
 from __future__ import annotations
 
 from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pytest
@@ -37,6 +38,9 @@ from shuffle_backends import ON, REAL_BACKENDS, skim_tables
 
 import graphed
 from graphed import Session
+
+if TYPE_CHECKING:
+    from graphed.awkward import AwkwardForm
 
 _CASES = {c.name: c for c in REAL_BACKENDS}
 
@@ -68,7 +72,7 @@ def _numpy_key_is_option(block: object, key: str) -> bool:
     names = _numpy_field_names(block)
     if f"__valid_{key}__" in names:
         return True
-    col = block[key] if isinstance(block, Mapping) else np.ma.asanyarray(block)[key]  # type: ignore[index]
+    col = block[key] if isinstance(block, Mapping) else np.ma.asanyarray(block)[key]
     return bool(np.ma.isMaskedArray(col) and np.ma.getmaskarray(col).any())
 
 
@@ -94,8 +98,8 @@ def test_awkward_noninner_key_form_matches_materialized_and_is_nonoption(how: st
     right = case.make_source(s, "right", right_cols)
     j = graphed.join(left, right, on=ON, how=how)
 
-    form_tt = s.form(j).tt  # the typetracer array behind the recorded op_form
-    block = s.materialize(j)
+    form_tt = cast("AwkwardForm", s.form(j)).tt  # the typetracer array behind the recorded op_form
+    block: Any = s.materialize(j)
     for k in ON:
         declared = _leaf_type(form_tt[k])
         produced = _leaf_type(block[k])

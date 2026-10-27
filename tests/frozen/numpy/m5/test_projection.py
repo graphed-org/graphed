@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import warnings
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pytest
@@ -10,8 +11,11 @@ import pytest
 import graphed.numpy as gn
 from graphed import ProjectionError, Session
 
+if TYPE_CHECKING:
+    from graphed import Array
 
-def _events(s: Session) -> object:
+
+def _events(s: Session) -> Array:
     return gn.from_record(
         s,
         "events",
@@ -44,7 +48,9 @@ def test_projection_correctness_against_materialize() -> None:
     s = Session(gn.NumpyBackend())
     events = _events(s)
     out = (events["pt"] * 2.0 + events["eta"]).reduce("sum")
-    assert np.isclose(float(s.materialize(out)), 2 * (10 + 40 + 25 + 5) + (0.1 - 2 + 1.5 + 0.3))
+    assert np.isclose(
+        float(cast(Any, s.materialize(out))), 2 * (10 + 40 + 25 + 5) + (0.1 - 2 + 1.5 + 0.3)
+    )
 
 
 def test_flat_source_is_whole_buffer() -> None:

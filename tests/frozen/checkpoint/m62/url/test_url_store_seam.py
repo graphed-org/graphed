@@ -10,6 +10,7 @@ import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import analyses
 import m62_url_helpers as h
@@ -17,6 +18,9 @@ import numpy as np
 import pytest
 
 from graphed.checkpoint import CheckpointStore, FsspecStore, Store, run_resumable
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 def test_fsspec_store_satisfies_the_protocol() -> None:
@@ -35,7 +39,7 @@ def test_fsspec_store_satisfies_the_protocol() -> None:
     assert FsspecStore(url, skip_instance_cache=True).fs is not store.fs
 
 
-def test_url_get_refuses_bytes_that_do_not_hash_to_their_name(store_url) -> None:
+def test_url_get_refuses_bytes_that_do_not_hash_to_their_name(store_url: str) -> None:
     store = FsspecStore(store_url)
     digest = store.put(b"true bytes")
     store.fs.pipe_file(f"{store.objects}/{digest}", b"evil bytes")
@@ -45,7 +49,7 @@ def test_url_get_refuses_bytes_that_do_not_hash_to_their_name(store_url) -> None
     assert store.fs.cat_file(f"{store.objects}/{digest}") == b"true bytes"
 
 
-def test_url_resume_recomputes_a_corrupted_partial_and_heals_it(store_url) -> None:
+def test_url_resume_recomputes_a_corrupted_partial_and_heals_it(store_url: str) -> None:
     plan = h.hist_plan(6)
     assert run_resumable(plan, FsspecStore(store_url)).report.executed == 6
     blobs = [e.blob for e in FsspecStore(store_url).completed().values()]
@@ -64,7 +68,7 @@ def test_url_resume_recomputes_a_corrupted_partial_and_heals_it(store_url) -> No
     assert np.array_equal(again.value, analyses.reference())
 
 
-def test_url_concurrent_identical_puts_never_fail(store_url) -> None:
+def test_url_concurrent_identical_puts_never_fail(store_url: str) -> None:
     for trial in range(20):
         store = FsspecStore(f"{store_url}/t{trial}")
         data = random.Random(trial).randbytes(1 << 20)
@@ -87,7 +91,7 @@ def test_url_concurrent_identical_puts_never_fail(store_url) -> None:
         assert [p.rsplit("/", 1)[-1] for p in store.fs.find(store.objects)] == [digest]
 
 
-def test_url_put_keeps_the_default_file_mode(tmp_path) -> None:
+def test_url_put_keeps_the_default_file_mode(tmp_path: Path) -> None:
     old = os.umask(0o022)
     try:
         store = FsspecStore("file://" + (tmp_path / "store").as_posix())
@@ -102,7 +106,9 @@ def test_url_put_keeps_the_default_file_mode(tmp_path) -> None:
     assert stat.S_IMODE(blob.stat().st_mode) == stat.S_IMODE(sibling.stat().st_mode)
 
 
-def _records_survive_glob_metacharacters(root_a, root_b) -> None:
+def _records_survive_glob_metacharacters(
+    root_a: Callable[[], Any], root_b: Callable[[], Any]
+) -> None:
     a, b = root_a(), root_b()
     blob_a = a.put(b"partial-A")
     a.record_done("task-A", "uri@0:10", blob_a)
@@ -118,13 +124,13 @@ def _records_survive_glob_metacharacters(root_a, root_b) -> None:
     assert sorted(d["task_id"] for d in reader.dead_letters()) == ["t1", "t2"]
 
 
-def test_root_with_glob_metacharacters_keeps_its_records(store_url) -> None:
+def test_root_with_glob_metacharacters_keeps_its_records(store_url: str) -> None:
     root = f"{store_url}/run[x]"
     _records_survive_glob_metacharacters(
         lambda: FsspecStore(root), lambda: FsspecStore(root, node="B")
     )
 
 
-def test_local_root_with_glob_metacharacters_keeps_its_records(tmp_path) -> None:
+def test_local_root_with_glob_metacharacters_keeps_its_records(tmp_path: Path) -> None:
     root = tmp_path / "run[x]"
     _records_survive_glob_metacharacters(lambda: Store(root), lambda: Store(root, node="B"))

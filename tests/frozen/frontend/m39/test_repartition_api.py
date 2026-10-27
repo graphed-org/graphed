@@ -9,21 +9,28 @@ numpy/awkward, so these run over a toy backend.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any, cast
+
 from shuffle_backends import ListSource, ToyBackend
 
 import graphed
 from graphed import Array, Session, compile_ir
 from graphed.core import GraphStore
 
+if TYPE_CHECKING:
+    from graphed import Form
 
-def _exchange_nodes(session: Session, result: Array) -> list[dict]:
+
+def _exchange_nodes(session: Session, result: Array) -> list[dict[str, Any]]:
     ir = bytes(compile_ir(session, result).ir)
     return [n for n in GraphStore.deserialize(ir).nodes() if n["kind"] == "exchange"]
 
 
 def _src(session: Session) -> Array:
     return session.source(
-        "x", form="f", data=ListSource([{"__joinkey__": i, "v": i} for i in range(8)])
+        "x",
+        form=cast("Form", "f"),
+        data=ListSource([{"__joinkey__": i, "v": i} for i in range(8)]),
     )
 
 

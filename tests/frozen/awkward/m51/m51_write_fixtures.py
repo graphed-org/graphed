@@ -47,7 +47,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 import awkward as ak
 import numpy as np
@@ -237,7 +237,7 @@ def weight_skim_inputs(events: Any) -> tuple[Any, Any]:
     level-0 event mask.
     """
     ctx = weight_collapse_context(events)
-    amb = graphed.weight(ctx)
+    amb: Any = graphed.weight(ctx)
     record = gak.zip({"met_pt": events.MET.pt, "w": amb}, depth_limit=1)
     threshold = float(np.median(np.asarray(EVENTS.MET.pt)))
     evt_mask = ctx.MET.pt > threshold
@@ -271,7 +271,7 @@ def rowspace_negative_inputs(events: Any) -> tuple[Any, Any]:
     """
     c = _sf_context(events)
     sel = c[gak.num(c.Jet) >= 2]
-    record = gak.zip({"met": c.MET.pt, "w": graphed.weight(sel)}, depth_limit=1)
+    record = gak.zip({"met": c.MET.pt, "w": cast(Any, graphed.weight(sel))}, depth_limit=1)
     threshold = float(np.median(np.asarray(EVENTS.MET.pt)))
     return record, c.MET.pt > threshold
 
@@ -283,7 +283,7 @@ def rowspace_positive_inputs(events: Any) -> tuple[Any, Any]:
     only — same-length members in the record's own row space (§6.4b).
     """
     c = _sf_context(events)
-    record = gak.zip({"met": c.MET.pt, "w": graphed.weight(c)}, depth_limit=1)
+    record = gak.zip({"met": c.MET.pt, "w": cast(Any, graphed.weight(c))}, depth_limit=1)
     threshold = float(np.median(np.asarray(EVENTS.MET.pt)))
     return record, c.MET.pt > threshold
 
@@ -343,7 +343,7 @@ def raw_manifest_bytes(path: str) -> bytes | None:
 def raw_manifest(path: str) -> dict[str, Any]:
     blob = raw_manifest_bytes(path)
     assert blob is not None, f"no {MANIFEST_KEY!r} KV entry in {path}"
-    return json.loads(blob)
+    return cast("dict[str, Any]", json.loads(blob))
 
 
 def raw_schema_names(path: str) -> list[str]:
@@ -365,7 +365,7 @@ def emit_weight_manifest_hex(destination: str) -> str:
     """
     _session, events = events_context()
     record, evt_mask = weight_skim_inputs(events)
-    paths = ga.to_parquet(record, destination, select={0: evt_mask})  # type: ignore[call-arg]
+    paths = ga.to_parquet(record, destination, select={0: evt_mask})
     blob = raw_manifest_bytes(paths[0])
     assert blob is not None
     return blob.hex()

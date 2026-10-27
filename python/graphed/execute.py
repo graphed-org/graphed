@@ -28,6 +28,7 @@ from typing import Any, ClassVar
 
 import graphed.core
 
+from .array import labels_carried
 from .backend import Backend
 from .errors import GraphedError
 from .session import Session
@@ -92,7 +93,7 @@ class CompiledGraph:
     #: §2.5's shift-after-weight ordering diagnostic: sorted `(factor family, collection)` pairs,
     #: one per ambient weight factor whose cone reaches a collection varied AFTER it was
     #: registered — that factor fills every shift universe with its PRE-shift value. Empty when the
-    #: order is sound. Detected at RECORD time (`context._vary_shift`); neither operand survives to
+    #: order is sound. Detected at RECORD time (`ambient.shift_form`); neither operand survives to
     #: here, so the compile-time walk the unreached-label diagnostic uses cannot see it.
     shift_after_weight: tuple[tuple[str, str], ...] = ()
 
@@ -169,8 +170,8 @@ def _compiled(
     names = tuple(session.source_name(nid) for nid in session.source_ids())
     reached: set[str] = set()
     for arr in outputs:
-        reached |= getattr(arr, "_labels", None) or frozenset()
-    registered = {label for labels, _ref in session._varied for label in labels}
+        reached |= labels_carried(arr) or frozenset()
+    registered = session.systematics.registered_labels()
     return CompiledGraph(
         ir=blob,
         source_names=names,
@@ -182,7 +183,7 @@ def _compiled(
         shift_after_weight=tuple(
             sorted(
                 pair
-                for pair, nodes in session._shift_after_weight.items()
+                for pair, nodes in session.systematics.shift_after_weight.items()
                 if not nodes.isdisjoint(node_map)
             )
         ),
