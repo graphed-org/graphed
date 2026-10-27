@@ -583,16 +583,16 @@ def _carried_up(
     masks = tuple(payload for kind, payload in ctx._links_below(home) if kind == "mask")
     if not masks:
         return (own,)
-    ops = ctx._session._ops
+    session = ctx._session
 
     def undo(node: int, label: str) -> int | None:
         for mask in reversed(masks):
-            recorded = ops.get(node)
+            recorded = session.recorded_op(node)
             carried = member_of(mask, label)
             if (
                 recorded is None
                 or recorded[0] != "getitem"
-                or tuple(recorded[2][1:]) != (carried.node_id,)
+                or recorded[2][1:] != (carried.node_id,)
             ):
                 return None
             node = recorded[2][0]
@@ -922,14 +922,14 @@ def _reindexed_onto(recorded: Any, node: Any) -> bool:
     here, there = accessors.context_of(recorded), accessors.context_of(node)
     if here is None or there is None or not here._is_ancestor_of(there):
         return False
-    ops = node._session._ops
+    session = node.session
     current = node.node_id
     for kind, payload in reversed(there._links_below(here)):
         if kind != "mask":
             continue
-        entry = ops.get(current)
+        entry = session.recorded_op(current)
         mask = member_of(payload, "nominal")
-        if entry is None or entry[0] != "getitem" or tuple(entry[2][1:]) != (mask.node_id,):
+        if entry is None or entry[0] != "getitem" or entry[2][1:] != (mask.node_id,):
             return False
         current = entry[2][0]
     return int(current) == int(recorded.node_id)

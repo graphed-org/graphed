@@ -26,7 +26,6 @@ from .systematics.registration import (  # isort: skip
     _reachable as _reachable,
     _reads_ambient as _reads_ambient,
     _route as _route,
-    _source_ids as _source_ids,
     _vary_loose as _vary_loose,
     check_family as check_family,
     check_members as check_members,

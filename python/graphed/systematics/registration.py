@@ -712,7 +712,7 @@ def check_members(labelled: Mapping[str, Any]) -> Any:
         for array in _flatten(member):
             if array.session is not session:
                 raise GraphedError(f"variation {label}: its member records into another Session")
-            sources.add(_source_ids(session, array))
+            sources.add(session.reachable_sources(array.node_id))
             if len(sources) > 1:
                 raise GraphedError(
                     f"variation {label}: its member roots in a different source; one container's "
@@ -754,59 +754,6 @@ def _compatible(session: Any, reference: Any, form: Any) -> bool:
     except Exception:
         return False
     return True
-
-
-def _source_ids(session: Any, array: Array) -> frozenset[int]:
-    """Return the source node_ids reachable from `array`, memoized per node on the Session.
-
-    `check_members` calls this once per member array, and every member of a family shares the same
-    (often deep) prefix; walking it afresh each time is O(members x depth) — the dominant
-    construction cost on a realistic deep reconstruction graph. The IR is append-only and
-    hash-consed, so a node_id maps to an immutable subgraph and its reachable-source set never
-    changes: the memo needs no invalidation, and the shared prefix is resolved once and reused
-    across members.
-    """
-    cache: dict[int, frozenset[int]] = session._source_ids_cache
-    root = array.node_id
-    hit = cache.get(root)
-    if hit is not None:
-        return hit
-
-    def _inputs(node_id: int) -> Any:
-        if node_id in session._externals:
-            return session._externals[node_id][1]
-        return session._ops[node_id][2]
-
-    # Iterative post-order (a deep chain blows the recursion limit): a node is appended only after
-    # every input it reaches, so the forward pass reads each input's set already resolved. Inputs
-    # already in `cache` from an earlier call are not re-pushed — that is what shares the prefix.
-    order: list[int] = []
-    seen: set[int] = set()
-    stack: list[tuple[int, bool]] = [(root, False)]
-    while stack:
-        node_id, done = stack.pop()
-        if node_id in cache:
-            continue
-        if done:
-            order.append(node_id)
-            continue
-        if node_id in seen:
-            continue
-        seen.add(node_id)
-        stack.append((node_id, True))
-        if node_id not in session._sources:
-            for input_id in _inputs(node_id):
-                if input_id not in cache and input_id not in seen:
-                    stack.append((input_id, False))
-    for node_id in order:
-        if node_id in session._sources:
-            cache[node_id] = frozenset((node_id,))
-        else:
-            reached: frozenset[int] = frozenset()
-            for input_id in _inputs(node_id):
-                reached |= cache[input_id]
-            cache[node_id] = reached
-    return cache[root]
 
 
 def stamp_labels(container: Varied) -> Varied:

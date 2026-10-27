@@ -119,10 +119,7 @@ class Session:
         # instead of rescanning the whole registry per minted label — the difference between O(N)
         # and O(N^2) in Session universes.
         self._points_by_point: dict[Point, str] = {}
-        # Per-node memo of `vary._source_ids` (node_id -> reachable source node_ids). The IR is
-        # append-only + hash-consed, so a node's reachable-source set is immutable and never needs
-        # invalidation; the memo turns check_members' per-member walk of a shared (deep) prefix
-        # from O(members x depth) into O(depth + members).
+        # `reachable_sources`' memo (node_id -> reachable source node_ids)
         self._source_ids_cache: dict[int, frozenset[int]] = {}
         # Per-Session memo of `context._mul_form` ((left, right) form DESCRIPTIONS -> product
         # form). Per-Session and not module-global because the answer depends on THIS backend
@@ -351,6 +348,60 @@ class Session:
     def form_of(self, node_id: int) -> Form:
         """Return the form of node ``node_id``."""
         return self._forms[node_id]
+
+    def recorded_op(
+        self, node_id: int
+    ) -> tuple[str, Mapping[str, ParamValue], tuple[int, ...]] | None:
+        """Return ``(op, params, input ids)`` node ``node_id`` was recorded with, else ``None``.
+
+        ``None`` for a source or an External.
+        """
+        recorded = self._ops.get(node_id)
+        return None if recorded is None else (recorded[0], recorded[1], tuple(recorded[2]))
+
+    def reachable_sources(self, node_id: int) -> frozenset[int]:
+        """Return the source node ids reachable from node ``node_id``.
+
+        Memoized per node: the IR is append-only and hash-consed, so a node's set never changes,
+        and a shared (deep) prefix is walked once however many nodes read it.
+        """
+        cache = self._source_ids_cache
+        hit = cache.get(node_id)
+        if hit is not None:
+            return hit
+        # iterative post-order (a deep chain blows the recursion limit): a node is appended only
+        # after every input it reaches, so the forward pass reads each input's set resolved
+        order: list[int] = []
+        seen: set[int] = set()
+        stack: list[tuple[int, bool]] = [(node_id, False)]
+        while stack:
+            current, done = stack.pop()
+            if done:
+                order.append(current)
+                continue
+            if current in seen:
+                continue
+            seen.add(current)
+            stack.append((current, True))
+            for input_id in self._inputs_of(current):
+                if input_id not in cache and input_id not in seen:
+                    stack.append((input_id, False))
+        for current in order:
+            if current in self._sources:
+                cache[current] = frozenset((current,))
+            else:
+                reached: frozenset[int] = frozenset()
+                for input_id in self._inputs_of(current):
+                    reached |= cache[input_id]
+                cache[current] = reached
+        return cache[node_id]
+
+    def _inputs_of(self, node_id: int) -> tuple[int, ...]:
+        if node_id in self._sources:
+            return ()
+        if node_id in self._externals:
+            return tuple(self._externals[node_id][1])
+        return tuple(self._ops[node_id][2])
 
     def sourcemap(self) -> dict[int, dict[str, object]]:
         """Per-node user-source provenance (file / line / function / sub-expression text).
@@ -597,13 +648,7 @@ class Session:
         """
         self._mine([array])
         cache: dict[int, object] = {} if memo is None else memo
-
-        def inputs_of(node_id: int) -> tuple[int, ...]:
-            if node_id in self._sources:
-                return ()
-            if node_id in self._externals:
-                return tuple(self._externals[node_id][1])
-            return tuple(self._ops[node_id][2])
+        inputs_of = self._inputs_of
 
         # explicit-stack post-order: a deeply chained recorded graph (a long selection/systematics
         # chain) would blow Python's recursion limit if this evaluated recursively. Inputs are
