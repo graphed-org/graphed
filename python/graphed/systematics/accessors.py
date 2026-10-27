@@ -12,12 +12,21 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, TypeGuard
 
-from ..array import Array
+from ..array import Array, attach, labels_carried
 from ..errors import GraphedError
 from .kinds import Kind
 from .points import Point, render
 from .tags import numeric_value
-from .varied import Varied, member_of, point_registry, rebuild
+from .varied import (
+    Varied,
+    member_exact,
+    member_of,
+    members_of,
+    point_registry,
+    rebuild,
+    tags_of,
+)
+from .varied import context_of as context_of
 
 if TYPE_CHECKING:
     from fractions import Fraction
@@ -51,7 +60,7 @@ def _variation_axis_index(hist: Any) -> int | None:
 def labels(x: Introspectable) -> tuple[str, ...]:
     """Return the variation labels `x` carries, `"nominal"` first then insertion order (§2.2)."""
     if isinstance(x, Varied):
-        return tuple(x._members)
+        return tuple(members_of(x))
     if _is_context(x):
         return x._context_labels()
     if isinstance(x, Array):
@@ -75,7 +84,7 @@ def labels(x: Introspectable) -> tuple[str, ...]:
 def universe(x: Introspectable, label: str) -> Any:
     """`x`'s universe for `label` — a KeyError listing the valid labels when it has none (§2.5)."""
     if isinstance(x, Varied):
-        return x._universe(label)
+        return member_exact(x, label)
     if _is_context(x):
         return x._project(label)
     if isinstance(x, Array):
@@ -129,15 +138,6 @@ def points(x: Introspectable) -> dict[str, dict[str, str]]:
     return {label: render(registry.get(label, Point({}))) for label in sorted(carried)}
 
 
-def context_of(value: Array | Varied) -> Any:
-    """Return the §2.3e context handle this value was read through, `None` when it is context-free.
-
-    On a `Varied` it answers with the CONTAINER's handle — the most-derived member handle §2.1
-    binds — which may belong to a non-nominal member.
-    """
-    return getattr(value, "_context", None)
-
-
 def selection(ctx: Any) -> Any:
     """§9.1's bridge: the `Varied`/Array mask that derived a context from its parent (§6.4a).
 
@@ -182,7 +182,7 @@ def variations(ctx: Any) -> dict[str, dict[str, tuple[Kind, Fraction | None]]]:
         for tag in tags:
             kinds.setdefault(name, {})[tag] = kinds.get(name, {}).get(tag, Kind(0)) | Kind.WEIGHT
     for collection in ctx._collections.values():
-        for name, tags in getattr(collection, "_tags", {}).items():
+        for name, tags in tags_of(collection).items():
             for tag in tags:
                 kinds.setdefault(name, {})[tag] = (
                     kinds.get(name, {}).get(tag, Kind(0)) | Kind.SHIFT
@@ -283,15 +283,12 @@ def with_context(value: Any, ctx: Any) -> Any:
     """Stamp `ctx`'s handle on a value (§2.3e's ORIGINATION rule), leaving node identity alone."""
     if isinstance(value, Varied):
         return rebuild(
-            {label: with_context(member, ctx) for label, member in value._members.items()},
-            tags=value._tags,
+            {label: with_context(member, ctx) for label, member in members_of(value).items()},
+            tags=tags_of(value),
             context=ctx,
         )
     if isinstance(value, Array):
-        stamped = type(value)(value._session, value._node_id)
-        stamped._context = ctx
-        stamped._labels = value._labels
-        return stamped
+        return attach(type(value)(value.session, value.node_id), ctx, labels_carried(value))
     return value
 
 

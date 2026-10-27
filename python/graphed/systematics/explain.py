@@ -14,8 +14,7 @@ from typing import TYPE_CHECKING
 from ..errors import GraphedError
 from .ambient import _live_factors, _live_riders, _Registration, _row_links, ambient_entries
 from .kinds import Kind
-from .registration import _member_nodes
-from .varied import labels_of
+from .varied import labels_of, member_nodes
 
 if TYPE_CHECKING:
     from ..context import EventContext
@@ -315,7 +314,7 @@ def explain(ctx: EventContext) -> Explanation:
             rider.kind,
             dict(rider.families),
             rider.links,
-            _member_nodes(entry),
+            member_nodes(entry),
             rider.fixed,
             rider.fixed_at,
         )

@@ -12,14 +12,24 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any, NamedTuple
 
-from ..array import Array
+from ..array import Array, add_labels
 from ..errors import GraphedError, GraphedTypeError, PointError
 from ..provenance import capture
 from . import accessors
 from .by_label import cone
 from .points import Point, coordinate, default, render
 from .tags import canonical_tag, numeric_value
-from .varied import Varied, member_of, rebuild, registered_points, session_of
+from .varied import (
+    Varied,
+    context_of,
+    member_nodes,
+    member_of,
+    members_of,
+    rebuild,
+    registered_points,
+    session_of,
+    tags_of,
+)
 
 #: §4's fanout budget: the default grid a plain `vary` mints is bounded by this many universes,
 #: above which the guard raises unless the analyst names `points=` or raises `max_universes=`. It
@@ -147,7 +157,7 @@ def _vary_loose(
         )
     if collections is not None:
         raise GraphedError("collections= needs an event-context target (the shift form)")
-    inherited = target._tags.get(name, ()) if isinstance(target, Varied) else ()
+    inherited = tags_of(target).get(name, ())
     # the loose form's own carrier for §4.11-4 is the target it registers on
     one_at_a_time, joints = gather_members(
         name,
@@ -160,7 +170,7 @@ def _vary_loose(
         composes_as_union=composes_as_union,
         max_universes=max_universes,
     )
-    existing = dict(target._members) if isinstance(target, Varied) else {"nominal": target}
+    existing = dict(members_of(target))
     # §4.6: registration resolves by the label's OWN point, so a supplied `Varied` contributes the
     # inner universe the point names instead of being flattened to its central one. A
     # machine-minted joint is already that inner cross node, so `member_of` on it is the identity.
@@ -176,7 +186,7 @@ def _vary_loose(
     handle = check_members({**existing, **resolved})
     existing = {label: _align(member, handle) for label, member in existing.items()}
     resolved = {label: accessors.reindex_to(member, handle) for label, member in resolved.items()}
-    inherited_tags = dict(target._tags) if isinstance(target, Varied) else {}
+    inherited_tags = dict(tags_of(target))
     # a joint is a cross-coordinate, not a tag of this single family, so it stays out of `_tags`
     inherited_tags[name] = inherited + tuple(label[len(name) + 1 :] for label in one_at_a_time)
     return register(rebuild({**existing, **resolved}, tags=inherited_tags, context=handle))
@@ -189,7 +199,7 @@ def _align(member: Any, handle: Any) -> Any:
     the identity in both row space and content, so re-indexing across it would do nothing but
     re-stamp the handle, losing the parent identity §2.3e pins on the member.
     """
-    src = accessors.context_of(member)
+    src = context_of(member)
     if src is None or src is handle:
         return member
     if not any(kind in ("mask", "project") for kind, _payload in handle._links_below(src)):
@@ -324,7 +334,7 @@ def _foreign(
         if nuisances & composed:
             # the weight form always carries the ambient (context._carriers)
             assert ambient is not None
-            if _reads_ambient(ambient, member._members[label], label):
+            if _reads_ambient(ambient, members_of(member)[label], label):
                 continue
         if carrier_nuisances and not nuisances <= carrier_nuisances:
             continue
@@ -342,15 +352,8 @@ def _reads_ambient(ambient: AmbientCarrier, member: Any, label: str) -> bool:
     """
     targets = ambient.resolve(label)
     return bool(targets) and any(
-        targets & cone(ambient.session, nid) for nid in _member_nodes(member)
+        targets & cone(ambient.session, nid) for nid in member_nodes(member)
     )
-
-
-def _member_nodes(value: Any) -> tuple[int, ...]:
-    """Return a member's node ids, resolving §2.2's one legal level of nesting."""
-    if not isinstance(value, Varied):
-        return (value.node_id,)
-    return tuple(nid for inner in value._members.values() for nid in _member_nodes(inner))
 
 
 class AmbientCarrier(NamedTuple):
@@ -431,7 +434,7 @@ def _fanout(
     for tag, member in canonical.items():
         for fl, fp in foreign_by_tag[tag].items():
             joint_label = f"{name}_{tag}__{fl}"
-            joints[joint_label] = member._members[fl]
+            joints[joint_label] = members_of(member)[fl]
             joint_points[joint_label] = Point({**dict(default(name, tag)), **dict(fp)})
     if points:  # an explicit selection is the analyst's own enumeration — never guarded (§4)
         kept, additive = _route(
@@ -688,14 +691,12 @@ def check_members(labelled: Mapping[str, Any]) -> Any:
                     f"variation {label}: its form {session.form(array)} is incompatible with the "
                     f"central universe's {reference}"
                 )
-    return accessors.unify_contexts(
-        *(accessors.context_of(member) for member in labelled.values())
-    )
+    return accessors.unify_contexts(*(context_of(member) for member in labelled.values()))
 
 
 def _flatten(member: object) -> list[Array]:
     if isinstance(member, Varied):
-        return [array for item in member._members.values() for array in _flatten(item)]
+        return [array for item in members_of(member).values() for array in _flatten(item)]
     if isinstance(member, Array):
         return [member]
     raise GraphedError(
@@ -729,11 +730,11 @@ def stamp_labels(container: Varied) -> Varied:
     would make any output built from one count the label as reached, silencing the very
     unreached-label diagnostic §2.5 exists for.
     """
-    for label, member in container._members.items():
+    for label, member in members_of(container).items():
         if label == "nominal":
             continue
         for array in _flatten(member):
-            array._labels = (array._labels or frozenset()) | {label}
+            add_labels(array, frozenset((label,)))
     return container
 
 
@@ -748,7 +749,7 @@ def record_labels(container: Varied) -> Varied:
     there is no diagnostic to feed, and the alternative is an attribute error on `None`.
     """
     session = session_of(container)
-    labels = tuple(label for label in container._members if label != "nominal")
+    labels = tuple(label for label in members_of(container) if label != "nominal")
     if labels and session is not None:
         session.systematics.record_varied(labels, container)
     return container

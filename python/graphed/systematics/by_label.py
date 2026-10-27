@@ -14,7 +14,7 @@ from ..array import Array
 from ..errors import GraphedError
 from ..projection import read_columns
 from ..session import Session
-from .varied import Varied, member_of, union_labels
+from .varied import Varied, member_of, members_of, union_labels
 
 __all__ = ["cone", "impact_by_label", "read_columns_by_label"]
 
@@ -71,7 +71,7 @@ def _per_label(verb: str, outputs: Outputs) -> dict[str, list[Array]]:
                 f"{verb}: a sequence operand must be all Varied, got {type(entry).__name__}; a "
                 "plain Array carries no label attribution"
             )
-        for label, universe in entry._members.items():
+        for label, universe in members_of(entry).items():
             if isinstance(universe, Varied):
                 # §2.2 admits nested members on a registered weight factor; the per-label walk
                 # cannot resolve past one level, so it says so rather than reaching through.

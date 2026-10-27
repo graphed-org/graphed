@@ -28,6 +28,7 @@ from typing import Any, ClassVar
 
 import graphed.core
 
+from .array import labels_carried
 from .backend import Backend
 from .errors import GraphedError
 from .session import Session
@@ -166,7 +167,7 @@ def _compiled(
     names = tuple(session.source_name(nid) for nid in session.source_ids())
     reached: set[str] = set()
     for arr in outputs:
-        reached |= getattr(arr, "_labels", None) or frozenset()
+        reached |= labels_carried(arr) or frozenset()
     registered = session.systematics.registered_labels()
     return CompiledGraph(
         ir=blob,

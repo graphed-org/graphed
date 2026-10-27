@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 
 import graphed.core
 
-from .array import Array
+from .array import Array, attach, handle_of, labels_carried
 from .backend import Backend, Form, ParamValue
 from .errors import GraphedTypeError, OutputTypeError
 from .provenance import Provenance, capture
@@ -119,7 +119,7 @@ class Session:
         `GraphedTypeError`; the readers pass nothing and get a plain `TypeError`
         (`GraphedTypeError` is not one, which is what separates the two halves).
         """
-        if all(a._session is self for a in arrays):
+        if all(a.session is self for a in arrays):
             return
         message = "an input was recorded in a different Session"
         if located is None:
@@ -192,10 +192,12 @@ class Session:
 
         array = self._array_cls(self, node_id)
         if inputs:
-            array._context = unify_contexts(*(item._context for item in inputs))
+            labels: frozenset[str] | None = None
             for item in inputs:
-                if item._labels:
-                    array._labels = (array._labels or frozenset()) | item._labels
+                carried = labels_carried(item)
+                if carried:
+                    labels = carried if labels is None else labels | carried
+            attach(array, unify_contexts(*(handle_of(item) for item in inputs)), labels)
         return array
 
     # ---- introspection ---------------------------------------------------------

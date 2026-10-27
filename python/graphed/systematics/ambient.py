@@ -25,7 +25,6 @@ from .kinds import Kind
 from .points import restrict
 from .registration import (
     AmbientCarrier,
-    _member_nodes,
     check_members,
     gather_members,
     record_labels,
@@ -34,12 +33,17 @@ from .registration import (
 from .tags import canonical_tag
 from .varied import (
     Varied,
+    context_of,
+    key_for,
     labels_of,
+    member_nodes,
     member_of,
+    members_of,
     point_registry,
     rebuild,
     registered_points,
     session_of,
+    tags_of,
 )
 
 if TYPE_CHECKING:
@@ -129,8 +133,8 @@ def _carriers(ctx: EventContext) -> tuple[Any, ...]:
         out: set[int] = set()
         for factor in factors:
             out.update(
-                set(_member_nodes(_two_level(factor, label)))
-                - set(_member_nodes(_two_level(factor, "nominal")))
+                set(member_nodes(_two_level(factor, label)))
+                - set(member_nodes(_two_level(factor, "nominal")))
             )
         return frozenset(out)
 
@@ -272,7 +276,7 @@ def _through_projections(ctx: EventContext, entry: Any) -> Any:
     Each one a member lookup, which mints nothing. A mask is left unwalked: its re-index would
     mint, and a decision mints nothing (§2.3), so the value stays in the row space above it.
     """
-    home = accessors.context_of(entry)
+    home = context_of(entry)
     value = entry
     for kind, payload in () if home is None else ctx._links_below(home):
         if kind == "project" and payload != "nominal":
@@ -386,7 +390,7 @@ def _reindex_entry(ctx: EventContext, entry: Any, rider: Rider) -> tuple[Any, st
     kept, fixed_at = _entry_state(ctx, rider)
     if not kept:
         return None, None
-    home = accessors.context_of(entry)
+    home = context_of(entry)
     if home is None or home is ctx:
         return entry, fixed_at
     value = entry
@@ -578,7 +582,7 @@ def _carried_up(
     wrote. Only the first is offered when some member is not that re-index, which is a handle
     naming no composition below.
     """
-    own = _member_nodes(central)
+    own = member_nodes(central)
     masks = tuple(payload for kind, payload in ctx._links_below(home) if kind == "mask")
     if not masks:
         return (own,)
@@ -597,10 +601,10 @@ def _carried_up(
             node = recorded[2][0]
         return node
 
-    members = central._members.items() if isinstance(central, Varied) else (("nominal", central),)
+    members = members_of(central).items()
     lifted: list[int] = []
     for label, member in members:
-        for node in _member_nodes(member):
+        for node in member_nodes(member):
             one = undo(node, label)
             if one is None:
                 return (own,)
@@ -771,7 +775,7 @@ def _owned_projection(ctx: EventContext, candidate: Any, rider: Rider) -> str | 
     and the families come from the rider, because the re-index the expansion performs leaves a bare
     member behind, with no tag map for this to read.
     """
-    home = accessors.context_of(candidate)
+    home = context_of(candidate)
     if home is None or not home._is_ancestor_of(ctx):
         return None
     return next(
@@ -900,7 +904,7 @@ def _one_value(left: Any, right: Any) -> bool:
     """
     if left.node_id != right.node_id:
         return False
-    here, there = accessors.context_of(left), accessors.context_of(right)
+    here, there = context_of(left), context_of(right)
     if here is None or there is None or here is there:
         return True
     deep, shallow = (here, there) if there._is_ancestor_of(here) else (there, here)
@@ -919,7 +923,7 @@ def _reindexed_onto(recorded: Any, node: Any) -> bool:
     below the mask carries no such record — which is what keeps §4's re-derivation controls new
     factors.
     """
-    here, there = accessors.context_of(recorded), accessors.context_of(node)
+    here, there = context_of(recorded), context_of(node)
     if here is None or there is None or not here._is_ancestor_of(there):
         return False
     session = node.session
@@ -1036,13 +1040,13 @@ def _headed(
     stands for, read at that label with the joined member in place.
     """
     current = ctx._factors[0]
-    carried = dict(current._members) if isinstance(current, Varied) else {"nominal": current}
+    carried = dict(members_of(current))
     moved = [
         label
         for label in _union(ctx._context_labels(), labels_of(joined))
         if label != "nominal"
         and label not in carried
-        and _member_nodes(_two_level(joined, label)) != _member_nodes(_two_level(standing, label))
+        and member_nodes(_two_level(joined, label)) != member_nodes(_two_level(standing, label))
     ]
     products = _compose(
         stood,
@@ -1050,7 +1054,7 @@ def _headed(
         overlays=_marks(stood, slots, overlays),
         fixed=_marks(stood, slots, fixed),
     )
-    tags = {**(getattr(current, "_tags", None) or {}), name: family}
+    tags = {**tags_of(current), name: family}
     return rebuild({**carried, **products}, tags=tags, context=ctx)
 
 
@@ -1129,9 +1133,9 @@ def _joined(
     here, before anything of this registration is recorded. A projection's adopted member is a bare
     array and becomes the nominal.
     """
-    existing = container._members if isinstance(container, Varied) else {"nominal": container}
+    existing = members_of(container)
     added = {label: member for label, member in members.items() if label != "nominal"}
-    tags = {**(getattr(container, "_tags", None) or {}), name: family}
+    tags = {**tags_of(container), name: family}
     nominal, widened = _union_nominal(existing["nominal"], members["nominal"], name, ctx, covering)
     return rebuild({**existing, "nominal": nominal, **added}, tags=tags, context=ctx), widened
 
@@ -1173,7 +1177,7 @@ def _here(ctx: EventContext, value: Any) -> Any:
     the set alone and is not followed: following one mints, and this decides a refusal that must
     leave no node behind (§2.5).
     """
-    home = accessors.context_of(value)
+    home = context_of(value)
     if home is None or home is ctx:
         return value
     for kind, payload in ctx._links_below(home):
@@ -1187,7 +1191,7 @@ def _coordinates(value: Any) -> frozenset[str]:
 
     `{"nominal"}` for a bare member, which is what `_union_nominal` reads it as.
     """
-    return frozenset(value._members) if isinstance(value, Varied) else frozenset({"nominal"})
+    return frozenset(members_of(value))
 
 
 def _union_nominal(
@@ -1200,25 +1204,24 @@ def _union_nominal(
     `_two_level` reads them at the ambient's shift labels, so the union is what makes the ambient
     read the weight at each label's own objects whichever family registered first.
     """
-    left = carried._members if isinstance(carried, Varied) else {"nominal": carried}
-    right = central._members if isinstance(central, Varied) else {"nominal": central}
+    left, right = members_of(carried), members_of(central)
     for label, member in right.items():
         if (
             label != "nominal"
             and label in left
-            and _member_nodes(left[label]) != _member_nodes(member)
+            and member_nodes(left[label]) != member_nodes(member)
         ):
             raise GraphedError(
                 f"graphed.vary({name!r}): its central names the weight factor already registered "
                 f"here, but the two disagree at coordinate {label!r} — the registered central "
-                f"carries node {_member_nodes(left[label])} there and this one carries "
-                f"{_member_nodes(member)}; one weight cannot have two values at one coordinate"
+                f"carries node {member_nodes(left[label])} there and this one carries "
+                f"{member_nodes(member)}; one weight cannot have two values at one coordinate"
             )
     merged = {**left, **right}
     widened = set(merged) > set(left)
     if len(merged) == 1:
         return merged["nominal"], widened
-    tags = {**(getattr(carried, "_tags", None) or {}), **(getattr(central, "_tags", None) or {})}
+    tags = {**tags_of(carried), **tags_of(central)}
     return rebuild(merged, tags=tags, context=ctx), widened
 
 
@@ -1333,7 +1336,7 @@ def _vary_weight(
         f"{n}_{t}"
         for tag_map in (
             ambient_tags,
-            *((getattr(source, "_tags", None) or {}) for source in _carriers(ctx)[1:]),
+            *(tags_of(source) for source in _carriers(ctx)[1:]),
         )
         for n, ts in tag_map.items()
         if n != name
@@ -1438,7 +1441,7 @@ def _vary_weight(
         )
     record_labels(factor)  # §2.5's vary-time half; the members are stamped when they compose
     # §2.5's shift-after-weight operand one: this factor's OWN member node ids, by value.
-    ctx._session.systematics.record_weight_factor(name, _member_nodes(factor))
+    ctx._session.systematics.record_weight_factor(name, member_nodes(factor))
 
     from ..context import _child_of  # noqa: PLC0415  (import cycle: it builds an EventContext)
 
@@ -1515,7 +1518,7 @@ def _vary_shift(
     family: tuple[str, ...] = ()
     for collection_name, inner in mapping.items():
         current = ctx._read(collection_name)
-        inherited = current._tags.get(name, ()) if isinstance(current, Varied) else ()
+        inherited = tags_of(current).get(name, ())
         one_at_a_time, joints = gather_members(
             name,
             inner,
@@ -1527,7 +1530,7 @@ def _vary_shift(
             composes_as_union=composes_as_union,
             max_universes=max_universes,
         )
-        existing = dict(current._members) if isinstance(current, Varied) else {"nominal": current}
+        existing = dict(members_of(current))
         # §4.6: a supplied member is projected by the label's own point, not flattened to its
         # central universe — which is what makes a shift (x) shift joint point expressible; a
         # machine-minted joint is already the cross node, so `member_of` on it is the identity
@@ -1540,7 +1543,7 @@ def _vary_shift(
         for label in resolved:
             if label in existing:
                 raise GraphedError(f"variation label {label!r} already varies {collection_name!r}")
-        tag_map = dict(current._tags) if isinstance(current, Varied) else {}
+        tag_map = dict(tags_of(current))
         # a joint is a cross-coordinate, not a tag of this single family, so it stays out of
         # `_tags`
         family = tag_map[name] = inherited + _tags_of(name, one_at_a_time)
@@ -1600,7 +1603,7 @@ def _unpack_varied(
             f"({collection_name!r}): its members carry no fan-out to prune; pass {hand} for a "
             "placed registration"
         )
-    tags = dict(varied._tags)
+    tags = dict(tags_of(varied))
     expected = {"nominal", *(f"{name}_{tag}" for tag in tags.get(name, ()))}
     extra = sorted(set(labels_of(varied)) - expected)
     if set(tags) != {name} or extra:
@@ -1664,14 +1667,14 @@ def _two_level(container: Any, label: str) -> Any:
     page = session.systematics.universe_page(container)
     path = page.get(label)
     if path is not None:
-        member = container._members[path[0]]
-        return member if path[1] is None else member._members[path[1]]
-    outer_key = container._key_for(label)
-    member = container._members[outer_key]
-    inner_key = member._key_for(label) if isinstance(member, Varied) else None
+        member = members_of(container)[path[0]]
+        return member if path[1] is None else members_of(member)[path[1]]
+    outer_key = key_for(container, label)
+    member = members_of(container)[outer_key]
+    inner_key = key_for(member, label) if isinstance(member, Varied) else None
     if _settled(container, label):
         page[label] = (outer_key, inner_key)
-    return member if inner_key is None else member._members[inner_key]
+    return member if inner_key is None else members_of(member)[inner_key]
 
 
 def _settled(container: Any, label: str) -> bool:
@@ -1710,10 +1713,11 @@ def _all_settled(session: Any, operands: Sequence[Any], labels: Sequence[str]) -
 def _fixed(value: Any, label: str) -> bool:
     if not isinstance(value, Varied):
         return True
-    if label in value._members:
+    members = members_of(value)
+    if label in members:
         return True
     registry = point_registry(value)
-    return label in registry and all(own in registry for own in value._members if own != "nominal")
+    return label in registry and all(own in registry for own in members if own != "nominal")
 
 
 # ---- §4's composition: linear in the registered factors ------------------------------------
@@ -1785,14 +1789,14 @@ def _product_over(
     if not factors:
         return {}
     centrals = [_two_level(factor, "nominal") for factor in factors]
-    central_ids = [_member_nodes(central) for central in centrals]
+    central_ids = [member_nodes(central) for central in centrals]
     count = len(centrals)
     tree = _product_tree([project(central, "nominal") for central in centrals], mul)
     complements = _complements(tree, count, mul)
     composed: dict[str, Any] = {}
     for label in labels:
         applied = [_two_level(factor, label) for factor in factors]
-        varying = [i for i in range(count) if _member_nodes(applied[i]) != central_ids[i]]
+        varying = [i for i in range(count) if member_nodes(applied[i]) != central_ids[i]]
         if not varying:
             rest = tree[(0, count)]
         elif len(varying) == 1:
@@ -1838,14 +1842,14 @@ def _compose_ordered(
         else:
             run.append(factor)
     runs.append(_product_over(run, labels, project, mul))
-    nominal_ids = [_member_nodes(_two_level(overlay, "nominal")) for overlay in marks]
+    nominal_ids = [member_nodes(_two_level(overlay, "nominal")) for overlay in marks]
     composed: dict[str, Any] = {}
     for label in labels:
         running: Any = runs[0].get(label)
         for index, overlay in enumerate(marks):
             applied = _two_level(overlay, label)
             spans = id(overlay) in fixed or (
-                _member_nodes(applied) != nominal_ids[index]
+                member_nodes(applied) != nominal_ids[index]
                 and not _placed_elsewhere(overlay, label)
             )
             if running is None or spans:
@@ -1876,9 +1880,9 @@ def _resolvable(operands: Sequence[Any], labels: Sequence[str]) -> bool:
         axes = frozenset(nuisance for own in carried.values() for nuisance, _ in own)
         for label in labels:
             point = registry.get(label)
-            if point is None or label in operand._members:
+            if point is None or label in members_of(operand):
                 continue
-            if restrict(point, axes) and operand._key_for(label) == "nominal":
+            if restrict(point, axes) and key_for(operand, label) == "nominal":
                 return False
     return True
 
@@ -2020,7 +2024,7 @@ def _member_form(session: Any, member: Any, label: str) -> Any:
             "mul",
             capture(),
             f"the ambient weight at variation label {label!r}: this factor's member is itself a "
-            f"container over {list(member._members)}, one universe deeper than a weight factor "
+            f"container over {list(members_of(member))}, one universe deeper than a weight factor "
             "nests",
         )
     return session.form(member)

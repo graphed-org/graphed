@@ -19,7 +19,6 @@ from .systematics.registration import (  # isort: skip
     _flatten as _flatten,
     _foreign as _foreign,
     _guard as _guard,
-    _member_nodes as _member_nodes,
     _mint_defaults as _mint_defaults,
     _parse_points as _parse_points,
     _reachable as _reachable,

@@ -61,14 +61,17 @@ from .systematics.ambient import (  # isort: skip
 )
 from .systematics.by_label import cone as cone  # isort: skip
 from .systematics.explain import Explanation as Explanation, explain as explain  # isort: skip
-from .systematics.registration import _member_nodes as _member_nodes, stamp_labels as stamp_labels  # isort: skip
+from .systematics.registration import stamp_labels as stamp_labels  # isort: skip
 from .systematics.varied import (  # isort: skip
     Varied as Varied,
     expand as expand,
     labels_of as labels_of,
+    member_nodes as member_nodes,
     member_of as member_of,
+    members_of as members_of,
     point_registry as point_registry,
     rebuild as rebuild,
+    tags_of as tags_of,
 )
 
 #: contexts are compared by IDENTITY (§2.6b), so a divergence error must name two distinguishable
@@ -166,7 +169,7 @@ class EventContext:
                 # a seeded context is a root: it came through no row-space link
                 self._slots[0]: Rider(
                     "factor",
-                    dict(getattr(weight, "_tags", None) or {}),
+                    dict(tags_of(weight)),
                     priors=(_two_level(weight, "nominal"),),
                     home=self,
                 )
@@ -339,7 +342,7 @@ class EventContext:
         which a mint may remake.
         """
         slots = _live_slots(self)
-        entry = (_member_nodes(composed), slots, tuple(self._gens.get(slot, 0) for slot in slots))
+        entry = (member_nodes(composed), slots, tuple(self._gens.get(slot, 0) for slot in slots))
         if entry not in self._reads:
             self._reads.append(entry)
 
@@ -410,7 +413,7 @@ class EventContext:
         """
         merged: dict[str, tuple[str, ...]] = {}
         for factor in self._factors:
-            merged.update(getattr(factor, "_tags", None) or {})
+            merged.update(tags_of(factor))
         return merged
 
     def _context_labels(self) -> tuple[str, ...]:
@@ -528,7 +531,7 @@ def _mask_key(mask: Array | Varied) -> tuple[tuple[str, int], ...]:
     `ctx[rebuilt] is ctx[mask]`.
     """
     if isinstance(mask, Varied):
-        return tuple((label, member.node_id) for label, member in mask._members.items())
+        return tuple((label, member.node_id) for label, member in members_of(mask).items())
     return (("nominal", mask.node_id),)
 
 

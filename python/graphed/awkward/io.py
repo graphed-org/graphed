@@ -44,7 +44,14 @@ from graphed.core import Partition
 from graphed.core.execution import Plan, SequentialRunner, WorkerResources
 from graphed.errors import GraphedError
 from graphed.services import bind_externals
-from graphed.varied import Varied, member_of, most_derived_context, refuse_container, union_labels
+from graphed.varied import (
+    Varied,
+    member_of,
+    members_of,
+    most_derived_context,
+    refuse_container,
+    union_labels,
+)
 from graphed.write import PartitionedSource
 
 from .backend import AwkwardBackend, AwkwardForm
@@ -468,7 +475,7 @@ def _record_context(value: Any) -> Any:
     A plain value's own handle, a container's most-derived member handle (§2.3e).
     """
     if isinstance(value, Varied):
-        return most_derived_context(*value._members.values())
+        return most_derived_context(*members_of(value).values())
     return context_of(value)
 
 
