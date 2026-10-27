@@ -95,7 +95,7 @@ class DashboardServer:
         self._n_connections = 0
         self._last_error: dict[str, Any] | None = None
         # merged sampled stacks -> flamegraph
-        self._profile_tree: dict[str, Any] = _sampler._new_node()
+        self._profile_tree: dict[str, Any] = _sampler.new_node()
         self._profile_samples = 0
         self._ready = threading.Event()
         self._error: BaseException | None = None

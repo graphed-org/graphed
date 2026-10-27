@@ -18,7 +18,7 @@ import numpy as np
 from awkward.types._awkward_datashape_parser import LarkError
 
 from graphed import Array, Session
-from graphed.aggregate import _resolved
+from graphed.aggregate import resolved_backend
 from graphed.backend import PYTHON_TYPES, Form
 from graphed.core import PayloadDescriptor
 from graphed.shuffle import join_blocks
@@ -64,7 +64,7 @@ class _BehaviorByRef(dict[Any, Any]):
 
 
 def _behavior_from(ref: str) -> Any:
-    return _resolved(ref)._behavior
+    return resolved_backend(ref)._behavior
 
 
 def _adopt(value: Any, behavior: Mapping[Any, Any] | None) -> Any:

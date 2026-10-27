@@ -108,7 +108,8 @@ def by_value(fn: T) -> T:
 
 
 @functools.cache
-def _resolved(ref: str) -> Any:
+def resolved_backend(ref: str) -> Any:
+    """Return the backend the import ``ref`` names, resolved once per process."""
     return resolve_backend(ref)
 
 
@@ -117,7 +118,7 @@ def _adopted(backend: Callable[[], Any] | str | None, value: T) -> T:
 
     An op over several of them leaves an equal copy, which does not pickle by that import ref.
     """
-    adopt = getattr(_resolved(backend), "adopt", None) if isinstance(backend, str) else None
+    adopt = getattr(resolved_backend(backend), "adopt", None) if isinstance(backend, str) else None
     return value if adopt is None else cast("T", adopt(value))
 
 
@@ -194,7 +195,7 @@ class _PartitionReduce(Generic[V]):
     def __call__(self, partition: Partition, resources: WorkerResources) -> V:
         chunk = self.reader.read_partition(partition, self.columns, resources)
         if self.store is None:
-            # _evaluate inlined: the default path keeps its pre-capture frame count
+            # evaluate inlined: the default path keeps its pre-capture frame count
             values = evaluate_ir(
                 self.ir,
                 resolve_backend(self.backend_factory),
@@ -211,14 +212,14 @@ class _PartitionReduce(Generic[V]):
         from graphed.checkpoint import PickleCodec  # noqa: PLC0415  (as cloudpickle)
 
         store = self._task_store()
-        cid, label, codec = self._capture_id(partition), str(partition), PickleCodec()
+        cid, label, codec = self.capture_id(partition), str(partition), PickleCodec()
         capturable = getattr(
             resolve_backend(self.backend_factory), "capturable", lambda chunk: chunk
         )
         # the input is kept before evaluating, so a failing task's input survives it
         blob = store.put(cloudpickle.dumps(capturable(chunk), protocol=codec.PROTOCOL))
         store.record_done(f"{cid}:input", label, blob, stage="replay-input")
-        result = _adopted(self.backend_factory, self.reduce(self._evaluate(chunk, partition)))
+        result = _adopted(self.backend_factory, self.reduce(self.evaluate(chunk, partition)))
         store.record_done(
             f"{cid}:output", label, store.put(codec.encode(result)), stage="replay-output"
         )
@@ -263,7 +264,8 @@ class _PartitionReduce(Generic[V]):
             codec(values[slot], path, meta)
         return [*values[: self.n_values], *paths]
 
-    def _evaluate(self, chunk: object, partition: Partition) -> list[object]:
+    def evaluate(self, chunk: object, partition: Partition) -> list[object]:
+        """Evaluate the IR on ``chunk`` as a task does, its failures attributed alike."""
         return evaluate_ir(
             self.ir,
             resolve_backend(self.backend_factory),
@@ -272,7 +274,7 @@ class _PartitionReduce(Generic[V]):
             on_failure=self._attribute(str(partition)),
         )
 
-    def _capture_id(self, partition: Partition) -> str:
+    def capture_id(self, partition: Partition) -> str:
         """Return the id a task's captures are journaled under.
 
         The IR and the partition, nothing about the run, so one capture root holds one run.
@@ -286,7 +288,7 @@ class _PartitionReduce(Generic[V]):
         assert self.store is not None
         return task_store(self.store, self.storage_options)
 
-    def _open_store(self, node: str | None = None) -> Any:
+    def open_store(self, node: str | None = None) -> Any:
         """Return the capture root as a checkpoint store, as every task and replay opens it."""
         # only a capturing plan needs it
         from graphed.checkpoint.resume import open_store  # noqa: PLC0415
