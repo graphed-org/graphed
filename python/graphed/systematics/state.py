@@ -16,6 +16,7 @@ import threading
 import weakref
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
+from types import MappingProxyType
 from typing import Any
 
 from .points import Point
@@ -59,13 +60,13 @@ class SystematicsState:
     def points(self) -> Mapping[str, Point]:
         """Return the registry, label to point."""
         with self._lock:
-            return self._points
+            return MappingProxyType(self._points)
 
     @property
     def point_owners(self) -> Mapping[Point, str]:
         """Return the registry's inverse, point to label."""
         with self._lock:
-            return self._point_owners
+            return MappingProxyType(self._point_owners)
 
     @property
     def epoch(self) -> int:
@@ -83,13 +84,14 @@ class SystematicsState:
     def shift_after_weight(self) -> Mapping[tuple[str, str], frozenset[int]]:
         """Return §2.5's `(family, collection) -> factor node ids` report."""
         with self._lock:
-            return self._shift_after_weight
+            return MappingProxyType(self._shift_after_weight)
 
     @property
     def universes(self) -> Mapping[int, Mapping[str, tuple[str, str | None]]]:
         """Return a copy of `ambient.two_level`'s memo pages, by container id."""
         with self._lock:
-            return {key: dict(page) for key, page in self._universes.items()}
+            # dict() copies atomically; iterating the live dict races its lock-free finalizers
+            return {key: dict(page) for key, page in dict(self._universes).items()}
 
     def registered_labels(self) -> frozenset[str]:
         """Return every label a registered container carries."""

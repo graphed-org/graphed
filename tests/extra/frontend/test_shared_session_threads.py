@@ -113,3 +113,10 @@ def test_explain_during_a_concurrent_vary_does_not_raise() -> None:
             graphed.explain(ctx)
 
     assert _run(minting, explaining) == []
+
+
+@pytest.mark.parametrize("view", ["points", "point_owners", "shift_after_weight"])
+def test_a_published_registry_cannot_be_written_through_its_view(view: str) -> None:
+    registry = getattr(Session(backend=NumpyBackend()).systematics, view)
+    with pytest.raises(TypeError):
+        registry["anything"] = None
