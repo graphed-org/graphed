@@ -34,7 +34,7 @@ class FakeMultiTritonClient:
     ) -> _Result:
         assert model_name == self.descriptor["model"]
         self.seen_input_names.append(sorted(i._name for i in inputs))
-        z = None
+        z: Any = None
         for inp in inputs:
             w = np.asarray(self.descriptor["weights"][inp._name], dtype="float64")
             contrib = inp._raw_data.astype("float64") @ w

@@ -498,7 +498,7 @@ class Session:
     def record_external(
         self,
         op: str,
-        fn: Callable[[object], object],
+        fn: Callable[..., object],
         inputs: Sequence[Array],
         params: Mapping[str, ParamValue] | None = None,
         *,

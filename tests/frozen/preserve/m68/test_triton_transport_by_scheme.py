@@ -13,7 +13,7 @@ import dataclasses
 import json
 import sys
 import types
-from typing import Any
+from typing import Any, cast
 
 import fake_triton_services as fake
 import numpy as np
@@ -73,8 +73,11 @@ def _served(tag: str) -> Plan[Any]:
     ev = new_events()
     ev.session.declare_service(ServiceSpec("scorer-svc", "triton"))
     params = {**PARAMS, "service": "scorer-svc"}
-    return values_plan(
-        record_external(ev.session, TRITON_PLUGIN, descriptor(tag), [ev.x], params=params)
+    return cast(
+        "Plan[Any]",
+        values_plan(
+            record_external(ev.session, TRITON_PLUGIN, descriptor(tag), [ev.x], params=params)
+        ),
     )
 
 

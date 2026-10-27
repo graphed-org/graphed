@@ -6,6 +6,7 @@ Survival is through realistic call patterns.
 from __future__ import annotations
 
 import sys
+from typing import Any
 
 from toy import ToyBackend, source
 
@@ -29,7 +30,7 @@ def test_provenance_survives_helper_functions() -> None:
     s = Session(ToyBackend())
     a = source(s, "a")
 
-    def build_mass(x: object) -> object:
+    def build_mass(x: Any) -> Any:
         return x.pt * 2  # the user's helper line
 
     out = build_mass(a)

@@ -12,12 +12,15 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 import graphed.core
 from graphed import Array, Session, aggregate_plan
 from graphed.core import Partition
 from graphed.core.execution import Plan
+
+if TYPE_CHECKING:
+    from graphed import Form
 
 POISON_OP = "mul"
 POISON_MESSAGE = "poisoned stage member"
@@ -34,7 +37,7 @@ class PoisonError(RuntimeError):
 class PoisonBackend:
     """A toy backend (no numpy, no awkward) whose ``POISON_OP`` always raises."""
 
-    def op_form(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> str:
+    def op_form(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> Any:
         return op
 
     def eval_stage(
@@ -89,7 +92,7 @@ def merged_key_program() -> tuple[Session, Array, Array, ListSource]:
     """
     session = Session(PoisonBackend())
     src = ListSource()
-    x = session.source("x", form="f", data=src)
+    x = session.source("x", form=cast("Form", "f"), data=src)
     poisoned = x * 2.0
     identity = poisoned + 0.0
     return session, identity, poisoned, src

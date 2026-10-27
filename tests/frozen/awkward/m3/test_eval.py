@@ -6,6 +6,8 @@ the reference node-by-node evaluator.)
 
 from __future__ import annotations
 
+from typing import cast
+
 import awkward as ak
 import numpy as np
 import pytest
@@ -17,22 +19,22 @@ from graphed.awkward import AwkwardBackend, from_awkward
 
 
 def _flat(x: object) -> np.ndarray:
-    return ak.to_numpy(ak.flatten(ak.Array(x), axis=None))
+    return cast("np.ndarray", ak.to_numpy(ak.flatten(ak.Array(x), axis=None)))
 
 
 def _reference(name: str, ev: ak.Array) -> np.ndarray:
     if name == "q1":
-        return ak.to_numpy(ev.MET.pt)
+        return cast("np.ndarray", ak.to_numpy(ev.MET.pt))
     if name == "q2":
         return _flat(ev.Jet.pt)
     if name == "q4":
         njet = ak.num(ev.Jet[ev.Jet.pt > 40], axis=1)
-        return ak.to_numpy(ev.MET.pt[njet >= 2])
+        return cast("np.ndarray", ak.to_numpy(ev.MET.pt[njet >= 2]))
     if name == "q5":
         pr = ak.combinations(ev.Muon, 2, fields=["a", "b"])
         m = _pair_mass(pr.a, pr.b)
         keep = ak.any((m > 60) & (m < 120) & (pr.a.charge != pr.b.charge), axis=1)
-        return ak.to_numpy(ev.MET.pt[keep])
+        return cast("np.ndarray", ak.to_numpy(ev.MET.pt[keep]))
     raise KeyError(name)
 
 

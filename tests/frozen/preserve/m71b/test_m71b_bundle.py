@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import awkward as ak
 import cloudpickle
@@ -39,7 +39,7 @@ def _histogram(value: object, weight: object) -> np.ndarray:
         range=(HIST["lo"], HIST["hi"]),
         weights=np.asarray(ak.to_numpy(ak.Array(weight)), dtype="float64"),
     )
-    return np.round(counts, 6)
+    return cast("np.ndarray", np.round(counts, 6))
 
 
 def test_a_declared_external_reproduces_from_its_bundle(registered: None, tmp_path: Path) -> None:

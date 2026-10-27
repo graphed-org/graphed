@@ -11,7 +11,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import m69b_opt_fixtures as fx
 import pytest
@@ -49,7 +49,7 @@ def test_opt0_ships_the_lowered_cone_of_the_outputs() -> None:
     session, events = fx.record()
     outputs = fx.merged_pair(events)
     cone = {op.node_id for o in outputs for op in lower(session, o, opt_level=0).ops}
-    shipped = _node_count(_plan(*outputs, opt_level=0).process.ir)
+    shipped = _node_count(cast(Any, _plan(*outputs, opt_level=0).process).ir)
     assert shipped == len(cone)
     assert _node_count(compile_ir(session, *outputs, optimize=False).ir) > shipped
 
@@ -86,9 +86,9 @@ def test_opt0_writes_the_defaults_parts(tmp_path: Path) -> None:
 def test_the_default_is_the_optimized_compile() -> None:
     session, events = fx.record()
     outputs = fx.merged_pair(events)
-    implicit = _plan(*outputs).process.ir
+    implicit = cast(Any, _plan(*outputs).process).ir
     assert (
-        _plan(*outputs, opt_level=1).process.ir
+        cast(Any, _plan(*outputs, opt_level=1).process).ir
         == implicit
         == bytes(compile_ir(session, *outputs).ir)
     )

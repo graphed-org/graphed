@@ -48,7 +48,7 @@ def _fill(value: object, owned: Mapping[str, Any], filled: list[Any]) -> Any:
     return value
 
 
-def _handles(result: object) -> list[object]:
+def _handles(result: Any) -> list[object]:
     if isinstance(result, tuple):
         return [graphed.context_of(item) for item in result]
     return [graphed.context_of(result)]

@@ -10,6 +10,7 @@ stays a `PartitionedSource` (the Protocol gains no member).
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 import awkward as ak
 import pytest
@@ -108,7 +109,7 @@ def test_a_source_without_the_hook_keeps_each_drivers_own_read_list(tmp_path: Pa
 def test_the_partitioned_source_protocol_gains_no_member() -> None:
     class HookOnly:
         def projected_columns(self, outputs: object) -> tuple[str, ...]:
-            return DECLARED
+            return cast("tuple[str, ...]", DECLARED)
 
     # a source with NO hook must keep passing the isinstance check the drivers dispatch on
     assert isinstance(PlainSource(), PartitionedSource)

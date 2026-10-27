@@ -7,6 +7,7 @@ import sys
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any, cast
 
 import numpy as np
 import pytest
@@ -61,7 +62,9 @@ def test_numpy_to_parquet_writes_its_parts_on_the_url_filesystem(url_root: str, 
     plan = gio.to_parquet(x * 2.0, destination, steps_per_file=3, compute=False)
     assert isinstance(plan, Plan)
     tasks = sorted(plan.tasks, key=lambda t: t.key)
-    assert [list(plan.process.part_paths(t.partition)) for t in tasks] == [[p] for p in expected]
+    assert [list(cast(Any, plan.process).part_paths(t.partition)) for t in tasks] == [
+        [p] for p in expected
+    ]
     assert SequentialRunner().run(plan).value == expected
     on_fs = fsspec.filesystem("memory").find(url_root.removeprefix("memory:/"))
     assert sorted(on_fs) == [p.removeprefix("memory:/") for p in expected]

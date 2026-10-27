@@ -61,7 +61,7 @@ def test_like_creators_record_fusible_ops_and_match_numpy() -> None:
 
 def test_from_array_accepts_chunk_metadata() -> None:
     s = Session(gn.NumpyBackend())
-    data = np.arange(8, dtype=np.float64)
+    data: np.ndarray = np.arange(8, dtype=np.float64)
     a = gn.from_array(s, "a", data, chunks=4)
     np.testing.assert_array_equal(np.asarray(s.materialize(a)), data)
     b = gn.from_array(s, "b", data)  # chunks are metadata only: evaluation unchanged

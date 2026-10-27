@@ -7,6 +7,8 @@ out and re-join (these re-convergence cases were dask-awkward failure points).
 
 from __future__ import annotations
 
+from typing import Any
+
 from graphed_corpus import make_events
 
 from graphed import Session
@@ -14,7 +16,7 @@ from graphed.awkward import AwkwardBackend, from_awkward, gak
 from graphed.awkward.projection import project
 
 
-def _events(s: Session) -> object:
+def _events(s: Session) -> Any:
     return from_awkward(s, "events", make_events(n_events=200))
 
 

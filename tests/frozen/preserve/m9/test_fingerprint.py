@@ -8,12 +8,17 @@ input and NOT on irrelevant ones.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any, cast
+
 import agc
 
+if TYPE_CHECKING:
+    from pathlib import Path
 
-def _fp(root, **opts):  # type: ignore[no-untyped-def]
+
+def _fp(root: Path, **opts: Any) -> str:
     bundle, _ = agc.build_agc(root, **opts)
-    return bundle.fingerprint()
+    return cast("str", bundle.fingerprint())
 
 
 def test_identical_inputs_give_an_identical_fingerprint(tmp_path) -> None:  # type: ignore[no-untyped-def]

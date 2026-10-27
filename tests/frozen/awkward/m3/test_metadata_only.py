@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
 
 import awkward as ak
 import pytest
@@ -11,6 +12,9 @@ from graphed_corpus import make_events
 
 from graphed import Session
 from graphed.awkward import AwkwardBackend, from_awkward, from_parquet, gak
+
+if TYPE_CHECKING:
+    from graphed.awkward import AwkwardForm
 
 
 def test_recording_keeps_every_form_on_the_typetracer_backend() -> None:
@@ -25,7 +29,7 @@ def test_op_form_does_not_touch_data() -> None:
     events = from_awkward(s, "events", make_events(n_events=100))
     jets = events.Jet[events.Jet.pt > 30]
     ht = gak.sum(jets.pt, axis=1)
-    assert s.form(ht).is_typetracer
+    assert cast("AwkwardForm", s.form(ht)).is_typetracer
 
 
 def test_from_parquet_reads_only_metadata(tmp_path: Path) -> None:
@@ -36,7 +40,7 @@ def test_from_parquet_reads_only_metadata(tmp_path: Path) -> None:
     events = from_parquet(s, "events", str(path))
     # the form is available from metadata alone (no row groups read)
     muon_pt = events.Muon.pt
-    assert s.form(muon_pt).is_typetracer
+    assert cast("AwkwardForm", s.form(muon_pt)).is_typetracer
     assert "var * float64" in s.form(muon_pt).describe()
     # and the data is still materializable lazily (read only now)
     njet = gak.num(events.Jet, axis=1)

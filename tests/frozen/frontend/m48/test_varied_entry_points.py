@@ -8,6 +8,8 @@ both wrong shapes are what these assertions reject.
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import pytest
 from vary_fixtures import loose_varied, vector_source
 
@@ -30,7 +32,7 @@ def test_getitem_with_a_varied_mask_returns_a_varied_carrying_the_masks_labels()
 
 def test_filter_with_a_varied_mask_returns_a_varied_carrying_the_masks_labels() -> None:
     _s, x, mask = _varied_mask()
-    filtered = x.filter(mask)
+    filtered = x.filter(cast(Any, mask))
     assert isinstance(filtered, graphed.Varied)
     assert list(graphed.labels(filtered)) == list(graphed.labels(mask))
     for label in graphed.labels(mask):

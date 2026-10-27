@@ -5,6 +5,8 @@ And a variation downstream of the boundary still compiles per universe.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any, cast
+
 import numpy as np
 import pytest
 from m49_vary_fixtures import JOINED_PT, JOINED_SF, join_program
@@ -12,13 +14,19 @@ from m49_vary_fixtures import JOINED_PT, JOINED_SF, join_program
 import graphed
 from graphed.errors import GraphedError
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
 JES = {"jes_up": 1.1, "jes_down": 0.9}
 
 
-def _varied_left(program: object) -> graphed.Varied:
+def _varied_left(program: Any) -> graphed.Varied:
     pt = program.left["pt"]
-    return graphed.vary(
-        pt, "jes", **{tag.split("_", 1)[1]: pt * factor for tag, factor in JES.items()}
+    return cast(
+        graphed.Varied,
+        graphed.vary(
+            pt, "jes", **{tag.split("_", 1)[1]: pt * factor for tag, factor in JES.items()}
+        ),
     )
 
 
@@ -30,9 +38,9 @@ def test_join_refuses_a_varied_operand_naming_the_verb_and_the_labels(side: str)
 
     with pytest.raises(GraphedError) as caught:
         if side == "left":
-            graphed.join(varied, other, on=["key"])
+            graphed.join(cast(Any, varied), other, on=["key"])
         else:
-            graphed.join(other, varied, on=["key"])
+            graphed.join(other, cast(Any, varied), on=["key"])
 
     message = str(caught.value)
     assert "graphed.join" in message
@@ -47,7 +55,9 @@ def test_join_refuses_a_varied_operand_naming_the_verb_and_the_labels(side: str)
         ("graphed.pack_key", lambda varied: graphed.pack_key(varied, on=["key"])),
     ],
 )
-def test_every_boundary_verb_names_the_verb_and_the_labels(verb: str, call: object) -> None:
+def test_every_boundary_verb_names_the_verb_and_the_labels(
+    verb: str, call: Callable[[Any], object]
+) -> None:
     program = join_program()
     varied = _varied_left(program)
 

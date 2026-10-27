@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import pytest
@@ -105,7 +105,7 @@ def test_a_structured_dtype_records_a_record_whose_fields_are_typed() -> None:
     spec = [("pt", "f4"), ("eta", "f4")]
 
     def pack(a: Any) -> Any:
-        out = np.zeros(len(a), dtype=spec)
+        out: Any = np.zeros(len(a), dtype=spec)
         out["pt"], out["eta"] = a, a * 2
         return out
 
@@ -161,7 +161,7 @@ def _program() -> bytes:
         record_of(sn).map(f, name="n5", output_type="bool"),
         *(x.map(f, name="num", output_type=name) for name in NUMERIC),
     ]
-    return sn.serialized_ir(*outs, optimize=False)
+    return cast(bytes, sn.serialized_ir(*outs, optimize=False))
 
 
 def test_declared_recordings_serialize_byte_identically_across_sessions() -> None:

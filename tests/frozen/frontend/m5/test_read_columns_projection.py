@@ -11,12 +11,16 @@ a NanoAOD) for a query that needs one, an order-of-magnitude I/O blowup on a rea
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from typing import TYPE_CHECKING, Any, cast
 
 from graphed import Array, Session, read_columns
 
+if TYPE_CHECKING:
+    from graphed import Form
+
 
 class _Backend:
-    def op_form(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> str:
+    def op_form(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> Any:
         return op
 
     def eval_stage(
@@ -35,7 +39,7 @@ class _Backend:
 
 
 def _events(s: Session) -> Array:
-    return s.source("events", form="f", data={"x": 1})
+    return s.source("events", form=cast("Form", "f"), data={"x": 1})
 
 
 def test_field_access_projects_to_that_column() -> None:

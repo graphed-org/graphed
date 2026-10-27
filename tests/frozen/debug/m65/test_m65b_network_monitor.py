@@ -14,7 +14,7 @@ import socket
 import threading
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -287,7 +287,7 @@ def test_per_worker_factory_pushes_from_a_subprocess(monkeypatch: pytest.MonkeyP
         ).worker_monitor_factory()
         assert lean_factory is not None
         lean_built = lean_factory()
-        assert lean_built.lean_events is True
+        assert cast(Any, lean_built).lean_events is True
         assert lean_built is not built
         assert NetworkMonitor(server.ingest_url).worker_monitor_factory() is None
         for h in reversed(hooks):

@@ -9,14 +9,19 @@ column set.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 
 import graphed
 from graphed import Session
 from graphed.numpy import NumpyBackend, from_record, project
 
+if TYPE_CHECKING:
+    from graphed import Array
 
-def _sources() -> tuple[object, object]:
+
+def _sources() -> tuple[Array, Array]:
     s = Session(NumpyBackend())
     left = from_record(
         s,

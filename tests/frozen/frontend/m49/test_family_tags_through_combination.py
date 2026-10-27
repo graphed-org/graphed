@@ -8,6 +8,8 @@ distinct labels naming one value.
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import numpy as np
 import pytest
 from m49_vary_fixtures import VECTOR
@@ -23,7 +25,7 @@ HALF = 0.5
 def _combined() -> tuple[Session, graphed.Array, graphed.Varied]:
     session = Session(NumpyBackend())
     x = from_array(session, "x", VECTOR)
-    scale = graphed.vary(x, "scale", **{"0.5": x * HALF})
+    scale = graphed.vary(x, "scale", **cast("dict[str, Any]", {"0.5": x * HALF}))
     other = graphed.vary(x, "btag", up=x * 2.0)
     return session, x, scale + other
 
@@ -42,7 +44,7 @@ def test_a_family_tag_survives_the_combination() -> None:
     _session, x, combined = _combined()
 
     with pytest.raises(GraphedError) as caught:
-        graphed.vary(combined, "scale", **{"0p5": x * HALF})
+        graphed.vary(combined, "scale", **cast("dict[str, Any]", {"0p5": x * HALF}))
     message = str(caught.value)
     assert "scale" in message
     assert "0p5" in message
@@ -51,7 +53,7 @@ def test_a_family_tag_survives_the_combination() -> None:
 def test_a_genuinely_new_tag_in_that_family_is_still_accepted() -> None:
     """The control leg: the family check refuses the duplicate value, not every later `vary`."""
     session, x, combined = _combined()
-    grown = graphed.vary(combined, "scale", **{"2.0": x * 2.0})
+    grown = graphed.vary(combined, "scale", **cast("dict[str, Any]", {"2.0": x * 2.0}))
 
     assert graphed.labels(grown) == ("nominal", "scale_5em1", "btag_up", "scale_2")
     assert np.allclose(

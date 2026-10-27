@@ -28,7 +28,7 @@ import hashlib
 import pickle
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 import awkward as ak
 import numpy as np
@@ -39,6 +39,9 @@ from graphed import Array, Session
 from graphed.awkward import AwkwardBackend, from_awkward
 from graphed.core import Partition
 from graphed.numpy import NumpyBackend, from_record
+
+if TYPE_CHECKING:
+    from graphed import Form
 
 # The join key fields and the full relational output column set (union of both sides' fields minus
 # the duplicated key), in a fixed order the normalizers project onto so internal column order is
@@ -117,7 +120,9 @@ class BackendCase:
 
 
 def _awkward_source(session: Session, name: str, cols: Mapping[str, np.ndarray]) -> Array:
-    return from_awkward(session, name, ak.Array({k: np.asarray(v) for k, v in cols.items()}))
+    return cast(
+        Array, from_awkward(session, name, ak.Array({k: np.asarray(v) for k, v in cols.items()}))
+    )
 
 
 def _awkward_rows(block: Any) -> list[tuple[int, ...]]:
@@ -180,40 +185,46 @@ class ToyJoinBackend:
         return None
 
     def partition(
-        self, block: Block, key_field: str, parts: int, *, salt: int = 0, boundaries: object = None
-    ) -> tuple[Block, ...]:
-        out: tuple[Block, ...] = tuple([] for _ in range(parts))
+        self,
+        block: Block[Any],
+        key_field: str,
+        parts: int,
+        *,
+        salt: int = 0,
+        boundaries: object = None,
+    ) -> tuple[Block[Any], ...]:
+        out: tuple[Block[Any], ...] = tuple([] for _ in range(parts))
         for row in block:
             out[route(row[key_field], parts, salt=salt)].append(row)
         return out
 
-    def concat(self, blocks: Sequence[Block]) -> Block:
-        merged: Block = []
+    def concat(self, blocks: Sequence[Block[Any]]) -> Block[Any]:
+        merged: Block[Any] = []
         for b in blocks:
             merged.extend(b)
         return merged
 
-    def slice_rows(self, block: Block, start: int, stop: int) -> Block:
+    def slice_rows(self, block: Block[Any], start: int, stop: int) -> Block[Any]:
         return block[start:stop]
 
     def estimated_bytes(self, block_or_form: object) -> int:
         return 16 * len(block_or_form) if isinstance(block_or_form, list) else 0
 
-    def to_wire(self, block: Block) -> bytes:
+    def to_wire(self, block: Block[Any]) -> bytes:
         return pickle.dumps(block)
 
-    def from_wire(self, data: bytes) -> Block:
-        return pickle.loads(data)
+    def from_wire(self, data: bytes) -> Block[Any]:
+        return cast("Block[Any]", pickle.loads(data))
 
 
 @dataclass
 class ListSource:
     """A ``PartitionedSource`` over an in-memory list of rows (the plan-builder toy, from m39)."""
 
-    data: list
-    reads: list = field(default_factory=list)
+    data: list[Any]
+    reads: list[tuple[int, int]] = field(default_factory=list)
 
-    def __call__(self) -> list:
+    def __call__(self) -> list[Any]:
         raise AssertionError("the whole-dataset loader must never run during a plan")
 
     def partitions(self, steps_per_file: int = 1) -> tuple[Partition, ...]:
@@ -221,7 +232,7 @@ class ListSource:
             Partition.blind("toy://list", "", s, steps_per_file) for s in range(steps_per_file)
         )
 
-    def read_partition(self, partition, columns, resources) -> list:  # type: ignore[no-untyped-def]
+    def read_partition(self, partition: Partition, columns: Any, resources: Any) -> list[Any]:
         part = partition.resolve(len(self.data))
         self.reads.append((part.entry_start, part.entry_stop))
         return list(self.data[part.entry_start : part.entry_stop])
@@ -231,12 +242,12 @@ def toy_join_sources(session: Session) -> tuple[Array, Array]:
     """Two independently-partitioned toy sources carrying ``(run, lumi, event)`` keys."""
     left = session.source(
         "left",
-        form="f",
+        form=cast("Form", "f"),
         data=ListSource([{"run": 1, "lumi": 1, "event": i % 3} for i in range(9)]),
     )
     right = session.source(
         "right",
-        form="f",
+        form=cast("Form", "f"),
         data=ListSource([{"run": 1, "lumi": 1, "event": i % 3} for i in range(6)]),
     )
     return left, right

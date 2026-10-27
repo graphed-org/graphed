@@ -17,7 +17,7 @@ COLLECTS against a tree with no m52 implementation and fails at RUN time.
 from __future__ import annotations
 
 import importlib
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 
@@ -121,7 +121,7 @@ def lockstep_shift_context() -> tuple[Session, EventContext]:
 
 def stacked_weight_context() -> tuple[Session, EventContext]:
     session, first = weight_context()
-    ambient = graphed.weight(first)
+    ambient: Any = graphed.weight(first)
     varied = graphed.vary(
         first,
         "mu",
@@ -174,7 +174,7 @@ EXISTING_SHAPES = tuple(DEFAULT_POINT_MAPS)
 
 def build(name: str) -> tuple[Session, Any]:
     """Run one of `EXISTING_SHAPES` by name, so a parametrized test names its program in the id."""
-    return globals()[name]()
+    return cast("tuple[Session, Any]", globals()[name]())
 
 
 # ---- the §8-g shape: a container whose LABELS outrun its `_tags` --------------------------------
@@ -250,7 +250,7 @@ def numeric_families() -> tuple[Session, EventContext]:
         is_weight=True,
         points={"1": weight * BTAG_UP, "-1": weight * BTAG_DOWN},
     )
-    ambient = graphed.weight(tagged)
+    ambient: Any = graphed.weight(tagged)
     return session, graphed.vary(
         tagged,
         "jer",
@@ -350,7 +350,7 @@ def selection_only_context() -> tuple[Session, EventContext]:
 
 
 def carrier(name: str) -> tuple[Session, EventContext]:
-    return globals()[name]()
+    return cast("tuple[Session, EventContext]", globals()[name]())
 
 
 def carrier_weight(ctx: EventContext) -> Any:
@@ -368,6 +368,8 @@ def carrier_weight(ctx: EventContext) -> Any:
 def materialized(session: Session, container: Varied) -> dict[str, tuple[float, ...]]:
     """Every universe of `container`, as plain tuples — the shape a value comparison wants."""
     return {
-        label: tuple(float(v) for v in session.materialize(graphed.universe(container, label)))
+        label: tuple(
+            float(v) for v in cast(Any, session.materialize(graphed.universe(container, label)))
+        )
         for label in graphed.labels(container)
     }

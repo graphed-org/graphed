@@ -11,7 +11,7 @@ import json
 import re
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import awkward as ak
 import numpy as np
@@ -164,7 +164,7 @@ def test_failed_run_keeps_its_stage_error(tmp_path: Path) -> None:
     assert _states(r) == ["finished", "errored", "submitted", "submitted"]
     labels = [t.partition for t in r.tasks]
     assert len(set(labels)) == 4 and all(labels)
-    assert r.error.startswith("StageError: ")
+    assert cast(str, r.error).startswith("StageError: ")
 
 
 def test_report_round_trips_through_json() -> None:
@@ -198,9 +198,9 @@ def test_durations_are_per_task_worker_clock() -> None:
         "submitted",
         "submitted",
     ]
-    assert by_key[0].duration_s >= 0.05 and by_key[1].duration_s >= 0.05
+    assert cast(float, by_key[0].duration_s) >= 0.05 and cast(float, by_key[1].duration_s) >= 0.05
     assert by_key[2].duration_s is None and by_key[3].duration_s is None
-    assert r.wall_s >= by_key[0].duration_s + by_key[1].duration_s
+    assert r.wall_s >= cast(float, by_key[0].duration_s) + cast(float, by_key[1].duration_s)
 
     rec = gd.RunRecorder()
     rec.on_task(_ev(TaskPhase.SUBMITTED, 0, 0.0, label="L0"))
@@ -287,7 +287,7 @@ def test_recorder_forwards_and_forces_the_full_stream() -> None:
     gc.SequentialRunner(monitor=rec).run(_plan(_ok))
     rec.on_combine(3)
     rec.on_profile("w", b"x")
-    assert rec.worker_profiler_factory() is _profiler_factory
+    assert cast(object, rec.worker_profiler_factory()) is _profiler_factory
     assert [(e.phase, e.key) for e in inner.events] == [
         *[(TaskPhase.SUBMITTED, k) for k in range(4)],
         *[(ph, k) for k in range(4) for ph in (TaskPhase.STARTED, TaskPhase.FINISHED)],

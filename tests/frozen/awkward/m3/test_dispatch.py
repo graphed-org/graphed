@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, cast
 
 import awkward as ak
 import pytest
@@ -13,8 +14,11 @@ from graphed import Session
 from graphed.awkward import AwkwardBackend, from_awkward, gak, payloads
 from graphed.awkward._ops import apply
 
+if TYPE_CHECKING:
+    from graphed.awkward import AwkwardForm
 
-def _events() -> tuple[Session, object]:
+
+def _events() -> tuple[Session, Any]:
     s = Session(AwkwardBackend())
     return s, from_awkward(s, "events", make_events(n_events=200))
 
@@ -29,7 +33,7 @@ def test_extra_reductions_and_helpers_record() -> None:
         gak.ones_like(jets.pt, dtype="int64"),
         gak.local_index(jets, axis=1),
     ):
-        assert s.form(out).is_typetracer
+        assert cast("AwkwardForm", s.form(out)).is_typetracer
 
 
 def test_values_astype_and_minimum_via_apply() -> None:

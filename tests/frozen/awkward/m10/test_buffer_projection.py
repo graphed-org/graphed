@@ -8,6 +8,8 @@ frozen M5 column view exactly, so the two granularities can never drift apart.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any, cast
+
 import numpy as np
 import pytest
 from graphed_corpus import make_events
@@ -15,14 +17,17 @@ from graphed_corpus import make_events
 from graphed import BufferNeed, BufferProjection, ProjectionError, Session
 from graphed.awkward import AwkwardBackend, from_awkward, gak, project, project_buffers
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
-def _session():
+
+def _session() -> Any:
     s = Session(AwkwardBackend())
     return from_awkward(s, "events", make_events(n_events=200))
 
 
-def _buffers(build) -> dict[str, BufferNeed]:
-    return project_buffers(build(_session())).buffers_for("events")
+def _buffers(build: Callable[[Any], Any]) -> dict[str, BufferNeed]:
+    return cast("dict[str, BufferNeed]", project_buffers(build(_session())).buffers_for("events"))
 
 
 def test_count_only_reports_offsets_not_the_empty_set() -> None:
@@ -49,7 +54,7 @@ def test_data_implies_structure_no_redundant_offsets_entry() -> None:
 
 def test_mixed_count_and_data() -> None:
     # cut on jet multiplicity, then read muon pt: Jet contributes structure only
-    def build(e):
+    def build(e: Any) -> Any:
         return e.Muon.pt[gak.num(e.Jet, axis=1) >= 2]
 
     needs = _buffers(build)
@@ -67,7 +72,7 @@ def test_no_overtouch_at_buffer_level() -> None:
 
 
 def test_to_projection_collapses_exactly_to_the_m5_column_view() -> None:
-    builds = [
+    builds: list[Callable[[Any], Any]] = [
         lambda e: e.Jet.pt,
         lambda e: e.Jet[e.Jet.pt > 30].eta,
         lambda e: gak.sum(e.Jet.pt, axis=1),
@@ -84,7 +89,7 @@ def test_to_projection_collapses_exactly_to_the_m5_column_view() -> None:
 
 
 def test_dimuon_buffer_needs() -> None:
-    def dimuon(e):
+    def dimuon(e: Any) -> Any:
         pairs = gak.combinations(e.Muon, 2, fields=["a", "b"])
         a, b = pairs.a, pairs.b
         mass = np.sqrt(2 * a.pt * b.pt * (np.cosh(a.eta - b.eta) - np.cos(a.phi - b.phi)))

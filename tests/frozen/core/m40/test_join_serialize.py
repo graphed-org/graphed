@@ -17,7 +17,7 @@ import pytest
 
 from graphed.core import GraphStore
 
-_SCHEME = {"how": "inner", "on": "event"}
+_SCHEME: dict[str, int | float | bool | str] = {"how": "inner", "on": "event"}
 
 
 def _join_graph() -> tuple[GraphStore, list[int]]:

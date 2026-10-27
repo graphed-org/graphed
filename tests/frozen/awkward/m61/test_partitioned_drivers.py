@@ -12,6 +12,7 @@ derived from the partition alone cannot tell two listings of one input apart.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 import awkward as ak
 import numpy as np
@@ -37,11 +38,11 @@ def parquet_path(tmp_path: Path) -> str:
 
 
 def _ak_source(path: str | list[str]) -> graphed.Array:
-    return from_parquet(graphed.Session(AwkwardBackend()), "ev", path)
+    return cast("graphed.Array", from_parquet(graphed.Session(AwkwardBackend()), "ev", path))
 
 
 def _np_source(path: str | list[str]) -> graphed.Array:
-    return npio.from_parquet(graphed.Session(gn.NumpyBackend()), "ev", path)
+    return cast("graphed.Array", npio.from_parquet(graphed.Session(gn.NumpyBackend()), "ev", path))
 
 
 def _total(plan: graphed.core.execution.Plan[float]) -> float:

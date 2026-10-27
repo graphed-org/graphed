@@ -9,7 +9,7 @@ from __future__ import annotations
 import pickle
 import shutil
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import m74_helpers as h
 import pytest
@@ -26,7 +26,9 @@ def zz(tmp_path: Path) -> dict[str, list[Path]]:
 
 
 def run(store: Path, path: list[Path], *flags: str, runner: str = "resumable") -> dict[str, Any]:
-    return h.run_script("m74_env.py", runner, str(store), *flags, path=path)
+    return cast(
+        "dict[str, Any]", h.run_script("m74_env.py", runner, str(store), *flags, path=path)
+    )
 
 
 def refuses(

@@ -8,6 +8,7 @@ import uuid
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import Any
 
 import m62_url_helpers as h
 import pytest
@@ -15,7 +16,7 @@ import pytest
 from graphed.checkpoint import FsspecStore, JournalEntry, Store
 
 
-def test_put_is_content_addressed_and_idempotent(store_url) -> None:
+def test_put_is_content_addressed_and_idempotent(store_url: str) -> None:
     store = FsspecStore(store_url)
     h1 = store.put(b"hello")
     h2 = store.put(b"hello")
@@ -26,20 +27,20 @@ def test_put_is_content_addressed_and_idempotent(store_url) -> None:
     assert len(store.fs.find(store.objects)) == 2
 
 
-def test_get_missing_blob_is_none(store_url) -> None:
+def test_get_missing_blob_is_none(store_url: str) -> None:
     store = FsspecStore(store_url)
     assert store.get("0" * 64) is None
     store.put(b"present")
     assert store.get("0" * 64) is None
 
 
-def test_fresh_store_is_empty(store_url) -> None:
+def test_fresh_store_is_empty(store_url: str) -> None:
     store = FsspecStore(store_url)
     assert store.completed() == {}
     assert store.dead_letters() == []
 
 
-def test_journal_replays_stage_deps_and_last_record_wins(store_url) -> None:
+def test_journal_replays_stage_deps_and_last_record_wins(store_url: str) -> None:
     store = FsspecStore(store_url)
     blobs = [store.put(f"partial-{i}".encode()) for i in range(12)]
     for i, blob in enumerate(blobs):
@@ -53,7 +54,7 @@ def test_journal_replays_stage_deps_and_last_record_wins(store_url) -> None:
     }
 
 
-def test_record_without_its_blob_is_not_honored(store_url) -> None:
+def test_record_without_its_blob_is_not_honored(store_url: str) -> None:
     store = FsspecStore(store_url)
     store.record_done("task-X", "uri@0:10", "f" * 64)
     assert store.completed() == {}
@@ -62,7 +63,7 @@ def test_record_without_its_blob_is_not_honored(store_url) -> None:
     assert set(store.completed()) == {"task-A"}
 
 
-def test_unparseable_record_is_skipped(store_url) -> None:
+def test_unparseable_record_is_skipped(store_url: str) -> None:
     store = FsspecStore(store_url)
     blob = store.put(b"partial-A")
     store.record_done("task-A", "uri@0:10", blob)
@@ -71,7 +72,7 @@ def test_unparseable_record_is_skipped(store_url) -> None:
     assert set(store.completed()) == {"task-A"}
 
 
-def _feed(store) -> None:
+def _feed(store: FsspecStore | Store) -> None:
     blob = store.put(b"partial-A")
     store.record_done("task-A", "uri@0:10", blob, stage="map_write", deps=("d0", "d1"))
     store.record_done("task-B", "uri@10:20", store.put(b"partial-B"))
@@ -81,7 +82,7 @@ def _feed(store) -> None:
     store.record_dead({"task_id": "t2", "error_type": "MemoryError"})
 
 
-def test_records_are_one_line_objects_with_the_local_bytes(store_url, tmp_path) -> None:
+def test_records_are_one_line_objects_with_the_local_bytes(store_url: str, tmp_path: Path) -> None:
     local_dead: list[bytes] = []
     for node in (None, "A"):
         remote = FsspecStore(store_url, node=node)
@@ -99,7 +100,7 @@ def test_records_are_one_line_objects_with_the_local_bytes(store_url, tmp_path) 
         assert sorted(dead) == sorted(local_dead)
 
 
-def test_dead_letters_keep_insertion_order(store_url) -> None:
+def test_dead_letters_keep_insertion_order(store_url: str) -> None:
     store = FsspecStore(store_url)
     for i in range(13):
         store.record_dead({"task_id": f"t{i}", "error_type": "ValueError"})
@@ -109,7 +110,7 @@ def test_dead_letters_keep_insertion_order(store_url) -> None:
     ]
 
 
-def test_node_writers_replay_as_a_union(store_url) -> None:
+def test_node_writers_replay_as_a_union(store_url: str) -> None:
     a = FsspecStore(store_url, node="A")
     b = FsspecStore(store_url, node="B")
     a.record_done("task-A", "uri@0:10", a.put(b"partial-A"))
@@ -121,7 +122,7 @@ def test_node_writers_replay_as_a_union(store_url) -> None:
     assert set(reader.completed()) == {"task-A", "task-B"}
 
 
-def test_concurrent_record_dead_loses_nothing(store_url) -> None:
+def test_concurrent_record_dead_loses_nothing(store_url: str) -> None:
     store = FsspecStore(store_url)
     barrier = threading.Barrier(8)
 
@@ -148,7 +149,7 @@ def test_concurrent_record_dead_loses_nothing(store_url) -> None:
     assert len(store.fs.find(store.dead_letter_path)) == 80
 
 
-def test_unreadable_record_raises_the_backend_error(monkeypatch) -> None:
+def test_unreadable_record_raises_the_backend_error(monkeypatch: pytest.MonkeyPatch) -> None:
     store = FsspecStore(f"memory://m62-{uuid.uuid4().hex}")
     store.record_done("task-A", "uri@0:10", store.put(b"partial-A"))
     store.record_done("task-B", "uri@10:20", store.put(b"partial-B"))
@@ -158,7 +159,7 @@ def test_unreadable_record_raises_the_backend_error(monkeypatch) -> None:
     boom = OSError("boom")
     calls: list[list[str]] = []
 
-    def fake(paths, starts, ends, **kwargs):
+    def fake(paths: Any, starts: Any, ends: Any, **kwargs: Any) -> list[Any]:
         calls.append(list(paths))
         return [*real(paths, starts, ends, **kwargs)[:-1], boom]
 

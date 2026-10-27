@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 import pytest
 from m68c_services_harness import FOLD, corrected, joined, rows, serve, two_sources
@@ -27,7 +28,7 @@ def test_resumable_bound_join_plan_equals_the_sequential_value(fold: bool, tmp_p
         res = run_shuffle_resumable(bound, store)
         assert server.requests > 0
         assert res.report.executed == sum(len(st.tasks) for st in plan.stages)
-        value = bound.value([store.get(h) for h in res.value])
+        value = bound.value(cast("list[bytes]", [store.get(h) for h in res.value]))
         expected = SequentialRunner().run(bound).value
     assert len(value) == len(expected) == 2
     union, want = joined(value), joined(expected)

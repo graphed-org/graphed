@@ -6,16 +6,23 @@ over-touching bug this milestone avoids.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
+
 import numpy as np
 import pytest
 
 import graphed.numpy as gn
 from graphed import Session
 
-WIDE = {f"c{i}": np.arange(4, dtype=float) for i in range(20)}  # a 20-column record
+if TYPE_CHECKING:
+    from graphed import Array
+
+WIDE: dict[str, Any] = {
+    f"c{i}": np.arange(4, dtype=float) for i in range(20)
+}  # a 20-column record
 
 
-def _events(s: Session) -> object:
+def _events(s: Session) -> Array:
     return gn.from_record(
         s,
         "events",

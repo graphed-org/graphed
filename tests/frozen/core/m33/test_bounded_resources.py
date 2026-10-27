@@ -8,6 +8,8 @@ The set of simultaneously-open handles is bounded (LRU-evicted, closing the evic
 
 from __future__ import annotations
 
+from typing import cast
+
 from graphed.core import LocalResources, SequentialRunner
 from graphed.core.execution import Partition, Plan, Task
 
@@ -33,7 +35,7 @@ def test_open_once_reuses_within_the_bound() -> None:
 
 def test_exceeding_the_bound_closes_the_least_recently_used() -> None:
     res = LocalResources(max_open=2)
-    handles = {u: res.open_once(u, _Handle) for u in ("a", "b")}
+    handles = {u: cast(_Handle, res.open_once(u, _Handle)) for u in ("a", "b")}
     res.open_once("a", _Handle)  # touch 'a' -> 'b' is now the LRU
     res.open_once("c", _Handle)  # over the bound -> evict + close 'b'
     assert handles["b"].closed is True
@@ -62,7 +64,7 @@ def test_close_releases_every_handle() -> None:
     res.close()
     assert all(h.closed for h in hs)  # type: ignore[attr-defined]
     # reusable after close: a fresh open works
-    again = res.open_once("a", _Handle)
+    again = cast(_Handle, res.open_once("a", _Handle))
     assert again.closed is False
 
 

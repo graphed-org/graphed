@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import time
 import urllib.request
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 
@@ -27,6 +28,9 @@ from graphed.debug import (
 )
 from graphed.debug.dashboard import _wire
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
 
 def _ev(phase: TaskPhase, key: int, worker: str = "w0", error: str | None = None) -> TaskEvent:
     return TaskEvent(
@@ -34,7 +38,9 @@ def _ev(phase: TaskPhase, key: int, worker: str = "w0", error: str | None = None
     )
 
 
-def _poll(server: DashboardServer, pred, timeout: float = 10.0) -> dict:  # type: ignore[no-untyped-def]
+def _poll(
+    server: DashboardServer, pred: Callable[[dict[str, Any]], bool], timeout: float = 10.0
+) -> dict[str, Any]:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         snap = server.snapshot()
@@ -311,8 +317,8 @@ def test_dashboard_convenience_and_attach() -> None:
             def run(self, plan: object) -> object:
                 return None
 
-        ex = _Exec()
-        assert dash.attach(ex) is ex
+        ex: Any = _Exec()
+        assert dash.attach(ex) is cast(object, ex)
         assert ex.monitor is dash.monitor
 
 

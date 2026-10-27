@@ -62,7 +62,7 @@ def test_parquet_write_reproduces_a_dump_to_parquet_part(tmp_path: Path) -> None
     paths = SequentialRunner().run(plan).value
     for task, path in zip(sorted(plan.tasks, key=lambda t: t.key), paths, strict=True):
         chunk = resolved_chunk(EVENTS, task.partition)
-        chunk_sum = np.sum(chunk.w.to_numpy())
+        chunk_sum: Any = np.sum(chunk.w.to_numpy())
         assert str(chunk_sum) != str(float(chunk_sum))
         eager = option_record(chunk, ak.zip, ak.mask)
         assert str(eager.type).startswith(f"{len(chunk)} * ?{{")
