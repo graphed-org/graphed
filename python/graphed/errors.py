@@ -1,7 +1,8 @@
-"""graphed frontend errors."""
+"""graphed frontend errors, and the worker-side ``StageError`` the frontend raises (plan M6)."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 from .provenance import Provenance
@@ -63,3 +64,94 @@ class MissingFieldError(GraphedTypeError, AttributeError):
     def __reduce__(self) -> tuple[Any, ...]:
         """Pickle by constructor arguments."""
         return (type(self), (self.op, self.provenance, self.detail))
+
+
+@dataclass(frozen=True)
+class SourceFrame:
+    """One user-source frame: where a node was created in the user's analysis."""
+
+    filename: str
+    lineno: int
+    function: str = ""
+    source: str = ""
+
+    def __str__(self) -> str:
+        """Show the frame as ``filename:lineno``."""
+        return f"{self.filename}:{self.lineno}"
+
+
+class StageError(Exception):
+    """A stage/op failure mapped back to the user's analysis. Picklable and re-raisable intact."""
+
+    def __init__(
+        self,
+        *,
+        op: str,
+        frames: tuple[SourceFrame, ...],
+        input_forms: tuple[str, ...],
+        partition: str,
+        cause_type: str,
+        cause_message: str,
+        opt_level: int,
+        variation: str = "",
+    ) -> None:
+        """Describe a failed op: its user frames, input forms, partition and cause."""
+        self.op = op
+        self.frames = tuple(frames)
+        self.input_forms = tuple(input_forms)
+        self.partition = partition
+        self.cause_type = cause_type
+        self.cause_message = cause_message
+        self.opt_level = opt_level
+        #: §8.1: the variation this failure belongs to. The EMPTY STRING is the single encoding of
+        #: nominal/unvaried (never the literal ``"nominal"``); several universes sharing one
+        #: failing node render sorted and joined by ``,`` (§8.2).
+        self.variation = variation
+        super().__init__(self.summary())
+
+    @property
+    def user_frame(self) -> SourceFrame:
+        """The top user frame — the exact analysis line that failed."""
+        return self.frames[0]
+
+    def summary(self) -> str:
+        """Return the one-line message naming the op, the user's line and the cause."""
+        loc = self.user_frame
+        variation = f", variation={self.variation}" if self.variation else ""
+        return (
+            f"StageError in op {self.op!r} at {loc} (partition {self.partition}{variation}, "
+            f"opt_level={self.opt_level}): {self.cause_type}: {self.cause_message}"
+        )
+
+    # Custom pickling: Exception's default uses self.args; we carry structured fields instead, so
+    # the error round-trips byte-for-byte across a process boundary (only graphed.errors is needed
+    # to load). `__new__` reconstructs a bare instance (no __init__), then __setstate__ restores
+    # the fields.
+    def __reduce__(self) -> tuple[object, tuple[type[StageError]], dict[str, object]]:
+        """Pickle by state, so the error crosses a process boundary intact."""
+        return (self.__class__.__new__, (self.__class__,), self.__dict__.copy())
+
+    def __setstate__(self, state: dict[str, object] | None) -> None:
+        """Restore the pickled state and the exception message."""
+        if state:
+            self.__dict__.update(state)
+        Exception.__init__(self, self.summary())
+
+    def __eq__(self, other: object) -> bool:
+        """Compare two errors by every field."""
+        if not isinstance(other, StageError):
+            return NotImplemented
+        return self.__dict__ == other.__dict__
+
+    def __hash__(self) -> int:
+        """Hash the identifying fields."""
+        return hash(
+            (
+                self.op,
+                self.frames,
+                self.partition,
+                self.cause_type,
+                self.cause_message,
+                self.variation,
+            )
+        )

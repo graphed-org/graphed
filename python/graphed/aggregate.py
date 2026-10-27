@@ -26,7 +26,7 @@ from graphed.core.execution import Plan, Task, WorkerResources
 from graphed.core.plan import _partition_bytes, _sha256_hex
 
 from .array import Array
-from .errors import GraphedError, OutputTypeError
+from .errors import GraphedError, OutputTypeError, SourceFrame, StageError
 from .execute import (
     CompiledGraph,
     Frame,
@@ -314,7 +314,6 @@ def attribute_failures(
     by_key = dict(frames)
     if not entries and not by_key:
         return None
-    from .debug.errors import SourceFrame, StageError  # noqa: PLC0415  (import cycle)
 
     def attribute(
         key: Key, op: str, ins: list[object], exc: BaseException
