@@ -574,7 +574,7 @@ def _varied_leaves(session: Session, record: Any, labels: tuple[str, ...]) -> li
     Those are structurally varied, §6.4b; an all-labels-equal leaf (unvaried, or coupled only
     through a zip) contributes no delta column.
     """
-    nodes = session._store.nodes()
+    nodes = session._nodes()
     leaves = _tt(session, member_of(record, "nominal")).layout.form.columns()
     varied = []
     for path in leaves:
@@ -999,7 +999,7 @@ def _write_varied(
         superset = None
     base = nominal_record if superset is None else nominal_record[superset]
 
-    nodes = session._store.nodes()
+    nodes = session._nodes()
     value_specs: list[_ValueSpec] = []
     outputs: list[Any] = [base]
     for path in varied:
