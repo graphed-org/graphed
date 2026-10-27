@@ -5,12 +5,17 @@ Identical structure, different results.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from backends import ListBackend, NegListBackend, from_list
 
 from graphed import Session
 
+if TYPE_CHECKING:
+    from graphed import Array
 
-def _program(backend: object) -> tuple[Session, object]:
+
+def _program(backend: object) -> tuple[Session, Array]:
     s = Session(backend)  # type: ignore[arg-type]
     a = from_list(s, "a", [1, 2, 3])
     b = from_list(s, "b", [10, 20, 30])

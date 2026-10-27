@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, cast
 
 import awkward as ak
 import numpy as np
@@ -28,7 +28,7 @@ from graphed.preserve import (
 
 X = np.array([0.0, 0.5, 1.0, 2.0, 3.5, 5.0, 8.0, 13.0])
 TRANSPORT = "fake_triton_services:transport"
-HIST = {"name": "x", "bins": 4, "lo": 0.0, "hi": 16.0}
+HIST: dict[str, Any] = {"name": "x", "bins": 4, "lo": 0.0, "hi": 16.0}
 
 
 def descriptor(tag: str, w: float = 0.45, b: float = -0.1) -> bytes:
@@ -42,7 +42,7 @@ def descriptor(tag: str, w: float = 0.45, b: float = -0.1) -> bytes:
 
 
 def expected(w: float, b: float) -> np.ndarray:
-    return 1.0 / (1.0 + np.exp(-(w * X + b)))
+    return cast("np.ndarray", 1.0 / (1.0 + np.exp(-(w * X + b))))
 
 
 class Chunks:

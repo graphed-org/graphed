@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Mapping, Sequence
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 
@@ -17,9 +18,12 @@ from graphed import (
 )
 from graphed.core import PayloadDescriptor
 
+if TYPE_CHECKING:
+    from graphed import Form
+
 
 class _Backend:
-    def op_form(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> str:
+    def op_form(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> Any:
         return op
 
     def eval_stage(
@@ -49,7 +53,7 @@ class _Backend:
 
 
 def _src(s: Session, name: str, value: object) -> Array:
-    return s.source(name, form="f", data=value)
+    return s.source(name, form=cast("Form", "f"), data=value)
 
 
 def test_walk_evaluates_like_materialize() -> None:
@@ -81,13 +85,15 @@ def test_source_helpers() -> None:
     a = _src(s, "events", 1)
     assert s.source_ids() == [a.node_id]
     assert s.source_name(a.node_id) == "events"
-    assert s.form_of(a.node_id) == "f"
+    assert cast(object, s.form_of(a.node_id)) == "f"
 
 
 def test_source_value_resolves_eager_and_lazy() -> None:
     s = Session(_Backend())
     eager = _src(s, "a", 5)
-    lazy = s.source("b", form="f", data=lambda: 7)  # a lazy loader (resolved on access)
+    lazy = s.source(
+        "b", form=cast("Form", "f"), data=lambda: 7
+    )  # a lazy loader (resolved on access)
     assert s.source_value(eager.node_id) == 5
     assert s.source_value(lazy.node_id) == 7
 

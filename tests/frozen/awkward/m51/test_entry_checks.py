@@ -17,7 +17,7 @@ wrong property is caught (the §6.1d loose-value / §6.4b row-space-not-offsets 
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from m51_write_fixtures import (
@@ -35,11 +35,14 @@ from graphed.awkward import gak
 from graphed.core.execution import Plan
 from graphed.errors import GraphedError
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
 pytest.importorskip("pyarrow")
 
 
 def _write(record: Any, dest: str, select: Any, *, compute: bool = True) -> Any:
-    return ga.to_parquet(record, dest, select=select, compute=compute)  # type: ignore[call-arg]
+    return ga.to_parquet(record, dest, select=select, compute=compute)
 
 
 # ---- (1) MULTIPLICITY — EXECUTION-time offsets refusal ---------------------------------------
@@ -76,10 +79,10 @@ def test_2a_refuses_a_chained_context_mask_against_a_root_row_space_record(tmp_p
     sel = events[gak.num(events.Jet) >= 2]
     sel2 = sel[gak.num(sel.Muon) >= 1]  # one row space below `sel`
     with pytest.raises(GraphedError):
-        _write(events.Jet, str(tmp_path / "chain"), graphed.selection(sel2), compute=False)  # type: ignore[attr-defined]
+        _write(events.Jet, str(tmp_path / "chain"), graphed.selection(sel2), compute=False)
 
 
-def test_2a_is_skipped_for_a_context_free_record(tmp_path) -> None:
+def test_2a_is_skipped_for_a_context_free_record(tmp_path: Path) -> None:
     """Absent-operand (i): a loose §2.1a record carries no handle.
 
     So (2a) is skipped and the write proceeds — the positive control that keeps the loose sink
@@ -89,7 +92,7 @@ def test_2a_is_skipped_for_a_context_free_record(tmp_path) -> None:
     assert graphed.context_of(root) is None
     mask = gak.num(root.Jet) >= 2  # context-free too
     paths = _write(root.Jet, str(tmp_path / "loose"), mask)
-    got = ga.read_varied(paths[0])  # type: ignore[attr-defined]
+    got = ga.read_varied(paths[0])
     assert list(got) == ["nominal"]
 
 

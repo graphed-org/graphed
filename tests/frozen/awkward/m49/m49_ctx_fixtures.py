@@ -9,7 +9,7 @@ name to whichever sibling directory imported first.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import awkward as ak
 import numpy as np
@@ -74,7 +74,7 @@ def jet_weight(source: Any, scale: float = 1.0) -> Array:
 
 def met_weight(source: Any, scale: float = 1.0) -> Array:
     """Return a per-event weight factor whose cone reaches the MET collection and nothing else."""
-    return source.MET.pt * scale
+    return cast("Array", source.MET.pt * scale)
 
 
 def weight_universes(ctx: Any) -> list[Array]:

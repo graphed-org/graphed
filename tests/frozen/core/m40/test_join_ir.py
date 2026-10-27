@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from graphed.core import GraphStore
 
-_SCHEME = {"how": "inner", "on": "event"}
+_SCHEME: dict[str, int | float | bool | str] = {"how": "inner", "on": "event"}
 
 
 def _two_sided_join() -> tuple[GraphStore, int, int]:

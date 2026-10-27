@@ -18,11 +18,16 @@ Load-bearing witnesses here:
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, cast
+
 import awkward as ak
 import numpy as np
 
 from graphed import Session
 from graphed.awkward import AwkwardBackend, from_awkward
+
+if TYPE_CHECKING:
+    from graphed.awkward import AwkwardForm
 
 
 def _block(**cols: object) -> ak.Array:
@@ -97,7 +102,7 @@ def test_op_form_join_is_a_flat_record_merge_union_minus_key() -> None:
     lf, rf = s.form(left), s.form(right)
 
     inner = be.op_form("join", [lf, rf], {"how": "inner", "on": "__joinkey__"})
-    assert set(inner.tt.fields) == {"__joinkey__", "lv", "rv"}
+    assert set(cast("AwkwardForm", inner).tt.fields) == {"__joinkey__", "lv", "rv"}
     assert "?" not in inner.describe(), "inner introduces no nulls -> no option in the form"
 
 
@@ -111,7 +116,7 @@ def test_op_form_left_join_makes_the_outer_side_option_typed() -> None:
     lf, rf = s.form(left), s.form(right)
 
     left_form = be.op_form("join", [lf, rf], {"how": "left", "on": "__joinkey__"})
-    assert set(left_form.tt.fields) == {"__joinkey__", "lv", "rv"}
+    assert set(cast("AwkwardForm", left_form).tt.fields) == {"__joinkey__", "lv", "rv"}
     assert "?" in left_form.describe(), (
         "left join: the missing-side field becomes an awkward option"
     )

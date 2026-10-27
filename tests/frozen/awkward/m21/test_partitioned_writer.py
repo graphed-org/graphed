@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from typing import Any, cast
 
 import awkward as ak
 import pytest
@@ -42,8 +43,8 @@ class ChunkedToySource:
     """A protocol source over an in-memory array, with counters as the efficiency witnesses."""
 
     data: ak.Array
-    whole_calls: list = field(default_factory=list)
-    part_reads: list = field(default_factory=list)
+    whole_calls: list[int] = field(default_factory=list)
+    part_reads: list[tuple[int, int]] = field(default_factory=list)
 
     def __call__(self) -> ak.Array:  # the whole-dataset loader (must NEVER run during writes)
         self.whole_calls.append(1)
@@ -61,7 +62,7 @@ class ChunkedToySource:
         return chunk[list(columns)] if columns else chunk
 
 
-def _toy_session() -> tuple[Session, object, ChunkedToySource]:
+def _toy_session() -> tuple[Session, Any, ChunkedToySource]:
     s = Session(AwkwardBackend())
     toy = ChunkedToySource(EVENTS)
     tt = ak.Array(EVENTS.layout.to_typetracer(forget_length=True))
@@ -100,7 +101,7 @@ def test_parquet_dataset_loader_implements_the_protocol(tmp_path) -> None:  # ty
     ((_nid, data),) = s.sources().items()
     assert isinstance(data, PartitionedSource)  # one code path: parquet rides the same protocol
     plan = gio.to_parquet(g.x * 3.0, os.path.join(tmp_path, "o"), compute=False)
-    assert all(t.partition.is_blind for t in plan.tasks)  # type: ignore[union-attr]
+    assert all(t.partition.is_blind for t in plan.tasks)
 
 
 def test_read_list_merges_syntactic_access_with_buffer_refinement(tmp_path) -> None:  # type: ignore[no-untyped-def]
@@ -116,7 +117,7 @@ def test_read_list_merges_syntactic_access_with_buffer_refinement(tmp_path) -> N
     g1 = from_parquet(s1, "events", where)
     expr = gak.num(g1.Jet, axis=1) + g1.x
     plan = gio.to_parquet(expr, os.path.join(tmp_path, "o1"), compute=False)
-    assert set(plan.process.columns) == {"Jet.eta", "x"}  # type: ignore[union-attr, attr-defined]
+    assert set(cast(Any, plan.process).columns) == {"Jet.eta", "x"}
 
     # the zip finding: evaluation REPLAYS the untouched leg, so its field must still be read
     s2 = Session(AwkwardBackend())
@@ -124,7 +125,7 @@ def test_read_list_merges_syntactic_access_with_buffer_refinement(tmp_path) -> N
     rec = gak.zip({"a": g2.x, "b": gak.num(g2.Jet, axis=1)})
     out = rec.a  # only a's DATA is touched, but the b leg (Jet's offsets) is replayed
     plan2 = gio.to_parquet(out, os.path.join(tmp_path, "o2"), compute=False)
-    assert set(plan2.process.columns) == {"Jet.eta", "x"}  # type: ignore[union-attr, attr-defined]
+    assert set(cast(Any, plan2.process).columns) == {"Jet.eta", "x"}
     paths = gio.to_parquet(out, os.path.join(tmp_path, "o3"))
     back = ak.concatenate([ak.from_parquet(p) for p in paths])
     assert ak.array_equal(back["data"], EVENTS.x)

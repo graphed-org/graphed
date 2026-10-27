@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import inspect
 import pathlib
+from collections.abc import Iterable
+from typing import cast
 
 from graphed.core.execution import ShuffleBackend
 
@@ -24,41 +26,49 @@ class _ConformingExchangeBackend:
 
     identity = "test-backend/0"
 
-    def partition(self, block, key_field, parts, *, salt=0, boundaries=None):
+    def partition(
+        self,
+        block: object,
+        key_field: str,
+        parts: int,
+        *,
+        salt: int = 0,
+        boundaries: object = None,
+    ) -> tuple[object, ...]:
         return (block, *(None for _ in range(parts - 1)))
 
-    def concat(self, blocks):
+    def concat(self, blocks: Iterable[object]) -> list[object]:
         return list(blocks)
 
-    def slice_rows(self, block, start, stop):
+    def slice_rows(self, block: object, start: int, stop: int) -> object:
         return block
 
-    def estimated_bytes(self, block_or_form):
+    def estimated_bytes(self, block_or_form: object) -> int:
         return 0
 
-    def to_wire(self, block):
+    def to_wire(self, block: object) -> bytes:
         return b""
 
-    def from_wire(self, data):
+    def from_wire(self, data: bytes) -> bytes:
         return data
 
 
 class _MissingPartition:
     identity = "broken/0"
 
-    def concat(self, blocks):
+    def concat(self, blocks: Iterable[object]) -> Iterable[object]:
         return blocks
 
-    def slice_rows(self, block, start, stop):
+    def slice_rows(self, block: object, start: int, stop: int) -> object:
         return block
 
-    def estimated_bytes(self, block_or_form):
+    def estimated_bytes(self, block_or_form: object) -> int:
         return 0
 
-    def to_wire(self, block):
+    def to_wire(self, block: object) -> bytes:
         return b""
 
-    def from_wire(self, data):
+    def from_wire(self, data: bytes) -> bytes:
         return data
 
 
@@ -87,6 +97,8 @@ def test_protocol_is_generic_over_opaque_block_and_index() -> None:
 
 def test_execution_module_imports_no_backend_library() -> None:
     # §A.4 guard: the protocol's home must not import numpy/awkward (kept a stable, minimal seam).
-    src = pathlib.Path(inspect.getsourcefile(ShuffleBackend)).read_text(encoding="utf-8")
+    src = pathlib.Path(cast(str, inspect.getsourcefile(ShuffleBackend))).read_text(
+        encoding="utf-8"
+    )
     assert "import numpy" not in src
     assert "import awkward" not in src

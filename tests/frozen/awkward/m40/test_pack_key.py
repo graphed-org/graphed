@@ -53,6 +53,7 @@ import itertools
 import os
 import subprocess
 import sys
+from typing import Any
 
 import awkward as ak
 
@@ -96,7 +97,7 @@ def _packed(rows: list[tuple[int, int, int]]) -> list[int]:
         ),
     )
     packed = graphed.pack_key(src, on=("run", "lumi", "event"))
-    out = s.materialize(packed)
+    out: Any = s.materialize(packed)
     return [int(v) for v in out["__joinkey__"].to_list()]
 
 

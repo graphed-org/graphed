@@ -9,7 +9,7 @@ sum, product and XOR delta below is exact in binary floating point and comparabl
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import awkward as ak
 
@@ -159,7 +159,7 @@ def varied_record(root: Array) -> tuple[Any, Any]:
     ctx = graphed.vary(
         events, "murf", weight, is_weight=True, points={"1": weight, "0.5": weight * 0.5}
     )
-    record = gak.zip({"zz": events.z, "w": graphed.weight(ctx)}, depth_limit=1)
+    record = gak.zip({"zz": events.z, "w": cast(Any, graphed.weight(ctx))}, depth_limit=1)
     return record, events.z > 8.0
 
 

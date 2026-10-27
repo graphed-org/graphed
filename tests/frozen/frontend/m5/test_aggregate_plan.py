@@ -12,6 +12,7 @@ import math
 from collections import OrderedDict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 
@@ -19,9 +20,12 @@ from graphed import Array, Session, aggregate_plan, resolve_backend
 from graphed.core import Partition
 from graphed.core.execution import SequentialRunner
 
+if TYPE_CHECKING:
+    from graphed import Form
+
 
 class _Backend:
-    def op_form(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> str:
+    def op_form(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> Any:
         return op
 
     def eval_stage(
@@ -48,10 +52,10 @@ class ListSource:
     The count is the efficiency witness.
     """
 
-    data: list
-    reads: list = field(default_factory=list)
+    data: list[Any]
+    reads: list[tuple[int, int]] = field(default_factory=list)
 
-    def __call__(self) -> list:
+    def __call__(self) -> list[Any]:
         raise AssertionError("the whole-dataset loader must never run during a plan")
 
     def partitions(self, steps_per_file: int = 1) -> tuple[Partition, ...]:
@@ -59,13 +63,13 @@ class ListSource:
             Partition.blind("toy://list", "", s, steps_per_file) for s in range(steps_per_file)
         )
 
-    def read_partition(self, partition, columns, resources) -> list:  # type: ignore[no-untyped-def]
+    def read_partition(self, partition: Partition, columns: Any, resources: Any) -> list[Any]:
         part = partition.resolve(len(self.data))
         self.reads.append((part.entry_start, part.entry_stop))
         return list(self.data[part.entry_start : part.entry_stop])
 
 
-def _sum_each(values: list) -> list[int]:
+def _sum_each(values: list[Any]) -> list[int]:
     return [sum(v) for v in values]
 
 
@@ -75,7 +79,7 @@ def _add_pairs(a: list[int], b: list[int]) -> list[int]:
 
 def _two_outputs(s: Session) -> tuple[Array, Array, Array, ListSource]:
     src = ListSource(list(range(1, 13)))  # 1..12
-    x = s.source("x", form="f", data=src)
+    x = s.source("x", form=cast("Form", "f"), data=src)
     shared = x + x  # the shared sub-expression (2x), feeding both outputs
     return shared, shared + x, x, src  # out1 = 2x, out2 = 3x
 
@@ -114,8 +118,8 @@ def test_validation() -> None:
     with pytest.raises(ValueError, match="at least one output"):
         aggregate_plan(reduce=_sum_each, combine=_add_pairs, empty=lambda: [])
     # two distinct partitioned sources in one graph -> cannot aggregate one plan
-    a = s.source("a", form="f", data=ListSource([1, 2]))
-    b = s.source("b", form="f", data=ListSource([3, 4]))
+    a = s.source("a", form=cast("Form", "f"), data=ListSource([1, 2]))
+    b = s.source("b", form=cast("Form", "f"), data=ListSource([3, 4]))
     with pytest.raises(TypeError, match="partitioned source"):
         aggregate_plan(a + b, reduce=_sum_each, combine=_add_pairs, empty=lambda: [0])
 

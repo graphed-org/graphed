@@ -10,6 +10,8 @@ that blames the wrong property sends the user to the wrong fix.
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from vary_ctx_fixtures import (
     events_context,
@@ -28,7 +30,7 @@ MAGNITUDE = "magnitude"
 TAG_LENGTH = "canonical tag length"
 
 
-def _weight_context(ctx: object, name: str, **kwargs: object) -> object:
+def _weight_context(ctx: object, name: str, **kwargs: Any) -> Any:
     """Return the §2.1(b) weight form: a per-event central factor plus per-tag factors."""
     return graphed.vary(ctx, name, pu_weight(ctx, 1.0), is_weight=True, **kwargs)
 

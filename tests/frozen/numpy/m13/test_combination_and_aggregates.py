@@ -9,12 +9,17 @@ keeps numpy's (counts, edges) contract: the counts are deferred, the edges — f
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any, cast
+
 import numpy as np
 import pytest
 from m13_helpers import recorded
 
 from graphed import GraphedTypeError, Session
 from graphed.numpy import NumpyBackend, from_array
+
+if TYPE_CHECKING:
+    from graphed import Array
 
 V = np.array([5.0, 1.0, 4.0, 2.0, 8.0, 6.0, 3.0, 7.0, 9.0, 0.0, 2.5, 1.5])
 W = np.array([2.0, 0.5, 3.5, 1.0, 7.5, 6.5, 2.5, 8.0, 9.5, 0.5, 3.0, 1.0])
@@ -74,7 +79,7 @@ def test_bincount_matches_numpy_and_rejects_floats() -> None:
     s = _s()
     ints = np.array([1, 3, 1, 0, 5, 3, 3])
     a = from_array(s, "a", ints)
-    out = np.bincount(a)
+    out = cast("Array", np.bincount(a))
     np.testing.assert_array_equal(np.asarray(s.materialize(out)), np.bincount(ints))
     assert recorded(s, out)["kind"] == "reduction"
     floats = from_array(s, "f", V)
@@ -85,7 +90,7 @@ def test_bincount_matches_numpy_and_rejects_floats() -> None:
 def test_histogram_keeps_the_counts_edges_contract() -> None:
     s = _s()
     a = from_array(s, "a", V)
-    counts, edges = np.histogram(a, bins=6, range=(0.0, 9.0))
+    counts, edges = cast(Any, np.histogram(a, bins=6, range=(0.0, 9.0)))
     ref_counts, ref_edges = np.histogram(V, bins=6, range=(0.0, 9.0))
     np.testing.assert_array_equal(np.asarray(s.materialize(counts)), ref_counts)
     assert isinstance(edges, np.ndarray)  # edges are record-time-concrete
@@ -101,7 +106,7 @@ def test_histogram2d_and_histogramdd_match_numpy() -> None:
     s = _s()
     x = from_array(s, "x", V)
     y = from_array(s, "y", W)
-    counts, xe, ye = np.histogram2d(x, y, bins=5, range=[(0.0, 10.0), (0.0, 10.0)])
+    counts, xe, ye = cast(Any, np.histogram2d(x, y, bins=5, range=[(0.0, 10.0), (0.0, 10.0)]))
     ref, rxe, rye = np.histogram2d(V, W, bins=5, range=[(0.0, 10.0), (0.0, 10.0)])
     np.testing.assert_array_equal(np.asarray(s.materialize(counts)), ref)
     np.testing.assert_allclose(xe, rxe)

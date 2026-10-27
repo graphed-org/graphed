@@ -9,6 +9,8 @@ External arm, which makes the labelled anchor go red (raw `BoomError` instead of
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any, cast
+
 import pytest
 from backends import ListBackend, ListForm, from_list
 
@@ -18,6 +20,9 @@ from graphed.aggregate import _PartitionReduce
 from graphed.core import PayloadDescriptor
 from graphed.debug.errors import StageError
 from graphed.execute import Key, compile_ir, evaluate_ir
+
+if TYPE_CHECKING:
+    from graphed.execute import CompiledGraph
 
 CHASH = "probe-payload-hash"
 KIND = "probe"
@@ -32,7 +37,7 @@ def _boom(*ins: object) -> object:
     raise BoomError("the payload failed")
 
 
-def _compiled_external() -> tuple[object, int]:
+def _compiled_external() -> tuple[CompiledGraph, int]:
     """Return one External node marked as the output, over a list source, and its reduced id."""
     session = Session(ListBackend())
     x = from_list(session, "x", [1.0, 2.0])
@@ -63,7 +68,7 @@ def _worker_hook(entries: tuple[object, ...]) -> object:
         ir=b"",
         source_name="x",
         backend_factory=ListBackend,
-        reader=None,
+        reader=cast(Any, None),
         columns=None,
         externals=(),
         reduce=list,
@@ -71,7 +76,7 @@ def _worker_hook(entries: tuple[object, ...]) -> object:
     )._attribute("toy://list:0")
 
 
-def _run(on_failure: object) -> list[object]:
+def _run(on_failure: Any) -> list[object]:
     compiled, _ = _compiled_external()
     return evaluate_ir(
         compiled,

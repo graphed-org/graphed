@@ -34,6 +34,8 @@ asserted on the awkward backend only.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any, cast
+
 import awkward as ak
 import numpy as np
 import pandas as pd
@@ -43,6 +45,9 @@ import graphed
 from graphed import Session
 from graphed.awkward import AwkwardBackend, from_awkward
 
+if TYPE_CHECKING:
+    from graphed.awkward import AwkwardForm
+
 _USER_COLS = ("k", "lv", "rv")
 
 
@@ -51,9 +56,7 @@ def _leaf(arr: object) -> str:
     return str(arr.type).split("*")[-1].strip()  # type: ignore[attr-defined]
 
 
-def _option_key_source(
-    session: Session, name: str, k: list[object], **payload: list[int]
-) -> object:
+def _option_key_source(session: Session, name: str, k: list[object], **payload: list[int]) -> Any:
     """Return a recorded source whose ``k`` is OPTION-typed (``?int64``) with a genuine null."""
     data = np.array([10_000_000 if v is None else v for v in k], dtype=np.int64)
     mask = np.array([v is None for v in k], dtype=bool)
@@ -62,9 +65,7 @@ def _option_key_source(
     return from_awkward(session, name, ak.Array(cols))
 
 
-def _nonoption_key_source(
-    session: Session, name: str, k: list[int], **payload: list[int]
-) -> object:
+def _nonoption_key_source(session: Session, name: str, k: list[int], **payload: list[int]) -> Any:
     """Return a recorded source whose ``k`` is a plain NON-option ``int64`` (no null carrier)."""
     cols: dict[str, object] = {"k": np.asarray(k, dtype=np.int64)}
     cols.update({f: np.asarray(v, dtype=np.int64) for f, v in payload.items()})
@@ -82,7 +83,7 @@ def _block_rows(block: object) -> list[tuple[int | None, ...]]:
     Nulls are kept as ``None``; the internal ``__joinkey__`` column is ignored — it is not a user
     column.
     """
-    return _srt([tuple(r.get(c) for c in _USER_COLS) for r in ak.to_list(block)])  # type: ignore[union-attr]
+    return _srt([tuple(r.get(c) for c in _USER_COLS) for r in ak.to_list(block)])
 
 
 def _oracle(
@@ -122,8 +123,8 @@ def test_awkward_right_option_null_key_form_matches_materialized_and_stays_optio
     j = graphed.join(left, right, on=["k"], how=how)
 
     # recorded op_form key type (the CANONICAL durable form, §A.3.1)
-    declared = _leaf(s.form(j).tt["k"])
-    block = s.materialize(j)
+    declared = _leaf(cast("AwkwardForm", s.form(j)).tt["k"])
+    block: Any = s.materialize(j)
     produced = _leaf(block["k"])
 
     assert "?" in produced, (
@@ -163,8 +164,8 @@ def test_awkward_both_nonoption_key_stays_nonoption(how: str) -> None:
     right = _nonoption_key_source(s, "right", [5, 7], rv=[500, 700])
     j = graphed.join(left, right, on=["k"], how=how)
 
-    declared = _leaf(s.form(j).tt["k"])
-    block = s.materialize(j)
+    declared = _leaf(cast("AwkwardForm", s.form(j)).tt["k"])
+    block: Any = s.materialize(j)
     produced = _leaf(block["k"])
 
     assert "?" not in produced, (

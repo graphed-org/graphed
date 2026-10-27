@@ -12,6 +12,7 @@ from __future__ import annotations
 import builtins
 import os
 from itertools import pairwise
+from typing import cast
 
 import pytest
 from m15_toy import CountingLoader, ToyForm, session
@@ -92,7 +93,7 @@ def test_part_index_is_stable_for_blind_and_eager(files: list[str]) -> None:
     # partition-to-path map pickled into every task); the awkward case n=5, steps=3 included
     steps = 3
     paths = gpq.discover(files)
-    bases = gpq.file_bases(paths, steps)
+    bases = cast("dict[str, int]", gpq.file_bases(paths, steps))
     assert [bases[p] for p in paths] == [0, 3, 6]
     eager = gpq.make_partitions(paths, steps_per_file=steps, open_files=True)
     blind = gpq.make_partitions(paths, steps_per_file=steps, open_files=False)

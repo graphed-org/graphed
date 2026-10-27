@@ -19,6 +19,8 @@ THIS FILE IS AWKWARD-FREE BY CONSTRUCTION (plan §10's frozen-layout rule): the 
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import numpy as np
 import pytest
 
@@ -76,6 +78,6 @@ def test_numpy_to_parquet_gains_no_select_keyword(tmp_path) -> None:  # type: ig
     session = Session(NumpyBackend())
     g = gn.from_array(session, "x", np.arange(6.0))
     with pytest.raises(TypeError) as excinfo:
-        gio.to_parquet(g, str(tmp_path / "nope"), select=g > 2.0)  # type: ignore[call-arg]
+        cast(Any, gio.to_parquet)(g, str(tmp_path / "nope"), select=g > 2.0)
     assert not isinstance(excinfo.value, GraphedError)
     assert "select" in str(excinfo.value)

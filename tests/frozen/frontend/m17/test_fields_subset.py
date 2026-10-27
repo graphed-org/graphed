@@ -34,7 +34,7 @@ def test_tuples_and_mixed_lists_are_still_refused() -> None:
     s = Session(ToyBackend())
     a = source(s, "a")
     with pytest.raises(TypeError):
-        _ = a[["x", 3]]  # type: ignore[list-item]
+        _ = a[["x", 3]]
     with pytest.raises(TypeError):
         _ = a[[]]  # an empty selection is meaningless
     with pytest.raises(TypeError):

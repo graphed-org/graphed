@@ -12,21 +12,26 @@ ShuffleResumeResult`` with ``.value`` (the tuple of content-addressed gather-blo
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
+
 import pytest
 import shuffle_analyses as sa
 
 from graphed.checkpoint import Store, run_shuffle_resumable
 from graphed.checkpoint.runner import _SimulatedInterrupt
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
 N_PROD, N_DEST = 3, 2
 _TOTAL = sa.n_blocks(N_PROD, N_DEST)  # 3 map-write + 2 gather = 5 blocks
 
 
-def _plan():  # type: ignore[no-untyped-def]
+def _plan() -> Any:
     return sa.build_shuffle_plan_v2(N_PROD, N_DEST)
 
 
-def _reference_value(tmp_path):  # type: ignore[no-untyped-def]
+def _reference_value(tmp_path: Path) -> Any:
     return run_shuffle_resumable(_plan(), Store(tmp_path / "ref")).value
 
 

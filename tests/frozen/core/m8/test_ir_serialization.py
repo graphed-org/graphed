@@ -13,7 +13,7 @@ import pytest
 from graphed.core import GraphStore, PayloadDescriptor
 
 
-def _analysis() -> GraphStore:
+def _analysis() -> tuple[GraphStore, int]:
     g = GraphStore()
     src = g.add_source("events", {"uri": "data.root"})
     pt = g.add_op("pt", [src])

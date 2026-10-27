@@ -14,11 +14,16 @@ this subtree with only `pytest hypothesis numpy` installed.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, cast
+
 import numpy as np
 
 from graphed import Array, Session
 from graphed.execute import compile_ir
 from graphed.numpy import NumpyBackend, from_array
+
+if TYPE_CHECKING:
+    from graphed.core import IncrementalReducer
 
 VALUES = np.arange(1.0, 5.0)
 
@@ -44,7 +49,10 @@ def test_the_fixture_arena_canonicalizes_below_the_record_arena() -> None:
     """
     session = Session(NumpyBackend(), incremental=True)
     _fold_program(session)
-    assert session._reducer.canonical_count() < session._store.node_count()
+    assert (
+        cast("IncrementalReducer", session._reducer).canonical_count()
+        < session._store.node_count()
+    )
 
 
 def test_the_incremental_path_answers_the_full_record_keyed_map() -> None:

@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "m39"))
 import shuffle_analyses as sa
 
 
-def test_kill_then_resume_equals_uninterrupted(store_url) -> None:
+def test_kill_then_resume_equals_uninterrupted(store_url: str) -> None:
     plan = h.hist_plan(6)
     with pytest.raises(_SimulatedInterrupt):
         run_resumable(plan, FsspecStore(store_url), _kill_after=4)
@@ -33,7 +33,7 @@ def test_kill_then_resume_equals_uninterrupted(store_url) -> None:
     assert set(FsspecStore(store_url).completed()) == {plan.task_id(p) for p in plan.partitions}
 
 
-def test_shuffle_kill_then_resume_equals_uninterrupted(store_url, tmp_path) -> None:
+def test_shuffle_kill_then_resume_equals_uninterrupted(store_url: str, tmp_path: Path) -> None:
     plan = sa.build_shuffle_plan_v2(3, 2)
     reference = Store(tmp_path / "reference")
     ref = run_shuffle_resumable(plan, reference)

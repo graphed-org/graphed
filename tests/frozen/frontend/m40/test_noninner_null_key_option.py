@@ -25,6 +25,8 @@ form surface, so the op_form-vs-materialized agreement is asserted on the awkwar
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any, cast
+
 import awkward as ak
 import numpy as np
 import pytest
@@ -33,15 +35,16 @@ import graphed
 from graphed import Session
 from graphed.awkward import AwkwardBackend, from_awkward
 
+if TYPE_CHECKING:
+    from graphed.awkward import AwkwardForm
+
 
 def _leaf(arr: object) -> str:
     """Per-column leaf type without the length prefix: ``2 * ?int64`` -> ``?int64``."""
     return str(arr.type).split("*")[-1].strip()  # type: ignore[attr-defined]
 
 
-def _option_key_source(
-    session: Session, name: str, k: list[object], **payload: list[int]
-) -> object:
+def _option_key_source(session: Session, name: str, k: list[object], **payload: list[int]) -> Any:
     """Return a recorded source whose ``k`` is OPTION-typed (``?int64``) with a genuine null."""
     data = np.array([10_000_000 if v is None else v for v in k], dtype=np.int64)
     mask = np.array([v is None for v in k], dtype=bool)
@@ -62,8 +65,8 @@ def test_awkward_option_null_key_form_matches_materialized_and_stays_option(how:
     right = _option_key_source(s, "right", [2], rv=[200])
     j = graphed.join(left, right, on=["k"], how=how)
 
-    declared = _leaf(s.form(j).tt["k"])  # recorded op_form key type
-    block = s.materialize(j)
+    declared = _leaf(cast("AwkwardForm", s.form(j)).tt["k"])  # recorded op_form key type
+    block: Any = s.materialize(j)
     produced = _leaf(block["k"])
 
     assert "?" in produced, (

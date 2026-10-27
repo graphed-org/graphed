@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 
@@ -18,6 +18,9 @@ import graphed
 from graphed import Array, Session
 from graphed.core import Partition
 from graphed.numpy import NumpyBackend, NumpyForm, from_array, from_record
+
+if TYPE_CHECKING:
+    from graphed import Form
 
 #: the 1-D VECTOR payload every recording fixture reads
 VECTOR = np.arange(1.0, 13.0)
@@ -49,7 +52,14 @@ def loose_varied(
 ) -> graphed.Varied:
     """§2.1(a): the loose primitive on a plain `Array` target, `x` itself as `"nominal"`."""
     factors = (1.5, 0.5, 2.5, 0.25)
-    return graphed.vary(x, name, **{t: x * f for t, f in zip(tags, factors, strict=False)})
+    return cast(
+        graphed.Varied,
+        graphed.vary(
+            x,
+            name,
+            **cast("dict[str, Any]", {t: x * f for t, f in zip(tags, factors, strict=False)}),
+        ),
+    )
 
 
 def sibling_outputs(v: graphed.Varied) -> list[Array]:
@@ -163,6 +173,6 @@ def add_pairs(a: list[int], b: list[int]) -> list[int]:
 def m5_two_outputs(s: Session) -> tuple[Array, Array, ListSource]:
     """m5's own two-output program: `out1 = 2x`, `out2 = 3x` over one partitioned source."""
     src = ListSource(list(range(1, 13)))
-    x = s.source("x", form="f", data=src)
+    x = s.source("x", form=cast("Form", "f"), data=src)
     shared = x + x
     return shared, shared + x, src

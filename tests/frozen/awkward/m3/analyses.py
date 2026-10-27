@@ -6,6 +6,8 @@ Operations Catalog through graphed. Each returns the final Array of the recorded
 
 from __future__ import annotations
 
+from typing import cast
+
 import numpy as np
 from graphed_corpus import make_events
 
@@ -18,7 +20,7 @@ def _delta_phi(a: Array, b: Array) -> Array:
 
 
 def _delta_r(eta1: Array, phi1: Array, eta2: Array, phi2: Array) -> Array:
-    return np.hypot(eta1 - eta2, _delta_phi(phi1, phi2))
+    return cast("Array", np.hypot(eta1 - eta2, _delta_phi(phi1, phi2)))
 
 
 def _pair_mass(o1: Array, o2: Array) -> Array:
@@ -28,24 +30,24 @@ def _pair_mass(o1: Array, o2: Array) -> Array:
     e = np.sqrt(o1.pt**2 * np.cosh(o1.eta) ** 2 + o1.mass**2) + np.sqrt(
         o2.pt**2 * np.cosh(o2.eta) ** 2 + o2.mass**2
     )
-    return np.sqrt(np.maximum(e**2 - (px**2 + py**2 + pz**2), 0.0))
+    return cast("Array", np.sqrt(np.maximum(e**2 - (px**2 + py**2 + pz**2), 0.0)))
 
 
 def q1(events: Array) -> Array:
-    return events.MET.pt
+    return cast("Array", events.MET.pt)
 
 
 def q2(events: Array) -> Array:
-    return events.Jet.pt
+    return cast("Array", events.Jet.pt)
 
 
 def q3(events: Array) -> Array:
-    return events.Jet[abs(events.Jet.eta) < 1.0].pt
+    return cast("Array", events.Jet[abs(events.Jet.eta) < 1.0].pt)
 
 
 def q4(events: Array) -> Array:
     njet = gak.num(events.Jet[events.Jet.pt > 40], axis=1)
-    return events.MET.pt[njet >= 2]
+    return cast("Array", events.MET.pt[njet >= 2])
 
 
 def q5(events: Array) -> Array:
@@ -54,7 +56,7 @@ def q5(events: Array) -> Array:
     opp = pairs.a.charge != pairs.b.charge
     mass = _pair_mass(pairs.a, pairs.b)
     keep = gak.any((mass > 60) & (mass < 120) & opp, axis=1)
-    return events.MET.pt[keep]
+    return cast("Array", events.MET.pt[keep])
 
 
 def q6(events: Array) -> Array:
@@ -111,7 +113,7 @@ def q8(events: Array) -> Array:
     met_k = met[keep]
     lead_k = lead[keep]
     dphi = _delta_phi(lead_k.phi, met_k.phi)
-    return np.sqrt(2 * lead_k.pt * met_k.pt * (1 - np.cos(dphi)))
+    return cast("Array", np.sqrt(2 * lead_k.pt * met_k.pt * (1 - np.cos(dphi))))
 
 
 def agc_object_selection(events: Array) -> Array:

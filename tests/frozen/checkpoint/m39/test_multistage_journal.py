@@ -11,10 +11,15 @@ still writes ``journal.log``.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from graphed.checkpoint import Store
 
+if TYPE_CHECKING:
+    from pathlib import Path
 
-def test_journal_entry_carries_stage_and_deps(tmp_path) -> None:  # type: ignore[no-untyped-def]
+
+def test_journal_entry_carries_stage_and_deps(tmp_path: Path) -> None:
     store = Store(tmp_path)
     block = store.put(b"gather-block")
     dep_a = store.put(b"map-write-a")
@@ -27,14 +32,14 @@ def test_journal_entry_carries_stage_and_deps(tmp_path) -> None:  # type: ignore
     )
 
 
-def test_default_writer_still_uses_the_v1_journal_file(tmp_path) -> None:
+def test_default_writer_still_uses_the_v1_journal_file(tmp_path: Path) -> None:
     # backward-compat: with no node the journal file is journal.log (M8 tests are untouched).
     store = Store(tmp_path)
     store.record_done("t0", "src@0:1", store.put(b"x"), stage="map_write")
     assert (tmp_path / "journal.log").exists()
 
 
-def test_journal_per_writer_and_union_replay(tmp_path) -> None:  # type: ignore[no-untyped-def]
+def test_journal_per_writer_and_union_replay(tmp_path: Path) -> None:
     # each node writes its OWN journal file; a reader replays the UNION (no shared-FS append
     # contention).
     node_a = Store(tmp_path, node="A")
@@ -50,7 +55,7 @@ def test_journal_per_writer_and_union_replay(tmp_path) -> None:  # type: ignore[
     assert set(union) == {"ta", "tb"}, "resume replays the UNION of every node's journal"
 
 
-def test_owner_journals_a_stolen_tasks_manifest(tmp_path) -> None:  # type: ignore[no-untyped-def]
+def test_owner_journals_a_stolen_tasks_manifest(tmp_path: Path) -> None:
     # a stolen producer-task's block stays on the thief; its owner journals the tiny MANIFEST so
     # the completed stolen task is SKIPPED (not re-run) on resume. Attribution is unambiguous
     # per-writer.

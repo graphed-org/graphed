@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import io
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 import awkward as ak
 import numpy as np
@@ -34,20 +34,26 @@ from graphed.preserve import (
     validate_plugin,
 )
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
 # NOTE: torch + xgboost vendor conflicting OpenMP runtimes; conftest.py sets KMP_DUPLICATE_LIB_OK /
 # OMP_NUM_THREADS before any OpenMP library loads so this suite runs both frameworks in one
 # process.
 
-_HIST = {"name": "met", "bins": 20, "lo": 0.0, "hi": 200.0}
+_HIST: dict[str, Any] = {"name": "met", "bins": 20, "lo": 0.0, "hi": 200.0}
 
 
 # ---- shared record -> build -> reproduce harness ------------------------------------------------
 def _hist(value: Any, weight: Any) -> np.ndarray:
     v = np.asarray(ak.to_numpy(ak.Array(value)), dtype="float64")
     w = np.asarray(ak.to_numpy(ak.Array(weight)), dtype="float64")
-    return np.histogram(v, bins=_HIST["bins"], range=(_HIST["lo"], _HIST["hi"]), weights=w)[
-        0
-    ].round(6)
+    return cast(
+        "np.ndarray",
+        np.histogram(v, bins=_HIST["bins"], range=(_HIST["lo"], _HIST["hi"]), weights=w)[0].round(
+            6
+        ),
+    )
 
 
 def _record(plugin: ExternalPlugin, payload: bytes, *, two_inputs: bool = False):  # type: ignore[no-untyped-def]
@@ -62,7 +68,7 @@ def _record(plugin: ExternalPlugin, payload: bytes, *, two_inputs: bool = False)
 
 
 def _check_roundtrip(
-    tmp_path, plugin: ExternalPlugin, payload: bytes, *, two_inputs: bool = False
+    tmp_path: Path, plugin: ExternalPlugin, payload: bytes, *, two_inputs: bool = False
 ) -> Bundle:
     register_plugin(plugin)  # validates the hash: cross-process determinism + non-vacuity
     s, value, weight = _record(plugin, payload, two_inputs=two_inputs)
@@ -169,12 +175,12 @@ def test_torch_plugin_hash_is_weights_and_validates() -> None:
     assert _torch_weight_hash(a) != _torch_weight_hash(b)
 
 
-def test_torch_model_reproduces_bit_for_bit(tmp_path) -> None:  # type: ignore[no-untyped-def]
+def test_torch_model_reproduces_bit_for_bit(tmp_path: Path) -> None:
     pytest.importorskip("torch")
     _check_roundtrip(tmp_path, TORCH_PLUGIN, _torch_model_bytes(weight=0.4, bias=-0.2))
 
 
-def test_torch_multi_input_model_reproduces(tmp_path) -> None:  # type: ignore[no-untyped-def]
+def test_torch_multi_input_model_reproduces(tmp_path: Path) -> None:
     # two per-event features -> one external (the API must not assume single-input models)
     pytest.importorskip("torch")
     _check_roundtrip(
@@ -224,7 +230,7 @@ XGB_PLUGIN = ExternalPlugin(
 )
 
 
-def test_xgboost_plugin_validates_and_reproduces(tmp_path) -> None:  # type: ignore[no-untyped-def]
+def test_xgboost_plugin_validates_and_reproduces(tmp_path: Path) -> None:
     pytest.importorskip("xgboost")
     # the booster bytes ARE the content -> sha256_bytes template suffices
     validate_plugin(XGB_PLUGIN)
@@ -251,14 +257,16 @@ class _FakeTritonClient:
     ) -> np.ndarray:
         # real_inputs/real_outputs are genuine tritonclient request objects (built below); a live
         # server would consume them. Offline we compute the served model directly.
-        return 1.0 / (1.0 + np.exp(-(self.weight * x[:, 0] + self.bias)))
+        return cast("np.ndarray", 1.0 / (1.0 + np.exp(-(self.weight * x[:, 0] + self.bias))))
 
     def close(self) -> None:
         self.closed = True
 
 
 def _triton_served_weights(*, weight: float, bias: float) -> bytes:
-    return np.array([weight, bias], dtype="float64").tobytes()  # the deployed model's weights
+    return cast(
+        "bytes", np.array([weight, bias], dtype="float64").tobytes()
+    )  # the deployed model's weights
 
 
 def _triton_connect(payload: bytes, params: Any) -> Any:
@@ -302,7 +310,7 @@ TRITON_PLUGIN = ExternalPlugin(
 )
 
 
-def test_triton_remote_inference_pattern(tmp_path) -> None:  # type: ignore[no-untyped-def]
+def test_triton_remote_inference_pattern(tmp_path: Path) -> None:
     pytest.importorskip("tritonclient.http")
     # hash of the served model's weights is deterministic + non-vacuous
     validate_plugin(TRITON_PLUGIN)
@@ -341,7 +349,7 @@ def test_triton_remote_inference_pattern(tmp_path) -> None:  # type: ignore[no-u
     assert entry["kind"] == "triton_model" and entry["content_hash"] == sha256_bytes(payload)
 
 
-def test_triton_reproduce_without_the_server_fails_loudly(tmp_path) -> None:  # type: ignore[no-untyped-def]
+def test_triton_reproduce_without_the_server_fails_loudly(tmp_path: Path) -> None:
     # the honest reproducibility boundary: a remote service must be present in the environment;
     # the bundle preserves the model identity but cannot bottle the server.
     pytest.importorskip("tritonclient.http")

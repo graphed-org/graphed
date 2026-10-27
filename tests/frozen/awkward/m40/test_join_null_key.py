@@ -82,8 +82,8 @@ def _np_block(k: list[object], payload_name: str, payload: list[int]) -> np.ma.M
     """Numpy structured masked block equivalent to :func:`_ak_block` (same logical table)."""
     km = _masked(k)
     dt = np.dtype([("k", np.int64), (payload_name, np.int64)])
-    data = np.zeros(len(k), dtype=dt)
-    mask = np.zeros(len(k), dtype=np.ma.make_mask_descr(dt))
+    data: np.ndarray = np.zeros(len(k), dtype=dt)
+    mask: np.ndarray = np.zeros(len(k), dtype=np.ma.make_mask_descr(dt))
     data["k"], mask["k"] = np.ma.getdata(km), np.ma.getmaskarray(km)
     data[payload_name] = np.asarray(payload, dtype=np.int64)
     return np.ma.MaskedArray(data, mask=mask)
@@ -93,19 +93,19 @@ def _triple(k: object, lv: object, rv: object) -> tuple[object, object, object]:
     return (k, lv, rv)
 
 
-def _ak_rows(merged: ak.Array) -> Counter:
+def _ak_rows(merged: ak.Array) -> Counter[tuple[object, object, object]]:
     """Return the multiset of (k, lv, rv), ``None`` for a null cell.
 
     It is read via the public ``to_list`` surface.
     """
-    out: Counter = Counter()
+    out: Counter[tuple[object, object, object]] = Counter()
     for r in ak.to_list(merged):
         out[_triple(r.get("k"), r.get("lv"), r.get("rv"))] += 1
     return out
 
 
-def _np_rows(merged: object) -> Counter:
-    arr = np.ma.asanyarray(merged)
+def _np_rows(merged: object) -> Counter[tuple[object, object, object]]:
+    arr: np.ma.MaskedArray = np.ma.asanyarray(merged)
     data, mask = np.ma.getdata(arr), np.ma.getmaskarray(arr)
     names = data.dtype.names or ()
 
@@ -121,7 +121,7 @@ def _np_rows(merged: object) -> Counter:
 
 def _pandas_oracle(
     left_k: list[object], left_lv: list[int], right_k: list[object], right_rv: list[int], how: str
-) -> Counter:
+) -> Counter[tuple[object, object, object]]:
     """Return SQL semantics via ``pandas.merge``.
 
     This is the independent oracle (not the awkward code under test).

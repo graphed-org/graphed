@@ -164,9 +164,12 @@ def data_empty() -> tuple[int, list[str]]:
     return 0, []
 
 
-MC_FILES = {"mc-a": np.arange(0, 12, dtype=np.int64), "mc-b": np.arange(100, 108, dtype=np.int64)}
+MC_FILES: dict[str, Any] = {
+    "mc-a": np.arange(0, 12, dtype=np.int64),
+    "mc-b": np.arange(100, 108, dtype=np.int64),
+}
 #: `mc-a` again, under another tree: routing must key on (uri, tree), not uri
-DATA_FILES = {
+DATA_FILES: dict[str, Any] = {
     "mc-a": np.arange(1000, 1010, dtype=np.int64),
     "data-b": np.arange(50, 56, dtype=np.int64),
 }

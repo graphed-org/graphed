@@ -107,6 +107,8 @@ def test_properties_are_classified_by_measurement_not_by_a_literal_list() -> Non
     varied = loose_varied(x)
     discovered = _properties(type(graphed.nominal(varied)))
     assert {"node_id", "session", "dtype", "T"} <= discovered
+    eager: list[str]
+    recording: list[str]
     eager, recording = [], []
     for name in sorted(discovered - {"node_id", "session"}):
         before = session.node_count()

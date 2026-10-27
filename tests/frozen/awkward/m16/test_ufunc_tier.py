@@ -7,12 +7,17 @@ typetracer form) and compares the materialization against the same ufunc on the 
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
+
 import awkward as ak
 import numpy as np
 import pytest
 from m16_helpers import session_events
 
 from graphed.awkward import from_awkward
+
+if TYPE_CHECKING:
+    from graphed import Session
 
 F = [[0.25, 0.5], [], [1.5, 2.0, 0.75], [1.0]]  # positive: safe for log/sqrt
 SYM = [[-0.9, -0.1], [], [0.4, 0.8, -0.5], [0.3]]  # |x| < 1: safe for arcsin/arctanh
@@ -83,7 +88,7 @@ BINARY_CASES = [
 ]
 
 
-def _src(s, name, data):  # type: ignore[no-untyped-def]
+def _src(s: Session, name: str, data: object) -> Any:
     return from_awkward(s, name, ak.Array(data))
 
 

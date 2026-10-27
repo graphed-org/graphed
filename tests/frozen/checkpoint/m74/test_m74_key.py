@@ -13,7 +13,7 @@ import sys
 import types
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import m74_helpers as h
 import pytest
@@ -82,7 +82,7 @@ def test_closures_differing_in_a_default(tmp_path: Path) -> None:
 def test_closures_differing_in_an_attribute(tmp_path: Path) -> None:
     def make(s: float) -> Any:
         def inner(p: Any, r: Any) -> float:
-            return float(p.entry_start) * inner.scale  # type: ignore[attr-defined]
+            return cast("float", float(p.entry_start) * cast(Any, inner).scale)
 
         inner.scale = s  # type: ignore[attr-defined]
         return inner
@@ -91,7 +91,7 @@ def test_closures_differing_in_an_attribute(tmp_path: Path) -> None:
 
 
 def _call(self: Any, p: Any, r: Any) -> float:
-    return float(p.entry_start) * self.factor
+    return cast("float", float(p.entry_start) * self.factor)
 
 
 def test_type_classes_differing_in_a_class_attribute(tmp_path: Path) -> None:

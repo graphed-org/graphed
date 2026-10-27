@@ -6,14 +6,19 @@ analysis inside a spawned child process.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any, cast
+
 import numpy as np
 
 import graphed.debug as gd
 import graphed.numpy as gn
 from graphed import Session
 
+if TYPE_CHECKING:
+    from graphed import Array
 
-def numpy_oob(n: int = 3):
+
+def numpy_oob(n: int = 3) -> tuple[Session, Array]:
     """Return a numpy analysis with an out-of-range index inside an opaque op.
 
     The op stands in for a mass calc.
@@ -21,11 +26,13 @@ def numpy_oob(n: int = 3):
     s = Session(gn.NumpyBackend())
     events = gn.from_record(s, "events", pt=np.arange(1.0, n + 1), eta=np.linspace(0, 1, n))
     scaled = events["pt"] * 2.0
-    bad = scaled.map(lambda a: a[100], name="oob_index")  # <-- the failing analysis line
+    bad = scaled.map(
+        lambda a: cast(Any, a)[100], name="oob_index"
+    )  # <-- the failing analysis line
     return s, bad
 
 
-def numpy_mismatch_in_fused_stage():
+def numpy_mismatch_in_fused_stage() -> tuple[Session, Array]:
     """Return a shape mismatch buried INSIDE a fused arithmetic stage (a non-boundary op).
 
     It proves the error maps to the right member deep in a fused kernel — not just the first or
@@ -39,7 +46,7 @@ def numpy_mismatch_in_fused_stage():
     return s, bad
 
 
-def awkward_mass_oob(n_events: int = 200):
+def awkward_mass_oob(n_events: int = 200) -> tuple[Session, Array]:
     """Return a dimuon mass calc that indexes the 2nd muon.
 
     That is out of range for the (many) events with fewer than two muons (the canonical
@@ -51,7 +58,7 @@ def awkward_mass_oob(n_events: int = 200):
 
     from graphed.awkward import AwkwardBackend, from_awkward  # noqa: PLC0415
 
-    def dimuon_mass(mu: object) -> object:
+    def dimuon_mass(mu: Any) -> object:
         a, b = mu[:, 0], mu[:, 1]  # <-- out-of-range 2nd-muon index for single-muon events
         return anp.sqrt(2 * a.pt * b.pt * (anp.cosh(a.eta - b.eta) - anp.cos(a.phi - b.phi)))
 
