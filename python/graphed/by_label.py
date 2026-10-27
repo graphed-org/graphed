@@ -8,9 +8,6 @@ from __future__ import annotations
 
 from .systematics.by_label import (  # isort: skip
     Outputs as Outputs,
-    _is_sequence as _is_sequence,
-    _per_label as _per_label,
-    _reach as _reach,
     cone as cone,
     impact_by_label as impact_by_label,
     read_columns_by_label as read_columns_by_label,

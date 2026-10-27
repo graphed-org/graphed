@@ -18,17 +18,25 @@ from types import FrameType
 
 try:  # executing gives sub-expression text; degrade gracefully if unavailable
     import executing
-except Exception:  # pragma: no cover - executing is a declared dependency
+except ImportError:  # pragma: no cover - executing is a declared dependency
     executing = None  # type: ignore[assignment]
 
-_enabled = True
 _lock = threading.Lock()
 
-#: Module-name prefixes `capture` skips, each already dot-terminated except the built-in
-#: `graphed*` rule, which is a bare STRING prefix (`graphed_foo` counts as internal, as it always
-#: has). A tuple so the per-frame test in `capture` — on the hot path of every recorded op — stays
-#: ONE `str.startswith` call however many libraries have registered.
-_SKIP: tuple[str, ...] = ("graphed",)
+
+@dataclass
+class _Settings:
+    """The process-global capture settings; each field is rebound whole, under `_lock`."""
+
+    enabled: bool = True
+    #: Module-name prefixes `capture` skips, each already dot-terminated except the built-in
+    #: `graphed*` rule, which is a bare STRING prefix (`graphed_foo` counts as internal, as it
+    #: always has). A tuple so the per-frame test in `capture` — on the hot path of every recorded
+    #: op — stays ONE `str.startswith` call however many libraries have registered.
+    skip: tuple[str, ...] = ("graphed",)
+
+
+_settings = _Settings()
 
 #: installed third-party code (site-packages), skipped unless no frame lies outside it: an analysis
 #: installed non-editable lives there too, and its own frame is then the best answer left.
@@ -62,14 +70,13 @@ _DISABLED = Provenance("<provenance-disabled>", 0)
 
 def set_enabled(value: bool) -> None:
     """Globally toggle provenance capture (default on)."""
-    global _enabled
     with _lock:
-        _enabled = value
+        _settings.enabled = value
 
 
 def is_enabled() -> bool:
     """Return whether provenance capture is on."""
-    return _enabled
+    return _settings.enabled
 
 
 def register_internal(prefix: str) -> None:
@@ -86,12 +93,11 @@ def register_internal(prefix: str) -> None:
         a prefix, so registering it would leave in place exactly the wrong provenance this call
         fixes.
     """
-    global _SKIP
     prefix = prefix.rstrip(".")
     if not all(part.isidentifier() for part in prefix.split(".")):
         raise ValueError(f"graphed: register_internal needs a module prefix, got {prefix!r}")
     with _lock:  # through a set, so a repeat registration cannot grow the per-frame test
-        _SKIP = tuple(sorted({*_SKIP, f"{prefix}."}))
+        _settings.skip = tuple(sorted({*_settings.skip, f"{prefix}."}))
 
 
 def _source_text(frame: FrameType) -> str:
@@ -105,7 +111,7 @@ def _source_text(frame: FrameType) -> str:
         return ""
     try:
         return ast.unparse(node)
-    except Exception:  # pragma: no cover
+    except Exception:  # pragma: no cover - best-effort, as above
         return ""
 
 
@@ -121,12 +127,10 @@ def capture() -> Provenance:
     universe; the direct walk stats no source and reads it only for the one frame it keeps (via
     `executing` in `_source_text`), the fields being lifted straight off the frame object.
     """
-    if not _enabled:
+    if not _settings.enabled:
         return _DISABLED
     frame: FrameType | None = sys._getframe(1)  # capture()'s caller; its own frame is graphed*
-    skip = (
-        _SKIP  # one read of the rebound global, so a concurrent registration cannot split a walk
-    )
+    skip = _settings.skip  # one read, so a concurrent registration cannot split a walk
     first: FrameType | None = None
     while frame is not None:
         # the trailing dot is what makes a registered prefix match whole dotted COMPONENTS; it

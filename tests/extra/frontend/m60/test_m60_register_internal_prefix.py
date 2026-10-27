@@ -44,21 +44,21 @@ def test_a_trailing_dot_spelling_is_the_same_declaration() -> None:
     "spelling", ["", ".", " ", " m60x_lib", "m60x_lib ", "my lib", "123", "a..b"]
 )
 def test_a_prefix_naming_no_module_is_refused(spelling: str) -> None:
-    before = graphed.provenance._SKIP
+    before = graphed.provenance._settings.skip
 
     with pytest.raises(ValueError):
         graphed.provenance.register_internal(spelling)
 
-    assert before == graphed.provenance._SKIP  # nothing registered on the way out
+    assert before == graphed.provenance._settings.skip  # nothing registered on the way out
 
 
 @pytest.mark.parametrize("spelling", ["m60x_lib.sub", "m60x_under_score_lib"])
 def test_a_prefix_a_module_name_could_equal_registers(spelling: str) -> None:
     """The admitted end: dotted and underscored names are both legal module names."""
-    before = graphed.provenance._SKIP
+    before = graphed.provenance._settings.skip
     try:
         graphed.provenance.register_internal(spelling)
-        after = graphed.provenance._SKIP
+        after = graphed.provenance._settings.skip
         assert after == tuple(sorted({*before, f"{spelling}."}))
     finally:
-        graphed.provenance._SKIP = before  # registration is process-global with no inverse
+        graphed.provenance._settings.skip = before  # registration is process-global, no inverse

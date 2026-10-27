@@ -8,13 +8,14 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 import awkward as ak
 import numpy as np
 
 from graphed.array import check_leading_ellipsis, decode_subscript
+from graphed.errors import GraphedError
 
 from . import join
 
@@ -182,8 +183,6 @@ def _broadcast_blame(operands: Sequence[Any], exc: ValueError) -> Exception:
     and lands at record time (where `Session.record_op` re-raises this at the user's line), while a
     jagged pair whose counts differ only in the data lands at execution time.
     """
-    from graphed.errors import GraphedError  # noqa: PLC0415  (graphed.errors imports no backend)
-
     value, factors = _structure(operands[0]), [_structure(f) for f in operands[1:]]
     # Two LEAF structures can only disagree on outer length, which is the already-flattened-value
     # case §6.1d names: a per-event factor against a per-object value someone flattened first.
@@ -233,233 +232,240 @@ def apply(
             ak.Array(x.layout, behavior=behavior, attrs=x.attrs) if isinstance(x, ak.Array) else x
             for x in operands
         ]
-    if op == "pack_key":  # M40 §2.1: add the big-endian-packed u64 __joinkey__ column
-        return join.pack_key(operands[0], join.on_from_params(params))
-    if op == "exchange":
-        # a pure data-movement boundary is identity on values in-process (§3.3a)
-        return operands[0]
     if op in _UNARY:
         return _UNARY[op](operands[0])
     if op in _BINARY:
         a, b = _scalar_operands(operands, params)
         return _BINARY[op](a, b)
-    if op == "field":
-        x = operands[0]
-        name = str(params["field"])
-        if name in getattr(x, "fields", []):
-            return x[name]
-        # M18: not a record field -> a behavior property (vector's .pt/.mass, the coffea
-        # pattern); works on the typetracer and real arrays alike when the array carries the
-        # behavior. An unknown attribute raises here -> a record-time GraphedTypeError.
-        return getattr(x, name)
-    if op == "method":
-        # M54: a behavior METHOD called with arguments. Array-valued arguments arrived as operands
-        # and stand in the JSON as {"$": index}; constants are plain JSON. Typetracer and real
-        # arrays share this branch, so form inference, projection replay and evaluation agree.
-        target = getattr(operands[0], str(params["method"]))
-        result = target(
-            *_decode_call(str(params["args"]), operands),
-            **_decode_call(str(params["kwargs"]), operands),
-        )
-        # M59: a tuple result may be NESTED; `index` numbers its leaves depth-first
-        return _leaves(result)[int(params["index"])] if "index" in params else result
-    if op in ("getitem", "filter"):
-        return operands[0][operands[1]]
-    if op == "slice":  # the M13 common axis-0 slice (start/stop/step present-only)
-        return operands[0][slice(params.get("start"), params.get("stop"), params.get("step"))]
-    if op == "subscript":  # M59: the shared inner-axis tuple key (axis 0 left whole)
-        key = decode_subscript(params["spec"])
-        # awkward's depth here is the MINIMUM list depth: `ndim` reads a record as depth 1 even
-        # when every field is a list, and `[..., 0]` does reach into those fields
-        check_leading_ellipsis(key, operands[0].layout.minmax_depth[0])
-        return operands[0][key]
-    if op == "index":  # the M13 common integer index
-        return operands[0][int(params["i"])]
-    if op == "ak.num":
-        return ak.num(operands[0], axis=int(params.get("axis", 1)))
-    if (
-        op in ("ak.min", "ak.max", "ak.ptp")
-        and _axis(params) is None
-        and not any(k in params for k in ("mask_identity", "initial", "keepdims"))
-    ):
-        return _global_extremum(op, operands[0])
-    if op in _AK_REDUCERS:
-        return _AK_REDUCERS[op](
-            operands[0], axis=_axis(params), **_reduce_kwargs(op, params, operands)
-        )
-    if op in ("ak.std", "ak.var"):
-        if (
-            _axis(params) is None
-            and not any(k in params for k in ("mask_identity", "keepdims"))
-            and ak.backend(operands[0]) == "typetracer"
-        ):
-            return _global_moment(op, params, operands)
-        fn = ak.std if op == "ak.std" else ak.var
-        return fn(
-            operands[0],
-            axis=_axis(params),
-            ddof=int(params.get("ddof", 0)),
-            **_reduce_kwargs(op, params, operands),
-        )
-    if op == "ak.moment":
-        return ak.moment(
-            operands[0],
-            int(params["n"]),
-            axis=_axis(params),
-            **_reduce_kwargs(op, params, operands),
-        )
-    if op == "ak.softmax":
-        return ak.softmax(operands[0], axis=int(params.get("axis", 1)))
-    if op in _AK_TWO_INPUT:
-        return _AK_TWO_INPUT[op](operands[0], operands[1], axis=_axis(params))
-    if op in ("ak.combinations", "ak.argcombinations"):
-        fn2 = ak.combinations if op == "ak.combinations" else ak.argcombinations
-        return fn2(
-            operands[0],
-            int(params["n"]),
-            fields=_fields(params) or None,
-            replacement=bool(params.get("replacement", False)),
-            axis=int(params.get("axis", 1)),
-            **_naming_kwargs(params),
-        )
-    if op in ("ak.cartesian", "ak.argcartesian"):
-        fn3 = ak.cartesian if op == "ak.cartesian" else ak.argcartesian
-        keys = _fields(params)
-        nested = _nested(params)
-        return fn3(
-            dict(zip(keys, operands, strict=True)) if keys else list(operands),
-            nested=[keys[i] for i in nested] if keys and isinstance(nested, list) else nested,
-            axis=int(params.get("axis", 1)),
-            **_naming_kwargs(params),
-        )
-    if op == "ak.zip":
-        zipped = (
-            tuple(operands)
-            if params.get("tuple")
-            else dict(zip(_fields(params), operands, strict=True))
-        )
-        kw: dict[str, Any] = dict(_naming_kwargs(params))
-        if "depth_limit" in params:
-            kw["depth_limit"] = int(params["depth_limit"])
-        return ak.zip(zipped, **kw)
-    if op == "ak.with_field":
-        value = scalar_param(params) if "scalar" in params else operands[1]
-        return ak.with_field(operands[0], value, where=params["field"])
-    if op == "ak.firsts":
-        return ak.firsts(operands[0], axis=int(params.get("axis", 1)))
-    if op in ("ak.argmin", "ak.argmax"):
-        fn4 = ak.argmin if op == "ak.argmin" else ak.argmax
-        return fn4(
-            operands[0],
-            axis=_axis(params),
-            keepdims=bool(params.get("keepdims", False)),
-            mask_identity=bool(params.get("mask_identity", True)),
-        )
-    if op == "ak.argsort":
-        return ak.argsort(
-            operands[0],
-            axis=int(params.get("axis", -1)),
-            ascending=bool(params.get("ascending", True)),
-            stable=bool(params.get("stable", True)),
-        )
-    if op == "ak.local_index":
-        return ak.local_index(operands[0], axis=int(params.get("axis", -1)))
-    if op == "ak.concatenate":
-        return ak.concatenate(list(operands), axis=int(params.get("axis", 0)))
-    if op == "ak.flatten":
-        return ak.flatten(operands[0], axis=_axis(params, default=1))
-    if op == "ak.fill_none":
-        return ak.fill_none(
-            operands[0],
-            scalar_param(params, "value", "value_dtype"),
-            axis=int(params.get("axis", -1)),
-        )
-    if op == "ak.drop_none":
-        ax = params.get("axis")
-        return ak.drop_none(operands[0], axis=None if ax is None else int(ax))
-    if op == "ak.where":
-        cond, a, b = _three_operands(operands, params)
-        return ak.where(cond, a, b)
-    if op == "ak.zeros_like":
-        return ak.zeros_like(operands[0], dtype=_dtype(params) if "dtype" in params else None)
-    if op == "ak.ones_like":
-        return ak.ones_like(operands[0], dtype=_dtype(params) if "dtype" in params else None)
-    if op == "ak.values_astype":
-        return ak.values_astype(operands[0], _dtype(params))
     if op == "ak.with_name":
         named = ak.with_name(operands[0], str(params["name"]))
         if behavior:
             return ak.Array(named.layout, behavior=behavior, attrs=named.attrs)
         return named
-    if op == "ak.with_parameter":
-        return ak.with_parameter(operands[0], str(params["key"]), params["value"])
-    if op == "ak.without_parameters":
-        return ak.without_parameters(operands[0])
-    if op == "ak.sort":
-        return ak.sort(
-            operands[0],
-            axis=int(params.get("axis", -1)),
-            ascending=bool(params.get("ascending", True)),
-            stable=bool(params.get("stable", True)),
-        )
-    if op == "ak.ravel":
-        return ak.ravel(operands[0])
-    if op == "ak.run_lengths":
-        return ak.run_lengths(operands[0])
-    if op == "ak.mask":
-        return ak.mask(operands[0], operands[1], valid_when=bool(params.get("valid_when", True)))
-    if op == "ak.is_none":
-        return ak.is_none(operands[0], axis=int(params.get("axis", 0)))
-    if op == "ak.singletons":
-        return ak.singletons(operands[0], axis=int(params.get("axis", 0)))
-    if op == "ak.pad_none":
-        return ak.pad_none(
-            operands[0],
-            int(params["target"]),
-            axis=int(params.get("axis", 1)),
-            clip=bool(params.get("clip", False)),
-        )
-    if op == "ak.unflatten":
-        counts = operands[1] if len(operands) > 1 else int(params["counts"])
-        return ak.unflatten(operands[0], counts, axis=int(params.get("axis", 0)))
-    if op == "ak.to_regular":
-        return ak.to_regular(operands[0], axis=int(params.get("axis", 1)))
-    if op == "ak.from_regular":
-        return ak.from_regular(operands[0], axis=int(params.get("axis", 1)))
-    if op == "ak.full_like":
-        dtype = np.dtype(str(params["dtype"])) if "dtype" in params else None
-        return ak.full_like(operands[0], scalar_param(params, "value", "value_dtype"), dtype=dtype)
-    if op == "ak.nan_to_num":
-        return ak.nan_to_num(
-            operands[0],
-            nan=float(params.get("nan", 0.0)),
-            posinf=float(params["posinf"]) if "posinf" in params else None,
-            neginf=float(params["neginf"]) if "neginf" in params else None,
-        )
-    if op == "ak.isclose":
-        return ak.isclose(
-            operands[0],
-            operands[1],
-            rtol=float(params.get("rtol", 1e-05)),
-            atol=float(params.get("atol", 1e-08)),
-            equal_nan=bool(params.get("equal_nan", False)),
-        )
-    if op == "ak.argcombinations":
-        return ak.argcombinations(operands[0], int(params["n"]), fields=_fields(params) or None)
-    if op == "ak.argcartesian":
-        return ak.argcartesian(list(operands), nested=bool(params.get("nested", False)))
-    if op == "ak.without_field":
-        return ak.without_field(operands[0], params["field"])
-    if op == "ak.broadcast_arrays":
-        dl = int(params["depth_limit"]) if "depth_limit" in params else None
-        try:
-            return ak.broadcast_arrays(*operands, depth_limit=dl)[int(params["index"])]
-        except ValueError as exc:  # §6.1d: awkward names two anonymous layouts; blame the factor
-            raise _broadcast_blame(operands, exc) from exc
-    if op == "fields":
-        names = [f for f in str(params["fields"]).split(",") if f]
-        return operands[0][names]
-    raise TypeError(f"unsupported awkward op {op!r}")
+    handler = _OPS.get(op)
+    if handler is None:
+        raise TypeError(f"unsupported awkward op {op!r}")
+    return handler(op, operands, params)
+
+
+#: An op's evaluation: ``(op, operands, params) -> value``, on typetracers and real arrays alike.
+_Handler = Callable[[str, Sequence[Any], Mapping[str, Any]], Any]
+
+
+def _field(op: str, xs: Sequence[Any], p: Mapping[str, Any]) -> Any:
+    x = xs[0]
+    name = str(p["field"])
+    if name in getattr(x, "fields", []):
+        return x[name]
+    # M18: not a record field -> a behavior property (vector's .pt/.mass, the coffea pattern);
+    # works on the typetracer and real arrays alike when the array carries the behavior. An
+    # unknown attribute raises here -> a record-time GraphedTypeError.
+    return getattr(x, name)
+
+
+def _method(op: str, xs: Sequence[Any], p: Mapping[str, Any]) -> Any:
+    # M54: a behavior METHOD called with arguments. Array-valued arguments arrived as operands
+    # and stand in the JSON as {"$": index}; constants are plain JSON. Typetracer and real
+    # arrays share this branch, so form inference, projection replay and evaluation agree.
+    target = getattr(xs[0], str(p["method"]))
+    result = target(*_decode_call(str(p["args"]), xs), **_decode_call(str(p["kwargs"]), xs))
+    # M59: a tuple result may be NESTED; `index` numbers its leaves depth-first
+    return _leaves(result)[int(p["index"])] if "index" in p else result
+
+
+def _subscript(op: str, xs: Sequence[Any], p: Mapping[str, Any]) -> Any:
+    # M59: the shared inner-axis tuple key (axis 0 left whole)
+    key = decode_subscript(p["spec"])
+    # awkward's depth here is the MINIMUM list depth: `ndim` reads a record as depth 1 even
+    # when every field is a list, and `[..., 0]` does reach into those fields
+    check_leading_ellipsis(key, xs[0].layout.minmax_depth[0])
+    return xs[0][key]
+
+
+def _reducer(op: str, xs: Sequence[Any], p: Mapping[str, Any]) -> Any:
+    if (
+        op in ("ak.min", "ak.max", "ak.ptp")
+        and _axis(p) is None
+        and not any(k in p for k in ("mask_identity", "initial", "keepdims"))
+    ):
+        return _global_extremum(op, xs[0])
+    return _AK_REDUCERS[op](xs[0], axis=_axis(p), **_reduce_kwargs(op, p, xs))
+
+
+def _std_var(op: str, xs: Sequence[Any], p: Mapping[str, Any]) -> Any:
+    if (
+        _axis(p) is None
+        and not any(k in p for k in ("mask_identity", "keepdims"))
+        and ak.backend(xs[0]) == "typetracer"
+    ):
+        return _global_moment(op, p, xs)
+    fn = ak.std if op == "ak.std" else ak.var
+    return fn(xs[0], axis=_axis(p), ddof=int(p.get("ddof", 0)), **_reduce_kwargs(op, p, xs))
+
+
+def _combinations(op: str, xs: Sequence[Any], p: Mapping[str, Any]) -> Any:
+    fn = ak.combinations if op == "ak.combinations" else ak.argcombinations
+    return fn(
+        xs[0],
+        int(p["n"]),
+        fields=_fields(p) or None,
+        replacement=bool(p.get("replacement", False)),
+        axis=int(p.get("axis", 1)),
+        **_naming_kwargs(p),
+    )
+
+
+def _cartesian(op: str, xs: Sequence[Any], p: Mapping[str, Any]) -> Any:
+    fn = ak.cartesian if op == "ak.cartesian" else ak.argcartesian
+    keys = _fields(p)
+    nested = _nested(p)
+    return fn(
+        dict(zip(keys, xs, strict=True)) if keys else list(xs),
+        nested=[keys[i] for i in nested] if keys and isinstance(nested, list) else nested,
+        axis=int(p.get("axis", 1)),
+        **_naming_kwargs(p),
+    )
+
+
+def _zip(op: str, xs: Sequence[Any], p: Mapping[str, Any]) -> Any:
+    zipped = tuple(xs) if p.get("tuple") else dict(zip(_fields(p), xs, strict=True))
+    kw: dict[str, Any] = dict(_naming_kwargs(p))
+    if "depth_limit" in p:
+        kw["depth_limit"] = int(p["depth_limit"])
+    return ak.zip(zipped, **kw)
+
+
+def _arg_extremum(op: str, xs: Sequence[Any], p: Mapping[str, Any]) -> Any:
+    fn = ak.argmin if op == "ak.argmin" else ak.argmax
+    return fn(
+        xs[0],
+        axis=_axis(p),
+        keepdims=bool(p.get("keepdims", False)),
+        mask_identity=bool(p.get("mask_identity", True)),
+    )
+
+
+def _sorting(op: str, xs: Sequence[Any], p: Mapping[str, Any]) -> Any:
+    fn = ak.sort if op == "ak.sort" else ak.argsort
+    return fn(
+        xs[0],
+        axis=int(p.get("axis", -1)),
+        ascending=bool(p.get("ascending", True)),
+        stable=bool(p.get("stable", True)),
+    )
+
+
+def _drop_none(op: str, xs: Sequence[Any], p: Mapping[str, Any]) -> Any:
+    ax = p.get("axis")
+    return ak.drop_none(xs[0], axis=None if ax is None else int(ax))
+
+
+def _nan_to_num(op: str, xs: Sequence[Any], p: Mapping[str, Any]) -> Any:
+    return ak.nan_to_num(
+        xs[0],
+        nan=float(p.get("nan", 0.0)),
+        posinf=float(p["posinf"]) if "posinf" in p else None,
+        neginf=float(p["neginf"]) if "neginf" in p else None,
+    )
+
+
+def _isclose(op: str, xs: Sequence[Any], p: Mapping[str, Any]) -> Any:
+    return ak.isclose(
+        xs[0],
+        xs[1],
+        rtol=float(p.get("rtol", 1e-05)),
+        atol=float(p.get("atol", 1e-08)),
+        equal_nan=bool(p.get("equal_nan", False)),
+    )
+
+
+def _broadcast_arrays(op: str, xs: Sequence[Any], p: Mapping[str, Any]) -> Any:
+    dl = int(p["depth_limit"]) if "depth_limit" in p else None
+    try:
+        return ak.broadcast_arrays(*xs, depth_limit=dl)[int(p["index"])]
+    except ValueError as exc:  # §6.1d: awkward names two anonymous layouts; blame the factor
+        raise _broadcast_blame(xs, exc) from exc
+
+
+def _like_dtype(p: Mapping[str, Any]) -> Any:
+    return _dtype(p) if "dtype" in p else None
+
+
+_OPS: dict[str, _Handler] = {
+    # M40 §2.1: add the big-endian-packed u64 __joinkey__ column
+    "pack_key": lambda op, xs, p: join.pack_key(xs[0], join.on_from_params(p)),
+    # a pure data-movement boundary is identity on values in-process (§3.3a)
+    "exchange": lambda op, xs, p: xs[0],
+    "field": _field,
+    "method": _method,
+    "getitem": lambda op, xs, p: xs[0][xs[1]],
+    "filter": lambda op, xs, p: xs[0][xs[1]],
+    # the M13 common axis-0 slice (start/stop/step present-only)
+    "slice": lambda op, xs, p: xs[0][slice(p.get("start"), p.get("stop"), p.get("step"))],
+    "subscript": _subscript,
+    "index": lambda op, xs, p: xs[0][int(p["i"])],  # the M13 common integer index
+    "fields": lambda op, xs, p: xs[0][[f for f in str(p["fields"]).split(",") if f]],
+    "ak.num": lambda op, xs, p: ak.num(xs[0], axis=int(p.get("axis", 1))),
+    **dict.fromkeys(_AK_REDUCERS, _reducer),
+    "ak.std": _std_var,
+    "ak.var": _std_var,
+    "ak.moment": lambda op, xs, p: ak.moment(
+        xs[0], int(p["n"]), axis=_axis(p), **_reduce_kwargs(op, p, xs)
+    ),
+    "ak.softmax": lambda op, xs, p: ak.softmax(xs[0], axis=int(p.get("axis", 1))),
+    **{
+        name: lambda op, xs, p: _AK_TWO_INPUT[op](xs[0], xs[1], axis=_axis(p))
+        for name in _AK_TWO_INPUT
+    },
+    "ak.combinations": _combinations,
+    "ak.argcombinations": _combinations,
+    "ak.cartesian": _cartesian,
+    "ak.argcartesian": _cartesian,
+    "ak.zip": _zip,
+    "ak.with_field": lambda op, xs, p: ak.with_field(
+        xs[0], scalar_param(p) if "scalar" in p else xs[1], where=p["field"]
+    ),
+    "ak.firsts": lambda op, xs, p: ak.firsts(xs[0], axis=int(p.get("axis", 1))),
+    "ak.argmin": _arg_extremum,
+    "ak.argmax": _arg_extremum,
+    "ak.argsort": _sorting,
+    "ak.sort": _sorting,
+    "ak.local_index": lambda op, xs, p: ak.local_index(xs[0], axis=int(p.get("axis", -1))),
+    "ak.concatenate": lambda op, xs, p: ak.concatenate(list(xs), axis=int(p.get("axis", 0))),
+    "ak.flatten": lambda op, xs, p: ak.flatten(xs[0], axis=_axis(p, default=1)),
+    "ak.fill_none": lambda op, xs, p: ak.fill_none(
+        xs[0], scalar_param(p, "value", "value_dtype"), axis=int(p.get("axis", -1))
+    ),
+    "ak.drop_none": _drop_none,
+    "ak.where": lambda op, xs, p: ak.where(*_three_operands(xs, p)),
+    "ak.zeros_like": lambda op, xs, p: ak.zeros_like(xs[0], dtype=_like_dtype(p)),
+    "ak.ones_like": lambda op, xs, p: ak.ones_like(xs[0], dtype=_like_dtype(p)),
+    "ak.values_astype": lambda op, xs, p: ak.values_astype(xs[0], _dtype(p)),
+    "ak.with_parameter": lambda op, xs, p: ak.with_parameter(xs[0], str(p["key"]), p["value"]),
+    "ak.without_parameters": lambda op, xs, p: ak.without_parameters(xs[0]),
+    "ak.ravel": lambda op, xs, p: ak.ravel(xs[0]),
+    "ak.run_lengths": lambda op, xs, p: ak.run_lengths(xs[0]),
+    "ak.mask": lambda op, xs, p: ak.mask(xs[0], xs[1], valid_when=bool(p.get("valid_when", True))),
+    "ak.is_none": lambda op, xs, p: ak.is_none(xs[0], axis=int(p.get("axis", 0))),
+    "ak.singletons": lambda op, xs, p: ak.singletons(xs[0], axis=int(p.get("axis", 0))),
+    "ak.pad_none": lambda op, xs, p: ak.pad_none(
+        xs[0], int(p["target"]), axis=int(p.get("axis", 1)), clip=bool(p.get("clip", False))
+    ),
+    "ak.unflatten": lambda op, xs, p: ak.unflatten(
+        xs[0], xs[1] if len(xs) > 1 else int(p["counts"]), axis=int(p.get("axis", 0))
+    ),
+    "ak.to_regular": lambda op, xs, p: ak.to_regular(xs[0], axis=int(p.get("axis", 1))),
+    "ak.from_regular": lambda op, xs, p: ak.from_regular(xs[0], axis=int(p.get("axis", 1))),
+    "ak.full_like": lambda op, xs, p: ak.full_like(
+        xs[0],
+        scalar_param(p, "value", "value_dtype"),
+        dtype=np.dtype(str(p["dtype"])) if "dtype" in p else None,
+    ),
+    "ak.nan_to_num": _nan_to_num,
+    "ak.isclose": _isclose,
+    "ak.without_field": lambda op, xs, p: ak.without_field(xs[0], p["field"]),
+    "ak.broadcast_arrays": _broadcast_arrays,
+}
 
 
 def _global_extremum(op: str, x: Any) -> Any:

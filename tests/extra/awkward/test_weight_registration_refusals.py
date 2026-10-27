@@ -30,6 +30,7 @@ from graphed import Session
 from graphed.awkward import AwkwardBackend, from_awkward
 from graphed.context import _two_level
 from graphed.errors import GraphedError, GraphedTypeError
+from graphed.systematics.lineage import ambient_of
 from graphed.varied import Varied, member_of, rebuild
 
 SHAPES = ak.Array(
@@ -116,7 +117,7 @@ def test_the_refusal_survives_a_derivation_between_the_two_registrations() -> No
 
 
 def test_a_refused_weight_leaves_no_residue_for_the_shift_after_weight_report() -> None:
-    """§2.5's diagnostic reads `Session._weight_factors`.
+    """§2.5's diagnostic reads `Session.systematics.weight_factors`.
 
     So the form check has to run BEFORE that append: a weight whose registration was refused must
     not be reported against a shift it never got to precede. The refused factor here READS the
@@ -203,7 +204,7 @@ def test_a_factor_whose_form_only_looks_like_a_memoised_one_is_still_refused() -
     for name, scale in (("A", 1.0), ("B", 1.5)):
         factor = _factor(registered, registered["deep"], scale)
         registered = graphed.vary(registered, name, factor, is_weight=True, up=factor * 1.1)
-    seeded = len(session._mul_forms)
+    seeded = len(session.systematics.mul_forms)
     assert seeded, "no product form was memoised; the collision cannot be exercised"
 
     clashing = _factor(registered, registered["wide"], 2.0)
@@ -265,12 +266,12 @@ def test_a_clash_at_a_joint_this_registration_mints_is_refused() -> None:
     """
     session, shifted = _shifted_context()
     registered, central, clashing = _joint_pair(shifted, shifted["r5"])
-    assert "B_up__jes_up" not in registered._recorded, (
+    assert "B_up__jes_up" not in ambient_of(registered).recorded, (
         "the joint is not new to the union; wrong case"
     )
     at_jes_up = [
         session.form(_two_level(container, "jes_up"))
-        for container in (registered._factors[0], central)
+        for container in (ambient_of(registered).factors[0], central)
     ]
     # jes_up itself agrees, or the joint is not the cause
     session.backend.op_form("mul", at_jes_up, {})
@@ -295,7 +296,7 @@ def test_a_rolled_back_mint_leaves_no_resolution_the_restored_registry_no_longer
     """
     session, shifted = _shifted_context()
     registered, central, clashing = _joint_pair(shifted, shifted["r5"])
-    factor = registered._factors[0]
+    factor = ambient_of(registered).factors[0]
 
     with pytest.raises(GraphedTypeError, match="B_up__jes_up"):
         graphed.vary(registered, "B", central, is_weight=True, up=clashing)
@@ -320,7 +321,7 @@ def test_a_valid_pair_that_only_looks_clashing_through_the_running_nominal_still
         shifted, shifted["r5"], a_nominal=shifted["r3"], a_up_wide=shifted["w"]
     )
     with pytest.raises(ValueError, match="broadcast"):  # the pair a nominal fold would have formed
-        running_nominal = session.form(_two_level(registered._factors[0], "nominal"))
+        running_nominal = session.form(_two_level(ambient_of(registered).factors[0], "nominal"))
         session.backend.op_form(
             "mul", [running_nominal, session.form(_two_level(wider, "jes_up"))], {}
         )

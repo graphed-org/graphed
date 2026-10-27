@@ -232,14 +232,18 @@ The labels live in the frontend only. Each universe lowers to an ordinary marked
 optimizer, the plan format and the executor never learn the word "variation" — and interning
 still shares whatever the universes have in common, which is usually almost everything.
 
-Where this lives: the machinery is the ``graphed.systematics`` package — ``registration`` is
-``vary`` itself (the checks, the minting, the fan-out), ``ambient`` is the event weight's operation
-list and everything that decides over it, ``explain`` is the report at the end of this section,
-``varied`` is the ``Varied`` container, ``accessors`` is the reader verbs above, ``by_label`` reads
-columns per label, and ``kinds`` / ``tags`` / ``points`` spell a variation's kind, its universe tags
-and a family's points. You never import by that path: ``vary``, ``labels``, ``weight``, ``explain``
-and the rest are exported from ``graphed``, and the event context they ride is ``graphed.context``,
-which keeps the ambient state that ``ambient`` decides over.
+Where this lives: the machinery is the ``graphed.systematics`` package. ``verb`` is ``vary``
+itself (the target dispatch and the rollback), ``registration`` what its three overloads share (the
+checks, the minting, the fan-out), ``state`` one Session's registries (``Session.systematics``),
+``lineage`` what an event context is to these layers (its parent, link, collections and ambient
+record), ``ambient`` the event weight's record and every rule that decides over it, ``handles``
+stamping and re-indexing a value's context, ``explain`` the report at the end of this section,
+``varied`` the ``Varied`` container, ``accessors`` the reader verbs above, ``by_label`` per-label
+column reads, and ``kinds`` / ``tags`` / ``points`` spell a variation's kind, its universe tags and
+a family's points, and their imports form no cycle. You never
+import by that path: ``vary``, ``labels``, ``weight``, ``explain`` and the rest are exported from
+``graphed``, and the event context they ride is ``graphed.context``, which builds child contexts
+from the records ``ambient`` returns.
 
 Variations that ride an event context
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

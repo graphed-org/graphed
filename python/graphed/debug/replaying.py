@@ -116,8 +116,8 @@ class Replay:
         self._store: Any = None
         self._captured: dict[str, str] = {}
         if process.store is not None:
-            self._store = process._open_store()
-            cid = process._capture_id(task.partition)
+            self._store = process.open_store()
+            cid = process.capture_id(task.partition)
             done = self._store.completed()
             self._captured = {
                 k: done[f"{cid}:{k}"].blob for k in ("input", "output") if f"{cid}:{k}" in done
@@ -196,7 +196,7 @@ class Replay:
         if "output" in self._captured:
             reference, recorded = "recorded", _decode(self._store, self._captured["output"])
         else:
-            evaluated = self._process._evaluate(self._chunk, self.task.partition)
+            evaluated = self._process.evaluate(self._chunk, self.task.partition)
             reference, recorded = "re-evaluated", self._process.reduce(evaluated)
         return ReplayDiff(reference, _equal(recorded, replayed), recorded, replayed)
 

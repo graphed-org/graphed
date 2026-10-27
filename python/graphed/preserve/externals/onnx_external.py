@@ -19,8 +19,8 @@ def onnx_content_hash(payload: bytes) -> str:
 
 
 def _onnx_content_hash_impl(payload: bytes) -> str:
-    import onnx  # noqa: PLC0415
-    from onnx import numpy_helper  # noqa: PLC0415
+    import onnx
+    from onnx import numpy_helper
 
     model = onnx.load_from_string(payload)
     h = hashlib.sha256()
@@ -35,15 +35,15 @@ def _onnx_content_hash_impl(payload: bytes) -> str:
 
 def load_onnx(payload: bytes, params: Mapping[str, Any]) -> Any:
     """Create the ONNX Runtime session once (per worker) — not per call."""
-    import onnxruntime as ort  # noqa: PLC0415
+    import onnxruntime as ort
 
     return ort.InferenceSession(payload, providers=["CPUExecutionProvider"])
 
 
 def eval_onnx(session: Any, params: Mapping[str, Any], inputs: list[Any]) -> Any:
     """Run the ONNX session on ``inputs``, one value per event."""
-    import awkward as ak  # noqa: PLC0415
-    import numpy as np  # noqa: PLC0415
+    import awkward as ak
+    import numpy as np
 
     # onnxruntime takes no implicit cast: feed each input the dtype the graph declares for it
     declared = {i.name: i.type for i in session.get_inputs()}
@@ -68,8 +68,8 @@ def eval_onnx(session: Any, params: Mapping[str, Any], inputs: list[Any]) -> Any
 
 
 def _onnx_samples() -> list[bytes]:
-    import numpy as np  # noqa: PLC0415
-    from onnx import TensorProto, helper, numpy_helper  # noqa: PLC0415
+    import numpy as np
+    from onnx import TensorProto, helper, numpy_helper
 
     def _model(weight: float) -> bytes:
         w = numpy_helper.from_array(np.array([[weight]], dtype=np.float32), name="W")

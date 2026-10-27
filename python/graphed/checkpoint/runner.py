@@ -125,9 +125,7 @@ def run_resumable(
             value = _run_one(
                 part, process=process, combine=combine, resources=resources, retry=retry
             )
-        except _SimulatedInterrupt:
-            raise
-        except BaseException as exc:
+        except Exception as exc:  # an interrupt or exit stops the run; it is not a dead letter
             store.record_dead(dead_letter_descriptor(tid, part, exc))
             report.dead += 1
             if error_budget is not None and report.dead > error_budget:
