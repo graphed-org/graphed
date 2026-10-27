@@ -110,6 +110,9 @@ pub(crate) const DROPPED: usize = usize::MAX;
 /// Reachability from the outputs (plan M4: DCE = reachability; never drops a node on a path to an
 /// output). Returns the reachable nodes compacted into topological order, the remapped outputs,
 /// and the `remap` vector itself (`DROPPED` for a node this pass dropped).
+///
+/// The order is the post-order walk from the outputs (in request order, inputs in order), so it
+/// depends only on the outputs' cone, never on the order the arena recorded it in.
 #[allow(
     clippy::indexing_slicing,
     reason = "callers bound the outputs, and the store keeps each input below its node"
@@ -118,29 +121,31 @@ pub(crate) fn dead_code_elimination(
     nodes: &[NodeKey],
     outputs: &[NodeId],
 ) -> (Vec<NodeKey>, Vec<usize>, Vec<usize>) {
-    let mut keep = vec![false; nodes.len()];
-    let mut stack: Vec<usize> = outputs.iter().map(|&o| index(o)).collect();
-    while let Some(i) = stack.pop() {
-        if keep[i] {
-            continue;
-        }
-        keep[i] = true;
-        for &inp in nodes[i].inputs() {
-            stack.push(index(inp));
-        }
-    }
-    // compact, preserving topological (ascending-id) order
     let mut remap = vec![DROPPED; nodes.len()];
     let mut kept: Vec<NodeKey> = Vec::new();
-    for (i, node) in nodes.iter().enumerate() {
-        if keep[i] {
-            remap[i] = kept.len();
-            let new_inputs: Vec<NodeId> = node
-                .inputs()
-                .iter()
-                .map(|&x| remap[index(x)] as NodeId)
-                .collect();
-            kept.push(node.with_inputs(new_inputs));
+    // (node, next input to visit); a DAG never meets a node already on this path
+    let mut stack: Vec<(usize, usize)> = Vec::new();
+    for &o in outputs {
+        if remap[index(o)] == DROPPED {
+            stack.push((index(o), 0));
+        }
+        while let Some(top) = stack.last_mut() {
+            let (i, next) = *top;
+            if let Some(&inp) = nodes[i].inputs().get(next) {
+                top.1 += 1;
+                if remap[index(inp)] == DROPPED {
+                    stack.push((index(inp), 0));
+                }
+            } else {
+                stack.pop();
+                remap[i] = kept.len();
+                let new_inputs: Vec<NodeId> = nodes[i]
+                    .inputs()
+                    .iter()
+                    .map(|&x| remap[index(x)] as NodeId)
+                    .collect();
+                kept.push(nodes[i].with_inputs(new_inputs));
+            }
         }
     }
     let out_idx = outputs.iter().map(|&o| remap[index(o)]).collect();
@@ -647,7 +652,7 @@ mod tests {
             src_member, None,
             "a source reduces to itself, not into a stage"
         );
-        // the three surviving ops fuse into ONE stage, in recording order; the identity op is
+        // the three surviving ops fuse into ONE stage, in dependency order; the identity op is
         // folded onto its input, so it lands exactly where `b` did (the post-DCE passes).
         let stage: Vec<_> = [a, b, id, out]
             .iter()
@@ -661,6 +666,47 @@ mod tests {
         );
         // the image really addresses the reduced store
         assert_eq!(reduced.node_count(), 2);
+    }
+
+    #[test]
+    fn reduction_is_independent_of_recording_order_and_unrelated_nodes() {
+        // `(x * 2)[x > 1]`, with the mask recorded before or after the product, optionally after an
+        // unrelated op on `x`: one cone, so one reduced graph and one opt_level=0 cone.
+        let build = |mask_first: bool, unrelated: bool| {
+            let s = GraphStore::new();
+            let x = s.add_source("x".into(), empty());
+            if unrelated {
+                s.add_op("neg".into(), vec![x], empty()).unwrap();
+            }
+            let (gt, mul) = if mask_first {
+                let gt = s.add_op("gt".into(), vec![x], empty()).unwrap();
+                (gt, s.add_op("mul".into(), vec![x], empty()).unwrap())
+            } else {
+                let mul = s.add_op("mul".into(), vec![x], empty()).unwrap();
+                (s.add_op("gt".into(), vec![x], empty()).unwrap(), mul)
+            };
+            let out = s.add_op("getitem".into(), vec![mul, gt], empty()).unwrap();
+            let (reduced, _) = s
+                .reduce_with_outputs(&[out], &EggEngine::default(), FusionMode::SingleUse)
+                .unwrap();
+            let cone = s.cone(&[out]).unwrap();
+            (
+                crate::serialize::serialize(&reduced).unwrap(),
+                crate::serialize::serialize(&cone).unwrap(),
+            )
+        };
+        let fresh = build(false, false);
+        assert_eq!(build(true, false), fresh);
+        assert_eq!(build(false, true), fresh);
+        assert_eq!(build(true, true), fresh);
+        // control: a different cone (the product alone) serializes differently
+        let s = GraphStore::new();
+        let x = s.add_source("x".into(), empty());
+        let mul = s.add_op("mul".into(), vec![x], empty()).unwrap();
+        let (other, _) = s
+            .reduce_with_outputs(&[mul], &EggEngine::default(), FusionMode::SingleUse)
+            .unwrap();
+        assert_ne!(crate::serialize::serialize(&other).unwrap(), fresh.0);
     }
 
     #[test]

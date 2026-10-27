@@ -45,6 +45,11 @@ Fixes
   number of members were merged into one and an output was dropped. Two ``External`` nodes whose
   descriptors differ only by a ``|`` in a field, or by ``preprocessing_ref="-"`` against none,
   stay apart too (#104).
+* The optimized IR (``serialized_ir``, ``compile_ir``) no longer depends on the order the Session
+  recorded a shared sub-expression: recording ``x > 1`` before ``(x * 2)[x > 1]`` gave other
+  bytes than a fresh Session. The ``opt_level=0`` cone gets the same order. The docs now say the
+  fresh-Session byte identity is for the optimized IR. ``optimize=False`` writes the whole record
+  arena, so its bytes change with everything the Session holds (#105).
 
 0.0.9
 -----

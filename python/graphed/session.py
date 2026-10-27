@@ -260,12 +260,15 @@ class Session:
         The IR is byte-identical.
 
         Pass the result ``Array``(s) of the analysis as ``outputs``: the artifact carries EXACTLY
-        that output set — outputs are a property of THIS request, not session state (M22), so
-        sequential calls with different outputs are fully independent
-        (byte-identical to fresh-session serializations). With ``optimize=True`` (the default) the
-        graph is reduced by the M4 optimizer (DCE + CSE + equality-saturation stage fusion), so
-        the bytes carry the **optimized interned graph** — the same content-addressed artifact an
-        executor runs. This is the "compile" step for a ``graphed.core.DurablePlan`` deployment:
+        that output set — outputs are a property of THIS request, not session state (M22). With
+        ``optimize=True`` (the default) the graph is reduced by the M4 optimizer (DCE + CSE +
+        equality-saturation stage fusion), so the bytes carry the **optimized interned graph** —
+        the same content-addressed artifact an executor runs — and are byte-identical to a
+        fresh-session serialization of the same outputs, whatever else this Session recorded
+        (except that an incremental Session keeps a commuted op's first-recorded operand order).
+        ``optimize=False`` writes the whole record arena with its record ids, flagging only
+        ``outputs``, so its bytes change with every node the Session holds.
+        This is the "compile" step for a ``graphed.core.DurablePlan`` deployment:
         record an analysis once, serialize it once, then re-target it at many datasets with
         ``DurablePlan.with_partitions`` / ``for_datasets``.
         """
