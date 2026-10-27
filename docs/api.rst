@@ -21,6 +21,9 @@ recorded operation, instead of the optimized graph. ``materialize`` evaluates Ar
 number of Sessions in this process, with no executor, reading only the source columns they use:
 a debugging tool. One Session can record
 several sources (a reader's ``session=``); a plan reads only the ones its outputs reach.
+``current_session`` is the Session a read with no array input records into: the innermost
+``with session:`` scope, else a default made on first use; ``new_session``, ``set_session`` and
+``set_default_backend`` replace the default or choose its backend.
 ``vary`` declares a systematic variation, and ``labels`` / ``nominal`` / ``universe`` /
 ``variations`` read the results back (each tag's ``Kind``, a flag, beside its ordering). ``join``, ``repartition``, ``join_plan`` and
 ``shuffle_plan`` move rows between partitions; ``read_columns`` and ``impact_by_label`` tell you

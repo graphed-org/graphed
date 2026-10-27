@@ -86,6 +86,50 @@ small, local data and for poking at things interactively. ``compile_ir`` + ``eva
 path everything else takes: reduce once, then evaluate the reduced node list wherever the data
 is. ``evaluate_ir`` returns one entry per requested output.
 
+Recording into the current Session
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+An operation on arrays records into its inputs' Session. A read has no array input, so it needs
+to be told where to land, and ``graphed.current_session()`` is that answer: the innermost open
+``with`` scope, else the **default** Session. The default is created on first use, on the
+reader's own backend (``AwkwardBackend()`` for a bare ``current_session()``), and is one object
+for the whole process: every thread and every asyncio task sees it.
+
+.. code-block:: python
+
+    import graphed
+    from graphed import Session
+    from graphed.numpy import NumpyBackend
+
+    graphed.new_session(NumpyBackend())            # replace the default with a fresh Session
+    default = graphed.current_session()
+    with Session(NumpyBackend()) as scoped:        # reads in this block land in `scoped`
+        print(graphed.current_session() is scoped)
+    print(graphed.current_session() is default)
+    previous = graphed.set_session(scoped)         # install an existing Session as the default
+    print(previous is default, graphed.current_session() is scoped)
+
+Prints::
+
+    True
+    True
+    True True
+
+``with array.session:`` scopes reads to the Session an array already lives in. Leaving a block,
+or replacing the default, never closes a Session: arrays recorded in it keep working. The default
+holds its graph until it is replaced and its arrays are gone, so a long notebook that records into
+it grows until you call ``graphed.new_session()``.
+
+A scope follows Python's context rules: a task created inside the block sees it and a sibling
+does not; a new thread sees it on free-threaded 3.14 and later (``sys.flags.thread_inherit_context``)
+and not on other builds. In a worker thread, open the ``with`` block inside the thread rather than
+relying on inheritance; a ``ThreadPoolExecutor`` worker started inside a block keeps that scope
+for its whole life.
+
+``graphed.set_default_backend(factory)`` chooses the backend of defaults no caller names — a bare
+``current_session()`` and ``new_session()`` without a backend. It never overrides a reader's own
+backend, and it leaves an existing default alone until the next ``new_session()``.
+
 
 Why the graph stays small while you build it
 --------------------------------------------
@@ -1121,7 +1165,8 @@ Prints::
 Several graphs in one plan
 --------------------------
 
-Each source makes its own session, and analysis code often branches in Python on what a dataset
+Each source makes its own session when it is read into its own ``with`` scope (or its own
+``session=``), and analysis code often branches in Python on what a dataset
 is: MC is weighted and data is not, so their graphs differ. ``graphed.collate`` takes a mapping of
 name to plan and returns one plan whose value is ``{name: that plan's value}``:
 

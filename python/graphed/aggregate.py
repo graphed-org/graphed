@@ -483,7 +483,8 @@ def aggregate_plan(
     if any(a.session is not session for a in arrays):
         raise TypeError(
             "all outputs of one plan must record into one session; collate one plan per Session"
-            " (graphed.collate)"
+            " (graphed.collate), or record them in one (`with output.session:` around the later"
+            " reads)"
         )
     partitioned = {
         nid: d for nid, d in sources_read(arrays).items() if isinstance(d, PartitionedSource)

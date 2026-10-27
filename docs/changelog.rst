@@ -7,6 +7,20 @@ Newest release first. Numbers in parentheses are the pull requests on
 0.0.10 (unreleased)
 -------------------
 
+A current Session for reads with no array input
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``graphed.current_session()`` returns the innermost ``with session:`` scope, else a process-wide
+  default Session created on first use; ``graphed.new_session(backend)`` and
+  ``graphed.set_session(s)`` replace the default, and ``graphed.set_default_backend(factory)``
+  chooses the backend of defaults no caller names. Scopes follow Python's context rules; the
+  default is visible from every thread.
+* Session methods lock their state, so threads may record into and compile one Session at once;
+  compiling while another thread recorded raised ``dictionary changed size during iteration``.
+* The cross-Session refusals of ``join``, ``gak.join``, ``apply``, ``apply_gufunc``,
+  ``aggregate_plan`` and the recording guard name the ``with`` scope that records both sides in
+  one Session.
+
 Several datasets in one Session
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

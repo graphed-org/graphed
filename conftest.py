@@ -14,6 +14,7 @@ leaves their isolation intact.
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 
 import pytest
 
@@ -41,3 +42,13 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int | pytest.ExitC
         and not session.testsfailed
     ):
         session.exitstatus = pytest.ExitCode.OK
+
+
+@pytest.fixture(autouse=True)
+def _own_default_session() -> Iterator[None]:
+    """Start every test with no default Session, and give back the one it found."""
+    from graphed.session import set_session  # noqa: PLC0415  (core suites import graphed lazily)
+
+    previous = set_session(None)
+    yield
+    set_session(previous)

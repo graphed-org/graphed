@@ -8,6 +8,7 @@ backend.
 
 from __future__ import annotations
 
+import contextvars
 import threading
 import types
 from collections.abc import Callable, Mapping, Sequence
@@ -87,7 +88,11 @@ class CheckedExternal:
 
 
 class Session:
-    """A recording session: the interned graph of every array recorded on ``backend``."""
+    """A recording session: the interned graph of every array recorded on ``backend``.
+
+    ``with session:`` makes it the Session array-less reads in this context record into, until the
+    block exits; see :func:`current_session`.
+    """
 
     def __init__(self, backend: Backend, *, incremental: bool = False) -> None:
         """Record on ``backend``; ``incremental`` reduces the graph as it is recorded."""
@@ -125,6 +130,18 @@ class Session:
         self._fn_names: dict[object, tuple[object, str]] = {}
         self._fn_taken: set[str] = set()
 
+    def __enter__(self) -> Session:
+        """Open a scope: array-less reads in this context record here until it exits."""
+        _scopes.set((*_scopes.get(), self))
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        """Close this scope; the Session and what it recorded stay usable."""
+        stack = _scopes.get()
+        if not stack or stack[-1] is not self:
+            raise RuntimeError("graphed: Session scopes exited out of order")
+        _scopes.set(stack[:-1])
+
     def _mine(self, arrays: Sequence[Any], located: tuple[str, Provenance] | None = None) -> None:
         """m60 integ-m60-X: refuse an `Array` this Session did not record.
 
@@ -136,7 +153,10 @@ class Session:
         """
         if all(a.session is self for a in arrays):
             return
-        message = "an input was recorded in a different Session"
+        message = (
+            "an input was recorded in a different Session; record every input in one (read the "
+            "later ones inside `with array.session:`, or pass the reader session=)"
+        )
         if located is None:
             raise TypeError(f"graphed: {message}")
         raise GraphedTypeError(located[0], located[1], message)
@@ -749,6 +769,90 @@ class Session:
             external=lambda _nid, fn, ins: fn(*ins),
             memo=memo,
         )
+
+
+#: the open ``with session:`` scopes of this context, innermost last; a tuple per context, so
+#: two threads entering one Session never share a push/pop
+_scopes: contextvars.ContextVar[tuple[Session, ...]] = contextvars.ContextVar(
+    "graphed_session_scopes", default=()
+)
+# module globals and not context variables: the default must be one object every thread and every
+# context sees, including those started before it existed
+_default: Session | None = None
+_default_factory: Callable[[], Backend] | None = None
+# guards the two writes; never held across `Session(...)` or a factory call, which may read back
+_default_lock = threading.Lock()
+
+
+def _factory_backend() -> Backend | None:
+    factory = _default_factory
+    return None if factory is None else factory()
+
+
+def current_session(backend: Backend | None = None) -> Session:
+    """Return the Session array-less reads record into: the innermost open scope, else the default.
+
+    With no default yet, one is created on ``backend``, else on the factory set with
+    :func:`set_default_backend`, else on ``graphed.awkward.AwkwardBackend()``. ``backend`` is
+    used only then: the Session returned may record on another backend.
+    """
+    global _default  # the process-wide default
+    stack = _scopes.get()
+    if stack:
+        return stack[-1]
+    held = _default
+    if held is not None:
+        return held
+    made = backend if backend is not None else _factory_backend()
+    if made is None:
+        try:
+            from .awkward import AwkwardBackend  # noqa: PLC0415  (an optional extra)
+        except ImportError as exc:
+            raise ImportError(
+                "graphed.current_session(): no backend for a new default Session; install "
+                "graphed[awkward], or configure one with graphed.set_default_backend(...)"
+            ) from exc
+        made = AwkwardBackend()
+    session = Session(made)
+    with _default_lock:
+        if _default is None:
+            _default = session
+        return _default
+
+
+def new_session(backend: Backend | None = None) -> None:
+    """Replace the default Session with a new one on ``backend``.
+
+    With no ``backend``, on the factory set with :func:`set_default_backend`; with neither, the
+    default is cleared and the next array-less read creates one on its own backend. An open
+    ``with`` scope still wins until it exits.
+    """
+    made = backend if backend is not None else _factory_backend()
+    set_session(None if made is None else Session(made))
+
+
+def set_session(default: Session | None, /) -> Session | None:
+    """Install ``default`` as the default Session (``None`` clears it); return the previous one.
+
+    The previous one is the restore token: ``prev = set_session(s); ...; set_session(prev)``.
+    """
+    global _default  # the process-wide default
+    with _default_lock:
+        previous, _default = _default, default
+    return previous
+
+
+def set_default_backend(factory: Callable[[], Backend] | None, /) -> Callable[[], Backend] | None:
+    """Set the backend factory of future defaults no creator names; return the previous factory.
+
+    Process-wide. It applies to a bare :func:`current_session` and to :func:`new_session` without
+    a backend, never to a reader with its own backend, and not to a default that already exists:
+    call :func:`new_session` to apply it now. ``None`` clears it.
+    """
+    global _default_factory  # the process-wide factory
+    with _default_lock:
+        previous, _default_factory = _default_factory, factory
+    return previous
 
 
 def _replace_arrays(item: Any, leaf: Callable[[Array], Any]) -> Any:
