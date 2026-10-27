@@ -370,6 +370,37 @@ def _join_nullable(
     return []
 
 
+def _join_form(left: NumpyForm, right: NumpyForm, params: Mapping[str, object]) -> NumpyForm:
+    """Return the record form a join of ``left`` and ``right`` gives."""
+    if left.fields is None or right.fields is None:
+        raise TypeError("join needs two record sources")
+    # intersection dedup keeping LEFT's copy (ignores `on`): fields = left ++ right-only,
+    # then the __valid_<n>__ nullability companions appended below. op_form's field set is
+    # thus a SUPERSET of the materialized block's DATA columns (the block carries
+    # nullability in .mask, not companions) — a sound over-declaration, never an
+    # under-declaration (§A.3.1). A form-vs-block check must assert op_form.fields ⊇
+    # block.dtype.names, not equality. See docs/numpy/improvements.rst (M40).
+    lnames = {f for f, _ in left.fields}
+    rnames = {f for f, _ in right.fields}
+    on_set = set(_decode_on(params.get("on", "")))
+    shared_nonkey = sorted(n for n in lnames & rnames if n not in on_set)
+    if shared_nonkey:  # F7: mirror merge_records — no silent SQL suffixing
+        raise ValueError(
+            f"op_form(join): shared non-key column(s) {shared_nonkey} — rename or add to `on`"
+        )
+    right_only = [(n, t) for n, t in right.fields if n not in lnames]
+    left_only = [(n, t) for n, t in left.fields if n not in rnames]
+    # left/outer nullability rides in companion validity columns (NumpyForm has no option
+    # field, a3). ponytail: only the exclusive (non-shared) fields get companions; a shared
+    # col nulled on an outer-only row is untested — widen if an outer HEP form test lands.
+    companions = [
+        (f"__valid_{n}__", np.dtype(np.bool_).str)
+        for n, _ in _join_nullable(str(params.get("how", "inner")), left_only, right_only)
+    ]
+    fields = (*left.fields, *right_only, *companions)
+    return NumpyForm(np.dtype(object), kind="record", fields=fields)
+
+
 class NumpyBackend:
     """A `graphed.Backend` over numpy arrays: M2 seam + M5 records + the M11 elementwise tier.
 
@@ -411,34 +442,7 @@ class NumpyBackend:
             return NumpyForm(np.dtype(object), kind="record", fields=fields)
         if op == "join":
             left, right = forms
-            if left.fields is None or right.fields is None:
-                raise TypeError("join needs two record sources")
-            # intersection dedup keeping LEFT's copy (ignores `on`): fields = left ++ right-only,
-            # then the __valid_<n>__ nullability companions appended below. op_form's field set is
-            # thus a SUPERSET of the materialized block's DATA columns (the block carries
-            # nullability in .mask, not companions) — a sound over-declaration, never an
-            # under-declaration (§A.3.1). A form-vs-block check must assert op_form.fields ⊇
-            # block.dtype.names, not equality. See docs/numpy/improvements.rst (M40).
-            lnames = {f for f, _ in left.fields}
-            rnames = {f for f, _ in right.fields}
-            on_set = set(_decode_on(params.get("on", "")))
-            shared_nonkey = sorted(n for n in lnames & rnames if n not in on_set)
-            if shared_nonkey:  # F7: mirror merge_records — no silent SQL suffixing
-                raise ValueError(
-                    f"op_form(join): shared non-key column(s) {shared_nonkey} — rename or add to "
-                    "`on`"
-                )
-            right_only = [(n, t) for n, t in right.fields if n not in lnames]
-            left_only = [(n, t) for n, t in left.fields if n not in rnames]
-            # left/outer nullability rides in companion validity columns (NumpyForm has no option
-            # field, a3). ponytail: only the exclusive (non-shared) fields get companions; a shared
-            # col nulled on an outer-only row is untested — widen if an outer HEP form test lands.
-            companions = [
-                (f"__valid_{n}__", np.dtype(np.bool_).str)
-                for n, _ in _join_nullable(str(params.get("how", "inner")), left_only, right_only)
-            ]
-            fields = (*left.fields, *right_only, *companions)
-            return NumpyForm(np.dtype(object), kind="record", fields=fields)
+            return _join_form(left, right, params)
         if op == "field":
             (rec,) = forms
             if rec.fields is None:
