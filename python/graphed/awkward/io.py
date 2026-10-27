@@ -218,11 +218,15 @@ def _file_key(partition: Partition) -> Any:
 def _file_tables(partitions: Sequence[Partition], steps_per_file: int) -> dict[str, Any]:
     """Return a reader-backed writer's ``bases`` and ``rows`` over its source's ``partitions``.
 
-    A source gives each file ``steps_per_file`` partitions in order, so every listing of a file
-    gets a key and a repeated one is refused; a file's last partition ends at its row count,
+    Every listing of a file has one first partition (blind step 0, or an eager range from 0), so
+    each gets a key and a repeated one is refused; a file's last partition ends at its row count,
     against which an eager step is reconstructed.
     """
-    files = [_file_key(p) for p in partitions[::steps_per_file]]
+    files = [
+        _file_key(p)
+        for p in partitions
+        if p.blind_step == 0 or (not p.is_blind and p.entry_start == 0)
+    ]
     rows = {_file_key(p): p.entry_stop for p in partitions if not p.is_blind}
     return {
         "bases": tuple(gw.file_bases(files, steps_per_file).items()),
@@ -1155,13 +1159,8 @@ def _write_varied(
         whole = ak.Array(data() if callable(data) else data)
         n = len(whole)
         partitions = tuple(
-            Partition(
-                f"memory://{source_name}",
-                "",
-                (s * n) // steps_per_file,
-                ((s + 1) * n) // steps_per_file,
-            )
-            for s in range(steps_per_file)
+            Partition(f"memory://{source_name}", "", start, stop)
+            for start, stop in gw.eager_ranges(n, steps_per_file)
         )
         writer = _VariedWritePart(bases=(), memory_data=whole, memory_rows=n, **common)
 
@@ -1274,13 +1273,8 @@ def to_parquet(
         whole = ak.Array(data() if callable(data) else data)
         n = len(whole)
         partitions = tuple(
-            Partition(
-                f"memory://{source_name}",
-                "",
-                (s * n) // steps_per_file,
-                ((s + 1) * n) // steps_per_file,
-            )
-            for s in range(steps_per_file)
+            Partition(f"memory://{source_name}", "", start, stop)
+            for start, stop in gw.eager_ranges(n, steps_per_file)
         )
         writer = _WritePart(
             compiled=compiled,

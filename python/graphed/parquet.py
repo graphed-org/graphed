@@ -36,7 +36,7 @@ from graphed.core import Partition
 from .array import Array
 from .backend import Form, ParamValue
 from .session import Session
-from .write import blind_part_index, file_bases, step_of, write_plan
+from .write import blind_part_index, eager_ranges, file_bases, step_of, write_plan
 from .write import part_path as _base_part_path
 
 PathLike = str | Iterable[str]
@@ -91,17 +91,15 @@ def make_partitions(
     """``steps_per_file`` partitions per file.
 
     With ``open_files=False`` the partitions are BLIND (first-class, R7.9): no file is opened here;
-    ranges resolve at read time.
+    ranges resolve at read time; an opened file's ranges are ``eager_ranges``, all distinct.
     """
     if steps_per_file < 1:
         raise ValueError(f"steps_per_file must be >= 1, got {steps_per_file}")
     out: list[Partition] = []
     for p in paths:
         if open_files:
-            n = num_rows(p)
             out.extend(
-                Partition(p, "", (s * n) // steps_per_file, ((s + 1) * n) // steps_per_file)
-                for s in range(steps_per_file)
+                Partition(p, "", a, b) for a, b in eager_ranges(num_rows(p), steps_per_file)
             )
         else:
             out.extend(Partition.blind(p, "", s, steps_per_file) for s in range(steps_per_file))

@@ -297,13 +297,8 @@ def to_parquet(
             mem = (("", np.asarray(resolved)),)
             n = len(mem[0][1])
         partitions = tuple(
-            Partition(
-                f"memory://{source_name}",
-                "",
-                (s * n) // steps_per_file,
-                ((s + 1) * n) // steps_per_file,
-            )
-            for s in range(steps_per_file)
+            Partition(f"memory://{source_name}", "", start, stop)
+            for start, stop in gw.eager_ranges(n, steps_per_file)
         )
         writer = _WritePart(bases=(), memory_data=mem, memory_rows=n, **common)  # type: ignore[arg-type]
 

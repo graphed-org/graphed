@@ -41,6 +41,9 @@ A reader's ``steps_per_file`` and ``open_files`` partition its plans
   so reads that differ in them record different IR. ``open_files=True`` reads each file's row
   count when the plan is built, for exact entry ranges; its default is now ``False``, the blind
   partitions every read already planned (#109).
+* A file, or an in-memory write, with fewer rows than ``steps_per_file`` is split into its
+  distinct non-empty entry ranges (one empty range for an empty input): equal empty ranges named
+  one part, so the writers refused or overwrote them (#109).
 
 Exceptions are named ``…Error``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

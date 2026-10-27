@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 
 from graphed import Session
-from graphed.core.execution import Plan
+from graphed.core.execution import Plan, SequentialRunner
 
 pytest.importorskip("pyarrow")
 import pyarrow as pa
@@ -77,3 +77,17 @@ def test_reads_differing_only_in_partitioning_do_not_collide(files: list[str]) -
         )
         irs.add(g.session.serialized_ir(g["x"]))
     assert len(irs) == 3
+
+
+def test_open_files_writes_files_shorter_than_their_steps(tmp_path: Path) -> None:
+    files = []
+    for name, xs in (("one", [7.0]), ("none", [])):
+        files.append(os.path.join(tmp_path, f"{name}.parquet"))
+        pq.write_table(pa.table({"x": pa.array(xs, pa.float64())}), files[-1])
+    g = gio.from_parquet(Session(NumpyBackend()), "ev", files, steps_per_file=3, open_files=True)
+    plan = gio.to_parquet(g["x"], os.path.join(tmp_path, "out"), compute=False)
+    assert _shape(plan) == [("one.parquet", None, None, 0, 1), ("none.parquet", None, None, 0, 0)]
+    assert isinstance(plan, Plan)
+    parts = SequentialRunner().run(plan).value
+    assert [os.path.basename(p) for p in parts] == ["part-00002.parquet", "part-00003.parquet"]
+    assert [pq.read_table(p)["data"].to_pylist() for p in parts] == [[7.0], []]

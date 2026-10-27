@@ -113,6 +113,19 @@ def blind_part_index(partition: Partition, bases: Mapping[Any, int]) -> int:
     return bases[partition.uri] + partition.blind_step
 
 
+def eager_ranges(n_entries: int, steps_per_file: int) -> list[tuple[int, int]]:
+    """Return the entry ranges of ``steps_per_file`` even steps over ``n_entries``, all distinct.
+
+    Empty steps are dropped (an empty input keeps one), since equal ranges would map to one step
+    in :func:`step_of` and so to one part.
+    """
+    ranges = [
+        ((s * n_entries) // steps_per_file, ((s + 1) * n_entries) // steps_per_file)
+        for s in range(steps_per_file)
+    ]
+    return [r for r in ranges if r[1] > r[0]] or ranges[:1]
+
+
 def step_of(entry_start: int, entry_stop: int, n_entries: int, steps_per_file: int) -> int:
     """Reconstruct which step an EAGER partition is, exactly.
 

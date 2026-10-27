@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import awkward as ak
+import numpy as np
 import pytest
 
 import graphed
@@ -17,7 +18,7 @@ from graphed.core.execution import SequentialRunner
 pytest.importorskip("pyarrow")
 import graphed.awkward.io as gio
 import graphed.parquet as gpq
-from graphed.awkward import AwkwardBackend, from_parquet, gak
+from graphed.awkward import AwkwardBackend, from_awkward, from_parquet, gak
 
 ROWS = (10, 5)
 
@@ -120,3 +121,29 @@ def test_reads_differing_only_in_partitioning_do_not_collide(files: list[str]) -
         )
         irs.append((events.session.serialized_ir(events.x), _sum_plan(events).process.ir))
     assert len({ir for ir, _ in irs}) == len({plan_ir for _, plan_ir in irs}) == 3
+
+
+def test_open_files_writes_files_shorter_than_their_steps(tmp_path: Path) -> None:
+    files = []
+    for name, xs in (("one", [7.0]), ("none", [])):
+        files.append(os.path.join(tmp_path, f"{name}.parquet"))
+        ak.to_parquet(ak.Array({"x": np.asarray(xs, dtype=float)}), files[-1])
+    events = from_parquet(
+        Session(AwkwardBackend()), "ev", files, steps_per_file=3, open_files=True
+    )
+    plan = gio.to_parquet(events.x, os.path.join(tmp_path, "out"), compute=False)
+    assert isinstance(plan, graphed.core.execution.Plan)
+    assert _shape([t.partition for t in plan.tasks]) == [
+        ("one.parquet", None, None, 0, 1),
+        ("none.parquet", None, None, 0, 0),
+    ]
+    parts = SequentialRunner().run(plan).value
+    assert [os.path.basename(p) for p in parts] == ["part-00002.parquet", "part-00003.parquet"]
+    assert [ak.from_parquet(p).data.to_list() for p in parts] == [[7.0], []]
+
+
+def test_an_in_memory_write_shorter_than_its_steps_writes_distinct_parts(tmp_path: Path) -> None:
+    g = from_awkward(Session(AwkwardBackend()), "m", ak.Array({"x": [7.0]}))
+    parts = gio.to_parquet(g.x, str(tmp_path), steps_per_file=3)
+    assert isinstance(parts, list)
+    assert [os.path.basename(p) for p in parts] == ["part-00002.parquet"]
