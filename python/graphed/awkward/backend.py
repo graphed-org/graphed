@@ -9,7 +9,7 @@ from __future__ import annotations
 import contextlib
 import functools
 import inspect
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -65,6 +65,45 @@ class _BehaviorByRef(dict[Any, Any]):
 
 def _behavior_from(ref: str) -> Any:
     return resolved_backend(ref)._behavior
+
+
+class _BehaviorByValue(dict[Any, Any]):
+    """A backend's behavior that pickles as the cloudpickle blob it was loaded from.
+
+    A process loads one object per blob, so every array a plan's tasks return carries one that
+    adopts back to it, as with :class:`_BehaviorByRef`.
+    """
+
+    def __init__(self, behavior: Mapping[Any, Any], blob: bytes) -> None:
+        super().__init__(behavior)
+        self.blob = blob
+
+    def _keyed_as(self) -> dict[Any, Any]:
+        return dict(self)
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        return _behavior_by_value, (self.blob,)
+
+
+@functools.cache
+def _behavior_by_value(blob: bytes) -> _BehaviorByValue:
+    import cloudpickle  # noqa: PLC0415  (only a behavior shipped by value needs it)
+
+    return _BehaviorByValue(cloudpickle.loads(blob), blob)
+
+
+def shipped_behavior(behavior: Mapping[Any, Any]) -> _BehaviorByValue:
+    """Return ``behavior`` as a plan ships it to workers: by value, lambdas included."""
+    import cloudpickle  # noqa: PLC0415  (only a behavior shipped by value needs it)
+
+    try:
+        blob = cloudpickle.dumps(dict(behavior))
+    except Exception as err:
+        raise TypeError(
+            f"the session backend's behavior does not pickle to workers ({err}); pass the plan "
+            "an importable backend factory, backend='module:factory'"
+        ) from err
+    return _behavior_by_value(blob)
 
 
 def _adopt(value: Any, behavior: Mapping[Any, Any] | None) -> Any:
@@ -295,7 +334,13 @@ class AwkwardBackend:
         # M18: a registered behavior dict (e.g. vector's) makes behavior PROPERTIES work through
         # plain attribute access — on the typetracer at record time and on real arrays in eval.
         """Use ``behavior``, when given, for behavior properties and methods."""
-        self._behavior = dict(behavior) if behavior else None
+        self._behavior: dict[Any, Any] | None = (
+            behavior
+            if isinstance(behavior, _BehaviorByValue)
+            else dict(behavior)
+            if behavior
+            else None
+        )
 
     def array_type(self) -> type[Array]:
         """Return the awkward-idiom proxy.
@@ -410,6 +455,12 @@ class AwkwardBackend:
             f"{params['method']}() returned {type(result).__name__}, which is not an awkward "
             "array or a tuple of awkward arrays, so it cannot be recorded"
         )
+
+    def worker_factory(self) -> Callable[[], AwkwardBackend]:
+        """Return the factory a plan's workers rebuild this backend with, behavior included."""
+        if not self._behavior:
+            return type(self)
+        return functools.partial(type(self), behavior=shipped_behavior(self._behavior))
 
     def resolved_from(self, ref: str) -> AwkwardBackend:
         """Return this backend as a worker resolved it from the import ``ref``.
