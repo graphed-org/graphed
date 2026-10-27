@@ -15,8 +15,8 @@ in `graphed.awkward.gnano` (the §2.1 factorization rule).
 
 A context's lineage is `graphed.systematics.lineage`'s `ContextNode`, and its ambient weight is an
 `AmbientRecord` that `graphed.systematics.ambient` builds and decides over; this module builds the
-contexts. `graphed.explain` is `graphed.systematics.explain`. Both are re-exported here, which is
-where the probes and the extra suites read them from.
+contexts. `graphed.explain` is `graphed.systematics.explain`; it and `ambient_entries` are
+re-exported here, which is where the probes and the extra suites read them from.
 """
 
 from __future__ import annotations
