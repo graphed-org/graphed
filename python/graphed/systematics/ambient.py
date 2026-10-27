@@ -22,6 +22,16 @@ from ..provenance import capture
 from . import accessors
 from .by_label import cone
 from .kinds import Kind
+from .lineage import (
+    ContextNode,
+    collections_of,
+    context_session,
+    is_ancestor,
+    link_of,
+    links_below,
+    parent_of,
+    selection,
+)
 from .points import restrict
 from .registration import (
     AmbientCarrier,
@@ -138,8 +148,8 @@ def _carriers(ctx: EventContext) -> tuple[Any, ...]:
             )
         return frozenset(out)
 
-    ambient = AmbientCarrier(ctx._session, ctx._recorded, resolve)
-    return (ambient, *ctx._collections.values(), ctx._selection())
+    ambient = AmbientCarrier(context_session(ctx), ctx._recorded, resolve)
+    return (ambient, *collections_of(ctx).values(), selection(ctx))
 
 
 def _lineage_factors(ctx: EventContext) -> tuple[Any, ...]:
@@ -154,7 +164,7 @@ def _lineage_factors(ctx: EventContext) -> tuple[Any, ...]:
     while node is not None:
         for factor in node._factors:
             seen.setdefault(id(factor), factor)
-        node = node._parent
+        node = parent_of(node)
     return tuple(seen.values())
 
 
@@ -215,9 +225,9 @@ def _adopted_from(ctx: EventContext) -> EventContext | None:
     through it.
     """
     node: EventContext | None = ctx
-    while node is not None and (node._link is None or node._link[0] == "vary"):
-        node = node._parent
-    return None if node is None else node._parent
+    while node is not None and ((link := link_of(node)) is None or link[0] == "vary"):
+        node = parent_of(node)
+    return None if node is None else parent_of(node)
 
 
 def _raw_riders(ctx: EventContext) -> dict[int, Rider]:
@@ -235,7 +245,7 @@ def _raw_riders(ctx: EventContext) -> dict[int, Rider]:
             riders.setdefault(slot, rider)
         if not node._adopted:
             break
-        node = node._parent
+        node = parent_of(node)
     return riders
 
 
@@ -278,7 +288,7 @@ def _through_projections(ctx: EventContext, entry: Any) -> Any:
     """
     home = context_of(entry)
     value = entry
-    for kind, payload in () if home is None else ctx._links_below(home):
+    for kind, payload in () if home is None else links_below(ctx, home):
         if kind == "project" and payload != "nominal":
             value = _two_level(value, payload)
     return value
@@ -306,11 +316,11 @@ def _row_links(
     root = below
     if root is None:
         root = ctx
-        while root._parent is not None:
-            root = root._parent
+        while (parent := parent_of(root)) is not None:
+            root = parent
     return tuple(
         (kind, None if kind == "mask" else payload)
-        for kind, payload in ctx._links_below(root)
+        for kind, payload in links_below(ctx, root)
         if kind != "vary"
     )
 
@@ -328,7 +338,7 @@ def _covers(ctx: EventContext, rider: Rider, label: str) -> bool:
     """
     if _named_by(label, rider.families.items()):
         return True
-    point = ctx._session.systematics.points.get(label)
+    point = context_session(ctx).systematics.points.get(label)
     if point is None or not any(name in rider.families for name, _tag in point):
         return False
     return _named_by(label, ((name, (tag,)) for name, tag in point))
@@ -362,7 +372,7 @@ def _entry_state(ctx: EventContext, rider: Rider) -> tuple[bool, str | None]:
         return True, None
     fixed = rider.fixed_at
     home = rider.home
-    for kind, payload in () if home is None else ctx._links_below(home):
+    for kind, payload in () if home is None else links_below(ctx, home):
         if fixed is not None or kind != "project" or payload == "nominal":
             continue
         if not _covers(ctx, rider, payload):
@@ -394,7 +404,7 @@ def _reindex_entry(ctx: EventContext, entry: Any, rider: Rider) -> tuple[Any, st
     if home is None or home is ctx:
         return entry, fixed_at
     value = entry
-    for kind, payload in ctx._links_below(home):
+    for kind, payload in links_below(ctx, home):
         if kind == "project" and payload != "nominal":
             value = _two_level(value, payload)
         else:
@@ -439,7 +449,7 @@ def _crossed(ctx: EventContext, rider: Rider, value: Any, fixed_at: str | None) 
     re-indexed the entry, deciding one program two ways (§2.3). The member is already recorded.
     """
     home = rider.home
-    crossed = () if home is None else ctx._links_below(home)
+    crossed = () if home is None else links_below(ctx, home)
     priors = rider.priors
     projected = any(kind == "project" and payload != "nominal" for kind, payload in crossed)
     if not projected and any(kind == "mask" for kind, _payload in crossed):
@@ -496,9 +506,7 @@ def ambient_entries(ctx: EventContext) -> tuple[tuple[int, Rider, Any], ...]:
     Deliberately not re-exported from `graphed`: it reads the mechanism, and the analysis idiom is
     `graphed.weight` / `graphed.variations`.
     """
-    from ..context import EventContext  # noqa: PLC0415  (import cycle: the class it guards)
-
-    if not isinstance(ctx, EventContext):
+    if not isinstance(ctx, ContextNode):
         raise GraphedError(
             "graphed.context.ambient_entries reads an event context's ambient weight operations"
         )
@@ -564,7 +572,7 @@ def _lineage_reads(ctx: EventContext) -> Iterator[tuple[EventContext, _Read]]:
             seen.add(id(node._reads))
             for record in node._reads:
                 yield node, record
-        node = node._parent
+        node = parent_of(node)
 
 
 def _carried_up(
@@ -583,10 +591,10 @@ def _carried_up(
     naming no composition below.
     """
     own = member_nodes(central)
-    masks = tuple(payload for kind, payload in ctx._links_below(home) if kind == "mask")
+    masks = tuple(payload for kind, payload in links_below(ctx, home) if kind == "mask")
     if not masks:
         return (own,)
-    session = ctx._session
+    session = context_session(ctx)
 
     def undo(node: int, label: str) -> int | None:
         for mask in reversed(masks):
@@ -776,12 +784,12 @@ def _owned_projection(ctx: EventContext, candidate: Any, rider: Rider) -> str | 
     member behind, with no tag map for this to read.
     """
     home = context_of(candidate)
-    if home is None or not home._is_ancestor_of(ctx):
+    if home is None or not is_ancestor(home, ctx):
         return None
     return next(
         (
             payload
-            for kind, payload in ctx._links_below(home)
+            for kind, payload in links_below(ctx, home)
             if kind == "project"
             and payload is not None
             and payload != "nominal"
@@ -819,7 +827,7 @@ def _owns(ctx: EventContext, rider: Rider, label: str) -> bool:
     A family of its RIDER is a coordinate of that universe's point, so a joint or a placed label
     has several owners and the point decides rather than the label's name.
     """
-    points = ctx._session.systematics.points
+    points = context_session(ctx).systematics.points
     return any(name in rider.families for name, _tag in points.get(label, ()))
 
 
@@ -907,8 +915,8 @@ def _one_value(left: Any, right: Any) -> bool:
     here, there = context_of(left), context_of(right)
     if here is None or there is None or here is there:
         return True
-    deep, shallow = (here, there) if there._is_ancestor_of(here) else (there, here)
-    return bool(shallow._is_ancestor_of(deep))
+    deep, shallow = (here, there) if is_ancestor(there, here) else (there, here)
+    return bool(is_ancestor(shallow, deep))
 
 
 def _reindexed_onto(recorded: Any, node: Any) -> bool:
@@ -924,11 +932,11 @@ def _reindexed_onto(recorded: Any, node: Any) -> bool:
     factors.
     """
     here, there = context_of(recorded), context_of(node)
-    if here is None or there is None or not here._is_ancestor_of(there):
+    if here is None or there is None or not is_ancestor(here, there):
         return False
     session = node.session
     current = node.node_id
-    for kind, payload in reversed(there._links_below(here)):
+    for kind, payload in reversed(links_below(there, here)):
         if kind != "mask":
             continue
         entry = session.recorded_op(current)
@@ -1180,7 +1188,7 @@ def _here(ctx: EventContext, value: Any) -> Any:
     home = context_of(value)
     if home is None or home is ctx:
         return value
-    for kind, payload in ctx._links_below(home):
+    for kind, payload in links_below(ctx, home):
         if kind == "project":
             value = member_of(value, payload)
     return value
@@ -1321,7 +1329,7 @@ def _vary_weight(
         variations,
         inherited,
         points,
-        session=ctx._session,
+        session=context_session(ctx),
         carriers=_carriers(ctx),
         composes_as_union=composes_as_union,
         max_universes=max_universes,
@@ -1414,7 +1422,7 @@ def _vary_weight(
     # the record-time type check, run BEFORE anything is recorded so a refused registration leaves
     # no trace at all
     _check_forms(
-        ctx._session,
+        context_session(ctx),
         operands,
         recorded,
         _marks(updated, slots, overlays),
@@ -1441,7 +1449,7 @@ def _vary_weight(
         )
     record_labels(factor)  # §2.5's vary-time half; the members are stamped when they compose
     # §2.5's shift-after-weight operand one: this factor's OWN member node ids, by value.
-    ctx._session.systematics.record_weight_factor(name, member_nodes(factor))
+    context_session(ctx).systematics.record_weight_factor(name, member_nodes(factor))
 
     from ..context import _child_of  # noqa: PLC0415  (import cycle: it builds an EventContext)
 
@@ -1468,7 +1476,12 @@ def _vary_weight(
     # only an append composed onto the memo above and can fold onto it (§3)
     if folds and operands is not updated:
         folded, settled = child._materialise(operands)
-        child._memo = (ctx._session.systematics.epoch, len(child._factors), folded, settled)
+        child._memo = (
+            context_session(ctx).systematics.epoch,
+            len(child._factors),
+            folded,
+            settled,
+        )
     else:
         child._memo = None
     return child
@@ -1514,7 +1527,7 @@ def _vary_shift(
     from ..context import _child_of  # noqa: PLC0415  (import cycle: it builds an EventContext)
 
     child = _child_of(ctx)
-    replaced = dict(ctx._collections)
+    replaced = dict(collections_of(ctx))
     family: tuple[str, ...] = ()
     for collection_name, inner in mapping.items():
         current = ctx._read(collection_name)
@@ -1525,7 +1538,7 @@ def _vary_shift(
             None,
             inherited,
             points,
-            session=ctx._session,
+            session=context_session(ctx),
             carriers=_carriers(ctx),
             composes_as_union=composes_as_union,
             max_universes=max_universes,
@@ -1570,7 +1583,7 @@ def _report_shift_after_weight(
     Diagnostic, not an error: a weight that legitimately does not track the shift is a valid
     program — which is why the walk is per (family, collection) rather than a membership test.
     """
-    session = ctx._session
+    session = context_session(ctx)
     state = session.systematics
     factors = state.weight_factors
     if not factors:

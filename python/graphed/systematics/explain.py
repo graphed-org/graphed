@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 from ..errors import GraphedError
 from .ambient import _live_factors, _live_riders, _Registration, _row_links, ambient_entries
 from .kinds import Kind
+from .lineage import ContextNode, collections_of, context_session, parent_of
 from .varied import labels_of, member_nodes
 
 if TYPE_CHECKING:
@@ -204,7 +205,7 @@ def _lineage_registrations(ctx: EventContext) -> tuple[_Registration, ...]:
     while node is not None:
         if node._registration is not None:
             found.append(node._registration)
-        node = node._parent
+        node = parent_of(node)
     return tuple(reversed(found))
 
 
@@ -219,18 +220,16 @@ def explain(ctx: EventContext) -> Explanation:
     its registered point against those families. The ambient is read exactly as `graphed.weight`
     reads it and nothing else is composed, so a call mints no node a `weight` read would not.
     """
-    from ..context import EventContext  # noqa: PLC0415  (import cycle: the class it guards)
-
-    if not isinstance(ctx, EventContext):
+    if not isinstance(ctx, ContextNode):
         raise GraphedError("graphed.explain reads an event context")
     registrations = _lineage_registrations(ctx)
     ambient = ctx._ambient_weight()
     # a row-space change hands its child ONE composed member, which carries no labels of its own:
     # the universe this context is inside is its nominal, and that is the universe it carries
     carried: dict[str, None] = dict.fromkeys(labels_of(ambient) or ("nominal",))
-    for collection in ctx._collections.values():
+    for collection in collections_of(ctx).values():
         carried.update(dict.fromkeys(labels_of(collection)))
-    points = ctx._session.systematics.points
+    points = context_session(ctx).systematics.points
     variations: dict[str, Variation] = {}
     for label in carried:
         point = tuple((name, tag) for name, tag in points.get(label, ()))
@@ -272,7 +271,7 @@ def explain(ctx: EventContext) -> Explanation:
     # §2.5's registry, by (weight family, collection): the shift that moved the objects a weight
     # family had already read, which is neither fanning out nor independence
     flagged: dict[str, tuple[str, ...]] = {}
-    for family_name, collection in ctx._session.systematics.shift_after_weight:
+    for family_name, collection in context_session(ctx).systematics.shift_after_weight:
         flagged[family_name] = tuple(
             dict.fromkeys(
                 (

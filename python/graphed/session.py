@@ -21,6 +21,7 @@ from .backend import Backend, Form, ParamValue
 from .errors import GraphedTypeError, OutputTypeError
 from .provenance import Provenance, capture
 from .services import Bindable
+from .systematics.lineage import unify_contexts
 from .systematics.points import Point
 from .systematics.state import SystematicsState
 
@@ -188,8 +189,6 @@ class Session:
         construction. Handles on ONE ancestry chain merge to the most-derived one; divergent
         handles are an error AT THIS OP naming both, which is §2.3e's early detection.
         """
-        from .accessors import unify_contexts  # noqa: PLC0415  (import cycle: accessors -> array)
-
         array = self._array_cls(self, node_id)
         if inputs:
             labels: frozenset[str] | None = None

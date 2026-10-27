@@ -15,6 +15,15 @@ from typing import TYPE_CHECKING, Any, TypeGuard
 from ..array import Array, attach, labels_carried
 from ..errors import GraphedError
 from .kinds import Kind
+from .lineage import (
+    ContextNode,
+    collections_of,
+    context_session,
+    is_ancestor,
+    links_below,
+    row_space_above,
+)
+from .lineage import unify_contexts as unify_contexts
 from .points import Point, render
 from .tags import numeric_value
 from .varied import (
@@ -40,9 +49,7 @@ Introspectable = Any
 
 
 def _is_context(value: object) -> TypeGuard[EventContext]:
-    from ..context import EventContext  # noqa: PLC0415  (import cycle: context reads these verbs)
-
-    return isinstance(value, EventContext)
+    return isinstance(value, ContextNode)
 
 
 def _variation_axis_index(hist: Any) -> int | None:
@@ -128,7 +135,7 @@ def points(x: Introspectable) -> dict[str, dict[str, str]]:
         registry: Mapping[str, Point] = point_registry(x)
         carried = labels(x)
     elif _is_context(x):
-        registry, carried = x._session.systematics.points, x._context_labels()
+        registry, carried = context_session(x).systematics.points, x._context_labels()
     else:
         raise GraphedError(
             "graphed.points reads a record-time shape — a Varied or an event context — not "
@@ -181,7 +188,7 @@ def variations(ctx: Any) -> dict[str, dict[str, tuple[Kind, Fraction | None]]]:
     for name, tags in ctx._weight_tags.items():
         for tag in tags:
             kinds.setdefault(name, {})[tag] = kinds.get(name, {}).get(tag, Kind(0)) | Kind.WEIGHT
-    for collection in ctx._collections.values():
+    for collection in collections_of(ctx).values():
         for name, tags in tags_of(collection).items():
             for tag in tags:
                 kinds.setdefault(name, {})[tag] = (
@@ -191,30 +198,6 @@ def variations(ctx: Any) -> dict[str, dict[str, tuple[Kind, Fraction | None]]]:
         name: {tag: (kind, numeric_value(tag)) for tag, kind in tags.items()}
         for name, tags in kinds.items()
     }
-
-
-def unify_contexts(*handles: Any) -> Any:
-    """§6.1d(A): the most-derived handle when the non-`None` arguments lie on ONE ancestry chain.
-
-    `None` when every argument is context-free; context-free arguments beside contexted ones are
-    ignored (the adopt rule); divergent branches raise the §2.3e error naming both contexts.
-    """
-    present = [handle for handle in handles if handle is not None]
-    if not present:
-        return None
-    best = present[0]
-    for handle in present[1:]:
-        if handle is best:
-            continue
-        if best._is_ancestor_of(handle):
-            best = handle
-        elif not handle._is_ancestor_of(best):
-            raise GraphedError(
-                f"variation contexts {best!r} and {handle!r} are on divergent branches; one "
-                "operation cannot combine values selected differently — derive both from one "
-                "context"
-            )
-    return best
 
 
 def reindex_to(value: Array | Varied, ctx: Any) -> Any:
@@ -234,11 +217,11 @@ def reindex_to(value: Array | Varied, ctx: Any) -> Any:
         raise GraphedError(
             f"cannot re-index a value read through {handle!r} to a context-free target"
         )
-    if not handle._is_ancestor_of(ctx):
-        above = _row_space_above(handle, ctx)
+    if not is_ancestor(handle, ctx):
+        above = row_space_above(handle, ctx)
         if above is not None:
             handle = above
-        elif ctx._is_ancestor_of(handle):
+        elif is_ancestor(ctx, handle):
             raise GraphedError(
                 f"{handle!r} is a descendant of {ctx!r}: a selection-scoped value has no way back "
                 "to its parent's row space (a mask has no inverse) — read the value at "
@@ -249,24 +232,9 @@ def reindex_to(value: Array | Varied, ctx: Any) -> Any:
                 f"variation contexts {handle!r} and {ctx!r} are on divergent branches; no lineage "
                 "path re-indexes one to the other"
             )
-    for kind, payload in ctx._links_below(handle):
+    for kind, payload in links_below(ctx, handle):
         value = _follow(value, kind, payload)
     return with_context(value, ctx)
-
-
-def _row_space_above(handle: Any, ctx: Any) -> Any | None:
-    """Return the context `handle`'s row space belongs to as seen from `ctx`.
-
-    `handle` itself is not one of `ctx`'s ancestors, but a run of `vary` links above it may end at
-    one (or at `ctx`), and such a run changes no rows. `None` when the two are on genuinely
-    different row spaces.
-    """
-    node = handle
-    while node._link is not None and node._link[0] == "vary":
-        node = node._parent
-        if node is ctx or node._is_ancestor_of(ctx):
-            return node
-    return None
 
 
 def _follow(value: Any, kind: str, payload: Any) -> Any:

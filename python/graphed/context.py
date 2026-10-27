@@ -60,6 +60,15 @@ from .systematics.ambient import (  # isort: skip
     ambient_entries as ambient_entries,
 )
 from .systematics.by_label import cone as cone  # isort: skip
+from .systematics.lineage import (  # isort: skip
+    ContextNode,
+    Link as Link,
+    collections_of,
+    context_session,
+    link_of,
+    parent_of,
+    selection,
+)
 from .systematics.explain import Explanation as Explanation, explain as explain  # isort: skip
 from .systematics.registration import stamp_labels as stamp_labels  # isort: skip
 from .systematics.varied import (  # isort: skip
@@ -78,12 +87,8 @@ from .systematics.varied import (  # isort: skip
 #: objects; the serial plus the user line where the context was built is that name
 _SERIAL = itertools.count()
 
-#: ("mask", mask) derives rows, ("vary", None) only registrations, ("project", label) narrows to
-#: one universe — §6.1d's three link kinds, in one place
-Link = tuple[str, Any]
 
-
-class EventContext:
+class EventContext(ContextNode):
     """An event context (§2.6). Built by an idiom constructor, never directly.
 
     Its RECORDED state — collections, selection, the registered weight factors and the label union
@@ -95,10 +100,9 @@ class EventContext:
     """
 
     __slots__ = (
-        "_adopted", "_collections", "_derived", "_factors", "_gens", "_head", "_head_ops",
-        "_is_data", "_link", "_memo", "_origin", "_overlays", "_parent", "_projected",
-        "_provenance", "_reads", "_record", "_recorded", "_registration", "_riders", "_serial",
-        "_session", "_slots", "_weight_tags",
+        "_adopted", "_derived", "_factors", "_gens", "_head", "_head_ops", "_is_data", "_memo",
+        "_origin", "_overlays", "_projected", "_provenance", "_reads", "_record", "_recorded",
+        "_registration", "_riders", "_serial", "_slots", "_weight_tags",
     )  # fmt: skip
 
     def __init__(
@@ -113,12 +117,9 @@ class EventContext:
         weight: Varied | None = None,
     ) -> None:
         """Wrap ``record`` as an event context, derived from ``parent`` by ``link``."""
-        self._session = session
+        super().__init__(session, parent, link, collections)
         self._record = record
         self._is_data = is_data
-        self._parent = parent
-        self._link = link
-        self._collections: dict[str, Any] = dict(collections or {})
         # §2.6's ambient weight is a DEFERRED composition (§4): the registered factors in
         # registration order, the label union RECORDED at each registration, and the composed
         # container once something reads it. Composing at every registration is quadratic in the
@@ -233,7 +234,7 @@ class EventContext:
         )
 
     def _read(self, name: str) -> Any:
-        value = self._collections.get(name)
+        value = collections_of(self).get(name)
         if value is None:
             value = expand(lambda record: getattr(record, name), (self._record,), {})
         return self._stamp(value)
@@ -248,59 +249,25 @@ class EventContext:
         return accessors.with_context(value, self)
 
     # ---- lineage (§2.6b: variation history is object lineage) -------------------
-    def _is_ancestor_of(self, other: EventContext) -> bool:
-        node: EventContext | None = other
-        while node is not None:
-            if node is self:
-                return True
-            node = node._parent
-        return False
-
-    def _links_below(self, ancestor: EventContext) -> tuple[Link, ...]:
-        """Return the links from just below `ancestor` down to `self`, parent-to-child (§6.1d)."""
-        links: list[Link] = []
-        node: EventContext | None = self
-        while node is not None and node is not ancestor:
-            if node._link is not None:
-                links.append(node._link)
-            node = node._parent
-        return tuple(reversed(links))
-
-    def _selection(self) -> Any:
-        """§9.1's selection: the mask that derived this context.
-
-        It skips `vary` IDENTITY links, answering as of the first non-identity link (`None` at a
-        root or across a projection, which is one label's unvaried member and contributes no
-        labels).
-        """
-        node: EventContext | None = self
-        while node is not None and node._link is not None:
-            kind, payload = node._link
-            if kind == "mask":
-                return payload
-            if kind == "project":
-                return None
-            node = node._parent
-        return None
-
     def _selection_bridge(self) -> Any:
-        """§9.1's `graphed.selection(ctx)` — the FULL three-case bridge, NOT `_selection()`.
+        """§9.1's `graphed.selection(ctx)` — the FULL three-case bridge, not `lineage.selection`.
 
         Case 1 (mask-derived): the mask that derived this context, skipping `vary` identity links.
         Case 2 (universe/nominal-derived): that label's member of the PARENT's selection — an
         unvaried `Array` in the GRANDparent's row space, `None` when the parent is root (where
-        `_selection()` returns `None`, the row-space/context reason §6.4a's universe/nominal REFUSE
-        control relies on). Case 3 (root): `None`.
+        `lineage.selection` returns `None`, the row-space/context reason §6.4a's universe/nominal
+        REFUSE control relies on). Case 3 (root): `None`.
         """
         node: EventContext | None = self
-        while node is not None and node._link is not None:
-            kind, payload = node._link
+        while node is not None and (link := link_of(node)) is not None:
+            kind, payload = link
             if kind == "mask":
                 return payload
+            parent = parent_of(node)
             if kind == "project":
-                parent_selection = node._parent._selection() if node._parent is not None else None
+                parent_selection = selection(parent) if parent is not None else None
                 return None if parent_selection is None else member_of(parent_selection, payload)
-            node = node._parent  # `vary` identity link: skip
+            node = parent  # `vary` identity link: skip
         return None
 
     def _ambient_weight(self) -> Varied | Array | None:
@@ -324,7 +291,7 @@ class EventContext:
             # records nothing new.
             adopted: Array = self._factors[0]
             return adopted
-        epoch = self._session.systematics.epoch
+        epoch = context_session(self).systematics.epoch
         memo = self._memo
         if memo is not None and memo[0] == epoch and memo[1] == len(self._factors):
             self._record_read(memo[2])
@@ -376,7 +343,7 @@ class EventContext:
         operand of, and folding onto it would freeze a resolution the read remakes.
         """
         memo = self._memo
-        if memo is None or memo[0] != self._session.systematics.epoch or not memo[3]:
+        if memo is None or memo[0] != context_session(self).systematics.epoch or not memo[3]:
             return None
         return memo
 
@@ -403,7 +370,7 @@ class EventContext:
             context=self._origin,
         )
         stamped = accessors.with_context(stamp_labels(composed), self._origin)
-        return stamped, _all_settled(self._session, operands, self._recorded)
+        return stamped, _all_settled(context_session(self), operands, self._recorded)
 
     def _ambient_tags(self) -> dict[str, tuple[str, ...]]:
         """Return the ambient's §1.1 tag map, accumulated over the factors in registration order.
@@ -423,7 +390,7 @@ class EventContext:
         CARRIES, (c) the labels of its selection.
         """
         out: dict[str, None] = dict.fromkeys(self._recorded)
-        for source in (*self._collections.values(), self._selection()):
+        for source in (*collections_of(self).values(), selection(self)):
             for label in labels_of(source):
                 out.setdefault(label, None)
         return tuple(out)
@@ -440,7 +407,7 @@ class EventContext:
         if memo is not None:
             return memo
         child = EventContext(
-            self._session,
+            context_session(self),
             expand(lambda record, on: record[on], (self._record, mask), {}),
             is_data=self._is_data,
             parent=self,
@@ -449,7 +416,7 @@ class EventContext:
         # every member re-indexed by THAT label's own mask, label-aligned per §2.4
         child._collections = {
             name: child._stamp(expand(lambda value, on: value[on], (collection, mask), {}))
-            for name, collection in self._collections.items()
+            for name, collection in collections_of(self).items()
         }
         if self._factors:
             ambient = self._ambient_weight()
@@ -474,7 +441,7 @@ class EventContext:
         if memo is not None:
             return memo
         child = EventContext(
-            self._session,
+            context_session(self),
             member_of(self._record, label),
             is_data=self._is_data,
             parent=self,
@@ -482,7 +449,7 @@ class EventContext:
         )
         child._collections = {
             name: child._stamp(member_of(collection, label))
-            for name, collection in self._collections.items()
+            for name, collection in collections_of(self).items()
         }
         if self._factors:
             child._adopt_ambient(child._stamp(member_of(self._ambient_weight(), label)))
@@ -508,13 +475,13 @@ class EventContext:
         # the child's OWN reads start empty; the ancestors' stay reachable through the adoption
         # (`_lineage_reads`), because the head is exactly the composition they recorded (§2.3)
         self._reads = []
-        parent = self._parent
+        parent = parent_of(self)
         slots = _live_slots(parent) if parent is not None else ()
         gens = parent._gens if parent is not None else {}
         self._head = (slots, tuple(gens.get(slot, 0) for slot in slots))
         # the live list is the adopting parent's, so its stamps come along
         self._gens = dict(gens)
-        self._memo = (self._session.systematics.epoch, 1, composed, True)
+        self._memo = (context_session(self).systematics.epoch, 1, composed, True)
         self._recorded = _union(("nominal",), labels_of(composed))
         self._origin = self
         # §2.1/§2.3: the adoption HANDS OUT the composed member, exactly as a read does, so a
@@ -580,12 +547,12 @@ def _child_of(ctx: EventContext) -> EventContext:
     would make every registration a two-element fold and reproduce the quadratic exactly.
     """
     child = EventContext(
-        ctx._session,
+        context_session(ctx),
         ctx._record,
         is_data=ctx._is_data,
         parent=ctx,
         link=("vary", None),
-        collections=ctx._collections,
+        collections=collections_of(ctx),
     )
     child._factors = list(ctx._factors)
     child._slots = list(ctx._slots)

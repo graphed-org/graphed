@@ -17,6 +17,7 @@ from ..errors import GraphedError, GraphedTypeError, PointError
 from ..provenance import capture
 from . import accessors
 from .by_label import cone
+from .lineage import context_session, links_below
 from .points import Point, coordinate, default, render
 from .tags import canonical_tag, numeric_value
 from .varied import (
@@ -74,7 +75,7 @@ def vary(
         session = session_of(target)
         overload = _vary_loose
     elif isinstance(target, EventContext):
-        session = target._session
+        session = context_session(target)
         overload = vary_context
     else:
         raise GraphedError(
@@ -202,7 +203,7 @@ def _align(member: Any, handle: Any) -> Any:
     src = context_of(member)
     if src is None or src is handle:
         return member
-    if not any(kind in ("mask", "project") for kind, _payload in handle._links_below(src)):
+    if not any(kind in ("mask", "project") for kind, _payload in links_below(handle, src)):
         return member
     return accessors.reindex_to(member, handle)
 

@@ -14,6 +14,7 @@ is where the machinery LIVES, one concern per module:
 - `by_label` — per-label column reads and impact.
 - `kinds`, `tags`, `points` — a variation's kind, a universe's tag spelling, a family's points.
 - `state` — one Session's variation registries (`Session.systematics`) and `vary`'s rollback.
+- `lineage` — what an event context is to these layers: its Session, parent, link, collections.
 
 The event context itself is NOT here: it is a frontend object with a row space and collections
 (`graphed.context`), and it KEEPS the ambient state that `ambient` decides over.

@@ -17,6 +17,7 @@ from typing import Any
 
 from ..array import Array, BoundMethod, handle_of, no_eager_value
 from ..errors import GraphedError
+from .lineage import unify_contexts
 from .points import Point, restrict
 
 #: §2.2's reserved names: resolving them as label-mapped field access would let
@@ -306,8 +307,6 @@ def most_derived_context(*values: Any) -> object:
 
     `None` when all are context-free.
     """
-    from .accessors import unify_contexts  # noqa: PLC0415  (import cycle)
-
     return unify_contexts(*(context_of(value) for value in values))
 
 
