@@ -1,5 +1,8 @@
-"""m68c edges the frozen suite does not take: the executors' payload slicer, a partial fold set, a
-join side that reads no partitioned source, and a plan with a lambda or ``__main__`` reduce."""
+"""m68c edges the frozen suite does not take.
+
+The executors' payload slicer, a partial fold set, a join side that reads no partitioned source,
+and a plan with a lambda or ``__main__`` reduce.
+"""
 
 from __future__ import annotations
 
@@ -14,7 +17,9 @@ import awkward as ak
 import numpy as np
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "frozen", "awkward", "m68c"))
+sys.path.insert(
+    0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "frozen", "awkward", "m68c")
+)
 from m68c_services_harness import FOLD, two_sources
 
 import graphed
@@ -45,13 +50,17 @@ def test_a_join_side_reading_no_partitioned_source_is_refused() -> None:
     ev, lu = two_sources()
     data = ak.Array({"run": np.array([1], dtype=np.int64), "w": np.array([2.0])})
     table = ev.session.source(
-        "table", form=AwkwardForm(ak.Array(data.layout.to_typetracer(forget_length=True))), data=data
+        "table",
+        form=AwkwardForm(ak.Array(data.layout.to_typetracer(forget_length=True))),
+        data=data,
     )
     graphed.join_plan(graphed.join(ev, lu, on=["run"]))
     with pytest.raises(TypeError, match="exactly two partitioned sources; the output reads 1"):
         graphed.join_plan(graphed.join(ev, table, on=["run"]))
     both = gak.zip({"run": ev.run + lu.run})
-    with pytest.raises(TypeError, match="exactly one partitioned source; one reads \\['events', 'lumi'\\]"):
+    with pytest.raises(
+        TypeError, match="exactly one partitioned source; one reads \\['events', 'lumi'\\]"
+    ):
         graphed.join_plan(graphed.join(both, table, on=["run"]))
 
 

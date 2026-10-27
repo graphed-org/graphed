@@ -26,18 +26,25 @@ def test_an_external_over_the_whole_record_makes_one_graph_conservative() -> Non
     assert read_columns([mixed], record.node_id) is None
 
 
-def test_an_external_over_FIELDS_alone_still_narrows() -> None:
-    """The control that keeps the fix from degenerating into "any External reads everything":
-    projection must still flow through an External to its declared field inputs."""
+def test_an_external_over_fields_alone_still_narrows() -> None:
+    """The control that keeps the fix from degenerating into "any External reads everything".
+
+    Projection must still flow through an External to its declared field inputs.
+    """
     _s, record = _source()
-    fields_only = graphed.apply(lambda pt, eta: pt, record["pt"], record["eta"], name="fields_only")
+    fields_only = graphed.apply(
+        lambda pt, eta: pt, record["pt"], record["eta"], name="fields_only"
+    )
     assert read_columns([fields_only], record.node_id) == ("eta", "pt")
     assert read_columns([record["pt"] * 2.0], record.node_id) == ("pt",)
 
 
 def test_the_whole_record_read_dominates_a_narrowing_sibling_in_the_same_graph() -> None:
-    """The masking this repairs: `needed` was non-empty, so the graph reported that narrow set
-    while an External beside it needed every column."""
+    """The masking this repairs.
+
+    `needed` was non-empty, so the graph reported that narrow set while an External beside it
+    needed every column.
+    """
     _s, record = _source()
     mixed = graphed.apply(lambda rec, pt: pt, record, record["pt"], name="uses_whole_record")
     combined = mixed * record["eta"]

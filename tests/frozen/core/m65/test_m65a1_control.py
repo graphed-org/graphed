@@ -1,5 +1,8 @@
-"""M65 A1 frozen suite (graphed-core slice): ``RunControl`` and the runner contract on
-``SequentialRunner``. Plain-Python process functions only; this subtree never imports awkward."""
+"""M65 A1 frozen suite (graphed-core slice).
+
+``RunControl`` and the runner contract on ``SequentialRunner``. Plain-Python process functions
+only; this subtree never imports awkward.
+"""
 
 from __future__ import annotations
 
@@ -40,7 +43,10 @@ class Recorder:
 
 
 def _one_hot_plan(n: int = N, hooks: dict[int, Any] | None = None) -> Plan[tuple[int, ...]]:
-    """Task ``k``'s partial is the one-hot tuple at ``k``; ``hooks[k]()`` runs inside task ``k``."""
+    """Return a plan whose task ``k``'s partial is the one-hot tuple at ``k``.
+
+    ``hooks[k]()`` runs inside task ``k``.
+    """
     hooks = hooks or {}
 
     def process(p: Partition, _reader: object) -> tuple[int, ...]:
@@ -57,34 +63,33 @@ def _one_hot_plan(n: int = N, hooks: dict[int, Any] | None = None) -> Plan[tuple
 
 
 def test_run_control_state_machine() -> None:
-    RunState = gc.RunState
     c = gc.RunControl()
-    assert c.state is RunState.RUNNING
+    assert c.state is gc.RunState.RUNNING
     c.pause()
-    assert c.state is RunState.PAUSED
+    assert c.state is gc.RunState.PAUSED
     c.resume()
-    assert c.state is RunState.RUNNING
+    assert c.state is gc.RunState.RUNNING
     c.cancel()
-    assert c.state is RunState.CANCELLED
+    assert c.state is gc.RunState.CANCELLED
     c.pause()
-    assert c.state is RunState.CANCELLED
+    assert c.state is gc.RunState.CANCELLED
     c.resume()
-    assert c.state is RunState.CANCELLED
+    assert c.state is gc.RunState.CANCELLED
     c.reset()
-    assert c.state is RunState.RUNNING
+    assert c.state is gc.RunState.RUNNING
 
     a = gc.RunControl()
     a.apply("pause")
-    assert a.state is RunState.PAUSED
+    assert a.state is gc.RunState.PAUSED
     a.apply("resume")
-    assert a.state is RunState.RUNNING
+    assert a.state is gc.RunState.RUNNING
     a.apply("cancel")
-    assert a.state is RunState.CANCELLED
+    assert a.state is gc.RunState.CANCELLED
     a.apply("resume")
-    assert a.state is RunState.CANCELLED
+    assert a.state is gc.RunState.CANCELLED
     with pytest.raises(ValueError, match="'stop'"):
         a.apply("stop")
-    assert [s.value for s in RunState] == ["running", "paused", "cancelled"]
+    assert [s.value for s in gc.RunState] == ["running", "paused", "cancelled"]
     assert gc.StopReason.CANCELLED.value == "cancelled"
 
 
@@ -96,15 +101,14 @@ def _wait_in_thread(c: Any) -> tuple[threading.Thread, list[Any]]:
 
 
 def test_wait_blocks_while_paused() -> None:
-    RunState = gc.RunState
     c = gc.RunControl()
     t0 = time.perf_counter()
-    assert c.wait(timeout=5) is RunState.RUNNING
+    assert c.wait(timeout=5) is gc.RunState.RUNNING
     assert time.perf_counter() - t0 < 1.0
 
     c.pause()
     t0 = time.perf_counter()
-    assert c.wait(timeout=0.2) is RunState.PAUSED
+    assert c.wait(timeout=0.2) is gc.RunState.PAUSED
     assert time.perf_counter() - t0 >= 0.1
 
     th, out = _wait_in_thread(c)
@@ -112,7 +116,7 @@ def test_wait_blocks_while_paused() -> None:
     assert th.is_alive()
     c.resume()
     th.join(timeout=5)
-    assert out == [RunState.RUNNING]
+    assert out == [gc.RunState.RUNNING]
 
     c.pause()
     th, out = _wait_in_thread(c)
@@ -120,9 +124,9 @@ def test_wait_blocks_while_paused() -> None:
     assert th.is_alive()
     c.cancel()
     th.join(timeout=5)
-    assert out == [RunState.CANCELLED]
+    assert out == [gc.RunState.CANCELLED]
     t0 = time.perf_counter()
-    assert c.wait(timeout=5) is RunState.CANCELLED
+    assert c.wait(timeout=5) is gc.RunState.CANCELLED
     assert time.perf_counter() - t0 < 1.0
 
 
@@ -141,10 +145,16 @@ def test_sequential_pause_holds_the_next_task() -> None:
         threading.Timer(0.3, resume).start()
 
     rec = Recorder()
-    res = gc.SequentialRunner(monitor=rec, control=control).run(_one_hot_plan(n, {1: pause_then_arm_resume}))
+    res = gc.SequentialRunner(monitor=rec, control=control).run(
+        _one_hot_plan(n, {1: pause_then_arm_resume})
+    )
     assert len(resumed_at) == 1
     assert rec.t(TaskPhase.STARTED, 2) >= resumed_at[0]
-    assert (res.value, res.n_partitions, res.n_combines) == (baseline.value, baseline.n_partitions, baseline.n_combines)
+    assert (res.value, res.n_partitions, res.n_combines) == (
+        baseline.value,
+        baseline.n_partitions,
+        baseline.n_combines,
+    )
     assert res.value == (1,) * n
     assert res.stopped is None
     assert control.state is gc.RunState.RUNNING
@@ -153,7 +163,9 @@ def test_sequential_pause_holds_the_next_task() -> None:
 def test_sequential_cancel_drains_and_folds_completed() -> None:
     control = gc.RunControl()
     rec = Recorder()
-    res = gc.SequentialRunner(monitor=rec, control=control).run(_one_hot_plan(hooks={2: control.cancel}))
+    res = gc.SequentialRunner(monitor=rec, control=control).run(
+        _one_hot_plan(hooks={2: control.cancel})
+    )
     assert res.stopped is gc.StopReason.CANCELLED
     assert res.value == (1, 1, 1, 0, 0, 0)
     assert res.n_partitions == 3

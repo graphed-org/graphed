@@ -1,8 +1,9 @@
 """M9 — the External plugin system: validated deterministic hashes + a user-defined template.
 
-Plan M9 (this refactor): Externals are any user-provided function with a deterministic content hash.
-The hash is checked for determinism (across processes) and non-vacuity; ONNX hashes its weights and
-correctionlib its contents (not the raw file bytes). Users follow the same shape for their own kinds.
+Plan M9 (this refactor): Externals are any user-provided function with a deterministic content
+hash. The hash is checked for determinism (across processes) and non-vacuity; ONNX hashes its
+weights and correctionlib its contents (not the raw file bytes). Users follow the same shape for
+their own kinds.
 """
 
 from __future__ import annotations
@@ -42,7 +43,8 @@ def test_builtin_plugins_have_valid_hashes() -> None:
 
 def test_correctionlib_hashes_contents_not_formatting() -> None:
     a = json.dumps({"schema_version": 2, "x": 1}, indent=4).encode()
-    b = json.dumps({"x": 1, "schema_version": 2}, separators=(",", ":")).encode()  # same content, diff bytes
+    # same content, diff bytes
+    b = json.dumps({"x": 1, "schema_version": 2}, separators=(",", ":")).encode()
     assert a != b
     assert CORRECTIONLIB_PLUGIN.content_hash(a) == CORRECTIONLIB_PLUGIN.content_hash(b)
     c = json.dumps({"schema_version": 2, "x": 2}).encode()  # different content

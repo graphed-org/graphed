@@ -10,10 +10,10 @@ from typing import Any
 
 from graphed.core.execution import RunState, TaskEvent
 
-# Perspective table schemas (column -> perspective type). ``tasks`` is indexed by ``key`` so a task's
-# row advances SUBMITTED -> STARTED -> FINISHED/ERRORED in place; ``stats`` is a single indexed row
-# updated in place. (The profile is a flamegraph, not a table — the server merges sampled stack trees
-# and serves them at /api/flamegraph.json.)
+# Perspective table schemas (column -> perspective type). ``tasks`` is indexed by ``key`` so a
+# task's row advances SUBMITTED -> STARTED -> FINISHED/ERRORED in place; ``stats`` is a single
+# indexed row updated in place. (The profile is a flamegraph, not a table — the server merges
+# sampled stack trees and serves them at /api/flamegraph.json.)
 TASKS_SCHEMA: dict[str, str] = {
     "key": "integer",
     "phase": "string",
@@ -65,8 +65,11 @@ def profile_message(worker: str, tree_b64: str) -> dict[str, Any]:
 
 
 def hello_message(*, control: bool = True, lean: bool = False) -> dict[str, Any]:
-    """A control or lean monitor's first message on every connection: ``control`` asks to be sent
-    commands, ``lean`` says its task stream is lean (the server derives what it leaves out)."""
+    """Return a control or lean monitor's first message on every connection.
+
+    ``control`` asks to be sent commands, ``lean`` says its task stream is lean (the server derives
+    what it leaves out).
+    """
     return {"type": "hello", "control": control, "lean": lean}
 
 
@@ -80,5 +83,5 @@ def control_message(cmd: str) -> dict[str, Any]:
 
 
 def task_row(message: dict[str, Any]) -> dict[str, Any]:
-    """The Perspective ``tasks``-table row for a decoded task message."""
+    """Return the Perspective ``tasks``-table row for a decoded task message."""
     return {col: message.get(col) for col in TASKS_SCHEMA}

@@ -1,11 +1,12 @@
 """M39 — the additive multi-stage plan schema ``DurablePlanV2`` (plan §4.4, §7.2).
 
-A shuffle needs genuine intra-run staging (a gather stage depending on a map-write stage), which the
-single map->reduce ``DurablePlan`` cannot express. ``DurablePlanV2`` is a SEPARATE, purely-additive
-class with a DISTINCT ``format_version`` (``"graphed-plan/2"`` — a string, vs V1's int), so its bytes
-can never collide with a V1 blob and a V1 reader rejects a V2 blob loudly. Its V2-only task ids fold
-``backend_id`` (read from ``StageSpec.routing``, no schema change) so two conforming backends that
-route a key to different dests never journal the same id for different content (B-r5.2).
+A shuffle needs genuine intra-run staging (a gather stage depending on a map-write stage), which
+the single map->reduce ``DurablePlan`` cannot express. ``DurablePlanV2`` is a SEPARATE,
+purely-additive class with a DISTINCT ``format_version`` (``"graphed-plan/2"`` — a string, vs V1's
+int), so its bytes can never collide with a V1 blob and a V1 reader rejects a V2 blob loudly. Its
+V2-only task ids fold ``backend_id`` (read from ``StageSpec.routing``, no schema change) so two
+conforming backends that route a key to different dests never journal the same id for different
+content (B-r5.2).
 
 Pinned surface: ``DurablePlanV2(ir, stages, ...)`` + ``StageSpec(kind, inputs, process, routing,
 tasks)`` importable from ``graphed.core``; ``to_bytes``/``from_bytes`` deterministic; and
@@ -30,7 +31,9 @@ from graphed.core import (
 def _ir() -> bytes:
     g = GraphStore()
     src = g.add_source("events", {"uri": "data.root"})
-    xchg = g.add_exchange([g.add_op("pt", [src])], {"scheme": "hash", "key": "__joinkey__", "parts": 4})
+    xchg = g.add_exchange(
+        [g.add_op("pt", [src])], {"scheme": "hash", "key": "__joinkey__", "parts": 4}
+    )
     out = g.add_reduction("sum", [xchg])
     return g.serialize(outputs=[out])
 
@@ -90,7 +93,9 @@ def test_v2_roundtrips_stages_and_deps() -> None:
     assert len(q.stages) == 2
     assert q.stages[0].kind == "map_write"
     assert q.stages[1].kind == "gather_join"
-    assert q.stages[1].inputs == (0,), "the gather stage's dependency edge on the map stage must survive"
+    assert q.stages[1].inputs == (0,), (
+        "the gather stage's dependency edge on the map stage must survive"
+    )
 
 
 def test_a_v1_reader_rejects_a_v2_blob_and_vice_versa() -> None:
@@ -111,8 +116,9 @@ def test_v2_task_id_is_deterministic_and_per_task() -> None:
 
 
 def test_v2_task_id_folds_the_backend_id() -> None:
-    # THE cross-backend cache-poisoning witness: two backends route the SAME key to DIFFERENT dests,
-    # so the same structural id must NOT be reused for different content — folding backend_id closes it.
+    # THE cross-backend cache-poisoning witness: two backends route the SAME key to DIFFERENT
+    # dests, so the same structural id must NOT be reused for different content — folding
+    # backend_id closes it.
     awk = _v2("graphed-awkward/0")
     npy = _v2("graphed-numpy/0")
     t0 = awk.stages[0].tasks[0]
@@ -121,5 +127,6 @@ def test_v2_task_id_folds_the_backend_id() -> None:
 
 def test_backend_id_rides_in_routing_not_a_schema_change() -> None:
     # §7.2 r6: backend_id is recorded in the EXISTING StageSpec.routing map, so §4.4's schema is
-    # untouched. Witness it is present there and drives the id (previous test), not a new top field.
+    # untouched. Witness it is present there and drives the id (previous test), not a new top
+    # field.
     assert _v2().stages[0].routing["backend_id"] == "graphed-awkward/0"

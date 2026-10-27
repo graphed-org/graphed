@@ -24,7 +24,12 @@ from graphed.awkward import gak
 
 def _weighted(ctx: object, name: str = "pu") -> object:
     return graphed.vary(
-        ctx, name, pu_weight(ctx, 1.0), is_weight=True, up=pu_weight(ctx, 1.1), down=pu_weight(ctx, 0.9)
+        ctx,
+        name,
+        pu_weight(ctx, 1.0),
+        is_weight=True,
+        up=pu_weight(ctx, 1.1),
+        down=pu_weight(ctx, 0.9),
     )
 
 
@@ -37,10 +42,15 @@ def test_vary_returns_a_new_context_and_the_input_is_unchanged() -> None:
     assert "pu_up" not in graphed.labels(events)
 
 
-def test_the_same_read_through_a_derived_context_and_its_parent_has_one_node_id_and_two_handles() -> None:
-    """The ORIGINATION rule. The merge-from-inputs rule alone gets this wrong: `Session.source`
-    receives no context and `record_op` merges only from `inputs`, so a derived context's reads go
-    through the same root wrapper and would inherit the PARENT's handle."""
+def test_the_same_read_through_a_derived_context_and_its_parent_has_one_node_id_and_two_handles() -> (  # noqa: E501
+    None
+):
+    """The ORIGINATION rule.
+
+    The merge-from-inputs rule alone gets this wrong: `Session.source` receives no context and
+    `record_op` merges only from `inputs`, so a derived context's reads go through the same root
+    wrapper and would inherit the PARENT's handle.
+    """
     _s, events = events_context()
     events2 = _weighted(events)
     through_parent = events.MET.pt
@@ -70,8 +80,10 @@ def test_divergent_contexts_raise_AT_THE_OP_naming_both() -> None:
 
 
 def test_pure_derivations_are_canonical_so_two_reads_of_one_universe_unify() -> None:
-    """A fresh-object-per-call implementation makes these siblings and fires the divergence error
-    on a legal program — §2.6b memoises them on the parent instead."""
+    """A fresh-object-per-call implementation makes these siblings.
+
+    It fires the divergence error on a legal program — §2.6b memoises them on the parent instead.
+    """
     _s, events = events_context()
     events2 = graphed.vary(events, "jes", **jes_kwargs(events))
     jets = events2.Jet[events2.Jet.pt > 25.0]
@@ -82,12 +94,16 @@ def test_pure_derivations_are_canonical_so_two_reads_of_one_universe_unify() -> 
     # a REBUILT mask interns to identical per-label node ids, which is the binding condition
     rebuilt = gak.num(events2.Jet[events2.Jet.pt > 25.0]) >= 4
     assert events2[rebuilt] is sel
-    assert graphed.context_of(graphed.nominal(sel).MET.pt * graphed.nominal(sel).MET.phi) is not None
+    assert (
+        graphed.context_of(graphed.nominal(sel).MET.pt * graphed.nominal(sel).MET.phi) is not None
+    )
 
 
 def test_divergence_is_also_caught_at_varys_OWN_construction() -> None:
-    """`vary` is a combining point that is not an op, so `record_op`'s merge chokepoint never
-    sees it."""
+    """`vary` is a combining point that is not an op.
+
+    So `record_op`'s merge chokepoint never sees it.
+    """
     _s, events = events_context()
     left = events[events.MET.pt > 20.0]
     right = events[events.MET.pt > 40.0]
@@ -104,8 +120,10 @@ def test_labels_on_a_context_reports_the_shift_labels_it_carries() -> None:
 
 
 def test_universe_and_nominal_return_a_context_that_is_a_CHILD_of_the_argument() -> None:
-    """So §6.1d's lineage-based unification can relate the result to its argument: a fill mixing a
-    read from the child with a read from the argument unifies instead of diverging."""
+    """So §6.1d's lineage-based unification can relate the result to its argument.
+
+    A fill mixing a read from the child with a read from the argument unifies instead of diverging.
+    """
     _s, events = events_context()
     shifted = graphed.vary(events, "jes", **jes_kwargs(events))
     for child in (graphed.universe(shifted, "jes_up"), graphed.nominal(shifted)):

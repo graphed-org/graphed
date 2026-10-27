@@ -2,8 +2,8 @@
 
 DCE already prunes the work; the diagnostic is what stops the mkShapesRDF silent-cost case, where a
 systematic is registered, paid for in build time, and quietly never filled. The channel is an
-additive `CompiledGraph` field — §7.2's schema-absence anchor is worded over `ExecResult`/`Plan`/the
-monitor payload, not over `CompiledGraph`.
+additive `CompiledGraph` field — §7.2's schema-absence anchor is worded over
+`ExecResult`/`Plan`/the monitor payload, not over `CompiledGraph`.
 """
 
 from __future__ import annotations
@@ -32,8 +32,10 @@ def test_no_label_is_reported_when_every_label_reaches_an_output() -> None:
 
 
 def test_the_report_is_a_diagnostic_and_the_compile_still_succeeds() -> None:
-    """A raise here would break a legal program: a label whose universe the user chose not to fill
-    is valid, only expensive."""
+    """A raise here would break a legal program.
+
+    A label whose universe the user chose not to fill is valid, only expensive.
+    """
     session, x = vector_source()
     loose_varied(x, "jer")
     compiled = compile_ir(session, x * 2.0)

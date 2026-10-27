@@ -204,14 +204,19 @@ _MANIP_OPS = frozenset(
 _CONCRETE_AGGS = frozenset({"histogram", "histogram2d", "histogramdd"})
 
 
-def _scalar_param(params: Mapping[str, object], key: str = "scalar", dtype_key: str = "dtype") -> Any:
-    """The scalar operand a binary op recorded — back in its own dtype when it had one (M59). The
-    frontend cannot build a numpy scalar, so it records the dtype name beside the value, and a
-    value wider than the store's i64 param as text."""
+def _scalar_param(
+    params: Mapping[str, object], key: str = "scalar", dtype_key: str = "dtype"
+) -> Any:
+    """Return the scalar operand a binary op recorded.
+
+    Back in its own dtype when it had one (M59). The frontend cannot build a numpy scalar, so it
+    records the dtype name beside the value, and a value wider than the store's i64 param as text.
+    """
     value = params[key]
     if dtype_key not in params:
         return value
-    return np.dtype(str(params[dtype_key])).type(value)  # the dtype parses the wide int's text itself
+    # the dtype parses the wide int's text itself
+    return np.dtype(str(params[dtype_key])).type(value)
 
 
 def _decode_dims(spec: object) -> tuple[int, ...]:
@@ -247,17 +252,25 @@ def _manip_eval(op: str, xs: Sequence[Any], params: Mapping[str, object]) -> Any
     if op == "astype":
         return np.asarray(xs[0]).astype(np.dtype(str(params["dtype"])))
     if op == "clip":
-        lo, hi = (_scalar_param(params, k, f"{k}_dtype") if k in params else None for k in ("lo", "hi"))
+        lo, hi = (
+            _scalar_param(params, k, f"{k}_dtype") if k in params else None for k in ("lo", "hi")
+        )
         return np.clip(xs[0], lo, hi)
     if op == "round":
         return np.round(xs[0], _i(params.get("decimals", 0)))
     if op == "take":
         axis = params.get("axis")
-        return np.take(xs[0], np.asarray(xs[1]).astype(np.intp), axis=None if axis is None else _i(axis))
+        return np.take(
+            xs[0], np.asarray(xs[1]).astype(np.intp), axis=None if axis is None else _i(axis)
+        )
     if op == "where":
         rest = list(xs[1:])
-        xval = _scalar_param(params, "x_scalar", "x_dtype") if "x_scalar" in params else rest.pop(0)
-        yval = _scalar_param(params, "y_scalar", "y_dtype") if "y_scalar" in params else rest.pop(0)
+        xval = (
+            _scalar_param(params, "x_scalar", "x_dtype") if "x_scalar" in params else rest.pop(0)
+        )
+        yval = (
+            _scalar_param(params, "y_scalar", "y_dtype") if "y_scalar" in params else rest.pop(0)
+        )
         return np.where(np.asarray(xs[0]), xval, yval)
     if op == "concatenate":
         return np.concatenate([np.asarray(x) for x in xs], axis=_i(params.get("axis", 0)))
@@ -288,8 +301,13 @@ def _manip_eval(op: str, xs: Sequence[Any], params: Mapping[str, object]) -> Any
     raise TypeError(f"unsupported op {op!r}")
 
 
-def _check_manip_geometry(op: str, forms: Sequence[NumpyForm], params: Mapping[str, object]) -> None:
-    """The axis-0-partitioned MVP's geometry rules, enforced at record time (Phase 2 lifts them)."""
+def _check_manip_geometry(
+    op: str, forms: Sequence[NumpyForm], params: Mapping[str, object]
+) -> None:
+    """Enforce the axis-0-partitioned MVP's geometry rules at record time.
+
+    Phase 2 lifts them.
+    """
     if op == "reshape":
         dims = _decode_dims(params["shape"])
         if not dims or dims[0] != -1 or any(d <= 0 for d in dims[1:]):
@@ -326,7 +344,10 @@ def _reduce_kwargs(params: Mapping[str, object]) -> dict[str, Any]:
 
 
 def _decode_on(spec: object) -> list[str]:
-    """The join ``on`` fields, whether recorded as a list or a comma-joined string (ParamMap)."""
+    """Return the join ``on`` fields.
+
+    They are recorded as a list or a comma-joined string (ParamMap).
+    """
     if isinstance(spec, str):
         return [s for s in spec.split(",") if s]
     return [str(c) for c in cast("Sequence[object]", spec)]
@@ -335,8 +356,10 @@ def _decode_on(spec: object) -> list[str]:
 def _join_nullable(
     how: str, left_data: Sequence[tuple[str, str]], right_data: Sequence[tuple[str, str]]
 ) -> list[tuple[str, str]]:
-    """The non-key fields a join makes nullable (⇒ a validity companion column, M40 a3): outer nulls
-    both sides, ``left``/``right`` null the opposite side, ``inner`` nulls nothing."""
+    """Return the non-key fields a join makes nullable (⇒ a validity companion column, M40 a3).
+
+    Outer nulls both sides, ``left``/``right`` null the opposite side, ``inner`` nulls nothing.
+    """
     if how == "outer":
         return [*left_data, *right_data]
     if how == "left":
@@ -351,7 +374,8 @@ class NumpyBackend:
 
     Also a `graphed.core.ShuffleBackend` (M39 exchange half): the rectilinear
     ``partition``/``concat``/``slice_rows``/``estimated_bytes``/``to_wire``/``from_wire`` over
-    structured (record) arrays, routing by the pinned §4 sha256 rule (``shuffle`` module)."""
+    structured (record) arrays, routing by the pinned §4 sha256 rule (``shuffle`` module).
+    """
 
     #: the backend's versioned shuffle-format token (folded into the V2 task ids, §7.2)
     identity = "graphed-numpy/0"
@@ -360,16 +384,20 @@ class NumpyBackend:
     subscript_keys = True
 
     def array_type(self) -> type[Array]:
-        """The numpy-idiomatic proxy (M11 factorization): Sessions return ``NumpyArray``."""
+        """Return the numpy-idiomatic proxy (M11 factorization): Sessions return ``NumpyArray``."""
         return NumpyArray
 
     canonical_output_type = staticmethod(canonical_output_type)
     check_output_type = staticmethod(check_output_type)
 
-    def op_form(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> NumpyForm:
+    def op_form(
+        self, op: str, inputs: Sequence[object], params: Mapping[str, object]
+    ) -> NumpyForm:
+        """Infer the form ``op`` gives ``inputs``."""
         forms = [f for f in inputs if isinstance(f, NumpyForm)]
         if op == "exchange":
-            return forms[0]  # a pure data-movement boundary is identity on the payload form (§3.3a)
+            # a pure data-movement boundary is identity on the payload form (§3.3a)
+            return forms[0]
         if op == "pack_key":
             (rec,) = forms
             if rec.fields is None:
@@ -384,25 +412,26 @@ class NumpyBackend:
             left, right = forms
             if left.fields is None or right.fields is None:
                 raise TypeError("join needs two record sources")
-            # intersection dedup keeping LEFT's copy (ignores `on`): fields = left ++ right-only, then the
-            # __valid_<n>__ nullability companions appended below. op_form's field set is thus a SUPERSET
-            # of the materialized block's DATA columns (the block carries nullability in .mask, not
-            # companions) — a sound over-declaration, never an under-declaration (§A.3.1). A form-vs-block
-            # check must assert op_form.fields ⊇ block.dtype.names, not equality. See
-            # docs/numpy/improvements.rst (M40).
+            # intersection dedup keeping LEFT's copy (ignores `on`): fields = left ++ right-only,
+            # then the __valid_<n>__ nullability companions appended below. op_form's field set is
+            # thus a SUPERSET of the materialized block's DATA columns (the block carries
+            # nullability in .mask, not companions) — a sound over-declaration, never an
+            # under-declaration (§A.3.1). A form-vs-block check must assert op_form.fields ⊇
+            # block.dtype.names, not equality. See docs/numpy/improvements.rst (M40).
             lnames = {f for f, _ in left.fields}
             rnames = {f for f, _ in right.fields}
             on_set = set(_decode_on(params.get("on", "")))
             shared_nonkey = sorted(n for n in lnames & rnames if n not in on_set)
             if shared_nonkey:  # F7: mirror merge_records — no silent SQL suffixing
                 raise ValueError(
-                    f"op_form(join): shared non-key column(s) {shared_nonkey} — rename or add to `on`"
+                    f"op_form(join): shared non-key column(s) {shared_nonkey} — rename or add to "
+                    "`on`"
                 )
             right_only = [(n, t) for n, t in right.fields if n not in lnames]
             left_only = [(n, t) for n, t in left.fields if n not in rnames]
-            # left/outer nullability rides in companion validity columns (NumpyForm has no option field,
-            # a3). ponytail: only the exclusive (non-shared) fields get companions; a shared col nulled on
-            # an outer-only row is untested — widen if an outer HEP form test lands.
+            # left/outer nullability rides in companion validity columns (NumpyForm has no option
+            # field, a3). ponytail: only the exclusive (non-shared) fields get companions; a shared
+            # col nulled on an outer-only row is untested — widen if an outer HEP form test lands.
             companions = [
                 (f"__valid_{n}__", np.dtype(np.bool_).str)
                 for n, _ in _join_nullable(str(params.get("how", "inner")), left_only, right_only)
@@ -429,9 +458,13 @@ class NumpyBackend:
                 return declared_form(forms, str(declared))
             return NumpyForm(np.dtype(object))  # opaque callable: result form unknown
         if op == "gufunc":
-            if "output_type" in params:  # the signature types a gufunc: `apply_gufunc(output_dtype=)`
-                raise TypeError("output_type is declared only on map; a gufunc takes output_dtype=")
-            return gufunc_form(forms, params)  # M14: the signature makes the opaque callable typable
+            # the signature types a gufunc: `apply_gufunc(output_dtype=)`
+            if "output_type" in params:
+                raise TypeError(
+                    "output_type is declared only on map; a gufunc takes output_dtype="
+                )
+            # M14: the signature makes the opaque callable typable
+            return gufunc_form(forms, params)
         if op in _REDUCERS or op in _SCANS:
             (a,) = forms
             if not (is_numeric(a) or (a.fields is None and a.dtype == np.bool_)):
@@ -480,16 +513,25 @@ class NumpyBackend:
             return _BINARY[op](a, b)
         raise TypeError(f"unsupported op {op!r}")
 
-    def eval_stage(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> object:
+    def eval_stage(
+        self, op: str, inputs: Sequence[object], params: Mapping[str, object]
+    ) -> object:
+        """Evaluate ``op`` over real numpy ``inputs``."""
         if op == "exchange":
-            return inputs[0]  # a pure data-movement boundary is identity on values in-process (§3.3a)
+            # a pure data-movement boundary is identity on values in-process (§3.3a)
+            return inputs[0]
         if op == "pack_key":
             return shuffle.pack_key(inputs[0], _decode_on(params["on"]))
         if op == "join":
-            from graphed.shuffle import join_blocks  # noqa: PLC0415  (local: avoid import-order coupling)
+            # local: avoid import-order coupling
+            from graphed.shuffle import join_blocks  # noqa: PLC0415
 
             return join_blocks(
-                self, inputs[0], inputs[1], on=_decode_on(params["on"]), how=str(params.get("how", "inner"))
+                self,
+                inputs[0],
+                inputs[1],
+                on=_decode_on(params["on"]),
+                how=str(params.get("how", "inner")),
             )
         if op == "field":
             return np.asarray(inputs[0][str(params["field"])])  # type: ignore[index]
@@ -502,13 +544,16 @@ class NumpyBackend:
         return self._apply(op, [np.asarray(x) for x in inputs], params)
 
     def boundary_ops(self) -> frozenset[str]:
+        """Return the op names that end a fused stage."""
         return frozenset({"source", "map", "gufunc", *_REDUCERS})
 
     def project(self, op: str, used: object, params: Mapping[str, object]) -> object:
         # Vestigial M2 per-op stub; the real projection is the module-level `project` (M5).
+        """Return ``used`` unchanged; the module-level ``project`` projects (M5)."""
         return used
 
     def external_payload(self, op: str, params: Mapping[str, object]) -> PayloadDescriptor | None:
+        """Return the payload descriptor a ``map`` or ``gufunc`` op carries."""
         if op not in ("map", "gufunc"):
             return None
         fn_name = str(params.get("fn", "lambda"))
@@ -523,7 +568,7 @@ class NumpyBackend:
             preprocessing_ref=None,
         )
 
-    # ---- ShuffleBackend exchange half (M39 §3.0) — thin delegates to the pure `shuffle` module ----
+    # --- ShuffleBackend exchange half (M39 §3.0) — thin delegates to the pure `shuffle` module ---
     def partition(
         self,
         block: Any,
@@ -533,33 +578,42 @@ class NumpyBackend:
         salt: int = 0,
         boundaries: object = None,
     ) -> tuple[Any, ...]:
+        """Route each row of ``block`` to one of ``parts`` sub-blocks by ``key_field``."""
         return shuffle.partition(block, key_field, parts, salt=salt, boundaries=boundaries)
 
     def concat(self, blocks: Sequence[Any]) -> Any:
+        """Concatenate ``blocks`` row-wise."""
         return shuffle.concat(blocks)
 
     def slice_rows(self, block: Any, start: int, stop: int) -> Any:
+        """Return rows ``[start, stop)`` of ``block``."""
         return shuffle.slice_rows(block, start, stop)
 
     def estimated_bytes(self, block_or_form: object) -> int:
+        """Estimate the bytes of a block or form."""
         return shuffle.estimated_bytes(block_or_form)
 
     def to_wire(self, block: Any) -> bytes:
+        """Serialize ``block`` deterministically."""
         return shuffle.to_wire(block)
 
     def from_wire(self, data: bytes) -> Any:
+        """Deserialize a block :meth:`to_wire` wrote."""
         return shuffle.from_wire(data)
 
     # ---- JoinBackend join half (M40 §3.3) — thin delegates to the pure `shuffle` module ----
     def match_indices(
         self, build: Any, probe: Any, *, on: Sequence[str], how: str = "inner"
     ) -> tuple[Any, Any]:
+        """Match ``build`` and ``probe`` rows on ``on`` as aligned index arrays."""
         return shuffle.match_indices(build, probe, on=on, how=how)
 
     def take(self, block: Any, index: Any) -> Any:
+        """Gather ``block``'s rows at ``index``; ``-1`` gives a missing row."""
         return shuffle.take(block, index)
 
     def merge_records(self, left: Any, right: Any, *, on: Sequence[str]) -> Any:
+        """Merge two aligned record blocks, keeping the ``on`` fields once."""
         return shuffle.merge_records(left, right, on=on)
 
 
@@ -580,7 +634,9 @@ def from_record(session: Session, name: str, **columns: object) -> Array:
     """Create a record source (named columns) — the buffer-projection target."""
     cols = {k: np.asarray(v) for k, v in columns.items()}
     fields = tuple((k, v.dtype.str) for k, v in cols.items())
-    return session.source(name, form=NumpyForm(np.dtype(object), kind="record", fields=fields), data=cols)
+    return session.source(
+        name, form=NumpyForm(np.dtype(object), kind="record", fields=fields), data=cols
+    )
 
 
 # M12 (dask.array parity P1): creation routines, deterministic random sources, and the

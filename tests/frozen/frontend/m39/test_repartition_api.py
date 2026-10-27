@@ -1,10 +1,10 @@
 """M39 — the repartition frontend surface (plan §3.1), backend-agnostic.
 
 The factorization rule (memory ``frontend-array-factorization``): ``Array`` stays idiom-neutral. A
-keyed repartition is a graphed capability -> a neutral MODULE verb ``graphed.repartition``; count/size
-rebalancing is *physical* (moves rows, no idiom) -> it stays on ``Array.repartition``. Every form
-records an ``Exchange`` node carrying its scheme params. graphed itself imports no numpy/awkward, so
-these run over a toy backend.
+keyed repartition is a graphed capability -> a neutral MODULE verb ``graphed.repartition``;
+count/size rebalancing is *physical* (moves rows, no idiom) -> it stays on ``Array.repartition``.
+Every form records an ``Exchange`` node carrying its scheme params. graphed itself imports no
+numpy/awkward, so these run over a toy backend.
 """
 
 from __future__ import annotations
@@ -22,11 +22,14 @@ def _exchange_nodes(session: Session, result: Array) -> list[dict]:
 
 
 def _src(session: Session) -> Array:
-    return session.source("x", form="f", data=ListSource([{"__joinkey__": i, "v": i} for i in range(8)]))
+    return session.source(
+        "x", form="f", data=ListSource([{"__joinkey__": i, "v": i} for i in range(8)])
+    )
 
 
 def test_graphed_repartition_is_a_neutral_module_verb() -> None:
-    # a join/keyed-shuffle is NEITHER an awkward nor a numpy idiom -> a module function, not on Array.
+    # a join/keyed-shuffle is NEITHER an awkward nor a numpy idiom -> a module function, not on
+    # Array.
     assert callable(graphed.repartition)
 
 
@@ -56,11 +59,14 @@ def test_array_repartition_by_count_records_the_partition_count() -> None:
     out = _src(s).repartition(n=4)
     xchg = _exchange_nodes(s, out)
     assert len(xchg) == 1
-    assert xchg[0]["params"]["parts"] == 4, "count rebalance must record the target partition count"
+    assert xchg[0]["params"]["parts"] == 4, (
+        "count rebalance must record the target partition count"
+    )
 
 
 def test_repartition_params_drive_structural_identity() -> None:
-    # two different targets are two different Exchange nodes (params in the structural key, not ignored)
+    # two different targets are two different Exchange nodes (params in the structural key, not
+    # ignored)
     s = Session(ToyBackend())
     src = _src(s)
     a = graphed.repartition(src, by="__joinkey__")

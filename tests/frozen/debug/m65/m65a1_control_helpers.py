@@ -14,7 +14,9 @@ from typing import Any
 
 
 def post(url: str, body: bytes, content_type: str = "application/json") -> tuple[int, Any]:
-    req = urllib.request.Request(url, data=body, method="POST", headers={"Content-Type": content_type})
+    req = urllib.request.Request(
+        url, data=body, method="POST", headers={"Content-Type": content_type}
+    )
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
             return resp.status, json.loads(resp.read() or b"null")
@@ -41,8 +43,10 @@ def until(pred: Callable[[], bool], timeout: float = 5.0) -> None:
 
 
 class Relay:
-    """A fixed local port that forwards each accepted connection to ``target`` (set by the test),
-    so a server can be replaced behind one address without rebinding a port."""
+    """A fixed local port that forwards each accepted connection to ``target`` (set by the test).
+
+    So a server can be replaced behind one address without rebinding a port.
+    """
 
     def __init__(self) -> None:
         self.target: int | None = None

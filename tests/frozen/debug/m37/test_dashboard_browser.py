@@ -1,7 +1,9 @@
-"""M37 browser smoke test (graphed-debug slice): load the real dashboard page in headless Chromium
-and assert it renders without JS errors. This is the regression guard for the class of bug that the
-Python-only tests cannot see — a Perspective client/server version mismatch or an unregistered plugin
-shows up only as browser-side ``cannot read properties of null`` / red error overlays.
+"""M37 browser smoke test (graphed-debug slice).
+
+Load the real dashboard page in headless Chromium and assert it renders without JS errors. This is
+the regression guard for the class of bug that the Python-only tests cannot see — a Perspective
+client/server version mismatch or an unregistered plugin shows up only as browser-side
+``cannot read properties of null`` / red error overlays.
 
 It is heavy (a real browser) and gated three ways so it never burdens the normal matrix:
 ``importorskip`` Playwright + Perspective, and it skips unless a browser is actually installed. CI
@@ -59,22 +61,24 @@ def test_dashboard_page_renders_in_a_browser() -> None:
         with sync_playwright() as pw:
             browser = pw.chromium.launch()  # the CI job runs `playwright install chromium` first
             page = browser.new_page()
-            page.on("console", lambda m: console_errors.append(m.text) if m.type == "error" else None)
+            page.on(
+                "console", lambda m: console_errors.append(m.text) if m.type == "error" else None
+            )
             page.on("pageerror", lambda e: page_errors.append(str(e)))
             page.goto(dash.url, wait_until="load")
-            # stats is a Datagrid -> renders a <regular-table> once it has loaded its table from the
-            # websocket. If the client/server versions mismatched, or a plugin were missing, it never
-            # appears and/or the error lists fill.
+            # stats is a Datagrid -> renders a <regular-table> once it has loaded its table from
+            # the websocket. If the client/server versions mismatched, or a plugin were missing, it
+            # never appears and/or the error lists fill.
             page.wait_for_selector("#stats regular-table", timeout=30000, state="attached")
-            # the progress panel polls /api/progress.json and renders one .pbar-row per bar (overall +
-            # per worker) -> at least the "all tasks" bar appears.
+            # the progress panel polls /api/progress.json and renders one .pbar-row per bar
+            # (overall + per worker) -> at least the "all tasks" bar appears.
             page.wait_for_selector("#progress .pbar-row", timeout=30000, state="attached")
-            # the profile panel is a d3 flamegraph polling /api/flamegraph.json -> once samples have
-            # been ingested it draws an <svg class="d3-flame-graph"> into #profile.
+            # the profile panel is a d3 flamegraph polling /api/flamegraph.json -> once samples
+            # have been ingested it draws an <svg class="d3-flame-graph"> into #profile.
             page.wait_for_selector("#profile svg.d3-flame-graph", timeout=30000, state="attached")
 
-            # hover a flamegraph cell -> the shared pop-out tooltip shows the FULL name + sample count
-            # (the cells truncate the name; this is the whole point of the mouseover).
+            # hover a flamegraph cell -> the shared pop-out tooltip shows the FULL name + sample
+            # count (the cells truncate the name; this is the whole point of the mouseover).
             page.hover("#profile svg.d3-flame-graph g")
             page.wait_for_function(
                 "document.getElementById('gp-tooltip').style.display === 'block'", timeout=5000

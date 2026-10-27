@@ -1,10 +1,11 @@
 """M39 — the awkward ``ShuffleBackend`` exchange primitives (plan §3.0, §3.3).
 
 ``AwkwardBackend`` supplies the vectorized exchange half the generic engine calls:
-``partition``/``concat``/``slice_rows``/``estimated_bytes``/``to_wire``/``from_wire`` (+ ``identity``).
-The load-bearing witness is (a-golden): ``partition`` MUST reproduce the pinned §4 SHA-256 dest
-assignment recorded in ``golden_route.GOLDEN`` — a backend substituting any other process-independent
-hash (blake2b/xxhash) FAILS these vectors even though it would pass the B2 process-invariance check.
+``partition``/``concat``/``slice_rows``/``estimated_bytes``/``to_wire``/``from_wire`` (+
+``identity``). The load-bearing witness is (a-golden): ``partition`` MUST reproduce the pinned §4
+SHA-256 dest assignment recorded in ``golden_route.GOLDEN`` — a backend substituting any other
+process-independent hash (blake2b/xxhash) FAILS these vectors even though it would pass the B2
+process-invariance check.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from graphed.awkward import AwkwardBackend
 
 
 def _single_key_block(key: int, rows: int = 3) -> ak.Array:
-    """A record block whose every row carries the same packed-u64 ``__joinkey__``."""
+    """Return a record block whose every row carries the same packed-u64 ``__joinkey__``."""
     return ak.Array(
         {"__joinkey__": np.full(rows, key, dtype=np.uint64), "v": np.arange(rows, dtype=np.int64)}
     )
@@ -34,17 +35,22 @@ def _jagged_block(keys: list[int]) -> ak.Array:
 
 def test_backend_has_a_stable_identity_token() -> None:
     ident = AwkwardBackend().identity
-    assert isinstance(ident, str) and ident, "identity is the versioned shuffle-format token (§7.2)"
+    assert isinstance(ident, str) and ident, (
+        "identity is the versioned shuffle-format token (§7.2)"
+    )
 
 
 def test_partition_matches_the_golden_routing_vectors() -> None:
-    # (a-golden) THE conformance witness: every single-key block lands entirely in the tabulated dest.
+    # (a-golden) THE conformance witness: every single-key block lands entirely in the tabulated
+    # dest.
     be = AwkwardBackend()
     for key, parts, dest in GOLDEN:
         subs = be.partition(_single_key_block(key), "__joinkey__", parts)
         assert len(subs) == parts
         assert len(subs[dest]) == 3, f"key {key:#x} into {parts} parts must fill dest {dest}"
-        assert sum(len(s) for i, s in enumerate(subs) if i != dest) == 0, "no rows in any other dest"
+        assert sum(len(s) for i, s in enumerate(subs) if i != dest) == 0, (
+            "no rows in any other dest"
+        )
 
 
 def test_partition_is_deterministic_across_calls() -> None:

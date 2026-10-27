@@ -1,5 +1,6 @@
-"""The M37 live execution dashboard: FINOS Perspective tables served over Tornado, fed by a
-websocket network transport.
+"""The M37 live execution dashboard.
+
+FINOS Perspective tables served over Tornado, fed by a websocket network transport.
 
 * :class:`Dashboard` — opt-in convenience: a local server + a loopback client.
 * :class:`DashboardServer` — the Perspective/Tornado server (browser viewer + event ingest).

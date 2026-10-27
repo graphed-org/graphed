@@ -1,9 +1,10 @@
 """M40 theme (d) — column projection through a join, BOTH sides (§B-15, M5 over-touch guard).
 
 A join reads exactly ``{key | used}`` on each side: the join-key columns (consumed by ``pack_key``)
-plus whatever downstream columns are actually referenced. Anything else is over-touch — the M5 defect
-this guards against, now doubled because a join has two independent record sources. The unused columns
-below (``lx_unused`` / ``rx_unused``) must never appear in either source's projected column set.
+plus whatever downstream columns are actually referenced. Anything else is over-touch — the M5
+defect this guards against, now doubled because a join has two independent record sources. The
+unused columns below (``lx_unused`` / ``rx_unused``) must never appear in either source's projected
+column set.
 """
 
 from __future__ import annotations

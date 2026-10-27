@@ -1,9 +1,10 @@
-"""m50 fix-cycle-1 (INT-1) EXTRA witness — the axis-mode/variation member of the
-preserve↔histogram content-address contract.
+r"""m50 fix-cycle-1 (INT-1) EXTRA witness.
+
+The axis-mode/variation member of the preserve↔histogram content-address contract.
 
 No FROZEN test preserves a §6.2 axis-mode fill, so this manual witness proves the third member of
 the INT-1 class (unweighted / multi-weight / **variation**) is closed: the preserve plugin
-re-derives H1's DISCRIMINATED ``_fill_chash`` (``spec + "\\x00" + "variation=<json>"``) from the
+re-derives H1's DISCRIMINATED ``_fill_chash`` (``spec + "\x00" + "variation=<json>"``) from the
 node's params, so ``build_bundle``'s integrity check accepts the axis-mode fill and ``reproduce``
 replays its evaluator-side variation loop bit-for-bit.
 
@@ -50,17 +51,27 @@ EVENTS = ak.Array(
 
 
 def _axis_spec() -> str:
-    """The frontend-declared axis-mode spec: the value axes plus a non-growth ``"variation"``
-    StrCategory (declared over the SORTED label set, §6.2(ii))."""
+    """Return the frontend-declared axis-mode spec.
+
+    The value axes plus a non-growth ``"variation"`` StrCategory (declared over the SORTED label
+    set, §6.2(ii)).
+    """
     var_ax = bh.axis.StrCategory(sorted(NODE_LABELS))
-    var_ax.__dict__["name"] = "variation"  # the kwarg form is a TypeError; the codec round-trips this
-    spec: str = gh.spec_of(bh.Histogram(bh.axis.Regular(4, 0.0, 8.0), var_ax, storage=bh.storage.Weight()))
+    var_ax.__dict__["name"] = (
+        "variation"  # the kwarg form is a TypeError; the codec round-trips this
+    )
+    spec: str = gh.spec_of(
+        bh.Histogram(bh.axis.Regular(4, 0.0, 8.0), var_ax, storage=bh.storage.Weight())
+    )
     return spec
 
 
 def _eager_axis_reference(spec: str) -> bh.Histogram:
-    """The oracle: ``FillEvaluator``'s axis loop is ``h.fill(value, label, weight=block)`` per
-    label — the value fixed, the weight block varying across the variation categories."""
+    """Return the oracle.
+
+    ``FillEvaluator``'s axis loop is ``h.fill(value, label, weight=block)`` per label — the value
+    fixed, the weight block varying across the variation categories.
+    """
     h = gh.zero_of(spec)
     xv = np.asarray(EVENTS.x)
     for label, wcol in zip(NODE_LABELS, (EVENTS.wn, EVENTS.wd, EVENTS.wu), strict=True):
@@ -83,26 +94,35 @@ def test_axis_mode_variation_fill_preserves_and_reproduces(tmp_path) -> None:  #
         "sampled": False,
         "variation": json.dumps(list(NODE_LABELS)),
     }
-    # inputs = [value, one weight block per label in NODE_LABELS order] (the axis-loop input layout)
-    fill = record_external(s, HISTOGRAM_PLUGIN, disc_payload.encode(), [g.x, g.wn, g.wd, g.wu], params=params)
+    # inputs = [value, one weight block per label in NODE_LABELS order] (the axis-loop input
+    # layout)
+    fill = record_external(
+        s, HISTOGRAM_PLUGIN, disc_payload.encode(), [g.x, g.wn, g.wd, g.wu], params=params
+    )
     stored = next(n for n in s._store.nodes() if n["id"] == fill.node_id)
     assert stored["descriptor"]["content_hash"] == disc_hash  # recorded the DISCRIMINATED id
 
     reference: Any = s.materialize(fill)  # record-time eval through the real FillEvaluator
 
-    # build_bundle would raise "hashes to X not recorded Y" if the plugin re-derived only sha256(spec)
-    bundle = build_bundle(tmp_path / "b", session=s, value=fill, datasets={"events": EVENTS}, payloads={})
+    # build_bundle would raise "hashes to X not recorded Y" if the plugin re-derived only
+    # sha256(spec)
+    bundle = build_bundle(
+        tmp_path / "b", session=s, value=fill, datasets={"events": EVENTS}, payloads={}
+    )
     entry = next(e for e in bundle.manifest["externals"] if e["kind"] == "histogram")
     payload = bundle.store.get(entry["store"])
     assert entry["content_hash"] == disc_hash
     assert payload is not None
-    # the synthesized payload is the DISCRIMINATED canonical (carries the variation), not the bare spec
+    # the synthesized payload is the DISCRIMINATED canonical (carries the variation), not the bare
+    # spec
     assert payload.decode() != spec and "variation=" in payload.decode()
-    assert HISTOGRAM_PLUGIN.content_hash(payload) == entry["content_hash"]  # integrity, as build checks
+    # integrity, as build checks
+    assert HISTOGRAM_PLUGIN.content_hash(payload) == entry["content_hash"]
 
     got = reproduce(bundle)  # the eval-side half: reconstruct the axis loop from params
     assert isinstance(got, bh.Histogram)
-    assert any(a.__dict__.get("name") == "variation" for a in got.axes)  # the variation axis survived
+    # the variation axis survived
+    assert any(a.__dict__.get("name") == "variation" for a in got.axes)
     eager = _eager_axis_reference(spec)
     assert np.array_equal(got.view(flow=True)["value"], reference.view(flow=True)["value"])
     assert np.array_equal(got.view(flow=True)["value"], eager.view(flow=True)["value"])
@@ -110,15 +130,22 @@ def test_axis_mode_variation_fill_preserves_and_reproduces(tmp_path) -> None:  #
 
 
 def test_same_spec_pair_discriminated_and_bare_both_preserve(tmp_path) -> None:  # type: ignore[no-untyped-def]
-    """Adversarial: the ONE same-spec collision the fix must reconcile. Two multi-weight fills with
-    IDENTICAL params but DIFFERENT recorded ids — H1's ``Histogram.fill`` mints the DISCRIMINATED
-    ``spec+"\\x00"+"n_weights=2"`` hash, the legacy ``record_external`` over bare spec bytes mints
-    ``sha256(spec)``. A params-only synthesize could serve only one; threading the recorded hash lets
-    the plugin emit whichever form each node actually recorded, so BOTH pass integrity."""
+    r"""Adversarial: the ONE same-spec collision the fix must reconcile.
+
+    Two multi-weight fills with IDENTICAL params but DIFFERENT recorded ids — H1's
+    ``Histogram.fill`` mints the DISCRIMINATED ``spec+"\x00"+"n_weights=2"`` hash, the legacy
+    ``record_external`` over bare spec bytes mints ``sha256(spec)``. A params-only synthesize could
+    serve only one; threading the recorded hash lets the plugin emit whichever form each node
+    actually recorded, so BOTH pass integrity.
+    """
     spec = gh.spec_of(bh.Histogram(bh.axis.Regular(4, 0.0, 8.0), storage=bh.storage.Weight()))
     params = {"spec": spec, "n_axes": 1, "weighted": True, "n_weights": 2, "sampled": False}
     events = ak.Array(
-        {"x": [1.0, 4.0, 7.0, 2.5] * 20, "a": [0.5, 1.0, 2.0, 1.5] * 20, "b": [1.0, 0.5, 1.0, 2.0] * 20}
+        {
+            "x": [1.0, 4.0, 7.0, 2.5] * 20,
+            "a": [0.5, 1.0, 2.0, 1.5] * 20,
+            "b": [1.0, 0.5, 1.0, 2.0] * 20,
+        }
     )
 
     disc_payload = spec + "\x00" + "n_weights=2"

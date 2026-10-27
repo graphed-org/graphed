@@ -1,6 +1,8 @@
-"""ML External plugins on HiggsDNA's shapes: a Varied input fans out per universe (GW13), an (n, k)
-output keeps its rows (GW14), inputs keep their dtype (GW15), and a gzipped JSON payload hashes and
-loads as its plain twin (GW16)."""
+"""ML External plugins on HiggsDNA's shapes.
+
+A Varied input fans out per universe (GW13), an (n, k) output keeps its rows (GW14), inputs keep
+their dtype (GW15), and a gzipped JSON payload hashes and loads as its plain twin (GW16).
+"""
 
 from __future__ import annotations
 
@@ -61,7 +63,7 @@ def _onnx_eager(payload: bytes, x: np.ndarray) -> Any:
     return sess.run(None, {"x": x})[0]
 
 
-# ---- each plugin with a three-output model, and that model called eagerly ------------------------
+# ---- each plugin with a three-output model, and that model called eagerly -----------------------
 def _onnx_case() -> tuple[ExternalPlugin, bytes, dict[str, Any], Callable[[np.ndarray], Any]]:
     payload = _onnx(W)
     return ONNX_PLUGIN, payload, ARGS, lambda x: _onnx_eager(payload, x.astype(np.float32))
@@ -82,7 +84,9 @@ def _torch_case() -> tuple[ExternalPlugin, bytes, dict[str, Any], Callable[[np.n
     )
 
 
-def _tensorflow_case() -> tuple[ExternalPlugin, bytes, dict[str, Any], Callable[[np.ndarray], Any]]:
+def _tensorflow_case() -> tuple[
+    ExternalPlugin, bytes, dict[str, Any], Callable[[np.ndarray], Any]
+]:
     keras = pytest.importorskip("keras")
     m = keras.Sequential([keras.layers.Input(shape=(2,)), keras.layers.Dense(3, use_bias=False)])
     m.layers[0].set_weights([W])
@@ -107,7 +111,12 @@ def _xgboost_case() -> tuple[ExternalPlugin, bytes, dict[str, Any], Callable[[np
     booster = xgb.train(
         {"objective": "multi:softprob", "num_class": 3}, xgb.DMatrix(X, label=np.arange(6) % 3), 2
     )
-    return XGBOOST_PLUGIN, bytes(booster.save_raw("json")), ARGS, lambda x: booster.predict(xgb.DMatrix(x))
+    return (
+        XGBOOST_PLUGIN,
+        bytes(booster.save_raw("json")),
+        ARGS,
+        lambda x: booster.predict(xgb.DMatrix(x)),
+    )
 
 
 class _Result:
@@ -164,13 +173,15 @@ CASES = {
 
 
 def test_a_gzipped_json_model_hashes_and_evaluates_as_its_plain_twin() -> None:
-    assert TRITON_PLUGIN.content_hash(gzip.compress(b'{"model": "scorer"}')) == TRITON_PLUGIN.content_hash(
-        b'{"model": "scorer"}'
-    )
+    assert TRITON_PLUGIN.content_hash(
+        gzip.compress(b'{"model": "scorer"}')
+    ) == TRITON_PLUGIN.content_hash(b'{"model": "scorer"}')
     plugin, payload, params, _eager = _xgboost_case()
     assert plugin.content_hash(gzip.compress(payload)) == plugin.content_hash(payload)
     session, ev = _events()
-    plain = session.materialize(record_external(session, plugin, payload, [ev.a, ev.b], params=params))
+    plain = session.materialize(
+        record_external(session, plugin, payload, [ev.a, ev.b], params=params)
+    )
     zipped = session.materialize(
         record_external(session, plugin, gzip.compress(payload), [ev.a, ev.b], params=params)
     )
@@ -181,7 +192,9 @@ def test_a_gzipped_json_model_hashes_and_evaluates_as_its_plain_twin() -> None:
 def test_a_multi_output_model_keeps_one_row_per_event(case: str) -> None:
     plugin, payload, params, eager = CASES[case]()
     session, ev = _events()
-    node = record_external(session, plugin, payload, [ev.a, ev.b], params=params, output_type="3 * float64")
+    node = record_external(
+        session, plugin, payload, [ev.a, ev.b], params=params, output_type="3 * float64"
+    )
     got = ak.Array(session.materialize(node))
     want = ak.from_numpy(np.asarray(eager(X), dtype=np.float64))
     assert str(got.type) == str(want.type) == "6 * 3 * float64"
@@ -191,7 +204,11 @@ def test_a_multi_output_model_keeps_one_row_per_event(case: str) -> None:
 def test_a_float64_torch_model_runs_in_float64_bit_equal_to_eager() -> None:
     torch = pytest.importorskip("torch")
     torch.manual_seed(0)
-    m = torch.nn.Sequential(torch.nn.Linear(2, 4), torch.nn.Tanh(), torch.nn.Linear(4, 1)).double().eval()
+    m = (
+        torch.nn.Sequential(torch.nn.Linear(2, 4), torch.nn.Tanh(), torch.nn.Linear(4, 1))
+        .double()
+        .eval()
+    )
     buf = io.BytesIO()
     torch.jit.save(torch.jit.trace(m, torch.zeros(1, 2, dtype=torch.float64)), buf)
     session, ev = _events()
@@ -204,11 +221,14 @@ def test_a_float64_torch_model_runs_in_float64_bit_equal_to_eager() -> None:
 
 
 def test_a_float64_onnx_model_is_fed_float64_bit_equal_to_eager() -> None:
-    weights = W[:, :1].astype(np.float64) + 1e-9  # below float32 resolution: a float32 feed would lose it
+    # below float32 resolution: a float32 feed would lose it
+    weights = W[:, :1].astype(np.float64) + 1e-9
     payload = _onnx(weights, TensorProto.DOUBLE)
     session, ev = _events()
     got = ak.to_numpy(
-        session.materialize(record_external(session, ONNX_PLUGIN, payload, [ev.a, ev.b], params=ARGS))
+        session.materialize(
+            record_external(session, ONNX_PLUGIN, payload, [ev.a, ev.b], params=ARGS)
+        )
     )
     assert np.array_equal(got, _onnx_eager(payload, X).reshape(-1))
 
@@ -231,7 +251,9 @@ def test_an_unfed_optional_string_input_does_not_block_the_fed_ones() -> None:
     session, ev = _events()
     params = {"args": {"x": ["$0", "$1"]}}
     got = ak.to_numpy(
-        session.materialize(record_external(session, ONNX_PLUGIN, payload, [ev.a, ev.b], params=params))
+        session.materialize(
+            record_external(session, ONNX_PLUGIN, payload, [ev.a, ev.b], params=params)
+        )
     )
     assert np.array_equal(got, _onnx_eager(payload, X.astype(np.float32)).reshape(-1))
 
@@ -245,7 +267,9 @@ def test_an_external_on_a_varied_input_records_one_node_per_universe() -> None:
     for label in graphed.labels(varied):
         a = ak.to_numpy(session.materialize(graphed.universe(varied, label)))
         want = _onnx_eager(payload, np.stack([a, X[:, 1]], axis=1).astype(np.float32)).reshape(-1)
-        assert np.array_equal(ak.to_numpy(session.materialize(graphed.universe(score, label))), want)
+        assert np.array_equal(
+            ak.to_numpy(session.materialize(graphed.universe(score, label))), want
+        )
 
 
 CORRECTION = json.dumps(

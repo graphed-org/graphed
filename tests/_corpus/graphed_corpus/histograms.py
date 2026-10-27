@@ -22,11 +22,15 @@ STABLE_DECIMALS = 6
 
 def stable(values: ak.Array | np.ndarray) -> np.ndarray:
     """Round to a fixed precision for cross-platform-stable cut/bin decisions."""
-    rounded: np.ndarray = np.round(np.asarray(ak.to_numpy(ak.flatten(values, axis=None))), STABLE_DECIMALS)
+    rounded: np.ndarray = np.round(
+        np.asarray(ak.to_numpy(ak.flatten(values, axis=None))), STABLE_DECIMALS
+    )
     return rounded
 
 
-def hist1d(values: ak.Array | np.ndarray, *, bins: int, start: float, stop: float, name: str) -> Hist:
+def hist1d(
+    values: ak.Array | np.ndarray, *, bins: int, start: float, stop: float, name: str
+) -> Hist:
     """Fill a 1D integer-count histogram from (already-flat) values."""
     h = Hist.new.Reg(bins, start, stop, name=name).Int64()
     h.fill(stable(values))
@@ -55,4 +59,6 @@ def load_reference(path: Path) -> dict[str, object]:
 
 def write_reference(path: Path, h: Hist) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(reference_record(h), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(reference_record(h), indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )

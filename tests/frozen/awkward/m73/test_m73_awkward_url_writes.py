@@ -1,5 +1,7 @@
-"""m73: the awkward writers (`parquet_write`, `to_parquet`, `to_parquet(select=)`) write their parts
-to an fsspec URL."""
+"""m73: the awkward writers write their parts to an fsspec URL.
+
+The writers are `parquet_write`, `to_parquet` and `to_parquet(select=)`.
+"""
 
 from __future__ import annotations
 
@@ -40,7 +42,9 @@ class MemorySource:
         raise AssertionError("the whole-dataset loader must never run inside a plan")
 
     def partitions(self, steps_per_file: int = 1) -> tuple[Partition, ...]:
-        return tuple(Partition.blind("mem://m73", "", s, steps_per_file) for s in range(steps_per_file))
+        return tuple(
+            Partition.blind("mem://m73", "", s, steps_per_file) for s in range(steps_per_file)
+        )
 
     def read_partition(self, partition: Partition, columns: Any, resources: Any) -> ak.Array:
         return chunk_of(partition)
@@ -78,7 +82,9 @@ def no_paths() -> list[str]:
 
 
 def run_writes(*writes: Any) -> list[str]:
-    plan = graphed.aggregate_plan(reduce=paths_only, combine=add, empty=no_paths, steps_per_file=2, writes=list(writes))
+    plan = graphed.aggregate_plan(
+        reduce=paths_only, combine=add, empty=no_paths, steps_per_file=2, writes=list(writes)
+    )
     paths: list[str] = SequentialRunner().run(plan).value
     return paths
 
@@ -88,12 +94,14 @@ def halves() -> list[ak.Array]:
 
 
 def varied_inputs(ev: Any) -> tuple[Any, Any]:
-    return gak.zip({"x": ev.x, "pt": ev.pt}, depth_limit=1), graphed.vary(ev.x > 1, "cut", up=ev.x > 2, down=ev.x > 0)
+    return gak.zip({"x": ev.x, "pt": ev.pt}, depth_limit=1), graphed.vary(
+        ev.x > 1, "cut", up=ev.x > 2, down=ev.x > 0
+    )
 
 
 @pytest.fixture
 def cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """An empty working directory: a URL write that creates a local tree creates it here."""
+    """Return an empty working directory: a URL write that creates a local tree creates it here."""
     here = tmp_path / "cwd"
     here.mkdir()
     monkeypatch.chdir(here)
@@ -113,11 +121,13 @@ def url_root(cwd: Path) -> Iterator[str]:
 def on_url_fs(url_root: str) -> list[str]:
     import fsspec  # noqa: PLC0415
 
-    return sorted("memory:/" + p for p in fsspec.filesystem("memory").find(url_root.removeprefix("memory:/")))
+    return sorted(
+        "memory:/" + p for p in fsspec.filesystem("memory").find(url_root.removeprefix("memory:/"))
+    )
 
 
 def fetch(url: str, local: Path) -> str:
-    """The part's bytes, copied to a local file for readers that take a local path."""
+    """Return the part's bytes, copied to a local file for readers that take a local path."""
     import fsspec  # noqa: PLC0415
 
     with fsspec.open(url, "rb") as handle:
@@ -131,7 +141,9 @@ def block_fsspec(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(sys.modules, "fsspec", None)
 
 
-def test_parquet_write_lands_each_part_on_the_url_filesystem(url_root: str, cwd: Path, tmp_path: Path) -> None:
+def test_parquet_write_lands_each_part_on_the_url_filesystem(
+    url_root: str, cwd: Path, tmp_path: Path
+) -> None:
     ev = partitioned()
     rec = gak.zip({"x": ev.x * 2.0, "pt": ev.pt}, depth_limit=1)
     destination = f"{url_root}/pw"
@@ -160,7 +172,9 @@ def test_parquet_write_only_a_url_destination_needs_fsspec(
     for path, chunk in zip(paths, halves(), strict=True):
         assert pq.read_table(path)["data"].to_pylist() == (chunk.x * 2.0).to_list()
     with pytest.raises(ImportError, match=EXTRA):
-        run_writes(ga.parquet_write(ev.x * 2.0, f"memory://m73-{uuid.uuid4().hex}/pw", name=by_step))
+        run_writes(
+            ga.parquet_write(ev.x * 2.0, f"memory://m73-{uuid.uuid4().hex}/pw", name=by_step)
+        )
     assert os.listdir(cwd) == []
 
 
@@ -169,18 +183,24 @@ def test_to_parquet_writes_its_parts_on_the_url_filesystem(url_root: str, cwd: P
 
     ev = in_memory()
     destination = f"{url_root}/tp"
-    paths = ga.to_parquet(gak.zip({"x": ev.x * 2.0, "pt": ev.pt}, depth_limit=1), destination, steps_per_file=2)
+    paths = ga.to_parquet(
+        gak.zip({"x": ev.x * 2.0, "pt": ev.pt}, depth_limit=1), destination, steps_per_file=2
+    )
     expected = [f"{destination}/part-{i:05d}.parquet" for i in range(2)]
     assert paths == expected
     assert on_url_fs(url_root) == expected
     for path, chunk in zip(expected, [EVENTS[:3], EVENTS[3:]], strict=True):
         with fsspec.open(path, "rb") as handle:
             back = ak.from_arrow(pq.read_table(handle))
-        assert back.to_list() == ak.zip({"x": chunk.x * 2.0, "pt": chunk.pt}, depth_limit=1).to_list()
+        assert (
+            back.to_list() == ak.zip({"x": chunk.x * 2.0, "pt": chunk.pt}, depth_limit=1).to_list()
+        )
     assert os.listdir(cwd) == []
 
 
-def test_varied_to_parquet_writes_its_part_on_the_url_filesystem(url_root: str, cwd: Path, tmp_path: Path) -> None:
+def test_varied_to_parquet_writes_its_part_on_the_url_filesystem(
+    url_root: str, cwd: Path, tmp_path: Path
+) -> None:
     ev = in_memory()
     record, mask = varied_inputs(ev)
     destination = f"{url_root}/var"

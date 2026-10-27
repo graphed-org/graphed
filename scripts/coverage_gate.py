@@ -17,14 +17,17 @@ THRESHOLD = 90.0
 
 
 def python_files(data: dict[str, Any]) -> dict[str, float]:
+    """Return each Python file's coverage percentage."""
     return {path: info["summary"]["percent_covered"] for path, info in data["files"].items()}
 
 
 def rust_files(data: dict[str, Any]) -> dict[str, float]:
+    """Return each Rust file's line coverage percentage."""
     return {f["filename"]: f["summary"]["lines"]["percent"] for f in data["data"][0]["files"]}
 
 
 def main() -> int:
+    """Check every file against the threshold; return the exit status."""
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("report", help="coverage.json (Python) or llvm-cov --json output (Rust)")
     ap.add_argument("--rust", action="store_true", help="parse as cargo-llvm-cov --json")

@@ -24,7 +24,9 @@ def _program(draw: st.DrawFn) -> list[tuple[str, str, dict[str, object]]]:
     return ops
 
 
-def _key(kind: str, name: str, params: dict[str, object], inputs: tuple[int, ...]) -> tuple[object, ...]:
+def _key(
+    kind: str, name: str, params: dict[str, object], inputs: tuple[int, ...]
+) -> tuple[object, ...]:
     # bool is a subclass of int in Python; tag the type to mirror Rust's typed ParamValue
     items = tuple(sorted((k, type(v).__name__, v) for k, v in params.items()))
     return (kind, name, items, inputs)
@@ -32,7 +34,9 @@ def _key(kind: str, name: str, params: dict[str, object], inputs: tuple[int, ...
 
 @settings(max_examples=150, deadline=None)
 @given(program=_program())
-def test_node_count_equals_distinct_keys(program: list[tuple[str, str, dict[str, object]]]) -> None:
+def test_node_count_equals_distinct_keys(
+    program: list[tuple[str, str, dict[str, object]]],
+) -> None:
     store = gc.GraphStore()
     keys: set[tuple[object, ...]] = set()
     made: list[int] = []

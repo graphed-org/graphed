@@ -24,7 +24,7 @@ VECTOR = np.arange(1.0, 13.0)
 
 
 def vector_source() -> tuple[Session, Array]:
-    """A numpy-idiom session over a 1-D VECTOR partitioned source.
+    """Return a numpy-idiom session over a 1-D VECTOR partitioned source.
 
     Rank and kind are both load-bearing for §2.2's property dispositions: `NumpyArray.T` — the
     recording representative — raises `GraphedTypeError` on a >=2-D partitioned form and on any
@@ -35,7 +35,7 @@ def vector_source() -> tuple[Session, Array]:
 
 
 def record_source() -> tuple[Session, Array]:
-    """A RECORD source carrying a literal `node_id` FIELD.
+    """Return a RECORD source carrying a literal `node_id` FIELD.
 
     §2.2 makes `node_id`/`session` raise on a `Varied`; the rule is a PROPERTY rule, so string
     getitem must still read a field of that name (a blanket `__getattr__` refusal would eat it).
@@ -44,26 +44,35 @@ def record_source() -> tuple[Session, Array]:
     return s, from_record(s, "r", node_id=np.arange(4), pt=np.arange(1.0, 5.0))
 
 
-def loose_varied(x: Array, name: str = "jes", *, tags: Sequence[str] = ("up", "down")) -> graphed.Varied:
+def loose_varied(
+    x: Array, name: str = "jes", *, tags: Sequence[str] = ("up", "down")
+) -> graphed.Varied:
     """§2.1(a): the loose primitive on a plain `Array` target, `x` itself as `"nominal"`."""
     factors = (1.5, 0.5, 2.5, 0.25)
     return graphed.vary(x, name, **{t: x * f for t, f in zip(tags, factors, strict=False)})
 
 
 def sibling_outputs(v: graphed.Varied) -> list[Array]:
-    """The §1.2 sibling lowering as `graphed` sees it: one marked output per label, in
-    `graphed.labels` order (`compile_ir` refuses a `Varied`, §2.3d)."""
+    """Return the §1.2 sibling lowering as `graphed` sees it.
+
+    One marked output per label, in `graphed.labels` order (`compile_ir` refuses a `Varied`,
+    §2.3d).
+    """
     return [graphed.universe(v, label) for label in graphed.labels(v)]
 
 
 class ToyBackend:
-    """The m5 backend shape (`tests/frozen/frontend/m5/test_aggregate_plan.py`), reused verbatim so
-    the §7.2 seam anchor extends that call shape rather than a new one."""
+    """The m5 backend shape (`tests/frozen/frontend/m5/test_aggregate_plan.py`), reused verbatim.
+
+    So the §7.2 seam anchor extends that call shape rather than a new one.
+    """
 
     def op_form(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> str:
         return op
 
-    def eval_stage(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> object:
+    def eval_stage(
+        self, op: str, inputs: Sequence[object], params: Mapping[str, object]
+    ) -> object:
         if op == "add":
             return [a + b for a, b in zip(inputs[0], inputs[1], strict=True)]  # type: ignore[call-overload]
         return inputs[0]
@@ -89,7 +98,9 @@ class ListSource:
         raise AssertionError("the whole-dataset loader must never run during a plan")
 
     def partitions(self, steps_per_file: int = 1) -> tuple[Partition, ...]:
-        return tuple(Partition.blind("toy://list", "", s, steps_per_file) for s in range(steps_per_file))
+        return tuple(
+            Partition.blind("toy://list", "", s, steps_per_file) for s in range(steps_per_file)
+        )
 
     def read_partition(self, partition: Any, columns: Any, resources: Any) -> list[int]:
         part = partition.resolve(len(self.data))
@@ -99,8 +110,11 @@ class ListSource:
 
 @dataclass
 class ArraySource:
-    """A numpy-idiom `PartitionedSource` over `VECTOR`, so a VARIED program can reach a real
-    `Plan`/`ExecResult` through the §1.2 sibling lowering (one marked output per label)."""
+    """A numpy-idiom `PartitionedSource` over `VECTOR`.
+
+    So a VARIED program can reach a real `Plan`/`ExecResult` through the §1.2 sibling lowering (one
+    marked output per label).
+    """
 
     data: np.ndarray
     reads: list[tuple[int, int]] = field(default_factory=list)
@@ -109,7 +123,9 @@ class ArraySource:
         raise AssertionError("the whole-dataset loader must never run during a plan")
 
     def partitions(self, steps_per_file: int = 1) -> tuple[Partition, ...]:
-        return tuple(Partition.blind("toy://vector", "", s, steps_per_file) for s in range(steps_per_file))
+        return tuple(
+            Partition.blind("toy://vector", "", s, steps_per_file) for s in range(steps_per_file)
+        )
 
     def read_partition(self, partition: Any, columns: Any, resources: Any) -> np.ndarray:
         part = partition.resolve(len(self.data))
@@ -118,7 +134,10 @@ class ArraySource:
 
 
 def partitioned_vector_source() -> tuple[Session, Array, ArraySource]:
-    """A numpy-idiom session whose single source is partitioned (`aggregate_plan`'s precondition)."""
+    """Return a numpy-idiom session whose single source is partitioned.
+
+    That is `aggregate_plan`'s precondition.
+    """
     s = Session(NumpyBackend())
     src = ArraySource(VECTOR)
     x = s.source("x", form=NumpyForm(VECTOR.dtype, shape=(None,)), data=src)

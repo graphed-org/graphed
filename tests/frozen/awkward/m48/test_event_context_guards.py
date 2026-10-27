@@ -18,8 +18,10 @@ from graphed.awkward import gak
 
 
 def test_a_data_context_refuses_BOTH_vary_forms() -> None:
-    """Accepting a shift on data and dropping its labels at the fill would be the §2.5 silent
-    drop, so "data fills nominal-only" is structural for every context-borne registration."""
+    """Accepting a shift on data and dropping its labels at the fill would be the §2.5 silent drop.
+
+    So "data fills nominal-only" is structural for every context-borne registration.
+    """
     _s, data = events_context(is_data=True)
     with pytest.raises(GraphedError):
         graphed.vary(data, "pu", pu_weight(data, 1.0), is_weight=True, up=pu_weight(data, 1.1))
@@ -44,7 +46,8 @@ def test_the_context_reserves_no_names() -> None:
     assert isinstance(tree.weights, Array)
     assert isinstance(tree.vary, Array)
     assert tree["vary"].node_id == tree.vary.node_id  # string getitem IS field access
-    assert graphed.weight(tree) is None  # the verb is a module function; `.weights` is tree content
+    # the verb is a module function; `.weights` is tree content
+    assert graphed.weight(tree) is None
 
 
 def test_slice_and_int_subscripts_are_refused_naming_the_supported_forms() -> None:

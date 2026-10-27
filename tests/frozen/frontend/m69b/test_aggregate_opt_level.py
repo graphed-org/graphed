@@ -1,5 +1,8 @@
-"""`aggregate_plan(opt_level=)`: `1`, the default, is the optimized compile; `0` ships the 1:1 cone
-of the plan's outputs, write arrays and metadata arrays; any other value is refused."""
+"""`aggregate_plan(opt_level=)`: `1`, the default, is the optimized compile.
+
+`0` ships the 1:1 cone of the plan's outputs, write arrays and metadata arrays; any other value is
+refused.
+"""
 
 from __future__ import annotations
 
@@ -21,7 +24,9 @@ from graphed.write import PartWrite
 
 
 def _plan(*outputs: Array, **kw: Any) -> Plan[Any]:
-    return aggregate_plan(*outputs, reduce=fx.sums, combine=fx.add, empty=fx.zero, steps_per_file=2, **kw)
+    return aggregate_plan(
+        *outputs, reduce=fx.sums, combine=fx.add, empty=fx.zero, steps_per_file=2, **kw
+    )
 
 
 def _node_count(ir: bytes) -> int:
@@ -82,11 +87,16 @@ def test_the_default_is_the_optimized_compile() -> None:
     session, events = fx.record()
     outputs = fx.merged_pair(events)
     implicit = _plan(*outputs).process.ir
-    assert _plan(*outputs, opt_level=1).process.ir == implicit == bytes(compile_ir(session, *outputs).ir)
+    assert (
+        _plan(*outputs, opt_level=1).process.ir
+        == implicit
+        == bytes(compile_ir(session, *outputs).ir)
+    )
 
 
 _CHILD = (
-    "import sys; sys.path.insert(0, {here!r}); import m69b_opt_fixtures; m69b_opt_fixtures.emit_opt0_digest()"
+    "import sys; sys.path.insert(0, {here!r}); import m69b_opt_fixtures; "
+    "m69b_opt_fixtures.emit_opt0_digest()"
 )
 
 
@@ -105,7 +115,9 @@ def _child_digest(seed: str) -> list[str]:
 
 def test_opt0_ir_and_pickled_plan_do_not_depend_on_the_hash_seed() -> None:
     one, two = _child_digest("1"), _child_digest("2")
-    assert one[2] != two[2], "the seeds did not change str hashing, so the comparison below is dead"
+    assert one[2] != two[2], (
+        "the seeds did not change str hashing, so the comparison below is dead"
+    )
     assert one[:2] == two[:2]
 
 
@@ -117,7 +129,9 @@ def test_opt0_ir_and_pickled_plan_do_not_depend_on_the_hash_seed() -> None:
         pytest.param("merged", {}, id="w-and-w-times-1-by-default"),
     ],
 )
-def test_replay_of_a_capturing_plan_equals_its_run(tmp_path: Path, pair: str, kw: dict[str, int]) -> None:
+def test_replay_of_a_capturing_plan_equals_its_run(
+    tmp_path: Path, pair: str, kw: dict[str, int]
+) -> None:
     _s, events = fx.record()
     outputs = fx.merged_pair(events) if pair == "merged" else (events.w, events.w)
     plan = _plan(*outputs, store=str(tmp_path), **kw)

@@ -2,9 +2,10 @@
 
 ``run`` evaluates the lowered graph op-by-op (so it localizes a failure even when it happens deep
 inside a fused stage), wrapping the first failing op in a ``StageError`` carrying that op's exact
-provenance, its input forms, and the partition. At ``opt_level=0`` it also runs inter-op consistency
-assertions. This is a *debug* runner, not the M7 executor; it exists to prove the error-surfacing
-contract, including across a process boundary (the resulting ``StageError`` is picklable).
+provenance, its input forms, and the partition. At ``opt_level=0`` it also runs inter-op
+consistency assertions. This is a *debug* runner, not the M7 executor; it exists to prove the
+error-surfacing contract, including across a process boundary (the resulting ``StageError`` is
+picklable).
 """
 
 from __future__ import annotations
@@ -18,8 +19,11 @@ from .lowering import LoweredGraph, lower
 
 
 def _chain(lowered: LoweredGraph, node_id: int) -> tuple[SourceFrame, ...]:
-    """The user-frame lineage: the failing op first (the analysis line), then back along its primary
-    input to a source — a readable 'how this value was built' trail."""
+    """Return the user-frame lineage.
+
+    The failing op first (the analysis line), then back along its primary input to a source — a
+    readable 'how this value was built' trail.
+    """
     frames: list[SourceFrame] = []
     cur: int | None = node_id
     seen: set[int] = set()
@@ -31,7 +35,9 @@ def _chain(lowered: LoweredGraph, node_id: int) -> tuple[SourceFrame, ...]:
     return tuple(frames)
 
 
-def _stage_error(lowered: LoweredGraph, node_id: int, partition: str, exc: BaseException) -> StageError:
+def _stage_error(
+    lowered: LoweredGraph, node_id: int, partition: str, exc: BaseException
+) -> StageError:
     failing = lowered.op_for(node_id)
     input_forms = tuple(lowered.op_for(i).form for i in failing.input_ids)
     return StageError(
@@ -46,17 +52,26 @@ def _stage_error(lowered: LoweredGraph, node_id: int, partition: str, exc: BaseE
 
 
 def _assert_consistent(lowered: LoweredGraph, node_id: int, value: object, partition: str) -> None:
-    """An inter-op consistency check, only at opt_level=0 (a debug scaffold; richer dtype/shape
-    contracts are a tracked improvement)."""
+    """Check inter-op consistency, only at opt_level=0.
+
+    A debug scaffold; richer dtype/shape contracts are a tracked improvement.
+    """
     if value is None:
         raise _stage_error(
-            lowered, node_id, partition, AssertionError("op produced None (inter-op consistency check)")
+            lowered,
+            node_id,
+            partition,
+            AssertionError("op produced None (inter-op consistency check)"),
         )
 
 
-def run(session: Session, array: Array, *, opt_level: int = 1, partition: str = "sample") -> object:
-    """Execute the analysis reaching ``array`` on the session's source data, raising a `StageError`
-    (mapped to the user's analysis line) on the first failing op."""
+def run(
+    session: Session, array: Array, *, opt_level: int = 1, partition: str = "sample"
+) -> object:
+    """Execute the analysis reaching ``array`` on the session's source data.
+
+    Raise a `StageError` (mapped to the user's analysis line) on the first failing op.
+    """
     lowered = lower(session, array, opt_level=opt_level)
     backend = session.backend
 

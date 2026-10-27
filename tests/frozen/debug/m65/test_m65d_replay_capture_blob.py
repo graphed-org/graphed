@@ -1,4 +1,7 @@
-"""M65 D frozen suite, fixup 2: a captured blob whose bytes no longer hash to its name (plan-D D-2, D-6)."""
+"""M65 D frozen suite, fixup 2: a captured blob whose bytes no longer hash to its name.
+
+Plan-D D-2, D-6.
+"""
 
 from __future__ import annotations
 
@@ -41,7 +44,9 @@ def _captured(tmp_path: Path) -> tuple[Plan[Any], Array, gcp.Store]:
     ev = from_parquet(Session(AwkwardBackend()), "events", str(path))
     y = gak.sum(ev.x * 2.0, axis=None)
     root = tmp_path / "cap"
-    plan = aggregate_plan(y, reduce=_first, combine=_add, empty=_zero, steps_per_file=4, store=root)
+    plan = aggregate_plan(
+        y, reduce=_first, combine=_add, empty=_zero, steps_per_file=4, store=root
+    )
     SequentialRunner().run(plan)
     return plan, y, gcp.Store(str(root))
 

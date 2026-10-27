@@ -31,7 +31,9 @@ from graphed.core.execution import SequentialRunner
 
 @pytest.mark.parametrize("over", ["field", "record"])
 @pytest.mark.parametrize("label", list(ACCEPTED))
-def test_a_multi_axis_key_records_and_executes_as_eager_awkward_does(label: str, over: str) -> None:
+def test_a_multi_axis_key_records_and_executes_as_eager_awkward_does(
+    label: str, over: str
+) -> None:
     key = ACCEPTED[label]
     session, events = session_over()
     root, data = (events.x, DATA.x) if over == "field" else (events, DATA)
@@ -94,4 +96,6 @@ def test_every_key_accepted_today_records_the_same_op_params_and_boundary_flag()
         assert (node["kind"], node["name"], node["params"]) == expected
 
     assert ak.to_list(session.materialize(events[1:3])) == ak.to_list(DATA[1:3])
-    assert ak.to_list(session.materialize(events.x[events.x > 1.0])) == ak.to_list(DATA.x[DATA.x > 1.0])
+    assert ak.to_list(session.materialize(events.x[events.x > 1.0])) == ak.to_list(
+        DATA.x[DATA.x > 1.0]
+    )

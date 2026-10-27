@@ -1,5 +1,7 @@
-"""m55 §2 item 2: a `Varied` collection member must carry exactly the family being registered —
-`"nominal"` plus that family's labels — and is refused loudly otherwise.
+"""m55 §2 item 2.
+
+A `Varied` collection member must carry exactly the family being registered — `"nominal"` plus that
+family's labels — and is refused loudly otherwise.
 
 One leg per way a container acquires a foreign label: built ON a collection another family already
 varied (it inherits those labels), built with MEMBERS that read one (the loose form mints joint
@@ -59,6 +61,8 @@ def test_the_same_second_family_built_on_the_nominal_is_accepted() -> None:
     varied, hand = equivalence(second_family_program, "Jet", "MET")
 
     labels = ("nominal", "jes_up", "jes_down", "jer_up", "jer_down")
-    assert set(varied) == {(collection, label) for collection in ("Jet", "MET") for label in labels}
+    assert set(varied) == {
+        (collection, label) for collection in ("Jet", "MET") for label in labels
+    }
     assert varied == hand
     assert len(set(varied.values())) == len(varied)

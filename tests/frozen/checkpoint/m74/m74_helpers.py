@@ -1,5 +1,8 @@
-"""Importable pieces of the m74 suite: processes, codecs and builders that the tests and the ``python``
-scripts beside them share. Spies are module state, so the objects that read them pickle by name."""
+"""Importable pieces of the m74 suite.
+
+These are the processes, codecs and builders that the tests and the ``python`` scripts beside
+them share. Spies are module state, so the objects that read them pickle by name.
+"""
 
 from __future__ import annotations
 
@@ -15,7 +18,16 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, ClassVar
 
-from graphed.core import DurablePlan, DurablePlanV2, GraphStore, OpSpec, Partition, Plan, StageSpec, Task
+from graphed.core import (
+    DurablePlan,
+    DurablePlanV2,
+    GraphStore,
+    OpSpec,
+    Partition,
+    Plan,
+    StageSpec,
+    Task,
+)
 
 HERE = Path(__file__).resolve().parent
 T = 6
@@ -43,7 +55,12 @@ def partitions(n: int = T, uri: str = "mem://m74/events") -> tuple[Partition, ..
 
 def plan_of(process: Any, parts: Sequence[Partition] | None = None) -> Plan[Any]:
     parts = partitions() if parts is None else parts
-    return Plan(process=process, combine=add, empty=zero, tasks=tuple(Task(i, p) for i, p in enumerate(parts)))
+    return Plan(
+        process=process,
+        combine=add,
+        empty=zero,
+        tasks=tuple(Task(i, p) for i, p in enumerate(parts)),
+    )
 
 
 def plain(p: Partition) -> Partition:
@@ -105,7 +122,7 @@ def raising(p: Partition, r: Any) -> float:
     raise ValueError(f"bad partition {p.entry_start}")
 
 
-# ---- wrapper fidelity (T5) ------------------------------------------------------------------------
+# ---- wrapper fidelity (T5) ----------------------------------------------------------------------
 #: every call a Recorder saw, as ``(type(partition), partition, endpoint)``
 RECEIVED: list[tuple[type, Partition, str]] = []
 
@@ -125,7 +142,7 @@ class Recorder:
         return ("resolved", value)
 
 
-# ---- threads (T6) ---------------------------------------------------------------------------------
+# ---- threads (T6) -------------------------------------------------------------------------------
 #: the barrier the current T6 leg's calls hold on
 BARRIER: list[threading.Barrier] = []
 
@@ -136,7 +153,7 @@ class Barriered:
         return float(p.entry_start)
 
 
-# ---- codecs (T9) ----------------------------------------------------------------------------------
+# ---- codecs (T9) --------------------------------------------------------------------------------
 #: ``(pid, thread ident)`` of every CountingCodec decode
 DECODES: list[tuple[int, int]] = []
 
@@ -150,7 +167,7 @@ class CountingCodec:
         return pickle.loads(data)
 
 
-# ---- live partials (T10) --------------------------------------------------------------------------
+# ---- live partials (T10) ------------------------------------------------------------------------
 LIVE: dict[str, int] = {"now": 0, "peak": 0}
 
 
@@ -197,15 +214,19 @@ def leaf_float(p: Partition, r: Any) -> float:
     return 1e16 if p.entry_start == 0 else 1.0
 
 
-# ---- durable plans --------------------------------------------------------------------------------
+# ---- durable plans ------------------------------------------------------------------------------
 def ir_bytes() -> bytes:
     g = GraphStore()
     src = g.add_source("events", {"uri": "mem://m74/events"})
-    xchg = g.add_exchange([g.add_op("key", [src])], {"scheme": "hash", "key": "__joinkey__", "parts": 2})
+    xchg = g.add_exchange(
+        [g.add_op("key", [src])], {"scheme": "hash", "key": "__joinkey__", "parts": 2}
+    )
     return g.serialize(outputs=[g.add_reduction("sum", [xchg])])
 
 
-def durable(process: str, combine: str = "m74_helpers:add", empty: str = "m74_helpers:zero", n: int = T) -> DurablePlan:
+def durable(
+    process: str, combine: str = "m74_helpers:add", empty: str = "m74_helpers:zero", n: int = T
+) -> DurablePlan:
     return DurablePlan(
         ir=ir_bytes(),
         process=OpSpec.from_ref(process),
@@ -232,7 +253,12 @@ def staged(n_map: int = 4, n_dest: int = 2) -> DurablePlanV2:
             StageSpec(
                 kind="map_write",
                 process=OpSpec.from_ref("m74_helpers:stage_map"),
-                routing={"scheme": "hash", "key": "__joinkey__", "parts": n_dest, "backend_id": "toy/0"},
+                routing={
+                    "scheme": "hash",
+                    "key": "__joinkey__",
+                    "parts": n_dest,
+                    "backend_id": "toy/0",
+                },
                 tasks=tuple(Task(i, Partition("src", "Events", i, i + 1)) for i in range(n_map)),
             ),
             StageSpec(
@@ -250,14 +276,16 @@ def stage_reused(plan: DurablePlanV2) -> list[int]:
     return [stage.process.resolve().reused for stage in plan.stages]
 
 
-# ---- refusals (T4) --------------------------------------------------------------------------------
+# ---- refusals (T4) ------------------------------------------------------------------------------
 #: one entry per pickling of a Served
 PICKLED: list[str] = []
 
 
 class Served:
-    """Stands in for a histserv ``_Served``: tasks return receipts for server state, and pickling one
-    would create that state."""
+    """Stands in for a histserv ``_Served``.
+
+    Tasks return receipts for server state, and pickling one would create that state.
+    """
 
     def __init__(self, inner: Any) -> None:
         self.inner = inner
@@ -273,7 +301,7 @@ class Served:
         return self
 
 
-# ---- an importable object that resolves by name and whose reduce carries a uuid (T2 xiv) ----------
+# ---- an importable object that resolves by name and whose reduce carries a uuid (T2 xiv) --------
 def _kernel(tag: str) -> Kernel:
     return KERNEL
 
@@ -292,7 +320,8 @@ class Kernel:
 KERNEL = Kernel()
 
 
-# ---- awkward ---------------------------------------------------------------------------------------
+# ----
+# awkward ---------------------------------------------------------------------------------------
 #: a behavior dict a backend import ref names; ``__main__`` mixins register into it
 behavior: dict[Any, Any] = {}
 
@@ -311,7 +340,10 @@ def events(directory: str | os.PathLike[str]) -> list[str]:
     for i in range(2):
         path = os.path.join(directory, f"events-{i}.parquet")
         if not os.path.exists(path):
-            ak.to_parquet(ak.Array({"x": [3.0 * k + i for k in range(50)], "y": [k % 5 for k in range(50)]}), path)
+            ak.to_parquet(
+                ak.Array({"x": [3.0 * k + i for k in range(50)], "y": [k % 5 for k in range(50)]}),
+                path,
+            )
         paths.append(path)
     return paths
 
@@ -341,8 +373,12 @@ def agg_plan(paths: Sequence[str]) -> Plan[Any]:
     from graphed.awkward import AwkwardBackend, gak  # noqa: PLC0415
     from graphed.awkward.io import from_parquet  # noqa: PLC0415
 
-    ev = from_parquet(Session(AwkwardBackend()), "events", list(paths), open_files=False, steps_per_file=2)
-    return aggregate_plan(gak.sum((ev.x + ev.y) * 2), reduce=agg_reduce, combine=agg_combine, empty=agg_empty)
+    ev = from_parquet(
+        Session(AwkwardBackend()), "events", list(paths), open_files=False, steps_per_file=2
+    )
+    return aggregate_plan(
+        gak.sum((ev.x + ev.y) * 2), reduce=agg_reduce, combine=agg_combine, empty=agg_empty
+    )
 
 
 def _sf_load(payload: bytes, params: Any) -> str:
@@ -366,7 +402,11 @@ def service_events(paths: Sequence[str]) -> Any:
     from graphed.services import ServiceSpec  # noqa: PLC0415
 
     plugin = ExternalPlugin(
-        kind="m74_sf", content_hash=sha256_bytes, load=_sf_load, evaluate=_sf_scale, samples=_sf_samples
+        kind="m74_sf",
+        content_hash=sha256_bytes,
+        load=_sf_load,
+        evaluate=_sf_scale,
+        samples=_sf_samples,
     )
     s = Session(AwkwardBackend())
     s.declare_service(ServiceSpec("sf", "http"))
@@ -374,12 +414,19 @@ def service_events(paths: Sequence[str]) -> Any:
     return record_external(s, plugin, b"sf-v1", [ev.x], params={"service": "sf"})
 
 
-# ---- subprocesses ---------------------------------------------------------------------------------
+# ----
+# subprocesses ---------------------------------------------------------------------------------
 def run_script(
-    script: str, *args: str, seed: str = "1", path: Sequence[str | os.PathLike[str]] = (), timeout: float = 180.0
+    script: str,
+    *args: str,
+    seed: str = "1",
+    path: Sequence[str | os.PathLike[str]] = (),
+    timeout: float = 180.0,
 ) -> dict[str, Any]:
-    """Run ``python <script> <args>`` from this directory and return its last stdout line as JSON; ``path``
-    goes ahead of this directory on ``PYTHONPATH``."""
+    """Run ``python <script> <args>`` from this directory and return its last stdout line as JSON.
+
+    ``path`` goes ahead of this directory on ``PYTHONPATH``.
+    """
     full = {**os.environ, "PYTHONHASHSEED": seed}
     inherited = [p for p in full.get("PYTHONPATH", "").split(os.pathsep) if p]
     full["PYTHONPATH"] = os.pathsep.join([*map(str, path), str(HERE), *inherited])
@@ -394,24 +441,30 @@ def run_script(
     )
     lines = done.stdout.strip().splitlines()
     if done.returncode != 0 or not lines:
-        raise AssertionError(f"{script} {args} exited {done.returncode}:\n{done.stdout}\n{done.stderr}")
+        raise AssertionError(
+            f"{script} {args} exited {done.returncode}:\n{done.stdout}\n{done.stderr}"
+        )
     report: dict[str, Any] = json.loads(lines[-1])
     return report
 
 
 def fake_dist(root: str | os.PathLike[str], name: str, version: str) -> Path:
-    """A directory holding ``<name>-<version>.dist-info`` with a ``METADATA`` naming it."""
+    """Return a directory holding ``<name>-<version>.dist-info`` with a ``METADATA`` naming it."""
     where = Path(root) / f"{name}-{version}"
     info = where / f"{name}-{version}.dist-info"
     info.mkdir(parents=True, exist_ok=True)
-    (info / "METADATA").write_text(f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n", encoding="utf-8")
+    (info / "METADATA").write_text(
+        f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n", encoding="utf-8"
+    )
     return where
 
 
 def snapshot(root: str | os.PathLike[str]) -> dict[str, bytes]:
     """Every file under a directory store, by relative path."""
     base = Path(root)
-    return {str(p.relative_to(base)): p.read_bytes() for p in sorted(base.rglob("*")) if p.is_file()}
+    return {
+        str(p.relative_to(base)): p.read_bytes() for p in sorted(base.rglob("*")) if p.is_file()
+    }
 
 
 def journal_records(root: str) -> dict[str, list[dict[str, Any]]]:

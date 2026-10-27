@@ -1,10 +1,13 @@
-"""The user-facing :class:`Dashboard` (M37): start it, point an executor at ``dash.monitor``, open
-``dash.url``. It bundles a local :class:`DashboardServer` with a loopback :class:`NetworkMonitor`, so
-even a same-machine run streams over a real websocket (the network transport is always exercised).
+"""The user-facing :class:`Dashboard` (M37).
 
-Opt-in and passive (unlike dask's always-on Bokeh): nothing runs until ``start()``/``with``, and the
-monitor only observes — it never changes the run's result. ``control=True`` is the exception you ask
-for: the page's pause and cancel buttons then steer the attached run, and a cancel changes its result.
+Start it, point an executor at ``dash.monitor``, open ``dash.url``. It bundles a
+local :class:`DashboardServer` with a loopback :class:`NetworkMonitor`, so even a same-machine run
+streams over a real websocket (the network transport is always exercised).
+
+Opt-in and passive (unlike dask's always-on Bokeh): nothing runs until ``start()``/``with``, and
+the monitor only observes — it never changes the run's result. ``control=True`` is the exception
+you ask for: the page's pause and cancel buttons then steer the attached run, and a cancel changes
+its result.
 """
 
 from __future__ import annotations
@@ -22,7 +25,9 @@ if TYPE_CHECKING:
 
 
 class Dashboard:
-    """A live execution dashboard. Example::
+    """A live execution dashboard.
+
+    Example::
 
         with Dashboard(port=8888, profile=True) as dash:
             ProcessExecutor(monitor=dash.monitor).run(plan)   # or dash.attach(executor)
@@ -36,7 +41,12 @@ class Dashboard:
     """
 
     def __init__(
-        self, port: int = 0, host: str = "127.0.0.1", *, profile: bool = False, control: bool = False
+        self,
+        port: int = 0,
+        host: str = "127.0.0.1",
+        *,
+        profile: bool = False,
+        control: bool = False,
     ) -> None:
         self._server = DashboardServer(host, port, control=control)
         self._control = RunControl() if control else None
@@ -83,24 +93,32 @@ class Dashboard:
         return self._server.snapshot()
 
     def wait_for(self, *, finished: int, timeout: float = 10.0) -> dict[str, Any]:
-        """Poll until ``finished`` tasks have landed server-side (events traverse the websocket
-        asynchronously), then return the snapshot. Raises on timeout."""
+        """Poll until ``finished`` tasks have landed server-side, then return the snapshot.
+
+        Events traverse the websocket asynchronously. Raises on timeout.
+        """
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             snap = self._server.snapshot()
             if snap["stats"]["finished"] >= finished:
                 return snap
             time.sleep(0.02)
-        raise TimeoutError(f"only {self._server.snapshot()['stats']['finished']}/{finished} finished")
+        raise TimeoutError(
+            f"only {self._server.snapshot()['stats']['finished']}/{finished} finished"
+        )
 
     def attach(self, executor: Executor) -> Executor:
-        """Set ``executor.monitor`` (and ``executor.control`` with ``control=True``). Refuses an
-        executor without those attributes, since a new attribute would be one nothing reads."""
+        """Set ``executor.monitor`` (and ``executor.control`` with ``control=True``).
+
+        Refuses an executor without those attributes, since a new attribute would be one nothing
+        reads.
+        """
         names = ("monitor", "control") if self._control is not None else ("monitor",)
         missing = [n for n in names if not hasattr(executor, n)]
         if missing:
             raise TypeError(
-                f"{type(executor).__name__} takes no {' or '.join(missing)}; Dashboard.attach cannot wire it"
+                f"{type(executor).__name__} takes no {' or '.join(missing)}; Dashboard.attach "
+                "cannot wire it"
             )
         executor.monitor = self.monitor  # type: ignore[attr-defined]
         if self._control is not None:

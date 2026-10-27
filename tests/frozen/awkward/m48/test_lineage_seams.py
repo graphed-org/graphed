@@ -61,15 +61,20 @@ def test_reindex_to_is_the_identity_for_a_value_already_at_the_target_or_context
     result = graphed.reindex_to(at_target, sel)
     assert list(graphed.labels(result)) == list(graphed.labels(at_target))
     for label in graphed.labels(at_target):
-        assert graphed.universe(result, label).node_id == graphed.universe(at_target, label).node_id
+        assert (
+            graphed.universe(result, label).node_id == graphed.universe(at_target, label).node_id
+        )
     context_free = root.MET.pt  # read from the SOURCE, not through the context
     assert graphed.context_of(context_free) is None
     assert graphed.reindex_to(context_free, shifted).node_id == context_free.node_id
 
 
 def test_reindex_to_raises_when_the_values_handle_is_a_DESCENDANT_or_divergent() -> None:
-    """The §2.1(b) direction rule: a mask has no inverse, so nothing carries a selection-scoped
-    value back up to the parent's row space."""
+    """The §2.1(b) direction rule.
+
+    A mask has no inverse, so nothing carries a selection-scoped value back up to the parent's row
+    space.
+    """
     _s, shifted, _mask, sel, _root = _varied_mask_program()
     with pytest.raises(GraphedError, match="descendant"):
         graphed.reindex_to(sel.MET.pt, shifted)
@@ -81,8 +86,11 @@ def test_reindex_to_raises_when_the_values_handle_is_a_DESCENDANT_or_divergent()
 
 
 def test_link_kind_1_a_mask_derivation_makes_an_UNVARIED_value_varied() -> None:
-    """Each member is re-indexed by THAT label's own mask; an implementation that unifies handles
-    but never re-indexes gets the row count wrong for every non-nominal label."""
+    """Each member is re-indexed by THAT label's own mask.
+
+    An implementation that unifies handles but never re-indexes gets the row count wrong for every
+    non-nominal label.
+    """
     session, shifted, mask, sel, _root = _varied_mask_program()
     value = shifted.Photon.pt  # unvaried: Photon is not a collection the shift names (§2.6b)
     assert not isinstance(value, graphed.Varied)
@@ -97,7 +105,9 @@ def test_link_kind_1_a_mask_derivation_makes_an_UNVARIED_value_varied() -> None:
 def test_link_kind_2_a_vary_link_is_the_IDENTITY_and_leaves_the_labels_alone() -> None:
     """The row space is unchanged across a `vary` link; only registrations differ."""
     _s, events = events_context()
-    weighted = graphed.vary(events, "pu", pu_weight(events, 1.0), is_weight=True, up=pu_weight(events, 1.1))
+    weighted = graphed.vary(
+        events, "pu", pu_weight(events, 1.0), is_weight=True, up=pu_weight(events, 1.1)
+    )
     value = events.MET.pt
     assert graphed.reindex_to(value, weighted).node_id == value.node_id
 
@@ -107,8 +117,11 @@ def test_link_kind_2_a_vary_link_is_the_IDENTITY_and_leaves_the_labels_alone() -
 
 
 def test_link_kind_3_a_projection_link_returns_an_UNVARIED_value_with_no_labels() -> None:
-    """The rule §6.1d's bare-`hist` anchor depends on: a projection link RESETS the accumulated
-    label set, so the fill computes its label set AFTER the lineage step, not before."""
+    """The rule §6.1d's bare-`hist` anchor depends on.
+
+    A projection link RESETS the accumulated label set, so the fill computes its label set AFTER
+    the lineage step, not before.
+    """
     session, _shifted, _mask, sel, _root = _varied_mask_program()
     child = graphed.nominal(sel)
     value = sel.Jet.pt

@@ -1,6 +1,9 @@
-"""m68c §3.3 build-time refusals: a size-driven repartition, a post-join read of a source, a chunk
-partial consumed on either side of the barrier (or left unfolded at a join output), and a grouped
-right/outer join, each refused when the plan is built."""
+"""m68c §3.3 build-time refusals.
+
+A size-driven repartition, a post-join read of a source, a chunk partial consumed on either side of
+the barrier (or left unfolded at a join output), and a grouped right/outer join, each refused when
+the plan is built.
+"""
 
 from __future__ import annotations
 
@@ -30,7 +33,9 @@ def test_a_post_join_operation_reading_a_source_directly_is_refused() -> None:
 
 def _join_sum_before() -> Any:
     ev, lu = two_sources()
-    return graphed.join_plan(graphed.join(gak.with_field(ev, ev.x / gak.sum(ev.x), "y"), lu, on=["run"]))
+    return graphed.join_plan(
+        graphed.join(gak.with_field(ev, ev.x / gak.sum(ev.x), "y"), lu, on=["run"])
+    )
 
 
 def _join_sum_after() -> Any:
@@ -46,7 +51,9 @@ def _join_sum_unfolded() -> Any:
 
 def _shuffle_sum_before() -> Any:
     ev = one_source()
-    return graphed.shuffle_plan(graphed.repartition(gak.with_field(ev, ev.x / gak.sum(ev.x), "y"), n=2), **FOLD)
+    return graphed.shuffle_plan(
+        graphed.repartition(gak.with_field(ev, ev.x / gak.sum(ev.x), "y"), n=2), **FOLD
+    )
 
 
 def _shuffle_sum_after() -> Any:
@@ -55,7 +62,14 @@ def _shuffle_sum_after() -> Any:
 
 
 @pytest.mark.parametrize(
-    "build", [_join_sum_before, _join_sum_after, _join_sum_unfolded, _shuffle_sum_before, _shuffle_sum_after]
+    "build",
+    [
+        _join_sum_before,
+        _join_sum_after,
+        _join_sum_unfolded,
+        _shuffle_sum_before,
+        _shuffle_sum_after,
+    ],
 )
 def test_a_chunk_partial_is_refused(build: Any) -> None:
     graphed.shuffle_plan(gak.sum(graphed.repartition(one_source(), n=2).x), **FOLD)

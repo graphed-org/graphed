@@ -52,9 +52,11 @@ def _leaf_columns(form: object, path: tuple[str, ...] = ()) -> dict[str, str]:
 
 
 def _structural_paths(form: object, path: tuple[str, ...] = ()) -> dict[str, str]:
-    """Map each STRUCTURAL buffer's form_key (list offsets / index / option masks) -> the dotted
-    path it shapes. The outermost event structure (empty path) carries no column to read, so it is
-    deliberately absent."""
+    """Map each STRUCTURAL buffer's form_key to the dotted path it shapes.
+
+    Structural buffers are list offsets / index / option masks. The outermost event structure
+    (empty path) carries no column to read, so it is deliberately absent.
+    """
     out: dict[str, str] = {}
     if getattr(form, "is_record", False):
         for field, content in zip(form.fields, form.contents, strict=True):  # type: ignore[attr-defined]
@@ -67,10 +69,14 @@ def _structural_paths(form: object, path: tuple[str, ...] = ()) -> dict[str, str
     return out
 
 
-def _replay(arrays: Sequence[Array], on_fail: str) -> tuple[dict[int, tuple[object, object, str]], bool]:
-    """Run the recorded graph of every output on ONE set of reporting typetracers, so each report is
-    the union of the outputs' touches. Returns per-source (report, form, name) keyed by source node
-    id, plus whether an opaque op forced conservative projection."""
+def _replay(
+    arrays: Sequence[Array], on_fail: str
+) -> tuple[dict[int, tuple[object, object, str]], bool]:
+    """Run the recorded graph of every output on ONE set of reporting typetracers.
+
+    So each report is the union of the outputs' touches. Returns per-source (report, form, name)
+    keyed by source node id, plus whether an opaque op forced conservative projection.
+    """
     if not arrays:
         raise ValueError("projection needs at least one output array")
     session = arrays[0].session
@@ -98,9 +104,9 @@ def _replay(arrays: Sequence[Array], on_fail: str) -> tuple[dict[int, tuple[obje
         # The stand-in is a typetracer of the node's RECORDED form (M23 `record_external(form=)`):
         # a package recording its own External family may declare a type its first input does not
         # have, and a downstream op is well-typed against that declaration alone. A recorded form
-        # from another backend (graphed-histogram's HistogramForm) has no typetracer -> first input.
-        # `eval_stage` re-wraps every operand with the backend's behavior, so the bare typetracer
-        # is enough — a behavior property on the External's output still resolves.
+        # from another backend (graphed-histogram's HistogramForm) has no typetracer -> first
+        # input. `eval_stage` re-wraps every operand with the backend's behavior, so the bare
+        # typetracer is enough — a behavior property on the External's output still resolves.
         form = session.form_of(nid)
         return form.tt if isinstance(form, AwkwardForm) else inputs[0]
 
@@ -137,24 +143,31 @@ def project(array: Array, *, on_fail: str = "raise") -> Projection:
 
 @expanding
 def project_buffers(array: Array, *, on_fail: str = "raise") -> BufferProjection:
-    """Compute, per source, each needed column with its :class:`graphed.BufferNeed`
-    (metadata-only).
+    """Compute each source's needed columns with their :class:`graphed.BufferNeed`.
+
+    Metadata-only.
 
     ``DATA`` marks columns whose leaf values are read. ``OFFSETS`` marks paths whose list/option/
     index STRUCTURE alone is needed (a multiplicity, a mask) with no leaf data beneath them — the
     truthful, non-empty answer for a count-only analysis, which the column-level `project`
-    necessarily reports as the empty set."""
+    necessarily reports as the empty set.
+    """
     return _buffers(*_replay([array], on_fail))
 
 
 @expanding
 def project_buffers_many(arrays: Sequence[Array], *, on_fail: str = "raise") -> BufferProjection:
-    """:func:`project_buffers` for several outputs of one Session at once: the union of their
-    needs, from one reporting typetracer per source rather than one per source per output."""
+    """:func:`project_buffers` for several outputs of one Session at once.
+
+    The union of their needs, from one reporting typetracer per source rather than one per source
+    per output.
+    """
     return _buffers(*_replay(arrays, on_fail))
 
 
-def _buffers(reports: dict[int, tuple[object, object, str]], conservative: bool) -> BufferProjection:
+def _buffers(
+    reports: dict[int, tuple[object, object, str]], conservative: bool
+) -> BufferProjection:
     read_buffers: dict[str, dict[str, BufferNeed]] = {}
     for report, form, name in reports.values():
         leaf_map = _leaf_columns(form)

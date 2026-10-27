@@ -1,5 +1,6 @@
-"""M39/M40 — ``graphed.shuffle``'s input-validation raises (plan guards in ``repartition``,
-``join``, ``shuffle_plan``, ``join_plan``).
+"""M39/M40 — ``graphed.shuffle``'s input-validation raises.
+
+These are the plan guards in ``repartition``, ``join``, ``shuffle_plan``, ``join_plan``.
 
 The frozen M39/M40 shape suites build only VALID plans, so these guard branches — wrong scheme
 kwargs, a cross-session join, a graph missing its Exchange/Join boundary, the wrong partitioned-
@@ -45,9 +46,11 @@ class _ToyForm:
 
 
 class ToyBackend:
-    """Minimal ``Backend`` + ``ShuffleBackend`` (mirrors ``tests/frozen/frontend/m39/
-    shuffle_backends.py``'s ``ToyBackend``, extended with the join-family ``op_form`` arms so a
-    self-join records over it too)."""
+    """Minimal ``Backend`` + ``ShuffleBackend``.
+
+    It mirrors ``tests/frozen/frontend/m39/shuffle_backends.py``'s ``ToyBackend``, extended with
+    the join-family ``op_form`` arms so a self-join records over it too.
+    """
 
     identity = "toy/0"
 
@@ -56,7 +59,9 @@ class ToyBackend:
             return inputs[0] if inputs else _ToyForm(op)
         return _ToyForm(op)
 
-    def eval_stage(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> object:
+    def eval_stage(
+        self, op: str, inputs: Sequence[object], params: Mapping[str, object]
+    ) -> object:
         return inputs[0]
 
     def boundary_ops(self) -> frozenset[str]:
@@ -106,7 +111,9 @@ class ListSource:
         raise AssertionError("the whole-dataset loader must never run during a plan")
 
     def partitions(self, steps_per_file: int = 1) -> tuple[Partition, ...]:
-        return tuple(Partition.blind("toy://list", "", s, steps_per_file) for s in range(steps_per_file))
+        return tuple(
+            Partition.blind("toy://list", "", s, steps_per_file) for s in range(steps_per_file)
+        )
 
     def read_partition(self, partition: Any, columns: Any, resources: Any) -> Block:
         part = partition.resolve(len(self.data))
@@ -146,7 +153,11 @@ def test_shuffle_plan_without_an_exchange_raises_type_error() -> None:
     arr = s.source("x", form=_ToyForm("f"), data=ListSource(_rows(4))).reduce("sum")
     with pytest.raises(TypeError, match="needs a repartition Exchange"):
         graphed.shuffle_plan(
-            arr, reduce=lambda vs: vs[0], combine=lambda a, b: a, empty=lambda: None, backend=ToyBackend
+            arr,
+            reduce=lambda vs: vs[0],
+            combine=lambda a, b: a,
+            empty=lambda: None,
+            backend=ToyBackend,
         )
 
 
@@ -160,7 +171,11 @@ def test_shuffle_plan_reading_two_partitioned_sources_raises_type_error() -> Non
     output = graphed.repartition(s.record_op("add", [x, y]), by="__joinkey__").reduce("sum")
     with pytest.raises(TypeError, match=r"exactly one partitioned source; the output reads 2"):
         graphed.shuffle_plan(
-            output, reduce=lambda vs: vs[0], combine=lambda a, b: a, empty=lambda: None, backend=ToyBackend
+            output,
+            reduce=lambda vs: vs[0],
+            combine=lambda a, b: a,
+            empty=lambda: None,
+            backend=ToyBackend,
         )
 
 
@@ -169,9 +184,15 @@ def test_shuffle_plan_ignores_a_source_its_output_does_not_read() -> None:
     unused = ListSource(_rows(2))
     s.source("unused", form=_ToyForm("f"), data=unused)
     read = ListSource(_rows(4))
-    output = graphed.repartition(s.source("x", form=_ToyForm("f"), data=read), by="__joinkey__").reduce("sum")
+    output = graphed.repartition(
+        s.source("x", form=_ToyForm("f"), data=read), by="__joinkey__"
+    ).reduce("sum")
     plan = graphed.shuffle_plan(
-        output, reduce=lambda vs: len(vs[0]), combine=lambda a, b: a + b, empty=lambda: 0, backend=ToyBackend
+        output,
+        reduce=lambda vs: len(vs[0]),
+        combine=lambda a, b: a + b,
+        empty=lambda: 0,
+        backend=ToyBackend,
     )
     assert SequentialRunner().run(plan).value == 4
 
@@ -188,7 +209,7 @@ def test_join_plan_without_a_join_boundary_raises_type_error() -> None:
         graphed.join_plan(output, backend=ToyBackend)
 
 
-# ---- join_plan: needs exactly two partitioned sources (a self-join has only one) -----------------
+# ---- join_plan: needs exactly two partitioned sources (a self-join has only one) ----------------
 
 
 def test_join_plan_self_join_has_one_partitioned_source_raises_type_error() -> None:
@@ -209,7 +230,9 @@ def test_join_plan_ignores_a_source_the_join_does_not_read() -> None:
         s.source("right", form=_ToyForm("f"), data=right),
         on=["__joinkey__"],
     )
-    assert [st.kind for st in graphed.join_plan(joined, backend=ToyBackend).stages].count("map_write") == 2
+    assert [st.kind for st in graphed.join_plan(joined, backend=ToyBackend).stages].count(
+        "map_write"
+    ) == 2
 
 
 def test_aggregate_plan_ignores_a_source_its_output_does_not_read() -> None:

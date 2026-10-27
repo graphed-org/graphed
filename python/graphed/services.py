@@ -2,9 +2,10 @@
 
 A :class:`ServiceSpec` is the requirement (``name`` nodes reference, ``kind`` a site table matches,
 ``check`` the readiness rule, ``ports`` a managed instance may bind) plus an optional
-:class:`Launch` recipe. A ``Session`` holds the declared specs (``declare_service``), a node names one
-through ``params["service"]``, and ``Plan``/``DurablePlan``/the preservation bundle carry the specs
-the graph references. The endpoint a run reaches a service at is environment, never graph identity:
+:class:`Launch` recipe. A ``Session`` holds the declared specs (``declare_service``), a node names
+one through ``params["service"]``, and ``Plan``/``DurablePlan``/the preservation bundle carry the
+specs the graph references. The endpoint a run reaches a service at is environment, never graph
+identity:
 :func:`bind_services` hands it to a plan's process after the IR is fixed, :func:`resolve_services`
 hands the run's value back through the same parts, and ``RunReport.endpoints`` records it as run
 provenance.
@@ -37,9 +38,12 @@ def _read_only(mapping: Mapping[str, Any]) -> Mapping[str, Any]:
 
 @dataclass(frozen=True)
 class Launch:
-    """How to start a managed instance: ``argv`` templates (``{port}``, ``{host}``, ``{python}``),
-    an optional ``image`` (a cvmfs path or registry ref), staged ``inputs``, ``env`` and
-    ``resources`` (``cpus``/``memory_mb``/``gpus``)."""
+    """How to start a managed instance.
+
+    ``argv`` templates (``{port}``, ``{host}``, ``{python}``), an optional ``image`` (a cvmfs path
+    or registry ref), staged ``inputs``, ``env`` and ``resources``
+    (``cpus``/``memory_mb``/``gpus``).
+    """
 
     argv: tuple[str, ...]
     image: str | None = None
@@ -48,6 +52,7 @@ class Launch:
     resources: Mapping[str, float] = field(default_factory=lambda: MappingProxyType({}))
 
     def __post_init__(self) -> None:
+        """Freeze the argument and mapping fields."""
         object.__setattr__(self, "argv", tuple(self.argv))
         object.__setattr__(self, "inputs", tuple(self.inputs))
         object.__setattr__(self, "env", _read_only(self.env))
@@ -55,9 +60,11 @@ class Launch:
 
     def __reduce__(self) -> tuple[Any, ...]:
         # a mappingproxy does not pickle; the constructor re-wraps the plain dicts
+        """Pickle with the mappings as plain dicts."""
         return (Launch, (self.argv, self.image, self.inputs, dict(self.env), dict(self.resources)))
 
     def __hash__(self) -> int:  # a mappingproxy does not hash
+        """Hash the fields, the mappings by their items."""
         return hash(
             (
                 self.argv,
@@ -69,6 +76,7 @@ class Launch:
         )
 
     def to_json(self) -> dict[str, Any]:
+        """Return the launch as a JSON-ready dict."""
         return {
             "argv": list(self.argv),
             "env": dict(sorted(self.env.items())),
@@ -79,13 +87,16 @@ class Launch:
 
     @classmethod
     def from_json(cls, doc: Mapping[str, Any]) -> Launch:
+        """Read a launch :meth:`to_json` wrote."""
         return cls(**doc)
 
 
 @dataclass(frozen=True)
 class ServiceSpec:
-    """A service an analysis needs, by ``name``; ``launch`` is how to start one when no endpoint is
-    given (``None``: an external service only)."""
+    """A service an analysis needs, by ``name``.
+
+    ``launch`` is how to start one when no endpoint is given (``None``: an external service only).
+    """
 
     name: str
     kind: str
@@ -95,10 +106,12 @@ class ServiceSpec:
     timeout_s: float = 600.0
 
     def __post_init__(self) -> None:
+        """Normalize ``ports`` to a pair of ints."""
         low, high = self.ports
         object.__setattr__(self, "ports", (int(low), int(high)))
 
     def to_json(self) -> dict[str, Any]:
+        """Return the spec as a JSON-ready dict."""
         return {
             "check": self.check,
             "kind": self.kind,
@@ -110,31 +123,43 @@ class ServiceSpec:
 
     @classmethod
     def from_json(cls, doc: Mapping[str, Any]) -> ServiceSpec:
+        """Read a spec :meth:`to_json` wrote."""
         launch = doc["launch"]
         return cls(**{**doc, "launch": None if launch is None else Launch.from_json(launch)})
 
 
-class UnboundService(GraphedError):
-    """Nodes name services no endpoint was bound for; ``names`` lists them, ``name`` is the first."""
+class UnboundServiceError(GraphedError):
+    """Nodes name services no endpoint was bound for.
+
+    ``names`` lists them, ``name`` is the first.
+    """
 
     def __init__(self, *names: str) -> None:
+        """Name the services that have no endpoint, with how to bind them."""
         self.names = names
         self.name = names[0]
         listed = ", ".join(map(repr, names))
         endpoints = ", ".join(f"{name!r}: 'scheme://host:port'" for name in names)
         has = f"service {listed} has" if len(names) == 1 else f"services {listed} have"
         super().__init__(
-            f"{has} no endpoint: bind with graphed.services.bind_services(plan, {{{endpoints}}}), or run"
-            " the plan through an executor that resolves Plan.services"
+            f"{has} no endpoint: bind with graphed.services.bind_services(plan, {{{endpoints}}}), "
+            "or run the plan through an executor that resolves Plan.services"
         )
 
     def __reduce__(self) -> tuple[Any, ...]:
-        return (UnboundService, self.names)
+        """Pickle by the service names."""
+        return (UnboundServiceError, self.names)
+
+
+# The pre-0.0.10 name, kept for graphed-executors and graphed-histogram, which still import it.
+UnboundService = UnboundServiceError
 
 
 def split_endpoint(endpoint: str) -> tuple[str, str]:
-    """``"grpcs://host:443"`` -> ``("grpcs", "host:443")``; anything but ``scheme://host:port`` with a
-    scheme in :data:`SCHEMES` is refused."""
+    """``"grpcs://host:443"`` -> ``("grpcs", "host:443")``.
+
+    Anything but ``scheme://host:port`` with a scheme in :data:`SCHEMES` is refused.
+    """
     parts = urlsplit(endpoint)
     try:
         port = parts.port
@@ -148,35 +173,49 @@ def split_endpoint(endpoint: str) -> tuple[str, str]:
         or endpoint != f"{parts.scheme}://{parts.netloc}"
     ):
         raise ValueError(
-            f"an endpoint is scheme://host:port with a scheme in {', '.join(SCHEMES)}; got {endpoint!r}"
+            f"an endpoint is scheme://host:port with a scheme in {', '.join(SCHEMES)}; got "
+            f"{endpoint!r}"
         )
     return parts.scheme, parts.netloc
 
 
 @runtime_checkable
 class Bindable(Protocol):
-    """A plan part that takes run endpoints: returns a bound copy, never binds in place. A part that
-    calls a service raises :class:`UnboundService` naming it when ``endpoints`` lacks the name and the
-    part holds no endpoint of its own, so :func:`require_bound` sees every service a part needs."""
+    """A plan part that takes run endpoints: returns a bound copy, never binds in place.
 
-    def bind_services(self, endpoints: Mapping[str, str]) -> Any: ...
+    A part that calls a service raises :class:`UnboundServiceError` naming it when ``endpoints``
+    lacks the name and the part holds no endpoint of its own, so :func:`require_bound` sees every
+    service a part needs.
+    """
+
+    def bind_services(self, endpoints: Mapping[str, str]) -> Any:
+        """Return this part with ``endpoints`` bound in."""
+        ...
 
 
 @runtime_checkable
 class Resolvable(Protocol):
-    """A plan part that turns a run's value into its final form while the run's services are up
-    (a receipt into a snapshot, say): returns the resolved value, never resolves in place."""
+    """A plan part that turns a run's value into its final form while services are up.
 
-    def resolve_services(self, value: Any) -> Any: ...
+    A receipt into a snapshot, say; it returns the resolved value, never resolves in place.
+    """
+
+    def resolve_services(self, value: Any) -> Any:
+        """Return ``value`` in its final form."""
+        ...
 
 
 def referenced_services(
     session: Session, nodes: Iterable[Mapping[str, Any]], names: Iterable[str] | None = None
 ) -> tuple[ServiceSpec, ...]:
-    """The ``session``'s specs named by the External ``nodes``' ``params["service"]`` and by
-    ``names``, in name order; an undeclared name is refused."""
+    """Return the ``session``'s specs the External ``nodes`` and ``names`` name.
+
+    The nodes name them by ``params["service"]``; in name order; an undeclared name is refused.
+    """
     named = {
-        str(n["params"]["service"]) for n in nodes if n["kind"] == "external" and "service" in n["params"]
+        str(n["params"]["service"])
+        for n in nodes
+        if n["kind"] == "external" and "service" in n["params"]
     }
     return tuple(session.service_for(name) for name in sorted(named.union(names or ())))
 
@@ -184,9 +223,13 @@ def referenced_services(
 def bind_externals(
     externals: Iterable[tuple[str, Any]], endpoints: Mapping[str, str]
 ) -> tuple[tuple[str, Any], ...]:
-    """A plan process's ``(key, evaluator)`` pairs with each :class:`Bindable` evaluator bound."""
+    """Return a plan process's ``(key, evaluator)`` pairs.
+
+    Each :class:`Bindable` evaluator is bound.
+    """
     return tuple(
-        (key, fn.bind_services(endpoints) if isinstance(fn, Bindable) else fn) for key, fn in externals
+        (key, fn.bind_services(endpoints) if isinstance(fn, Bindable) else fn)
+        for key, fn in externals
     )
 
 
@@ -195,9 +238,11 @@ def _stage_processes(plan: DurablePlanV2) -> tuple[Any, ...]:
 
 
 def require_bound(plan: Plan[Any] | DurablePlanV2) -> None:
-    """Raise :class:`UnboundService` naming every service ``plan``'s process (a ``DurablePlanV2``'s
-    stage processes) has no endpoint for; a runner calls it before its first task. A plan without
-    ``services`` returns at once."""
+    """Raise :class:`UnboundServiceError` naming every service ``plan`` has no endpoint for.
+
+    The plan's process (a ``DurablePlanV2``'s stage processes) names them; a runner calls it before
+    its first task. A plan without ``services`` returns at once.
+    """
     if not plan.services:
         return
     from .core.plan import DurablePlanV2  # noqa: PLC0415  (core.plan imports this module)
@@ -212,13 +257,14 @@ def _require_parts(parts: Sequence[Bindable]) -> None:
         try:
             for part in parts:
                 part.bind_services(missing)
-        except UnboundService as err:
-            if err.name in missing:  # a part refusing a name it was handed breaks the Bindable contract
+        except UnboundServiceError as err:
+            # a part refusing a name it was handed breaks the Bindable contract
+            if err.name in missing:
                 raise
             missing[err.name] = "tcp://unbound:0"
             continue
         if missing:
-            raise UnboundService(*sorted(missing))
+            raise UnboundServiceError(*sorted(missing))
         return
 
 
@@ -226,10 +272,15 @@ def _require_parts(parts: Sequence[Bindable]) -> None:
 def bind_services(plan: DurablePlanV2, endpoints: Mapping[str, str]) -> DurablePlanV2: ...
 @overload
 def bind_services(plan: Plan[R], endpoints: Mapping[str, str]) -> Plan[R]: ...
-def bind_services(plan: Plan[R] | DurablePlanV2, endpoints: Mapping[str, str]) -> Plan[R] | DurablePlanV2:
-    """``plan`` with ``endpoints`` (service name -> ``scheme://host:port``) bound into its process (a
-    ``DurablePlanV2``: into each stage process, as ``OpSpec.live``, so bytes and task ids stay); the
-    same plan when nothing has a ``bind_services`` hook. Every endpoint is checked first."""
+def bind_services(
+    plan: Plan[R] | DurablePlanV2, endpoints: Mapping[str, str]
+) -> Plan[R] | DurablePlanV2:
+    """Return ``plan`` with ``endpoints`` bound into its process.
+
+    ``endpoints`` maps service name -> ``scheme://host:port``; a ``DurablePlanV2`` binds into each
+    stage process, as ``OpSpec.live``, so bytes and task ids stay. The same plan when nothing has a
+    ``bind_services`` hook. Every endpoint is checked first.
+    """
     for endpoint in endpoints.values():
         split_endpoint(endpoint)
     from .core.plan import DurablePlanV2, OpSpec  # noqa: PLC0415  (core.plan imports this module)
@@ -240,7 +291,8 @@ def bind_services(plan: Plan[R] | DurablePlanV2, endpoints: Mapping[str, str]) -
             op, fn = stage.process, stage.process.resolve()
             if isinstance(fn, Bindable):
                 stage = replace(
-                    stage, process=OpSpec(op.kind, op.ref, op.blob_b64, live=fn.bind_services(endpoints))
+                    stage,
+                    process=OpSpec(op.kind, op.ref, op.blob_b64, live=fn.bind_services(endpoints)),
                 )
             stages.append(stage)
         return replace(plan, stages=tuple(stages))
@@ -254,10 +306,13 @@ def resolve_services(plan: DurablePlanV2, value: Any) -> Any: ...
 @overload
 def resolve_services(plan: Plan[R], value: R) -> R: ...
 def resolve_services(plan: Plan[R] | DurablePlanV2, value: Any) -> Any:
-    """``value``, a run of ``plan``'s, resolved through its process (a ``DurablePlanV2``: through each
-    stage process in stage order); ``value`` itself when nothing has a ``resolve_services`` hook. A
-    runner that holds the run's services calls it at the end of the run, before they close
-    (``SequentialRunner`` holds none and does not); it walks the parts :func:`bind_services` reaches."""
+    """Return ``value``, a run of ``plan``'s, resolved through its process.
+
+    A ``DurablePlanV2`` resolves through each stage process in stage order; ``value`` itself when
+    nothing has a ``resolve_services`` hook. A runner that holds the run's services calls it at the
+    end of the run, before they close (``SequentialRunner`` holds none and does not); it walks the
+    parts :func:`bind_services` reaches.
+    """
     from .core.plan import DurablePlanV2  # noqa: PLC0415  (core.plan imports this module)
 
     parts = _stage_processes(plan) if isinstance(plan, DurablePlanV2) else (plan.process,)
@@ -273,7 +328,7 @@ __all__ = [
     "Launch",
     "Resolvable",
     "ServiceSpec",
-    "UnboundService",
+    "UnboundServiceError",
     "bind_externals",
     "bind_services",
     "referenced_services",

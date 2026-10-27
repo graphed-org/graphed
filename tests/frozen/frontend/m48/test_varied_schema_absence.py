@@ -43,7 +43,7 @@ class _CollectingMonitor:
 
 
 def _varied_run() -> tuple[Plan[list[float]], ExecResult[list[float]], _CollectingMonitor]:
-    """A varied program lowered to siblings — one marked output per label — and executed."""
+    """Return a varied program lowered to siblings — one marked output per label — and executed."""
     _s, x, _src = partitioned_vector_source()
     varied = loose_varied(x)
     outputs = sibling_outputs(varied)
@@ -60,7 +60,10 @@ def _varied_run() -> tuple[Plan[list[float]], ExecResult[list[float]], _Collecti
 
 
 def _plain_plan() -> Plan[list[float]]:
-    """The same analysis with no `vary`: the three universes' arrays built plainly in a fresh session."""
+    """Return the same analysis with no `vary`.
+
+    The three universes' arrays built plainly in a fresh session.
+    """
     _s, x, _src = partitioned_vector_source()
     return graphed.aggregate_plan(
         x,
@@ -77,7 +80,9 @@ def test_plan_schema_is_unchanged_by_a_varied_program() -> None:
     varied, _result, _monitor = _varied_run()
     plain = _plain_plan()
     assert type(varied) is type(plain)
-    assert {f.name for f in dataclasses.fields(varied)} == {f.name for f in dataclasses.fields(plain)}
+    assert {f.name for f in dataclasses.fields(varied)} == {
+        f.name for f in dataclasses.fields(plain)
+    }
     assert vars(varied).keys() == vars(plain).keys()
 
 

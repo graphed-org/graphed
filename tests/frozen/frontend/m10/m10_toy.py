@@ -46,7 +46,9 @@ class CountingListBackend:
             return ListForm("object")
         raise TypeError(f"unsupported op {op!r}")
 
-    def eval_stage(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> object:
+    def eval_stage(
+        self, op: str, inputs: Sequence[object], params: Mapping[str, object]
+    ) -> object:
         self.calls.append(op)
         if op in {"add", "mul"} and "scalar" in params:
             s = params["scalar"]

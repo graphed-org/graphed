@@ -57,9 +57,10 @@ def test_payload_hash_coheres_with_the_node_identity() -> None:
 
 def test_histogram_terminal_bundle_reproduces_bit_for_bit(tmp_path) -> None:  # type: ignore[no-untyped-def]
     s, fill, eager = _record()
+    # no weight, no histogram spec, no payload bytes: the fill IS the analysis terminal
     bundle = build_bundle(
         tmp_path / "bundle", session=s, value=fill, datasets={"events": EVENTS}, payloads={}
-    )  # no weight, no histogram spec, no payload bytes: the fill IS the analysis terminal
+    )
     entry = next(e for e in bundle.manifest["externals"] if e["kind"] == "histogram")
     assert entry["content_hash"].startswith("sha256:")  # synthesized + integrity-checked at build
 
@@ -85,6 +86,7 @@ def test_histogram_terminal_bundle_reproduces_bit_for_bit(tmp_path) -> None:  # 
 def test_the_triple_path_must_stay_coherent(tmp_path) -> None:  # type: ignore[no-untyped-def]
     s, fill, _ = _record()
     with pytest.raises(PreserveError, match="together"):
+        # a weight without a histogram spec (or vice versa) is incoherent
         build_bundle(
             tmp_path / "b",
             session=s,
@@ -92,4 +94,4 @@ def test_the_triple_path_must_stay_coherent(tmp_path) -> None:  # type: ignore[n
             weight=fill,
             datasets={"events": EVENTS},
             payloads={},
-        )  # a weight without a histogram spec (or vice versa) is incoherent
+        )

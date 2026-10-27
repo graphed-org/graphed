@@ -11,9 +11,9 @@ needs.
 
 Awkward-idiom because the admitted member needs a backend whose `add` and `mul` disagree: awkward
 broadcasts `## * float64` against `## * 3 * float64` (so `check_members` admits the container) and
-refuses `## * 3 * float64` against `## * 5 * float64` (so the product at that label does not exist).
-Numpy has no such member — `NumpyBackend.op_form` routes both through the same broadcasting, so any
-pair `mul` refuses at a label, `add` has already refused inside the container.
+refuses `## * 3 * float64` against `## * 5 * float64` (so the product at that label does not
+exist). Numpy has no such member — `NumpyBackend.op_form` routes both through the same
+broadcasting, so any pair `mul` refuses at a label, `add` has already refused inside the container.
 """
 
 from __future__ import annotations
@@ -51,22 +51,29 @@ EVENTS = ak.Array(
 
 
 def _shifted_context() -> tuple[Session, Any]:
-    """A context carrying a `jes` shift, so a factor read through it varies at `jes_up`."""
+    """Return a context carrying a `jes` shift, so a factor read through it varies at `jes_up`."""
     session = Session(AwkwardBackend())
     ctx = ga.gnano.events(from_awkward(session, "ev", EVENTS))
     jets = ctx.Jet
     shifted = {
-        tag: ga.gak.with_field(jets, jets.pt * scale, "pt") for tag, scale in (("up", 1.05), ("down", 0.95))
+        tag: ga.gak.with_field(jets, jets.pt * scale, "pt")
+        for tag, scale in (("up", 1.05), ("down", 0.95))
     }
     return session, graphed.vary(ctx, "jes", collections={"Jet": shifted})
 
 
 def _factor(ctx: Any, wide: Any, scale: float, *, nominal: Any = None) -> Any:
-    """A weight factor computed on shifted objects: `nominal`-shaped (flat unless named) at
-    nominal, `wide`-shaped at `jes_up`."""
+    """Return a weight factor computed on shifted objects.
+
+    `nominal`-shaped (flat unless named) at nominal, `wide`-shaped at `jes_up`.
+    """
     flat = ctx["w"] * scale
     return rebuild(
-        {"nominal": flat if nominal is None else nominal * scale, "jes_up": wide * scale, "jes_down": flat},
+        {
+            "nominal": flat if nominal is None else nominal * scale,
+            "jes_up": wide * scale,
+            "jes_down": flat,
+        },
         context=ctx,
     )
 
@@ -78,7 +85,8 @@ def test_two_factors_that_collide_at_one_shift_label_are_refused_at_registration
 
     second = _factor(shifted, shifted["r5"], 2.0)  # nominals multiply; the `jes_up` members do not
     nominals = [session.form(graphed.nominal(first)), session.form(graphed.nominal(second))]
-    session.backend.op_form("mul", nominals, {})  # must not raise, or this is not the per-label case
+    # must not raise, or this is not the per-label case
+    session.backend.op_form("mul", nominals, {})
 
     with pytest.raises(GraphedTypeError, match="jes_up"):
         graphed.vary(registered, "B", second, is_weight=True, up=second * 1.1)
@@ -91,9 +99,11 @@ def test_two_factors_that_collide_at_one_shift_label_are_refused_at_registration
 
 
 def test_the_refusal_survives_a_derivation_between_the_two_registrations() -> None:
-    """The running form must follow the factor list at every site that sets it. A derivation
-    MATERIALISES — the child's form map is rebuilt from the composed container's members, not
-    copied — so the clash has to be refused through that rebuilt state too."""
+    """The running form must follow the factor list at every site that sets it.
+
+    A derivation MATERIALISES — the child's form map is rebuilt from the composed container's
+    members, not copied — so the clash has to be refused through that rebuilt state too.
+    """
     session, shifted = _shifted_context()
     first = _factor(shifted, shifted["r3"], 1.0)
     registered = graphed.vary(shifted, "A", first, is_weight=True, up=first * 1.1)
@@ -106,10 +116,12 @@ def test_the_refusal_survives_a_derivation_between_the_two_registrations() -> No
 
 
 def test_a_refused_weight_leaves_no_residue_for_the_shift_after_weight_report() -> None:
-    """§2.5's diagnostic reads `Session._weight_factors`, so the form check has to run BEFORE that
-    append: a weight whose registration was refused must not be reported against a shift it never
-    got to precede. The refused factor here READS the collection the shift varies, which is what
-    makes the report's cone walk answer yes for it."""
+    """§2.5's diagnostic reads `Session._weight_factors`.
+
+    So the form check has to run BEFORE that append: a weight whose registration was refused must
+    not be reported against a shift it never got to precede. The refused factor here READS the
+    collection the shift varies, which is what makes the report's cone walk answer yes for it.
+    """
     session, shifted = _shifted_context()
     jets = shifted.Jet
     factor = ga.gak.prod(1.0 + jets.pt * 0.01, axis=1)  # a per-event weight that reads Jet
@@ -119,7 +131,9 @@ def test_a_refused_weight_leaves_no_residue_for_the_shift_after_weight_report() 
         graphed.vary(registered, "bad", jets, is_weight=True, up=jets)
 
     later = graphed.vary(
-        registered, "jer", collections={"Jet": {"up": ga.gak.with_field(jets, jets.pt * 1.02, "pt")}}
+        registered,
+        "jer",
+        collections={"Jet": {"up": ga.gak.with_field(jets, jets.pt * 1.02, "pt")}},
     )
     ambient = graphed.weight(later)
     universes = [graphed.universe(ambient, label) for label in graphed.labels(ambient)]
@@ -127,14 +141,19 @@ def test_a_refused_weight_leaves_no_residue_for_the_shift_after_weight_report() 
 
 
 def _colliding_shapes() -> tuple[tuple[int, ...], tuple[int, ...]]:
-    """Two regular shapes whose forms render identically under `str` and differently under
-    `describe`. Awkward elides the middle of a deep type; the depth at which it starts is a repr
-    detail that moves between versions, so it is searched rather than pinned."""
+    """Return two regular shapes whose forms render identically under `str`.
+
+    They render differently under `describe`. Awkward elides the middle of a deep type; the depth
+    at which it starts is a repr detail that moves between versions, so it is searched rather than
+    pinned.
+    """
     session = Session(AwkwardBackend())
     for depth in range(6, 15):
         deep, wide = (2,) * depth, (2,) * (depth - 1) + (3,)
         record = from_awkward(
-            session, f"probe{depth}", ak.Array({"d": np.ones((2, *deep)), "e": np.ones((2, *wide))})
+            session,
+            f"probe{depth}",
+            ak.Array({"d": np.ones((2, *deep)), "e": np.ones((2, *wide))}),
         )
         left, right = session.form(record["d"]), session.form(record["e"])
         if str(left) == str(right) and left.describe() != right.describe():
@@ -142,7 +161,7 @@ def _colliding_shapes() -> tuple[tuple[int, ...], tuple[int, ...]]:
     pytest.fail("awkward's type repr no longer abbreviates; the memo-key collision is unreachable")
 
 
-def test_a_factor_whose_form_only_LOOKS_like_a_memoised_one_is_still_refused() -> None:
+def test_a_factor_whose_form_only_looks_like_a_memoised_one_is_still_refused() -> None:
     """The running-form memo keys on the `Form` protocol's `describe()`, never on `str(form)`.
 
     An abbreviating repr makes two forms that multiply DIFFERENTLY render alike, so a `str` key
@@ -198,11 +217,14 @@ def test_a_factor_whose_form_only_LOOKS_like_a_memoised_one_is_still_refused() -
     assert "C_up" in graphed.labels(graphed.weight(ok))
 
 
-def test_a_variation_member_whose_form_only_LOOKS_like_the_central_one_is_refused() -> None:
-    """`check_members`' compatibility fast path is the same class as the memo key, one registration
+def test_a_variation_member_whose_form_only_looks_like_the_central_one_is_refused() -> None:
+    """A member whose form only RENDERS like the central universe's is still checked.
+
+    `check_members`' compatibility fast path is the same class as the memo key, one registration
     earlier: a member whose form only RENDERS like the central universe's must still meet the
     backend's own inference, or an abbreviated repr waves an incompatible member straight past the
-    check that exists to catch it. Same two shapes."""
+    check that exists to catch it. Same two shapes.
+    """
     deep, wide = _colliding_shapes()
     session = Session(AwkwardBackend())
     events = ak.Array({"deep": np.ones((6, *deep)), "wide": np.ones((6, *wide))})
@@ -220,9 +242,12 @@ def test_a_variation_member_whose_form_only_LOOKS_like_the_central_one_is_refuse
 def _joint_pair(
     shifted: Any, b_up_wide: Any, *, a_nominal: Any = None, a_up_wide: Any = None
 ) -> tuple[Any, Any, Any]:
-    """A registered `A` plus the `(central, up)` pair for a `B` whose only disagreement with `A`
-    lives at the joint `B_up__jes_up` that this very registration mints — `B`'s central agrees with
-    `A` at `jes_up`, so nothing already in the running form map can refuse or admit the pair."""
+    """Return a registered `A` plus the `(central, up)` pair for a `B`.
+
+    `B`'s only disagreement with `A` lives at the joint `B_up__jes_up` that this very registration
+    mints — `B`'s central agrees with `A` at `jes_up`, so nothing already in the running form map
+    can refuse or admit the pair.
+    """
     a_up_wide = shifted["r3"] if a_up_wide is None else a_up_wide
     first = _factor(shifted, a_up_wide, 1.0, nominal=a_nominal)
     registered = graphed.vary(shifted, "A", first, is_weight=True, up=first * 1.1)
@@ -231,18 +256,24 @@ def _joint_pair(
 
 
 def test_a_clash_at_a_joint_this_registration_mints_is_refused() -> None:
-    """The record-time check's operands must be the composition's, at a label brand new to the
-    running form map. The earlier factors resolve a minted joint through their own point
-    restriction — here onto `jes_up`, whose member is wide — not through their nominal, so folding
-    the running nominal would admit a pair whose product does not exist and leave the minted labels
-    bound for the Session's life."""
+    """The record-time check's operands must be the composition's, at a brand-new label.
+
+    The label is brand new to the running form map. The earlier factors resolve a minted joint
+    through their own point restriction — here onto `jes_up`, whose member is wide — not through
+    their nominal, so folding the running nominal would admit a pair whose product does not exist
+    and leave the minted labels bound for the Session's life.
+    """
     session, shifted = _shifted_context()
     registered, central, clashing = _joint_pair(shifted, shifted["r5"])
-    assert "B_up__jes_up" not in registered._recorded, "the joint is not new to the union; wrong case"
+    assert "B_up__jes_up" not in registered._recorded, (
+        "the joint is not new to the union; wrong case"
+    )
     at_jes_up = [
-        session.form(_two_level(container, "jes_up")) for container in (registered._factors[0], central)
+        session.form(_two_level(container, "jes_up"))
+        for container in (registered._factors[0], central)
     ]
-    session.backend.op_form("mul", at_jes_up, {})  # jes_up itself agrees, or the joint is not the cause
+    # jes_up itself agrees, or the joint is not the cause
+    session.backend.op_form("mul", at_jes_up, {})
 
     with pytest.raises(GraphedTypeError, match="B_up__jes_up"):
         graphed.vary(registered, "B", central, is_weight=True, up=clashing)
@@ -255,11 +286,12 @@ def test_a_clash_at_a_joint_this_registration_mints_is_refused() -> None:
 
 
 def test_a_rolled_back_mint_leaves_no_resolution_the_restored_registry_no_longer_gives() -> None:
-    """A rollback is the one place a resolution moves BACKWARDS, and the walk has already answered
-    at the minted joint by the time the clash at it refuses: the earlier factor resolved there
-    through its own point restriction, onto `jes_up`. Once the label is unminted that answer is the
-    central universe again, so the resolution memo — which stores on the premise that the registry
-    only grows — must not be allowed to keep the restricted one.
+    """A rollback is the one place a resolution moves BACKWARDS.
+
+    And the walk has already answered at the minted joint by the time the clash at it refuses: the
+    earlier factor resolved there through its own point restriction, onto `jes_up`. Once the label
+    is unminted that answer is the central universe again, so the resolution memo — which stores on
+    the premise that the registry only grows — must not be allowed to keep the restricted one.
     """
     session, shifted = _shifted_context()
     registered, central, clashing = _joint_pair(shifted, shifted["r5"])
@@ -274,17 +306,24 @@ def test_a_rolled_back_mint_leaves_no_resolution_the_restored_registry_no_longer
     assert restricted.node_id != _two_level(factor, "nominal").node_id, "the two answers coincide"
 
 
-def test_a_valid_pair_that_only_LOOKS_clashing_through_the_running_nominal_still_registers() -> None:
-    """The other end of the same class. `A` is wide at nominal and flat at `jes_up`, so at the
-    minted joint the composition multiplies flat by `B`'s wide member and succeeds — a check that
-    folded the running NOMINAL there would refuse a program the composition composes."""
+def test_a_valid_pair_that_only_looks_clashing_through_the_running_nominal_still_registers() -> (
+    None
+):
+    """The other end of the same class.
+
+    `A` is wide at nominal and flat at `jes_up`, so at the minted joint the composition multiplies
+    flat by `B`'s wide member and succeeds — a check that folded the running NOMINAL there would
+    refuse a program the composition composes.
+    """
     session, shifted = _shifted_context()
     registered, central, wider = _joint_pair(
         shifted, shifted["r5"], a_nominal=shifted["r3"], a_up_wide=shifted["w"]
     )
     with pytest.raises(ValueError, match="broadcast"):  # the pair a nominal fold would have formed
         running_nominal = session.form(_two_level(registered._factors[0], "nominal"))
-        session.backend.op_form("mul", [running_nominal, session.form(_two_level(wider, "jes_up"))], {})
+        session.backend.op_form(
+            "mul", [running_nominal, session.form(_two_level(wider, "jes_up"))], {}
+        )
 
     ok = graphed.vary(registered, "B", central, is_weight=True, up=wider)
     ambient = graphed.weight(ok)
@@ -316,10 +355,13 @@ def _register_all(ctx: Any, fields: tuple[str, ...]) -> Any:
 
 
 def test_a_product_only_the_composition_s_own_grouping_forms_is_refused_at_registration() -> None:
-    """`mul` inference is not associative for raise/no-raise, so the check has to RUN the
-    composition's walk rather than fold the same operands in registration order: the balanced tree
-    over three nominals groups the last two, and `3 * float64` against `5 * float64` has no
-    product, while folding those same three left to right does."""
+    """`mul` inference is not associative for raise/no-raise.
+
+    So the check has to RUN the composition's walk rather than fold the same operands in
+    registration order: the balanced tree over three nominals groups the last two, and
+    `3 * float64` against `5 * float64` has no product, while folding those same three left to
+    right does.
+    """
     session, ctx = _plain_context()
     forms = {field: session.form(ctx[field] * 1.0) for field in ("var", "r3", "r5")}
     _mul(session, forms["var"], forms["r3"], forms["r5"])  # the fold types, or nothing is refused
@@ -330,7 +372,9 @@ def test_a_product_only_the_composition_s_own_grouping_forms_is_refused_at_regis
     third = registered["r5"] * 1.0
     with pytest.raises(GraphedTypeError, match="mul"):
         graphed.vary(registered, "C", third, is_weight=True, up=third * 1.1)
-    assert sorted(session._points) == ["A_up", "B_up"], "the refused registration moved the registry"
+    assert sorted(session._points) == ["A_up", "B_up"], (
+        "the refused registration moved the registry"
+    )
 
     fine = registered["var"] * 2.0  # the name is free again
     ok = graphed.vary(registered, "C", fine, is_weight=True, up=fine * 1.1)
@@ -338,10 +382,12 @@ def test_a_product_only_the_composition_s_own_grouping_forms_is_refused_at_regis
 
 
 def test_a_clashing_pair_the_walk_never_forms_as_a_pair_still_registers() -> None:
-    """The other end: the walk refuses what it FORMS, not what it merely contains. These four
-    nominals include the same `3 *` / `5 *` pair, but every product the tree and the complement
-    pushdown build has a ragged factor in it first, so all four register and the ambient composes
-    at every label."""
+    """The other end: the walk refuses what it FORMS, not what it merely contains.
+
+    These four nominals include the same `3 *` / `5 *` pair, but every product the tree and the
+    complement pushdown build has a ragged factor in it first, so all four register and the ambient
+    composes at every label.
+    """
     session, ctx = _plain_context()
     with pytest.raises(ValueError, match="broadcast"):  # the pair itself has no product
         _mul(session, session.form(ctx["r3"] * 1.0), session.form(ctx["r5"] * 1.0))
@@ -354,10 +400,13 @@ def test_a_clashing_pair_the_walk_never_forms_as_a_pair_still_registers() -> Non
 
 
 def test_a_factor_that_nests_past_the_one_level_the_composition_flattens_is_refused() -> None:
-    """§2.2 lets a factor's member be a container — a factor computed on shifted objects — and the
-    composition reads two levels deep to flatten it. A member that varies past that level would
-    compose into an ambient universe that is itself a container, which no consumer can read, so it
-    is refused inside `vary` instead of at the read that trips over it."""
+    """§2.2 lets a factor's member be a container.
+
+    A factor computed on shifted objects — and the composition reads two levels deep to flatten it.
+    A member that varies past that level would compose into an ambient universe that is itself a
+    container, which no consumer can read, so it is refused inside `vary` instead of at the read
+    that trips over it.
+    """
     session, shifted = _shifted_context()
     flat = shifted["w"] * 1.0
     inner = rebuild({"nominal": flat, "q_up": flat * 3.0}, context=shifted)
@@ -370,12 +419,18 @@ def test_a_factor_that_nests_past_the_one_level_the_composition_flattens_is_refu
 
 
 def _clash_at_an_unwalked_label() -> tuple[Session, Any]:
-    """Two weight factors whose members clash at `q_up` — a label no collection carries, so it is
-    not in the recorded union and the record-time walk never asks about it. The JOINT over it is in
-    the union, put there by the hand-built escape hatch, waiting for a mint to reach it."""
+    """Two weight factors whose members clash at `q_up`.
+
+    A label no collection carries, so it is not in the recorded union and the record-time walk
+    never asks about it. The JOINT over it is in the union, put there by the hand-built escape
+    hatch, waiting for a mint to reach it.
+    """
     session = Session(AwkwardBackend())
     ctx = ga.gnano.events(from_awkward(session, "ev", EVENTS))
-    ctx._collections = {**ctx._collections, "hand": rebuild({"nominal": ctx["w"], JOINT: ctx["w"] * 2.0})}
+    ctx._collections = {
+        **ctx._collections,
+        "hand": rebuild({"nominal": ctx["w"], JOINT: ctx["w"] * 2.0}),
+    }
     flat = ctx["w"] * 1.0
     # distinct nominals, so the two remain two factors and their `q_up` members meet
     for name, field, scale in (("A", "r3", 1.0), ("B", "r5", 2.0)):
@@ -387,12 +442,16 @@ def _clash_at_an_unwalked_label() -> tuple[Session, Any]:
 JOINT = "b_up__q_up"
 
 
-def test_a_clash_a_later_mint_creates_raises_at_the_read_and_leaves_that_varys_labels_bound() -> None:
-    """The one raise this design moves out of `vary`. A clash at a label NO registration could see
-    — neither factor's registration walked it, because nothing carried it — becomes reachable when
-    a later, unrelated `vary` mints the joint over it. Resolving as of the read is what finds it;
-    the read is where it is reported, naming the label, and the loose `vary` that minted keeps its
-    own labels, because that `vary` is not the one at fault and refusing it would blame it.
+def test_a_clash_a_later_mint_creates_raises_at_the_read_and_leaves_that_varys_labels_bound() -> (
+    None
+):
+    """The one raise this design moves out of `vary`.
+
+    A clash at a label NO registration could see — neither factor's registration walked it, because
+    nothing carried it — becomes reachable when a later, unrelated `vary` mints the joint over it.
+    Resolving as of the read is what finds it; the read is where it is reported, naming the label,
+    and the loose `vary` that minted keeps its own labels, because that `vary` is not the one at
+    fault and refusing it would blame it.
 
     The ambient composes for all its labels at once, so the clash takes the whole container down:
     that context reads at NO label until it is resolved. What stays readable is any other context,
@@ -413,5 +472,7 @@ def test_a_clash_a_later_mint_creates_raises_at_the_read_and_leaves_that_varys_l
     for label in labels:
         with pytest.raises(GraphedTypeError, match=JOINT):
             graphed.universe(graphed.weight(ctx), label)
-    assert {"q_up", "b_up", JOINT} <= set(session._points), "the loose vary's labels were rolled back"
+    assert {"q_up", "b_up", JOINT} <= set(session._points), (
+        "the loose vary's labels were rolled back"
+    )
     assert graphed.universe(graphed.weight(unclashed), "C_up").node_id

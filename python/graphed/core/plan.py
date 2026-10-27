@@ -1,7 +1,7 @@
 """The serializable, versioned, content-addressed durable **Plan** (plan M8).
 
-This is the "serializable physical artifact for an executor" the glossary calls *Plan* — forecast by
-``execution.Plan``'s docstring ("the real serializable Plan is M8"). ``execution.Plan`` is the
+This is the "serializable physical artifact for an executor" the glossary calls *Plan* — forecast
+by ``execution.Plan``'s docstring ("the real serializable Plan is M8"). ``execution.Plan`` is the
 in-memory runtime job (live callables); ``DurablePlan`` is its durable form: it can be written
 to bytes, content-addressed, shipped, and re-executed **on a machine with no user source files**.
 
@@ -38,7 +38,9 @@ from .execution import Partition, Task
 from .graphed_core import GraphStore
 
 FORMAT_VERSION = 1
-FORMAT_VERSION_V2 = "graphed-plan/2"  # a STRING (vs V1's int) -> V1 and V2 byte spaces never overlap
+FORMAT_VERSION_V2 = (
+    "graphed-plan/2"  # a STRING (vs V1's int) -> V1 and V2 byte spaces never overlap
+)
 _TASK_DOMAIN = b"graphed-task-v1"
 _TASK_DOMAIN_V2 = b"graphed-task-v2"
 
@@ -71,6 +73,7 @@ class OpSpec:
 
     @property
     def opaque(self) -> bool:
+        """Whether the callable is embedded by value rather than referenced."""
         return self.kind == "opaque"
 
     def identity(self) -> bytes:
@@ -80,6 +83,7 @@ class OpSpec:
         return b"opaque\0" + base64.b64decode(self.blob_b64)
 
     def resolve(self) -> Callable[..., Any]:
+        """Return the callable this spec names."""
         if self.live is not None:
             return self.live
         if self.kind == "ref":
@@ -97,11 +101,12 @@ class OpSpec:
 
     @classmethod
     def from_ref(cls, ref: str) -> OpSpec:
+        """Refer to the callable at ``ref`` (``"module:qualname"``)."""
         return cls(kind="ref", ref=ref)
 
     @classmethod
     def from_callable(cls, fn: Callable[..., Any], *, prefer_ref: bool = True) -> OpSpec:
-        """Reference ``fn`` by import path if it is importable, else embed it by value (opaque)."""
+        """Refer to ``fn`` by import path if importable, else embed it by value (opaque)."""
         mod = getattr(fn, "__module__", None)
         qual = getattr(fn, "__qualname__", None)
         if prefer_ref and mod and qual and "<locals>" not in qual and mod != "__main__":
@@ -185,18 +190,26 @@ class DurablePlan:
 
     # ---- "compile once, run on N datasets" ------------------------------------------------------
     def with_partitions(self, partitions: Iterable[Partition]) -> DurablePlan:
-        """A sibling plan with the SAME computation (``ir`` + reduction spec + column/stopping/
-        resource metadata) but a new partition set. The ``ir`` is shared unchanged, so the analysis
-        is **not** recorded/optimized/serialized again — this is the basis of the *compile once, run
-        on N datasets* deployment pattern."""
+        """Return a sibling plan with the SAME computation but a new partition set.
+
+        The computation is ``ir`` + reduction spec + column/stopping/resource metadata. The ``ir``
+        is shared unchanged, so the analysis is **not** recorded/optimized/serialized again — this
+        is the basis of the *compile once, run on N datasets* deployment pattern.
+        """
         return replace(self, partitions=tuple(partitions))
 
     def for_dataset(self, dataset: Dataset, *, chunk_size: int) -> DurablePlan:
-        """This analysis, partitioned over a single dataset (chunked into entry ranges)."""
+        """Return this analysis, partitioned over a single dataset.
+
+        The dataset is chunked into entry ranges.
+        """
         return self.with_partitions(partition_dataset(dataset, chunk_size=chunk_size))
 
     def for_datasets(self, datasets: Iterable[Dataset], *, chunk_size: int) -> DurablePlan:
-        """This analysis, partitioned over several datasets at once (partitions concatenated)."""
+        """Return this analysis, partitioned over several datasets at once.
+
+        The partitions are concatenated.
+        """
         return self.with_partitions(partition_datasets(datasets, chunk_size=chunk_size))
 
     # ---- (de)serialization ----------------------------------------------------------------------
@@ -220,6 +233,7 @@ class DurablePlan:
 
     @classmethod
     def from_bytes(cls, data: bytes) -> DurablePlan:
+        """Read a plan :meth:`to_bytes` wrote."""
         doc = json.loads(data)
         return cls(
             ir=base64.b64decode(doc["ir_b64"]),
@@ -238,9 +252,11 @@ class DurablePlan:
 
 @dataclass(frozen=True)
 class StageSpec:
-    """One stage of a multi-stage :class:`DurablePlanV2` (plan M39 §4.4). A shuffle is a stage-1
-    map-write (``kind="map_write"``) that a stage-2 gather (``kind="gather"|"gather_join"``) depends
-    on via ``inputs`` (the indices of the stages it reads).
+    """One stage of a multi-stage :class:`DurablePlanV2` (plan M39 §4.4).
+
+    A shuffle is a stage-1 map-write (``kind="map_write"``) that a stage-2 gather
+    (``kind="gather"|"gather_join"``) depends on via ``inputs`` (the indices of the stages it
+    reads).
 
     ``process`` is the per-task callable (an :class:`OpSpec`, source-free like V1). ``routing`` is
     the free-form exchange scheme the stage carries (``scheme``/``key``/``parts`` + the backend's
@@ -260,7 +276,9 @@ class StageSpec:
             "inputs": list(self.inputs),
             "process": self.process._to_json(),
             "routing": dict(self.routing),
-            "tasks": [{"key": t.key, "partition": _partition_json(t.partition)} for t in self.tasks],
+            "tasks": [
+                {"key": t.key, "partition": _partition_json(t.partition)} for t in self.tasks
+            ],
         }
 
     @classmethod
@@ -270,17 +288,21 @@ class StageSpec:
             inputs=tuple(int(i) for i in d["inputs"]),
             process=OpSpec._from_json(d["process"]),
             routing=dict(d["routing"]),
-            tasks=tuple(Task(int(t["key"]), _partition_from_json(t["partition"])) for t in d["tasks"]),
+            tasks=tuple(
+                Task(int(t["key"]), _partition_from_json(t["partition"])) for t in d["tasks"]
+            ),
         )
 
 
 @dataclass(frozen=True)
 class DurablePlanV2:
-    """The additive multi-stage durable plan (plan M39 §4.4). A shuffle needs genuine intra-run
-    staging (a gather stage depending on a map-write stage), which the single map->reduce
-    :class:`DurablePlan` cannot express. This is a SEPARATE, purely-additive class with a DISTINCT
-    string ``format_version`` (``"graphed-plan/2"`` vs V1's int), so a V1 blob and a V2 blob can
-    never collide and each reader rejects the other's bytes loudly. V1 is untouched.
+    """The additive multi-stage durable plan (plan M39 §4.4).
+
+    A shuffle needs genuine intra-run staging (a gather stage depending on a map-write stage),
+    which the single map->reduce :class:`DurablePlan` cannot express. This is a SEPARATE,
+    purely-additive class with a DISTINCT string ``format_version`` (``"graphed-plan/2"`` vs V1's
+    int), so a V1 blob and a V2 blob can never collide and each reader rejects the other's bytes
+    loudly. V1 is untouched.
     """
 
     ir: bytes
@@ -294,14 +316,20 @@ class DurablePlanV2:
         return GraphStore.deserialize(self.ir)
 
     def ir_fingerprint(self) -> str:
+        """Return the SHA-256 hex digest of the plan's IR."""
         return _sha256_hex(self.ir)
 
     def task_id(self, stage_index: int, task: Task) -> str:
-        """Content-addressed id for one task of one stage. Folds the stage's ``routing`` (hence its
-        ``backend_id``, §7.2) so two conforming backends that route a key to different dests never
-        journal the same id for different content (B-r5.2); cache-poisoning-safe like V1's."""
+        """Content-addressed id for one task of one stage.
+
+        Folds the stage's ``routing`` (hence its ``backend_id``, §7.2) so two conforming backends
+        that route a key to different dests never journal the same id for different content
+        (B-r5.2); cache-poisoning-safe like V1's.
+        """
         stage = self.stages[stage_index]
-        routing_bytes = json.dumps(dict(stage.routing), sort_keys=True, separators=(",", ":")).encode()
+        routing_bytes = json.dumps(
+            dict(stage.routing), sort_keys=True, separators=(",", ":")
+        ).encode()
         return _sha256_hex(
             _TASK_DOMAIN_V2,
             self.ir,
@@ -326,11 +354,13 @@ class DurablePlanV2:
 
     @classmethod
     def from_bytes(cls, data: bytes) -> DurablePlanV2:
+        """Read a V2 plan :meth:`to_bytes` wrote, refusing any other format."""
         doc = json.loads(data)
         if doc.get("format_version") != FORMAT_VERSION_V2:
             raise ValueError(
-                f"not a {FORMAT_VERSION_V2!r} blob (format_version={doc.get('format_version')!r}); "
-                "a V1 DurablePlan blob must be read by DurablePlan.from_bytes"
+                f"not a {FORMAT_VERSION_V2!r} blob "
+                f"(format_version={doc.get('format_version')!r}); a V1 DurablePlan blob must be "
+                "read by DurablePlan.from_bytes"
             )
         return cls(
             ir=base64.b64decode(doc["ir_b64"]),
@@ -339,8 +369,11 @@ class DurablePlanV2:
         )
 
     def value(self, payloads: Sequence[bytes]) -> Any:
-        """A run's value from its last stage's payloads, in task order: the one decoded payload of a
-        ``kind="reduce"`` last stage, else the tuple of decoded payloads."""
+        """Return a run's value from its last stage's payloads, in task order.
+
+        The one decoded payload of a ``kind="reduce"`` last stage, else the tuple of decoded
+        payloads.
+        """
         decoded = tuple(pickle.loads(p) for p in payloads)
         if self.stages and self.stages[-1].kind == "reduce":
             (only,) = decoded
@@ -364,7 +397,10 @@ class Dataset:
 
 
 def partition_dataset(dataset: Dataset, *, chunk_size: int) -> tuple[Partition, ...]:
-    """Split a dataset's ``[0, n_events)`` into contiguous half-open chunks of at most ``chunk_size``."""
+    """Split a dataset's ``[0, n_events)`` into contiguous half-open chunks.
+
+    Each chunk holds at most ``chunk_size`` events.
+    """
     if chunk_size <= 0:
         raise ValueError("chunk_size must be positive")
     out: list[Partition] = []
@@ -377,7 +413,10 @@ def partition_dataset(dataset: Dataset, *, chunk_size: int) -> tuple[Partition, 
 
 
 def partition_datasets(datasets: Iterable[Dataset], *, chunk_size: int) -> tuple[Partition, ...]:
-    """Partition several datasets and concatenate the work units (one combined run over all of them)."""
+    """Partition several datasets and concatenate the work units.
+
+    One combined run goes over all of them.
+    """
     out: list[Partition] = []
     for ds in datasets:
         out.extend(partition_dataset(ds, chunk_size=chunk_size))
@@ -400,7 +439,9 @@ def _partition_json(p: Partition) -> dict[str, str | int]:
 
 def _partition_from_json(d: Mapping[str, Any]) -> Partition:
     if "blind_step" in d:
-        return Partition.blind(d["uri"], d.get("tree", ""), int(d["blind_step"]), int(d["blind_n_steps"]))
+        return Partition.blind(
+            d["uri"], d.get("tree", ""), int(d["blind_step"]), int(d["blind_n_steps"])
+        )
     return Partition(
         uri=d["uri"],
         tree=d.get("tree", ""),

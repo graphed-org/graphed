@@ -29,8 +29,11 @@ NAMED = {
 
 
 def _discover() -> set[str]:
-    """The MODULE is named, not the package: `graphed.awkward` re-exports modules and classes only.
-    The `__module__` filter is what keeps the re-exported payload descriptors out."""
+    """Return the MODULE is named, not the package.
+
+    `graphed.awkward` re-exports modules and classes only. The `__module__` filter is what keeps
+    the re-exported payload descriptors out.
+    """
     return {
         name
         for name, member in inspect.getmembers(gak_module, inspect.isfunction)

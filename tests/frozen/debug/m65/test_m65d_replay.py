@@ -1,6 +1,9 @@
-"""M65 D frozen suite: capture into an M8 store through ``aggregate_plan(store=)`` and
-``graphed.debug.replay`` of one task at opt_level=0 (plan-D D-1..D-6). New API is read through module
-attributes so each test fails on its own line before the implementation exists."""
+"""M65 D frozen suite.
+
+Capture into an M8 store through ``aggregate_plan(store=)`` and ``graphed.debug.replay`` of one
+task at opt_level=0 (plan-D D-1..D-6). New API is read through module attributes so each test fails
+on its own line before the implementation exists.
+"""
 
 from __future__ import annotations
 
@@ -62,7 +65,9 @@ def _rows(v: list[Any]) -> dict[str, tuple[Any, ...]]:
     return {"rows": (v[0],)}
 
 
-def _rows_add(a: dict[str, tuple[Any, ...]], b: dict[str, tuple[Any, ...]]) -> dict[str, tuple[Any, ...]]:
+def _rows_add(
+    a: dict[str, tuple[Any, ...]], b: dict[str, tuple[Any, ...]]
+) -> dict[str, tuple[Any, ...]]:
     return {"rows": a["rows"] + b["rows"]}
 
 
@@ -148,14 +153,20 @@ def _external(s: Session, x: Array) -> tuple[Array, str]:
         io_schema="uhi",
         preprocessing_ref=None,
     )
-    h = s.record_external("histogram", _ext_sum, [x], {"spec": "m65d"}, descriptor=desc, form=_ExtForm())
+    h = s.record_external(
+        "histogram", _ext_sum, [x], {"spec": "m65d"}, descriptor=desc, form=_ExtForm()
+    )
     node = next(
-        n for n in GraphStore.deserialize(bytes(compile_ir(s, h).ir)).nodes() if n["kind"] == "external"
+        n
+        for n in GraphStore.deserialize(bytes(compile_ir(s, h).ir)).nodes()
+        if n["kind"] == "external"
     )
     return h, external_key(node)
 
 
-def test_capture_writes_inputs_and_outputs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_capture_writes_inputs_and_outputs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     _s, ev = _events(tmp_path)
     y = gak.sum(ev.x * 2.0, axis=None)
     root = tmp_path / "cap"
@@ -221,7 +232,9 @@ def test_steps_walk_the_opt_level_0_cone_with_user_frames(tmp_path: Path) -> Non
     assert ak.array_equal(by_op["field"].value, np.arange(float(ROWS)))
     assert ak.array_equal(by_op["mul"].value, 2.0 * np.arange(float(ROWS)))
     assert float(by_op["ak.sum"].value) == 2.0 * sum(range(ROWS))
-    assert all(st.node.provenance.lineno == s.provenance(Array(s, st.node.node_id)).lineno for st in steps)
+    assert all(
+        st.node.provenance.lineno == s.provenance(Array(s, st.node.node_id)).lineno for st in steps
+    )
     assert len(steps) > len(GraphStore.deserialize(plan.process.ir).nodes())
 
 
@@ -266,7 +279,12 @@ def test_value_and_diff_against_the_recorded_output(tmp_path: Path) -> None:
     assert r0.input_source == "re-read"
     assert r0.value == expected
     d0 = r0.diff()
-    assert (d0.reference, d0.equal, d0.recorded, d0.replayed) == ("re-evaluated", True, expected, expected)
+    assert (d0.reference, d0.equal, d0.recorded, d0.replayed) == (
+        "re-evaluated",
+        True,
+        expected,
+        expected,
+    )
 
 
 def test_inputs_come_from_the_store(tmp_path: Path) -> None:
@@ -305,7 +323,9 @@ def test_failing_task_raises_at_its_node(tmp_path: Path) -> None:
     assert seen == ["events", "field"]
     err = ei.value
     assert isinstance(err.__cause__, ValueError)
-    want = _stage_error(gd.lower(s, Array(s, m.node_id), opt_level=0), m.node_id, part, err.__cause__)
+    want = _stage_error(
+        gd.lower(s, Array(s, m.node_id), opt_level=0), m.node_id, part, err.__cause__
+    )
     assert err.opt_level == 0
     assert err.op == "external" == want.op
     assert err.partition == part
@@ -362,8 +382,11 @@ def test_replay_binds_the_runs_external_evaluators(tmp_path: Path) -> None:
 
 
 def test_replay_reads_its_own_plans_capture_root(tmp_path: Path) -> None:
-    """Plans over the same outputs and partitions (so the same capture ids), each captured into its
-    own root as plan-D prescribes (one run per root), each diff against their own recorded output."""
+    """Plans over the same outputs and partitions share capture ids but not capture roots.
+
+    Each is captured into its own root as plan-D prescribes (one run per root), and each diffs
+    against its own recorded output.
+    """
     s, ev = _events(tmp_path)
     y = gak.sum(ev.x * 2.0, axis=None)
     a = _plan(y, store=tmp_path / "cap_a")

@@ -30,9 +30,12 @@ from graphed.varied import member_of, point_registry, rebuild
 
 
 def _corpus_shaped_selection() -> tuple[graphed.Session, object, object, object]:
-    """The §2.6 sketch, in order: ambient weight FIRST, then the lockstep shift, then the
-    `Varied`-mask derivation. Registering `pu` before the shift is what gives the ambient registry
-    a `jes_up` member at all (§2.6c) — without it `graphed.weight(sel)` is `None`."""
+    """Return the §2.6 sketch, in order.
+
+    Ambient weight FIRST, then the lockstep shift, then the `Varied`-mask derivation. Registering
+    `pu` before the shift is what gives the ambient registry a `jes_up` member at all (§2.6c) —
+    without it `graphed.weight(sel)` is `None`.
+    """
     session, events = events_context()
     events = graphed.vary(
         events,
@@ -58,14 +61,19 @@ def test_stacking_on_a_loose_varied_keeps_the_members_idiom_and_the_inherited_un
     assert isinstance(stacked, graphed.Varied)
     assert list(graphed.labels(stacked)) == ["nominal", "jes_up", "jes_down", "jer_up", "jer_down"]
     for inherited in ("nominal", "jes_up", "jes_down"):
-        assert graphed.universe(stacked, inherited).node_id == graphed.universe(base, inherited).node_id
+        assert (
+            graphed.universe(stacked, inherited).node_id
+            == graphed.universe(base, inherited).node_id
+        )
     # a new label's member is the provided value's CENTRAL universe, not the value itself
     assert graphed.universe(stacked, "jer_up").node_id == (x * 1.1).node_id
 
 
 def _two_levels_deep(container: object, label: str) -> object:
-    """§2.1's `factor[L]`: the container's member for `label`, then — when that member is itself a
-    `Varied` — its own member for `label`."""
+    """§2.1's `factor[L]`: the container's member for `label`, then.
+
+    When that member is itself a `Varied` — its own member for `label`.
+    """
     return member_of(member_of(container, label), label)
 
 
@@ -112,16 +120,22 @@ def test_a_weight_vary_composes_with_the_inherited_shift_label_two_levels_deep()
 
 
 def test_a_factor_read_at_the_parent_is_accepted_and_re_indexed_to_the_derived_row_space() -> None:
-    """§2.1(b)'s ROW-SPACE positive control. `Session.record_op` performs no length check, so
-    without the re-indexing the mismatch would surface only at execution."""
+    """§2.1(b)'s ROW-SPACE positive control.
+
+    `Session.record_op` performs no length check, so without the re-indexing the mismatch would
+    surface only at execution.
+    """
     session, events, mask, sel = _corpus_shaped_selection()
-    sel3 = graphed.vary(sel, "sf", pu_weight(events, 1.05), is_weight=True, up=pu_weight(events, 1.1))
+    sel3 = graphed.vary(
+        sel, "sf", pu_weight(events, 1.05), is_weight=True, up=pu_weight(events, 1.1)
+    )
     weight = graphed.weight(sel3)
     mask_labels = set(graphed.labels(mask))
     registry = point_registry(weight)
     for label in graphed.labels(weight):
         # a label lives in the row space of the coordinate the mask carries — its own label for a
-        # one-at-a-time universe, the mask's label for that coordinate in a joint, nominal otherwise
+        # one-at-a-time universe, the mask's label for that coordinate in a joint, nominal
+        # otherwise
         carried = [f"{n}_{t}" for n, t in registry.get(label, ()) if f"{n}_{t}" in mask_labels]
         chosen = carried[0] if carried else "nominal"
         rows = int(ak.sum(session.materialize(graphed.universe(mask, chosen))))
@@ -129,8 +143,11 @@ def test_a_factor_read_at_the_parent_is_accepted_and_re_indexed_to_the_derived_r
 
 
 def test_a_factor_read_through_a_DESCENDANT_context_is_a_construction_time_error() -> None:
-    """Not divergence, and not re-indexable: a mask has no inverse, so no operation carries a
-    selection-scoped value back up to the parent's row space."""
+    """Not divergence, and not re-indexable.
+
+    A mask has no inverse, so no operation carries a selection-scoped value back up to the parent's
+    row space.
+    """
     _s, events, _mask, sel = _corpus_shaped_selection()
     with pytest.raises(GraphedError, match="descendant"):
         graphed.vary(

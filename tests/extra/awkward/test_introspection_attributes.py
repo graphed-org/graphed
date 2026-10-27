@@ -1,6 +1,8 @@
-"""ak.Array's own descriptors (`fields`, `ndim`, ...) describe a deferred array; they are answered from
-the record-time typetracer or refused, never recorded as a `field` op. A record field or a behavior
-class that provides the same name keeps today's path."""
+"""ak.Array's own descriptors (`fields`, `ndim`, ...) describe a deferred array.
+
+They are answered from the record-time typetracer or refused, never recorded as a `field` op. A
+record field or a behavior class that provides the same name keeps today's path.
+"""
 
 from __future__ import annotations
 
@@ -46,7 +48,9 @@ def test_refused_population_is_live() -> None:
     assert {"layout", "mask", "nbytes", "attrs", "behavior", "named_axis"} <= set(REFUSED)
 
 
-@pytest.mark.parametrize("data", [RECORDS, ak.Array([[(1, 2.0)], [], [(3, 4.0)]])], ids=["record", "tuple"])
+@pytest.mark.parametrize(
+    "data", [RECORDS, ak.Array([[(1, 2.0)], [], [(3, 4.0)]])], ids=["record", "tuple"]
+)
 @pytest.mark.parametrize("name", EAGER)
 def test_eager_names_answer_like_the_data_and_record_nothing(data: ak.Array, name: str) -> None:
     session, arr = _session(data)

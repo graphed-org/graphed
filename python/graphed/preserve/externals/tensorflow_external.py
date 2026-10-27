@@ -1,4 +1,7 @@
-"""The ``tensorflow_model`` plugin (M26): ``.keras`` archives; hash = name-stripped config + weights."""
+"""The ``tensorflow_model`` plugin (M26): ``.keras`` archives.
+
+The hash is name-stripped config + weights.
+"""
 
 from __future__ import annotations
 
@@ -19,6 +22,7 @@ from ._helpers import (
 
 
 def tensorflow_content_hash(payload: bytes) -> str:
+    """Return the content hash of a ``.keras`` payload."""
     return memoized_model_hash("tensorflow", payload, _tensorflow_content_hash_impl)
 
 
@@ -28,7 +32,9 @@ def _tensorflow_content_hash_impl(payload: bytes) -> str:
     import numpy as np  # noqa: PLC0415
 
     h = hashlib.sha256(b"keras-config-weights-v1")
-    h.update(json.dumps(_strip_config_names(model.get_config()), sort_keys=True, default=str).encode())
+    h.update(
+        json.dumps(_strip_config_names(model.get_config()), sort_keys=True, default=str).encode()
+    )
     for weights in model.get_weights():
         h.update(np.ascontiguousarray(weights).tobytes())
     return "sha256:" + h.hexdigest()
@@ -47,10 +53,12 @@ def _keras_load_from_bytes(payload: bytes) -> Any:
 
 
 def load_tensorflow(payload: bytes, params: Mapping[str, Any]) -> Any:
+    """Load a ``.keras`` payload."""
     return _keras_load_from_bytes(payload)
 
 
 def eval_tensorflow(model: Any, params: Mapping[str, Any], inputs: list[Any]) -> Any:
+    """Run the Keras model on ``inputs``, one value per event."""
     template = parse_call_template(params, len(inputs))
     if template is None:  # legacy: one stacked feature matrix
         out = model(_stack_feature_columns(inputs))
@@ -72,8 +80,12 @@ def _tensorflow_samples() -> list[bytes]:
     import numpy as np  # noqa: PLC0415
 
     def _model(weight: float) -> bytes:
-        m = keras.Sequential([keras.layers.Input(shape=(1,)), keras.layers.Dense(1, activation="sigmoid")])
-        m.layers[0].set_weights([np.array([[weight]], dtype="float32"), np.array([0.0], dtype="float32")])
+        m = keras.Sequential(
+            [keras.layers.Input(shape=(1,)), keras.layers.Dense(1, activation="sigmoid")]
+        )
+        m.layers[0].set_weights(
+            [np.array([[weight]], dtype="float32"), np.array([0.0], dtype="float32")]
+        )
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "model.keras"
             m.save(path)

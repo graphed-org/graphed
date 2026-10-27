@@ -1,5 +1,7 @@
-"""m55 §2 items 1 and 4: a `Varied` collection member is an unpack of the hand form, and the two
-spellings compile to the same nodes.
+"""m55 §2 items 1 and 4.
+
+A `Varied` collection member is an unpack of the hand form, and the two spellings compile to the
+same nodes.
 
 The legs separate the ways this can be wrong: the container is REFUSED (item 1), it is accepted but
 unpacked to the wrong members (item 4's node equality), the labels are right and the arrays wrong
@@ -34,7 +36,10 @@ BOTH = {(collection, label) for collection in ("Jet", "MET") for label in JES_LA
 def test_a_varied_jet_and_its_propagated_met_mint_the_hand_forms_nodes() -> None:
     containers = jes_containers(base_toy().ctx)
     # the two legs below are the two SPELLINGS, or the comparison compares a program with itself
-    assert all(isinstance(v, graphed.Varied) for v in spelled("varied", containers, "jes", JES_TAGS).values())
+    assert all(
+        isinstance(v, graphed.Varied)
+        for v in spelled("varied", containers, "jes", JES_TAGS).values()
+    )
     assert all(isinstance(v, dict) for v in spelled("hand", containers, "jes", JES_TAGS).values())
 
     varied, hand = equivalence(headline_program, "Jet", "MET")
@@ -85,13 +90,13 @@ def test_a_varied_whose_tags_differ_from_the_mapping_is_out_of_lockstep() -> Non
 
 
 def test_a_value_that_is_neither_a_mapping_nor_a_varied_stays_refused() -> None:
-    """Regression control: m55 widens the accepted collection values to two shapes, not to any
-    value. Passes on the pre-m55 tree, so a run in which it also failed would prove the harness
-    dead rather than the feature absent."""
+    """Regression control: m55 widens the accepted collection values to two shapes, not any value.
+
+    Passes on the pre-m55 tree, so a run in which it also failed would prove the harness dead
+    rather than the feature absent.
+    """
     toy = base_toy()
 
-    message = refused(
-        toy, lambda: graphed.vary(toy.ctx, "jes", collections={"Jet": toy.ctx.Jet})
-    )
+    message = refused(toy, lambda: graphed.vary(toy.ctx, "jes", collections={"Jet": toy.ctx.Jet}))
     for fragment in ("Jet", "{tag: record}"):
         assert fragment in message, fragment

@@ -48,14 +48,18 @@ def test_the_recorded_form_equals_what_eager_awkward_gives_the_same_file(tmp_pat
     assert _recorded_form(session, events) == eager(path).layout.form
 
 
-def test_a_behavior_keyed_on_the_record_name_resolves_on_the_deferred_array(tmp_path: Path) -> None:
+def test_a_behavior_keyed_on_the_record_name_resolves_on_the_deferred_array(
+    tmp_path: Path,
+) -> None:
     (path,) = awkward_dataset(tmp_path)
     session = Session(AwkwardBackend(behavior=BEHAVIOR))
 
     events = ga.from_parquet(session, "ev", path)
     total = events.p.total
 
-    assert session.form(total).describe() == str(ak.Array(tracer(eager(path), BEHAVIOR).p.total).type)
+    assert session.form(total).describe() == str(
+        ak.Array(tracer(eager(path), BEHAVIOR).p.total).type
+    )
     assert ak.to_list(session.materialize(total)) == TOTALS
     assert ak.to_list(ak.Array(eager(path).layout, behavior=BEHAVIOR).p.total) == TOTALS
 
@@ -98,8 +102,11 @@ def test_recording_a_source_reads_no_event_data_and_opens_only_the_first_file(
 def test_a_zero_row_file_of_the_datasets_schema_stays_readable_under_the_guard(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The route the contract names must survive its own witness: the ban is path-scoped, so the
-    dataset's schema is readable and a zero-row file written elsewhere reads back normally."""
+    """The route the contract names must survive its own witness.
+
+    The ban is path-scoped, so the dataset's schema is readable and a zero-row file written
+    elsewhere reads back normally.
+    """
     (path,) = awkward_dataset(tmp_path)
     read_guard(monkeypatch, [path])
 

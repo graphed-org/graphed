@@ -1,5 +1,7 @@
-"""m68c §3.4: ``run_shuffle_resumable`` runs a bound ``join_plan`` whose map stage calls a service;
-``plan.value`` over its last-stage blocks equals the ``SequentialRunner`` value."""
+"""m68c §3.4: ``run_shuffle_resumable`` runs a bound ``join_plan`` whose map stage calls a service.
+
+``plan.value`` over its last-stage blocks equals the ``SequentialRunner`` value.
+"""
 
 from __future__ import annotations
 

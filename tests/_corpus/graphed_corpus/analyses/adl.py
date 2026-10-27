@@ -77,7 +77,11 @@ def q6_trijet_pt(events: ak.Array) -> Hist:
     tri = ak.combinations(jets, 3, fields=["a", "b", "c"])
     px = tri.a.pt * np.cos(tri.a.phi) + tri.b.pt * np.cos(tri.b.phi) + tri.c.pt * np.cos(tri.c.phi)
     py = tri.a.pt * np.sin(tri.a.phi) + tri.b.pt * np.sin(tri.b.phi) + tri.c.pt * np.sin(tri.c.phi)
-    pz = tri.a.pt * np.sinh(tri.a.eta) + tri.b.pt * np.sinh(tri.b.eta) + tri.c.pt * np.sinh(tri.c.eta)
+    pz = (
+        tri.a.pt * np.sinh(tri.a.eta)
+        + tri.b.pt * np.sinh(tri.b.eta)
+        + tri.c.pt * np.sinh(tri.c.eta)
+    )
     e = (
         np.sqrt(tri.a.pt**2 * np.cosh(tri.a.eta) ** 2 + tri.a.mass**2)
         + np.sqrt(tri.b.pt**2 * np.cosh(tri.b.eta) ** 2 + tri.b.mass**2)
@@ -107,10 +111,15 @@ def q7_sum_isolated_jet_pt(events: ak.Array) -> Hist:
 
 
 def q8_mt_met_lepton(events: ak.Array) -> Hist:
-    """Q8: events with >= 3 leptons and an OSSF pair; transverse mass of MET + the highest-pt
-    lepton not in the OSSF pair whose mass is closest to 91.2."""
+    """Q8: events with >= 3 leptons and an OSSF pair.
+
+    Transverse mass of MET + the highest-pt lepton not in the OSSF pair whose mass is closest to
+    91.2.
+    """
     muons = ak.with_field(events.Muon, ak.zeros_like(events.Muon.pt, dtype=np.int64), "flavor")
-    eles = ak.with_field(events.Electron, ak.ones_like(events.Electron.pt, dtype=np.int64), "flavor")
+    eles = ak.with_field(
+        events.Electron, ak.ones_like(events.Electron.pt, dtype=np.int64), "flavor"
+    )
     lep = ak.concatenate([muons, eles], axis=1)
     lep = lep[ak.argsort(lep.pt, axis=1, ascending=False)]
 

@@ -1,7 +1,9 @@
-"""``aggregate_plan``: the multi-output, one-pass-over-a-shared-sub-graph engine. Several outputs
-sharing a sub-expression compile into ONE IR and read+evaluate the partition ONCE (not once per
-output); the caller supplies the per-output reduce/combine/empty. A NEW frozen file (test-authoring
-deliverable). The bug this guards: building a plan per output recomputes a shared sub-graph N times.
+"""``aggregate_plan``: the multi-output, one-pass-over-a-shared-sub-graph engine.
+
+Several outputs sharing a sub-expression compile into ONE IR and read+evaluate the partition ONCE
+(not once per output); the caller supplies the per-output reduce/combine/empty. A NEW frozen file
+(test-authoring deliverable). The bug this guards: building a plan per output recomputes a shared
+sub-graph N times.
 """
 
 from __future__ import annotations
@@ -22,7 +24,9 @@ class _Backend:
     def op_form(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> str:
         return op
 
-    def eval_stage(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> object:
+    def eval_stage(
+        self, op: str, inputs: Sequence[object], params: Mapping[str, object]
+    ) -> object:
         if op == "add":
             return [a + b for a, b in zip(inputs[0], inputs[1], strict=True)]  # type: ignore[call-overload]
         return inputs[0]
@@ -39,7 +43,10 @@ class _Backend:
 
 @dataclass
 class ListSource:
-    """A PartitionedSource over an in-memory list, counting partition reads (the efficiency witness)."""
+    """A PartitionedSource over an in-memory list, counting partition reads.
+
+    The count is the efficiency witness.
+    """
 
     data: list
     reads: list = field(default_factory=list)
@@ -48,7 +55,9 @@ class ListSource:
         raise AssertionError("the whole-dataset loader must never run during a plan")
 
     def partitions(self, steps_per_file: int = 1) -> tuple[Partition, ...]:
-        return tuple(Partition.blind("toy://list", "", s, steps_per_file) for s in range(steps_per_file))
+        return tuple(
+            Partition.blind("toy://list", "", s, steps_per_file) for s in range(steps_per_file)
+        )
 
     def read_partition(self, partition, columns, resources) -> list:  # type: ignore[no-untyped-def]
         part = partition.resolve(len(self.data))
@@ -78,15 +87,24 @@ def test_shared_subgraph_read_once_and_reduced_correctly() -> None:
         out1, out2, reduce=_sum_each, combine=_add_pairs, empty=lambda: [0, 0], steps_per_file=4
     )
     value = SequentialRunner().run(plan).value
-    assert value == [sum(2 * v for v in range(1, 13)), sum(3 * v for v in range(1, 13))]  # [156, 234]
-    assert len(src.reads) == 4  # witness: 4 partitions read ONCE each, not once per output (would be 8)
+    # [156, 234]
+    assert value == [
+        sum(2 * v for v in range(1, 13)),
+        sum(3 * v for v in range(1, 13)),
+    ]
+    # witness: 4 partitions read ONCE each, not once per output (would be 8)
+    assert len(src.reads) == 4
 
 
 def test_single_output() -> None:
     s = Session(_Backend())
     out1, _out2, _x, _src = _two_outputs(s)
     plan = aggregate_plan(
-        out1, reduce=lambda vs: sum(vs[0]), combine=lambda a, b: a + b, empty=lambda: 0, steps_per_file=3
+        out1,
+        reduce=lambda vs: sum(vs[0]),
+        combine=lambda a, b: a + b,
+        empty=lambda: 0,
+        steps_per_file=3,
     )
     assert SequentialRunner().run(plan).value == sum(2 * v for v in range(1, 13))  # 156
 
@@ -104,5 +122,6 @@ def test_validation() -> None:
 
 def test_resolve_backend_forms() -> None:
     assert resolve_backend(lambda: "factory-made") == "factory-made"  # zero-arg factory
-    assert isinstance(resolve_backend("collections:OrderedDict"), OrderedDict)  # importable callable
+    # importable callable
+    assert isinstance(resolve_backend("collections:OrderedDict"), OrderedDict)
     assert resolve_backend("math:pi") == math.pi  # importable non-callable attr returned as-is

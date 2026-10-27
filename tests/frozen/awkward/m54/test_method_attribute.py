@@ -1,9 +1,9 @@
 """m54 §2.1 — a method is a callable, a property is an array.
 
 The classification is the whole point: `getattr` must split the behavior class's functions from its
-properties and from the record's own fields. An implementation that answered `BoundMethod` for every
-behavior attribute fails the property leg; one that answered it for every non-field name fails the
-shadowed-field leg.
+properties and from the record's own fields. An implementation that answered `BoundMethod` for
+every behavior attribute fails the property leg; one that answered it for every non-field name
+fails the shadowed-field leg.
 """
 
 from __future__ import annotations
@@ -32,9 +32,12 @@ def test_a_method_is_a_bound_method_and_a_property_is_an_array() -> None:
 
 
 def test_the_property_side_is_the_closed_set() -> None:
-    """Only a data descriptor or a `cached_property` is a property; every other resolving descriptor
-    is a method. `partialmethod`, `classmethod` and `singledispatchmethod` are NOT callable, so a
-    `callable()`-only rule classifies all three as properties and fails here."""
+    """Only a data descriptor or a `cached_property` is a property.
+
+    Every other resolving descriptor is a method. `partialmethod`, `classmethod` and
+    `singledispatchmethod` are NOT callable, so a `callable()`-only rule classifies all three as
+    properties and fails here.
+    """
     _session, jets, _probe = recorded()
 
     for name in ("combine", "spread", "doubled", "widen"):
@@ -89,9 +92,7 @@ def test_a_field_named_like_a_method_is_still_a_field() -> None:
     shadow = collection(session, "Shadow")
 
     assert isinstance(shadow.scaled, graphed.Array)
-    assert ak.array_equal(
-        ak.Array(session.materialize(shadow.scaled)), eager("Shadow")["scaled"]
-    )
+    assert ak.array_equal(ak.Array(session.materialize(shadow.scaled)), eager("Shadow")["scaled"])
 
 
 def test_the_numpy_backend_attribute_path_is_unchanged() -> None:

@@ -1,5 +1,7 @@
-"""`visualize` renders a small, legible stage-graph in Mermaid/Graphviz, annotated with provenance
-and (optionally) projected columns (plan M6)."""
+"""`visualize` renders a small, legible stage-graph in Mermaid/Graphviz.
+
+It is annotated with provenance and (optionally) projected columns (plan M6).
+"""
 
 from __future__ import annotations
 

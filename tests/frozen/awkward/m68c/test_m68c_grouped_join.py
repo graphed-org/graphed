@@ -1,5 +1,7 @@
-"""m68c §3.3: ``gak.join(grouped=True)`` for inner and left runs through a V2 plan per dest, one dest
-having no left rows, and gives ``materialize``'s grouped type and sublists."""
+"""m68c §3.3: ``gak.join(grouped=True)`` for inner and left runs through a V2 plan per dest.
+
+One dest has no left rows, and the result gives ``materialize``'s grouped type and sublists.
+"""
 
 from __future__ import annotations
 

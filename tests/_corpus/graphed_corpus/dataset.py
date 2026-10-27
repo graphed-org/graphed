@@ -23,7 +23,9 @@ def _jagged(rng: np.random.Generator, counts: np.ndarray, **flat_fields: np.ndar
     return ak.unflatten(ak.Array(dict(flat_fields)), counts)
 
 
-def _kin(rng: np.random.Generator, n: int, *, pt_scale: float, eta_max: float) -> dict[str, np.ndarray]:
+def _kin(
+    rng: np.random.Generator, n: int, *, pt_scale: float, eta_max: float
+) -> dict[str, np.ndarray]:
     return {
         "pt": rng.exponential(pt_scale, n).astype(np.float64) + 5.0,
         "eta": rng.uniform(-eta_max, eta_max, n).astype(np.float64),
@@ -32,7 +34,10 @@ def _kin(rng: np.random.Generator, n: int, *, pt_scale: float, eta_max: float) -
 
 
 def make_events(n_events: int = DEFAULT_N_EVENTS, seed: int = DEFAULT_SEED) -> ak.Array:
-    """Generate a deterministic event record array with Muon/Electron/Jet/Photon/MET collections."""
+    """Generate a deterministic event record array.
+
+    It carries Muon/Electron/Jet/Photon/MET collections.
+    """
     rng = np.random.default_rng(seed)
 
     n_mu = rng.poisson(0.9, n_events)

@@ -2,7 +2,8 @@
 
 Plan A.3.1: "the serializable IR — not cloudpickle — is the canonical durable representation." Plan
 M8 gate: "Identical plan -> byte-identical serialization." These tests pin the IR-level guarantees
-the durable Plan builds on; the higher-level DurablePlan guarantees live in ``test_durable_plan.py``.
+the durable Plan builds on; the higher-level DurablePlan guarantees live in
+``test_durable_plan.py``.
 """
 
 from __future__ import annotations
@@ -44,7 +45,8 @@ def test_roundtrip_preserves_structure() -> None:
 def test_reserialize_is_byte_identical() -> None:
     g, out = _analysis()
     blob = g.serialize(outputs=[out])
-    assert GraphStore.deserialize(blob).serialize() == blob  # carried marks reserialize identically
+    # carried marks reserialize identically
+    assert GraphStore.deserialize(blob).serialize() == blob
 
 
 def test_identical_graphs_serialize_identically() -> None:

@@ -30,8 +30,11 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class CheckedExternal:
-    """The evaluator of an External that declared its type: its value must have that type, checked
-    by the backend on every call and never cast. Picklable when ``fn`` is."""
+    """The evaluator of an External that declared its type.
+
+    Its value must have that type, checked by the backend on every call and never cast. Picklable
+    when ``fn`` is.
+    """
 
     fn: Callable[..., object]
     #: ``"output_type"`` (the element type) or ``"output_dtype"`` (a static leaf dtype)
@@ -44,6 +47,7 @@ class CheckedExternal:
     node: str
 
     def __call__(self, *inputs: object) -> object:
+        """Evaluate, then refuse a value that disagrees with the declared type."""
         value = self.fn(*inputs)
         actual = self.check(value, inputs, self.key, self.declared)
         if actual is not None:
@@ -52,24 +56,34 @@ class CheckedExternal:
         return value
 
     def bind_services(self, endpoints: Mapping[str, str]) -> CheckedExternal:
-        return replace(self, fn=self.fn.bind_services(endpoints)) if isinstance(self.fn, Bindable) else self
+        """Return this check around the evaluator with ``endpoints`` bound."""
+        return (
+            replace(self, fn=self.fn.bind_services(endpoints))
+            if isinstance(self.fn, Bindable)
+            else self
+        )
 
     def __getattr__(self, name: str) -> Any:
         # the wrapped evaluator's own attributes (a plugin evaluator's `endpoint`) read through;
         # dunders and a half-unpickled instance must not recurse into `fn`
+        """Read an attribute through to the wrapped evaluator."""
         if name.startswith("__") or "fn" not in self.__dict__:
             raise AttributeError(name)
         return getattr(self.__dict__["fn"], name)
 
 
 class Session:
+    """A recording session: the interned graph of every array recorded on ``backend``."""
+
     def __init__(self, backend: Backend, *, incremental: bool = False) -> None:
+        """Record on ``backend``; ``incremental`` reduces the graph as it is recorded."""
         self._store = graphed.core.GraphStore()
         self._backend = backend
         self._forms: dict[int, Form] = {}
         self._sources: dict[int, object] = {}
         self._source_names: dict[int, str] = {}
-        self._slots: dict[str, tuple[object, object]] = {}  # source name -> (form description, data)
+        # source name -> (form description, data)
+        self._slots: dict[str, tuple[object, object]] = {}
         self._ops: dict[int, tuple[str, dict[str, ParamValue], list[int]]] = {}
         self._externals: dict[int, tuple[Callable[[object], object], list[int]]] = {}
         self._services: dict[str, ServiceSpec] = {}
@@ -87,9 +101,10 @@ class Session:
         # registered label that reaches no marked output instead of paying for it silently.
         self._varied: list[tuple[tuple[str, ...], weakref.ref[Any]]] = []
         # M49 §2.5: the shift-after-weight ordering diagnostic. Both operands are live only at the
-        # shift `vary` call, so detection is RECORD-time and the registration is BY VALUE — `_stamp`
-        # rebuilds a context's ambient weight after `register`, so `_varied`'s weak reference is
-        # already dead at compile, and no Session-retained object ever carries a COLLECTION name.
+        # shift `vary` call, so detection is RECORD-time and the registration is BY VALUE —
+        # `_stamp` rebuilds a context's ambient weight after `register`, so `_varied`'s weak
+        # reference is already dead at compile, and no Session-retained object ever carries a
+        # COLLECTION name.
         self._weight_factors: list[tuple[str, tuple[int, ...]]] = []
         # `(family, collection)` -> the offending factor's own member node ids. Carrying the ids is
         # what keeps the report PER-PROGRAM: this registry accumulates for the Session's lifetime,
@@ -99,19 +114,21 @@ class Session:
         # pure f(label) and no narrowing call site grows a Point argument. Record-time only —
         # points are not written to disk (§5.3).
         self._points: dict[str, Point] = {}
-        # §4.11-2's inverse of `_points` (point -> owning label), kept in sync by `vary._bind_points`
-        # so `vary._check_unique` tests "one point wears one label" in O(1) instead of rescanning the
-        # whole registry per minted label — the difference between O(N) and O(N^2) in Session universes.
+        # §4.11-2's inverse of `_points` (point -> owning label), kept in sync by
+        # `vary._bind_points` so `vary._check_unique` tests "one point wears one label" in O(1)
+        # instead of rescanning the whole registry per minted label — the difference between O(N)
+        # and O(N^2) in Session universes.
         self._points_by_point: dict[Point, str] = {}
         # Per-node memo of `vary._source_ids` (node_id -> reachable source node_ids). The IR is
         # append-only + hash-consed, so a node's reachable-source set is immutable and never needs
-        # invalidation; the memo turns check_members' per-member walk of a shared (deep) prefix from
-        # O(members x depth) into O(depth + members).
+        # invalidation; the memo turns check_members' per-member walk of a shared (deep) prefix
+        # from O(members x depth) into O(depth + members).
         self._source_ids_cache: dict[int, frozenset[int]] = {}
-        # Per-Session memo of `context._mul_form` ((left, right) form DESCRIPTIONS -> product form).
-        # Per-Session and not module-global because the answer depends on THIS backend instance —
-        # an `AwkwardBackend`'s registered behavior can decide an op the plain one refuses — and
-        # because a module-global would keep every form string a process ever inferred.
+        # Per-Session memo of `context._mul_form` ((left, right) form DESCRIPTIONS -> product
+        # form). Per-Session and not module-global because the answer depends on THIS backend
+        # instance — an `AwkwardBackend`'s registered behavior can decide an op the plain one
+        # refuses — and because a module-global would keep every form string a process ever
+        # inferred.
         self._mul_forms: dict[tuple[str, str], Any] = {}
         # Per-Session memo of `context._two_level`, keyed by container id -> {label: the pair of
         # member KEYS the label resolves through}. §5's record-time check re-runs the whole
@@ -184,7 +201,8 @@ class Session:
             if name is not None:
                 self._fn_taken.add(name)
                 return name
-            if type(fn) is types.MethodType:  # not isinstance: `__class__` is the callable's to claim
+            # not isinstance: `__class__` is the callable's to claim
+            if type(fn) is types.MethodType:
                 key: object = (id(fn.__self__), id(fn.__func__))
             else:
                 key = id(fn)
@@ -225,16 +243,21 @@ class Session:
     # ---- introspection ---------------------------------------------------------
     @property
     def backend(self) -> Backend:
+        """The backend this session records on."""
         return self._backend
 
     def node_count(self) -> int:
+        """Return the number of interned nodes."""
         return self._store.node_count()
 
     def to_dot(self) -> str:
+        """Return the graph in Graphviz dot format."""
         return self._store.to_dot()
 
     def serialized_ir(self, *outputs: Array, optimize: bool = True) -> bytes:
-        """The recorded analysis as a canonical, versioned, byte-identical durable IR (plan M8).
+        """Return the recorded analysis as a canonical, versioned durable IR (plan M8).
+
+        The IR is byte-identical.
 
         Pass the result ``Array``(s) of the analysis as ``outputs``: the artifact carries EXACTLY
         that output set — outputs are a property of THIS request, not session state (M22), so
@@ -259,45 +282,60 @@ class Session:
         return bytes(self._store.reduce(outputs=ids)[0].serialize())
 
     def form(self, array: Array) -> Form:
+        """Return the form of ``array``."""
         self._mine([array])
         return self._forms[array.node_id]
 
     def provenance(self, array: Array) -> Provenance:
+        """Return the user source location that recorded ``array``."""
         self._mine([array])
         return self._provenance[array.node_id]
 
     def source_ids(self) -> list[int]:
-        """The node ids of all source nodes (used by projection)."""
+        """Return the node ids of all source nodes (used by projection)."""
         return list(self._sources)
 
     def sources(self) -> dict[int, object]:
-        """The source nodes' concrete data objects, keyed by node id (a public, read-only view —
-        host-reader integrations inspect this instead of reaching into session internals)."""
+        """Return the source nodes' concrete data objects, keyed by node id.
+
+        A public, read-only view — host-reader integrations inspect this instead of reaching into
+        session internals.
+        """
         return dict(self._sources)
 
     def declare_service(self, spec: ServiceSpec) -> None:
-        """Declare a service nodes may name by ``params["service"]``; declaring a name again must
-        repeat the same spec."""
+        """Declare a service nodes may name by ``params["service"]``.
+
+        Declaring a name again must repeat the same spec.
+        """
         held = self._services.setdefault(spec.name, spec)
         if held != spec:
             raise ValueError(f"service {spec.name!r} is already declared as {held}, not {spec}")
 
     def services(self) -> dict[str, ServiceSpec]:
-        """The declared services by name (a copy)."""
+        """Return the declared services by name (a copy)."""
         return dict(self._services)
 
     def service_for(self, name: str) -> ServiceSpec:
-        """The declared spec called ``name``; an undeclared name is refused naming the declared ones."""
+        """Return the declared spec called ``name``.
+
+        An undeclared name is refused naming the declared ones.
+        """
         spec = self._services.get(name)
         if spec is None:
             declared = ", ".join(sorted(self._services)) or "none"
-            raise ValueError(f"service {name!r} is not declared on this Session (declared: {declared})")
+            raise ValueError(
+                f"service {name!r} is not declared on this Session (declared: {declared})"
+            )
         return spec
 
     def reduction_state(self) -> dict[str, int] | None:
-        """Incremental-reduction introspection (M10): how many nodes the maintained reduced view
-        has consumed (`watermark`), cumulative reducer work (`total_work` — equals `watermark`, the
-        incrementality witness), and the canonical size. ``None`` for a non-incremental session."""
+        """Incremental-reduction introspection (M10).
+
+        How many nodes the maintained reduced view has consumed (`watermark`), cumulative reducer
+        work (`total_work` — equals `watermark`, the incrementality witness), and the canonical
+        size. ``None`` for a non-incremental session.
+        """
         if self._reducer is None:
             return None
         return {
@@ -307,15 +345,19 @@ class Session:
         }
 
     def source_name(self, node_id: int) -> str:
+        """Return the name of source node ``node_id``."""
         return self._source_names[node_id]
 
     def form_of(self, node_id: int) -> Form:
+        """Return the form of node ``node_id``."""
         return self._forms[node_id]
 
     def sourcemap(self) -> dict[int, dict[str, object]]:
-        """Per-node user-source provenance (file / line / function / sub-expression text) — the M6
-        sourcemap. M9's ``inspect`` renders it so every preserved node maps back to the analysis line
-        that created it, without executing anything."""
+        """Per-node user-source provenance (file / line / function / sub-expression text).
+
+        The M6 sourcemap. M9's ``inspect`` renders it so every preserved node maps back to the
+        analysis line that created it, without executing anything.
+        """
         return {
             nid: {
                 "filename": p.filename,
@@ -327,7 +369,10 @@ class Session:
         }
 
     def source_value(self, node_id: int) -> object:
-        """The concrete data for a source node (resolving a lazy loader). Used by debug execution."""
+        """Return the concrete data for a source node (resolving a lazy loader).
+
+        Used by debug execution.
+        """
         value = self._sources[node_id]
         return value() if callable(value) else value
 
@@ -335,6 +380,7 @@ class Session:
     def source(self, name: str, *, form: Form, data: object, **params: ParamValue) -> Array:
         # a name is a slot of one form bound to one data object; the store interns (name, params),
         # so a name reused for other data would silently keep its first binding
+        """Record a source called ``name`` of ``form``, bound to ``data``."""
         described = getattr(form, "describe", None)
         key = described() if callable(described) else form
         held = self._slots.setdefault(name, (key, data))
@@ -343,7 +389,9 @@ class Session:
                 f"source {name!r} is already a slot of another form in this Session; name this one"
             )
         if held[1] is not data:
-            raise ValueError(f"source {name!r} is already bound to other data in this Session; name this one")
+            raise ValueError(
+                f"source {name!r} is already bound to other data in this Session; name this one"
+            )
         node_id = self._store.add_source(name, dict(params))
         self._forms.setdefault(node_id, form)
         self._sources.setdefault(node_id, data)
@@ -360,6 +408,7 @@ class Session:
         *,
         reduction: bool = False,
     ) -> Array:
+        """Record ``op`` over ``inputs`` and return its array."""
         params_d: dict[str, ParamValue] = dict(params or {})
         prov = capture()
         self._mine(inputs, (op, prov))
@@ -382,9 +431,11 @@ class Session:
         return self._wrap(node_id, inputs)
 
     def record_exchange(self, input_array: Array, params: Mapping[str, ParamValue]) -> Array:
-        """Record an ``Exchange`` boundary (M39): a pure data-movement repartition of one input. Its
-        ``params`` (the scheme map — ``scheme``/``key``/``parts``/``target_bytes``) are its structural
-        identity; its output form is the input form (identity on the payload, §3.3a)."""
+        """Record an ``Exchange`` boundary (M39): a pure data-movement repartition of one input.
+
+        Its ``params`` (the scheme map — ``scheme``/``key``/``parts``/``target_bytes``) are its
+        structural identity; its output form is the input form (identity on the payload, §3.3a).
+        """
         params_d: dict[str, ParamValue] = dict(params)
         prov = capture()
         self._mine([input_array], ("exchange", prov))
@@ -398,9 +449,12 @@ class Session:
         return self._wrap(node_id, [input_array])
 
     def record_join(self, left: Array, right: Array, params: Mapping[str, ParamValue]) -> Array:
-        """Record a ``Join`` boundary (M40): a two-input co-partitioned relational combine. Its
-        ``params`` (``on``/``how``) + its ordered inputs ``[left, right]`` are its structural identity;
-        its output form is the backend's ``op_form("join", …)`` (flat record-merge; §3.3)."""
+        """Record a ``Join`` boundary (M40): a two-input co-partitioned relational combine.
+
+        Its ``params`` (``on``/``how``) + its ordered inputs ``[left, right]`` are its structural
+        identity; its output form is the backend's ``op_form("join", …)`` (flat record-merge;
+        §3.3).
+        """
         params_d: dict[str, ParamValue] = dict(params)
         prov = capture()
         self._mine([left, right], ("join", prov))
@@ -431,10 +485,12 @@ class Session:
         output_type: object = None,
         form_params: Mapping[str, object] | None = None,
     ) -> Array:
-        """Record an External node. By default the BACKEND supplies the payload descriptor and
-        output form (the M3 correctionlib/ONNX family); a package recording its OWN External
-        family (M23 — e.g. histogram fills) passes ``descriptor=`` and ``form=`` explicitly and
-        the backend is not consulted at all, so backends stay free of domain content (§A.4).
+        """Record an External node.
+
+        By default the BACKEND supplies the payload descriptor and output form (the M3
+        correctionlib/ONNX family); a package recording its OWN External family (M23 — e.g.
+        histogram fills) passes ``descriptor=`` and ``form=`` explicitly and the backend is not
+        consulted at all, so backends stay free of domain content (§A.4).
 
         ``output_type=`` declares the per-element type of the External's value (m71). The
         backend's optional ``canonical_output_type`` reduces it to one string, stored as the
@@ -448,7 +504,8 @@ class Session:
         A declaration is checked, never cast: with a backend ``check_output_type``, the evaluator
         of a node declaring ``output_type`` or a ``form_params`` ``output_dtype`` (also beside
         ``form=``) becomes a :class:`CheckedExternal`, and a value of another type raises
-        :class:`~graphed.OutputTypeError` at this call's line."""
+        :class:`~graphed.OutputTypeError` at this call's line.
+        """
         params_d: dict[str, ParamValue] = dict(params or {})
         prov = capture()
         self._mine(inputs, (op, prov))
@@ -459,7 +516,9 @@ class Session:
         spec = output_type
         if spec is not None:
             if "output_type" in params_d:
-                raise GraphedTypeError(op, prov, "output_type= collides with an 'output_type' param")
+                raise GraphedTypeError(
+                    op, prov, "output_type= collides with an 'output_type' param"
+                )
             if form is not None:
                 raise GraphedTypeError(op, prov, "output_type= and form= are exclusive")
             canonical = getattr(self._backend, "canonical_output_type", None)
@@ -472,16 +531,20 @@ class Session:
         if descriptor is None:
             descriptor = self._backend.external_payload(op, params_d)
             if descriptor is None:
-                raise GraphedTypeError(op, prov, "backend returned no payload descriptor for external op")
+                raise GraphedTypeError(
+                    op, prov, "backend returned no payload descriptor for external op"
+                )
         if form is None:
             in_forms = [self._forms[a.node_id] for a in inputs]
             try:
                 form = self._backend.op_form(op, in_forms, {**form_view, **(form_params or {})})
             except GraphedTypeError:
                 raise
-            except Exception as exc:  # backend type/shape error -> user-located error (as record_op)
+            # backend type/shape error -> user-located error (as record_op)
+            except Exception as exc:
                 raise GraphedTypeError(op, prov, str(exc)) from exc
-        # the declaration op_form honoured (or, beside form=, a leaf dtype) is checked on every value
+        # the declaration op_form honoured (or, beside form=, a leaf dtype) is checked on every
+        # value
         check = getattr(self._backend, "check_output_type", None)
         canonical = getattr(self._backend, "canonical_output_type", None)
         dtype = (form_params or {}).get("output_dtype")
@@ -499,10 +562,15 @@ class Session:
             node = f"{op} node {node_id} ({params_d.get('fn', descriptor.kind)!r})"
             fn = CheckedExternal(fn, declared[0], declared[1], check, op, prov, node)
         prior = self._externals.get(node_id)
-        if prior is not None and isinstance(prior[0], CheckedExternal) != isinstance(fn, CheckedExternal):
-            # an 'output_type' param and output_type= store the same params, so one node would drop the check
+        if prior is not None and isinstance(prior[0], CheckedExternal) != isinstance(
+            fn, CheckedExternal
+        ):
+            # an 'output_type' param and output_type= store the same params, so one node would drop
+            # the check
             raise GraphedTypeError(
-                op, prov, "this External is already recorded with its type declared on one call only"
+                op,
+                prov,
+                "this External is already recorded with its type declared on one call only",
             )
         self._forms.setdefault(node_id, form)
         self._externals.setdefault(node_id, (fn, ids))
@@ -520,11 +588,13 @@ class Session:
         external: Callable[[int, Callable[..., object], list[object]], object],
         memo: dict[int, object] | None = None,
     ) -> object:
-        """Evaluate the graph from ``array`` with caller-supplied handlers for sources, ops, and
-        externals. `materialize` evaluates real data; projection evaluates reporting tracers.
+        """Evaluate the graph from ``array`` with caller-supplied handlers for sources, ops.
+
+        And externals. `materialize` evaluates real data; projection evaluates reporting tracers.
         Walks of several outputs that share one ``memo`` evaluate each shared node once.
 
-        `materialize` reaches the m60 own-session guard through this one call."""
+        `materialize` reaches the m60 own-session guard through this one call.
+        """
         self._mine([array])
         cache: dict[int, object] = {} if memo is None else memo
 
@@ -537,8 +607,9 @@ class Session:
 
         # explicit-stack post-order: a deeply chained recorded graph (a long selection/systematics
         # chain) would blow Python's recursion limit if this evaluated recursively. Inputs are
-        # pushed reversed so the first input resolves first -- left-to-right compute order, matching
-        # a depth-first recursion; the cache deduplicates shared sub-DAGs and survives re-visits.
+        # pushed reversed so the first input resolves first -- left-to-right compute order,
+        # matching a depth-first recursion; the cache deduplicates shared sub-DAGs and survives
+        # re-visits.
         root = array.node_id
         stack = [root]
         while stack:
@@ -579,8 +650,10 @@ class Session:
 
 
 def _replace_arrays(item: Any, leaf: Callable[[Array], Any]) -> Any:
-    """``item`` with each Array replaced by ``leaf(array)``, through lists, tuples (named ones keep
-    their type) and mappings; other items pass through."""
+    """Return ``item`` with each Array replaced by ``leaf(array)``.
+
+    Through lists, tuples (named ones keep their type) and mappings; other items pass through.
+    """
     if isinstance(item, Array):
         return leaf(item)
     if isinstance(item, Mapping):
@@ -595,8 +668,10 @@ def _replace_arrays(item: Any, leaf: Callable[[Array], Any]) -> Any:
 
 def _projected_reads(session: Session, arrays: Sequence[Array]) -> dict[int, object]:
     """Each partitioned source ``arrays`` read, read with the columns a plan over them would read.
+
     A source whose read list is every column, or whose partitions the backend cannot concatenate,
-    is left to its lazy loader."""
+    is left to its lazy loader.
+    """
     from .core.execution import LocalResources  # noqa: PLC0415  (import cycle)
     from .projection import read_columns  # noqa: PLC0415
     from .write import PartitionedSource, declared_columns, sources_read  # noqa: PLC0415
@@ -617,19 +692,24 @@ def _projected_reads(session: Session, arrays: Sequence[Array]) -> dict[int, obj
             if len(partitions) == 1:
                 reads[nid] = data.read_partition(partitions[0], columns, resources)
             elif concat is not None:
-                reads[nid] = concat([data.read_partition(p, columns, resources) for p in partitions])
+                reads[nid] = concat(
+                    [data.read_partition(p, columns, resources) for p in partitions]
+                )
     finally:
         resources.close()
     return reads
 
 
 def materialize(arrays: Any) -> Any:
-    """Evaluate ``arrays`` in this process: an :class:`Array`, or any nesting of lists, tuples
-    (named ones keep their type) and mappings holding them (other items pass through), recorded in
-    any number of Sessions. Returns the same structure with each Array replaced by its value; the
-    Arrays of one Session evaluate every node they share once, and read only the source columns
-    they use, as a plan over them would. Evaluation only: running on an executor is a plan's job
-    (:func:`graphed.aggregate_plan`, :func:`graphed.collate`)."""
+    """Evaluate ``arrays`` in this process.
+
+    An :class:`Array`, or any nesting of lists, tuples (named ones keep their type) and mappings
+    holding them (other items pass through), recorded in any number of Sessions. Returns the same
+    structure with each Array replaced by its value; the Arrays of one Session evaluate every node
+    they share once, and read only the source columns they use, as a plan over them would.
+    Evaluation only: running on an executor is a plan's job
+    (:func:`graphed.aggregate_plan`, :func:`graphed.collate`).
+    """
     found: dict[Session, list[Array]] = {}
     _replace_arrays(arrays, lambda a: found.setdefault(a.session, []).append(a))
     memos = {session: _projected_reads(session, outs) for session, outs in found.items()}

@@ -5,9 +5,9 @@ A realistic multi-observable analysis is compiled ONCE to an optimized, interned
 ``DurablePlan.for_dataset``, all sharing ONE checkpoint ``Store``. These tests exercise the pattern
 for **correctness** (per-dataset bit-for-bit, partition-count invariance), **responsiveness**
 (kill mid-deployment then resume, skipping completed work; a finished deployment redoes nothing),
-and **usability/performance** (one compiled artifact reused across datasets; retargeting is cheap and
-content-addressing namespaces datasets in a single store). It is the regression guard for the whole
-deployment story.
+and **usability/performance** (one compiled artifact reused across datasets; retargeting is cheap
+and content-addressing namespaces datasets in a single store). It is the regression guard for the
+whole deployment story.
 """
 
 from __future__ import annotations
@@ -25,8 +25,14 @@ CHUNK = 700  # N_EVENTS=1800 -> 3 chunks per dataset
 
 
 def _run_deployment(plan, datasets, store, **kw):  # type: ignore[no-untyped-def]
-    """The deployment idiom under test: one compiled plan, one store, run over each dataset."""
-    return {ds.uri: run_resumable(plan.for_dataset(ds, chunk_size=CHUNK), store, **kw) for ds in datasets}
+    """Run the deployment idiom under test.
+
+    One compiled plan, one store, run over each dataset.
+    """
+    return {
+        ds.uri: run_resumable(plan.for_dataset(ds, chunk_size=CHUNK), store, **kw)
+        for ds in datasets
+    }
 
 
 # ---- the compiled artifact is realistic + reused ------------------------------------------------
@@ -92,7 +98,8 @@ def test_kill_mid_deployment_then_resume_is_correct_and_incremental(tmp_path) ->
     results = _run_deployment(plan, deployment.DATASETS, store)
     rep = {uri: r.report for uri, r in results.items()}
     assert rep[ds0.uri].executed == 0 and rep[ds0.uri].skipped == 3  # already done -> all reused
-    assert rep[ds1.uri].skipped == 2 and rep[ds1.uri].executed == 1  # only the unfinished chunk runs
+    # only the unfinished chunk runs
+    assert rep[ds1.uri].skipped == 2 and rep[ds1.uri].executed == 1
     assert rep[ds2.uri].executed == 3  # never started before -> fresh
     for ds in deployment.DATASETS:
         assert np.array_equal(results[ds.uri].value, deployment.reference_for(ds.uri))

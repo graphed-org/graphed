@@ -81,8 +81,13 @@ def test_every_numerical_dtype_is_declarable(name: str) -> None:
 
     assert describe(sn, out) == f"vector[{name}]"
     assert params_of(sn, out)["output_type"] == name
-    assert x.map(lambda a: a.astype(name), name="num", output_type=np.dtype(name)).node_id == out.node_id
-    assert x.map(lambda a: a.astype(name), name="num", output_type=scalar_type).node_id == out.node_id
+    assert (
+        x.map(lambda a: a.astype(name), name="num", output_type=np.dtype(name)).node_id
+        == out.node_id
+    )
+    assert (
+        x.map(lambda a: a.astype(name), name="num", output_type=scalar_type).node_id == out.node_id
+    )
     assert x.map(lambda a: a.astype(name), name="num").node_id != out.node_id
     value = sn.materialize(out)
     assert isinstance(value, np.ndarray) and value.dtype == np.dtype(name)

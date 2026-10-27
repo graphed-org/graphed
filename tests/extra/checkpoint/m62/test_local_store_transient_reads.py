@@ -1,4 +1,7 @@
-"""A blob that a concurrent put is replacing is briefly unopenable on Windows; ``get`` waits it out."""
+"""A blob a concurrent put is replacing is briefly unopenable on Windows.
+
+``get`` waits it out.
+"""
 
 from __future__ import annotations
 
@@ -26,7 +29,9 @@ def _flaky_read_bytes(monkeypatch: pytest.MonkeyPatch, failures: int) -> list[in
     return seen
 
 
-def test_get_waits_out_a_transient_permission_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_waits_out_a_transient_permission_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     s = Store(tmp_path)
     h = s.put(b"mid-replace")
     seen = _flaky_read_bytes(monkeypatch, failures=2)
@@ -34,7 +39,9 @@ def test_get_waits_out_a_transient_permission_error(tmp_path: Path, monkeypatch:
     assert seen[0] == 3
 
 
-def test_get_gives_up_after_the_backoff_schedule(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_gives_up_after_the_backoff_schedule(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     s = Store(tmp_path)
     h = s.put(b"stuck")
     seen = _flaky_read_bytes(monkeypatch, failures=len(store_module._READ_BACKOFF) + 1)

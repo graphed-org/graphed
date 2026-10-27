@@ -1,5 +1,8 @@
-"""A preserve External's declaration is checked at run time: ``output_type=``, else the plugin's
-static leaf ``output_dtype``; a disagreeing value is refused at the declaring line."""
+"""A preserve External's declaration is checked at run time.
+
+``output_type=``, else the plugin's static leaf ``output_dtype``; a disagreeing value is refused at
+the declaring line.
+"""
 
 from __future__ import annotations
 
@@ -39,10 +42,14 @@ def _plugin(dtype: str, output_dtype: object) -> ExternalPlugin:
 
 def _x() -> tuple[Session, Any]:
     s = Session(AwkwardBackend())
-    return s, from_awkward(s, "e", ak.zip({"x": np.array([0.5, 2.0], dtype=np.float32)}, depth_limit=1)).x
+    return s, from_awkward(
+        s, "e", ak.zip({"x": np.array([0.5, 2.0], dtype=np.float32)}, depth_limit=1)
+    ).x
 
 
-def test_a_served_mask_declared_bool_is_refused_at_its_line(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_served_mask_declared_bool_is_refused_at_its_line(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setitem(_base._REGISTRY, TRITON_PLUGIN.kind, TRITON_PLUGIN)
     s = Session(AwkwardBackend())
     chunks = fx.Chunks()
@@ -51,12 +58,18 @@ def test_a_served_mask_declared_bool_is_refused_at_its_line(monkeypatch: pytest.
     s.declare_service(ServiceSpec("scorer", "http"))
     params = {"model": "scorer", "transport": "m71_triton_fixtures:transport", "service": "scorer"}
     payload = b'{"model": "scorer"}'
-    mask, line = record_external(s, TRITON_PLUGIN, payload, [ev.x], output_type="bool", params=params), here()
-    plan = graphed.aggregate_plan(gak.sum(ev.x[mask]), reduce=fx.total, combine=fx.add, empty=fx.zero)
+    line = here() + 1
+    mask = record_external(s, TRITON_PLUGIN, payload, [ev.x], output_type="bool", params=params)
+    plan = graphed.aggregate_plan(
+        gak.sum(ev.x[mask]), reduce=fx.total, combine=fx.add, empty=fx.zero
+    )
     with pytest.raises(StageError) as info:
         SequentialRunner().run(bind_services(plan, {"scorer": fx.ENDPOINT}))
     assert info.value.user_frame.lineno == line
-    assert "('triton_model') declares output_type 'bool'; its value is 'float64'" in info.value.cause_message
+    assert (
+        "('triton_model') declares output_type 'bool'; its value is 'float64'"
+        in info.value.cause_message
+    )
 
 
 def test_a_plugin_breaking_its_output_dtype_is_refused() -> None:
@@ -76,11 +89,16 @@ def test_output_type_wins_over_output_dtype() -> None:
 
 def test_an_honest_plugin_and_an_undeclared_one_run() -> None:
     s, x = _x()
-    assert ak.to_list(s.materialize(record_external(s, _plugin("float64", "float64"), b"m", [x]))) == [
+    assert ak.to_list(
+        s.materialize(record_external(s, _plugin("float64", "float64"), b"m", [x]))
+    ) == [
         0.0,
         1.0,
     ]
-    assert ak.to_list(s.materialize(record_external(s, _plugin("int8", None), b"m", [x]))) == [0, 1]
+    assert ak.to_list(s.materialize(record_external(s, _plugin("int8", None), b"m", [x]))) == [
+        0,
+        1,
+    ]
 
 
 def _bundle(tmp_path: Any, plugin: ExternalPlugin, **kw: Any) -> tuple[Any, int]:
@@ -101,11 +119,21 @@ def _bundle(tmp_path: Any, plugin: ExternalPlugin, **kw: Any) -> tuple[Any, int]
     ("dtype", "output_dtype", "kw", "message"),
     [
         ("float32", "float64", {}, "declares output_dtype 'float64'; its value is 'float32'"),
-        ("float64", None, {"output_type": "bool"}, "declares output_type 'bool'; its value is 'float64'"),
+        (
+            "float64",
+            None,
+            {"output_type": "bool"},
+            "declares output_type 'bool'; its value is 'float64'",
+        ),
     ],
 )
 def test_reproduce_refuses_a_value_of_another_type_at_its_line(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Any, dtype: str, output_dtype: Any, kw: Any, message: str
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Any,
+    dtype: str,
+    output_dtype: Any,
+    kw: Any,
+    message: str,
 ) -> None:
     plugin = _plugin(dtype, output_dtype)
     monkeypatch.setitem(_base._REGISTRY, plugin.kind, plugin)

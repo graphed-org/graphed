@@ -54,15 +54,16 @@ def test_the_keyword_spelling_order_does_not_change_the_node() -> None:
 
 
 def test_two_array_keywords_are_ordered_by_name_not_by_spelling() -> None:
-    """Sorting the keyword NAMES is not enough: the input list must follow the same order, or the
-    two arrays swap silently. The second assertion is the one an order-blind encoder fails."""
+    """Sorting the keyword NAMES is not enough.
+
+    The input list must follow the same order, or the two arrays swap silently. The second
+    assertion is the one an order-blind encoder fails.
+    """
     _session, jets, probe = recorded()
     lead, partner = gak.firsts(jets, axis=1), gak.firsts(probe, axis=1)
     third = gak.firsts(gak.with_field(jets, jets.pt * 2.0, "pt"), axis=1)
 
-    assert (
-        lead.blend(x=partner, y=third).node_id == lead.blend(y=third, x=partner).node_id
-    )
+    assert lead.blend(x=partner, y=third).node_id == lead.blend(y=third, x=partner).node_id
     assert lead.blend(x=partner, y=third).node_id != lead.blend(x=third, y=partner).node_id
 
 
@@ -74,9 +75,12 @@ def test_a_list_and_a_tuple_of_the_same_constants_are_one_node() -> None:
 
 
 def test_arrays_nested_in_a_dict_constant_follow_the_sorted_key_order() -> None:
-    """`sort_keys=True` hides this: with float values both spellings encode identically whatever
-    order the inputs were joined in. Only arrays under the keys expose an input list built in
-    spelling order rather than sorted order."""
+    """`sort_keys=True` hides this.
+
+    With float values both spellings encode identically whatever order the inputs were joined in.
+    Only arrays under the keys expose an input list built in spelling order rather than sorted
+    order.
+    """
     _session, jets, probe = recorded()
     lead, partner = gak.firsts(jets, axis=1), gak.firsts(probe, axis=1)
     third = gak.firsts(gak.with_field(jets, jets.pt * 2.0, "pt"), axis=1)

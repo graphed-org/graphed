@@ -1,6 +1,8 @@
-"""m68 §3.2 — the service surface is analysis data: a JSON-round-tripping spec, declared on the
-Session, carried by the runtime Plan, the DurablePlan and the bundle, listed by ``inspect()``;
-run endpoints ride the RunReport, outside the fingerprint."""
+"""m68 §3.2 — the service surface is analysis data.
+
+A JSON-round-tripping spec, declared on the Session, carried by the runtime Plan, the DurablePlan
+and the bundle, listed by ``inspect()``; run endpoints ride the RunReport, outside the fingerprint.
+"""
 
 from __future__ import annotations
 
@@ -51,14 +53,23 @@ def _json(doc: Any) -> Any:
 
 def test_defaults_are_the_planned_ones_and_specs_are_frozen() -> None:
     site = _site()
-    assert (site.check, site.ports, site.launch, site.timeout_s) == ("tcp", (10000, 10100), None, 600.0)
+    assert (site.check, site.ports, site.launch, site.timeout_s) == (
+        "tcp",
+        (10000, 10100),
+        None,
+        600.0,
+    )
     bare = Launch(argv=("serve",))
     assert (bare.image, bare.inputs, dict(bare.env), dict(bare.resources)) == (None, (), {}, {})
     with pytest.raises(dataclasses.FrozenInstanceError):
         site.name = "other"  # type: ignore[misc]
     with pytest.raises(dataclasses.FrozenInstanceError):
         bare.image = "x"  # type: ignore[misc]
-    for mapping in (bare.env, bare.resources):  # §3 defaults rule: read-only, not a shared mutable dict
+    # §3 defaults rule: read-only, not a shared mutable dict
+    for mapping in (
+        bare.env,
+        bare.resources,
+    ):
         with pytest.raises(TypeError):
             mapping["k"] = 1.0  # type: ignore[index]
 
@@ -87,7 +98,8 @@ def test_session_registry_refuses_conflicts_and_undeclared_names() -> None:
     with pytest.raises(Exception, match=r"(?s)nope") as looked_up:
         s.service_for("nope")
     assert looked_up.match(declared)
-    assert ev.x is not None  # interned before counting, so only a refused External could add a node
+    # interned before counting, so only a refused External could add a node
+    assert ev.x is not None
     before = s.node_count()
     with pytest.raises(Exception, match=r"(?s)nope") as recorded:
         score(ev, descriptor("undeclared"), service="nope")
@@ -121,7 +133,11 @@ def test_plan_and_durable_plan_carry_the_referenced_specs() -> None:
     weight = score(ev, descriptor("durable"), service="scorer-svc")
     score(ev, descriptor("dead"), service="scorer-site")
     assert values_plan(weight).services == (_managed(),)
-    assert values_plan(weight, services=("unused-svc",)).services == (_managed(), _unused())  # sorted by name
+    # sorted by name
+    assert values_plan(weight, services=("unused-svc",)).services == (
+        _managed(),
+        _unused(),
+    )
     assert values_plan(weight, services=("scorer-svc",)).services == (_managed(),)  # a union
     with pytest.raises(Exception, match="nope") as err:
         values_plan(weight, services=("nope",))
@@ -141,10 +157,15 @@ def test_plan_and_durable_plan_carry_the_referenced_specs() -> None:
     back = DurablePlan.from_bytes(raw)
     assert back.services == (_managed(),)
     assert back.to_bytes() == raw
-    kept = {f.name: getattr(durable, f.name) for f in dataclasses.fields(durable) if f.name != "services"}
+    kept = {
+        f.name: getattr(durable, f.name)
+        for f in dataclasses.fields(durable)
+        if f.name != "services"
+    }
     bare = DurablePlan(**kept)
     assert bare.services == ()
-    assert [durable.task_id(p) for p in parts] == [bare.task_id(p) for p in parts]  # the spec is not identity
+    # the spec is not identity
+    assert [durable.task_id(p) for p in parts] == [bare.task_id(p) for p in parts]
 
 
 def _bundle(root: Any) -> Bundle:
@@ -167,7 +188,8 @@ def _bundle(root: Any) -> Bundle:
 
 def test_bundle_manifest_and_inspect_list_the_referenced_specs(tmp_path: Any) -> None:
     opened = Bundle.open(_bundle(tmp_path / "b").root)
-    assert opened.manifest["services"] == [_json(s.to_json()) for s in (_site(), _managed())]  # name order
+    # name order
+    assert opened.manifest["services"] == [_json(s.to_json()) for s in (_site(), _managed())]
     lines = inspect(opened).splitlines()
     (header,) = [i for i, line in enumerate(lines) if line.strip().startswith("services")]
     assert header > next(i for i, line in enumerate(lines) if "external payloads" in line)
@@ -238,7 +260,8 @@ def test_run_report_endpoints_are_run_provenance(tmp_path: Any) -> None:
     assert opened.fingerprint() == bundle.fingerprint()
     lines = inspect(opened).splitlines()
     heads = [
-        next(i for i, line in enumerate(lines) if line.startswith(f"    {d[:12]} ")) for d in (first, second)
+        next(i for i, line in enumerate(lines) if line.startswith(f"    {d[:12]} "))
+        for d in (first, second)
     ]
     (arrow,) = [i for i, line in enumerate(lines) if "endpoints:" in line]
     for name, endpoint in endpoints.items():  # each pair a whole token on the one endpoints line

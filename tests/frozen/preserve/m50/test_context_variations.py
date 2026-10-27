@@ -1,15 +1,17 @@
 """m50 §9.1 ``graphed.variations`` + §6.2(i-bis) narrowing helpers over an axis-mode histogram.
 
-``graphed.variations(ctx)`` reports the context's registry as ``{name: {tag: (kind, value | None)}}``
-with the two-word kind vocabulary ``"weight"``/``"shift"``, the numeric tag parsed under BOTH the
-canonical e-form and the datacard p-form, and a non-numeric tag carrying no value (not raising).
+``graphed.variations(ctx)`` reports the context's registry as
+``{name: {tag: (kind, value | None)}}`` with the two-word kind vocabulary ``"weight"``/``"shift"``,
+the numeric tag parsed under BOTH the canonical e-form and the datacard p-form, and a non-numeric
+tag carrying no value (not raising).
 
-The §6.2(i-bis) helpers read a variation axis off a bare histogram OBJECT: the axis is recognised by
-``axis.__dict__.get("name") == "variation"`` (the ``StrCategory(..., name=)`` kwarg is a ``TypeError``,
-so the fixture sets the name through ``__dict__``). ``graphed.labels`` reorders ``"nominal"``-first
-then axis order while the STORED order stays lexicographic; ``universe``/``nominal`` slice that axis.
-These live here — not in graphed-histogram — so G1's ``accessors.py`` edit is covered by graphed's own
-frozen suite (no ``graphed_histogram`` import: graphed CI does not install it).
+The §6.2(i-bis) helpers read a variation axis off a bare histogram OBJECT: the axis is recognised
+by ``axis.__dict__.get("name") == "variation"`` (the ``StrCategory(..., name=)`` kwarg is a
+``TypeError``, so the fixture sets the name through ``__dict__``). ``graphed.labels`` reorders
+``"nominal"``-first then axis order while the STORED order stays lexicographic;
+``universe``/``nominal`` slice that axis. These live here — not in graphed-histogram — so G1's
+``accessors.py`` edit is covered by graphed's own frozen suite (no ``graphed_histogram`` import:
+graphed CI does not install it).
 
 Freeze-time spelling this suite pins: ``graphed.variations`` (name settled by §9.1) is homed in
 ``accessors.py`` beside ``labels``/``universe``/``nominal``/``weight``.
@@ -30,8 +32,11 @@ from graphed.awkward import AwkwardBackend, from_awkward, gak
 
 
 def _ctx_with_families() -> Any:
-    """A context carrying ONE weight family and ONE shift family, over tags that exercise both
-    numeric parsers (``5em1``/``m15em1`` e-form, ``2p5`` p-form) and a non-numeric tag (``up``)."""
+    """Return a context carrying ONE weight family and ONE shift family.
+
+    Their tags exercise both numeric parsers (``5em1``/``m15em1`` e-form, ``2p5`` p-form) and a
+    non-numeric tag (``up``).
+    """
     events = make_events(n_events=100, seed=51)
     s = Session(AwkwardBackend())
     ev = from_awkward(s, "events", events)
@@ -63,12 +68,14 @@ def test_variations_reports_kind_and_parsed_value_per_tag() -> None:
     assert {kind for fam in v.values() for kind, _ in fam.values()} == {Kind.WEIGHT, Kind.SHIFT}
 
 
-# ---- §6.2(i-bis): narrowing helpers over a bare axis-mode histogram ------------------------------
+# ---- §6.2(i-bis): narrowing helpers over a bare axis-mode histogram -----------------------------
 _STORED_ORDER = ("jes_down", "jes_up", "nominal")  # lexicographic; its first bin is NOT "nominal"
 
 
 def _axis_mode_hist() -> bh.Histogram:
-    h = bh.Histogram(bh.axis.Regular(5, 0.0, 1.0), bh.axis.StrCategory(list(_STORED_ORDER), growth=True))
+    h = bh.Histogram(
+        bh.axis.Regular(5, 0.0, 1.0), bh.axis.StrCategory(list(_STORED_ORDER), growth=True)
+    )
     h.axes[1].__dict__["name"] = "variation"  # the kwarg form is a TypeError (§6.2 i-bis)
     h.fill([0.1, 0.2], ["jes_up", "jes_up"])
     h.fill([0.3], ["jes_down"])

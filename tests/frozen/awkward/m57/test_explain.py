@@ -1,12 +1,12 @@
 """m57 §2.7: `graphed.explain(ctx)` — how a user's sources of uncertainty became these variations.
 
-The record is derived from what the context already keeps: the family registrations, the riders, the
-link chain from the root and the labels' registered points. It re-decides nothing and mints nothing
-beyond what a `weight` read mints, and its text carries no node id, so two Sessions of the same
-program render byte-identically.
+The record is derived from what the context already keeps: the family registrations, the riders,
+the link chain from the root and the labels' registered points. It re-decides nothing and mints
+nothing beyond what a `weight` read mints, and its text carries no node id, so two Sessions of the
+same program render byte-identically.
 
-The layout these legs read is §2.7's and §3's vocabulary: `families` / `operations` / `variations`; a
-family's `kind`, `tags`, `links`, `entry`, `placements` and its relation sets (`composes_with`,
+The layout these legs read is §2.7's and §3's vocabulary: `families` / `operations` / `variations`;
+a family's `kind`, `tags`, `links`, `entry`, `placements` and its relation sets (`composes_with`,
 `shares_with`, `fans_out_over`, `independent_of`); an operation's `position`, `kind`, `families`,
 `links` and `fixed` mark.
 """
@@ -41,8 +41,10 @@ import graphed
 
 
 def _capstone(*, weight_first: bool) -> tuple[Any, Any]:
-    """`jes` shifts the jets AND swaps the SF table by name identity; `hf` is a weight family over
-    those jets; `pu` is a pure weight off the multiplicity, which the shift cannot move.
+    """`jes` shifts the jets AND swaps the SF table by name identity.
+
+    `hf` is a weight family over those jets; `pu` is a pure weight off the multiplicity, which the
+    shift cannot move.
 
     `weight_first=False` registers `hf` BEFORE the shift — §2.5's shift-after-weight order.
     """
@@ -63,9 +65,12 @@ def _capstone(*, weight_first: bool) -> tuple[Any, Any]:
 
 
 def test_explain_reports_each_familys_entry_form_and_every_labels_origin() -> None:
-    """On the §1 chain the joined family names the factor's other family, the overlay names the two
-    families it was read over, the placement reports its point, and every label the ambient carries
-    has an origin — the overlay's own universes included."""
+    """On the §1 chain explain reports each family's entry form and every label's origin.
+
+    The joined family names the factor's other family, the overlay names the two families it was
+    read over, the placement reports its point, and every label the ambient carries has an origin —
+    the overlay's own universes included.
+    """
     tour = m57_tour()
     explanation = m57_explain(tour.ctx)
     families = explanation.families
@@ -82,8 +87,10 @@ def test_explain_reports_each_familys_entry_form_and_every_labels_origin() -> No
 
 
 def test_explain_reports_the_composes_with_sets_of_the_chain() -> None:
-    """ "Composes with" is the set of weight families a family shares NO registered point with, so the
-    placed diagonal takes `mu` out of `hf`'s set and leaves `pu` there alone."""
+    """A family's "composes with" set holds the families it shares NO registered point with.
+
+    So the placed diagonal takes `mu` out of `hf`'s set and leaves `pu` there alone.
+    """
     tour = m57_tour()
     families = m57_explain(tour.ctx).families
 
@@ -93,8 +100,10 @@ def test_explain_reports_the_composes_with_sets_of_the_chain() -> None:
 
 
 def test_explain_reports_a_joined_family_as_sharing_the_factor() -> None:
-    """Two families on one factor are two values of one operation: they SHARE it, and their joint is
-    absent for that reason rather than because it is a product."""
+    """Two families on one factor are two values of one operation.
+
+    They SHARE it, and their joint is absent for that reason rather than because it is a product.
+    """
     tour = m57_tour()
     families = m57_explain(tour.ctx).families
 
@@ -105,11 +114,16 @@ def test_explain_reports_a_joined_family_as_sharing_the_factor() -> None:
 
 
 def test_explain_reports_the_links_the_lineage_took() -> None:
-    """The registering context's links and each entry's row-space links are the links the lineage
-    actually took — read off the record's link fields, not off a rendering."""
+    """The links reported are the links the lineage actually took.
+
+    That holds for the registering context's links and each entry's row-space links — read off the
+    record's link fields, not off a rendering.
+    """
     for projected in (False, True):
         base = m57_two_factors()
-        child = graphed.universe(base.ctx, "hf_up") if projected else base.ctx[base.met.pt > MET_CUT]
+        child = (
+            graphed.universe(base.ctx, "hf_up") if projected else base.ctx[base.met.pt > MET_CUT]
+        )
         lf = {tag: graphed.reindex_to(member, child) for tag, member in base.hf_members.items()}
         registered = m57_weight(child, "lf", graphed.reindex_to(base.pu, child), lf)
         explanation = m57_explain(registered)
@@ -117,12 +131,17 @@ def test_explain_reports_the_links_the_lineage_took() -> None:
 
         assert expected in tuple(explanation.families["lf"].links), projected
         assert explanation.families["pu"].links == (), projected
-        assert all(expected in tuple(operation.links) for operation in explanation.operations), projected
+        assert all(expected in tuple(operation.links) for operation in explanation.operations), (
+            projected
+        )
 
 
 def test_explain_marks_a_fixed_overlay_and_names_the_universe_that_fixed_it() -> None:
-    """Below a projection into an overlay's own universe, and below a further projection, the overlay's
-    operation record is marked fixed and its line names the universe that fixed it."""
+    """Below a projection into an overlay's own universe.
+
+    And below a further projection, the overlay's operation record is marked fixed and its line
+    names the universe that fixed it.
+    """
     _session, ctx = m57_base()
     jets, met = ctx["Jet"], ctx["MET"]
     sf, pu, trig = m57_sf(jets), m57_pu(jets), m57_trig(met)
@@ -135,7 +154,10 @@ def test_explain_marks_a_fixed_overlay_and_names_the_universe_that_fixed_it() ->
         outer,
         "mf",
         m57_sf(jets, 0.5) * 1.0,
-        {tag: graphed.reindex_to(member, outer) for tag, member in m57_table_members(jets, MF_TABLE).items()},
+        {
+            tag: graphed.reindex_to(member, outer)
+            for tag, member in m57_table_members(jets, MF_TABLE).items()
+        },
     )
     inner = graphed.universe(deeper, "mf_up")
 
@@ -148,8 +170,11 @@ def test_explain_marks_a_fixed_overlay_and_names_the_universe_that_fixed_it() ->
 
 
 def test_explain_keeps_the_relations_of_a_family_whose_label_the_projection_dropped() -> None:
-    """Relations and placements quantify over the family's registered points on the lineage, not over
-    the labels this context carries, so a projection that drops a label drops neither."""
+    """Relations and placements quantify over the family's registered points on the lineage.
+
+    They do not quantify over the labels this context carries, so a projection that drops a label
+    drops neither.
+    """
     tour = m57_tour()
     at_parent = m57_explain(tour.ctx).families
     projected = graphed.universe(tour.ctx, "pu_up")
@@ -164,8 +189,11 @@ def test_explain_keeps_the_relations_of_a_family_whose_label_the_projection_drop
 
 
 def test_explain_reports_the_capstones_fanout_and_independence() -> None:
-    """The capstone's weight family fans out over the shift it reads and composes with the pure-weight
-    family; the pure-weight family is independent of the shift and never composes with it."""
+    """The capstone's weight family fans out over the shift it reads.
+
+    It composes with the pure-weight family; the pure-weight family is independent of the shift and
+    never composes with it.
+    """
     _session, ctx = _capstone(weight_first=True)
     families = m57_explain(ctx).families
 
@@ -176,8 +204,11 @@ def test_explain_reports_the_capstones_fanout_and_independence() -> None:
 
 
 def test_explain_reports_a_weight_registered_before_the_shift_as_reading_moved_objects() -> None:
-    """A weight family registered BEFORE the shift of the objects its central read is reported as
-    reading objects a later shift moved — never as independent of that shift."""
+    """A weight family registered BEFORE a shift is reported as reading moved objects.
+
+    It is registered before the shift of the objects its central read, and is reported as reading
+    objects a later shift moved — never as independent of that shift.
+    """
     _session, ctx = _capstone(weight_first=False)
     families = m57_explain(ctx).families
 
@@ -187,8 +218,10 @@ def test_explain_reports_a_weight_registered_before_the_shift_as_reading_moved_o
 
 
 def test_explain_mints_no_more_than_a_weight_read() -> None:
-    """`explain` reads the ambient exactly as `weight(ctx)` does and mints nothing else — before and
-    after a further registration."""
+    """`explain` reads the ambient exactly as `weight(ctx)` does and mints nothing else.
+
+    Before and after a further registration.
+    """
     tour = m57_tour()
     graphed.weight(tour.ctx)
     after_read = m57_node_count(tour.session)
@@ -204,8 +237,11 @@ def test_explain_mints_no_more_than_a_weight_read() -> None:
 
 
 def test_the_explain_text_is_byte_identical_across_two_sessions() -> None:
-    """The text carries no integer node id, so the same program renders identically in two Sessions
-    whose ids cannot coincide — the second mints an unrelated node before the program."""
+    """The text carries no integer node id.
+
+    So the same program renders identically in two Sessions whose ids cannot coincide — the second
+    mints an unrelated node before the program.
+    """
     first = m57_tour()
     second = m57_tour(offset=1)  # an unrelated mint first, so the ids cannot coincide
 

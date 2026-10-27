@@ -1,9 +1,10 @@
 """m54 §2.2 refusals and §2.7 typetracer errors — both raise `GraphedTypeError` and record nothing.
 
-The two families are distinct mechanisms and are pinned apart: a non-JSON ARGUMENT is refused by the
-encoder before the typetracer is ever asked, while a well-formed call that the METHOD itself rejects
-is refused by the record-time typetracer run. Either way the session's node count is unchanged, so a
-"record first, validate later" implementation fails here even though its exception type is right.
+The two families are distinct mechanisms and are pinned apart: a non-JSON ARGUMENT is refused by
+the encoder before the typetracer is ever asked, while a well-formed call that the METHOD itself
+rejects is refused by the record-time typetracer run. Either way the session's node count is
+unchanged, so a "record first, validate later" implementation fails here even though its exception
+type is right.
 
 The accepted-constant test is the discrimination for the refusals: a blanket "collections are not
 constants" rule would pass every refusal case and fail that one.
@@ -75,8 +76,11 @@ def test_the_json_representable_constants_are_accepted() -> None:
 
 
 def test_a_dict_is_refused_only_when_the_marker_is_its_whole_shape() -> None:
-    """`{"$": i}` is how an array reference is encoded, so only a dict that IS that shape is
-    ambiguous. A blanket "no `$` key" rule would refuse this one and is what the leg discriminates."""
+    """`{"$": i}` is how an array reference is encoded.
+
+    So only a dict that IS that shape is ambiguous. A blanket "no `$` key" rule would refuse this
+    one and is what the leg discriminates.
+    """
     session, jets, _probe = recorded()
     weights = {"pt": 2.0, "eta": 3.0, "$": 1.0}
 
@@ -100,8 +104,11 @@ def test_an_array_from_another_session_is_refused_as_a_method_argument() -> None
 
 
 def test_an_array_from_another_session_is_refused_by_a_binary_op() -> None:
-    """The guard lives in `Session.record_op`, which every recorder routes through — so a method is
-    not a special case and a guard installed only in the method encoder fails here."""
+    """The guard lives in `Session.record_op`.
+
+    Which every recorder routes through — so a method is not a special case and a guard installed
+    only in the method encoder fails here.
+    """
     session, jets, _probe = recorded()
     _foreign_session, foreign, _foreign_probe = recorded()
     mine, theirs = jets.pt, foreign.pt
@@ -115,7 +122,10 @@ def test_an_array_from_another_session_is_refused_by_a_binary_op() -> None:
 
 
 def test_a_zero_dimensional_numpy_array_is_a_typed_scalar_not_refused() -> None:
-    """The refusal is about ELEMENTS, not about numpy: a 0-d array is a scalar, typed by its dtype."""
+    """The refusal is about ELEMENTS, not about numpy.
+
+    A 0-d array is a scalar, typed by its dtype.
+    """
     session, jets, _probe = recorded()
     typed = jets.scaled(np.array(2.0))
     assert typed.node_id != jets.scaled(2.0).node_id
@@ -135,8 +145,11 @@ def test_an_unknown_keyword_is_refused_at_the_call_site() -> None:
 
 
 def test_an_argument_the_method_rejects_is_refused_at_the_call_site() -> None:
-    """`deltaR` demands a vector; a bare float array is a legal graph operand and an illegal one
-    for this method — the failure belongs to the typetracer run, not to the encoder."""
+    """`deltaR` demands a vector.
+
+    A bare float array is a legal graph operand and an illegal one for this method — the failure
+    belongs to the typetracer run, not to the encoder.
+    """
     session, jets, _probe = recorded()
     lead = gak.firsts(jets, axis=1)
     not_a_vector = gak.firsts(jets.pt, axis=1)

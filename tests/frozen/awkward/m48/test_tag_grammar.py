@@ -29,20 +29,23 @@ TAG_LENGTH = "canonical tag length"
 
 
 def _weight_context(ctx: object, name: str, **kwargs: object) -> object:
-    """The §2.1(b) weight form: a per-event central factor plus per-tag factors."""
+    """Return the §2.1(b) weight form: a per-event central factor plus per-tag factors."""
     return graphed.vary(ctx, name, pu_weight(ctx, 1.0), is_weight=True, **kwargs)
 
 
 def _only_tag_label(varied: object) -> str:
-    """The single user label of a one-tag container."""
+    """Return the single user label of a one-tag container."""
     labels = list(graphed.labels(varied))
     assert len(labels) == 2 and labels[0] == "nominal"
     return labels[1]
 
 
 def test_kwarg_tags_canonicalize_by_exact_decimal_arithmetic() -> None:
-    """`"2"`, `"2.0"`, `"2e0"` and `"20e-1"` are ONE value, so they are ONE label — the labels are
-    never an IEEE round-trip, so no float artifact reaches a name."""
+    """`"2"`, `"2.0"`, `"2e0"` and `"20e-1"` are ONE value.
+
+    So they are ONE label — the labels are never an IEEE round-trip, so no float artifact reaches a
+    name.
+    """
     _s, ctx = events_context()
     for spelling in ("2", "2.0", "2e0", "20e-1"):
         varied = _weight_context(ctx, "murf", points={spelling: pu_weight(ctx, 2.0)})
@@ -53,26 +56,41 @@ def test_the_variations_channel_carries_tags_kwarg_syntax_cannot_spell() -> None
     _s, ctx = events_context()
     eps = _weight_context(ctx, "eps", points={"1e-8": pu_weight(ctx, 1.0)})
     assert list(graphed.labels(eps)) == ["nominal", "eps_1em8"]
-    pdf = _weight_context(ctx, "pdf", points={f"{i}": pu_weight(ctx, float(i)) for i in (1, 2, 102)})
-    assert list(graphed.labels(pdf)) == ["nominal", "pdf_1", "pdf_2", "pdf_102"]  # indices untouched
+    pdf = _weight_context(
+        ctx, "pdf", points={f"{i}": pu_weight(ctx, float(i)) for i in (1, 2, 102)}
+    )
+    # indices untouched
+    assert list(graphed.labels(pdf)) == [
+        "nominal",
+        "pdf_1",
+        "pdf_2",
+        "pdf_102",
+    ]
 
 
 def test_the_collection_mapping_inner_keys_are_the_third_channel() -> None:
-    """The shift form's tags arrive as the INNER keys of a collection mapping and take the same
-    grammar — a channel-specific canonicalizer would leave `murf_0.5` on disk."""
+    """The shift form's tags arrive as the INNER keys of a collection mapping.
+
+    They take the same grammar — a channel-specific canonicalizer would leave `murf_0.5` on disk.
+    """
     _s, ctx = events_context()
     varied = graphed.vary(ctx, "murf", Jet={"0.5": shifted_jets(ctx, 0.5)})
     assert list(graphed.labels(varied)) == ["nominal", "murf_5em1"]
 
 
 def test_non_minimal_canonical_grammar_tags_are_re_rendered() -> None:
-    """A hand-typed non-minimal e-form would otherwise ride through as an ordinary identifier tag:
-    two labels, one value."""
+    """A hand-typed non-minimal e-form would otherwise ride through as an ordinary identifier tag.
+
+    Two labels, one value.
+    """
     _s, ctx = events_context()
-    assert _only_tag_label(_weight_context(ctx, "murf", points={"50em2": pu_weight(ctx, 0.5)})) == (
-        "murf_5em1"
+    assert _only_tag_label(
+        _weight_context(ctx, "murf", points={"50em2": pu_weight(ctx, 0.5)})
+    ) == ("murf_5em1")
+    assert (
+        _only_tag_label(_weight_context(ctx, "murf", points={"05": pu_weight(ctx, 5.0)}))
+        == "murf_5"
     )
-    assert _only_tag_label(_weight_context(ctx, "murf", points={"05": pu_weight(ctx, 5.0)})) == "murf_5"
 
 
 def test_two_spellings_of_one_value_unify_ACROSS_calls() -> None:
@@ -92,8 +110,11 @@ def test_two_spellings_of_one_value_are_a_duplicate_rejection_WITHIN_one_call() 
 
 
 def test_cross_notation_numeric_equal_pairs_are_rejected_within_one_call() -> None:
-    """The p-form deliberately does NOT canonicalize, so it is the one residual duplicate class:
-    two labels for one value would mean two StrCategory bins and two content hashes."""
+    """The p-form deliberately does NOT canonicalize.
+
+    So it is the one residual duplicate class: two labels for one value would mean two StrCategory
+    bins and two content hashes.
+    """
     _s, ctx = events_context()
     for pair in (("0.5", "0p5"), ("2", "2p0")):
         with pytest.raises(GraphedError):
@@ -101,8 +122,10 @@ def test_cross_notation_numeric_equal_pairs_are_rejected_within_one_call() -> No
 
 
 def test_cross_notation_pairs_are_rejected_across_two_STACKING_calls() -> None:
-    """A family is the tags one `name` carries on one container INCLUDING inherited labels, so a
-    per-call check would accept `"0.5"` now and `"0p5"` next call, uncatchable afterwards."""
+    """A family is the tags one `name` carries on one container INCLUDING inherited labels.
+
+    So a per-call check would accept `"0.5"` now and `"0p5"` next call, uncatchable afterwards.
+    """
     _s, ctx = events_context()
     stacked = _weight_context(ctx, "murf", points={"0.5": pu_weight(ctx, 0.5)})
     with pytest.raises(GraphedError):
@@ -123,7 +146,8 @@ def test_malformed_and_non_string_tags_are_rejected() -> None:
         with pytest.raises(GraphedError):
             _weight_context(ctx, "sig", points={tag: pu_weight(ctx, 1.0)})
     with pytest.raises(GraphedError):
-        _weight_context(ctx, "sig", points={True: pu_weight(ctx, 1.0)})  # a bool is not the number 1
+        # a bool is not the number 1
+        _weight_context(ctx, "sig", points={True: pu_weight(ctx, 1.0)})
 
 
 def test_negative_zero_canonicalizes_to_zero() -> None:
@@ -134,9 +158,11 @@ def test_negative_zero_canonicalizes_to_zero() -> None:
 
 
 def test_the_cap_boundary_pair_refuses_by_cause() -> None:
-    """`"1.5e31"` renders `15` followed by 30 zeros — exactly 32 characters, and LEGAL. The naive
-    "mantissa digits + exponent" sum computes 33 for it and rejects it; `"1e40"` alone cannot catch
-    that off-by-one, which is why the accepted half of the pair is here."""
+    """`"1.5e31"` renders `15` followed by 30 zeros — exactly 32 characters, and LEGAL.
+
+    The naive "mantissa digits + exponent" sum computes 33 for it and rejects it; `"1e40"` alone
+    cannot catch that off-by-one, which is why the accepted half of the pair is here.
+    """
     _s, ctx = events_context()
     accepted = _weight_context(ctx, "scan", points={"1.5e31": pu_weight(ctx, 1.0)})
     tag = _only_tag_label(accepted).removeprefix("scan_")
@@ -164,10 +190,14 @@ def test_an_integer_magnitude_over_the_cap_names_the_magnitude() -> None:
 
 
 def test_signature_shadowed_names_reach_tags_through_the_mapping_channels() -> None:
-    """`nominal`, `is_weight`, `points` and `collections` are legal tags AND legal collection
-    names, so they can only arrive through a mapping — `collections` by self-reference."""
+    """`nominal`, `is_weight`, `points` and `collections` are legal tags AND collection names.
+
+    So they can only arrive through a mapping — `collections` by self-reference.
+    """
     _s, ctx = events_context()
-    shadowed = {name: pu_weight(ctx, 1.0) for name in ("nominal", "is_weight", "points", "collections")}
+    shadowed = {
+        name: pu_weight(ctx, 1.0) for name in ("nominal", "is_weight", "points", "collections")
+    }
     varied = _weight_context(ctx, "pu", points=shadowed)
     assert list(graphed.labels(varied)) == [
         "nominal",
@@ -177,13 +207,17 @@ def test_signature_shadowed_names_reach_tags_through_the_mapping_channels() -> N
         "pu_collections",
     ]
     _rs, tree = reserved_names_context()  # a tree branch literally named `collections`
-    self_referenced = graphed.vary(tree, "jes", collections={"collections": {"up": tree["collections"]}})
+    self_referenced = graphed.vary(
+        tree, "jes", collections={"collections": {"up": tree["collections"]}}
+    )
     assert list(graphed.labels(self_referenced)) == ["nominal", "jes_up"]
 
 
 def test_the_tag_nominal_is_legal_and_yields_an_ordinary_label() -> None:
-    """`"nominal"` is unreachable as a user label BY CONSTRUCTION — every user label carries a `_`
-    — so there is no "label equals nominal" rejection to freeze."""
+    """`"nominal"` is unreachable as a user label BY CONSTRUCTION.
+
+    Every user label carries a `_` — so there is no "label equals nominal" rejection to freeze.
+    """
     _s, ctx = events_context()
     varied = _weight_context(ctx, "pu", points={"nominal": pu_weight(ctx, 1.1)})
     assert list(graphed.labels(varied)) == ["nominal", "pu_nominal"]
@@ -197,18 +231,26 @@ def test_variations_is_refused_in_the_shift_form() -> None:
 
 
 def test_nominal_is_refused_in_the_shift_form_with_an_error_naming_collections() -> None:
-    """The collections' central members come from the target context, so `nominal=` has nothing to
-    mean there — and as a shadowed name it cannot be read as a tag either."""
+    """The collections' central members come from the target context.
+
+    So `nominal=` has nothing to mean there — and as a shadowed name it cannot be read as a tag
+    either.
+    """
     _s, ctx = events_context()
     with pytest.raises(GraphedError, match="collections"):
         graphed.vary(ctx, "jes", shifted_jets(ctx, 1.0), **jes_kwargs(ctx))
 
 
 def test_no_label_ever_contains_a_dot_or_a_dash() -> None:
-    """The measured ground: `ak.from_parquet(columns=["murf_0.5"])` is silently empty, RNTuple
-    splits a field path on `.`, and the TTree writer uses `.` as its nesting separator."""
+    """The measured ground.
+
+    `ak.from_parquet(columns=["murf_0.5"])` is silently empty, RNTuple splits a field path on `.`,
+    and the TTree writer uses `.` as its nesting separator.
+    """
     _s, ctx = events_context()
-    varied = _weight_context(ctx, "murf", points={"0.5": pu_weight(ctx, 0.5), "-2": pu_weight(ctx, 2.0)})
+    varied = _weight_context(
+        ctx, "murf", points={"0.5": pu_weight(ctx, 0.5), "-2": pu_weight(ctx, 2.0)}
+    )
     assert list(graphed.labels(varied)) == ["nominal", "murf_5em1", "murf_m2"]
     assert not any("." in label or "-" in label for label in graphed.labels(varied))
 

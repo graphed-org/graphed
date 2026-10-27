@@ -67,7 +67,9 @@ def _module_verbs_taking_a_session() -> set[str]:
 def _calls(own: Session, mine: Any, foreign: Any) -> dict[str, Callable[[], object]]:
     return {
         "record_exchange": lambda: own.record_exchange(foreign, {"scheme": "count", "parts": 2}),
-        "record_external": lambda: own.record_external("map", _identity, [foreign], {"fn": "identity"}),
+        "record_external": lambda: own.record_external(
+            "map", _identity, [foreign], {"fn": "identity"}
+        ),
         "record_join": lambda: own.record_join(mine, foreign, {"on": "k", "how": "inner"}),
         "record_op": lambda: own.record_op("add", [mine, foreign]),
         "form": lambda: own.form(foreign),
@@ -83,8 +85,10 @@ def test_the_instrument_finds_no_array_taking_method_without_a_leg() -> None:
 
 
 def test_a_foreign_arrays_id_addresses_a_real_node_of_the_refusing_session() -> None:
-    """The premise the refusal exists for: the ids COLLIDE, so today's answer is another
-    session's node, silently."""
+    """The premise the refusal exists for.
+
+    The ids COLLIDE, so today's answer is another session's node, silently.
+    """
     own, alpha, other, beta = colliding_sessions()
 
     assert beta.node_id == alpha.node_id
@@ -126,17 +130,25 @@ def test_own_session_calls_record_and_read_exactly_as_today() -> None:
     assert own.form(alpha) == ToyForm("alpha")
     assert own.materialize(alpha) == ("alpha", [DATUM], {})
     assert own.provenance(alpha).function == "colliding_sessions"
-    assert own.walk(alpha, source=lambda _n: DATUM, op=lambda *a: a[1], external=lambda *a: a) == "alpha"
+    assert (
+        own.walk(alpha, source=lambda _n: DATUM, op=lambda *a: a[1], external=lambda *a: a)
+        == "alpha"
+    )
     assert own.node_count() == 2
 
     exchanged = own.record_exchange(alpha, {"scheme": "count", "parts": 2})
     joined = own.record_join(alpha, exchanged, {"on": "k", "how": "inner"})
     external = own.record_external("map", _identity, [joined], {"fn": "identity"})
     assert own.node_count() == 5
-    assert [own.form(node).tag for node in (exchanged, joined, external)] == ["exchange", "join", "map"]
+    assert [own.form(node).tag for node in (exchanged, joined, external)] == [
+        "exchange",
+        "join",
+        "map",
+    ]
 
     twice = [toy_session("x") for _ in range(2)]
     bytes_of = {
-        session.serialized_ir(session.record_op("alpha", [mine]), optimize=False) for session, mine in twice
+        session.serialized_ir(session.record_op("alpha", [mine]), optimize=False)
+        for session, mine in twice
     }
     assert len(bytes_of) == 1

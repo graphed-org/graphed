@@ -1,14 +1,17 @@
-"""vary-m53b plan §7.7 / §7.8: the additive increment must not disturb the two behaviors it sits
-beside, and its registry is deterministic.
+"""vary-m53b plan §7.7 / §7.8.
 
-Two are POSITIVE CONTROLS (live on the current tree, proving the harness is real, not merely failing):
-(a) a GENUINELY dependent member still auto-mints its compound universe with NO ``points=`` (§1b — a
-    2+-foreign universe from real member dependence already works and needs no additive code);
+The additive increment must not disturb the two behaviors it sits beside, and its registry is
+deterministic.
+
+Two are POSITIVE CONTROLS (live on the current tree, proving the harness is real, not merely
+failing):
+(a) a GENUINELY dependent member still auto-mints its compound universe with NO ``points=`` (§1b
+    — a 2+-foreign universe from real member dependence already works and needs no additive code);
 (b) a pure ``points=[{prune}]`` selection is byte-identical to the frozen m53 prune behavior.
 
-The determinism witness FAILS on the current tree for feature-absence (its additive build is refused),
-and PASSES under the feature: two interpreters at different ``PYTHONHASHSEED`` produce a byte-identical
-``graphed.points()`` registry.
+The determinism witness FAILS on the current tree for feature-absence (its additive build is
+refused), and PASSES under the feature: two interpreters at different ``PYTHONHASHSEED`` produce a
+byte-identical ``graphed.points()`` registry.
 """
 
 from __future__ import annotations
@@ -26,8 +29,11 @@ from graphed.numpy import NumpyBackend, from_record
 
 
 def test_a_genuinely_dependent_member_still_auto_mints_its_compound() -> None:
-    """§1b, the measured carve-out: jer members read off the jes-varied pt genuinely depend on jes,
-    so a plain vary mints the compound ``jer_hi__jes_up`` → ``{jer: hi, jes: up}`` with NO points=."""
+    """§1b, the measured carve-out.
+
+    Jer members read off the jes-varied pt genuinely depend on jes, so a plain vary mints the
+    compound ``jer_hi__jes_up`` → ``{jer: hi, jes: up}`` with NO points=.
+    """
     session = Session(NumpyBackend())
     record = from_record(session, "ev", pt=VECTOR)
     pt = record["pt"]
@@ -44,8 +50,10 @@ def test_a_genuinely_dependent_member_still_auto_mints_its_compound() -> None:
 
 
 def test_a_pure_prune_selection_is_byte_identical_to_the_frozen_behavior() -> None:
-    """§7.7(b): the additive router leaves the frozen prune path untouched — a pure prune list yields
-    exactly the m53-freeze registry."""
+    """§7.7(b): the additive router leaves the frozen prune path untouched.
+
+    A pure prune list yields exactly the m53-freeze registry.
+    """
     session = Session(NumpyBackend())
     record = from_record(session, "ev", pt=VECTOR, eta=VECTOR / 10.0)
     pt = record["pt"]
@@ -59,7 +67,11 @@ def test_a_pure_prune_selection_is_byte_identical_to_the_frozen_behavior() -> No
         "btag",
         varied * 1.0,
         is_weight=True,
-        points=[*members.items(), {"btag": "hf_up", "jes": "up"}, {"btag": "lf_down", "jes": "down"}],
+        points=[
+            *members.items(),
+            {"btag": "hf_up", "jes": "up"},
+            {"btag": "lf_down", "jes": "down"},
+        ],
     )
 
     assert graphed.points(graphed.weight(registered)) == {

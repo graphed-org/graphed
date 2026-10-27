@@ -29,7 +29,9 @@ class FakeMultiTritonClient:
         self.closed = False
         self.seen_input_names: list[list[str]] = []
 
-    def infer(self, model_name: str, inputs: list[Any], outputs: list[Any] | None = None) -> _Result:
+    def infer(
+        self, model_name: str, inputs: list[Any], outputs: list[Any] | None = None
+    ) -> _Result:
         assert model_name == self.descriptor["model"]
         self.seen_input_names.append(sorted(i._name for i in inputs))
         z = None

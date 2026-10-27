@@ -2,8 +2,8 @@
 
 ``RunRecorder`` is a monitor that records every event at the driver and forwards to an optional
 inner monitor (a dashboard). ``report()`` folds what arrived since the previous report into a
-``RunReport``: per task its state, worker, duration and error; the run's outcome, its ``StageError``
-and the environment digest a bundle would record.
+``RunReport``: per task its state, worker, duration and error; the run's outcome, its
+``StageError`` and the environment digest a bundle would record.
 """
 
 from __future__ import annotations
@@ -64,21 +64,26 @@ class RunReport:
     endpoints: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))
 
     def __post_init__(self) -> None:
+        """Freeze ``endpoints`` into a read-only mapping."""
         object.__setattr__(self, "endpoints", MappingProxyType(dict(self.endpoints)))
 
     def __reduce__(self) -> tuple[Any, ...]:
         # a mappingproxy does not pickle; the constructor re-wraps the plain dict
+        """Pickle with ``endpoints`` as a plain dict."""
         values = {f.name: getattr(self, f.name) for f in fields(self)}
         return (_report, (values | {"endpoints": dict(self.endpoints)},))
 
     def __setstate__(self, state: dict[str, Any]) -> None:  # a 0.0.6 pickle carries no endpoints
+        """Restore pickled state, defaulting ``endpoints`` for a 0.0.6 pickle."""
         self.__dict__.update({"endpoints": MappingProxyType({})} | state)
 
     @property
     def failed_keys(self) -> tuple[int, ...]:
+        """Return the keys of the tasks that errored."""
         return tuple(t.key for t in self.tasks if t.state == "errored")
 
     def to_json(self) -> dict[str, Any]:
+        """Return the report as a JSON-ready dict."""
         f = self.failure
         failure = None
         if f is not None:
@@ -99,6 +104,7 @@ class RunReport:
 
     @classmethod
     def from_json(cls, data: Mapping[str, Any]) -> RunReport:
+        """Read a report :meth:`to_json` wrote."""
         if data["version"] != _VERSION:
             raise ValueError(f"unsupported run report version {data['version']}")
         f = data["failure"]
@@ -145,30 +151,38 @@ def _fold(key: int, events: list[TaskEvent]) -> TaskRecord:
 
 
 class RunRecorder:
-    """A ``Monitor`` that records a run's events for ``report()``, then forwards every call to
-    ``inner``. It defines neither ``lean_events`` nor ``worker_monitor_factory``, so the executor
-    routes the full stream through the driver, and it opts into ``complete_events``."""
+    """A ``Monitor`` that records a run's events for ``report()``.
+
+    It forwards every call to ``inner``. It defines neither ``lean_events`` nor
+    ``worker_monitor_factory``, so the executor routes the full stream through the driver, and it
+    opts into ``complete_events``.
+    """
 
     complete_events = True
 
     def __init__(self, inner: Monitor | None = None) -> None:
+        """Record a run's events, forwarding each to ``inner``."""
         self._inner = inner
         self._calls: list[tuple[TaskEvent, float]] = []
 
     def on_task(self, event: TaskEvent) -> None:
+        """Record a task event, then forward it."""
         self._calls.append((event, time.perf_counter()))  # before forwarding: inner may raise
         if self._inner is not None:
             self._inner.on_task(event)
 
     def on_profile(self, worker: str, payload: bytes) -> None:
+        """Forward a profile payload."""
         if self._inner is not None:
             self._inner.on_profile(worker, payload)
 
     def on_combine(self, leaves_done: int) -> None:
+        """Forward the reduction's progress."""
         if self._inner is not None:
             self._inner.on_combine(leaves_done)
 
     def worker_profiler_factory(self) -> Callable[[], WorkerProfiler] | None:
+        """Return the inner monitor's profiler factory, if any."""
         return self._inner.worker_profiler_factory() if self._inner is not None else None
 
     def report(
@@ -179,9 +193,12 @@ class RunRecorder:
         container_digest: str | None = None,
         endpoints: Mapping[str, str] | None = None,
     ) -> RunReport:
-        """Fold the events received since the previous ``report()`` (or construction) into a
-        ``RunReport`` of ``result`` or of the raised ``error`` — exactly one of them; ``endpoints``
-        records where the run reached each service."""
+        """Fold the events received since the previous ``report()`` into a ``RunReport``.
+
+        The events since construction count for the first; the report is of ``result`` or of the
+        raised ``error`` — exactly one of them; ``endpoints`` records where the run reached each
+        service.
+        """
         if (result is None) == (error is None):
             raise ValueError("RunRecorder.report needs exactly one of result= or error=")
         from graphed.preserve import capture_environment, fingerprint  # noqa: PLC0415

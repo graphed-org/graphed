@@ -1,8 +1,8 @@
 """M8 — the "compile once, run on N datasets" deployment primitives.
 
 ``DurablePlan.with_partitions`` / ``for_dataset`` / ``for_datasets`` + the ``Dataset`` → partitions
-builders let a user compile an analysis once and re-target it at many inputs without re-recording or
-re-optimizing the graph. These tests pin: correct chunking, that the computation (the optimized
+builders let a user compile an analysis once and re-target it at many inputs without re-recording
+or re-optimizing the graph. These tests pin: correct chunking, that the computation (the optimized
 interned IR) is **shared unchanged** across re-targetings, and that per-dataset ``task_id``s are
 disjoint so a single checkpoint store namespaces datasets safely.
 """
@@ -44,7 +44,12 @@ def _compiled_plan() -> DurablePlan:
 def test_partition_dataset_chunks_cover_the_whole_range() -> None:
     ds = Dataset("file://a.root", n_events=100, tree="Events")
     parts = partition_dataset(ds, chunk_size=30)
-    assert [(p.entry_start, p.entry_stop) for p in parts] == [(0, 30), (30, 60), (60, 90), (90, 100)]
+    assert [(p.entry_start, p.entry_stop) for p in parts] == [
+        (0, 30),
+        (30, 60),
+        (60, 90),
+        (90, 100),
+    ]
     assert all(p.uri == "file://a.root" and p.tree == "Events" for p in parts)
     assert sum(p.n_entries for p in parts) == 100  # exact cover, no gaps or overlap
 
@@ -113,7 +118,8 @@ def test_task_ids_are_namespaced_per_dataset() -> None:
 def test_retargeting_only_changes_partitions_in_the_serialized_form() -> None:
     base = _compiled_plan().with_partitions([Partition("ds-A", "Events", 0, 10)])
     other = base.with_partitions([Partition("ds-A", "Events", 0, 10)])
-    assert base.to_bytes() == other.to_bytes()  # deterministic + identical for identical deployment
+    # deterministic + identical for identical deployment
+    assert base.to_bytes() == other.to_bytes()
     moved = base.with_partitions([Partition("ds-B", "Events", 0, 10)])
     assert moved.to_bytes() != base.to_bytes()  # a different dataset is a different deployment
     assert moved.ir_fingerprint() == base.ir_fingerprint()  # ...but the same computation

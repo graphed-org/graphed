@@ -1,7 +1,11 @@
-"""m68 D7 live — the shipped Triton plugin reaches a REAL server only through ``bind_services``, one leg per
-wire, with no ``transport`` param: the endpoint's scheme picks ``tritonclient.http`` or ``tritonclient.grpc``.
-The CI ``triton`` job serves ``tests/samples/triton_models/scorer``; each leg is gated on its variable like
-``preserve/m9/test_triton_server.py``. The gRPC port answers only gRPC, so that leg witnesses the gRPC client."""
+"""m68 D7 live.
+
+The shipped Triton plugin reaches a REAL server only through ``bind_services``, one leg per wire,
+with no ``transport`` param: the endpoint's scheme picks ``tritonclient.http`` or
+``tritonclient.grpc``. The CI ``triton`` job serves ``tests/samples/triton_models/scorer``; each
+leg is gated on its variable like ``preserve/m9/test_triton_server.py``. The gRPC port answers only
+gRPC, so that leg witnesses the gRPC client.
+"""
 
 from __future__ import annotations
 
@@ -16,10 +20,15 @@ from graphed.core import SequentialRunner
 from graphed.preserve import TRITON_PLUGIN, record_external
 from graphed.services import ServiceSpec, bind_services
 
-SERVERS = {"http": os.environ.get("GRAPHED_TRITON_HTTP"), "grpc": os.environ.get("GRAPHED_TRITON_GRPC")}
+SERVERS = {
+    "http": os.environ.get("GRAPHED_TRITON_HTTP"),
+    "grpc": os.environ.get("GRAPHED_TRITON_GRPC"),
+}
 CHECKS = {"http": "http:/v2/health/ready", "grpc": "grpc:"}
 # the served model's weights — they match tests/samples/triton_models/scorer/1/model.py
-PAYLOAD = json.dumps({"model": "scorer", "version": "1", "weights": {"w": 0.45, "b": -0.1}}).encode()
+PAYLOAD = json.dumps(
+    {"model": "scorer", "version": "1", "weights": {"w": 0.45, "b": -0.1}}
+).encode()
 
 
 def _leg(wire: str) -> object:

@@ -13,12 +13,18 @@ from typing import Protocol, runtime_checkable
 
 from graphed.core import PayloadDescriptor
 
-# Param values are scalars the graphed-core store can intern (must match graphed.core's ParamValue).
+# Param values are scalars the graphed-core store can intern (must match graphed.core's
+# ParamValue).
 ParamValue = int | float | bool | str
 
-# numpy's name for each Python scalar type an External's ``output_type`` may be; not `np.dtype(int)`,
-# which is int32 on Windows under numpy 1.x
-PYTHON_TYPES: dict[type, str] = {bool: "bool", int: "int64", float: "float64", complex: "complex128"}
+# numpy's name for each Python scalar type an External's ``output_type`` may be; not
+# `np.dtype(int)`, which is int32 on Windows under numpy 1.x
+PYTHON_TYPES: dict[type, str] = {
+    bool: "bool",
+    int: "int64",
+    float: "float64",
+    complex: "complex128",
+}
 
 
 @runtime_checkable
@@ -38,12 +44,17 @@ class Backend(Protocol):
         """Infer the result form of `op`. Raise a TypeError-like error if the op is ill-typed."""
         ...
 
-    def eval_stage(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> object:
+    def eval_stage(
+        self, op: str, inputs: Sequence[object], params: Mapping[str, object]
+    ) -> object:
         """Evaluate one stage. M2 has no fusion, so a stage is a single op."""
         ...
 
     def boundary_ops(self) -> frozenset[str]:
-        """Op names that are boundaries (source | reduction | repartition | materialize | external)."""
+        """Return the op names that are boundaries.
+
+        Boundaries are source | reduction | repartition | materialize | external.
+        """
         ...
 
     def project(self, op: str, used: object, params: Mapping[str, object]) -> object:
@@ -51,6 +62,8 @@ class Backend(Protocol):
         ...
 
     def external_payload(self, op: str, params: Mapping[str, object]) -> PayloadDescriptor | None:
-        """Reproducibility metadata for an external/opaque op, or None. Flag opaque callables as a
-        preservation risk (plan A.3.1)."""
+        """Reproducibility metadata for an external/opaque op, or None.
+
+        Flag opaque callables as a preservation risk (plan A.3.1).
+        """
         ...

@@ -1,5 +1,8 @@
-"""m61 — `file_bases` refuses a key listed twice: a worker derives its part index from the
-partition alone (R15.9), so two partitions of one file and step would overwrite each other."""
+"""m61 — `file_bases` refuses a key listed twice.
+
+A worker derives its part index from the partition alone (R15.9), so two partitions of one file and
+step would overwrite each other.
+"""
 
 from __future__ import annotations
 

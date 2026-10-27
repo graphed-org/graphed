@@ -1,10 +1,11 @@
 """M39 — the ``ShuffleBackend`` protocol lives in graphed-core, pure and §A.4-clean (plan §3.0).
 
-The protocol NAMES the vectorized primitives the generic engine calls; it is a ``typing.Protocol`` in
-``graphed.core.execution`` beside ``WorkerTransport``/``Executor``/``Plan`` — importing nothing heavy
-(§A.4: graphed-core MUST NOT import awkward/numpy). Per ADV-r5.3 the ``@runtime_checkable`` check is
-**import hygiene only** — it verifies method NAMES, never the routing rule (that is the golden-vector
-theme). The M39 protocol carries the exchange/repartition half only; the join half is M40.
+The protocol NAMES the vectorized primitives the generic engine calls; it is a ``typing.Protocol``
+in ``graphed.core.execution`` beside ``WorkerTransport``/``Executor``/``Plan`` — importing nothing
+heavy (§A.4: graphed-core MUST NOT import awkward/numpy). Per ADV-r5.3 the ``@runtime_checkable``
+check is **import hygiene only** — it verifies method NAMES, never the routing rule (that is the
+golden-vector theme). The M39 protocol carries the exchange/repartition half only; the join half is
+M40.
 """
 
 from __future__ import annotations

@@ -1,7 +1,9 @@
-"""Complex graph topologies through the optimizer (plan M4) — diamond, star (fan-out/fan-in), and
-deeply-nested shapes. These were the dask-optimizer failure points (CSE blow-ups, O(N^2) reduction,
-DCE dropping a node reachable via two paths), so they are guarded explicitly here: correct reduced
-structure, a shared apex/hub interned once, and sub-quadratic reduction time as the shape grows.
+"""Complex graph topologies through the optimizer (plan M4).
+
+The topologies are diamond, star (fan-out/fan-in), and deeply-nested shapes. These were the
+dask-optimizer failure points (CSE blow-ups, O(N^2) reduction, DCE dropping a node reachable via
+two paths), so they are guarded explicitly here: correct reduced structure, a shared apex/hub
+interned once, and sub-quadratic reduction time as the shape grows.
 """
 
 from __future__ import annotations
@@ -12,7 +14,7 @@ import graphed.core as gc
 
 
 def _diamond(s: gc.GraphStore, apex: int) -> int:
-    """apex fans out to two distinct branches that re-converge; returns the join node."""
+    """Apex fans out to two distinct branches that re-converge; returns the join node."""
     left = s.add_op("incl", [apex])
     right = s.add_op("negr", [apex])
     return s.add_op("add", [left, right])
@@ -105,14 +107,15 @@ def _best_reduce_time(store: gc.GraphStore, out: int, repeats: int = 5) -> float
 
 
 # the smallest graph must itself reduce in clearly-measurable ms-scale time; below this the ratio
-# would be dominated by timer noise rather than real work (the failure mode that flaked at 71x when a
-# bad builder collapsed the graph to ~4 nodes timed in microseconds).
+# would be dominated by timer noise rather than real work (the failure mode that flaked at 71x when
+# a bad builder collapsed the graph to ~4 nodes timed in microseconds).
 _MS_SCALE_FLOOR_S = 1e-3
 
 
 def test_diamond_and_star_reduction_is_subquadratic() -> None:
     # the dask O(N^2) guard, on topologies (not just chains): an 8x bigger graph must NOT cost ~64x
-    # the reduction time. Uses ms-scale sizes (matching the M4 benchmark) so the ratio is meaningful.
+    # the reduction time. Uses ms-scale sizes (matching the M4 benchmark) so the ratio is
+    # meaningful.
     for family in (_diamond_chain, _star):
         sizes = [1000, 2000, 4000, 8000]
         stores = {k: family(k) for k in sizes}
@@ -121,8 +124,8 @@ def test_diamond_and_star_reduction_is_subquadratic() -> None:
         # SANITY: confirm we are actually timing ms-scale work, not the noise floor. If the base
         # reduction is sub-millisecond the whole ratio is meaningless, so fail loudly here instead.
         assert base >= _MS_SCALE_FLOOR_S, (
-            f"{family.__name__}: base reduction {base * 1e6:.0f}us is NOT ms-scale — timing the noise "
-            f"floor, not real work (graph too small / collapsed?): {times}"
+            f"{family.__name__}: base reduction {base * 1e6:.0f}us is NOT ms-scale — timing the "
+            f"noise floor, not real work (graph too small / collapsed?): {times}"
         )
         # and every larger size must also be ms-scale (monotone real growth, not noise)
         assert all(t >= _MS_SCALE_FLOOR_S for t in times.values()), times

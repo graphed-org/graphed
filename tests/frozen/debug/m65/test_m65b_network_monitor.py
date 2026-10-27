@@ -1,5 +1,8 @@
-"""M65 B frozen suite (graphed-debug slice): the buffered, batched ``NetworkMonitor``, lean derivation
-in the ``DashboardServer`` and the per-worker monitor factory."""
+"""M65 B frozen suite (graphed-debug slice).
+
+The buffered, batched ``NetworkMonitor``, lean derivation in the ``DashboardServer`` and the
+per-worker monitor factory.
+"""
 
 from __future__ import annotations
 
@@ -62,7 +65,9 @@ def test_on_task_builds_no_message_on_the_calling_thread(monkeypatch: pytest.Mon
     assert threading.get_ident() not in idents
 
 
-def test_sender_ships_batches_and_reconnects_after_a_send_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_sender_ships_batches_and_reconnects_after_a_send_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     fake = HeldConnect()
     monkeypatch.setattr(websocket, "create_connection", fake)
     mon = NetworkMonitor("ws://127.0.0.1:9/ingest").start()
@@ -99,7 +104,9 @@ def test_server_accepts_a_batch_frame() -> None:
     try:
         conn = websocket.create_connection(server.ingest_url, timeout=5)
         try:
-            items = [wire.task_message(TaskEvent(FIN, k, "w0", float(k), f"f{k}", k)) for k in range(3)]
+            items = [
+                wire.task_message(TaskEvent(FIN, k, "w0", float(k), f"f{k}", k)) for k in range(3)
+            ]
             conn.send(json.dumps({"type": "batch", "items": items}))
             wait_stat(server, "finished", 3)
         finally:
@@ -128,7 +135,12 @@ def test_lean_stream_derives_started_inflight_label_and_start() -> None:
             mon.on_task(_lean(2, "w1", 6.0))
             wait_stat(server, "finished", 3)
             stats = server.snapshot()["stats"]
-            assert (stats["submitted"], stats["started"], stats["finished"], stats["inflight"]) == (
+            assert (
+                stats["submitted"],
+                stats["started"],
+                stats["finished"],
+                stats["inflight"],
+            ) == (
                 4,
                 3,
                 3,
@@ -138,7 +150,11 @@ def test_lean_stream_derives_started_inflight_label_and_start() -> None:
             assert worker(server, "w0")["inflight"] == 0
             w0, w1 = _records(server, "w0"), _records(server, "w1")
             assert (w0[0]["t_start"], w0[1]["t_start"], w1[2]["t_start"]) == (5.0, 5.0, 6.0)
-            assert (w0[0]["partition"], w0[1]["partition"], w1[2]["partition"]) == ("L0", "L1", "L2")
+            assert (w0[0]["partition"], w0[1]["partition"], w1[2]["partition"]) == (
+                "L0",
+                "L1",
+                "L2",
+            )
             assert (w0[0]["n_entries"], w0[1]["n_entries"], w1[2]["n_entries"]) == (10, 11, 12)
             for k in range(3):
                 assert row(server, k) == ("finished", f"L{k}", 10 + k)
@@ -266,7 +282,9 @@ def test_per_worker_factory_pushes_from_a_subprocess(monkeypatch: pytest.MonkeyP
         assert isinstance(built, NetworkMonitor)
         assert built.lean_events is False
         assert factory() is built
-        lean_factory = NetworkMonitor(server.ingest_url, per_worker=True, lean=True).worker_monitor_factory()
+        lean_factory = NetworkMonitor(
+            server.ingest_url, per_worker=True, lean=True
+        ).worker_monitor_factory()
         assert lean_factory is not None
         lean_built = lean_factory()
         assert lean_built.lean_events is True
@@ -283,7 +301,9 @@ def test_worker_monitor_exit_flush_is_bounded(monkeypatch: pytest.MonkeyPatch) -
     try:
         port = lsock.getsockname()[1]
         hooks = _capture_atexit(monkeypatch)
-        factory = NetworkMonitor(f"ws://127.0.0.1:{port}/ingest", per_worker=True).worker_monitor_factory()
+        factory = NetworkMonitor(
+            f"ws://127.0.0.1:{port}/ingest", per_worker=True
+        ).worker_monitor_factory()
         assert factory is not None
         factory().on_task(TaskEvent(FIN, 0, "w0", 1.0, ""))
         time.sleep(0.1)

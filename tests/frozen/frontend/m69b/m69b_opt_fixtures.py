@@ -1,6 +1,8 @@
-"""Awkward-free fixtures for the m69b frontend suite (the free-threaded job collects
-`tests/frozen/frontend` with only numpy installed). Everything a plan ships is module level, so a
-pickled plan names it by reference."""
+"""Awkward-free fixtures for the m69b frontend suite.
+
+The free-threaded job collects `tests/frozen/frontend` with only numpy installed. Everything a plan
+ships is module level, so a pickled plan names it by reference.
+"""
 
 from __future__ import annotations
 
@@ -34,17 +36,24 @@ class Events:
         raise AssertionError("the whole-dataset loader must never run inside a plan")
 
     def partitions(self, steps_per_file: int = 1) -> tuple[Partition, ...]:
-        return tuple(Partition.blind("mem://events", "t", s, steps_per_file) for s in range(steps_per_file))
+        return tuple(
+            Partition.blind("mem://events", "t", s, steps_per_file) for s in range(steps_per_file)
+        )
 
-    def read_partition(self, partition: Partition, columns: Any, resources: Any) -> dict[str, np.ndarray]:
+    def read_partition(
+        self, partition: Partition, columns: Any, resources: Any
+    ) -> dict[str, np.ndarray]:
         part = partition.resolve(len(COLUMNS["x"]))
         names = COLUMNS if columns is None else columns
         return {c: COLUMNS[c][part.entry_start : part.entry_stop] for c in names}
 
 
 def record() -> tuple[Session, Array]:
-    """The fixture session. Before any output it records, unmarked, a node over `z` (no output
-    reads it) and a node that raises on the data (no `x` exceeds 100)."""
+    """Return the fixture session.
+
+    Before any output it records, unmarked, a node over `z` (no output reads it) and a node that
+    raises on the data (no `x` exceeds 100).
+    """
     session = Session(NumpyBackend())
     events = session.source("events", form=FORM, data=Events())
     _unread = events.z * 3.0
@@ -58,7 +67,7 @@ def merged_pair(events: Array) -> tuple[Array, Array]:
 
 
 def failing_op(events: Array) -> tuple[Array, int]:
-    """An op that raises on the data, and the line recording it."""
+    """Return an op that raises on the data, and the line recording it."""
     return events.w[events.w > 100.0][0], sys._getframe().f_lineno
 
 
@@ -93,8 +102,10 @@ def json_codec(value: object, path: str, kv: Mapping[str, str] | None) -> None:
 
 
 def emit_opt0_digest() -> None:
-    """One line: the sha256 of an opt-0 plan's IR and of the pickled plan, then this
-    interpreter's `str` hash salt."""
+    """Emit one line: the sha256 of an opt-0 plan's IR and of the pickled plan.
+
+    The line ends with this interpreter's `str` hash salt.
+    """
     _session, events = record()
     plan = aggregate_plan(
         *merged_pair(events), reduce=sums, combine=add, empty=zero, steps_per_file=2, opt_level=0

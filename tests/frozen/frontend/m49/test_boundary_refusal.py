@@ -1,5 +1,7 @@
-"""§5.4: a boundary/plan verb refuses a `Varied` operand, and a variation downstream of the
-boundary still compiles per universe."""
+"""§5.4: a boundary/plan verb refuses a `Varied` operand.
+
+And a variation downstream of the boundary still compiles per universe.
+"""
 
 from __future__ import annotations
 
@@ -15,7 +17,9 @@ JES = {"jes_up": 1.1, "jes_down": 0.9}
 
 def _varied_left(program: object) -> graphed.Varied:
     pt = program.left["pt"]
-    return graphed.vary(pt, "jes", **{tag.split("_", 1)[1]: pt * factor for tag, factor in JES.items()})
+    return graphed.vary(
+        pt, "jes", **{tag.split("_", 1)[1]: pt * factor for tag, factor in JES.items()}
+    )
 
 
 @pytest.mark.parametrize("side", ["left", "right"])
@@ -60,7 +64,9 @@ def test_a_variation_downstream_of_the_join_still_compiles_per_universe() -> Non
     """The positive control: a blanket "a Varied near a Join raises" must fail the suite."""
     program = join_program()
     pt, sf = program.joined["pt"], program.joined["sf"]
-    varied = graphed.vary(pt * sf, "jes", **{tag.split("_", 1)[1]: (pt * f) * sf for tag, f in JES.items()})
+    varied = graphed.vary(
+        pt * sf, "jes", **{tag.split("_", 1)[1]: (pt * f) * sf for tag, f in JES.items()}
+    )
 
     expected = {"nominal": JOINED_PT * JOINED_SF} | {
         label: (JOINED_PT * factor) * JOINED_SF for label, factor in JES.items()

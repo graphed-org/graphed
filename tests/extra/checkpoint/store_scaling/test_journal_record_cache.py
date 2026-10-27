@@ -41,7 +41,9 @@ def test_replays_of_one_capture_root_read_each_record_once(
     path = tmp_path / "d.parquet"
     ak.to_parquet(ak.Array({"x": np.arange(1000.0)}), path)
     y = gak.sum(from_parquet(Session(AwkwardBackend()), "events", str(path)).x, axis=None)
-    plan = aggregate_plan(y, reduce=_first, combine=_add, empty=_zero, steps_per_file=4, store=s3_url)
+    plan = aggregate_plan(
+        y, reduce=_first, combine=_add, empty=_zero, steps_per_file=4, store=s3_url
+    )
     SequentialRunner().run(plan)
     probe = gcp.FsspecStore(s3_url)
 
@@ -90,12 +92,16 @@ class _ListProtocolFS:
     def glob(self, pattern: str) -> list[str]:
         return [p for p in self.objects if fnmatch.fnmatchcase(p, pattern)]
 
-    def cat_ranges(self, paths: list[str], starts: list[Any], ends: list[Any], **_kw: Any) -> list[bytes]:
+    def cat_ranges(
+        self, paths: list[str], starts: list[Any], ends: list[Any], **_kw: Any
+    ) -> list[bytes]:
         self.reads.extend(paths)
         return [self.objects[p] for p in paths]
 
 
-def test_completed_reads_each_record_once_with_a_list_protocol(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_completed_reads_each_record_once_with_a_list_protocol(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     fs = _ListProtocolFS()
     monkeypatch.setattr("fsspec.core.url_to_fs", lambda url, **_o: (fs, "bkt/root"))
     store = gcp.FsspecStore("s3://bkt/root")

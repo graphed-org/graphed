@@ -1,6 +1,8 @@
-"""m56 §2 item 1 / §4 headline: a family registered over jets a BOTH-KIND nuisance shifts fans out
-over that nuisance as well as over the shift-only one, and each joint resolves to the cross node the
-graph holds rather than collapsing onto a one-at-a-time universe.
+"""m56 §2 item 1 / §4 headline.
+
+A family registered over jets a BOTH-KIND nuisance shifts fans out over that nuisance as well as
+over the shift-only one, and each joint resolves to the cross node the graph holds rather than
+collapsing onto a one-at-a-time universe.
 """
 
 from __future__ import annotations

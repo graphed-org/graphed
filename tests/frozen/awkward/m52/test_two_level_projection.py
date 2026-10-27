@@ -1,5 +1,7 @@
-"""C3 / design §4.6, §8-e: `context._two_level` is the same resolution applied at each of its two
-levels, and it is where R1-c is earned.
+"""C3 / design §4.6, §8-e.
+
+`context._two_level` is the same resolution applied at each of its two levels, and it is where R1-c
+is earned.
 
 The weight form already RECORDS every cross member inside the nested factor container; today
 `_two_level` discards them to produce the diagonal. Projection makes the recorded cross member

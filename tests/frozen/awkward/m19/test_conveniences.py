@@ -2,7 +2,8 @@
 
 `fields`/`type_of`/`backend_of` answer from the recorded FORM and the session — pure metadata,
 recording NOTHING (witnessed by node counts). `head`/`sample` are EAGER peeking sugar over the
-common slice op + the reference materialize."""
+common slice op + the reference materialize.
+"""
 
 from __future__ import annotations
 

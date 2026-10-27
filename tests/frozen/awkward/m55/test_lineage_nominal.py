@@ -1,14 +1,15 @@
-"""m55 §2 item 3: the container's nominal, reindexed to the target context, must BE that context's
-central member of the collection — the node equality decides admission, not where the container was
-built.
+"""m55 §2 item 3.
+
+The container's nominal, reindexed to the target context, must BE that context's central member of
+the collection — the node equality decides admission, not where the container was built.
 
 Two accepts fix that the rule is about nodes and not about lineage: a container built at the parent
 still registers at a masked child and at a `vary`-link descendant, where the reindex lands on the
 same node. Three refusals fix the other direction, each naming both nodes: a nominal moved off the
 central member, a projected child whose central member is one universe of the parent's, and a
 collection the context reads off the record, whose masked read is a different node from the masked
-container. The last two refuse programs the hand unpack accepts, so each asserts the hand form still
-does — a refusal placed in the shared path would fail there.
+container. The last two refuse programs the hand unpack accepts, so each asserts the hand form
+still does — a refusal placed in the shared path would fail there.
 """
 
 from __future__ import annotations
@@ -39,7 +40,9 @@ JER_LABELS = ("nominal", "jes_up", "jes_down", "jer_up", "jer_down")
 def test_a_parent_built_container_registers_at_a_masked_child() -> None:
     varied, hand = equivalence(masked_child_program, "Jet", "MET")
 
-    assert set(varied) == {(collection, label) for collection in ("Jet", "MET") for label in JER_LABELS}
+    assert set(varied) == {
+        (collection, label) for collection in ("Jet", "MET") for label in JER_LABELS
+    }
     assert varied == hand
     assert len(set(varied.values())) == len(varied)
 

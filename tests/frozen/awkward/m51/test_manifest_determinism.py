@@ -36,13 +36,24 @@ def _manifest_hex_in_subprocess(seed: str, destination: str) -> str:
     env = dict(os.environ)
     env["PYTHONHASHSEED"] = seed
     env["PYTHONPATH"] = os.pathsep.join(
-        [os.path.join(_REPO_ROOT, "python"), os.path.join(_REPO_ROOT, "tests", "_corpus"), _M51_DIR]
+        [
+            os.path.join(_REPO_ROOT, "python"),
+            os.path.join(_REPO_ROOT, "tests", "_corpus"),
+            _M51_DIR,
+        ]
     )
     proc = subprocess.run(
-        [sys.executable, "-c",
-         "import sys, m51_write_fixtures as f; sys.stdout.write(f.emit_weight_manifest_hex(sys.argv[1]))",
-         destination],
-        capture_output=True, text=True, env=env, check=False,
+        [
+            sys.executable,
+            "-c",
+            "import sys, m51_write_fixtures as f; "
+            "sys.stdout.write(f.emit_weight_manifest_hex(sys.argv[1]))",
+            destination,
+        ],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
     )
     assert proc.returncode == 0, f"seed={seed} write failed:\n{proc.stderr}"
     return proc.stdout.strip()

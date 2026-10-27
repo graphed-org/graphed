@@ -1,8 +1,10 @@
-"""graphed-checkpoint (plan M8): content-addressed checkpoint Store, deterministic resume, and
-error harvesting on top of the M8 ``DurablePlan`` from ``graphed-core``.
+"""graphed-checkpoint (plan M8).
 
-``Store`` is a local directory; ``FsspecStore`` puts the same store at an fsspec URL, pulled forward
-from Phase 2 past the M8 local-only guardrail. Analysis *preservation* is M9.
+It provides a content-addressed checkpoint Store, deterministic resume, and error harvesting on
+top of the M8 ``DurablePlan`` from ``graphed-core``.
+
+``Store`` is a local directory; ``FsspecStore`` puts the same store at an fsspec URL, pulled
+forward from Phase 2 past the M8 local-only guardrail. Analysis *preservation* is M9.
 """
 
 from __future__ import annotations
@@ -10,7 +12,9 @@ from __future__ import annotations
 from .codec import Codec, NumpyCodec, PickleCodec
 from .errors import dead_letter_descriptor
 from .fsspec_store import FsspecStore
-from .resume import EnvironmentChanged, StoreUnavailable, check_resumable, resumable
+from .resume import EnvironmentChanged as EnvironmentChanged
+from .resume import EnvironmentChangedError, StoreUnavailableError, check_resumable, resumable
+from .resume import StoreUnavailable as StoreUnavailable
 from .retry import Quarantine, RetryElsewhere, RetryN, RetrySmallerChunk
 from .runner import (
     ResumeReport,
@@ -24,7 +28,7 @@ from .store import CheckpointStore, JournalEntry, Store
 __all__ = [
     "CheckpointStore",
     "Codec",
-    "EnvironmentChanged",
+    "EnvironmentChangedError",
     "FsspecStore",
     "JournalEntry",
     "NumpyCodec",
@@ -37,7 +41,7 @@ __all__ = [
     "RetrySmallerChunk",
     "ShuffleResumeResult",
     "Store",
-    "StoreUnavailable",
+    "StoreUnavailableError",
     "check_resumable",
     "dead_letter_descriptor",
     "resumable",

@@ -1,5 +1,7 @@
-"""Concurrency: many threads building overlapping subgraphs yield exactly the distinct-key count
-with no panic/race (M1). Runs under the GIL and, in CI, under free-threaded 3.14t."""
+"""Concurrency: many threads building overlapping subgraphs yield exactly the distinct-key count.
+
+There is no panic/race (M1). Runs under the GIL and, in CI, under free-threaded 3.14t.
+"""
 
 from __future__ import annotations
 

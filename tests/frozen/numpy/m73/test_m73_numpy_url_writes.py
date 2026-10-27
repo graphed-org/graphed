@@ -29,7 +29,7 @@ def recorded() -> Array:
 
 @pytest.fixture
 def cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """An empty working directory: a URL write that creates a local tree creates it here."""
+    """Return an empty working directory: a URL write that creates a local tree creates it here."""
     here = tmp_path / "cwd"
     here.mkdir()
     monkeypatch.chdir(here)
@@ -74,13 +74,17 @@ def test_numpy_to_parquet_writes_its_parts_on_the_url_filesystem(url_root: str, 
     assert os.listdir(cwd) == []
 
 
-def test_numpy_only_a_url_destination_needs_fsspec(tmp_path: Path, cwd: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_numpy_only_a_url_destination_needs_fsspec(
+    tmp_path: Path, cwd: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     block_fsspec(monkeypatch)
     x = recorded()
     local = str(tmp_path / "local")
     paths = gio.to_parquet(x * 2.0, local, steps_per_file=3)
     assert paths == [os.path.join(local, f"part-{i:05d}.parquet") for i in range(3)]
-    np.testing.assert_array_equal(np.concatenate([pq.read_table(p)["data"].to_numpy() for p in paths]), DATA * 2.0)
+    np.testing.assert_array_equal(
+        np.concatenate([pq.read_table(p)["data"].to_numpy() for p in paths]), DATA * 2.0
+    )
     with pytest.raises(ImportError, match=r"pip install 'graphed\[checkpoint\]'"):
         gio.to_parquet(x * 2.0, f"memory://m73-{uuid.uuid4().hex}/np", steps_per_file=3)
     assert os.listdir(cwd) == []

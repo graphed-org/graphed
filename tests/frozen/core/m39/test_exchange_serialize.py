@@ -29,7 +29,8 @@ def _legacy_graph() -> bytes:
 
 
 def test_magic_is_unchanged_even_with_an_exchange() -> None:
-    # the tag is APPENDED, not a format break: a blob CONTAINING an Exchange still starts with GIR1.
+    # the tag is APPENDED, not a format break: a blob CONTAINING an Exchange still starts with
+    # GIR1.
     g, outs = _exchange_graph()
     blob = g.serialize(outputs=outs)
     assert blob[:4] == b"GIR1", "the magic must stay GIR1 (append a tag, never bump the magic)"
@@ -42,9 +43,12 @@ def test_exchange_blob_roundtrips_byte_identically() -> None:
     assert back.node_count() == g.node_count()
     # freeze-M39-1 (owner-sanctioned refreeze, 2026-07-02): compare deserialize-vs-deserialize —
     # the M8 pattern (m8/test_ir_serialization.py) — because the blob-marked `back` can never equal
-    # the unmarked builder `g` under the M22 read-only-serialize pin (dispute: .graphed/M39/disputes/).
+    # the unmarked builder `g` under the M22 read-only-serialize pin (dispute:
+    # .graphed/M39/disputes/).
     assert back.to_dot() == GraphStore.deserialize(blob).to_dot()
-    assert back.serialize() == blob, "re-serialize of a decoded Exchange graph must be byte-identical"
+    assert back.serialize() == blob, (
+        "re-serialize of a decoded Exchange graph must be byte-identical"
+    )
 
 
 def test_exchange_scheme_survives_the_roundtrip() -> None:

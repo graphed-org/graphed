@@ -1,4 +1,6 @@
-"""Replay one task of an ``aggregate_plan`` run on the driver, one operation at a time (opt_level=0).
+"""Replay one task of an ``aggregate_plan`` run on the driver, one operation at a time.
+
+This is opt_level=0.
 
 ``replay(plan, key, *outputs)`` re-executes the task with the input it read — from the plan's
 capture root (``aggregate_plan(store=)``) when the run kept it, else by re-reading its partition —
@@ -18,7 +20,13 @@ from graphed import Array
 from graphed.aggregate import _compile_at, _PartitionReduce, _slot_of, resolve_backend
 from graphed.core import GraphStore, LocalResources
 from graphed.core.execution import Plan, Task
-from graphed.execute import CompiledGraph, _unbound_external, _unbound_source, compile_ir, external_key
+from graphed.execute import (
+    CompiledGraph,
+    _unbound_external,
+    _unbound_source,
+    compile_ir,
+    external_key,
+)
 
 from .lowering import LoweredOp, lower
 from .runner import _stage_error
@@ -26,7 +34,10 @@ from .runner import _stage_error
 
 @dataclass(frozen=True)
 class Step:
-    """One replayed operation: its lowered op (with the user's frame), its value, and how long it took."""
+    """One replayed operation: its lowered op, its value, and how long it took.
+
+    The lowered op carries the user's frame.
+    """
 
     node: LoweredOp
     value: Any
@@ -35,8 +46,11 @@ class Step:
 
 @dataclass(frozen=True)
 class ReplayDiff:
-    """The replayed partial against the reference: ``"recorded"`` (the run's captured output) or
-    ``"re-evaluated"`` (the plan's graph run again on the same input)."""
+    """The replayed partial against the reference.
+
+    ``"recorded"`` (the run's captured output) or ``"re-evaluated"`` (the plan's graph run again on
+    the same input).
+    """
 
     reference: str
     equal: bool
@@ -54,8 +68,11 @@ def _decode(store: Any, blob: str) -> Any:
 
 
 def _equal(a: Any, b: Any) -> bool:
-    """By value: dicts by key, sequences by position, leaves by ``numpy.array_equal`` (which
-    dispatches to awkward and answers False on a length or shape mismatch). NaN is unequal."""
+    """Compare by value.
+
+    Dicts by key, sequences by position, leaves by ``numpy.array_equal`` (which dispatches to
+    awkward and answers False on a length or shape mismatch). NaN is unequal.
+    """
     if isinstance(a, dict):
         return isinstance(b, dict) and a.keys() == b.keys() and all(_equal(a[k], b[k]) for k in a)
     if isinstance(a, (tuple, list)):
@@ -66,7 +83,10 @@ def _equal(a: Any, b: Any) -> bool:
 
 
 class Replay:
-    """One task of a run, ready to replay. ``steps()`` is lazy; ``value`` runs it once and caches."""
+    """One task of a run, ready to replay.
+
+    ``steps()`` is lazy; ``value`` runs it once and caches.
+    """
 
     def __init__(
         self,
@@ -75,6 +95,7 @@ class Replay:
         outputs: tuple[Array, ...],
         compiled: CompiledGraph | None = None,
     ) -> None:
+        """Prepare ``task`` of a run for replay over ``outputs``."""
         self.task = task
         self._process = process
         self._session = outputs[0].session
@@ -88,7 +109,9 @@ class Replay:
         cone = {op.node_id: op for o in outputs for op in lower(self._session, o, opt_level=0).ops}
         self._cone = [cone[i] for i in sorted(cone)]
         # the unfused IR keeps record ids; it is the whole arena, so only the cone is evaluated
-        arena = GraphStore.deserialize(bytes(compile_ir(self._session, *outputs, optimize=False).ir))
+        arena = GraphStore.deserialize(
+            bytes(compile_ir(self._session, *outputs, optimize=False).ir)
+        )
         self._nodes = [n for n in arena.nodes() if n["id"] in cone]
         self._store: Any = None
         self._captured: dict[str, str] = {}
@@ -96,7 +119,9 @@ class Replay:
             self._store = process._open_store()
             cid = process._capture_id(task.partition)
             done = self._store.completed()
-            self._captured = {k: done[f"{cid}:{k}"].blob for k in ("input", "output") if f"{cid}:{k}" in done}
+            self._captured = {
+                k: done[f"{cid}:{k}"].blob for k in ("input", "output") if f"{cid}:{k}" in done
+            }
         self.input_source = "store" if "input" in self._captured else "re-read"
 
     @cached_property
@@ -108,15 +133,20 @@ class Replay:
         )
 
     def steps(self) -> Iterator[Step]:
-        """Evaluate the task's opt_level=0 cone node by node, yielding each :class:`Step`. The input is
-        read before the first step, and a failed read raises as the run's own read would."""
-        from graphed.preserve.interpreter import iter_ir  # noqa: PLC0415  (workers import graphed.debug)
+        """Evaluate the task's opt_level=0 cone node by node, yielding each :class:`Step`.
+
+        The input is read before the first step, and a failed read raises as the run's own read
+        would.
+        """
+        # workers import graphed.debug
+        from graphed.preserve.interpreter import iter_ir  # noqa: PLC0415
 
         chunk = self._chunk
         source_name = self._process.source_name
         externals = dict(self._process.externals)
 
-        # bound as evaluate_ir binds them for the run, so an unbound name fails replay as it failed the task
+        # bound as evaluate_ir binds them for the run, so an unbound name fails replay as it failed
+        # the task
         def source(node: dict[str, Any]) -> Any:
             if node["name"] != source_name:
                 raise _unbound_source(node["name"])
@@ -146,14 +176,22 @@ class Replay:
 
     @cached_property
     def value(self) -> Any:
-        """The replayed partial: the plan's ``reduce`` over one replayed value per output of the plan's
-        IR, as the run's ``reduce`` receives them."""
-        out = {s.node.node_id: s.value for s in self.steps() if s.node.node_id in self._reduced_ids}
+        """The replayed partial.
+
+        The plan's ``reduce`` over one replayed value per output of the plan's IR, as the run's
+        ``reduce`` receives them.
+        """
+        out = {
+            s.node.node_id: s.value for s in self.steps() if s.node.node_id in self._reduced_ids
+        }
         return self._process.reduce([out[i] for i in self._reduced_ids])
 
     def diff(self) -> ReplayDiff:
-        """Compare the replayed partial with the run's recorded one, or, when the run kept no output
-        for this task, with the plan's graph evaluated on the same input."""
+        """Compare the replayed partial with the run's recorded one.
+
+        When the run kept no output for this task, compare with the plan's graph evaluated on the
+        same input.
+        """
         replayed = self.value
         if "output" in self._captured:
             reference, recorded = "recorded", _decode(self._store, self._captured["output"])
@@ -164,20 +202,27 @@ class Replay:
 
 
 def replay(plan: Plan[Any], key: int, *outputs: Array) -> Replay:
-    """Replay task ``key`` of an ``aggregate_plan`` plan. ``outputs`` are the Arrays the plan was
-    built from, in order: they supply the unfused graph and the user's frames, and must recompile
-    to the plan's IR."""
+    """Replay task ``key`` of an ``aggregate_plan`` plan.
+
+    ``outputs`` are the Arrays the plan was built from, in order: they supply the unfused graph and
+    the user's frames, and must recompile to the plan's IR.
+    """
     process = plan.process
     if not isinstance(process, _PartitionReduce):
-        raise TypeError(f"replay needs a plan built by aggregate_plan, not one whose process is {process!r}")
+        raise TypeError(
+            f"replay needs a plan built by aggregate_plan, not one whose process is {process!r}"
+        )
     if process.writes:
-        raise TypeError("replay does not re-run a plan's writes; replay a plan built without writes=")
+        raise TypeError(
+            "replay does not re-run a plan's writes; replay a plan built without writes="
+        )
     task = next((t for t in plan.tasks if t.key == key), None)
     if task is None:
         raise ValueError(f"the plan has no task with key {key!r}")
     compiled = _compile_at(process.opt_level, outputs[0].session, outputs) if outputs else None
     if compiled is None or bytes(compiled.ir) != process.ir:
         raise ValueError(
-            "these outputs do not recompile to the plan's IR: pass the outputs given to aggregate_plan, in order"
+            "these outputs do not recompile to the plan's IR: pass the outputs given to "
+            "aggregate_plan, in order"
         )
     return Replay(process, task, outputs, compiled)

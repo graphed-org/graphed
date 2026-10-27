@@ -1,4 +1,6 @@
-"""M35 — Session.walk evaluates iteratively: a deeply-chained graph does not hit the recursion limit.
+"""M35 — Session.walk evaluates iteratively.
+
+A deeply-chained graph does not hit the recursion limit.
 
 `materialize` and projection share `Session.walk`. A long recorded chain (a realistic deep
 selection/systematics graph) would `RecursionError` if `walk` recursed per node. The traversal is

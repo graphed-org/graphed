@@ -85,8 +85,10 @@ def test_the_second_object_of_a_derived_name_records_that_name_with_an_ordinal()
 
 
 def test_the_durable_path_ships_each_callable_its_own_evaluator() -> None:
-    """`compile_ir` carries no callables (an opaque payload is a preservation risk, §A.3.1): the
-    worker resolves them by payload key, so two colliding callables share ONE evaluator there."""
+    """`compile_ir` carries no callables (an opaque payload is a preservation risk, §A.3.1).
+
+    The worker resolves them by payload key, so two colliding callables share ONE evaluator there.
+    """
     session, x = toy_session()
     first, second = x.map(m60_lib.q), x.map(m60_libx.q)
 
@@ -118,7 +120,12 @@ def test_a_program_without_name_collisions_records_the_bare_names_and_the_same_i
     for _ in range(2):
         session, x = toy_session()
         first, second = x.map(plus_one), x.map(times_hundred)
-        built.append((session.serialized_ir(first, second, optimize=False), fn_params(session, first, second)))
+        built.append(
+            (
+                session.serialized_ir(first, second, optimize=False),
+                fn_params(session, first, second),
+            )
+        )
 
     assert built[0][1] == built[1][1] == ["plus_one", "times_hundred"]
     assert built[0][0] == built[1][0]

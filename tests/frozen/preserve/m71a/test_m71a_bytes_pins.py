@@ -1,5 +1,7 @@
-"""m71a A-C6: a plan that declares no output type keeps graphed 0.0.6's bytes (IR, compiled IR,
-DurablePlan, and the bundle manifest's externals/opaque_nodes/analysis subtrees).
+"""m71a A-C6: a plan that declares no output type keeps graphed 0.0.6's bytes.
+
+That covers the IR, compiled IR, DurablePlan, and the bundle manifest's
+externals/opaque_nodes/analysis subtrees.
 
 The pins were measured on 3c46e01 (graphed 0.0.6). Descriptors embed `platform.python_version()`,
 so it is fixed here; payloads are byte literals so no sample generator can drift them.
@@ -29,8 +31,8 @@ from graphed.preserve.externals import CORRECTIONLIB_PLUGIN, ONNX_PLUGIN, record
 CSET = (
     b'{"schema_version": 2, "corrections": [{"name": "sf", "version": 1, "inputs": [{"name": '
     b'"systematic", "type": "string"}, {"name": "x", "type": "real"}], "output": {"name": "sf", '
-    b'"type": "real"}, "data": {"nodetype": "category", "input": "systematic", "content": [{"key": '
-    b'"nominal", "value": 1.0}]}}]}'
+    b'"type": "real"}, "data": {"nodetype": "category", "input": "systematic", "content": '
+    b'[{"key": "nominal", "value": 1.0}]}}]}'
 )
 MODEL = (
     b'\x08\t:]\n\x12\n\x01x\n\x01W\n\x01B\x12\x01y"\x04Gemm\x12\x01m*\x0f\x08\x01\x08\x01\x10\x01B'
@@ -45,7 +47,7 @@ PINS = {
     "awk.compile_ir": "86fb5cfd13c819409f5657a0ba8ced3a41056fc8138249c0d4f38bb4f5a4a9c9",
     "awk.durableplan": "b5d2bfff4008f53112c2bf587da5a023dc4204af3bdd9b30bc337037dbe619fc",
     "awk.manifest.externals": "2f754dd342a2142201dae90be5c65bdbaa76e343bd4cca2e094fe71bb871ed57",
-    "awk.manifest.opaque_nodes": "fe94b827f0455bee6f4a6a265286f827f18748ede569565ee827058085bad146",
+    "awk.manifest.opaque_nodes": "fe94b827f0455bee6f4a6a265286f827f18748ede569565ee827058085bad146",  # noqa: E501
     "awk.manifest.analysis": "a5626dfc6038ed85150255504dc127f4627f276abe56f93e5467499b1af16fb7",
     "np.ir.opt0": "6b94f6ac5ce8f1f1eade6575535130b7eea0d72b30bdcb7effae12924b358a0b",
 }
@@ -85,7 +87,9 @@ def _pins(root: Path) -> dict[str, str]:
         "awk.ir.opt0": _sha(s.serialized_ir(out, optimize=False)),
         "awk.ir.opt1": _sha(s.serialized_ir(out)),
         "awk.compile_ir": _sha(compiled),
-        "awk.durableplan": _sha(DurablePlan(ir=compiled, process=spec, combine=spec, empty=spec).to_bytes()),
+        "awk.durableplan": _sha(
+            DurablePlan(ir=compiled, process=spec, combine=spec, empty=spec).to_bytes()
+        ),
     }
     bundle = build_bundle(
         root,
@@ -109,6 +113,8 @@ def _pins(root: Path) -> dict[str, str]:
     return pins
 
 
-def test_an_undeclared_plan_keeps_its_0_0_6_bytes(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_an_undeclared_plan_keeps_its_0_0_6_bytes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     monkeypatch.setattr(platform, "python_version", lambda: "3.13.3")
     assert _pins(tmp_path / "a") == PINS

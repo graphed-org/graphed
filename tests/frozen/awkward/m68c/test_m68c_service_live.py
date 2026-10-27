@@ -1,5 +1,8 @@
-"""m68c §3.2/§3.3: a server call before a repartition, on one side before a join, and after a join
-runs through ``bind_services`` then ``SequentialRunner`` against a local HTTP stand-in."""
+"""m68c §3.2/§3.3: a server call before a repartition, on one side before a join.
+
+And after a join runs through ``bind_services`` then ``SequentialRunner`` against a local HTTP
+stand-in.
+"""
 
 from __future__ import annotations
 
@@ -34,7 +37,9 @@ def _before_repartition() -> tuple[DurablePlanV2, Any]:
 
 def _before_join() -> tuple[DurablePlanV2, Any]:
     ev, lu = two_sources()
-    plan = graphed.join_plan(graphed.join(corrected(ev), lu, on=["run"], how="left"), steps_per_file=2, **FOLD)
+    plan = graphed.join_plan(
+        graphed.join(corrected(ev), lu, on=["run"], how="left"), steps_per_file=2, **FOLD
+    )
     return plan, ev.session.materialize(graphed.join(by_hand(ev), lu, on=["run"], how="left"))
 
 

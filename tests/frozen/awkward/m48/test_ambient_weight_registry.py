@@ -19,8 +19,10 @@ from graphed.awkward import gak
 
 
 def _program() -> tuple[Session, Any, Any, Any]:
-    """Weight registered BEFORE the shift (§2.1's ordering rule), then a VARIED-mask derivation, so
-    the derived registry's row set differs per label."""
+    """Weight registered BEFORE the shift (§2.1's ordering rule), then a VARIED-mask derivation.
+
+    So the derived registry's row set differs per label.
+    """
     session, events = events_context()
     weighted = graphed.vary(
         events,
@@ -63,19 +65,25 @@ def test_the_derived_registry_is_re_indexed_per_label_elementwise() -> None:
 
 
 def test_re_indexing_every_label_by_nominals_mask_is_a_different_answer() -> None:
-    """The instrument for the assertion above: if the two agreed, that test would pass under the
-    implementation it exists to reject."""
+    """The instrument for the assertion above.
+
+    If the two agreed, that test would pass under the implementation it exists to reject.
+    """
     session, shifted, mask, _sel = _program()
     parent = graphed.weight(shifted)
     nominal_mask = graphed.nominal(mask)
-    per_label = as_list(session.materialize(graphed.nominal(parent)[graphed.universe(mask, "jes_up")]))
+    per_label = as_list(
+        session.materialize(graphed.nominal(parent)[graphed.universe(mask, "jes_up")])
+    )
     by_nominal = as_list(session.materialize(graphed.nominal(parent)[nominal_mask]))
     assert per_label != by_nominal
 
 
 def test_the_ambient_weight_answers_in_the_contexts_OWN_row_space() -> None:
-    """The invariant §6.4b's precondition assumes: `graphed.weight(ctx)` never answers at the
-    parent's row count."""
+    """The invariant §6.4b's precondition assumes.
+
+    `graphed.weight(ctx)` never answers at the parent's row count.
+    """
     session, shifted, mask, sel = _program()
     parent_rows = len(as_list(session.materialize(graphed.nominal(graphed.weight(shifted)))))
     derived_rows = len(as_list(session.materialize(graphed.nominal(graphed.weight(sel)))))

@@ -43,6 +43,7 @@ class Varied:
         tags: Mapping[str, tuple[str, ...]] | None = None,
         context: object = None,
     ) -> None:
+        """Hold ``members`` by label; a ``nominal`` member is required."""
         if "nominal" not in members:
             raise GraphedError("a Varied must carry a 'nominal' universe")
         self._members: dict[str, Member] = dict(members)
@@ -59,8 +60,9 @@ class Varied:
             ) from None
 
     def _key_for(self, label: str) -> str:
-        """§4.6: the KEY of the member whose point equals `restrict(point(L), axes(self))`, else
-        `"nominal"`.
+        """§4.6: the KEY of the member whose point equals `restrict(point(L), axes(self))`.
+
+        Else `"nominal"`.
 
         The fast path — a label this container carries — is not a special case but a theorem:
         `keys(point(L)) ⊆ axes(C)` makes the restriction the identity and point→label is unique
@@ -84,8 +86,11 @@ class Varied:
         return "nominal"
 
     def _member_for(self, label: str) -> Member:
-        """The member §4.6 resolves `label` to. The carried-label theorem above is spelled again
-        here rather than paid for as a call: this is the hot path of every narrowed op."""
+        """Return the member §4.6 resolves `label` to.
+
+        The carried-label theorem above is spelled again here rather than paid for as a call: this
+        is the hot path of every narrowed op.
+        """
         member = self._members.get(label)
         return member if member is not None else self._members[self._key_for(label)]
 
@@ -108,6 +113,7 @@ class Varied:
 
     # ---- structural access -----------------------------------------------------
     def __getattr__(self, name: str) -> Any:
+        """Map an attribute read over every member."""
         if name in RESERVED:
             raise AttributeError(
                 f"{name!r} is not defined on a Varied; read one universe first, with "
@@ -120,7 +126,8 @@ class Varied:
         probe = getattr(self._members["nominal"], name)
         if isinstance(probe, BoundMethod):
             return BoundMethod(self, name)
-        if not isinstance(probe, Array | Varied):  # a form answer, e.g. `.fields`: one for all universes
+        # a form answer, e.g. `.fields`: one for all universes
+        if not isinstance(probe, Array | Varied):
             if any(getattr(member, name) != probe for member in self._members.values()):
                 raise GraphedError(
                     f"the universes disagree on {name!r}; read one universe first, with "
@@ -130,23 +137,28 @@ class Varied:
         return expand(lambda member: getattr(member, name), (self,), {})
 
     def __iter__(self) -> Iterator[Any]:
+        """Refuse iteration: a deferred value has no known length."""
         raise TypeError(
-            "deferred graphed arrays are not iterable (unknown partitioned length); materialize first"
+            "deferred graphed arrays are not iterable (unknown partitioned length); materialize "
+            "first"
         )
 
     def __bool__(self) -> bool:
+        """Refuse a truth value: a deferred value has none."""
         raise no_eager_value("bool(...)", "truth value")
 
     def __array__(self, dtype: object = None, copy: object = None) -> Any:
+        """Refuse an eager numpy value: a deferred value has none."""
         raise no_eager_value("np.asarray(...)", "numpy value")
 
     def __repr__(self) -> str:
+        """Show the labels this container carries."""
         return f"Varied(labels={list(self._members)})"
 
 
 # ---- §4.5's Session label -> point registry, read through the nominal member ----------------
 def session_of(value: object) -> Any:
-    """The Session `value` records into, `None` when it is not a recorded value.
+    """Return the Session `value` records into, `None` when it is not a recorded value.
 
     Reached through the nominal member because §2.2 RESERVES `session` on a `Varied` — resolution
     has no other legal spelling (§4.5).
@@ -157,13 +169,13 @@ def session_of(value: object) -> Any:
 
 
 def point_registry(value: object) -> Mapping[str, Point]:
-    """The `{label: point}` registry of the Session `value` records into (§4.5)."""
+    """Return the `{label: point}` registry of the Session `value` records into (§4.5)."""
     session = session_of(value)
     return {} if session is None else session._points
 
 
 def registered_points(container: Varied) -> dict[str, Point]:
-    """The registered point of each label `container` carries, in its label order.
+    """Return the registered point of each label `container` carries, in its label order.
 
     A label with no entry is ABSENT rather than mapped to the origin: it resolves by exact match,
     which is today's rule and what keeps `graphed.varied.rebuild` usable as a hand-built escape
@@ -175,11 +187,15 @@ def registered_points(container: Varied) -> dict[str, Point]:
 
 # ---- the §2.4 combination rule ------------------------------------------------------------
 def labels_of(value: object) -> tuple[str, ...]:
+    """Return the labels ``value`` carries, or ``()`` for a non-container."""
     return tuple(value._members) if isinstance(value, Varied) else ()
 
 
 def member_of(value: object, label: str) -> Any:
-    """The universe `value` contributes for `label` (§2.4): its own member, else its nominal one."""
+    """Return the universe `value` contributes for `label` (§2.4).
+
+    Its own member, else its nominal one.
+    """
     return value._member_for(label) if isinstance(value, Varied) else value
 
 
@@ -189,8 +205,10 @@ def universes_of(value: object) -> tuple[Any, ...]:
 
 
 def _collect(value: object, found: list[Varied]) -> None:
-    """Every `Varied` in an operand, INSIDE Mapping/Sequence arguments too (§2.3c's
-    *container-traversing* class: `gak.zip`'s mapping is its only array-bearing operand)."""
+    """Collect every `Varied` in an operand, INSIDE Mapping/Sequence arguments too.
+
+    §2.3c's *container-traversing* class: `gak.zip`'s mapping is its only array-bearing operand.
+    """
     if isinstance(value, Varied):
         found.append(value)
     elif isinstance(value, Mapping):
@@ -213,6 +231,7 @@ def narrow(value: object, label: str) -> Any:
 
 
 def containers_in(*values: object) -> list[Varied]:
+    """Return every `Varied` in ``values``, inside containers too."""
     found: list[Varied] = []
     for value in values:
         _collect(value, found)
@@ -220,9 +239,12 @@ def containers_in(*values: object) -> list[Varied]:
 
 
 def union_labels(*values: object) -> tuple[str, ...]:
-    """§2.4's bound union ORDER: the first operand's labels, then labels new to the next, and so
-    on, `"nominal"` always first. §3.2's determinism gate and §6.1c's positional layout both
-    depend on this being insertion ordered, never set ordered."""
+    """§2.4's bound union ORDER.
+
+    The first operand's labels, then labels new to the next, and so on, `"nominal"` always first.
+    §3.2's determinism gate and §6.1c's positional layout both depend on this being insertion
+    ordered, never set ordered.
+    """
     out: dict[str, None] = {"nominal": None}
     for container in containers_in(*values):
         for label in container._members:
@@ -231,7 +253,7 @@ def union_labels(*values: object) -> tuple[str, ...]:
 
 
 def union_tags(*values: object) -> dict[str, tuple[str, ...]]:
-    """The per-`name` tag map §1.1's family check reads, carried through combinations."""
+    """Return the per-`name` tag map §1.1's family check reads, carried through combinations."""
     merged: dict[str, tuple[str, ...]] = {}
     for container in containers_in(*values):
         for name, tags in container._tags.items():
@@ -241,7 +263,10 @@ def union_tags(*values: object) -> dict[str, tuple[str, ...]]:
 
 
 def most_derived_context(*values: Any) -> object:
-    """§2.3e's container handle: the most-derived member handle, `None` when all are context-free."""
+    """§2.3e's container handle: the most-derived member handle.
+
+    `None` when all are context-free.
+    """
     from .accessors import context_of, unify_contexts  # noqa: PLC0415  (import cycle)
 
     return unify_contexts(*(context_of(value) for value in values))
@@ -284,8 +309,10 @@ def expand(fn: Callable[..., Any], args: Sequence[object], kwargs: Mapping[str, 
     return rebuild(results, tags=union_tags(*operands), context=most_derived_context(*operands))
 
 
-def expand_tuple(fn: Callable[..., Any], args: Sequence[object], kwargs: Mapping[str, object]) -> Any:
-    """The *tuple-returning* shape: one `Varied` per tuple position (§2.3c)."""
+def expand_tuple(
+    fn: Callable[..., Any], args: Sequence[object], kwargs: Mapping[str, object]
+) -> Any:
+    """Return the *tuple-returning* shape: one `Varied` per tuple position (§2.3c)."""
     operands = (*args, *kwargs.values())
     if not containers_in(*operands):
         return fn(*args, **kwargs)
@@ -317,9 +344,12 @@ def broadcasting(fn: Callable[..., Any]) -> Callable[..., Any]:
 
 
 def expanding(fn: Callable[..., Any]) -> Callable[..., Any]:
-    """Answer with `{label: <the verb's own return type>}` — `project`'s `Projection` and
-    `project_buffers`' `BufferProjection` are distinct types, so neither is wrapped in a
-    container. `apply` and `read_columns` expand too but each has its own answer shape."""
+    """Answer with `{label: <the verb's own return type>}`.
+
+    `project`'s `Projection` and `project_buffers`' `BufferProjection` are distinct types, so
+    neither is wrapped in a container. `apply` and `read_columns` expand too but each has its own
+    answer shape.
+    """
 
     @functools.wraps(fn)
     def verb(*args: Any, **kwargs: Any) -> Any:
@@ -377,12 +407,18 @@ def _refusing_method(name: str) -> Callable[..., Any]:
 
 
 def install_surface(varied_cls: type[Varied], dispositions: Mapping[str, str]) -> None:
-    """Give `varied_cls` a real attribute for every disposed name — §2.3a resolves ON THE CLASS,
-    which the instance `__getattr__` fallback cannot satisfy."""
+    """Give `varied_cls` a real attribute for every disposed name.
+
+    §2.3a resolves ON THE CLASS, which the instance `__getattr__` fallback cannot satisfy.
+    """
     for name, kind in dispositions.items():
         if name in varied_cls.__dict__:  # a hand-written override wins (`__getattr__`, properties)
             continue
-        setattr(varied_cls, name, _broadcast_method(name) if kind == "broadcast" else _refusing_method(name))
+        setattr(
+            varied_cls,
+            name,
+            _broadcast_method(name) if kind == "broadcast" else _refusing_method(name),
+        )
 
 
 install_surface(Varied, SURFACE_DISPOSITIONS)
@@ -392,10 +428,12 @@ _VARIED_CLASSES: dict[type, type[Varied]] = {}
 
 
 def register_varied(array_cls: type[Array], varied_cls: type[Varied]) -> None:
+    """Register ``varied_cls`` as the container class of ``array_cls``."""
     _VARIED_CLASSES[array_cls] = varied_cls
 
 
 def varied_class_for(array_cls: type) -> type[Varied]:
+    """Return the container class registered for ``array_cls``."""
     for cls in array_cls.__mro__:
         registered = _VARIED_CLASSES.get(cls)
         if registered is not None:
@@ -405,8 +443,9 @@ def varied_class_for(array_cls: type) -> type[Varied]:
 
 # ---- §2.3d's two refusal contracts ---------------------------------------------------------
 def boundary_refusal(verb: str, *values: object) -> GraphedError:
-    """§5.4's message shape, shared by every spelling of the boundary refusal (the module verbs, the
-    `Varied` method surface, and gak's own dispatch).
+    """§5.4's message shape, shared by every spelling of the boundary refusal.
+
+    The spellings are the module verbs, the `Varied` method surface, and gak's own dispatch.
 
     Worded over what the site actually knows: there is no boundary NODE at an operand check, so it
     names the refusing VERB and EVERY label the offending containers carry — `"nominal"` included,
@@ -420,16 +459,22 @@ def boundary_refusal(verb: str, *values: object) -> GraphedError:
 
 
 def refuse_boundary(verb: str, *values: object) -> None:
-    """Contract one: boundary and plan verbs (§5.4). They move or key rows, which has no
-    per-universe meaning, so they refuse rather than silently compiling one universe."""
+    """Contract one: boundary and plan verbs (§5.4).
+
+    They move or key rows, which has no per-universe meaning, so they refuse rather than silently
+    compiling one universe.
+    """
     if containers_in(*values):
         raise boundary_refusal(verb, *values)
 
 
 def refuse_container(verb: str, *values: object) -> None:
-    """Contract two: the compile/aggregate verbs. They consume `arr.node_id`/`arr.session`
-    directly, and §2.2's reserved-name rule makes that a clean seam — so the refusal points at the
-    extraction verb instead of dying on an AttributeError."""
+    """Contract two: the compile/aggregate verbs.
+
+    They consume `arr.node_id`/`arr.session` directly, and §2.2's reserved-name rule makes that a
+    clean seam — so the refusal points at the extraction verb instead of dying on an
+    AttributeError.
+    """
     if containers_in(*values):
         raise GraphedError(
             f"{verb} does not accept a Varied output; pass one universe with "

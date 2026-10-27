@@ -1,5 +1,7 @@
-"""A deferred value has no truth value and no eager numpy value: asking for either raises at the
-user's line instead of answering `True` or a 0-d object array."""
+"""A deferred value has no truth value and no eager numpy value.
+
+Asking for either raises at the user's line instead of answering `True` or a 0-d object array.
+"""
 
 from __future__ import annotations
 

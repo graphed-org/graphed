@@ -42,8 +42,10 @@ def _properties(cls: type) -> set[str]:
 
 
 def _dispositions() -> dict[str, str]:
-    """The `Array`-surface classification, read as the UNION over the packages that own it — the
-    same per-package shape §2.3d's floor takes over its three enumerations."""
+    """Return the `Array`-surface classification, read as the UNION over the packages that own it.
+
+    The same per-package shape §2.3d's floor takes over its three enumerations.
+    """
     return {**graphed.SURFACE_DISPOSITIONS, **gnp.SURFACE_DISPOSITIONS}
 
 
@@ -54,16 +56,22 @@ def test_every_discovered_surface_name_resolves_on_the_varied_class() -> None:
     assert len(discovered) >= SURFACE_FLOOR
     assert {"__array_ufunc__", "__getitem__", "__and__", "filter"} <= discovered  # §2.3c's floor
     missing = sorted(name for name in discovered if getattr(type(varied), name, None) is None)
-    assert not missing, f"{missing} are answered only by the field-access fallback, not implemented"
+    assert not missing, (
+        f"{missing} are answered only by the field-access fallback, not implemented"
+    )
 
 
 def test_class_resolution_is_what_makes_the_parity_gate_discriminating() -> None:
-    """The instance never refuses: `Array.__getattr__` records a `field` op for any non-underscore
-    name, so an instance-level inventory would report EVERY name as present."""
+    """The instance never refuses.
+
+    `Array.__getattr__` records a `field` op for any non-underscore name, so an instance-level
+    inventory would report EVERY name as present.
+    """
     _s, record = record_source()
     varied = graphed.vary(record, "sf", up=record, down=record)
     assert getattr(type(varied), "pt", None) is None
-    assert list(graphed.labels(varied["pt"])) == list(graphed.labels(varied))  # field access answers
+    # field access answers
+    assert list(graphed.labels(varied["pt"])) == list(graphed.labels(varied))
 
 
 def test_surface_floor_names_repartition_as_the_only_refusing_member() -> None:
@@ -80,15 +88,21 @@ def test_one_behavioural_probe_per_disposition_class() -> None:
     broadcast = varied > 3.0
     assert isinstance(broadcast, graphed.Varied)
     assert list(graphed.labels(broadcast)) == list(graphed.labels(varied))
-    assert graphed.universe(broadcast, "jes_up").node_id == (graphed.universe(varied, "jes_up") > 3.0).node_id
+    assert (
+        graphed.universe(broadcast, "jes_up").node_id
+        == (graphed.universe(varied, "jes_up") > 3.0).node_id
+    )
     with pytest.raises(GraphedError):
         varied.repartition(n=2)  # refusing (§5.4); NOT `TypeError: not callable`
 
 
 def test_properties_are_classified_by_measurement_not_by_a_literal_list() -> None:
-    """§2.2's three-class rule. The discriminator between the eager and the recording class is the
-    `Session.node_count()` delta of the access on the PLAIN nominal `Array`, so a blanket "delta 0
-    for every property" reds a correct implementation on `T`."""
+    """§2.2's three-class rule.
+
+    The discriminator between the eager and the recording class is the `Session.node_count()` delta
+    of the access on the PLAIN nominal `Array`, so a blanket "delta 0 for every property" reds a
+    correct implementation on `T`.
+    """
     session, x = vector_source()
     varied = loose_varied(x)
     discovered = _properties(type(graphed.nominal(varied)))
@@ -98,7 +112,9 @@ def test_properties_are_classified_by_measurement_not_by_a_literal_list() -> Non
         before = session.node_count()
         getattr(x, name)
         (recording if session.node_count() > before else eager).append(name)
-    assert eager and recording, "both property classes must be represented, or the split is untested"
+    assert eager and recording, (
+        "both property classes must be represented, or the split is untested"
+    )
 
     for name in eager:
         before = session.node_count()
@@ -112,9 +128,12 @@ def test_properties_are_classified_by_measurement_not_by_a_literal_list() -> Non
 
 
 def test_node_id_and_session_raise_while_the_field_of_that_name_still_reads() -> None:
-    """The reserved-name rule is a PROPERTY rule: `compile_ir` reads `arr.node_id` per output, so a
-    recorded `field` op named "node_id" would silently compile. A blanket `__getattr__` refusal
-    would also eat a tree branch of that name, which the record fixture carries literally."""
+    """The reserved-name rule is a PROPERTY rule.
+
+    `compile_ir` reads `arr.node_id` per output, so a recorded `field` op named "node_id" would
+    silently compile. A blanket `__getattr__` refusal would also eat a tree branch of that name,
+    which the record fixture carries literally.
+    """
     _s, x = vector_source()
     varied = loose_varied(x)
     for name in ("node_id", "session"):

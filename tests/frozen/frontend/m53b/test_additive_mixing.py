@@ -1,15 +1,18 @@
-"""vary-m53b §3, §6, plan §7.4 / §7.6 — the headline: ONE ``points=`` list carrying a PRUNE entry
-(over a dependent member) AND an ADDITIVE entry (over an independent member), routed per-entry by the
-named member's genuine foreign dependence. The two act on DISJOINT members, so they never contend.
+"""vary-m53b §3, §6, plan §7.4 / §7.6.
 
-The ``corr`` family carries two members: ``dep`` read off the jes-varied ``pt`` (genuinely depends on
-``jes`` → auto-fans over jes → PRUNE keeps the named joint), and ``ind`` read off the nominal
+The headline: ONE ``points=`` list carrying a PRUNE entry (over a dependent member) AND an ADDITIVE
+entry (over an independent member), routed per-entry by the named member's genuine foreign
+dependence. The two act on DISJOINT members, so they never contend.
+
+The ``corr`` family carries two members: ``dep`` read off the jes-varied ``pt`` (genuinely depends
+on ``jes`` → auto-fans over jes → PRUNE keeps the named joint), and ``ind`` read off the nominal
 (independent → ADDITIVE re-points its one-at-a-time label). The own-axis rule is witnessed on the
-same call: the prune label keeps its own ``corr`` axis (a genuine cross), the additive label drops it.
+same call: the prune label keeps its own ``corr`` axis (a genuine cross), the additive label drops
+it.
 
 Non-vacuity: the additive entry is refused today ("names no joint the fanout of 'corr' derives; the
-derived joints are ['corr_dep__jes_down', 'corr_dep__jes_up']" — the ``ind`` member names none of the
-dep-only joints), so the mixed call fails for feature-absence.
+derived joints are ['corr_dep__jes_down', 'corr_dep__jes_up']" — the ``ind`` member names none of
+the dep-only joints), so the mixed call fails for feature-absence.
 """
 
 from __future__ import annotations
@@ -56,7 +59,10 @@ def test_a_prune_entry_and_an_additive_entry_both_land_in_one_call() -> None:
 
 
 def test_the_own_axis_rule_holds_across_the_mixed_call() -> None:
-    """§6: a prune label carries its own family axis (a genuine cross), an additive label does not."""
+    """§6: a prune label carries its own family axis (a genuine cross).
+
+    An additive label does not.
+    """
     points = _mixed()
 
     prune_point = points["corr_dep__jes_up"]

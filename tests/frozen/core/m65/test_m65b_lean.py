@@ -1,5 +1,8 @@
-"""M65 B frozen suite (graphed-core slice): lean events and the per-worker push hook on the monitor
-seam, read through ``graphed.core`` helpers. Plain-Python process functions only (no awkward)."""
+"""M65 B frozen suite (graphed-core slice).
+
+Lean events and the per-worker push hook on the monitor seam, read through ``graphed.core``
+helpers. Plain-Python process functions only (no awkward).
+"""
 
 from __future__ import annotations
 
@@ -55,7 +58,11 @@ def test_sequential_lean_emits_submitted_and_terminal_only() -> None:
     rec = LeanRecorder()
     res = gc.SequentialRunner(monitor=rec).run(plan)
     bare = gc.SequentialRunner().run(plan)
-    assert (res.value, res.n_partitions, res.n_combines) == (bare.value, bare.n_partitions, bare.n_combines)
+    assert (res.value, res.n_partitions, res.n_combines) == (
+        bare.value,
+        bare.n_partitions,
+        bare.n_combines,
+    )
     labels = {t.key: partition_label(t.partition) for t in plan.tasks}
     for k in range(4):
         assert rec.phases(k) == [TaskPhase.SUBMITTED, TaskPhase.FINISHED]

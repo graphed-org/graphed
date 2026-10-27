@@ -1,9 +1,10 @@
 """§6.4e's manifest merge must ride the PUBLIC arrow surface, not awkward's private internals.
 
 The frozen suite pins WHAT lands in the parquet KV (`raw_manifest`, `ak.from_parquet` round-trip);
-this guards HOW it gets there — a later "just reach into `awkward._connect`" refactor would still pass
-the frozen anchors but couples us to a private module. A source scan (not an import hook) so it fires
-on the literal text regardless of lazy-import timing; the public-route control keeps it non-vacuous.
+this guards HOW it gets there — a later "just reach into `awkward._connect`" refactor would still
+pass the frozen anchors but couples us to a private module. A source scan (not an import hook) so
+it fires on the literal text regardless of lazy-import timing; the public-route control keeps it
+non-vacuous.
 """
 
 from __future__ import annotations

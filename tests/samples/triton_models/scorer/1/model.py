@@ -2,8 +2,8 @@
 
 A per-event score = sigmoid(W*x + B). The same closed-form (in numpy float32) is the test's
 independent reference, so a bundle reproduced through a REAL Triton server matches bit-for-bit.
-The weights W/B are the served model's content; the test content-addresses this file as the payload.
-Keep W/B in sync with W/B in tests/frozen/m9/test_triton_server.py.
+The weights W/B are the served model's content; the test content-addresses this file as the
+payload. Keep W/B in sync with W/B in tests/frozen/m9/test_triton_server.py.
 """
 
 from typing import Any

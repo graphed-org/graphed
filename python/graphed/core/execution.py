@@ -1,8 +1,8 @@
 """The execution-layer contract (plan M7) — PROVISIONAL until exercised by a real adapter.
 
-graphed-core owns the *contract*; the reference executors (a thread pool AND a process pool) live in
-``graphed-exec-local``. This module is data-only — no awkward/numpy/backend imports — so the contract
-stays a stable, minimal seam. A `Plan` is reduced to a single result by an `Executor`:
+graphed-core owns the *contract*; the reference executors (a thread pool AND a process pool) live
+in ``graphed-exec-local``. This module is data-only — no awkward/numpy/backend imports — so the
+contract stays a stable, minimal seam. A `Plan` is reduced to a single result by an `Executor`:
 
 - work is a stream of `Task`s (fixed `tasks`, or pulled adaptively from `next_tasks`);
 - each task runs `process(partition, resources)` on a worker and returns a **partial**;
@@ -23,7 +23,16 @@ from collections import OrderedDict
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar, cast, overload, runtime_checkable
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Generic,
+    Protocol,
+    TypeVar,
+    cast,
+    overload,
+    runtime_checkable,
+)
 
 from ..services import require_bound
 
@@ -36,24 +45,26 @@ Block = TypeVar("Block")  # a backend-native partition of rows (opaque to the en
 # M39: a phantom second parameter of ShuffleBackend (used by no exchange method). Covariant, as an
 # unused Protocol type parameter must be.
 Index_co = TypeVar("Index_co", covariant=True)
-# M40 (E3): the row-index handle the join half actually uses. INVARIANT — ``match_indices`` produces
-# it (return position) and ``take`` consumes it (parameter position), so it is neither purely
-# covariant nor contravariant. Lives on :class:`JoinBackend`, not on ``ShuffleBackend``.
+# M40 (E3): the row-index handle the join half actually uses. INVARIANT — ``match_indices``
+# produces it (return position) and ``take`` consumes it (parameter position), so it is neither
+# purely covariant nor contravariant. Lives on :class:`JoinBackend`, not on ``ShuffleBackend``.
 Index = TypeVar("Index")
 
 
 @runtime_checkable
 class ShuffleBackend(Protocol[Block, Index_co]):
-    """The vectorized data-movement primitives the generic exchange/repartition engine calls (plan
-    M39 §3.0, exchange half). Like every contract in this module it is **pure and §A.4-clean** —
-    graphed-core must never depend on a backend array library, so the engine deals only in opaque
+    """The vectorized data-movement primitives the generic exchange/repartition engine calls.
+
+    Plan M39 §3.0, exchange half. Like every contract in this module it is **pure and §A.4-clean**
+    — graphed-core must never depend on a backend array library, so the engine deals only in opaque
     ``Block``/``Index`` handles; the real primitives live in the array-backend packages.
 
-    ``identity`` is the backend's versioned shuffle-format token (folded into the V2 task ids so two
-    conforming backends never journal the same id for different content, §7.2). Per ADV-r5.3 the
-    ``@runtime_checkable`` check is **import hygiene only** — it witnesses method NAMES, never the
-    routing rule; the pinned §4 SHA-256 route ``partition`` implements is witnessed by the backends'
-    golden-vector suites. The join half (``match_indices``/``take``/``merge_records``) is M40.
+    ``identity`` is the backend's versioned shuffle-format token (folded into the V2 task ids so
+    two conforming backends never journal the same id for different content, §7.2). Per ADV-r5.3
+    the ``@runtime_checkable`` check is **import hygiene only** — it witnesses method NAMES, never
+    the routing rule; the pinned §4 SHA-256 route ``partition`` implements is witnessed by the
+    backends' golden-vector suites. The join half (``match_indices``/``take``/``merge_records``) is
+    M40.
     """
 
     identity: str
@@ -61,8 +72,11 @@ class ShuffleBackend(Protocol[Block, Index_co]):
     def partition(
         self, block: Block, key_field: str, parts: int, *, salt: int = 0, boundaries: object = None
     ) -> tuple[Block, ...]:
-        """Route each row of ``block`` to one of ``parts`` sub-blocks by the pinned §4 hash of its
-        ``key_field`` (``range`` uses ``boundaries``). Row-conserving; deterministic; §4/B2 contract."""
+        """Route each row of ``block`` to one of ``parts`` sub-blocks.
+
+        Routing is by the pinned §4 hash of its ``key_field`` (``range`` uses ``boundaries``).
+        Row-conserving; deterministic; §4/B2 contract.
+        """
         ...
 
     def concat(self, blocks: Sequence[Block]) -> Block:
@@ -70,7 +84,7 @@ class ShuffleBackend(Protocol[Block, Index_co]):
         ...
 
     def slice_rows(self, block: Block, start: int, stop: int) -> Block:
-        """A half-open row slice at event boundaries (keeps each row's structure intact)."""
+        """Return a half-open row slice at event boundaries (keeps each row's structure intact)."""
         ...
 
     def estimated_bytes(self, block_or_form: object) -> int:
@@ -88,29 +102,41 @@ class ShuffleBackend(Protocol[Block, Index_co]):
 
 @runtime_checkable
 class JoinBackend(ShuffleBackend[Block, Index], Protocol[Block, Index]):
-    """The M39 exchange half (inherited) **plus** the M40 relational join half (plan §3.0/§3.3). The
-    generic radix-hash join engine needs a backend that is BOTH a :class:`ShuffleBackend` (move/route
-    rows) AND supplies these relational primitives; the real array backends satisfy it, while an
-    exchange-only M39 backend stays a plain :class:`ShuffleBackend` (its frozen ``isinstance``
-    contract is unchanged — the join half is additive, not a widening of ``ShuffleBackend``)."""
+    """The M39 exchange half (inherited) **plus** the M40 relational join half (plan §3.0/§3.3).
+
+    The generic radix-hash join engine needs a backend that is BOTH a :class:`ShuffleBackend`
+    (move/route rows) AND supplies these relational primitives; the real array backends satisfy it,
+    while an exchange-only M39 backend stays a plain :class:`ShuffleBackend` (its frozen
+    ``isinstance`` contract is unchanged — the join half is additive, not a widening of
+    ``ShuffleBackend``).
+    """
 
     def match_indices(
         self, build: Block, probe: Block, *, on: Sequence[str], how: str = "inner"
     ) -> tuple[Index, Index]:
-        """Relationally match two co-partitioned blocks on ``on`` and return aligned
-        ``(build_idx, probe_idx)`` **with duplication** — a probe row with k build matches yields k
-        aligned pairs (SQL/pandas semantics, NOT list-of-matches). ``how=left``/``outer`` emit a
-        ``-1`` sentinel where a side is missing (→ :meth:`take` yields a null/option row)."""
+        """Relationally match two co-partitioned blocks on ``on``.
+
+        Return aligned ``(build_idx, probe_idx)`` **with duplication** — a probe row with k build
+        matches yields k aligned pairs (SQL/pandas semantics, NOT list-of-matches).
+        ``how=left``/``outer`` emit a ``-1`` sentinel where a side is missing (→ :meth:`take`
+        yields a null/option row).
+        """
         ...
 
     def take(self, block: Block, index: Index) -> Block:
-        """Gather rows of ``block`` by ``index``. A ``-1`` entry is a **miss** → a null/option row,
-        **never** the last row (an ``np.take``-style gather is a bug — plan M40 trap #1)."""
+        """Gather rows of ``block`` by ``index``.
+
+        A ``-1`` entry is a **miss** → a null/option row, **never** the last row (an
+        ``np.take``-style gather is a bug — plan M40 trap #1).
+        """
         ...
 
     def merge_records(self, left: Block, right: Block, *, on: Sequence[str]) -> Block:
-        """Flat relational record-merge of two aligned taken blocks: the union of both sides' fields
-        minus the duplicated ``on`` key, one flat record per aligned row (plan M40 §3.3)."""
+        """Flat relational record-merge of two aligned taken blocks.
+
+        The union of both sides' fields minus the duplicated ``on`` key, one flat record per
+        aligned row (plan M40 §3.3).
+        """
         ...
 
 
@@ -122,7 +148,8 @@ class Partition:
     ``(step, n_steps)`` instead of an entry range, and the reader calls :meth:`resolve` against the
     file's actual entry count when the partition is read. Construct with :meth:`Partition.blind` —
     this replaces the old host-reader convention of smuggling the step through a negative
-    ``entry_stop``, which any unaware consumer silently misread."""
+    ``entry_stop``, which any unaware consumer silently misread.
+    """
 
     uri: str
     tree: str = ""
@@ -133,18 +160,22 @@ class Partition:
 
     @classmethod
     def blind(cls, uri: str, tree: str, step: int, n_steps: int) -> Partition:
-        """A partition describing step ``step`` of ``n_steps`` over a file NOT opened yet."""
+        """Return a partition for step ``step`` of ``n_steps`` over a file NOT opened yet."""
         if n_steps < 1 or not 0 <= step < n_steps:
             raise ValueError(f"blind partition needs 0 <= step < n_steps, got {step}/{n_steps}")
         return cls(uri, tree, 0, 0, blind_step=step, blind_n_steps=n_steps)
 
     @property
     def is_blind(self) -> bool:
+        """Whether this partition's entry range is not resolved yet."""
         return self.blind_step is not None
 
     def resolve(self, num_entries: int) -> Partition:
-        """Resolve a blind partition against the file's actual entry count (every entry is read
-        exactly once across the file's n_steps partitions). A non-blind partition returns itself."""
+        """Resolve a blind partition against the file's actual entry count.
+
+        Every entry is read exactly once across the file's n_steps partitions. A non-blind
+        partition returns itself.
+        """
         if self.blind_step is None or self.blind_n_steps is None:
             return self
         start = (self.blind_step * num_entries) // self.blind_n_steps
@@ -153,13 +184,17 @@ class Partition:
 
     @property
     def n_entries(self) -> int:
+        """The number of entries this partition covers."""
         return max(0, self.entry_stop - self.entry_start)
 
 
 @dataclass(frozen=True)
 class Task:
-    """One schedulable unit: a partition plus a deterministic ordering ``key`` (fixes the reduction
-    tree shape so a fixed partition set reduces bit-for-bit regardless of completion order)."""
+    """One schedulable unit.
+
+    A partition plus a deterministic ordering ``key`` (fixes the reduction tree shape so a fixed
+    partition set reduces bit-for-bit regardless of completion order).
+    """
 
     key: int
     partition: Partition
@@ -167,13 +202,20 @@ class Task:
 
 @runtime_checkable
 class WorkerResources(Protocol):
-    """Per-worker resources. ``open_once`` returns a cached handle so a uri is opened exactly once
-    per worker across that worker's chunks (file-locality directive)."""
+    """Per-worker resources.
 
-    def open_once(self, uri: str, opener: Callable[[str], object]) -> object: ...
+    ``open_once`` returns a cached handle so a uri is opened exactly once per worker across that
+    worker's chunks (file-locality directive).
+    """
+
+    def open_once(self, uri: str, opener: Callable[[str], object]) -> object:
+        """Open ``uri`` with ``opener`` once, and reuse the handle afterwards."""
+        ...
 
 
 class StopReason(StrEnum):
+    """Why a run stopped."""
+
     EXHAUSTED = "exhausted"  # all data processed (the normal end)
     TARGET_EVENTS = "target_events"
     PRECISION = "precision"
@@ -202,6 +244,7 @@ class StopCondition:
     max_errors: int | None = None
 
     def reason(self, ctx: ExecContext) -> StopReason | None:
+        """Return why ``ctx`` should stop the run, or ``None`` to go on."""
         if self.target_events is not None and ctx.events_done >= self.target_events:
             return StopReason.TARGET_EVENTS
         if self.max_wall_s is not None and ctx.elapsed_s >= self.max_wall_s:
@@ -219,7 +262,9 @@ class Plan(Generic[R]):
     combine: Callable[[R, R], R]  # associative (and commutative) reducer
     empty: Callable[[], R]  # identity, for zero partitions / an empty fold
     tasks: Sequence[Task] = ()  # a fixed partition set -> a deterministic reduction tree
-    next_tasks: Callable[[ExecContext], Iterable[Task] | None] | None = None  # adaptive hook (DONE=None)
+    next_tasks: Callable[[ExecContext], Iterable[Task] | None] | None = (
+        None  # adaptive hook (DONE=None)
+    )
     stop: StopCondition | None = None
     open_once: bool = False
     # a plain default, not a factory: a Plan pickled before this field existed still loads
@@ -228,6 +273,8 @@ class Plan(Generic[R]):
 
 @dataclass(frozen=True)
 class ExecResult(Generic[R]):
+    """A run's value, with how many partitions and combines produced it."""
+
     value: R
     n_partitions: int
     n_combines: int
@@ -236,11 +283,15 @@ class ExecResult(Generic[R]):
 
 @runtime_checkable
 class Executor(Protocol):
-    """Run a `Plan` to a single reduced result. Reference impls live in graphed-exec-local
-    (thread-pool and process-pool). Implementations MUST surface a worker failure to the driver
-    intact (picklable) — never as an opaque string."""
+    """Run a `Plan` to a single reduced result.
 
-    def run(self, plan: Plan[R]) -> ExecResult[R]: ...
+    Reference impls live in graphed-exec-local (thread-pool and process-pool). Implementations MUST
+    surface a worker failure to the driver intact (picklable) — never as an opaque string.
+    """
+
+    def run(self, plan: Plan[R]) -> ExecResult[R]:
+        """Run ``plan`` to its result."""
+        ...
 
 
 # ---- M38: the inter-worker comms seam (peer reduction + work-stealing) ----------------------
@@ -248,94 +299,137 @@ class Executor(Protocol):
 
 @runtime_checkable
 class WorkerTransport(Protocol):
-    """An addressable, **best-effort, non-blocking** message channel between the driver and workers
-    (and worker↔worker). It is the seam under peer reduction and work-stealing; a single-machine
-    executor backs it with IPC (queues), and a future distributed executor backs the *same* interface
-    with sockets/HTTP — so neither the reduction protocol nor the executor changes when the topology
-    does.
+    """An addressable, **best-effort, non-blocking** message channel.
+
+    It runs between the driver and workers (and worker↔worker). It is the seam under peer reduction
+    and work-stealing; a single-machine executor backs it with IPC (queues), and a future
+    distributed executor backs the *same* interface with sockets/HTTP — so neither the reduction
+    protocol nor the executor changes when the topology does.
 
     Contract:
 
     - every endpoint has a string ``address`` (``"driver"`` is reserved); :meth:`peers` lists the
       addresses this endpoint may send to;
     - :meth:`send` is **non-blocking** and **best-effort** — it enqueues and returns ``True``, or
-      drops and returns ``False`` if the destination's inbox is full (back-pressure must never reach
-      the data path, exactly as M37 telemetry is off-path);
-    - messages are arbitrary **picklable** objects; their meaning (a steal request, a partial handoff)
-      is defined by the protocol layer above, not here;
-    - :meth:`poll` drains the local inbox without blocking; :meth:`recv` blocks up to ``timeout`` and
-      is for a dedicated coordination thread, never the task thread;
-    - the transport imposes **no ordering or delivery guarantees** — determinism of a reduction is the
-      protocol layer's job (it keys every combine by leaf index, never by arrival time or worker).
+      drops and returns ``False`` if the destination's inbox is full (back-pressure must never
+      reach the data path, exactly as M37 telemetry is off-path);
+    - messages are arbitrary **picklable** objects; their meaning (a steal request, a partial
+      handoff) is defined by the protocol layer above, not here;
+    - :meth:`poll` drains the local inbox without blocking; :meth:`recv` blocks up to ``timeout``
+      and is for a dedicated coordination thread, never the task thread;
+    - the transport imposes **no ordering or delivery guarantees** — determinism of a reduction is
+      the protocol layer's job (it keys every combine by leaf index, never by arrival time or
+      worker).
     """
 
     address: str
 
-    def peers(self) -> tuple[str, ...]: ...
-    def send(self, dest: str, message: object) -> bool: ...
-    def broadcast(self, message: object) -> None: ...
-    def poll(self) -> list[tuple[str, object]]: ...
-    def recv(self, timeout: float | None = None) -> tuple[str, object] | None: ...
-    def close(self) -> None: ...
+    def peers(self) -> tuple[str, ...]:
+        """Return the addresses of the other endpoints."""
+        ...
+
+    def send(self, dest: str, message: object) -> bool:
+        """Send ``message`` to ``dest``; return whether it was accepted."""
+        ...
+
+    def broadcast(self, message: object) -> None:
+        """Send ``message`` to every peer."""
+        ...
+
+    def poll(self) -> list[tuple[str, object]]:
+        """Return every message waiting, without blocking."""
+        ...
+
+    def recv(self, timeout: float | None = None) -> tuple[str, object] | None:
+        """Return the next message, waiting up to ``timeout``, or ``None``."""
+        ...
+
+    def close(self) -> None:
+        """Release the channel."""
+        ...
 
 
-# ---- M41: the Phase-2 ClusterExecutor launch seam (plan §6.1.3) ----------------------------------
+# ---- M41: the Phase-2 ClusterExecutor launch seam (plan §6.1.3) ---------------------------------
 # Three data-only siblings of Executor/WorkerTransport. The concrete cross-process Store + launcher
-# live in graphed-exec-local BEHIND these types; this module stays pure (§A.4 — no backend/exec import).
+# live in graphed-exec-local BEHIND these types; this module stays pure (§A.4 — no backend/exec
+# import).
 @dataclass
 class AddressTable:
-    """A data-only ``node_id -> routable (host, port)`` table a *launcher* populates (plan §6.1.3),
-    each entry tagged with ``registered_by`` provenance — the CHILD that announced it, not the driver.
+    """A data-only ``node_id -> routable (host, port)`` table a *launcher* populates.
 
-    This is **ephemeral runtime state**: announced host/port/pid live here and MUST NOT be folded into
-    the durable plan (:class:`~graphed.core.plan.DurablePlanV2`) or the content-addressed task ids —
-    addresses vary run-to-run, so baking them into the canonical IR would make task ids non-deterministic
-    (§A.3.1). Multi-host launch stays deferred (Phase-2); only the seam ships now."""
+    Plan §6.1.3; each entry is tagged with ``registered_by`` provenance — the CHILD that announced
+    it, not the driver.
+
+    This is **ephemeral runtime state**: announced host/port/pid live here and MUST NOT be folded
+    into the durable plan (:class:`~graphed.core.plan.DurablePlanV2`) or the content-addressed task
+    ids — addresses vary run-to-run, so baking them into the canonical IR would make task ids
+    non-deterministic (§A.3.1). Multi-host launch stays deferred (Phase-2); only the seam ships
+    now.
+    """
 
     addresses: dict[object, tuple[str, int]] = field(default_factory=dict)
     provenance: dict[object, object] = field(default_factory=dict)
 
     def register(self, node_id: object, host: str, port: int, *, registered_by: object) -> None:
-        """Record ``node_id -> (host, port)`` and who announced it (the registering child, not the driver)."""
+        """Record ``node_id -> (host, port)`` and who announced it.
+
+        The announcer is the registering child, not the driver.
+        """
         self.addresses[node_id] = (host, int(port))
         self.provenance[node_id] = registered_by
 
     def lookup(self, node_id: object) -> tuple[str, int]:
-        """The routable ``(host, port)`` a launcher registered for ``node_id``."""
+        """Return the routable ``(host, port)`` a launcher registered for ``node_id``."""
         return self.addresses[node_id]
 
     def registered_by(self, node_id: object) -> object:
-        """Registration provenance for ``node_id`` — the child endpoint that announced its address."""
+        """Return the registration provenance for ``node_id``.
+
+        That is the child endpoint that announced its address.
+        """
         return self.provenance[node_id]
 
 
 @runtime_checkable
 class NodeStore(Protocol):
-    """The per-node Store handle the cluster runtime pulls blobs through (plan §6.1.3, §4.3). The
-    concrete node-local Store in graphed-exec-local satisfies this *behind* the core type (§A.4).
+    """The per-node Store handle the cluster runtime pulls blobs through (plan §6.1.3, §4.3).
+
+    The concrete node-local Store in graphed-exec-local satisfies this *behind* the core type
+    (§A.4).
 
     ``fetch(digest)`` is the bulk data-plane endpoint: **idempotent** (re-fetching a digest already
-    present returns the same bytes and moves none) and **byte-backpressured / spillable** (a large blob
-    streams to the node-local Store instead of sitting whole in RAM — the *body* is exec/M41-T1; the
-    seam pins only the *signature*, left open for an Arrow-Flight/RDMA transport of the same shape)."""
+    present returns the same bytes and moves none) and **byte-backpressured / spillable** (a large
+    blob streams to the node-local Store instead of sitting whole in RAM — the *body* is
+    exec/M41-T1; the seam pins only the *signature*, left open for an Arrow-Flight/RDMA transport
+    of the same shape).
+    """
 
-    def fetch(self, digest: str) -> object: ...
+    def fetch(self, digest: str) -> object:
+        """Return the object stored under ``digest``."""
+        ...
 
 
 @runtime_checkable
 class ClusterExecutor(Protocol):
-    """An :class:`Executor`-shaped launch seam over a cluster (plan §6.1.3): a launcher populates an
-    :class:`AddressTable`, each node exposes a :class:`NodeStore` ``fetch`` endpoint, and ``run`` drives
-    a ``Plan`` to a reduced result across them. Multi-host launch is Phase-2 — defining the seam here
-    keeps the reduction protocol and the single-machine executors unchanged when the topology grows."""
+    """An :class:`Executor`-shaped launch seam over a cluster (plan §6.1.3).
 
-    def run(self, plan: Plan[R]) -> ExecResult[R]: ...
+    A launcher populates an :class:`AddressTable`, each node exposes a :class:`NodeStore` ``fetch``
+    endpoint, and ``run`` drives a ``Plan`` to a reduced result across them. Multi-host launch is
+    Phase-2 — defining the seam here keeps the reduction protocol and the single-machine executors
+    unchanged when the topology grows.
+    """
+
+    def run(self, plan: Plan[R]) -> ExecResult[R]:
+        """Run ``plan`` across the cluster to its result."""
+        ...
 
 
 # ---- M37: the passive live-dashboard seam (data-only; no web, no profiler dep) --------------
 
 
 class TaskPhase(StrEnum):
+    """A task's lifecycle phase, as a monitor sees it."""
+
     SUBMITTED = "submitted"
     STARTED = "started"
     FINISHED = "finished"
@@ -346,13 +440,14 @@ class TaskPhase(StrEnum):
 class TaskEvent:
     """A passive, display-only record of one task's lifecycle transition (M37 dashboard seam).
 
-    Carries no un-picklable objects — it crosses a process boundary from a ``ProcessExecutor`` worker
-    back to the driver. ``error`` is a pre-rendered summary string, never an exception object;
-    ``partition`` is a human label. Per task the contract is exactly one ``SUBMITTED``, then one
-    ``STARTED``, then exactly one of ``FINISHED`` | ``ERRORED`` — except that a task a
-    :class:`RunControl` cancel kept from starting ends at its ``SUBMITTED``. For a monitor that opts
-    into lean events (:func:`lean_events`) the sequence is ``SUBMITTED``, then ``FINISHED`` |
-    ``ERRORED`` with an empty ``partition``: only the driver's ``SUBMITTED`` carries the label."""
+    Carries no un-picklable objects — it crosses a process boundary from a ``ProcessExecutor``
+    worker back to the driver. ``error`` is a pre-rendered summary string, never an exception
+    object; ``partition`` is a human label. Per task the contract is exactly one ``SUBMITTED``,
+    then one ``STARTED``, then exactly one of ``FINISHED`` | ``ERRORED`` — except that a task a
+    :class:`RunControl` cancel kept from starting ends at its ``SUBMITTED``. For a monitor that
+    opts into lean events (:func:`lean_events`) the sequence is ``SUBMITTED``, then ``FINISHED`` |
+    ``ERRORED`` with an empty ``partition``: only the driver's ``SUBMITTED`` carries the label.
+    """
 
     phase: TaskPhase
     key: int
@@ -366,30 +461,57 @@ class TaskEvent:
 
 @runtime_checkable
 class WorkerProfiler(Protocol):
-    """A per-worker statistical sampler (M37). graphed-debug supplies the implementation
-    (pyinstrument-backed); graphed-exec-local *drives* it without importing any profiler.
-    ``flush``/``stop`` return a serialized sample tree (bytes) the driver merges, or ``None``."""
+    """A per-worker statistical sampler (M37).
 
-    def start(self) -> None: ...
-    def flush(self) -> bytes | None: ...
-    def stop(self) -> bytes | None: ...
+    graphed-debug supplies the implementation (pyinstrument-backed); graphed-exec-local *drives* it
+    without importing any profiler. ``flush``/``stop`` return a serialized sample tree (bytes) the
+    driver merges, or ``None``.
+    """
+
+    def start(self) -> None:
+        """Start sampling."""
+        ...
+
+    def flush(self) -> bytes | None:
+        """Return the samples since the last flush, or ``None``."""
+        ...
+
+    def stop(self) -> bytes | None:
+        """Stop sampling and return the remaining samples, or ``None``."""
+        ...
 
 
 @runtime_checkable
 class Monitor(Protocol):
-    """A passive observer of a run (M37). An executor *emits* through it; it MUST NOT influence task
-    order, the reduction tree, or results — the determinism gate is green attached-or-not. A monitor
-    that raises is swallowed by the emitting executor (see :func:`emit_task`). ``worker_profiler_factory``
-    returns a *picklable* zero-arg factory shipped to workers (``None`` ⇒ no sampling).
-    :class:`RunControl` is its non-passive counterpart: the object a runner reads to pause or cancel."""
+    """A passive observer of a run (M37).
 
-    def on_task(self, event: TaskEvent) -> None: ...
-    def on_profile(self, worker: str, payload: bytes) -> None: ...
-    def on_combine(self, leaves_done: int) -> None: ...
-    def worker_profiler_factory(self) -> Callable[[], WorkerProfiler] | None: ...
+    An executor *emits* through it; it MUST NOT influence task order, the reduction tree, or
+    results — the determinism gate is green attached-or-not. A monitor that raises is swallowed by
+    the emitting executor (see :func:`emit_task`). ``worker_profiler_factory`` returns
+    a *picklable* zero-arg factory shipped to workers (``None`` ⇒ no sampling). :class:`RunControl`
+    is its non-passive counterpart: the object a runner reads to pause or cancel.
+    """
+
+    def on_task(self, event: TaskEvent) -> None:
+        """Observe a task event."""
+        ...
+
+    def on_profile(self, worker: str, payload: bytes) -> None:
+        """Observe a worker's profile payload."""
+        ...
+
+    def on_combine(self, leaves_done: int) -> None:
+        """Observe the reduction's progress."""
+        ...
+
+    def worker_profiler_factory(self) -> Callable[[], WorkerProfiler] | None:
+        """Return the factory workers build their profiler with, or ``None``."""
+        ...
 
 
 class RunState(StrEnum):
+    """A run's control state."""
+
     RUNNING = "running"
     PAUSED = "paused"
     CANCELLED = "cancelled"
@@ -402,14 +524,17 @@ class RunControl:
     """A thread-safe pause/resume/cancel switch a runner reads before starting each task.
 
     ``pause`` holds a RUNNING run, ``resume`` releases a PAUSED one, and ``cancel`` is sticky: once
-    CANCELLED only ``reset`` (which a runner calls when a run ends) returns it to RUNNING."""
+    CANCELLED only ``reset`` (which a runner calls when a run ends) returns it to RUNNING.
+    """
 
     def __init__(self) -> None:
+        """Start in the running state."""
         self._cond = threading.Condition()
         self._state = RunState.RUNNING
 
     @property
     def state(self) -> RunState:
+        """The current control state."""
         return self._state
 
     def _move(self, to: RunState, *, only_from: RunState | None = None) -> None:
@@ -419,21 +544,27 @@ class RunControl:
             self._cond.notify_all()
 
     def pause(self) -> None:
+        """Pause a running run."""
         self._move(RunState.PAUSED, only_from=RunState.RUNNING)
 
     def resume(self) -> None:
+        """Resume a paused run."""
         self._move(RunState.RUNNING, only_from=RunState.PAUSED)
 
     def cancel(self) -> None:
+        """Cancel the run."""
         self._move(RunState.CANCELLED)
 
     def reset(self) -> None:
+        """Return to the running state."""
         self._move(RunState.RUNNING)
 
     def apply(self, cmd: str) -> None:
         """Run the named command (the dashboard's wire form)."""
         if cmd not in _COMMANDS:
-            raise ValueError(f"unknown run-control command {cmd!r} (expected pause, resume or cancel)")
+            raise ValueError(
+                f"unknown run-control command {cmd!r} (expected pause, resume or cancel)"
+            )
         getattr(self, cmd)()
 
     def wait(self, timeout: float | None = None) -> RunState:
@@ -444,8 +575,11 @@ class RunControl:
 
 
 def emit_task(monitor: Monitor | None, event: TaskEvent) -> None:
-    """Best-effort task emission: a ``None`` monitor is a no-op, and a monitor that raises must never
-    break a run (M37 passivity)."""
+    """Best-effort task emission.
+
+    A ``None`` monitor is a no-op, and a monitor that raises must never break a run (M37
+    passivity).
+    """
     if monitor is None:
         return
     with contextlib.suppress(Exception):
@@ -453,25 +587,37 @@ def emit_task(monitor: Monitor | None, event: TaskEvent) -> None:
 
 
 def lean_events(monitor: Monitor | None) -> bool:
-    """True when ``monitor`` opts into lean events by carrying ``lean_events = True`` (exactly)."""
+    """Return True when ``monitor`` opts into lean events.
+
+    It opts in by carrying ``lean_events = True`` (exactly).
+    """
     return getattr(monitor, "lean_events", False) is True
 
 
 def complete_events(monitor: Monitor | None) -> bool:
-    """True when ``monitor`` asks for every event of a run by the time ``run()`` returns or raises,
-    by carrying ``complete_events = True`` (exactly)."""
+    """Return True when ``monitor`` asks for every event of a run.
+
+    It asks for them by the time ``run()`` returns or raises, by carrying ``complete_events =
+    True`` (exactly).
+    """
     return getattr(monitor, "complete_events", False) is True
 
 
 def worker_monitor_factory(monitor: Monitor | None) -> Callable[[], Monitor] | None:
-    """The picklable zero-arg factory a monitor offers for per-worker push, or ``None`` when the
-    monitor defines no ``worker_monitor_factory`` (the ``Monitor`` protocol stays four methods)."""
+    """Return the picklable zero-arg factory a monitor offers for per-worker push.
+
+    ``None`` when the monitor defines no ``worker_monitor_factory`` (the ``Monitor`` protocol stays
+    four methods).
+    """
     method = getattr(monitor, "worker_monitor_factory", None)
     return cast("Callable[[], Monitor] | None", method()) if method is not None else None
 
 
 def partition_label(partition: Partition) -> str:
-    """A short human label for a partition (dashboard display only); a blind one names its step."""
+    """Return a short human label for a partition (dashboard display only).
+
+    A blind one names its step.
+    """
     if partition.blind_step is not None:
         return f"{partition.uri}:{partition.tree}:{partition.blind_step}/{partition.blind_n_steps}"
     return f"{partition.uri}:{partition.tree}:{partition.entry_start}-{partition.entry_stop}"
@@ -485,20 +631,24 @@ def _close_handle(handle: object) -> None:
 
 
 class LocalResources:
-    """Reference :class:`WorkerResources`: ``open_once(uri, opener)`` opens a uri at most once and
-    reuses the handle for that runner/worker's later chunks. The set of simultaneously-open
-    handles is **bounded** to ``max_open`` — when a new open would exceed it, the
-    least-recently-used handle is closed and dropped (a uri reopened after eviction is opened
-    again). ``close()`` releases every handle. The bound matters for a long-lived worker (a
-    persistent process pool over many files): without it, ``open_once`` would accumulate every
-    file ever opened for the worker's whole lifetime."""
+    """Reference :class:`WorkerResources`.
+
+    ``open_once(uri, opener)`` opens a uri at most once and reuses the handle for that
+    runner/worker's later chunks. The set of simultaneously-open handles is **bounded** to
+    ``max_open`` — when a new open would exceed it, the least-recently-used handle is closed and
+    dropped (a uri reopened after eviction is opened again). ``close()`` releases every handle. The
+    bound matters for a long-lived worker (a persistent process pool over many files): without it,
+    ``open_once`` would accumulate every file ever opened for the worker's whole lifetime.
+    """
 
     def __init__(self, max_open: int = 128) -> None:
+        """Keep at most ``max_open`` handles open at once."""
         self._handles: OrderedDict[str, object] = OrderedDict()
         self._max_open = max_open
         self.open_count = 0  # real opens performed (test/diagnostic introspection)
 
     def open_once(self, uri: str, opener: Callable[[str], object]) -> object:
+        """Open ``uri`` once and reuse the handle, evicting the least recently used."""
         if uri in self._handles:
             self._handles.move_to_end(uri)  # mark most-recently-used
             return self._handles[uri]
@@ -511,15 +661,17 @@ class LocalResources:
         return handle
 
     def close(self) -> None:
+        """Close every open handle."""
         for handle in self._handles.values():
             _close_handle(handle)
         self._handles.clear()
 
 
 class SequentialRunner:
-    """The dependency-free reference :class:`Executor` of the ``Plan`` contract: runs a plan's
-    tasks **in key order**, in-process, with no worker pool. It lives beside the contract it
-    executes so every layer — the frontend's deferred writers, histogram aggregation,
+    """The dependency-free reference :class:`Executor` of the ``Plan`` contract.
+
+    Runs a plan's tasks **in key order**, in-process, with no worker pool. It lives beside the
+    contract it executes so every layer — the frontend's deferred writers, histogram aggregation,
     preservation, the benchmarks — can run a ``Plan`` without depending on the executor package
     (which the frontend may not import). It is the canonical baseline any real executor
     (graphed-exec-local's thread/process pools) must match bit-for-bit.
@@ -529,13 +681,15 @@ class SequentialRunner:
     steers it: checked on entry and before each task, a pause holds the next task and a cancel
     returns the fold of the tasks that completed with ``stopped=StopReason.CANCELLED``.
 
-    A :class:`~graphed.core.plan.DurablePlanV2` runs stage by stage, each task handed every upstream
-    payload, to ``plan.value`` of the last stage's payloads; ``n_partitions`` counts the tasks of
-    stages with no inputs and ``n_combines`` the rest. The control is checked on entry and before each
-    stage, and a cancel returns ``value=None``: a staged run cut short has no value. It emits no task
-    events."""
+    A :class:`~graphed.core.plan.DurablePlanV2` runs stage by stage, each task handed every
+    upstream payload, to ``plan.value`` of the last stage's payloads; ``n_partitions`` counts the
+    tasks of stages with no inputs and ``n_combines`` the rest. The control is checked on entry and
+    before each stage, and a cancel returns ``value=None``: a staged run cut short has no value. It
+    emits no task events.
+    """
 
     def __init__(self, monitor: Monitor | None = None, control: RunControl | None = None) -> None:
+        """Run in-process, reporting to ``monitor`` and obeying ``control``."""
         self.monitor = monitor
         self.control = control
 
@@ -544,6 +698,7 @@ class SequentialRunner:
     @overload
     def run(self, plan: DurablePlanV2) -> ExecResult[Any]: ...
     def run(self, plan: Plan[R] | DurablePlanV2) -> ExecResult[R] | ExecResult[Any]:
+        """Run ``plan`` one task at a time in this process."""
         require_bound(plan)
         if not isinstance(plan, Plan):
             return self._run_stages(plan)
@@ -556,7 +711,9 @@ class SequentialRunner:
             n = 0
             stopped: StopReason | None = None
             if control is not None and control.state is RunState.CANCELLED:
-                return ExecResult(value=value, n_partitions=0, n_combines=0, stopped=StopReason.CANCELLED)
+                return ExecResult(
+                    value=value, n_partitions=0, n_combines=0, stopped=StopReason.CANCELLED
+                )
             ordered = sorted(plan.tasks, key=lambda t: t.key)
             if monitor is not None:
                 for task in ordered:
@@ -572,13 +729,17 @@ class SequentialRunner:
                 except Exception as exc:
                     if monitor is not None:
                         error = f"{type(exc).__name__}: {exc}"
-                        emit_task(monitor, self._event(TaskPhase.ERRORED, task, error=error, lean=lean))
+                        emit_task(
+                            monitor, self._event(TaskPhase.ERRORED, task, error=error, lean=lean)
+                        )
                     raise
                 value = plan.combine(value, partial)
                 if monitor is not None:
                     emit_task(monitor, self._event(TaskPhase.FINISHED, task, lean=lean))
                 n += 1
-            return ExecResult(value=value, n_partitions=n, n_combines=max(0, n - 1), stopped=stopped)
+            return ExecResult(
+                value=value, n_partitions=n, n_combines=max(0, n - 1), stopped=stopped
+            )
         finally:
             resources.close()  # release file handles deterministically at end of run
             if control is not None and control.state is RunState.CANCELLED:
@@ -593,7 +754,10 @@ class SequentialRunner:
             for stage in plan.stages:
                 if control is not None and control.wait() is RunState.CANCELLED:
                     return ExecResult(
-                        value=None, n_partitions=ran[0], n_combines=ran[1], stopped=StopReason.CANCELLED
+                        value=None,
+                        n_partitions=ran[0],
+                        n_combines=ran[1],
+                        stopped=StopReason.CANCELLED,
                     )
                 process = stage.process.resolve()
                 upstream = tuple(p for dep in stage.inputs for p in payloads[dep])
@@ -602,14 +766,18 @@ class SequentialRunner:
                     out.append(process(task, upstream, resources))
                     ran[bool(stage.inputs)] += 1
                 payloads.append(out)
-            return ExecResult(value=plan.value(payloads[-1]), n_partitions=ran[0], n_combines=ran[1])
+            return ExecResult(
+                value=plan.value(payloads[-1]), n_partitions=ran[0], n_combines=ran[1]
+            )
         finally:
             resources.close()
             if control is not None and control.state is RunState.CANCELLED:
                 control.reset()  # a cancel ends this run only, whether or not a check saw it
 
     @staticmethod
-    def _event(phase: TaskPhase, task: Task, *, error: str | None = None, lean: bool = False) -> TaskEvent:
+    def _event(
+        phase: TaskPhase, task: Task, *, error: str | None = None, lean: bool = False
+    ) -> TaskEvent:
         return TaskEvent(
             phase=phase,
             key=task.key,

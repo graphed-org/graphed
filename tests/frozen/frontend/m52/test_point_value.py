@@ -27,8 +27,10 @@ NEAR_ONE = "1.00000000000000000001"
 
 
 def test_numeric_spellings_of_one_coordinate_are_one_point() -> None:
-    """A `dict[str, str]` implementation yields two points here: `canonical_tag("0p5")` is `"0p5"`
-    while `canonical_tag("0.5")` is `"5em1"`."""
+    """A `dict[str, str]` implementation yields two points here.
+
+    `canonical_tag("0p5")` is `"0p5"` while `canonical_tag("0.5")` is `"5em1"`.
+    """
     api = point_api()
 
     points = [api.Point({"jes": spelling}) for spelling in HALF_SPELLINGS]
@@ -60,8 +62,11 @@ def test_a_fraction_with_no_finite_decimal_is_refused_naming_the_value() -> None
 
 
 def test_identifier_coordinates_are_not_promoted_to_numbers() -> None:
-    """design §4.2's stated refusal: the HistFactory reading of `up` as +1 sigma is a stats-export
-    convention, not a frontend change."""
+    """Design §4.2's stated refusal.
+
+    The HistFactory reading of `up` as +1 sigma is a stats-export convention, not a frontend
+    change.
+    """
     api = point_api()
 
     assert api.Point({"jes": "up"}) != api.Point({"jes": "1"})
@@ -78,8 +83,10 @@ def test_a_point_is_name_sorted_and_order_independent() -> None:
 
 
 def test_an_explicit_map_zero_drops_and_an_all_zero_map_is_the_origin() -> None:
-    """design §4.2: in an explicit map a zero coordinate says "this axis sits at its central
-    value", which is what absence already says."""
+    """Design §4.2: in an explicit map a zero coordinate means the axis is at its central value.
+
+    That is what absence already says.
+    """
     api = point_api()
 
     assert api.Point({"jes": 1, "btag": 0}) == api.Point({"jes": 1})
@@ -88,8 +95,11 @@ def test_an_explicit_map_zero_drops_and_an_all_zero_map_is_the_origin() -> None:
 
 
 def test_a_default_point_is_never_zero_dropped() -> None:
-    """The zero asymmetry. A default point's coordinate is the tag the analyst REGISTERED - a name
-    for that universe - so the legal tag `0` mints an ordinary universe, not `nominal`."""
+    """The zero asymmetry.
+
+    A default point's coordinate is the tag the analyst REGISTERED - a name for that universe - so
+    the legal tag `0` mints an ordinary universe, not `nominal`.
+    """
     api = point_api()
 
     assert api.default("shift", "0") != api.Point({})
@@ -112,8 +122,10 @@ def test_restrict_drops_only_the_coordinates_off_the_axes() -> None:
 
 
 def test_rendering_is_by_value_so_two_equal_points_render_alike() -> None:
-    """design §4.10: a numeric coordinate renders THROUGH its value, so the rendered view predicts
-    resolution and deliberately does not round-trip the tag spelling."""
+    """Design §4.10: a numeric coordinate renders THROUGH its value.
+
+    So the rendered view predicts resolution and deliberately does not round-trip the tag spelling.
+    """
     api = point_api()
 
     assert api.render(api.Point({"jes": "0p5"})) == {"jes": "5em1"}

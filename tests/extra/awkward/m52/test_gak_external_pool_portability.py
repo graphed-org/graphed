@@ -1,17 +1,17 @@
 """`gak.apply_correction` / `gak.onnx_inference` plans must survive a STDLIB pickle.
 
-Both recorders used to hand `Session.record_external` a local closure (`apply_correction.<locals>._fn`).
-`graphed-executors` ships a plan's process callable with stdlib `pickle`, so every plan reading a
-templated correction or ONNX score died on submission with
+Both recorders used to hand `Session.record_external` a local closure
+(`apply_correction.<locals>._fn`). `graphed-executors` ships a plan's process callable with stdlib
+`pickle`, so every plan reading a templated correction or ONNX score died on submission with
 
     AttributeError: Can't get local object 'apply_correction.<locals>._fn'
 
-— `pickle.dumps(plan.process)` and `ProcessPoolExecutor.run(plan)` alike. The recorded evaluator is now
-a module-level `_TemplateExternal`, which rebuilds the resource from the payload bytes via the preserve
-plugin. `apply_correction` records that rebuild for EVERY backend, in-process included, so the two
-cannot diverge; `onnx_inference` still keeps the user's `runner` in-process, because an inference
-session carries provider/device configuration the plugin's CPU-only load would not reproduce.
-Nothing else moves — same template semantics, same content descriptor, same output form.
+— `pickle.dumps(plan.process)` and `ProcessPoolExecutor.run(plan)` alike. The recorded evaluator is
+now a module-level `_TemplateExternal`, which rebuilds the resource from the payload bytes via the
+preserve plugin. `apply_correction` records that rebuild for EVERY backend, in-process included, so
+the two cannot diverge; `onnx_inference` still keeps the user's `runner` in-process, because an
+inference session carries provider/device configuration the plugin's CPU-only load would not
+reproduce. Nothing else moves — same template semantics, same content descriptor, same output form.
 """
 
 from __future__ import annotations
@@ -60,7 +60,10 @@ def _correctionlib_json() -> bytes:
             {
                 "name": "btag_sf",
                 "version": 1,
-                "inputs": [{"name": "systematic", "type": "string"}, {"name": "x", "type": "real"}],
+                "inputs": [
+                    {"name": "systematic", "type": "string"},
+                    {"name": "x", "type": "real"},
+                ],
                 "output": {"name": "sf", "type": "real"},
                 "data": {
                     "nodetype": "category",
@@ -89,8 +92,11 @@ CSET = _correctionlib_json()
 
 
 def _compound_correctionlib_json() -> bytes:
-    """The JEC L1L2L3 shape in miniature: two plain corrections plus a `compound_corrections` stack
-    that multiplies them. The stack members differ, so their product identifies both."""
+    """Return the JEC L1L2L3 shape in miniature.
+
+    Two plain corrections plus a `compound_corrections` stack that multiplies them. The stack
+    members differ, so their product identifies both.
+    """
 
     def _level(name: str, content: list[float]) -> dict[str, Any]:
         return {
@@ -133,7 +139,10 @@ _COMPOUND_EVENTS = ak.Array({"Jet": [[{"pt": 30.0}, {"pt": 50.0}], [], [{"pt": 8
 
 
 def _unusable(*call: Any) -> Any:
-    """An `evaluator` that fails loudly if the template path ever consults the caller's callable."""
+    """Return an `evaluator` that fails if the template path consults it.
+
+    It fails loudly if the template path ever consults the caller's callable.
+    """
     raise AssertionError("the template path called the user's evaluator")
 
 
@@ -163,9 +172,14 @@ class CorpusEvents:
         return self.data
 
     def partitions(self, steps_per_file: int = 1) -> tuple[Partition, ...]:
-        return tuple(Partition.blind("corpus://events", "", s, steps_per_file) for s in range(steps_per_file))
+        return tuple(
+            Partition.blind("corpus://events", "", s, steps_per_file)
+            for s in range(steps_per_file)
+        )
 
-    def read_partition(self, partition: Partition, columns: Any, resources: WorkerResources) -> ak.Array:
+    def read_partition(
+        self, partition: Partition, columns: Any, resources: WorkerResources
+    ) -> ak.Array:
         part = partition.resolve(len(self.data))
         self.part_reads.append((part.entry_start, part.entry_stop))
         return self.data[part.entry_start : part.entry_stop]
@@ -177,8 +191,10 @@ def _events(session: Session) -> Array:
 
 
 def _correction_universes() -> tuple[Session, list[Array]]:
-    """Three SF universes recorded through the REAL user surface: `gak.apply_correction` with a
-    template whose first entry is the systematic CONSTANT."""
+    """Three SF universes recorded through the REAL user surface.
+
+    `gak.apply_correction` with a template whose first entry is the systematic CONSTANT.
+    """
     import correctionlib  # noqa: PLC0415
 
     cset = correctionlib.CorrectionSet.from_string(CSET.decode())
@@ -193,15 +209,20 @@ def _correction_universes() -> tuple[Session, list[Array]]:
 
 
 def _legacy_scale(njet: object) -> object:
-    """A picklable single-input 'correction' for the legacy (``args=None``) recording path."""
+    """Return a picklable single-input 'correction'.
+
+    It is for the legacy (``args=None``) recording path.
+    """
     arr = np.asarray(ak.to_numpy(ak.Array(njet)), dtype="float64")
     return ak.Array(arr * 1.05)
 
 
 def _legacy_correction() -> tuple[Session, list[Array]]:
-    """The legacy (``args=None``) recorder — the other end of the class. origin/main wrapped the
-    callable in an ``apply_correction.<locals>.<lambda>`` that no stdlib pickle could carry; the
-    recorder now hands the user's callable straight to ``record_external``."""
+    """Return the legacy (``args=None``) recorder — the other end of the class.
+
+    origin/main wrapped the callable in an ``apply_correction.<locals>.<lambda>`` that no stdlib
+    pickle could carry; the recorder now hands the user's callable straight to ``record_external``.
+    """
     path = Path(tempfile.gettempdir()) / "graphed_m52_legacy_btag_sf.json"
     path.write_bytes(CSET)  # the legacy path derives the descriptor by hashing this file at build
     session = Session(AwkwardBackend())
@@ -254,40 +275,50 @@ class _Zeros:
 
 def _plan(build: Any) -> Any:
     _session, outs = build()
-    return aggregate_plan(*outs, reduce=_sums, combine=_add, empty=_zeros_for(len(outs)), steps_per_file=4)
+    return aggregate_plan(
+        *outs, reduce=_sums, combine=_add, empty=_zeros_for(len(outs)), steps_per_file=4
+    )
 
 
-# ---------------------------------- 1. pool portability -------------------------------------------
+# ---------------------------------- 1. pool portability ------------------------------------------
 def test_apply_correction_plan_pickles_and_runs_in_a_process_pool() -> None:
     pytest.importorskip("correctionlib")
-    ProcessPoolExecutor = pytest.importorskip("graphed_executors.local").ProcessPoolExecutor
+    local = pytest.importorskip("graphed_executors.local")
 
-    pickle.dumps(_plan(_correction_universes).process)  # pre-fix: AttributeError on the local closure
+    # pre-fix: AttributeError on the local closure
+    pickle.dumps(_plan(_correction_universes).process)
     seq = SequentialRunner().run(_plan(_correction_universes)).value
-    par = ProcessPoolExecutor(max_workers=2).run(_plan(_correction_universes)).value
+    par = local.ProcessPoolExecutor(max_workers=2).run(_plan(_correction_universes)).value
     assert np.array_equal(par, seq)  # bit-for-bit, not merely close
     assert par.tolist() == GOLDEN_SF_SUMS
 
 
 def test_legacy_untemplated_apply_correction_plan_pickles_and_runs_in_a_process_pool() -> None:
-    """The other end of the class: `args=None` recorded a wrapping lambda pre-fix and would not
-    pickle; now a picklable evaluator yields a picklable, pool-runnable plan."""
-    ProcessPoolExecutor = pytest.importorskip("graphed_executors.local").ProcessPoolExecutor
+    """The other end of the class.
+
+    `args=None` recorded a wrapping lambda pre-fix and would not pickle; now a picklable evaluator
+    yields a picklable, pool-runnable plan.
+    """
+    local = pytest.importorskip("graphed_executors.local")
 
     pickle.dumps(_plan(_legacy_correction).process)  # pre-fix: Can't pickle <locals>.<lambda>
     seq = SequentialRunner().run(_plan(_legacy_correction)).value
-    par = ProcessPoolExecutor(max_workers=2).run(_plan(_legacy_correction)).value
-    # allclose, not array_equal: seq and pool combine the per-partition partials in different orders,
-    # so a float sum differs by ~1 ULP across executors (measured 4.5e-13) — expected, not a defect.
+    par = local.ProcessPoolExecutor(max_workers=2).run(_plan(_legacy_correction)).value
+    # allclose, not array_equal: seq and pool combine the per-partition partials in different
+    # orders, so a float sum differs by ~1 ULP across executors (measured 4.5e-13) — expected, not
+    # a defect.
     assert np.allclose(par, seq)
-    # recompute njet from the corpus directly (not through graphed): proves _legacy_scale (x1.05) ran
+    # recompute njet from the corpus directly (not through graphed): proves _legacy_scale (x1.05)
+    # ran
     ref_njet = ak.num(EVENTS.Jet[EVENTS.Jet.pt > 25], axis=1)
     assert par.tolist() == pytest.approx([float(ak.sum(ref_njet)) * 1.05])
 
 
 def test_a_recorded_kind_with_no_plugin_fails_with_a_clear_message() -> None:
-    """A pickled `_TemplateExternal` whose kind has no registered plugin cannot be rebuilt in a
-    worker — the reconstruction path says so, rather than an obscure NoneType deeper in the cache."""
+    """A `_TemplateExternal` kind with no registered plugin cannot be rebuilt in a worker.
+
+    The reconstruction path says so, rather than an obscure NoneType deeper in the cache.
+    """
     from graphed.awkward.functions import _TemplateExternal  # noqa: PLC0415
 
     orphan = _TemplateExternal("no_such_kind", b"{}", {"content_hash": "sha256:0"}, None)
@@ -296,18 +327,21 @@ def test_a_recorded_kind_with_no_plugin_fails_with_a_clear_message() -> None:
 
 
 def test_onnx_inference_plan_pickles_and_runs_in_a_process_pool() -> None:
-    ProcessPoolExecutor = pytest.importorskip("graphed_executors.local").ProcessPoolExecutor
+    local = pytest.importorskip("graphed_executors.local")
 
     pickle.dumps(_plan(_onnx_score).process)
     seq = SequentialRunner().run(_plan(_onnx_score)).value
-    par = ProcessPoolExecutor(max_workers=2).run(_plan(_onnx_score)).value
+    par = local.ProcessPoolExecutor(max_workers=2).run(_plan(_onnx_score)).value
     assert np.array_equal(par, seq)
     assert float(seq[0]) != 0.0  # the model actually scored something
 
 
 def test_the_recorded_evaluator_round_trips_through_stdlib_pickle() -> None:
-    """The evaluator itself: picklable, and the restored copy — which has NO access to the user's
-    callable — evaluates to the same numbers by rebuilding the correction set from the payload."""
+    """The evaluator itself is picklable.
+
+    The restored copy — which has NO access to the user's callable — evaluates to the same numbers
+    by rebuilding the correction set from the payload.
+    """
     pytest.importorskip("correctionlib")
     from graphed.awkward.functions import _TemplateExternal  # noqa: PLC0415  (absent pre-fix)
 
@@ -326,11 +360,14 @@ def test_the_recorded_evaluator_round_trips_through_stdlib_pickle() -> None:
 def test_the_template_path_evaluates_in_process_through_the_plugin(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`evaluator` is not what runs on the template path — the correctionlib plugin is, in-process
-    exactly as in a worker. So a wrapping/scaling `evaluator` can no longer make one backend
-    disagree with another, and the in-process call gets the plugin's flat-buffer evaluation rather
-    than correctionlib's per-call `ak.transform` wrapper. The evaluator passed here fails loudly if
-    it is still consulted; the values pin that the real correction answered instead."""
+    """`evaluator` is not what runs on the template path.
+
+    The correctionlib plugin is, in-process exactly as in a worker. So a wrapping/scaling
+    `evaluator` can no longer make one backend disagree with another, and the in-process call gets
+    the plugin's flat-buffer evaluation rather than correctionlib's per-call `ak.transform`
+    wrapper. The evaluator passed here fails loudly if it is still consulted; the values pin that
+    the real correction answered instead.
+    """
     correctionlib = pytest.importorskip("correctionlib")
     import graphed.preserve.externals.correctionlib_external as clx  # noqa: PLC0415
 
@@ -354,17 +391,22 @@ def test_the_template_path_evaluates_in_process_through_the_plugin(
     # ENGAGED, not merely consulted: a None return is a silent fall back to correctionlib's wrapper
     assert len(answered) == 1 and answered[0] is not None
     ref_njet = ak.num(EVENTS.Jet[EVENTS.Jet.pt > 25], axis=1)
-    ref = correctionlib.CorrectionSet.from_string(CSET.decode())["btag_sf"].evaluate("up", ref_njet)
+    ref = correctionlib.CorrectionSet.from_string(CSET.decode())["btag_sf"].evaluate(
+        "up", ref_njet
+    )
     assert ak.to_list(got) == ak.to_list(ref)  # bit-for-bit, and not the all-ones nominal
     assert set(ak.to_list(got)) == set(_SF_CONTENT["up"])  # every bin of the varied SF was read
 
 
 def test_a_compound_correction_resolves_out_of_cset_compound() -> None:
-    """A *compound* correction — the JEC L1L2L3 shape — is keyed in `cset.compound`, not in `cset`,
-    and correctionlib's `__getitem__` raises `IndexError` on the miss (not `KeyError`). Now that the
-    plugin owns in-process evaluation, resolving only `cset[name]` would turn every compound payload
-    into an opaque `IndexError: map::at: key not found` where the caller's own `evaluate` answered
-    before. The two stack members have different contents, so the product pins that both applied."""
+    """A *compound* correction.
+
+    The JEC L1L2L3 shape — is keyed in `cset.compound`, not in `cset`, and correctionlib's
+    `__getitem__` raises `IndexError` on the miss (not `KeyError`). Now that the plugin owns
+    in-process evaluation, resolving only `cset[name]` would turn every compound payload into an
+    opaque `IndexError: map::at: key not found` where the caller's own `evaluate` answered before.
+    The two stack members have different contents, so the product pins that both applied.
+    """
     correctionlib = pytest.importorskip("correctionlib")
     session = Session(AwkwardBackend())
     ev = from_awkward(session, "events", _COMPOUND_EVENTS)
@@ -372,30 +414,42 @@ def test_a_compound_correction_resolves_out_of_cset_compound() -> None:
 
     got = ak.Array(session.materialize(jec))
     flat_pt = ak.to_numpy(ak.flatten(_COMPOUND_EVENTS.Jet.pt))
-    ref = correctionlib.CorrectionSet.from_string(COMPOUND_CSET.decode()).compound["jec"].evaluate(flat_pt)
+    ref = (
+        correctionlib.CorrectionSet.from_string(COMPOUND_CSET.decode())
+        .compound["jec"]
+        .evaluate(flat_pt)
+    )
     assert ak.num(got, axis=1).tolist() == [2, 0, 1]  # jagged structure survives the compound call
     assert ak.to_list(ak.flatten(got)) == list(ref)  # bit-for-bit against correctionlib itself
     assert set(ak.to_list(ak.flatten(got))) == {0.9 * 2.0, 1.1 * 3.0}  # neither factor on its own
 
 
 def test_an_unknown_correction_name_names_both_key_sets() -> None:
-    """The miss is an `IndexError: map::at: key not found` out of pybind11 otherwise — it names
-    neither the correction asked for nor what the payload does hold, plain or compound."""
+    """The miss is an `IndexError: map::at: key not found` out of pybind11 otherwise.
+
+    It names neither the correction asked for nor what the payload does hold, plain or compound.
+    """
     pytest.importorskip("correctionlib")
     session = Session(AwkwardBackend())
     ev = from_awkward(session, "events", _COMPOUND_EVENTS)
     sf = gak.apply_correction(COMPOUND_CSET, "l3", [ev.Jet.pt], _unusable, args=["$0"])
 
-    with pytest.raises(PreserveError, match=r"no correction named 'l3'.*\['l1', 'l2'\].*\['jec'\]"):
+    with pytest.raises(
+        PreserveError, match=r"no correction named 'l3'.*\['l1', 'l2'\].*\['jec'\]"
+    ):
         session.materialize(sf)
 
 
 def test_a_missing_framework_is_attributed_to_the_plugin() -> None:
-    """Rebuilding from the payload bytes means the framework must be importable wherever evaluation
-    happens. A bare `ImportError: No module named 'correctionlib'` out of a worker names neither the
-    External that needed it nor the payload kind; the branded error names both."""
+    """Rebuilding from the payload bytes needs the framework wherever evaluation happens.
+
+    A bare `ImportError: No module named 'correctionlib'` out of a worker names neither the
+    External that needed it nor the payload kind; the branded error names both.
+    """
     from graphed.preserve.externals._base import _PluginEvaluator  # noqa: PLC0415
-    from graphed.preserve.externals.correctionlib_external import CORRECTIONLIB_PLUGIN  # noqa: PLC0415
+    from graphed.preserve.externals.correctionlib_external import (  # noqa: PLC0415
+        CORRECTIONLIB_PLUGIN,
+    )
 
     def _no_lib(payload: bytes, params: Any) -> Any:
         raise ImportError("No module named 'correctionlib'")
@@ -407,8 +461,12 @@ def test_a_missing_framework_is_attributed_to_the_plugin() -> None:
     def _params(tag: str) -> dict[str, Any]:
         return {"name": "btag_sf", "content_hash": f"sha256:{tag}", "args": '["up", "$0"]'}
 
-    with pytest.raises(PreserveError, match=r"'correctionlib' plugin.*correctionlib is not importable"):
-        _PluginEvaluator(replace(CORRECTIONLIB_PLUGIN, load=_no_lib), CSET, _params("no-lib"))(ak.Array([3]))
+    with pytest.raises(
+        PreserveError, match=r"'correctionlib' plugin.*correctionlib is not importable"
+    ):
+        _PluginEvaluator(replace(CORRECTIONLIB_PLUGIN, load=_no_lib), CSET, _params("no-lib"))(
+            ak.Array([3])
+        )
 
     # only a missing import is a missing framework: any other load failure keeps its own type
     with pytest.raises(RuntimeError, match="not a correction set"):
@@ -417,17 +475,19 @@ def test_a_missing_framework_is_attributed_to_the_plugin() -> None:
         )
 
 
-# ---------------------------------- 2. numeric identity -------------------------------------------
+# ---------------------------------- 2. numeric identity ------------------------------------------
 def test_sequential_numbers_match_the_pre_fix_golden() -> None:
-    """Routing in-process evaluation through the plugin changed no number: the SFs the user's
-    `cset[...].evaluate` produced pre-fix are still the SFs that come out."""
+    """Routing in-process evaluation through the plugin changed no number.
+
+    The SFs the user's `cset[...].evaluate` produced pre-fix are still the SFs that come out.
+    """
     pytest.importorskip("correctionlib")
     got = SequentialRunner().run(_plan(_correction_universes)).value
     assert got.tolist() == GOLDEN_SF_SUMS
     assert got[1] > got[0] > got[2]  # up/down bracket nominal: the SF was really read per universe
 
 
-# ---------------------------------- 3. preservation intact ----------------------------------------
+# ---------------------------------- 3. preservation intact ---------------------------------------
 def test_content_identity_and_plan_bytes_are_unchanged_and_deterministic() -> None:
     pytest.importorskip("correctionlib")
     session, outs = _correction_universes()
@@ -438,7 +498,9 @@ def test_content_identity_and_plan_bytes_are_unchanged_and_deterministic() -> No
         assert node["descriptor"]["content_hash"] == correctionlib_contents_hash(CSET)
         assert "path" not in node["params"]
         assert json.loads(str(node["params"]["args"])) == [syst, "$0"]
-    assert bytes(_plan(_correction_universes).process.ir) == bytes(_plan(_correction_universes).process.ir)
+    assert bytes(_plan(_correction_universes).process.ir) == bytes(
+        _plan(_correction_universes).process.ir
+    )
 
 
 def test_onnx_content_identity_is_unchanged() -> None:
@@ -450,7 +512,7 @@ def test_onnx_content_identity_is_unchanged() -> None:
     assert "path" not in node["params"]
 
 
-# ---------------------------------- 4. no cloudpickle ---------------------------------------------
+# ---------------------------------- 4. no cloudpickle --------------------------------------------
 def _imports_cloudpickle(module: Any) -> bool:
     tree = ast.parse(Path(str(module.__file__)).read_text())
     return any(
@@ -461,7 +523,10 @@ def _imports_cloudpickle(module: Any) -> bool:
 
 
 def test_the_recording_path_does_not_reach_for_cloudpickle() -> None:
-    """§A.3.1: a correctionlib/ONNX payload is preservable, so it must never need by-value pickling."""
+    """§A.3.1: a correctionlib/ONNX payload is preservable.
+
+    So it must never need by-value pickling.
+    """
     from graphed.awkward import functions  # noqa: PLC0415
     from graphed.preserve.externals import _base  # noqa: PLC0415
 

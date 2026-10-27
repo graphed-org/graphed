@@ -1,5 +1,8 @@
-"""M65 C frozen suite (graphed-preserve slice): a run report kept in a bundle's own Store, outside its
-fingerprint, and rendered by ``inspect()`` without executing (plan-C C-5, C-6)."""
+"""M65 C frozen suite (graphed-preserve slice).
+
+A run report kept in a bundle's own Store, outside its fingerprint, and rendered by ``inspect()``
+without executing (plan-C C-5, C-6).
+"""
 
 from __future__ import annotations
 
@@ -119,7 +122,9 @@ def test_inspect_renders_reports_only_when_present(tmp_path: Path) -> None:
     lines = text.splitlines()
     assert "  run reports:" in lines
     head = _header(text, digest)
-    assert "outcome=failed" in head and "tasks=4 finished=1 errored=1" in head and "env=same" in head
+    assert (
+        "outcome=failed" in head and "tasks=4 finished=1 errored=1" in head and "env=same" in head
+    )
     assert f"      environment_digest={r.environment_digest}" in lines
     failed_lines = [ln for ln in lines if ln.startswith("      failed: ")]
     assert any(str(r.failure.user_frame) in ln for ln in failed_lines)
@@ -164,7 +169,9 @@ def test_inspect_reads_reports_without_executing(tmp_path: Path) -> None:
 def test_graph_block_stays_contiguous(tmp_path: Path) -> None:
     bundle, _ = agc.build_agc(tmp_path)
     gp.attach_run_report(bundle, _failed().to_json())
-    gp.attach_run_report(bundle, gd.RunRecorder().report(error=RuntimeError("n1\n    n2")).to_json())
+    gp.attach_run_report(
+        bundle, gd.RunRecorder().report(error=RuntimeError("n1\n    n2")).to_json()
+    )
     ir = bundle.store.get(bundle.manifest["analysis"]["ir"])
     n_nodes = len(GraphStore.deserialize(ir).nodes())
     lines = gp.inspect(gp.Bundle.open(bundle.root)).splitlines()

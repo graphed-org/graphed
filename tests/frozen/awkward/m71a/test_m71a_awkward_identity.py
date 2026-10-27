@@ -1,5 +1,8 @@
-"""m71a A-C2/A-C7 (awkward): the canonical declared type is node identity — spellings of one type
-intern to one node, different types never collapse, and the IR carries the canonical string."""
+"""m71a A-C2/A-C7 (awkward).
+
+The canonical declared type is node identity — spellings of one type intern to one node, different
+types never collapse, and the IR carries the canonical string.
+"""
 
 from __future__ import annotations
 
@@ -41,11 +44,25 @@ def _float16(a: Any) -> Any:
 
 #: (canonical, spellings, column, callable, name, materialize-and-compare)
 FAMILIES: list[tuple[str, list[Any], str, Callable[[Any], Any], str, bool]] = [
-    ("float32", ["float32", np.float32, np.dtype("f4"), "f4", F32], "x", lambda a: a, "fam", False),
+    (
+        "float32",
+        ["float32", np.float32, np.dtype("f4"), "f4", F32],
+        "x",
+        lambda a: a,
+        "fam",
+        False,
+    ),
     ("bool", [bool, np.bool_, "bool", NumpyType("bool")], "x", f, "fam", False),
     ("int64", [int, np.int64, "i8"], "x", lambda a: ak.values_astype(a, "int64"), "fam", False),
     ("float64", [float, "float64"], "x", lambda a: ak.values_astype(a, "float64"), "fam", False),
-    ("complex128", [complex, "complex128"], "x", lambda a: ak.values_astype(a, "complex128"), "fam", False),
+    (
+        "complex128",
+        [complex, "complex128"],
+        "x",
+        lambda a: ak.values_astype(a, "complex128"),
+        "fam",
+        False,
+    ),
     ("string", ["string", "U5", np.dtype("U5"), str], "x", strings, "fam", True),
     ("bytes", ["bytes", "S5", bytes], "x", byte_strings, "fam", True),
     ("float16", [np.float16, "f2", "float16"], "x", _float16, "h", True),
@@ -171,7 +188,10 @@ def test_every_numerical_dtype_is_declarable() -> None:
     for name in NUMERIC:
         fn: Callable[[Any], Any] = lambda a, name=name: ak.values_astype(a, name)  # noqa: E731
         scalar_type = np.bool_ if name == "bool" else getattr(np, name)
-        arrays = [ev.x.map(fn, name="num", output_type=spec) for spec in (name, np.dtype(name), scalar_type)]
+        arrays = [
+            ev.x.map(fn, name="num", output_type=spec)
+            for spec in (name, np.dtype(name), scalar_type)
+        ]
         assert len({a.node_id for a in arrays}) == 1, name
         assert params_of(s, arrays[0])["output_type"] == name
         assert describe(s, arrays[0]) == f"## * {name}"

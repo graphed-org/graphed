@@ -45,8 +45,11 @@ def _child(seed: str) -> tuple[str, str, str]:
 
 
 def test_points_refuses_a_result_mapping() -> None:
-    """§4.10: points are a record-time fact. Answering `{label: {}}` for an executed result asserts
-    that every executed universe is the origin."""
+    """§4.10: points are a record-time fact.
+
+    Answering `{label: {}}` for an executed result asserts that every executed universe is the
+    origin.
+    """
     _session, ctx = weight_context()
 
     result_shaped = dict.fromkeys(graphed.labels(ctx), ctx)

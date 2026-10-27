@@ -1,4 +1,7 @@
-"""A fill with scalar constants preserves and reproduces: the plugin rebuilds its hash and evaluator."""
+"""A fill with scalar constants preserves and reproduces.
+
+The plugin rebuilds its hash and evaluator.
+"""
 
 from __future__ import annotations
 

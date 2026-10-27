@@ -1,5 +1,8 @@
-"""Shared analyses for the M6 suite, including a module-level worker so the process-boundary test can
-build + run the failing analysis inside a spawned child process."""
+"""Shared analyses for the M6 suite.
+
+They include a module-level worker so the process-boundary test can build + run the failing
+analysis inside a spawned child process.
+"""
 
 from __future__ import annotations
 
@@ -11,7 +14,10 @@ from graphed import Session
 
 
 def numpy_oob(n: int = 3):
-    """A numpy analysis with an out-of-range index inside an opaque op (stands in for a mass calc)."""
+    """Return a numpy analysis with an out-of-range index inside an opaque op.
+
+    The op stands in for a mass calc.
+    """
     s = Session(gn.NumpyBackend())
     events = gn.from_record(s, "events", pt=np.arange(1.0, n + 1), eta=np.linspace(0, 1, n))
     scaled = events["pt"] * 2.0
@@ -20,8 +26,11 @@ def numpy_oob(n: int = 3):
 
 
 def numpy_mismatch_in_fused_stage():
-    """A shape mismatch buried INSIDE a fused arithmetic stage (a non-boundary op), to prove the
-    error maps to the right member deep in a fused kernel — not just the first or boundary op."""
+    """Return a shape mismatch buried INSIDE a fused arithmetic stage (a non-boundary op).
+
+    It proves the error maps to the right member deep in a fused kernel — not just the first or
+    boundary op.
+    """
     s = Session(gn.NumpyBackend())
     a = gn.from_record(s, "a", x=np.arange(3.0))["x"]
     b = gn.from_record(s, "b", y=np.arange(5.0))["y"]
@@ -31,9 +40,12 @@ def numpy_mismatch_in_fused_stage():
 
 
 def awkward_mass_oob(n_events: int = 200):
-    """A dimuon mass calc that indexes the 2nd muon — out of range for the (many) events with fewer
-    than two muons (the canonical 'out-of-range index into the mass calc' of the M6 contract). The
-    positional index is awkward-specific, so the calc lives in a map; the error surfaces at eval."""
+    """Return a dimuon mass calc that indexes the 2nd muon.
+
+    That is out of range for the (many) events with fewer than two muons (the canonical
+    'out-of-range index into the mass calc' of the M6 contract). The positional index is
+    awkward-specific, so the calc lives in a map; the error surfaces at eval.
+    """
     import numpy as anp  # noqa: PLC0415 - awkward-only helpers, kept off the numpy-backend import
     from graphed_corpus import make_events  # noqa: PLC0415
 
@@ -50,7 +62,10 @@ def awkward_mass_oob(n_events: int = 200):
 
 
 def run_numpy_oob_and_raise() -> None:
-    """Module-level worker for multiprocessing: build + run in THIS process, letting the StageError
-    propagate (so the parent receives it pickled across the process boundary)."""
+    """Module-level worker for multiprocessing.
+
+    Build + run in THIS process, letting the StageError propagate (so the parent receives it
+    pickled across the process boundary).
+    """
     s, bad = numpy_oob()
     gd.run(s, bad, opt_level=1)

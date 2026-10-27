@@ -29,7 +29,7 @@ class Chunks:
 
 
 def score(x: Any) -> Any:
-    """A classifier score: float64, though a caller may declare it a mask."""
+    """Return a classifier score: float64, though a caller may declare it a mask."""
     return 1.0 / (1.0 + np.exp(-x))
 
 
@@ -55,5 +55,5 @@ def run_task(process: Any, partition: Partition) -> Any:
 
 
 def here() -> int:
-    """The caller's line."""
+    """Return the caller's line."""
     return sys._getframe(1).f_lineno

@@ -3,8 +3,8 @@
 The two halves are the two ways a new op kind goes wrong. Projection: an op that could not be
 replayed through the reporting typetracer would fall back to reading the whole source, so the
 assertion is EQUALITY against an independently measured eager oracle (over-read fails it as loudly
-as under-read), plus the leaf the method provably never reads. Fusion: an op mistakenly treated as a
-boundary would split the run in two, which the reduced store's node kinds show directly.
+as under-read), plus the leaf the method provably never reads. Fusion: an op mistakenly treated as
+a boundary would split the run in two, which the reduced store's node kinds show directly.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from graphed.awkward import AwkwardBackend, from_awkward, gak, project
 
 
 def _lead_delta_r(events: ak.Array) -> ak.Array:
-    """The eager twin of the recorded program below, for the oracle."""
+    """Return the eager twin of the recorded program below, for the oracle."""
     jets = ak.with_name(events.Jet, "Jet")
     probe = ak.with_name(events.Probe, "Jet")
     return ak.firsts(jets, axis=1).deltaR(ak.firsts(probe, axis=1))
@@ -45,8 +45,10 @@ def test_projection_reports_exactly_the_leaves_the_method_reads() -> None:
 
 
 def test_a_method_does_not_end_a_stage() -> None:
-    """The property analogue of the same program reduces to source + one stage + reduction; a
-    boundary op would make it two stages, or emit a node kind of its own."""
+    """The property analogue of the same program reduces to source + one stage + reduction.
+
+    A boundary op would make it two stages, or emit a node kind of its own.
+    """
     session, jets, probe = recorded()
     method_out = gak.sum(gak.firsts(jets, axis=1).deltaR(gak.firsts(probe, axis=1)))
     property_out = gak.sum(gak.firsts(jets, axis=1).rho - gak.firsts(probe, axis=1).rho)
@@ -60,9 +62,12 @@ def test_a_method_does_not_end_a_stage() -> None:
 
 
 def test_a_backend_only_behavior_resolves_like_a_globally_registered_one() -> None:
-    """`JetArray` and the `Jet` ufunc overloads live in the backend's dict alone. If the backend
-    handed bare arrays to the typetracer or to evaluation, only vector's globally registered names
-    would work — so these three legs together separate the two registration routes."""
+    """`JetArray` and the `Jet` ufunc overloads live in the backend's dict alone.
+
+    If the backend handed bare arrays to the typetracer or to evaluation, only vector's globally
+    registered names would work — so these three legs together separate the two registration
+    routes.
+    """
     assert ("*", "Jet") not in ak.behavior
     assert "Jet" not in ak.behavior
 
@@ -79,9 +84,12 @@ def test_a_backend_only_behavior_resolves_like_a_globally_registered_one() -> No
 
 
 def test_the_read_list_never_under_reads_for_a_field_rooted_method() -> None:
-    """`read_columns` drives I/O at TOP-LEVEL field granularity, so the gate is prefix containment:
-    every leaf the method touches must have its field in the read list. The leaf-level narrowing is
-    projection's job, so the `Jet.*` half of that is asserted against the same oracle."""
+    """`read_columns` drives I/O at TOP-LEVEL field granularity.
+
+    So the gate is prefix containment: every leaf the method touches must have its field in the
+    read list. The leaf-level narrowing is projection's job, so the `Jet.*` half of that is
+    asserted against the same oracle.
+    """
     session, jets, probe = recorded()
     out = gak.sum(gak.firsts(jets, axis=1).deltaR(gak.firsts(probe, axis=1)))
 
@@ -96,9 +104,11 @@ def test_the_read_list_never_under_reads_for_a_field_rooted_method() -> None:
 
 
 def test_the_read_list_never_under_reads_for_a_method_on_the_source_record() -> None:
-    """A method applied directly to the source record may read the whole source; what it may NOT do
-    is answer a strict subset of what the method touches. `None` stays legal, and so does a later
-    narrowing — hence the superset, not an equality or an `is None`."""
+    """A method applied directly to the source record may read the whole source.
+
+    What it may NOT do is answer a strict subset of what the method touches. `None` stays legal,
+    and so does a later narrowing — hence the superset, not an equality or an `is None`.
+    """
     _session, source, source_nid = jets_source()
     out = gak.sum(source.scaled(2.0))
 
@@ -110,9 +120,11 @@ def test_the_read_list_never_under_reads_for_a_method_on_the_source_record() -> 
 
 
 def test_the_behavior_re_wrap_carries_the_arrays_attrs() -> None:
-    """A re-wrap built from the layout alone loses `attrs`, so both members answer their default —
-    half the value here. Pinned for a property and a method, on a source whose records are already
-    named and on one named through `gak.with_name`."""
+    """A re-wrap built from the layout alone loses `attrs`.
+
+    So both members answer their default — half the value here. Pinned for a property and a method,
+    on a source whose records are already named and on one named through `gak.with_name`.
+    """
     named, events = attrs_sources()
 
     control = Session(AwkwardBackend())
@@ -125,9 +137,7 @@ def test_the_behavior_re_wrap_carries_the_arrays_attrs() -> None:
     renamed = gak.with_name(from_awkward(renamed_session, "events", events).Jet, "Jet")
 
     for session, jets in ((on_source_session, on_source), (renamed_session, renamed)):
-        assert ak.array_equal(
-            ak.Array(session.materialize(jets.calibrated)), named.calibrated
-        )
+        assert ak.array_equal(ak.Array(session.materialize(jets.calibrated)), named.calibrated)
         assert ak.array_equal(
             ak.Array(session.materialize(jets.calibrate(3.0))), named.calibrate(3.0)
         )

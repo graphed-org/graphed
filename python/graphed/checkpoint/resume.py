@@ -2,15 +2,16 @@
 
 :func:`resumable` is a plan transform. On the driver it keys every task, reads the store's journal
 once, and returns the same plan with two changes: its ``process`` is a wrapper, and each task's
-partition is a :class:`Partition` subclass carrying the task's key and, for a task the store already
-holds, its blob's hash. A runner ships and calls that process as it would any other; the wrapper
-either decodes the stored partial or runs the inner process and records the result. No runner reads
-the extra fields, so resume is a property of the plan, not of the executor that runs it.
+partition is a :class:`Partition` subclass carrying the task's key and, for a task the store
+already holds, its blob's hash. A runner ships and calls that process as it would any other; the
+wrapper either decodes the stored partial or runs the inner process and records the result. No
+runner reads the extra fields, so resume is a property of the plan, not of the executor that runs
+it.
 
 A task's key is :func:`_key_digest`, a hash of cloudpickle's own by-value pickling of what a worker
 runs, with only state that never changes what it computes blanked or canonicalized. The environment
-(installed distributions and the interpreter's cache tag) is kept beside the keys as a store record a
-changed environment refuses on, rather than in them.
+(installed distributions and the interpreter's cache tag) is kept beside the keys as a store record
+a changed environment refuses on, rather than in them.
 """
 
 from __future__ import annotations
@@ -59,19 +60,32 @@ _TASK_DOMAIN = b"graphed-exec-task-v1"
 _ENV_DOMAIN = "graphed-env"
 
 
-class StoreUnavailable(RuntimeError):
+class StoreUnavailableError(RuntimeError):
     """A worker could not open, read or write the checkpoint store."""
 
 
-class EnvironmentChanged(ValueError):
+class EnvironmentChangedError(ValueError):
     """The store's environment record for this salt differs from the running environment."""
+
+
+# The pre-0.0.10 names, kept for graphed-executors, which still imports them.
+StoreUnavailable = StoreUnavailableError
+EnvironmentChanged = EnvironmentChangedError
 
 
 # ---- the task key -----------------------------------------------------------------------------
 _IMMUTABLE = (str, bytes, int, float, complex, tuple, frozenset, type(None), bool)
 #: code attributes that say where the code is, not what it does
 _LOCATIONS = frozenset(
-    {"co_filename", "co_firstlineno", "co_linetable", "co_lnotab", "co_positions", "co_lines", "co_branches"}
+    {
+        "co_filename",
+        "co_firstlineno",
+        "co_linetable",
+        "co_lnotab",
+        "co_positions",
+        "co_lines",
+        "co_branches",
+    }
 )
 #: class-dict entries the interpreter fills, and source locations
 _CLASS_BLANKS = (
@@ -87,7 +101,7 @@ _PURE: Any = pickle
 
 
 def _key_only(*args: object) -> NoReturn:
-    """The callable of a reduction that exists only in key bytes."""
+    """Return the callable of a reduction that exists only in key bytes."""
     raise AssertionError("key bytes are hashed, never loaded")
 
 
@@ -114,8 +128,10 @@ _CLOUDPICKLE_PRIVATE = {
 
 @functools.cache
 def _cloudpickle() -> types.SimpleNamespace:
-    """cloudpickle's private API the key pickler reuses (named in ``_CLOUDPICKLE_PRIVATE``), read here
-    alone and only when a key is taken."""
+    """Return cloudpickle's private API the key pickler reuses.
+
+    It is named in ``_CLOUDPICKLE_PRIVATE``, read here alone and only when a key is taken.
+    """
     try:
         cp = cloudpickle.cloudpickle
         return types.SimpleNamespace(
@@ -146,13 +162,18 @@ def _resolves(module: str, qualname: str, obj: object) -> bool:
 
 
 class _KeyPickler(pickle._Pickler):
-    """cloudpickle's by-value/by-name partition and reducers on the pure-Python pickler (the C one
-    skips ``reducer_override`` for exact sets), with the key rules of :func:`_key_digest`.
+    """Cloudpickle's by-value/by-name partition and reducers on the pure-Python pickler.
 
-    ``seen`` holds the classes pickled by value so far; a set element's sort key, pickled apart from
-    the whole, names such a class instead of recursing into it."""
+    The C pickler skips ``reducer_override`` for exact sets. The key rules are those
+    of :func:`_key_digest`.
 
-    def __init__(self, file: io.BytesIO | _HashSink, seen: Mapping[int, type], rebound: set[int]) -> None:
+    ``seen`` holds the classes pickled by value so far; a set element's sort key, pickled apart
+    from the whole, names such a class instead of recursing into it.
+    """
+
+    def __init__(
+        self, file: io.BytesIO | _HashSink, seen: Mapping[int, type], rebound: set[int]
+    ) -> None:
         super().__init__(file, protocol=5)
         self._cp = _cloudpickle()
         self.globals_ref: dict[int, dict[str, Any]] = {}
@@ -173,8 +194,11 @@ class _KeyPickler(pickle._Pickler):
 
     def _module_reduce(self, module: types.ModuleType) -> tuple[Any, ...]:
         if module.__name__ == "__main__":
-            raise TypeError("the __main__ module cannot be keyed: a worker's __main__ is not the driver's")
-        if getattr(module, "__spec__", None) is None:  # made at run time, so no import finds it by name
+            raise TypeError(
+                "the __main__ module cannot be keyed: a worker's __main__ is not the driver's"
+            )
+        # made at run time, so no import finds it by name
+        if getattr(module, "__spec__", None) is None:
             return self._cp.dynamic_subimport, (
                 module.__name__,
                 {k: v for k, v in vars(module).items() if k != "__builtins__"},
@@ -194,7 +218,9 @@ class _KeyPickler(pickle._Pickler):
     def memoize(self, obj: Any) -> None:
         # interning would decide where memo references fall; a loaded closure shares no cell, and
         # sharing changes what runs only for a cell some function rebinds
-        if not isinstance(obj, _IMMUTABLE) and (type(obj) is not types.CellType or id(obj) in self._rebound):
+        if not isinstance(obj, _IMMUTABLE) and (
+            type(obj) is not types.CellType or id(obj) in self._rebound
+        ):
             _PURE._Pickler.memoize(self, obj)
 
     def save_global(self, obj: Any, name: str | None = None) -> None:
@@ -202,8 +228,8 @@ class _KeyPickler(pickle._Pickler):
         module = _PURE.whichmodule(obj, qualname)
         if module == "__main__":
             raise TypeError(
-                f"{obj!r} is referenced by the name __main__.{name or obj.__qualname__}, whose content"
-                " cannot be keyed: define it in an importable module"
+                f"{obj!r} is referenced by the name __main__.{name or obj.__qualname__}, whose "
+                "content cannot be keyed: define it in an importable module"
             )
         _PURE._Pickler.save_global(self, obj, name)
 
@@ -220,7 +246,10 @@ class _KeyPickler(pickle._Pickler):
         if ignore or resolve:
             fields: dict[str, Any] = dict.fromkeys(ignore)
             fields.update(
-                {name: (getattr(obj, name), fn(getattr(obj, name))) for name, fn in resolve.items()}
+                {
+                    name: (getattr(obj, name), fn(getattr(obj, name)))
+                    for name, fn in resolve.items()
+                }
             )
             return dataclasses.replace(cast("Any", obj), **fields).__reduce_ex__(5)
         if (
@@ -240,20 +269,25 @@ class _KeyPickler(pickle._Pickler):
         state = {
             "__annotations__" if k == "__annotations_cache__" else k: v
             for k, v in state.items()
-            if k not in _CLASS_BLANKS and not (k == "__annotations_cache__" and "__annotations__" in state)
+            if k not in _CLASS_BLANKS
+            and not (k == "__annotations_cache__" and "__annotations__" in state)
         }
         annotate = vars(obj).get("__annotate_func__")
         if callable(annotate) and "__annotations__" not in state:
-            # cloudpickle drops an unread class's annotate function, so key it, never evaluated; its
-            # __classdict__ cell holds this class's own dict, which the class's state already keys
+            # cloudpickle drops an unread class's annotate function, so key it, never evaluated;
+            # its __classdict__ cell holds this class's own dict, which the class's state already
+            # keys
             cells = (
                 zip(annotate.__code__.co_freevars, annotate.__closure__ or (), strict=True)
                 if isinstance(annotate, types.FunctionType)
                 else ()
             )
-            self._classdicts.update({id(c.cell_contents): obj for n, c in cells if n == "__classdict__"})
+            self._classdicts.update(
+                {id(c.cell_contents): obj for n, c in cells if n == "__classdict__"}
+            )
             state["<key-only annotate>"] = annotate
-        if isinstance(state.get("_abc_impl"), list):  # cloudpickle lists an ABC's registry from a set
+        # cloudpickle lists an ABC's registry from a set
+        if isinstance(state.get("_abc_impl"), list):
             state["_abc_impl"] = self._sorted(state["_abc_impl"])
         return (func, args, (state, slotstate), *rest)
 
@@ -270,8 +304,16 @@ class _KeyPickler(pickle._Pickler):
             )
         make, args, (state, slotstate), *rest = self._cp.dynamic_function_reduce(self, func)
         # cloudpickle records only the globals LOAD_GLOBAL-family ops read, not class-scope reads
-        read = {n: func.__globals__[n] for n in _class_scope_reads(func.__code__) if n in func.__globals__}
-        slotstate = {**slotstate, "__doc__": None, "__globals__": {**slotstate["__globals__"], **read}}
+        read = {
+            n: func.__globals__[n]
+            for n in _class_scope_reads(func.__code__)
+            if n in func.__globals__
+        }
+        slotstate = {
+            **slotstate,
+            "__doc__": None,
+            "__globals__": {**slotstate["__globals__"], **read},
+        }
         return (make, args, (state, slotstate), *rest)
 
     def _function_getnewargs(self, func: types.FunctionType) -> tuple[Any, ...]:
@@ -291,8 +333,10 @@ class _KeyPickler(pickle._Pickler):
 
 
 def _class_scope_reads(code: types.CodeType) -> list[str]:
-    """The names ``code``, or code nested in it, reads by ``LOAD_NAME`` or ``LOAD_FROM_DICT_OR_GLOBALS``
-    (3.12+), in code order."""
+    """Return the names ``code``, or code nested in it, reads by name, in code order.
+
+    The reads are ``LOAD_NAME`` or ``LOAD_FROM_DICT_OR_GLOBALS`` (3.12+).
+    """
     names = [
         ins.argval
         for ins in dis.get_instructions(code)
@@ -305,7 +349,10 @@ def _class_scope_reads(code: types.CodeType) -> list[str]:
 
 
 def _rebinds(code: types.CodeType, names: frozenset[str]) -> set[str]:
-    """The free variables in ``names`` that ``code``, or code nested in it that shares them, rebinds."""
+    """Return the free variables in ``names`` that ``code`` rebinds.
+
+    Code nested in ``code`` that shares them counts too.
+    """
     found = {
         ins.argval
         for ins in dis.get_instructions(code)
@@ -324,23 +371,25 @@ def _dumps(obj: object, seen: Mapping[int, type], rebound: set[int]) -> bytes:
 
 
 def _key_digest(obj: object) -> bytes:
-    """The sha256 of ``obj``'s key pickling: cloudpickle's by-value pickling of what a worker
-    resolves (functions that share a namespace share one globals dict), made the same in every
-    interpreter that holds the same values.
+    """Return the sha256 of ``obj``'s key pickling.
 
-    The key writes the state a worker's copy is rebuilt from, and blanks or canonicalizes only state
-    that never changes what the object or that copy computes:
+    cloudpickle's by-value pickling of what a worker resolves (functions that share a namespace
+    share one globals dict), made the same in every interpreter that holds the same values.
+
+    The key writes the state a worker's copy is rebuilt from, and blanks or canonicalizes only
+    state that never changes what the object or that copy computes:
 
     - sets, frozensets, a ``weakref.WeakSet`` and an ABC's registry are written sorted by their
       elements' key bytes;
-    - interpreter-filled class caches (``__slotnames__``, typing's protocol-member caches) are dropped,
-      and a class's ``__annotations_cache__`` is written as ``__annotations__`` when it has none;
+    - interpreter-filled class caches (``__slotnames__``, typing's protocol-member caches) are
+      dropped, and a class's ``__annotations_cache__`` is written as ``__annotations__`` when it
+      has none;
     - a class that holds neither has its unevaluated ``__annotate_func__`` written in their place;
     - an object other than a function, class or module, of a type outside the pickler's dispatch
       table, that its ``__module__``/``__qualname__`` name in a module other than ``__main__`` is
       written by that name;
-    - a module without ``__spec__`` is written by value; a name into ``__main__`` and the ``__main__``
-      module are refused (``TypeError``), since their content cannot be keyed;
+    - a module without ``__spec__`` is written by value; a name into ``__main__`` and the
+      ``__main__`` module are refused (``TypeError``), since their content cannot be keyed;
     - cloudpickle's per-process tracker ids, code locations (``co_filename``, ``co_firstlineno``,
       line and position tables), a function's ``__file__`` global and doc, and a class's
       ``__firstlineno__`` and doc are blanked;
@@ -355,7 +404,8 @@ def _key_digest(obj: object) -> bytes:
     rebound: set[int] = set()
     sink = _HashSink()
     _KeyPickler(sink, {}, rebound).dump(obj)
-    if rebound:  # the first pass wrote cells unmemoized before meeting the function that rebinds them
+    # the first pass wrote cells unmemoized before meeting the function that rebinds them
+    if rebound:
         sink = _HashSink()
         _KeyPickler(sink, {}, rebound).dump(obj)
     return sink.hash.digest()
@@ -384,20 +434,25 @@ _DIRLESS = frozenset({"s3", "s3a", "gcs", "gs", "abfs", "az", "adl", "memory"})
 _TOKEN: tuple[int, str] = (os.getpid(), uuid.uuid4().hex)
 
 
-def open_store(root: str, node: str | None = None, storage_options: Mapping[str, Any] | None = None) -> Any:
-    """``root`` as a checkpoint store: an :class:`FsspecStore` when it contains ``://``, else a
-    directory :class:`Store`."""
+def open_store(
+    root: str, node: str | None = None, storage_options: Mapping[str, Any] | None = None
+) -> Any:
+    """``root`` as a checkpoint store.
+
+    An :class:`FsspecStore` when it contains ``://``, else a directory :class:`Store`.
+    """
     if is_url(root):
         return FsspecStore(root, node, **dict(storage_options or {}))
     return Store(root, node)
 
 
 def task_store(root: str, storage_options: Sequence[tuple[str, Any]] = ()) -> Any:
-    """A worker's store at ``root``, writing its own journal per process and thread.
+    """Return a worker's store at ``root``, writing its own journal per process and thread.
 
     An object-store root's store is opened once per (root, options, process, thread): reopening
     costs a bucket request per task. Any other root is opened per call, since a cached store would
-    outlive a removed directory."""
+    outlive a removed directory.
+    """
     global _TOKEN
     if _TOKEN[0] != os.getpid():  # a forked child must not share its parent's journals
         _TOKEN = (os.getpid(), uuid.uuid4().hex)
@@ -407,7 +462,9 @@ def task_store(root: str, storage_options: Sequence[tuple[str, Any]] = ()) -> An
         return cache[key]
     store = open_store(root, f"{_TOKEN[1]}-{threading.get_ident()}", dict(storage_options))
     protocols = getattr(getattr(store, "fs", None), "protocol", ())
-    if is_url(root) and _DIRLESS & set(protocols if isinstance(protocols, (tuple, list)) else (protocols,)):
+    if is_url(root) and _DIRLESS & set(
+        protocols if isinstance(protocols, (tuple, list)) else (protocols,)
+    ):
         cache[key] = store
     return store
 
@@ -416,7 +473,7 @@ def _guarded(root: str, call: Callable[[], _T]) -> _T:
     try:
         return call()
     except Exception as exc:
-        raise StoreUnavailable(
+        raise StoreUnavailableError(
             f"checkpoint store {root} is unavailable: {type(exc).__name__}: {exc}"
         ) from exc
 
@@ -428,7 +485,7 @@ def _served_or_run(
     run: Callable[[Partition], bytes],
     stage: str = "",
 ) -> bytes:
-    """The stored bytes of a done task, else ``run(plain partition)``'s, recorded."""
+    """Return the stored bytes of a done task, else ``run(plain partition)``'s, recorded."""
     keyed = cast("_Keyed", partition)
     store = _guarded(root, lambda: task_store(root, storage_options))
     if keyed.blob:
@@ -438,14 +495,20 @@ def _served_or_run(
     plain = _plain(keyed)
     data = run(plain)
     _guarded(
-        root, lambda: store.record_done(keyed.task_id, _partition_tag(plain), store.put(data), stage=stage)
+        root,
+        lambda: store.record_done(
+            keyed.task_id, _partition_tag(plain), store.put(data), stage=stage
+        ),
     )
     return data
 
 
 @dataclass(frozen=True)
 class _Resumable:
-    """A runtime plan's resumable process; ``reused`` counts the tasks the store held at plan time."""
+    """A runtime plan's resumable process.
+
+    ``reused`` counts the tasks the store held at plan time.
+    """
 
     inner: Callable[[Partition, Any], Any]
     root: str
@@ -462,7 +525,9 @@ class _Resumable:
     def bind_services(self, endpoints: Mapping[str, str]) -> _Resumable:
         return replace(
             self,
-            inner=self.inner.bind_services(endpoints) if isinstance(self.inner, Bindable) else self.inner,
+            inner=self.inner.bind_services(endpoints)
+            if isinstance(self.inner, Bindable)
+            else self.inner,
         )
 
     def resolve_services(self, value: Any) -> Any:
@@ -492,7 +557,9 @@ class _ResumableStage:
     def bind_services(self, endpoints: Mapping[str, str]) -> _ResumableStage:
         return replace(
             self,
-            inner=self.inner.bind_services(endpoints) if isinstance(self.inner, Bindable) else self.inner,
+            inner=self.inner.bind_services(endpoints)
+            if isinstance(self.inner, Bindable)
+            else self.inner,
         )
 
     def resolve_services(self, value: Any) -> Any:
@@ -501,8 +568,10 @@ class _ResumableStage:
 
 # ---- the environment record -------------------------------------------------------------------
 def _environment() -> bytes:
-    """Canonical JSON of the installed distributions (the copy Python imports for a name installed
-    twice) and the interpreter's cache tag."""
+    """Return canonical JSON of the installed distributions and the interpreter's cache tag.
+
+    For a name installed twice, the distribution is the copy Python imports.
+    """
     versions: dict[str, str] = {}
     for dist in importlib.metadata.distributions():
         name = dist.metadata.get("Name")
@@ -516,7 +585,9 @@ def _changes(old: Mapping[str, Any], new: Mapping[str, Any]) -> list[str]:
     was, now = old.get("distributions", {}), new["distributions"]
     out = [f"{n} {now[n]} added" for n in sorted(now.keys() - was.keys())]
     out += [f"{n} {was[n]} removed" for n in sorted(was.keys() - now.keys())]
-    out += [f"{n} {was[n]} -> {now[n]}" for n in sorted(was.keys() & now.keys()) if was[n] != now[n]]
+    out += [
+        f"{n} {was[n]} -> {now[n]}" for n in sorted(was.keys() & now.keys()) if was[n] != now[n]
+    ]
     if old.get("cache_tag") != new["cache_tag"]:
         out.append(f"interpreter {old.get('cache_tag')} -> {new['cache_tag']}")
     return out
@@ -525,9 +596,12 @@ def _changes(old: Mapping[str, Any], new: Mapping[str, Any]) -> list[str]:
 def check_environment(
     store: CheckpointStore, done: Mapping[str, JournalEntry], salt: str, accept: bool
 ) -> None:
-    """Hold ``store``'s environment record for ``salt`` against this environment, from the
-    ``completed()`` mapping ``done``: none is written as record 1; one equal to the record in force
-    passes; any other raises :class:`EnvironmentChanged`, unless ``accept`` writes this one next."""
+    """Hold ``store``'s environment record for ``salt`` against this environment.
+
+    The record comes from the ``completed()`` mapping ``done``: none is written as record 1; one
+    equal to the record in force passes; any other raises :class:`EnvironmentChangedError`, unless
+    ``accept`` writes this one next.
+    """
     mine = _environment()
     digest = Store.content_hash(mine)
     prefix = f"{_ENV_DOMAIN}:{_sha256_hex(salt.encode())}:"
@@ -547,9 +621,10 @@ def check_environment(
             for blob in sorted(in_force - {digest})
             for change in _changes(json.loads(store.get(blob) or b"{}"), new)
         ]
-        raise EnvironmentChanged(
-            f"this environment differs from the one the checkpoint store recorded ({'; '.join(changes)});"
-            " pass accept_environment=True to resume in this one, or use a new salt or store"
+        raise EnvironmentChangedError(
+            "this environment differs from the one the checkpoint store recorded "
+            f"({'; '.join(changes)}); pass accept_environment=True to resume in this one, or use "
+            "a new salt or store"
         )
     blob = store.put(mine)
     cast("Any", store).record_environment(f"{prefix}{top + 1:08d}:{blob}", blob)
@@ -559,13 +634,14 @@ def require_environment_store(store: object) -> None:
     """Refuse a store that cannot hold the environment record, before any call to it."""
     if not callable(getattr(store, "record_environment", None)):
         raise TypeError(
-            f"{type(store).__name__} has no record_environment, so it cannot hold the environment record"
+            f"{type(store).__name__} has no record_environment, so it cannot hold the environment "
+            "record"
         )
 
 
 # ---- the transform ----------------------------------------------------------------------------
 def _processes(plan: Plan[Any] | DurablePlan | DurablePlanV2) -> list[Any]:
-    """The plan's processes, after the refusals that must precede any pickling."""
+    """Return the plan's processes, after the refusals that must precede any pickling."""
     if isinstance(plan, Plan) and plan.next_tasks is not None:
         raise TypeError("resumable needs a fixed task set; this plan pulls tasks from next_tasks")
     if isinstance(plan, DurablePlanV2):
@@ -577,22 +653,28 @@ def _processes(plan: Plan[Any] | DurablePlan | DurablePlanV2) -> list[Any]:
             raise TypeError("this plan is already resumable")
         if plan.services and not getattr(process, "checkpointable", False):
             raise TypeError(
-                f"this plan has services and its process {type(process).__qualname__} does not declare"
-                " checkpointable, so its results may stand for server state a store cannot hold; a"
-                " process whose result is self-contained may set checkpointable = True"
+                f"this plan has services and its process {type(process).__qualname__} does not "
+                "declare checkpointable, so its results may stand for server state a store "
+                "cannot hold; a process whose result is self-contained may set checkpointable = "
+                "True"
             )
     return processes
 
 
 def _behaviors() -> tuple[bytes, ...]:
-    """The sorted key digests of the global ``ak.behavior`` entries, which a backend built without its
-    own behavior dict reads at run time."""
+    """Return the sorted key digests of the global ``ak.behavior`` entries.
+
+    Which a backend built without its own behavior dict reads at run time.
+    """
     ak = sys.modules.get("awkward")
     if ak is None:
         return ()
     entries = ak.behavior.items()
     return tuple(
-        sorted(_keyed(entry, functools.partial("ak.behavior[{!r}]".format, entry[0])) for entry in entries)
+        sorted(
+            _keyed(entry, functools.partial("ak.behavior[{!r}]".format, entry[0]))
+            for entry in entries
+        )
     )
 
 
@@ -604,7 +686,8 @@ def _keyed(obj: object, what: Callable[[], str]) -> bytes:
 
 
 def _of(process: object) -> Callable[[], str]:
-    return lambda: f"the process {reprlib.repr(process)}"  # a repr can be as large as the payloads it shows
+    # a repr can be as large as the payloads it shows
+    return lambda: f"the process {reprlib.repr(process)}"
 
 
 def _task_id(ident: str, salt: str, partition: Partition) -> str:
@@ -614,7 +697,7 @@ def _task_id(ident: str, salt: str, partition: Partition) -> str:
 def _task_ids(
     plan: Plan[Any] | DurablePlan | DurablePlanV2, codec: Codec, salt: str
 ) -> tuple[list[Any], list[list[str]]]:
-    """The plan's processes and each one's task keys, in task order."""
+    """Return the plan's processes and each one's task keys, in task order."""
     _cloudpickle()  # refuses a missing private name itself, not as the first thing keyed
     processes = _processes(plan)
     behaviors = _behaviors()
@@ -622,12 +705,16 @@ def _task_ids(
         ids: list[list[str]] = []
         for si, (stage, process) in enumerate(zip(plan.stages, processes, strict=True)):
             body = _keyed((process, behaviors), _of(process))
-            routing = json.dumps(dict(stage.routing), sort_keys=True, separators=(",", ":")).encode()
+            routing = json.dumps(
+                dict(stage.routing), sort_keys=True, separators=(",", ":")
+            ).encode()
             upstream = [tid.encode() for dep in stage.inputs for tid in ids[dep]]
             head = (plan.ir, str(si).encode(), stage.kind.encode(), routing)
             ids.append(
                 [
-                    _task_id(_sha256_hex(*head, str(t.key).encode(), body, *upstream), salt, t.partition)
+                    _task_id(
+                        _sha256_hex(*head, str(t.key).encode(), body, *upstream), salt, t.partition
+                    )
                     for t in stage.tasks
                 ]
             )
@@ -649,7 +736,11 @@ def _tagged(task: Task, task_id: str, done: Mapping[str, JournalEntry]) -> Task:
     entry = done.get(task_id)
     return Task(
         task.key,
-        _Keyed(**vars(_plain(task.partition)), task_id=task_id, blob="" if entry is None else entry.blob),
+        _Keyed(
+            **vars(_plain(task.partition)),
+            task_id=task_id,
+            blob="" if entry is None else entry.blob,
+        ),
     )
 
 
@@ -705,8 +796,9 @@ def resumable(
     The returned process (each stage's) has ``reused``, the tasks the store held. A plan without a
     fixed task set, an already-resumable one, one with ``services`` whose process does not declare
     ``checkpointable``, and a process that cannot be keyed are refused with ``TypeError`` before
-    any store I/O. A store whose environment record differs raises :class:`EnvironmentChanged`
-    unless ``accept_environment``."""
+    any store I/O. A store whose environment record differs raises :class:`EnvironmentChangedError`
+    unless ``accept_environment``.
+    """
     codec = PickleCodec() if codec is None else codec
     processes, ids = _task_ids(plan, codec, salt)
     options = tuple((storage_options or {}).items())
@@ -724,7 +816,10 @@ def resumable(
                 replace(
                     stage,
                     process=OpSpec(op.kind, op.ref, op.blob_b64, live=live),
-                    tasks=tuple(_tagged(t, tid, done) for t, tid in zip(stage.tasks, stage_ids, strict=True)),
+                    tasks=tuple(
+                        _tagged(t, tid, done)
+                        for t, tid in zip(stage.tasks, stage_ids, strict=True)
+                    ),
                 )
             )
         return replace(plan, stages=tuple(stages))
@@ -739,4 +834,6 @@ def resumable(
     else:
         tasks, base = plan.tasks, plan
     keyed = tuple(_tagged(t, tid, done) for t, tid in zip(tasks, ids[0], strict=True))
-    return replace(base, process=_Resumable(processes[0], store, options, codec, reused[0]), tasks=keyed)
+    return replace(
+        base, process=_Resumable(processes[0], store, options, codec, reused[0]), tasks=keyed
+    )

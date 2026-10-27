@@ -26,7 +26,10 @@ from graphed.awkward import AwkwardBackend, from_awkward
 
 
 def _block(**cols: object) -> ak.Array:
-    """A flat record block; ``__joinkey__`` is the packed-u64 key column the engine routes on."""
+    """Return a flat record block.
+
+    ``__joinkey__`` is the packed-u64 key column the engine routes on.
+    """
     return ak.Array(
         {k: (np.asarray(v, dtype=np.uint64) if k == "__joinkey__" else v) for k, v in cols.items()}
     )
@@ -41,8 +44,12 @@ def test_inner_join_primitives_duplicate_relationally() -> None:
     bi, pi = be.match_indices(left, right, on=["__joinkey__"], how="inner")
     merged = be.merge_records(be.take(left, bi), be.take(right, pi), on=["__joinkey__"])
     assert len(merged) == 4, "k=2 x k=2 must duplicate to 4 rows (relational), not collapse to 2"
-    assert all(k == 2 for k in merged["__joinkey__"].to_list()), "only the matched key survives inner"
-    assert set(merged.fields) == {"__joinkey__", "lv", "rv"}, "union of fields minus the duplicate key"
+    assert all(k == 2 for k in merged["__joinkey__"].to_list()), (
+        "only the matched key survives inner"
+    )
+    assert set(merged.fields) == {"__joinkey__", "lv", "rv"}, (
+        "union of fields minus the duplicate key"
+    )
     pairs = sorted(zip(merged["lv"].to_list(), merged["rv"].to_list(), strict=True))
     assert pairs == sorted([(20, 200), (20, 201), (21, 200), (21, 201)])
 
@@ -63,7 +70,8 @@ def test_merge_records_is_field_union_minus_duplicate_key() -> None:
 def test_left_join_missing_side_reads_as_an_awkward_option_null() -> None:
     # (a3) TRAP 1 (awkward analogue of np.take(-1)): the left-only row's right field must READ NULL
     # (ak.is_none True), asserted as VALIDITY. A naive `take` (np.take, or `block[index]` where
-    # index=-1 does negative indexing) gathers the LAST right row (rv=200) -> is_none False -> FAILS.
+    # index=-1 does negative indexing) gathers the LAST right row (rv=200) -> is_none False ->
+    # FAILS.
     be = AwkwardBackend()
     left = _block(__joinkey__=[1, 2], lv=[10, 20])
     right = _block(__joinkey__=[2], rv=[200])  # key 1 has NO right match
@@ -79,9 +87,9 @@ def test_left_join_missing_side_reads_as_an_awkward_option_null() -> None:
 
 
 def test_op_form_join_is_a_flat_record_merge_union_minus_key() -> None:
-    # op_form("join") builds the OUTPUT form by relational record-merge: union of both sides' fields
-    # minus the duplicate key. An identity/passthrough op_form (return inputs[0]) yields only
-    # {__joinkey__, lv} and FAILS the union assertion.
+    # op_form("join") builds the OUTPUT form by relational record-merge: union of both sides'
+    # fields minus the duplicate key. An identity/passthrough op_form (return inputs[0]) yields
+    # only {__joinkey__, lv} and FAILS the union assertion.
     s = Session(AwkwardBackend())
     be = s.backend
     left = from_awkward(s, "l", _block(__joinkey__=[1, 2], lv=[10, 20]))
@@ -104,4 +112,6 @@ def test_op_form_left_join_makes_the_outer_side_option_typed() -> None:
 
     left_form = be.op_form("join", [lf, rf], {"how": "left", "on": "__joinkey__"})
     assert set(left_form.tt.fields) == {"__joinkey__", "lv", "rv"}
-    assert "?" in left_form.describe(), "left join: the missing-side field becomes an awkward option"
+    assert "?" in left_form.describe(), (
+        "left join: the missing-side field becomes an awkward option"
+    )

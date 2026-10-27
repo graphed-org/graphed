@@ -23,6 +23,7 @@ def xgboost_content_hash(payload: bytes) -> str:
 
 
 def load_xgboost(payload: bytes, params: Mapping[str, Any]) -> Any:
+    """Load an XGBoost booster from its JSON payload."""
     import xgboost as xgb  # noqa: PLC0415
 
     booster = xgb.Booster()
@@ -31,6 +32,7 @@ def load_xgboost(payload: bytes, params: Mapping[str, Any]) -> Any:
 
 
 def eval_xgboost(booster: Any, params: Mapping[str, Any], inputs: list[Any]) -> Any:
+    """Predict with the booster over ``inputs``, one value per event."""
     template = parse_call_template(params, len(inputs), allow_kwargs=False)
     if template is not None:
         args, _ = template

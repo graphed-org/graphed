@@ -31,9 +31,11 @@ BROADCAST_FLOOR = 40
 
 
 def _fill(value: object, owned: Mapping[str, Any], filled: list[Any]) -> Any:
-    """Replace every declared SLOT with the test's own contexted array of the kind it names —
-    including inside a Mapping or Sequence argument, since `gak.zip`'s mapping is its only
-    array-bearing operand and there is otherwise no position to substitute into."""
+    """Replace every declared SLOT with the test's own contexted array of the kind it names.
+
+    Including inside a Mapping or Sequence argument, since `gak.zip`'s mapping is its only
+    array-bearing operand and there is otherwise no position to substitute into.
+    """
     if isinstance(value, gak_module.GakSlot):
         assert value.kind in OPERAND_KINDS  # the KIND vocabulary is frozen at m48
         replacement = owned[value.kind]
@@ -53,9 +55,7 @@ def _handles(result: object) -> list[object]:
 
 
 def _carrying_names() -> list[str]:
-    return sorted(
-        name for name, kind in gak_module.GAK_DISPOSITIONS.items() if kind in CARRYING
-    )
+    return sorted(name for name, kind in gak_module.GAK_DISPOSITIONS.items() if kind in CARRYING)
 
 
 def test_every_carrying_function_propagates_the_context_handle_it_was_given() -> None:
@@ -68,7 +68,9 @@ def test_every_carrying_function_propagates_the_context_handle_it_was_given() ->
         filled: list[Any] = []
         args = _fill(fixture.args, owned, filled)
         kwargs = _fill(fixture.kwargs, owned, filled)
-        assert filled, f"{name}'s fixture declares no substitution slot, so nothing carried a handle"
+        assert filled, (
+            f"{name}'s fixture declares no substitution slot, so nothing carried a handle"
+        )
         handles = _handles(getattr(gak, name)(*args, **kwargs))
         assert handles, f"gak.{name} returned nothing to read a handle from"
         for handle in handles:
@@ -77,8 +79,11 @@ def test_every_carrying_function_propagates_the_context_handle_it_was_given() ->
 
 
 def test_every_carrying_function_has_an_argument_fixture_in_src() -> None:
-    """The self-repairing rule: the fixture is a property of the function and lives beside its
-    classification, so adding a gak function never requires editing this frozen file."""
+    """The self-repairing rule.
+
+    The fixture is a property of the function and lives beside its classification, so adding a gak
+    function never requires editing this frozen file.
+    """
     missing = [name for name in _carrying_names() if name not in gak_module.GAK_ARG_FIXTURES]
     assert not missing, f"{missing} are classified as carrying but cannot be called by this gate"
 
@@ -89,8 +94,11 @@ def test_the_exempt_set_is_exactly_eager_metadata_and_refusing() -> None:
 
 
 def test_the_membership_floor_on_the_exempt_classes() -> None:
-    """Classification is implementer-editable `src`, so without a membership floor a hard member
-    could be re-classified into an exempt class and stay green while the class NAMES stay right."""
+    """Classification is implementer-editable `src`.
+
+    So without a membership floor a hard member could be re-classified into an exempt class and
+    stay green while the class NAMES stay right.
+    """
     dispositions = gak_module.GAK_DISPOSITIONS
     refusing = {name for name, kind in dispositions.items() if kind == "refusing"}
     broadcast = {name for name, kind in dispositions.items() if kind == "broadcast"}

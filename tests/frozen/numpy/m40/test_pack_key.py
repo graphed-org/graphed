@@ -1,9 +1,10 @@
 """M40 GAP-1 — direct witness for ``graphed.pack_key`` (spec Implementation Target 8; trap #6).
 
-See ``tests/frozen/awkward/m40/test_pack_key.py`` for the full rationale and the measured proof that
-a ``hash()``-based packer violates (iii)/(iv)/(v) below; this file is the numpy-backend half of the
-same direct witness (the existing ``test_join_primitives.py``/``test_op_form_join.py`` construct
-``__joinkey__`` BY HAND on tiny int fixtures, so ``pack_key`` itself has no coverage there).
+See ``tests/frozen/awkward/m40/test_pack_key.py`` for the full rationale and the measured proof
+that a ``hash()``-based packer violates (iii)/(iv)/(v) below; this file is the numpy-backend half
+of the same direct witness (the existing ``test_join_primitives.py``/``test_op_form_join.py``
+construct ``__joinkey__`` BY HAND on tiny int fixtures, so ``pack_key`` itself has no coverage
+there).
 
 Pinned surface: ``graphed.pack_key(array, *, on)`` — a thin NEUTRAL frontend verb returning an
 ``Array`` carrying a flat u64 ``__joinkey__`` column, big-endian bit-packed most-significant field
@@ -13,10 +14,11 @@ Pinned surface: ``graphed.pack_key(array, *, on)`` — a thin NEUTRAL frontend v
   (ii)  injectivity — N distinct triples -> N distinct ``__joinkey__``.
   (iii) low-field monotonicity — fixed (run, lumi), strictly increasing in ``event``.
   (iv)  high-field dominance — incrementing ``run`` outranks every key sharing the smaller ``run``.
-  (v)   not ``hash()`` — ``__joinkey__`` != ``hash((run, lumi, event))`` and != hash of the field bytes.
+  (v)   not ``hash()`` — ``__joinkey__`` != ``hash((run, lumi, event))`` and != hash of the field
+  bytes.
 
-(hash() fails iii/iv — measured with CPython 3.12 in the awkward-side docstring; int/tuple hashing is
-unsalted so it does NOT fail (i), which instead guards other nondeterminism sources.)
+(hash() fails iii/iv — measured with CPython 3.12 in the awkward-side docstring; int/tuple hashing
+is unsalted so it does NOT fail (i), which instead guards other nondeterminism sources.)
 """
 
 from __future__ import annotations
@@ -69,7 +71,9 @@ def test_pack_key_is_injective_on_distinct_triples() -> None:
     # (ii) kills a packer that collapses fields (e.g. keys only on `event`).
     vals = _packed(ROWS)
     assert len(vals) == len(ROWS)
-    assert len(set(vals)) == len(ROWS), "distinct (run,lumi,event) triples must pack to distinct keys"
+    assert len(set(vals)) == len(ROWS), (
+        "distinct (run,lumi,event) triples must pack to distinct keys"
+    )
 
 
 def test_pack_key_is_strictly_monotonic_in_event_for_fixed_run_lumi() -> None:
@@ -94,9 +98,13 @@ def test_pack_key_is_not_pythons_hash() -> None:
     # (v) direct inequality with hash() — kills `pack_key = lambda t: hash(t)` outright.
     vals = dict(zip(ROWS, _packed(ROWS), strict=True))
     for (r, lu, e), packed in vals.items():
-        assert packed != (hash((r, lu, e)) & _MASK64), f"{(r, lu, e)}: __joinkey__ must not be hash(triple)"
+        assert packed != (hash((r, lu, e)) & _MASK64), (
+            f"{(r, lu, e)}: __joinkey__ must not be hash(triple)"
+        )
         field_bytes = r.to_bytes(8, "big") + lu.to_bytes(8, "big") + e.to_bytes(8, "big")
-        assert packed != (hash(field_bytes) & _MASK64), f"{(r, lu, e)}: __joinkey__ must not be hash(bytes)"
+        assert packed != (hash(field_bytes) & _MASK64), (
+            f"{(r, lu, e)}: __joinkey__ must not be hash(bytes)"
+        )
 
 
 # (i) cross-process / cross-hash-seed determinism — mirrors graphed-exec-check's M39 B2 pattern
@@ -135,5 +143,7 @@ def _pack_in_child(seed: str) -> list[str]:
 def test_pack_key_is_stable_across_processes_and_hash_seeds() -> None:
     a = _pack_in_child("0")
     b = _pack_in_child("1")
-    assert a == b, "pack_key must be independent of PYTHONHASHSEED (never Python hash() in the path)"
+    assert a == b, (
+        "pack_key must be independent of PYTHONHASHSEED (never Python hash() in the path)"
+    )
     assert a == [str(v) for v in _packed(ROWS)], "and match the in-process computation"

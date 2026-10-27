@@ -36,18 +36,22 @@ class NumpyVaried(Varied):
     # that method's *broadcast* disposition.
     @property
     def shape(self) -> Any:
+        """The nominal member's shape."""
         return nominal(self).shape
 
     @property
     def dtype(self) -> Any:
+        """The nominal member's dtype."""
         return nominal(self).dtype
 
     @property
     def ndim(self) -> Any:
+        """The nominal member's number of dimensions."""
         return nominal(self).ndim
 
     @property
-    def T(self) -> Any:
+    def T(self) -> Any:  # noqa: N802 - numpy parity name
+        """Each member's transpose."""
         return expand(lambda member: member.T, (self,), {})
 
 

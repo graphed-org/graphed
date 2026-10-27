@@ -1,5 +1,8 @@
-"""A plan whose callables are lambdas or closures, and whose partials carry a lambda-holding behavior,
-runs across a stdlib-pickling process boundary as it runs in-process (GW33)."""
+"""A plan whose callables are lambdas or closures.
+
+And whose partials carry a lambda-holding behavior, runs across a stdlib-pickling process boundary
+as it runs in-process (GW33).
+"""
 
 from __future__ import annotations
 
@@ -34,9 +37,13 @@ class Events:
         return self.data
 
     def partitions(self, steps_per_file: int = 1) -> tuple[Partition, ...]:
-        return tuple(Partition.blind("mem://events", "", s, steps_per_file) for s in range(steps_per_file))
+        return tuple(
+            Partition.blind("mem://events", "", s, steps_per_file) for s in range(steps_per_file)
+        )
 
-    def read_partition(self, partition: Partition, columns: Any, resources: WorkerResources) -> ak.Array:
+    def read_partition(
+        self, partition: Partition, columns: Any, resources: WorkerResources
+    ) -> ak.Array:
         part = partition.resolve(len(self.data))
         return self.data[part.entry_start : part.entry_stop]
 
@@ -70,11 +77,15 @@ def _task(process: Callable[[Partition, WorkerResources], Any], partition: Parti
 
 def _spawned(plan: Plan[Any]) -> Any:
     with ProcessPoolExecutor(2, mp_context=multiprocessing.get_context("spawn")) as pool:
-        parts = list(pool.map(functools.partial(_task, plan.process), [t.partition for t in plan.tasks]))
+        parts = list(
+            pool.map(functools.partial(_task, plan.process), [t.partition for t in plan.tasks])
+        )
     return functools.reduce(plan.combine, parts, plan.empty())
 
 
-@pytest.mark.parametrize("backend", [None, f"{__name__}:make_backend"], ids=["class", "import_ref"])
+@pytest.mark.parametrize(
+    "backend", [None, f"{__name__}:make_backend"], ids=["class", "import_ref"]
+)
 def test_a_plan_of_closures_runs_in_spawned_workers_as_in_process(backend: str | None) -> None:
     plan = _plan(3.0, backend)
     got = _spawned(plan)
@@ -152,7 +163,9 @@ def test_an_op_over_several_arrays_keeps_a_partial_picklable(op: str) -> None:
 
 def test_combining_unpickled_partials_stays_picklable() -> None:
     plan = _ref_plan(lambda pt: pt * 2)
-    p0, p1 = (pickle.loads(pickle.dumps(plan.process(t.partition, LocalResources()))) for t in plan.tasks)
+    p0, p1 = (
+        pickle.loads(pickle.dumps(plan.process(t.partition, LocalResources()))) for t in plan.tasks
+    )
     combined = plan.combine(p0, p1)
     assert ak.to_list(pickle.loads(pickle.dumps(combined))) == ak.to_list(ak.concatenate([p0, p1]))
 
@@ -201,7 +214,10 @@ def test_an_op_output_held_by_a_user_object_stays_picklable() -> None:
 
 def _paired(values: list[Any]) -> dict[str, Any]:
     pt = values[0]
-    return {"pairs": [ak.zip({"a": pt, "b": pt}), ak.cartesian([pt, pt])], "first": (ak.zip({"a": pt}),)}
+    return {
+        "pairs": [ak.zip({"a": pt, "b": pt}), ak.cartesian([pt, pt])],
+        "first": (ak.zip({"a": pt}),),
+    }
 
 
 def test_a_partial_whose_reduce_merges_arrays_inside_containers_stays_picklable() -> None:

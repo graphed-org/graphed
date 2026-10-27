@@ -58,7 +58,10 @@ def test_validate_plugin_rejects_duplicate_samples() -> None:
 
 def test_validate_plugin_rejects_an_empty_hash() -> None:
     plugin = ExternalPlugin(
-        kind="empty-hash", content_hash=lambda p: "", evaluate=lambda *_: None, samples=_two_samples
+        kind="empty-hash",
+        content_hash=lambda p: "",
+        evaluate=lambda *_: None,
+        samples=_two_samples,
     )
     with pytest.raises(PreserveError, match="non-empty string"):
         validate_plugin(plugin)

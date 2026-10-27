@@ -1,4 +1,7 @@
-"""``run_shuffle_resumable`` journal records stay constant-size as the upstream block count grows."""
+"""``run_shuffle_resumable`` journal records stay constant-size.
+
+They do so as the upstream block count grows.
+"""
 
 from __future__ import annotations
 

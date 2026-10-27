@@ -35,9 +35,10 @@ HIST = {"name": "met", "bins": 20, "lo": 0.0, "hi": 200.0}
 def _hist(value: Any, weight: Any) -> np.ndarray:
     v = np.asarray(ak.to_numpy(ak.Array(value)), dtype="float64")
     w = np.asarray(ak.to_numpy(ak.Array(weight)), dtype="float64")
+    # the triple-path _histogram convention
     return np.histogram(v, bins=HIST["bins"], range=(HIST["lo"], HIST["hi"]), weights=w)[0].round(
         6
-    )  # the triple-path _histogram convention
+    )
 
 
 def _record(plugin: Any, payload: bytes, params: dict[str, Any] | None = None):  # type: ignore[no-untyped-def]
@@ -70,11 +71,15 @@ def _roundtrip(tmp_path, plugin: Any, payload: bytes, params: dict[str, Any] | N
     return bundle
 
 
-TRITON_DESCRIPTOR = b'{"model": "scorer", "version": "1", "weights": {"w": 0.45, "b": -0.1}, "io": {"input": "x", "output": "y"}}'
+TRITON_DESCRIPTOR = (
+    b'{"model": "scorer", "version": "1", "weights": {"w": 0.45, "b": -0.1}, "io": {"input": "x", '
+    b'"output": "y"}}'
+)
 TRITON_PARAMS = {
     "url": "triton://demo:8000",
     "model": "scorer",
-    "transport": "fake_triton:transport",  # the injectable seam; a live run omits this (tritonclient default)
+    # the injectable seam; a live run omits this (tritonclient default)
+    "transport": "fake_triton:transport",
     "input_name": "x",
     "output_name": "y",
 }
@@ -121,32 +126,39 @@ def test_xgboost_external_preserves_and_reproduces_bit_for_bit(tmp_path) -> None
 
 # ---------------------------------- Triton, LIVE (CI only) ---------------------------------------
 LIVE_TRITON_URL = os.environ.get("TRITON_SERVER_URL", "")
-LIVE_DESCRIPTOR = b'{"model": "scorer", "version": "1", "weights": {"w": 0.45, "b": -0.1}, "io": {"input": "x", "output": "y"}}'
+LIVE_DESCRIPTOR = (
+    b'{"model": "scorer", "version": "1", "weights": {"w": 0.45, "b": -0.1}, "io": {"input": "x", '
+    b'"output": "y"}}'
+)
 
 
 @pytest.mark.skipif(
     not LIVE_TRITON_URL,
-    reason="needs a live Triton server (set TRITON_SERVER_URL; the CI test-triton-live job runs this)",
+    reason=(
+        "needs a live Triton server (set TRITON_SERVER_URL; the CI test-triton-live job runs this)"
+    ),
 )
 def test_triton_live_server_end_to_end(tmp_path) -> None:  # type: ignore[no-untyped-def]
-    """The DEFAULT tritonclient transport against a real running Triton server (no fakes, no
-    transport override): record -> build -> reproduce with every inference over the wire, and
-    the result independently checked against the served model's declared weights."""
+    """The DEFAULT tritonclient transport against a real running Triton server.
+
+    No fakes, no transport override: record -> build -> reproduce with every inference over the
+    wire, and the result independently checked against the served model's declared weights.
+    """
     pytest.importorskip("tritonclient.http")
-    from graphed.preserve import TRITON_PLUGIN as plugin  # noqa: PLC0415
+    from graphed.preserve import TRITON_PLUGIN  # noqa: PLC0415
 
     params = {"url": LIVE_TRITON_URL, "model": "scorer", "input_name": "x", "output_name": "y"}
 
     # independent check first: one direct evaluation against sigmoid(w*x + b) from the
     # descriptor (the served identity) — FP32 over the wire, so allclose not array_equal
     feats = np.array([0.0, 1.0, 2.5, -1.0, 4.0], dtype="float64")
-    resource = plugin.load(LIVE_DESCRIPTOR, params)
+    resource = TRITON_PLUGIN.load(LIVE_DESCRIPTOR, params)
     try:
-        got = np.asarray(ak.to_numpy(ak.Array(plugin.evaluate(resource, params, [feats]))))
+        got = np.asarray(ak.to_numpy(ak.Array(TRITON_PLUGIN.evaluate(resource, params, [feats]))))
     finally:
-        plugin.close(resource)
+        TRITON_PLUGIN.close(resource)
     want = 1.0 / (1.0 + np.exp(-(0.45 * feats - 0.1)))
     assert np.allclose(got, want, atol=1e-6)
 
     # the full preservation round trip THROUGH THE SERVER, bit-for-bit build vs reproduce
-    _roundtrip(tmp_path, plugin, LIVE_DESCRIPTOR, params)
+    _roundtrip(tmp_path, TRITON_PLUGIN, LIVE_DESCRIPTOR, params)

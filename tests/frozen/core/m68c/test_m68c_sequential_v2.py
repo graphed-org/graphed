@@ -1,6 +1,9 @@
-"""m68c §3.4: ``SequentialRunner.run`` runs a ``DurablePlanV2`` stage by stage with full upstream
-payloads, returns ``plan.value`` of the last stage, refuses an unbound plan before any process call,
-and follows V1's run control (cancel on entry, ``wait()`` before each stage, ``reset()`` at the end)."""
+"""m68c §3.4: ``SequentialRunner.run`` runs a ``DurablePlanV2`` stage by stage.
+
+It passes full upstream payloads, returns ``plan.value`` of the last stage, refuses an unbound plan
+before any process call, and follows V1's run control (cancel on entry, ``wait()`` before each
+stage, ``reset()`` at the end).
+"""
 
 from __future__ import annotations
 
@@ -12,8 +15,14 @@ from typing import Any
 import pytest
 
 from graphed.core import DurablePlanV2, GraphStore, OpSpec, Partition, StageSpec, Task
-from graphed.core.execution import LocalResources, RunControl, RunState, SequentialRunner, StopReason
-from graphed.services import ServiceSpec, UnboundService, bind_services
+from graphed.core.execution import (
+    LocalResources,
+    RunControl,
+    RunState,
+    SequentialRunner,
+    StopReason,
+)
+from graphed.services import ServiceSpec, UnboundServiceError, bind_services
 
 #: every stage-process call, as ``(stage name, task key)``
 CALLS: list[tuple[str, int]] = []
@@ -59,7 +68,7 @@ class Served:
     def bind_services(self, endpoints: Mapping[str, str]) -> Served:
         endpoint = endpoints.get("sf", self.endpoint)
         if endpoint is None:
-            raise UnboundService("sf")
+            raise UnboundServiceError("sf")
         return replace(self, endpoint=endpoint)
 
 
@@ -112,7 +121,7 @@ def test_a_completed_run_returns_the_last_stages_value_in_stage_order() -> None:
 def test_an_unbound_plan_is_refused_before_any_process_call_and_a_bound_one_runs() -> None:
     stages = (_stage("map_write", Served(), (), 2),)
     plan = DurablePlanV2(ir=_ir(), stages=stages, services=(ServiceSpec("sf", "http"),))
-    with pytest.raises(UnboundService, match="'sf'"):
+    with pytest.raises(UnboundServiceError, match="'sf'"):
         SequentialRunner().run(plan)
     assert CALLS == []
 

@@ -35,6 +35,7 @@ class Point(tuple[tuple[str, str], ...]):
     __slots__ = ()
 
     def __new__(cls, mapping: Mapping[str, object]) -> Point:
+        """Build a point from ``mapping``, dropping its zero coordinates."""
         pairs = ((_nuisance(name), coordinate(value)) for name, value in mapping.items())
         return _build(pair for pair in pairs if numeric_value(pair[1]) != 0)
 
@@ -50,13 +51,19 @@ def default(name: str, tag: str) -> Point:
 
 
 def restrict(point: Point, axes: frozenset[str]) -> Point:
-    """§4.6's whole resolution machinery: drop every coordinate off `axes`, zero-dropping nothing."""
+    """§4.6's whole resolution machinery: drop every coordinate off `axes`.
+
+    Zero-dropping nothing.
+    """
     return _build(pair for pair in point if pair[0] in axes)
 
 
 def render(point: Point) -> dict[str, str]:
-    """§4.10's coordinate view: nuisance-sorted, each coordinate by VALUE, so two equal points
-    render alike and the rendering predicts resolution rather than round-tripping the spelling."""
+    """§4.10's coordinate view.
+
+    Coordinates are nuisance-sorted and each is rendered by VALUE, so two equal points render alike
+    and the rendering predicts resolution rather than round-tripping the spelling.
+    """
     return dict(point)
 
 
@@ -65,14 +72,17 @@ def _build(pairs: Iterable[tuple[str, str]]) -> Point:
 
 
 def _nuisance(name: object) -> str:
-    """A nuisance name is a Python identifier — the same rule `vary` applies to a family name."""
+    """Return a nuisance name is a Python identifier.
+
+    The same rule `vary` applies to a family name.
+    """
     if not isinstance(name, str) or not name.isidentifier():
         raise GraphedError(f"a nuisance name must be a Python identifier, got {name!r}")
     return name
 
 
 def coordinate(value: object) -> str:
-    """The canonical coordinate a spelling names, reduced to its VALUE when it has one."""
+    """Return the canonical coordinate a spelling names, reduced to its VALUE when it has one."""
     if isinstance(value, str):
         tag = canonical_tag(value)
         exact = numeric_value(tag)
@@ -85,7 +95,9 @@ def coordinate(value: object) -> str:
         )
     # a float goes through its shortest round-tripping decimal (never its IEEE expansion); an int
     # and a Fraction are already exact
-    return _decimal(Fraction(repr(number)) if isinstance(number, float) else Fraction(number), value)
+    return _decimal(
+        Fraction(repr(number)) if isinstance(number, float) else Fraction(number), value
+    )
 
 
 def _decimal(value: Fraction, source: object) -> str:

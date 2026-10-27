@@ -1,5 +1,7 @@
-"""m57 §2.1 "joins a factor": a nominal that IS a live factor's nominal node joins that factor's
-container instead of appending a second copy of it.
+"""m57 §2.1 "joins a factor".
+
+A nominal that IS a live factor's nominal node joins that factor's container instead of appending a
+second copy of it.
 
 The failing direction throughout is the squared central: pre-m57 every registration appends its
 nominal as a new factor and the composition multiplies it in again.
@@ -38,8 +40,11 @@ from graphed.awkward import gak
 
 
 def test_two_families_on_one_central_give_the_one_sf_oracle_and_the_central_node() -> None:
-    """Both families' universes are absolute values of ONE weight: each is its own declared member
-    and the nominal universe is the central node itself. Fails on the squared nominal."""
+    """Both families' universes are absolute values of ONE weight.
+
+    Each is its own declared member and the nominal universe is the central node itself. Fails on
+    the squared nominal.
+    """
     session, ctx = m57_base()
     jets = ctx["Jet"]
     sf = m57_sf(jets)
@@ -49,14 +54,22 @@ def test_two_families_on_one_central_give_the_one_sf_oracle_and_the_central_node
     weight = graphed.weight(registered)
     joined = [m57_factor("hf", sf, hf, **m57_by_label("lf", lf))]
 
-    assert set(graphed.labels(weight)) == {"nominal", *m57_by_label("hf", hf), *m57_by_label("lf", lf)}
-    assert m57_ambient_values(session, weight) == m57_oracle_values(session, joined, graphed.labels(weight))
+    assert set(graphed.labels(weight)) == {
+        "nominal",
+        *m57_by_label("hf", hf),
+        *m57_by_label("lf", lf),
+    }
+    assert m57_ambient_values(session, weight) == m57_oracle_values(
+        session, joined, graphed.labels(weight)
+    )
     assert m57_node(weight) == sf.node_id
 
 
 def test_two_centrals_with_different_shift_coordinates_agree_in_both_orders() -> None:
-    """The joined nominal member is the UNION of the two centrals' coordinate universes, so the
-    ambient reads the weight at each label's own jets whichever family registered first."""
+    """The joined nominal member is the UNION of the two centrals' coordinate universes.
+
+    So the ambient reads the weight at each label's own jets whichever family registered first.
+    """
 
     def program(shift_first: bool) -> tuple[object, object, list[object]]:
         session, ctx = m57_base()
@@ -92,16 +105,23 @@ def test_two_centrals_with_different_shift_coordinates_agree_in_both_orders() ->
 
     # not an empty agreement: the union really does carry the jes-dependent family's joints
     assert {label for label in graphed.labels(weight) if "__" in label}
-    assert m57_ambient_values(session, weight) == m57_oracle_values(session, ops, graphed.labels(weight))
+    assert m57_ambient_values(session, weight) == m57_oracle_values(
+        session, ops, graphed.labels(weight)
+    )
     assert m57_ambient_values(other_session, other_weight) == m57_oracle_values(
         other_session, other_ops, graphed.labels(other_weight)
     )
     assert set(graphed.labels(weight)) == set(graphed.labels(other_weight))
 
 
-def test_a_coordinate_both_centrals_declare_with_different_nodes_is_refused_before_minting() -> None:
-    """The union cannot pick between two nodes for one coordinate, and refusing after composing to
-    decide would mint inside the refused call: the node count is unmoved across it."""
+def test_a_coordinate_both_centrals_declare_with_different_nodes_is_refused_before_minting() -> (
+    None
+):
+    """The union cannot pick between two nodes for one coordinate.
+
+    And refusing after composing to decide would mint inside the refused call: the node count is
+    unmoved across it.
+    """
     session, ctx = m57_base()
     jets = ctx["Jet"]
     sf, pu = m57_sf(jets), m57_pu(jets)
@@ -131,8 +151,11 @@ def test_a_coordinate_both_centrals_declare_with_different_nodes_is_refused_befo
 
 
 def test_the_capstone_mints_the_same_labels_and_values_in_both_registration_orders() -> None:
-    """A nuisance that shifts the jets AND swaps the SF table joins the family registered on the
-    same central: one container, so the order of the two registrations cannot matter."""
+    """A nuisance that shifts the jets AND swaps the SF table joins the same central's family.
+
+    That family is registered on the same central: one container, so the order of the two
+    registrations cannot matter.
+    """
 
     def capstone(weight_first: bool) -> tuple[object, object, list[object]]:
         session, ctx = m57_base()
@@ -165,15 +188,20 @@ def test_the_capstone_mints_the_same_labels_and_values_in_both_registration_orde
     other_session, other_weight, other_ops = capstone(weight_first=False)
 
     assert set(graphed.labels(weight)) == set(graphed.labels(other_weight))
-    assert m57_ambient_values(session, weight) == m57_oracle_values(session, ops, graphed.labels(weight))
+    assert m57_ambient_values(session, weight) == m57_oracle_values(
+        session, ops, graphed.labels(weight)
+    )
     assert m57_ambient_values(other_session, other_weight) == m57_oracle_values(
         other_session, other_ops, graphed.labels(other_weight)
     )
 
 
 def test_a_joint_of_two_families_on_one_factor_is_the_containers_cross_member() -> None:
-    """At a joint of the two families the ambient is the ONE container's cross member for that
-    point — the other family's one-at-a-time member is not also multiplied in."""
+    """At a joint of the two families the ambient is the ONE container's cross member.
+
+    It is the cross member for that point — the other family's one-at-a-time member is not also
+    multiplied in.
+    """
     session, ctx = m57_base()
     shifted = m57_shifted(ctx, "jes", JES)
     sjets = shifted["Jet"]
@@ -181,20 +209,27 @@ def test_a_joint_of_two_families_on_one_factor_is_the_containers_cross_member() 
     jes_members = m57_table_members(sjets, MF_TABLE)
     hf_members = m57_table_members(sjets, HF_TABLE)
 
-    registered = m57_weight(m57_weight(shifted, "jes", central, jes_members), "hf", central, hf_members)
+    registered = m57_weight(
+        m57_weight(shifted, "jes", central, jes_members), "hf", central, hf_members
+    )
     weight = graphed.weight(registered)
 
     for tag in TAGS:
         for direction in TAGS:
             label = f"hf_{tag}__jes_{direction}"
             oracle = m57_sf(graphed.member_of(sjets, f"jes_{direction}"), HF_TABLE[tag])
-            assert m57_values(session, graphed.member_of(weight, label)) == m57_values(session, oracle), label
+            assert m57_values(session, graphed.member_of(weight, label)) == m57_values(
+                session, oracle
+            ), label
 
 
 def test_the_ratio_spellings_placed_joint_carries_both_families_variations() -> None:
-    """A joint that carries BOTH families' variations is spelled by building the cross member from
-    the other family's varied member and PLACING it at that point; joining the factor makes the
-    placed universe one value of the one operation, so nothing else multiplies it."""
+    """A joint carrying BOTH families' variations is spelled by PLACING a cross member.
+
+    The cross member is built from the other family's varied member and placed at that point;
+    joining the factor makes the placed universe one value of the one operation, so nothing else
+    multiplies it.
+    """
     session, ctx = m57_base()
     jets = ctx["Jet"]
     sf = m57_sf(jets)
@@ -213,12 +248,17 @@ def test_the_ratio_spellings_placed_joint_carries_both_families_variations() -> 
     assert graphed.points(placed)["x_upup"] == {"hf": "up", "lf": "up"}
     assert m57_values(session, graphed.member_of(weight, "x_upup")) == m57_values(session, cross)
     ops = [m57_factor("hf", sf, hf, **m57_by_label("lf", lf), x_upup=cross)]
-    assert m57_ambient_values(session, weight) == m57_oracle_values(session, ops, graphed.labels(weight))
+    assert m57_ambient_values(session, weight) == m57_oracle_values(
+        session, ops, graphed.labels(weight)
+    )
 
 
 def test_a_family_extending_a_factor_still_fans_out_over_the_shift_it_reads() -> None:
-    """Joining a factor does not make the family's own dependence disappear: members reached through
-    the shifted jets mint their joints, each read two-level from the one container."""
+    """Joining a factor does not make the family's own dependence disappear.
+
+    Members reached through the shifted jets mint their joints, each read two-level from the one
+    container.
+    """
     session, ctx = m57_base()
     shifted = m57_shifted(ctx, "jes", JES)
     sjets = shifted["Jet"]
@@ -236,12 +276,17 @@ def test_a_family_extending_a_factor_still_fans_out_over_the_shift_it_reads() ->
     ops = [m57_factor("hf", flat, hf, **m57_by_label("lf", lf), **joints)]
 
     assert set(joints) <= set(graphed.labels(weight))
-    assert m57_ambient_values(session, weight) == m57_oracle_values(session, ops, graphed.labels(weight))
+    assert m57_ambient_values(session, weight) == m57_oracle_values(
+        session, ops, graphed.labels(weight)
+    )
 
 
 def test_a_recomputed_central_with_equal_values_is_a_new_factor() -> None:
-    """The comparison is node identity, never value: a different expression with the same values
-    stays a product. Today's answer, so this leg is the tree's live control."""
+    """The comparison is node identity, never value.
+
+    A different expression with the same values stays a product. Today's answer, so this leg is the
+    tree's live control.
+    """
     session, ctx = m57_base()
     jets = ctx["Jet"]
     sf = m57_sf(jets)
@@ -254,12 +299,17 @@ def test_a_recomputed_central_with_equal_values_is_a_new_factor() -> None:
     weight = graphed.weight(registered)
     ops = [m57_factor("hf", sf, hf), m57_factor("lf", equal, lf)]
 
-    assert m57_ambient_values(session, weight) == m57_oracle_values(session, ops, graphed.labels(weight))
+    assert m57_ambient_values(session, weight) == m57_oracle_values(
+        session, ops, graphed.labels(weight)
+    )
 
 
 def test_name_identity_extends_the_factor_the_central_names() -> None:
-    """A `jes` weight whose nominal is `hf`'s central extends that factor, so inside the jes
-    universe the SF appears once — and the fan-out's joints still read from the one container."""
+    """A `jes` weight whose nominal is `hf`'s central extends that factor.
+
+    So inside the jes universe the SF appears once — and the fan-out's joints still read from the
+    one container.
+    """
     session, ctx = m57_base()
     shifted = m57_shifted(ctx, "jes", JES)
     sjets = shifted["Jet"]
@@ -273,11 +323,15 @@ def test_name_identity_extends_the_factor_the_central_names() -> None:
     for direction in TAGS:
         label = f"jes_{direction}"
         oracle = m57_sf(graphed.member_of(sjets, label), MF_TABLE[direction])
-        assert m57_values(session, graphed.member_of(weight, label)) == m57_values(session, oracle), label
+        assert m57_values(session, graphed.member_of(weight, label)) == m57_values(
+            session, oracle
+        ), label
     joints = {f"hf_{tag}__jes_{d}" for tag in TAGS for d in TAGS}
     assert joints <= set(graphed.labels(weight))
     for tag in TAGS:
         for direction in TAGS:
             label = f"hf_{tag}__jes_{direction}"
             oracle = m57_sf(graphed.member_of(sjets, f"jes_{direction}"), HF_TABLE[tag])
-            assert m57_values(session, graphed.member_of(weight, label)) == m57_values(session, oracle), label
+            assert m57_values(session, graphed.member_of(weight, label)) == m57_values(
+                session, oracle
+            ), label

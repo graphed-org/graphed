@@ -58,9 +58,11 @@ def jes_shifted_context() -> tuple[Session, Any]:
 
 
 def btag_scale_factors(jets: Any) -> tuple[Any, Any, Any]:
-    """A pT-DEPENDENT per-event b-tag SF product and its two systematic siblings, evaluated on the
-    jets of whatever universe `jets` carries — R1-a propagation. The pT dependence is what makes the
-    joint universe differ from the factorized product."""
+    """Return a pT-DEPENDENT per-event b-tag SF product and its two systematic siblings.
+
+    They are evaluated on the jets of whatever universe `jets` carries — R1-a propagation. The pT
+    dependence is what makes the joint universe differ from the factorized product.
+    """
     relative = 0.01 + 0.05 * gak.where(jets.pt < 100.0, jets.pt / 100.0, 1.0)
     central = gak.prod(1.0 + 0.0 * relative, axis=1)
     return central, gak.prod(1.0 + relative, axis=1), gak.prod(1.0 - relative, axis=1)
@@ -81,9 +83,12 @@ class JointProgram:
 
 
 def joint_weight_program() -> JointProgram:
-    """The m53 auto-fanout spelling: a plain weight `vary` over two jes-dependent b-tag SF members.
-    Each joint the fanout mints binds the SAME expression object as its one-at-a-time sibling, and
-    the POINT selects which inner universe each label reads."""
+    """Return the m53 auto-fanout spelling.
+
+    A plain weight `vary` over two jes-dependent b-tag SF members. Each joint the fanout mints
+    binds the SAME expression object as its one-at-a-time sibling, and the POINT selects which
+    inner universe each label reads.
+    """
     session, shifted = jes_shifted_context()
     jets = shifted.Jet
     central, sf_hf_up, sf_hf_down = btag_scale_factors(jets)
@@ -118,8 +123,11 @@ def joint_weight_program() -> JointProgram:
 
 
 def selection_program() -> tuple[Session, Any, Any, Any]:
-    """A `jes`-varied event mask, the context it selects, and a parent-read weight carrying the
-    joint label — the `reindex_to` / `_follow` row-space shape."""
+    """Return a `jes`-varied event mask, the context it selects.
+
+    And a parent-read weight carrying the joint label — the `reindex_to` / `_follow` row-space
+    shape.
+    """
     session, shifted = jes_shifted_context()
     jets = shifted.Jet
     mask = gak.num(jets[jets.pt > JET_PT_CUT]) >= 4

@@ -2,20 +2,23 @@
 
 Every anchor here imports `graphed.awkward`, so none can live under `tests/frozen/frontend|numpy`
 (a required free-threaded job collects those under `pytest hypothesis numpy` alone). The helper
-carries an `m51_` prefix even though `run-tests.sh` gives `tests/frozen/awkward/m51` its own process:
-prepend import mode binds a bare top-level helper name to whichever sibling dir imported first.
+carries an `m51_` prefix even though `run-tests.sh` gives `tests/frozen/awkward/m51` its own
+process: prepend import mode binds a bare top-level helper name to whichever sibling dir imported
+first.
 
 ────────────────────────────────────────────────────────────────────────────────────────────────
 FREEZE SPELLINGS (this test-author owns them; the plan defers the naming to m51 freeze — §6.4a/b/e,
 §9.1; decomposition §4). They are LAW: the implementer conforms. Asserted consistently below.
 
-  * `graphed.selection(ctx)`            — the §9.1 three-case bridge verb (top-level module export).
+  * `graphed.selection(ctx)`            — the §9.1 three-case bridge verb (top-level module
+    export).
   * `graphed.awkward.read_varied(path)` — the symmetric awkward-idiom reader → {label: ak.Array}.
-  * `to_parquet(record, select=…)`      — `select=` is a single `Varied` row mask (⇔ `{0: mask}`) OR
-      a mapping keyed by  `int`  (bare depth, the RECORD'S OWN axis at that depth)  or
+  * `to_parquet(record, select=…)`      — `select=` is a single `Varied` row mask (⇔ `{0: mask}`)
+      OR a mapping keyed by  `int`  (bare depth, the RECORD'S OWN axis at that depth)  or
       `tuple[str, int]`  (a field-scoped `(field_name, depth≥1)` entry). §6.4a's key space.
-  * on-disk VALUE-delta column   `__vary_{label}__{field_flat}`   (e.g. `__vary_murf_5em1__Jet_pt`);
-    field path flattened per level with `_`  (`Jet.pt` → `Jet_pt`; a bare-field skim's `pt` → `pt`).
+  * on-disk VALUE-delta column   `__vary_{label}__{field_flat}`   (e.g.
+    `__vary_murf_5em1__Jet_pt`); field path flattened per level with `_`  (`Jet.pt` → `Jet_pt`; a
+    bare-field skim's `pt` → `pt`).
   * on-disk validity-MASK column `__vary_{label}__mask__{entry_flat}`  (`…__mask__0` for level 0,
     `…__mask__Jet_1` for a field-scoped `("Jet",1)`, `…__mask__1` for a bare depth-1 entry).
   * parquet KV metadata key      `b"graphed.variations"`  (greenfield — graphed writes none today).
@@ -25,10 +28,11 @@ FREEZE SPELLINGS (this test-author owns them; the plan defers the naming to m51 
                         "entry": <int | [flat_field, depth]>|null}}`
     (value deltas: representation `"xor"`, `field` set, `entry` null; masks: representation
     `"packbits"`, `field` null, `entry` the level).  `"levels"` is a LIST whose elements are an
-    `int` depth or a two-element `[flat_field, depth]`, ordered by the key `(depth, flat_field or "")`
-    — bare-depth before field-scoped of the same depth (§6.4e; `sorted()` cannot order the mixed
-    list and `json.dumps(sort_keys=True)` never reorders a list, so the order is an explicit key).
-    Serialized `json.dumps(manifest, sort_keys=True)` — sorted mapping keys, `PYTHONHASHSEED`-free.
+    `int` depth or a two-element `[flat_field, depth]`, ordered by the key
+    `(depth, flat_field or "")` — bare-depth before field-scoped of the same depth (§6.4e;
+    `sorted()` cannot order the mixed list and `json.dumps(sort_keys=True)` never reorders a list,
+    so the order is an explicit key). Serialized `json.dumps(manifest, sort_keys=True)` — sorted
+    mapping keys, `PYTHONHASHSEED`-free.
   * numpy refusal (anchor L, other tree): `GraphedError` naming the awkward backend on a `Varied`
     first positional to `graphed.numpy.io.to_parquet`.
 
@@ -80,7 +84,7 @@ def awkward_session() -> tuple[Session, Array]:
 
 
 def events_context() -> tuple[Session, Any]:
-    """The §2.6 event context over the corpus events."""
+    """Return the §2.6 event context over the corpus events."""
     session, root = awkward_session()
     return session, ga.gnano.events(root)
 
@@ -115,7 +119,7 @@ def eager_jet_mask(label: str) -> ak.Array:
 
 
 def eager_superset_rows() -> ak.Array:
-    """The written row set: level-0 OR over every universe's event mask (§6.4a)."""
+    """Return the written row set: level-0 OR over every universe's event mask (§6.4a)."""
     acc = eager_evt_mask("nominal")
     for label in JES_LABELS[1:]:
         acc = acc | eager_evt_mask(label)
@@ -123,16 +127,20 @@ def eager_superset_rows() -> ak.Array:
 
 
 def eager_jet_universe(label: str) -> ak.Array:
-    """The in-memory varied run for the bare-key single-collection Jet skim: universe `label`'s
-    jets on the rows passing its event mask, inner-filtered by its per-jet mask."""
+    """Return the in-memory varied run for the bare-key single-collection Jet skim.
+
+    Universe `label`'s jets on the rows passing its event mask, inner-filtered by its per-jet mask.
+    """
     jets, em, jm = _scaled_jets(label), eager_evt_mask(label), eager_jet_mask(label)
     kept = jets[em]
     return kept[jm[em]]
 
 
 def eager_multifield_universe(label: str) -> ak.Array:
-    """The in-memory varied run for the field-scoped `{Jet, MET}` record: same selection, but the
-    Jet field is inner-filtered while MET rides the event mask only."""
+    """Return the in-memory varied run for the field-scoped `{Jet, MET}` record.
+
+    Same selection, but the Jet field is inner-filtered while MET rides the event mask only.
+    """
     raw = raw_events()
     jets, em, jm = _scaled_jets(label), eager_evt_mask(label), eager_jet_mask(label)
     kept_jets = jets[em]
@@ -140,7 +148,10 @@ def eager_multifield_universe(label: str) -> ak.Array:
 
 
 def eager_row_universe(label: str) -> ak.Array:
-    """The weight-only per-event skim's universe `label`: `{met_pt, w}` on the superset rows."""
+    """Return the weight-only per-event skim's universe `label`.
+
+    `{met_pt, w}` on the superset rows.
+    """
     raw = raw_events()
     w = ak.prod(1.0 + raw.Jet.btag, axis=1)
     factor = {"nominal": w, "murf_1": w, "murf_5em1": w * 0.5, "murf_2": w * 2.0}[label]
@@ -152,7 +163,7 @@ ROW_LABELS = ("nominal", "murf_1", "murf_5em1", "murf_2")
 
 
 def eager_row_mask() -> ak.Array:
-    """The weight skim's (unvaried) level-0 selection — a plain per-event predicate."""
+    """Return the weight skim's (unvaried) level-0 selection — a plain per-event predicate."""
     raw = raw_events()
     return raw.MET.pt > float(np.median(np.asarray(raw.MET.pt)))
 
@@ -186,9 +197,12 @@ def multifield_skim_inputs(events: Any) -> tuple[Any, Any, Any]:
 
 
 def superset_inputs(events: Any) -> tuple[Any, Any]:
-    """(record, evt_mask) for the superset anchor: an UNVARIED per-event `{met_pt}` record (met_pt is
-    distinct per event, an identity to trace) written under a VARIED level-0 event mask that migrates
-    with the JES shift, so the universes' row sets genuinely differ and their union is the superset."""
+    """(record, evt_mask) for the superset anchor.
+
+    An UNVARIED per-event `{met_pt}` record (met_pt is distinct per event, an identity to trace)
+    written under a VARIED level-0 event mask that migrates with the JES shift, so the universes'
+    row sets genuinely differ and their union is the superset.
+    """
     ctx = jes_context(events)
     vjets = ctx.Jet
     record = gak.zip({"met_pt": events.MET.pt}, depth_limit=1)
@@ -205,16 +219,23 @@ def eager_superset_met() -> ak.Array:
 
 
 def weight_collapse_context(events: Any) -> Any:
-    """`events` with a μR/μF weight family whose `murf_1` member EQUALS nominal (all-zero delta),
-    interning to nominal's node id (§7.2 collapse) — the anchor-B replication discriminator, and the
-    e-canonical `murf_5em1` label carrier."""
+    """Return `events` with a μR/μF weight family whose `murf_1` member EQUALS nominal.
+
+    The all-zero delta interns to nominal's node id (§7.2 collapse) — the anchor-B replication
+    discriminator, and the e-canonical `murf_5em1` label carrier.
+    """
     w = gak.prod(1.0 + events.Jet.btag, axis=1)
-    return graphed.vary(events, "murf", w, is_weight=True, points={"1": w, "0.5": w * 0.5, "2": w * 2.0})
+    return graphed.vary(
+        events, "murf", w, is_weight=True, points={"1": w, "0.5": w * 0.5, "2": w * 2.0}
+    )
 
 
 def weight_skim_inputs(events: Any) -> tuple[Any, Any]:
-    """(record, evt_mask) for the weight-only per-event skim: a `{met_pt, w}` record whose `w` field
-    is the collapsing ambient weight; a plain (unvaried) level-0 event mask."""
+    """(record, evt_mask) for the weight-only per-event skim.
+
+    A `{met_pt, w}` record whose `w` field is the collapsing ambient weight; a plain (unvaried)
+    level-0 event mask.
+    """
     ctx = weight_collapse_context(events)
     amb = graphed.weight(ctx)
     record = gak.zip({"met_pt": events.MET.pt, "w": amb}, depth_limit=1)
@@ -224,9 +245,11 @@ def weight_skim_inputs(events: Any) -> tuple[Any, Any]:
 
 
 def multiplicity_change_inputs(events: Any) -> tuple[Any, Any]:
-    """(record, evt_mask) whose Jet field's per-label OFFSETS differ from nominal — a cleaning that
-    drops a different number of jets per universe (§6.4d passes §2.1's TYPE check yet has no
-    representable XOR delta). The offsets refusal is EXECUTION-time (§6.4a(1))."""
+    """(record, evt_mask) whose Jet field's per-label OFFSETS differ from nominal.
+
+    A cleaning that drops a different number of jets per universe (§6.4d passes §2.1's TYPE check
+    yet has no representable XOR delta). The offsets refusal is EXECUTION-time (§6.4a(1)).
+    """
     jets = events.Jet
     up = jets[jets.pt > 10.0]
     down = jets[jets.pt > 5.0]
@@ -241,9 +264,11 @@ def _sf_context(events: Any) -> Any:
 
 
 def rowspace_negative_inputs(events: Any) -> tuple[Any, Any]:
-    """(record, evt_mask) storing `graphed.weight(sel)` for a SELECTION-derived `sel`: its per-label
-    members live in `sel`'s post-selection row space (§2.6c), not the record's superset — §6.4b
-    refuses this at the entry check naming the ROW SPACE, never offsets."""
+    """(record, evt_mask) storing `graphed.weight(sel)` for a SELECTION-derived `sel`.
+
+    Its per-label members live in `sel`'s post-selection row space (§2.6c), not the record's
+    superset — §6.4b refuses this at the entry check naming the ROW SPACE, never offsets.
+    """
     c = _sf_context(events)
     sel = c[gak.num(c.Jet) >= 2]
     record = gak.zip({"met": c.MET.pt, "w": graphed.weight(sel)}, depth_limit=1)
@@ -252,8 +277,11 @@ def rowspace_negative_inputs(events: Any) -> tuple[Any, Any]:
 
 
 def rowspace_positive_inputs(events: Any) -> tuple[Any, Any]:
-    """The storable spelling: `graphed.weight(c)` for a `c` reached from the record's context across
-    `vary` IDENTITY links only — same-length members in the record's own row space (§6.4b)."""
+    """Return the storable spelling.
+
+    `graphed.weight(c)` for a `c` reached from the record's context across `vary` IDENTITY links
+    only — same-length members in the record's own row space (§6.4b).
+    """
     c = _sf_context(events)
     record = gak.zip({"met": c.MET.pt, "w": graphed.weight(c)}, depth_limit=1)
     threshold = float(np.median(np.asarray(EVENTS.MET.pt)))
@@ -263,9 +291,11 @@ def rowspace_positive_inputs(events: Any) -> tuple[Any, Any]:
 # ---- single-read witness (§5.2b): a PartitionedSource that COUNTS partition reads --------------
 @dataclass
 class CountingSource:
-    """An awkward `PartitionedSource` that records every `read_partition` call — the m48 `ArraySource`
-    shape. A varied write must read each partition ONCE (one pass for all universes, §7.1), never
-    once per label."""
+    """An awkward `PartitionedSource` that records every `read_partition` call.
+
+    The m48 `ArraySource` shape. A varied write must read each partition ONCE (one pass for all
+    universes, §7.1), never once per label.
+    """
 
     data: ak.Array
     reads: list[tuple[int, int]] = field(default_factory=list)
@@ -274,7 +304,9 @@ class CountingSource:
         raise AssertionError("the whole-dataset loader must never run during a varied write plan")
 
     def partitions(self, steps_per_file: int = 1) -> tuple[Partition, ...]:
-        return tuple(Partition.blind("toy://events", "", s, steps_per_file) for s in range(steps_per_file))
+        return tuple(
+            Partition.blind("toy://events", "", s, steps_per_file) for s in range(steps_per_file)
+        )
 
     def read_partition(self, partition: Partition, columns: Any, resources: Any) -> ak.Array:
         part = partition.resolve(len(self.data))
@@ -300,7 +332,10 @@ def _pq() -> Any:
 
 
 def raw_manifest_bytes(path: str) -> bytes | None:
-    """The graphed manifest KV bytes in a parquet part's file metadata, `None` when absent."""
+    """Return the graphed manifest KV bytes in a parquet part's file metadata.
+
+    Return `None` when absent.
+    """
     meta = _pq().ParquetFile(path).metadata.metadata or {}
     return meta.get(MANIFEST_KEY)
 

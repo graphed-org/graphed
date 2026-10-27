@@ -4,9 +4,9 @@
 (`{np.int64(2): member}`) and a PLACEMENT coordinate (`{"jes": np.int64(2)}`). Before this fix only
 the declaring channel went through `numbers`, so a placement refused `np.float32`/`np.int64` and
 `np.float64` — a `float` subclass whose own `repr` is `'np.float64(2.0)'` — leaked a raw
-`ValueError` out of `Fraction`. The equality legs are the point: each numpy case is asserted against
-the *pure-Python* run of the identical program, so a change that moved both channels together would
-still pass while one that moved only one fails.
+`ValueError` out of `Fraction`. The equality legs are the point: each numpy case is asserted
+against the *pure-Python* run of the identical program, so a change that moved both channels
+together would still pass while one that moved only one fails.
 """
 
 from __future__ import annotations
@@ -31,7 +31,9 @@ EQUIVALENT = [(np.float64(2.0), 2.0), (np.float32(2.0), 2.0), (np.int64(2), 2)]
 
 
 def _joint(declare: Any, place: Any) -> tuple[str, dict[str, str]]:
-    """A jes family declared with `declare`, and a jes-dependent weight placed at that coordinate.
+    """Return a jes family declared with `declare`.
+
+    And a jes-dependent weight placed at that coordinate.
 
     Returns the joint label and its registered point, so a caller compares the NAME a coordinate
     minted and the POINT it resolved to, not merely that the call survived.
@@ -65,21 +67,32 @@ def test_a_numpy_declaring_key_matches_its_python_value(scalar: Any, python: Any
 
 @pytest.mark.parametrize(("scalar", "python"), EQUIVALENT, ids=repr)
 def test_the_two_channels_name_one_universe(scalar: Any, python: Any) -> None:
-    """The declaring and placement roads meet: declaring with the numpy scalar and placing with the
-    Python number resolves, which it could not if the two normalizations disagreed."""
+    """The declaring and placement roads meet.
+
+    Declaring with the numpy scalar and placing with the Python number resolves, which it could not
+    if the two normalizations disagreed.
+    """
     assert _joint(scalar, python) == ("muF_2__jes_2", {"jes": "2", "muF": "2"})
 
 
 def test_a_numpy_bool_is_refused_like_a_python_bool() -> None:
-    """`np.bool_` is registered with no numeric ABC, so it must refuse where `True` refuses —
-    a coordinate is a tag or a number, and `True` is neither."""
+    """`np.bool_` is registered with no numeric ABC.
+
+    So it must refuse where `True` refuses — a coordinate is a tag or a number, and `True` is
+    neither.
+    """
     for channel in ({"jes": np.bool_(True)}, {"jes": True}):
         with pytest.raises(GraphedError, match="a coordinate is a variation tag or a number"):
             graphed._points.Point(channel)
 
 
 def test_a_numpy_float_keeps_its_own_precision() -> None:
-    """`np.float32(0.1)` is a different value from `0.1` and must not be silently read as one: the
-    coordinate is that float32's widened decimal, which is what the declaring channel already did."""
-    assert graphed._points.coordinate(np.float32(0.1)) == graphed._tags.canonical_tag(np.float32(0.1))
+    """`np.float32(0.1)` is a different value from `0.1` and must not be silently read as one.
+
+    The coordinate is that float32's widened decimal, which is what the declaring channel already
+    did.
+    """
+    assert graphed._points.coordinate(np.float32(0.1)) == graphed._tags.canonical_tag(
+        np.float32(0.1)
+    )
     assert graphed._points.coordinate(np.float32(0.1)) != graphed._points.coordinate(0.1)

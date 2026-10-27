@@ -1,5 +1,8 @@
-"""Every m72 plan shape whose tasks evaluate a service-calling External carries that service and
-binds its endpoint: a writes-only plan, writes beside reductions, and collated plans (the union)."""
+"""Each m72 plan shape whose tasks call a service carries that service and binds it.
+
+The service is called by an External; the shapes are a writes-only plan, writes beside reductions,
+and collated plans (the union).
+"""
 
 from __future__ import annotations
 
@@ -31,7 +34,7 @@ from graphed.awkward import AwkwardBackend, AwkwardForm, gak
 from graphed.core import Plan
 from graphed.core.execution import SequentialRunner
 from graphed.preserve import ExternalPlugin, record_external, sha256_bytes
-from graphed.services import ServiceSpec, UnboundService, bind_services, require_bound
+from graphed.services import ServiceSpec, UnboundServiceError, bind_services, require_bound
 from graphed.write import PartWrite
 
 SVC = ServiceSpec("svc", "http")
@@ -73,7 +76,7 @@ def _served(files: dict[str, Any], tree: str, spec: ServiceSpec) -> Any:
 
 def _run_bound(plan: Plan[Any], services: tuple[ServiceSpec, ...]) -> Any:
     assert plan.services == services
-    with pytest.raises(UnboundService):
+    with pytest.raises(UnboundServiceError):
         SequentialRunner().run(plan)
     return SequentialRunner().run(bind_services(plan, ENDPOINTS)).value
 
@@ -102,8 +105,12 @@ def test_a_collated_plan_carries_the_union_and_binds_every_part(tmp_path: Path) 
     write = PartWrite(array=mc_y, destination=str(tmp_path), name=by_step, codec=json_codec)
     mc = graphed.aggregate_plan(reduce=paths_only, combine=add, empty=no_paths, writes=[write])
     _x, data_y = _served(DATA_FILES, "Runs", OTHER)
-    data = graphed.aggregate_plan(gak.sum(data_y), reduce=data_reduce, combine=data_combine, empty=data_empty)
-    value = _run_bound(graphed.collate({"mc": graphed.collate({"mc": mc}), "data": data}), (OTHER, SVC))
+    data = graphed.aggregate_plan(
+        gak.sum(data_y), reduce=data_reduce, combine=data_combine, empty=data_empty
+    )
+    value = _run_bound(
+        graphed.collate({"mc": graphed.collate({"mc": mc}), "data": data}), (OTHER, SVC)
+    )
     assert value["data"][0] == sum(int(v.sum()) + len(v) for v in DATA_FILES.values())
     assert read_part(value["mc"]["mc"][0])["values"] == (MC_FILES["mc-a"] + 1).tolist()
 
@@ -112,7 +119,9 @@ def test_collate_refuses_one_service_name_declared_two_ways() -> None:
     _x, a = _served(MC_FILES, "Events", SVC)
     _x, b = _served(DATA_FILES, "Runs", ServiceSpec("svc", "grpc"))
     plans = {
-        n: graphed.aggregate_plan(gak.sum(y), reduce=data_reduce, combine=data_combine, empty=data_empty)
+        n: graphed.aggregate_plan(
+            gak.sum(y), reduce=data_reduce, combine=data_combine, empty=data_empty
+        )
         for n, y in (("mc", a), ("data", b))
     }
     with pytest.raises(ValueError, match="'svc'"):
@@ -125,7 +134,10 @@ def _writes(array: Any, tmp_path: Path, sub: str) -> Plan[Any]:
 
 
 def _two_sources(tmp_path: Path) -> tuple[Plan[Any], Plan[Any]]:
-    """A service-free data plan and an mc plan calling ``svc`` then ``other``; both write parts."""
+    """Return a service-free data plan and an mc plan calling ``svc`` then ``other``.
+
+    Both write parts.
+    """
     data_x, _y = _served(DATA_FILES, "Runs", SVC)
     _x, mc_y = _served(MC_FILES, "Events", SVC)
     mc_y.session.declare_service(OTHER)
@@ -137,10 +149,12 @@ def _written(tmp_path: Path) -> list[str]:
     return sorted(str(p.relative_to(tmp_path)) for p in tmp_path.rglob("*.json"))
 
 
-def test_an_unbound_collated_plan_writes_nothing_and_names_every_missing_service(tmp_path: Path) -> None:
+def test_an_unbound_collated_plan_writes_nothing_and_names_every_missing_service(
+    tmp_path: Path,
+) -> None:
     data, mc = _two_sources(tmp_path)
     plan = graphed.collate({"data": data, "mc": mc})
-    with pytest.raises(UnboundService) as err:
+    with pytest.raises(UnboundServiceError) as err:
         SequentialRunner().run(plan)
     assert _written(tmp_path) == []
     assert err.value.names == ("other", "svc")
@@ -150,8 +164,10 @@ def test_an_unbound_collated_plan_writes_nothing_and_names_every_missing_service
 def test_a_partly_bound_plan_names_only_the_missing_service(tmp_path: Path) -> None:
     _data, mc = _two_sources(tmp_path)
     _x, data_y = _served(DATA_FILES, "Runs", ServiceSpec("alt", "http"))
-    plan = graphed.collate({"mc": bind_services(mc, ENDPOINTS), "data": _writes(data_y, tmp_path, "data")})
-    with pytest.raises(UnboundService) as err:
+    plan = graphed.collate(
+        {"mc": bind_services(mc, ENDPOINTS), "data": _writes(data_y, tmp_path, "data")}
+    )
+    with pytest.raises(UnboundServiceError) as err:
         SequentialRunner().run(plan)
     assert _written(tmp_path) == []
     assert err.value.names == ("alt",)
@@ -186,7 +202,7 @@ class _HistReduce:
     def bind_services(self, endpoints: Any) -> _HistReduce:
         endpoint = endpoints.get("hist-svc", self.endpoint)
         if endpoint is None:
-            raise UnboundService("hist-svc")
+            raise UnboundServiceError("hist-svc")
         return _HistReduce(endpoint)
 
 
@@ -196,7 +212,7 @@ def test_a_reduce_only_service_is_refused_before_any_part_is_written(tmp_path: P
     plan = graphed.aggregate_plan(
         reduce=_HistReduce(), combine=add, empty=no_paths, writes=[write], services=["hist-svc"]
     )
-    with pytest.raises(UnboundService) as err:
+    with pytest.raises(UnboundServiceError) as err:
         SequentialRunner().run(plan)
     assert _written(tmp_path) == []
     assert err.value.names == ("hist-svc",)
@@ -209,11 +225,13 @@ class _RefusesItsOwnName:
         return []
 
     def bind_services(self, endpoints: Any) -> Any:
-        raise UnboundService("x")
+        raise UnboundServiceError("x")
 
 
 def test_a_part_refusing_a_name_it_was_handed_raises_instead_of_looping() -> None:
-    plan: Plan[list[str]] = Plan(process=_RefusesItsOwnName(), combine=add, empty=no_paths, services=(SVC,))
-    with pytest.raises(UnboundService) as err:
+    plan: Plan[list[str]] = Plan(
+        process=_RefusesItsOwnName(), combine=add, empty=no_paths, services=(SVC,)
+    )
+    with pytest.raises(UnboundServiceError) as err:
         require_bound(plan)
     assert err.value.names == ("x",)

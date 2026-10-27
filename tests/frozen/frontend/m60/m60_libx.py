@@ -10,7 +10,7 @@ from typing import Any
 
 
 def q(value: Any) -> Any:
-    """The other half of the same-name-different-module pair."""
+    """Return the other half of the same-name-different-module pair."""
     return value * 100
 
 

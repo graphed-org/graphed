@@ -1,10 +1,11 @@
-"""The §1.1 variation-tag grammar: validation, canonicalization, and the two cap refusals.
+r"""The §1.1 variation-tag grammar: validation, canonicalization, and the two cap refusals.
 
 A tag is the user-facing half of a variation label (`f"{name}_{tag}"`). Identifier tags (`up`,
 `pdf_1`, the datacard p-form `2p5`) are kept verbatim; numeric spellings — and bare numbers
 (`int`/`float`, or a numpy scalar), read as their exact / shortest round-tripping decimal
-spelling — are canonicalized by EXACT DECIMAL arithmetic to the e-form `m?\\d+(em\\d+)?`, so `"2"`, `"2.0"`, `"2e0"` and `"20e-1"`
-all name one label and no IEEE round-trip artifact ever reaches a name.
+spelling — are canonicalized by EXACT DECIMAL arithmetic to the e-form `m?\d+(em\d+)?`, so `"2"`,
+`"2.0"`, `"2e0"` and `"20e-1"` all name one label and no IEEE round-trip artifact ever reaches a
+name.
 
 Canonicalization works on (sign, digit string, power of ten) triples taken straight from the
 input's characters, never on a float, and the 32-character cap is tested on the COMPUTED digit
@@ -23,7 +24,9 @@ from ..errors import GraphedError
 #: on-disk name).
 MAX_TAG_CHARS = 32
 
-_FLOAT_SUGAR = re.compile(r"(?P<sign>-?)(?P<int>\d+)(?:\.(?P<frac>\d+))?(?:[eE](?P<exp>[+-]?\d+))?\Z")
+_FLOAT_SUGAR = re.compile(
+    r"(?P<sign>-?)(?P<int>\d+)(?:\.(?P<frac>\d+))?(?:[eE](?P<exp>[+-]?\d+))?\Z"
+)
 _CANONICAL = re.compile(r"(?P<sign>m?)(?P<int>\d+)(?:em(?P<exp>\d+))?\Z")
 _P_FORM = re.compile(r"(?P<sign>m?)(?P<int>\d+)(?:p(?P<frac>\d+))?\Z")
 _IDENTIFIER = re.compile(r"[A-Za-z0-9_]+\Z")
@@ -70,10 +73,10 @@ def python_number(value: object) -> int | float | None:
     """`value` as the `int`/`float` it names, or `None` when it names no number.
 
     Read through `numbers`, not through `int`/`float`, so a numpy (or any registered) scalar spells
-    the same coordinate its Python equivalent does — `np.float32(2.5)` is not a `float` subclass and
-    `np.float64`'s own `repr` is `'np.float64(2.5)'`, which is no numeric spelling at all. `bool` is
-    excluded: `True` is not the tag `1`. Rationals are left to the caller — a `Fraction` must stay
-    exact rather than round through binary.
+    the same coordinate its Python equivalent does — `np.float32(2.5)` is not a `float` subclass
+    and `np.float64`'s own `repr` is `'np.float64(2.5)'`, which is no numeric spelling at all.
+    `bool` is excluded: `True` is not the tag `1`. Rationals are left to the caller — a `Fraction`
+    must stay exact rather than round through binary.
     """
     if isinstance(value, bool):
         return None
@@ -85,12 +88,16 @@ def python_number(value: object) -> int | float | None:
 
 
 def canonical_tag(tag: object) -> str:
-    """The §1.1 tag a user spelling names, or a `GraphedError` saying which rule it broke."""
+    """Return the §1.1 tag a user spelling names.
+
+    Raise a `GraphedError` saying which rule it broke otherwise.
+    """
     number = python_number(tag)
     if isinstance(number, int):
         tag = str(number)
     elif isinstance(number, float):
-        # the shortest round-tripping decimal, never an IEEE expansion: `2.5` and `"2.5"` are one tag
+        # the shortest round-tripping decimal, never an IEEE expansion: `2.5` and `"2.5"` are one
+        # tag
         tag = repr(number)
     if not isinstance(tag, str):
         raise GraphedError(f"variation tags must be strings, integers or floats, got {tag!r}")
@@ -122,7 +129,9 @@ def canonical_tag(tag: object) -> str:
 
 
 def numeric_value(tag: str) -> Fraction | None:
-    """The exact value a canonical or p-encoded tag names, `None` for a non-numeric identifier.
+    """Return the exact value a canonical or p-encoded tag names.
+
+    `None` for a non-numeric identifier.
 
     The p-form deliberately does not canonicalize, so it is the one residual duplicate class:
     §1.1's family check compares these values to reject `{"0.5", "0p5"}` naming one universe twice.

@@ -1,9 +1,10 @@
 """M9 support — a generic, user-defined External op carries a caller-supplied deterministic hash.
 
 The legacy `correction` / `onnx` external ops content-hash a specific file format. The generic
-`external` op lets a user record ANY external whose deterministic content hash is computed elsewhere
-(e.g. a graphed-preserve plugin: ONNX -> hash of weights, correctionlib -> hash of contents, or a
-user's own scheme). The backend is just the conduit: it records the descriptor verbatim.
+`external` op lets a user record ANY external whose deterministic content hash is computed
+elsewhere (e.g. a graphed-preserve plugin: ONNX -> hash of weights, correctionlib -> hash of
+contents, or a user's own scheme). The backend is just the conduit: it records the descriptor
+verbatim.
 """
 
 from __future__ import annotations

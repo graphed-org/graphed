@@ -34,7 +34,9 @@ ALL = {
 
 def test_all_five_plugins_are_registered_at_import() -> None:
     for kind, (plugin, framework) in ALL.items():
-        assert get_plugin(kind) is plugin, f"{kind} must be registered by importing graphed.preserve"
+        assert get_plugin(kind) is plugin, (
+            f"{kind} must be registered by importing graphed.preserve"
+        )
         assert plugin.kind == kind
         assert plugin.framework == framework
 

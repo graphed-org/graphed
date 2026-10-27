@@ -1,5 +1,8 @@
-"""m71c C-C3/C-C5: built-in plugins and the gak correction template record their float64 value type;
-a plugin's `output_dtype` default is validated at the calling line, and any numerical dtype works."""
+"""m71c C-C3/C-C5: built-in plugins and the gak correction template record float64.
+
+They record their float64 value type; a plugin's `output_dtype` default is validated at the calling
+line, and any numerical dtype works.
+"""
 
 from __future__ import annotations
 
@@ -60,7 +63,8 @@ def test_a_correctionlib_external_records_float64_over_a_float32_input() -> None
     assert describe(s, sf) == "## * float64"
     assert str(ak.type(s.materialize(sf))) == "4 * float64"
     assert (
-        describe(s, record_external(s, CORRECTIONLIB_PLUGIN, CSET, [gak.sum(ev.x)], params=SF)) == "float64"
+        describe(s, record_external(s, CORRECTIONLIB_PLUGIN, CSET, [gak.sum(ev.x)], params=SF))
+        == "float64"
     )
 
 
@@ -79,7 +83,9 @@ def test_the_correction_template_records_float64() -> None:
 def test_an_explicit_output_type_wins_over_the_plugin_default() -> None:
     s, ev = recorded()
     default = record_external(s, CORRECTIONLIB_PLUGIN, CSET, [ev.x], params=SF)
-    explicit = record_external(s, CORRECTIONLIB_PLUGIN, CSET, [ev.x], params=SF, output_type="float32")
+    explicit = record_external(
+        s, CORRECTIONLIB_PLUGIN, CSET, [ev.x], params=SF, output_type="float32"
+    )
 
     assert describe(s, explicit) == "## * float32"
     assert explicit.node_id != default.node_id

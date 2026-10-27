@@ -1,4 +1,7 @@
-"""``aggregate_plan(store=<url>)`` opens the capture store once per worker thread and passes ``storage_options`` to it."""
+"""``aggregate_plan(store=<url>)`` opens the capture store once per worker thread.
+
+It passes ``storage_options`` to it.
+"""
 
 from __future__ import annotations
 
@@ -39,13 +42,16 @@ def _plan(tmp_path: Path, url: str, **kw: Any) -> Any:
     path = tmp_path / "d.parquet"
     ak.to_parquet(ak.Array({"x": np.arange(1000.0)}), path)
     y = gak.sum(from_parquet(Session(AwkwardBackend()), "events", str(path)).x, axis=None)
-    return aggregate_plan(y, reduce=_first, combine=_add, empty=_zero, steps_per_file=4, store=url, **kw)
+    return aggregate_plan(
+        y, reduce=_first, combine=_add, empty=_zero, steps_per_file=4, store=url, **kw
+    )
 
 
 def test_capture_store_is_opened_once_and_gets_storage_options(
     tmp_path: Path, s3_url: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    probe = gcp.FsspecStore(s3_url, **OPTIONS)  # the filesystem instance (and client) the tasks share
+    # the filesystem instance (and client) the tasks share
+    probe = gcp.FsspecStore(s3_url, **OPTIONS)
     calls: collections.Counter[str] = collections.Counter()
     client = probe.fs.s3
     client.meta.events.register("before-call.s3", lambda model, **_k: calls.update([model.name]))

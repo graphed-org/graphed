@@ -1,4 +1,7 @@
-"""The ``jax_export`` plugin (M26): ``jax.export`` artifacts; hash = location-stripped StableHLO + avals."""
+"""The ``jax_export`` plugin (M26): ``jax.export`` artifacts.
+
+The hash is location-stripped StableHLO + avals.
+"""
 
 from __future__ import annotations
 
@@ -20,6 +23,7 @@ _MLIR_LOC = re.compile(r"loc\(.*?\)|#loc\d*\s*=?.*")
 
 
 def jax_content_hash(payload: bytes) -> str:
+    """Return the content hash of a ``jax.export`` payload."""
     return memoized_model_hash("jax", payload, _jax_content_hash_impl)
 
 
@@ -36,12 +40,14 @@ def _jax_content_hash_impl(payload: bytes) -> str:
 
 
 def load_jax(payload: bytes, params: Mapping[str, Any]) -> Any:
+    """Deserialize a ``jax.export`` payload."""
     from jax import export  # noqa: PLC0415
 
     return export.deserialize(bytearray(payload))
 
 
 def eval_jax(exported: Any, params: Mapping[str, Any], inputs: list[Any]) -> Any:
+    """Call the exported function on ``inputs``, one value per event."""
     template = parse_call_template(params, len(inputs))
     if template is None:  # legacy: one stacked feature matrix
         return _as_event_array(exported.call(_stack_feature_columns(inputs)))

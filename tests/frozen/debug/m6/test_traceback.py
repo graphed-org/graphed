@@ -1,5 +1,7 @@
-"""`format_traceback` renders the user frames (collapsing graphed* internals), failing line last, and
-is identical before and after a pickle round-trip (plan M6)."""
+"""`format_traceback` renders the user frames (collapsing graphed* internals), failing line last.
+
+And is identical before and after a pickle round-trip (plan M6).
+"""
 
 from __future__ import annotations
 
@@ -33,7 +35,9 @@ def test_shows_the_failing_user_line_marked_and_last() -> None:
     assert out.index("line 40") < out.index("line 42")
     assert (
         "-->"
-        in out.splitlines()[out.splitlines().index(next(ln for ln in out.splitlines() if "line 42" in ln))]
+        in out.splitlines()[
+            out.splitlines().index(next(ln for ln in out.splitlines() if "line 42" in ln))
+        ]
     )
 
 
@@ -50,9 +54,10 @@ def test_collapses_graphed_internal_frames() -> None:
         run(s, bad, opt_level=1)
     except StageError as e:
         out = format_traceback(e)
-        # graphed* internal frames are collapsed (provenance.capture skips module.startswith("graphed")).
-        # The consolidated repo dir is itself named "graphed", so the user file's own path contains
-        # "graphed/"; assert no INTERNAL package SOURCE file leaks instead of a bare "graphed/" substring.
+        # graphed* internal frames are collapsed (provenance.capture skips
+        # module.startswith("graphed")). The consolidated repo dir is itself named "graphed", so
+        # the user file's own path contains "graphed/"; assert no INTERNAL package SOURCE file
+        # leaks instead of a bare "graphed/" substring.
         internal_sources = (
             "session.py",
             "array.py",

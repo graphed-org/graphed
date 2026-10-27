@@ -1,4 +1,7 @@
-"""A capturing plan keeps a projected read's input as read, and its replay agrees with the run (#54)."""
+"""A capturing plan keeps a projected read's input as read.
+
+Its replay agrees with the run (#54).
+"""
 
 from __future__ import annotations
 
@@ -64,7 +67,9 @@ class _Reader:
     def partitions(self, steps_per_file: int) -> tuple[Partition, ...]:
         return self.source.partitions(steps_per_file)
 
-    def read_partition(self, partition: Partition, columns: Any, resources: WorkerResources) -> ak.Array:
+    def read_partition(
+        self, partition: Partition, columns: Any, resources: WorkerResources
+    ) -> ak.Array:
         return _chunk(self.projected)
 
 
@@ -80,7 +85,9 @@ def _zero() -> float:
     return 0.0
 
 
-@pytest.mark.parametrize("projected", [True, False], ids=["placeholder-buffers", "lambda-behavior"])
+@pytest.mark.parametrize(
+    "projected", [True, False], ids=["placeholder-buffers", "lambda-behavior"]
+)
 def test_a_captured_projected_read_replays_as_the_run(tmp_path: Path, projected: bool) -> None:
     s = Session(AwkwardBackend())
     ak.to_parquet(_chunk(projected=False), tmp_path / "d.parquet")
@@ -89,7 +96,10 @@ def test_a_captured_projected_read_replays_as_the_run(tmp_path: Path, projected:
     built = aggregate_plan(y, reduce=_first, combine=_add, empty=_zero, store=tmp_path / "capture")
     assert isinstance(built.process, _PartitionReduce)
     plan: Plan[float] = dataclasses.replace(
-        built, process=dataclasses.replace(built.process, reader=_Reader(built.process.reader, projected))
+        built,
+        process=dataclasses.replace(
+            built.process, reader=_Reader(built.process.reader, projected)
+        ),
     )
 
     total = SequentialRunner().run(plan).value

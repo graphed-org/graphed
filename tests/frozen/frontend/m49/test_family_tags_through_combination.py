@@ -34,8 +34,11 @@ def test_a_combining_op_unions_the_labels() -> None:
 
 
 def test_a_family_tag_survives_the_combination() -> None:
-    """`0p5` canonicalizes to a DIFFERENT label than `5em1` but names the same value, so only the
-    family check can refuse it — and only if the combination carried the family through."""
+    """`0p5` canonicalizes to a DIFFERENT label than `5em1` but names the same value.
+
+    So only the family check can refuse it — and only if the combination carried the family
+    through.
+    """
     _session, x, combined = _combined()
 
     with pytest.raises(GraphedError) as caught:
