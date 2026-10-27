@@ -540,6 +540,16 @@ long-lived worker grinding through thousands of files does not accumulate them a
 ``StopCondition`` ends submission early on a target event count, a wall-clock limit or an error
 budget, reporting which one fired.
 
+A plan may also carry a ``finalize``: a function the runner calls exactly once, on the driver,
+on the value the run hands back, after the last ``combine`` — dask's ``__dask_postcompute__``,
+in plan form. Partials can then stay in a form that combines and ships cheaply (a histogram
+whose category axes are still chunked, say) while ``result.value`` is the form you asked for. The
+empty value of a run with no partitions, a stopped or cancelled run's fold and a resumed
+checkpointed run's value are finalized too; a cancelled ``DurablePlanV2`` run has no value and
+is not. ``DurablePlan`` and ``DurablePlanV2`` carry it as an ``OpSpec``, written into their bytes
+only when set and left out of ``task_id``. A runner of your own applies it by returning
+``graphed.core.finalize_result(plan, result)``.
+
 The obligation running the other way is on the runner: **a worker failure must reach the driver
 intact.** In particular the ``StageError`` from ``graphed.debug`` must not degrade into an
 opaque string in transit, because that error is what lets the driver print a traceback pointing

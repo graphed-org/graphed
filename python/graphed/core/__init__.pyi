@@ -64,6 +64,9 @@ from .execution import (
     emit_task as emit_task,
 )
 from .execution import (
+    finalize_result as finalize_result,
+)
+from .execution import (
     lean_events as lean_events,
 )
 from .execution import (

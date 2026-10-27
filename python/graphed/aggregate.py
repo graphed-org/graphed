@@ -428,6 +428,7 @@ def aggregate_plan(
     services: Sequence[str] | None = None,
     writes: Sequence[PartWrite] = (),
     opt_level: int = 1,
+    finalize: Callable[[V], V] | None = None,
 ) -> Plan[V]:
     """Build a one-pass partition-wise reduction :class:`~graphed.core.execution.Plan`.
 
@@ -460,6 +461,9 @@ def aggregate_plan(
     :func:`graphed.debug.lower` calls ``opt_level=0``), so ``reduce`` receives one value per
     distinct output. A ``StageError`` reports the level, and :func:`graphed.debug.replay`
     recompiles at it. Any other value is refused.
+
+    ``finalize`` becomes ``Plan.finalize``: the runner calls it once, on the head, on the combined
+    value (``empty()``'s too), and ``run(plan).value`` is what it returns.
     """
     if type(opt_level) is not int or opt_level not in (0, 1):
         raise ValueError(
@@ -546,6 +550,7 @@ def aggregate_plan(
         else _Adopting(by_value(empty), backend),
         tasks=tasks,
         services=plan_services(session, compiled, services),
+        finalize=None if finalize is None else by_value(finalize),
     )
 
 
@@ -617,6 +622,16 @@ class _Collated:
 
 
 @dataclass(frozen=True)
+class _CollatedFinalize:
+    """Each name's value through its sub-plan's finalize; a name without one passes through."""
+
+    finalizers: Mapping[str, Callable[[Any], Any]]
+
+    def __call__(self, value: dict[str, Any]) -> dict[str, Any]:
+        return {n: f(v) if (f := self.finalizers.get(n)) else v for n, v in value.items()}
+
+
+@dataclass(frozen=True)
 class _CollatedCombine:
     """Per name with that sub-plan's combine; a name on one side only passes through."""
 
@@ -640,9 +655,9 @@ def collate(plans: Mapping[str, Plan[Any]]) -> Plan[dict[str, Any]]:
     they share the read), and so is a part two tasks would both write, across plans too (named by
     each process's optional ``part_paths(partition)`` hook; a process without it is not checked).
     A name is in the value exactly when its plan has at least one task. ``Plan.services`` is the
-    union of the plans' services; one name declared as two different specs is refused.
-    Running each plan on its own and collecting ``{name: value}`` gives the same product when each
-    ``combine`` is exact.
+    union of the plans' services; one name declared as two different specs is refused. Each name's
+    value passes through its plan's ``finalize``, if it has one. Running each plan on its own and
+    collecting ``{name: value}`` gives the same product when each ``combine`` is exact.
     """
     if not plans:
         raise ValueError("collate needs at least one plan")
@@ -671,6 +686,7 @@ def collate(plans: Mapping[str, Plan[Any]]) -> Plan[dict[str, Any]]:
             tasks.append(Task(len(tasks), task.partition))
     process = _Collated({n: p.process for n, p in plans.items()}, route)
     _refuse_shared_parts((process, t.partition) for t in tasks)
+    finalizers = {n: p.finalize for n, p in plans.items() if p.finalize is not None}
     return Plan(
         process=process,
         combine=_CollatedCombine({n: p.combine for n, p in plans.items()}),
@@ -678,4 +694,5 @@ def collate(plans: Mapping[str, Plan[Any]]) -> Plan[dict[str, Any]]:
         tasks=tuple(tasks),
         open_once=any(p.open_once for p in plans.values()),
         services=tuple(services[n] for n in sorted(services)),
+        finalize=_CollatedFinalize(finalizers) if finalizers else None,
     )

@@ -21,7 +21,7 @@ import threading
 import time
 from collections import OrderedDict
 from collections.abc import Callable, Iterable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import (
     TYPE_CHECKING,
@@ -269,6 +269,8 @@ class Plan(Generic[R]):
     open_once: bool = False
     # a plain default, not a factory: a Plan pickled before this field existed still loads
     services: tuple[ServiceSpec, ...] = ()  # the services the plan's nodes name (graphed.services)
+    # the run's value in its final form, called once on the head after the last combine
+    finalize: Callable[[R], R] | None = None
 
 
 @dataclass(frozen=True)
@@ -279,6 +281,22 @@ class ExecResult(Generic[R]):
     n_partitions: int
     n_combines: int
     stopped: StopReason | None = None
+
+
+def finalize_result(plan: Plan[R] | DurablePlanV2, result: ExecResult[R]) -> ExecResult[R]:
+    """Return ``result`` with its value passed through ``plan.finalize``.
+
+    Every runner calls it once, on the head, on each result it returns — an empty, stopped or
+    resumed run's too. A plan without ``finalize`` and a cancelled ``DurablePlanV2`` run (which has
+    no value) come back as they are.
+    """
+    if isinstance(plan, Plan):
+        fn = plan.finalize
+    elif plan.finalize is None or result.stopped is StopReason.CANCELLED:
+        return result
+    else:
+        fn = plan.finalize.resolve()
+    return result if fn is None else replace(result, value=fn(result.value))
 
 
 @runtime_checkable
@@ -686,6 +704,8 @@ class SequentialRunner:
     tasks of stages with no inputs and ``n_combines`` the rest. The control is checked on entry and
     before each stage, and a cancel returns ``value=None``: a staged run cut short has no value. It
     emits no task events.
+
+    The plan's ``finalize`` runs on the value it returns (:func:`finalize_result`).
     """
 
     def __init__(self, monitor: Monitor | None = None, control: RunControl | None = None) -> None:
@@ -700,8 +720,10 @@ class SequentialRunner:
     def run(self, plan: Plan[R] | DurablePlanV2) -> ExecResult[R] | ExecResult[Any]:
         """Run ``plan`` one task at a time in this process."""
         require_bound(plan)
-        if not isinstance(plan, Plan):
-            return self._run_stages(plan)
+        result = self._run_tasks(plan) if isinstance(plan, Plan) else self._run_stages(plan)
+        return finalize_result(plan, result)
+
+    def _run_tasks(self, plan: Plan[R]) -> ExecResult[R]:
         resources = LocalResources()
         monitor = self.monitor
         control = self.control

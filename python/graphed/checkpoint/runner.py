@@ -153,7 +153,10 @@ def run_resumable(
         )
 
     report.dead_letters = store.dead_letters()
-    return ResumeResult(value=acc if folded else empty(), report=report)
+    value = acc if folded else empty()
+    if plan.finalize is not None:
+        value = plan.finalize.resolve()(value)
+    return ResumeResult(value=value, report=report)
 
 
 def _run_one(

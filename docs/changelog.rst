@@ -21,6 +21,16 @@ Several datasets in one Session
   source columns those Arrays use, as a plan over them would. A plan over several Sessions is
   ``graphed.collate``, which ``aggregate_plan``'s refusal now names (#103).
 
+A plan finalizes its value on the driver
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``Plan.finalize`` (and ``DurablePlan.finalize`` / ``DurablePlanV2.finalize``, an ``OpSpec``)
+  turns a run's value into its final form once, on the driver, after the last combine — also for
+  an empty, stopped, cancelled or resumed run. ``SequentialRunner``, ``graphed.checkpoint``'s
+  ``run_resumable`` and ``resumable`` apply it; ``aggregate_plan(finalize=)`` sets it and
+  ``collate`` applies each plan's to its own name. A runner of its own returns
+  ``graphed.core.finalize_result(plan, result)``. A durable plan without one keeps its bytes.
+
 Exceptions are named ``…Error``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

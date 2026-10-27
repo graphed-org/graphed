@@ -154,6 +154,8 @@ class DurablePlan:
     format_version: int = FORMAT_VERSION
     #: the services the IR's nodes name; not identity (``task_id`` ignores it)
     services: tuple[ServiceSpec, ...] = ()
+    #: the run's value in its final form, on the head; not identity (``task_id`` ignores it)
+    finalize: OpSpec | None = None
 
     # ---- the live graph -------------------------------------------------------------------------
     def graph(self) -> GraphStore:
@@ -163,7 +165,8 @@ class DurablePlan:
     @property
     def opaque(self) -> bool:
         """True if any callable is embedded by value (a preservation risk; plan A.3.1)."""
-        return self.process.opaque or self.combine.opaque or self.empty.opaque
+        ops = (self.process, self.combine, self.empty, self.finalize)
+        return any(op is not None and op.opaque for op in ops)
 
     # ---- content addressing ---------------------------------------------------------------------
     def ir_fingerprint(self) -> str:
@@ -229,6 +232,8 @@ class DurablePlan:
         }
         if self.services:  # omitted when empty: a plan without services keeps its 0.0.6 bytes
             doc["services"] = [spec.to_json() for spec in self.services]
+        if self.finalize is not None:  # omitted when unset, as services are
+            doc["finalize"] = self.finalize._to_json()
         return json.dumps(doc, sort_keys=True, separators=(",", ":")).encode()
 
     @classmethod
@@ -247,6 +252,7 @@ class DurablePlan:
             resource_hints=dict(doc["resource_hints"]),
             format_version=int(doc["format_version"]),
             services=tuple(ServiceSpec.from_json(spec) for spec in doc.get("services", ())),
+            finalize=_finalize_from_json(doc),
         )
 
 
@@ -310,6 +316,8 @@ class DurablePlanV2:
     format_version: str = FORMAT_VERSION_V2
     #: the services the IR's nodes name; not identity (``task_id`` ignores it)
     services: tuple[ServiceSpec, ...] = ()
+    #: applied to :meth:`value` on the head; not identity (``task_id`` ignores it)
+    finalize: OpSpec | None = None
 
     def graph(self) -> GraphStore:
         """Rebuild the interned IR (no user source files required)."""
@@ -350,6 +358,8 @@ class DurablePlanV2:
         }
         if self.services:  # omitted when empty: a plan without services keeps its bytes
             doc["services"] = [spec.to_json() for spec in self.services]
+        if self.finalize is not None:
+            doc["finalize"] = self.finalize._to_json()
         return json.dumps(doc, sort_keys=True, separators=(",", ":")).encode()
 
     @classmethod
@@ -366,6 +376,7 @@ class DurablePlanV2:
             ir=base64.b64decode(doc["ir_b64"]),
             stages=tuple(StageSpec._from_json(s) for s in doc["stages"]),
             services=tuple(ServiceSpec.from_json(spec) for spec in doc.get("services", ())),
+            finalize=_finalize_from_json(doc),
         )
 
     def value(self, payloads: Sequence[bytes]) -> Any:
@@ -421,6 +432,11 @@ def partition_datasets(datasets: Iterable[Dataset], *, chunk_size: int) -> tuple
     for ds in datasets:
         out.extend(partition_dataset(ds, chunk_size=chunk_size))
     return tuple(out)
+
+
+def _finalize_from_json(doc: Mapping[str, Any]) -> OpSpec | None:
+    spec = doc.get("finalize")
+    return None if spec is None else OpSpec._from_json(spec)
 
 
 def _partition_json(p: Partition) -> dict[str, str | int]:
