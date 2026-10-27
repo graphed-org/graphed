@@ -10,7 +10,7 @@ without awkward's metadata is unchanged, and no event data is read to find out.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 import awkward as ak
 import pytest
@@ -34,9 +34,12 @@ import graphed.awkward as ga
 from graphed import Session
 from graphed.awkward import AwkwardBackend
 
+if TYPE_CHECKING:
+    from graphed.awkward import AwkwardForm
+
 
 def _recorded_form(session: Session, array: Any) -> Any:
-    return session.form(array).tt.layout.form
+    return cast("AwkwardForm", session.form(array)).tt.layout.form
 
 
 def test_the_recorded_form_equals_what_eager_awkward_gives_the_same_file(tmp_path: Path) -> None:
@@ -70,7 +73,7 @@ def test_columns_still_selects_and_the_selection_keeps_the_record_name(tmp_path:
 
     events = ga.from_parquet(session, "ev", path, columns=["p"])
 
-    assert session.form(events).tt.fields == ["p"]
+    assert cast("AwkwardForm", session.form(events)).tt.fields == ["p"]
     assert RECORD_NAME in session.form(events).describe()
 
 
@@ -92,7 +95,7 @@ def test_recording_a_source_reads_no_event_data_and_opens_only_the_first_file(
 
     events = ga.from_parquet(session, "ev", list(paths), open_files=False)
 
-    assert session.form(events).tt.fields == ["p", "o", "r"]
+    assert cast("AwkwardForm", session.form(events)).tt.fields == ["p", "o", "r"]
     assert [path for path in opened if path in paths] == [paths[0]]
     # the guard is a LIVE instrument: reading the same file's data now trips it
     with pytest.raises(AssertionError, match="event data read at record time"):

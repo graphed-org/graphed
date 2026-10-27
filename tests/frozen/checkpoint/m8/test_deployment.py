@@ -13,6 +13,7 @@ whole deployment story.
 from __future__ import annotations
 
 import time
+from typing import Any
 
 import deployment
 import numpy as np
@@ -24,7 +25,7 @@ from graphed.checkpoint.runner import _SimulatedInterrupt
 CHUNK = 700  # N_EVENTS=1800 -> 3 chunks per dataset
 
 
-def _run_deployment(plan, datasets, store, **kw):  # type: ignore[no-untyped-def]
+def _run_deployment(plan: Any, datasets: Any, store: Store, **kw: Any) -> dict[str, Any]:
     """Run the deployment idiom under test.
 
     One compiled plan, one store, run over each dataset.

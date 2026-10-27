@@ -8,7 +8,7 @@ endpoint before binding.
 from __future__ import annotations
 
 import dataclasses
-from typing import Any
+from typing import Any, cast
 
 import fake_triton_services as fake
 import numpy as np
@@ -20,13 +20,15 @@ from graphed.services import ServiceSpec, UnboundServiceError, bind_services, sp
 
 
 def _endpoints(plan: Plan[Any]) -> list[str | None]:
-    return [getattr(fn, "endpoint", None) for _key, fn in plan.process.externals]
+    return [getattr(fn, "endpoint", None) for _key, fn in cast(Any, plan.process).externals]
 
 
 def _served(tag: str, **plan_kw: Any) -> Plan[Any]:
     ev = new_events()
     ev.session.declare_service(ServiceSpec("scorer-svc", "triton"))
-    return values_plan(score(ev, descriptor(tag), service="scorer-svc"), **plan_kw)
+    return cast(
+        "Plan[Any]", values_plan(score(ev, descriptor(tag), service="scorer-svc"), **plan_kw)
+    )
 
 
 def test_a_bound_plan_carries_the_endpoint_and_the_original_stays_unbound() -> None:
@@ -65,7 +67,7 @@ class _BindableReduce:
         self.endpoints = endpoints
 
     def __call__(self, values: list[Any]) -> list[list[float]]:
-        return _rows(values)
+        return cast("list[list[float]]", _rows(values))
 
     def bind_services(self, endpoints: dict[str, str]) -> _BindableReduce:
         return _BindableReduce(dict(endpoints))
@@ -75,8 +77,8 @@ def test_a_reduce_with_the_hook_is_bound_too() -> None:
     endpoints = {"scorer-svc": "http://bind-reduce:8000"}
     plan = _served("bind-reduce", reduce=_BindableReduce())
     bound = bind_services(plan, endpoints)
-    assert bound.process.reduce.endpoints == endpoints
-    assert plan.process.reduce.endpoints is None
+    assert cast(Any, bound.process).reduce.endpoints == endpoints
+    assert cast(Any, plan.process).reduce.endpoints is None
 
 
 # D8: histserv lives on the reduce, no External names it

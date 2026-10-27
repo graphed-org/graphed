@@ -15,7 +15,7 @@ import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import m74_helpers as h
 import pytest
@@ -125,19 +125,20 @@ def test_durable_plan_becomes_a_runtime_plan_keyed_by_task_id(tmp_path: Path) ->
     assert isinstance(rp, Plan)
     assert [t.key for t in rp.tasks] == list(range(h.T))
     assert [h.plain(t.partition) for t in rp.tasks] == list(dp.partitions)
-    assert rp.process.reused == 0
+    assert cast(Any, rp.process).reused == 0
     value = SequentialRunner().run(rp).value
     assert h.STATE["calls"] == h.T
-    assert set(Store(root).completed()) == {t.partition.task_id for t in rp.tasks}
+    assert set(Store(root).completed()) == {cast(Any, t.partition).task_id for t in rp.tasks}
     assert value == run_resumable(dp, Store(tmp_path / "reference")).value
     h.reset()
     again = resumable(dp, root)
-    assert again.process.reused == h.T
+    assert cast(Any, again.process).reused == h.T
     assert SequentialRunner().run(again).value == value
     assert h.STATE["calls"] == 0
 
 
 def _stage_payloads(plan: DurablePlanV2) -> list[list[bytes]]:
+    out: list[list[bytes]]
     resources, out = LocalResources(), []
     for stage in plan.stages:
         process = stage.process.resolve()
@@ -175,7 +176,7 @@ def test_shuffle_plan_interrupted_resumes_with_identical_gather_payloads(tmp_pat
     final = resumable(plan, root)
     assert h.stage_reused(final) == [len(stage.tasks) for stage in plan.stages]
     store = Store(root)
-    assert [store.get(t.partition.blob) for t in final.stages[1].tasks] == payloads[1]
+    assert [store.get(cast(Any, t.partition).blob) for t in final.stages[1].tasks] == payloads[1]
 
 
 def test_store_unavailable_wraps_store_calls_only(tmp_path: Path) -> None:

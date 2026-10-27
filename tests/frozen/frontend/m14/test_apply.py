@@ -23,8 +23,8 @@ def test_apply_records_one_external_with_n_inputs() -> None:
     assert node["kind"] == "external"
     assert node["inputs"] == [a.node_id, b.node_id]
     descriptor = node["descriptor"]
-    assert descriptor["kind"] == "opaque_callable"  # type: ignore[index]
-    assert "add2" in descriptor["content_hash"]  # type: ignore[index]
+    assert descriptor["kind"] == "opaque_callable"
+    assert "add2" in descriptor["content_hash"]
 
 
 def test_apply_materializes_by_calling_fn_on_all_inputs() -> None:

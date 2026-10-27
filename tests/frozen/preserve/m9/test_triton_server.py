@@ -17,7 +17,7 @@ from __future__ import annotations
 import os
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import awkward as ak
 import numpy as np
@@ -38,7 +38,7 @@ from graphed.preserve import (
 # the served model's weights — MUST match tests/samples/triton_models/scorer/1/model.py
 _W, _B = 0.45, -0.1
 _MODEL = "scorer"
-_HIST = {"name": "met", "bins": 20, "lo": 0.0, "hi": 200.0}
+_HIST: dict[str, Any] = {"name": "met", "bins": 20, "lo": 0.0, "hi": 200.0}
 _SERVERS = {
     "grpc": os.environ.get("GRAPHED_TRITON_GRPC"),
     "http": os.environ.get("GRAPHED_TRITON_HTTP"),
@@ -110,9 +110,12 @@ def _reference(events: Any) -> np.ndarray:
     )
     met = np.asarray(ak.to_numpy(ak.Array(s.materialize(ev.MET.pt))), dtype="float64")
     weight = (1.0 / (1.0 + np.exp(-(_W * njet + _B)))).astype("float32").astype("float64")
-    return np.histogram(met, bins=_HIST["bins"], range=(_HIST["lo"], _HIST["hi"]), weights=weight)[
-        0
-    ].round(6)
+    return cast(
+        "np.ndarray",
+        np.histogram(met, bins=_HIST["bins"], range=(_HIST["lo"], _HIST["hi"]), weights=weight)[
+            0
+        ].round(6),
+    )
 
 
 @pytest.mark.parametrize("protocol", ["grpc", "http"])

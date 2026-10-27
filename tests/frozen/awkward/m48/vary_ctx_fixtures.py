@@ -10,7 +10,7 @@ under `pytest hypothesis numpy` alone, so no helper crosses between the two tree
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import awkward as ak
 import numpy as np
@@ -108,7 +108,7 @@ def pu_weight(source: Any, scale: float) -> Array:
     Deliberately NOT constant: §2.6c's re-indexing is asserted elementwise, and a constant factor
     would compare equal under the wrong mask whenever two labels' row counts coincide.
     """
-    return source.MET.pt * scale
+    return cast(Array, source.MET.pt * scale)
 
 
 def btag_weight(jets: Array, scale: float = 1.0) -> Array:
@@ -151,7 +151,7 @@ def record_source() -> tuple[Session, Array]:
 
 def loose_varied(x: Array, name: str = "jes") -> graphed.Varied:
     """§2.1(a)'s loose primitive, the construction path with no context involved."""
-    return graphed.vary(x, name, up=x * 1.5, down=x * 0.5)
+    return cast(graphed.Varied, graphed.vary(x, name, up=x * 1.5, down=x * 0.5))
 
 
 @dataclass

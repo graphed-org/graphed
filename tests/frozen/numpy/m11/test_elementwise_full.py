@@ -7,11 +7,16 @@ materializes the deferred program and compares against applying the same ufunc d
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any, cast
+
 import numpy as np
 import pytest
 
 from graphed import Session
 from graphed.numpy import NumpyBackend, from_array
+
+if TYPE_CHECKING:
+    from graphed import Array
 
 F = np.array([0.25, 0.5, 1.5, 2.0])  # positive floats: safe for log/sqrt/reciprocal
 G = np.array([2.0, 0.5, 3.0, 1.5])
@@ -125,7 +130,7 @@ def test_binary_matches_numpy(fn: np.ufunc, x: np.ndarray, y: np.ndarray) -> Non
 def test_binary_with_scalar_matches_numpy(fn: np.ufunc, x: np.ndarray, y: np.ndarray) -> None:
     s = Session(NumpyBackend())
     a = from_array(s, "a", x)
-    scalar = y[0].item()
+    scalar: Any = y[0].item()
     np.testing.assert_array_equal(np.asarray(s.materialize(fn(a, scalar))), fn(x, scalar))
     if fn is not np.ldexp:  # numpy itself rejects the reflected order ldexp(int, float-array)
         np.testing.assert_array_equal(np.asarray(s.materialize(fn(scalar, a))), fn(scalar, x))
@@ -160,4 +165,6 @@ def test_operator_dunders_match_numpy() -> None:
 def test_np_sum_dispatches_and_matches_numpy() -> None:
     s = Session(NumpyBackend())
     a = from_array(s, "a", F)
-    assert float(np.asarray(s.materialize(np.sum(a)))) == pytest.approx(float(np.sum(F)))
+    assert float(np.asarray(s.materialize(cast("Array", np.sum(a))))) == pytest.approx(
+        float(np.sum(F))
+    )

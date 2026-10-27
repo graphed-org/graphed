@@ -9,6 +9,8 @@ no proxy changes (the factorization rule).
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any, cast
+
 import awkward as ak
 import pytest
 
@@ -18,6 +20,9 @@ vector = pytest.importorskip("vector")
 vector.register_awkward()
 
 from graphed.awkward import AwkwardBackend, from_awkward, gak, project  # noqa: E402
+
+if TYPE_CHECKING:
+    from graphed.awkward import AwkwardForm
 
 MUONS = ak.Array(
     {
@@ -39,23 +44,23 @@ def _ref() -> ak.Array:
     )
 
 
-def _s() -> tuple[Session, object]:
+def _s() -> tuple[Session, Any]:
     s = Session(AwkwardBackend(behavior=vector.backends.awkward.behavior))
     return s, from_awkward(s, "events", MUONS)
 
 
 def test_behavior_properties_record_with_typetracer_forms() -> None:
     s, g = _s()
-    v = gak.with_name(g.Muon, "Momentum4D")  # type: ignore[attr-defined]
+    v = gak.with_name(g.Muon, "Momentum4D")
     pt = v.pt  # a behavior PROPERTY, not a record field
     form = s.form(pt)
-    assert form.is_typetracer  # inferred from metadata alone
+    assert cast("AwkwardForm", form).is_typetracer  # inferred from metadata alone
     assert "var * float64" in form.describe()
 
 
 def test_behavior_properties_evaluate_exactly() -> None:
     s, g = _s()
-    v = gak.with_name(g.Muon, "Momentum4D")  # type: ignore[attr-defined]
+    v = gak.with_name(g.Muon, "Momentum4D")
     ref = _ref()
     assert ak.array_equal(ak.Array(s.materialize(v.pt)), ref.pt)
     assert ak.array_equal(ak.Array(s.materialize(v.mass)), ref.mass, equal_nan=True)
@@ -64,7 +69,7 @@ def test_behavior_properties_evaluate_exactly() -> None:
 
 def test_projection_reports_what_the_behavior_property_actually_reads() -> None:
     _session, g = _s()
-    v = gak.with_name(g.Muon, "Momentum4D")  # type: ignore[attr-defined]
+    v = gak.with_name(g.Muon, "Momentum4D")
     out = gak.sum(v.pt, axis=1)
     # pt = hypot(px, py): exactly those two leaves, nothing else — behaviors stay projectable
     assert project(out).columns_for("events") == frozenset({"Muon.px", "Muon.py"})
@@ -79,18 +84,18 @@ def test_unknown_attributes_fail_at_record_time() -> None:
 
 def test_with_parameter_and_without_parameters() -> None:
     s, g = _s()
-    tagged = gak.with_parameter(g.Muon, "origin", "simulation")  # type: ignore[attr-defined]
+    tagged = gak.with_parameter(g.Muon, "origin", "simulation")
     out = ak.Array(s.materialize(tagged))
     assert out.layout.parameter("origin") == "simulation"
-    cleared = gak.without_parameters(tagged)  # type: ignore[attr-defined]
+    cleared = gak.without_parameters(tagged)
     out2 = ak.Array(s.materialize(cleared))
     assert out2.layout.parameter("origin") is None
-    assert s.form(cleared).is_typetracer
+    assert cast("AwkwardForm", s.form(cleared)).is_typetracer
 
 
 def test_named_records_survive_structure_ops() -> None:
     s, g = _s()
-    v = gak.with_name(g.Muon, "Momentum4D")  # type: ignore[attr-defined]
+    v = gak.with_name(g.Muon, "Momentum4D")
     leading = gak.firsts(v, axis=1)
     got = ak.Array(s.materialize(leading.pt))
     ref = ak.firsts(_ref(), axis=1).pt

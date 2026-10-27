@@ -26,6 +26,7 @@ from graphed import Array, Kind, Session, compile_ir
 from graphed.context import EventContext
 from graphed.errors import GraphedTypeError
 from graphed.numpy import NumpyBackend, from_record
+from graphed.systematics.lineage import ambient_of
 from graphed.varied import Varied, member_of, rebuild
 
 VEC = np.arange(1.0, 13.0)
@@ -355,7 +356,7 @@ def _walk_resolutions(calls: list[int], count: int) -> tuple[int, int, Any]:
         ctx = graphed.vary(
             ctx, f"f{index}", central, is_weight=True, up=central * 1.1, down=central * 0.9
         )
-    return len(calls), len(ctx._factors) * len(ctx._recorded), session
+    return len(calls), len(ambient_of(ctx).factors) * len(ambient_of(ctx).recorded), session
 
 
 @pytest.mark.parametrize("count", [4, 8, 16])
@@ -375,7 +376,7 @@ def test_the_record_time_walk_resolves_each_factor_and_label_once(
     resolutions, pairs, session = _walk_resolutions(calls, count)
 
     assert resolutions * reference_pairs == reference * pairs
-    assert sum(len(page) for page in session._universes.values()) == pairs
+    assert sum(len(page) for page in session.systematics.universes.values()) == pairs
 
 
 JOINT = "b_up__jes_up"
@@ -399,7 +400,7 @@ def _resolved_product(session: Session, ctx: Any, label: str) -> np.ndarray:
     test.
     """
     product: Any = None
-    for factor in ctx._factors:
+    for factor in ambient_of(ctx).factors:
         member = member_of(member_of(factor, label), label)
         product = member if product is None else product * member
     resolved: np.ndarray = np.asarray(session.materialize(product))
@@ -415,7 +416,7 @@ def _minted_by_the_second_registration(*, read_first: bool) -> tuple[Session, An
     shifted = _shift(ctx, "jes", record["pt"])
     shifted._collections = _hand_built_joint(shifted, record)
     left = graphed.vary(shifted, "a", shifted["pt"] * 0.5, is_weight=True, up=shifted["pt"] * 0.6)
-    assert JOINT in left._recorded and JOINT not in session._points
+    assert JOINT in ambient_of(left).recorded and JOINT not in session._points
     if read_first:
         graphed.weight(left)
     both = graphed.vary(left, "b", shifted["pt"] * 1.0, is_weight=True, up=shifted["pt"] * 1.2)
@@ -499,7 +500,7 @@ def test_an_unsettled_ambient_leaves_the_record_time_check_walking_the_original_
     shifted._collections = _hand_built_joint(shifted, record)
     left = graphed.vary(shifted, "a", shifted["pt"] * 0.5, is_weight=True, up=shifted["pt"] * 0.6)
     graphed.weight(left)
-    memo = left._memo
+    memo = ambient_of(left).memo
     assert memo is not None and not memo[3], (
         "this shape must leave the ambient composed and unsettled"
     )
@@ -515,7 +516,9 @@ def test_an_unsettled_ambient_leaves_the_record_time_check_walking_the_original_
     monkeypatch.setattr(graphed.systematics.ambient, "_check_forms", spy)
     graphed.vary(left, "b", shifted["pt"] * 1.0, is_weight=True, up=shifted["pt"] * 1.2)
 
-    assert [id(operand) for operand in walked[-1][:-1]] == [id(factor) for factor in left._factors]
+    assert [id(operand) for operand in walked[-1][:-1]] == [
+        id(factor) for factor in ambient_of(left).factors
+    ]
     assert all(operand is not memo[2] for operand in walked[-1]), "the check walked the fold"
 
 
@@ -560,13 +563,16 @@ def test_a_projection_leaves_a_bare_factor_the_walk_still_multiplies() -> None:
     projected = graphed.universe(
         graphed.vary(ctx, "pu", weight, is_weight=True, up=weight * 1.1), "pu_up"
     )
-    assert not isinstance(projected._factors[0], Varied)
+    assert not isinstance(ambient_of(projected).factors[0], Varied)
 
     later = graphed.vary(projected, "sf", weight * 2.0, is_weight=True, up=weight * 2.1)
     ambient = graphed.weight(later)
     assert graphed.labels(ambient) == ("nominal", "sf_up")
-    assert graphed.nominal(ambient).node_id == (projected._factors[0] * (weight * 2.0)).node_id
-    assert id(projected._factors[0]) not in session._universes
+    assert (
+        graphed.nominal(ambient).node_id
+        == (ambient_of(projected).factors[0] * (weight * 2.0)).node_id
+    )
+    assert id(ambient_of(projected).factors[0]) not in session.systematics.universes
 
 
 def test_a_projected_weight_stays_the_member_across_a_later_mint() -> None:
@@ -621,9 +627,9 @@ def test_every_change_to_the_point_registry_moves_the_mint_epoch(shape: str) -> 
     """
     session, ctx, record = _context()
     _minting_shapes()[shape](ctx, record)  # the rolled-back shape has to mint before it refuses
-    epoch, registry = session._mint_epoch, dict(session._points)
+    epoch, registry = session.systematics.epoch, dict(session._points)
     _minting_shapes()[shape](ctx, record)
-    assert session._mint_epoch != epoch
+    assert session.systematics.epoch != epoch
     if shape == "rolled back":
         assert session._points == registry, "this shape is meant to leave the registry as it was"
 
@@ -651,8 +657,8 @@ def test_the_resolution_memo_holds_no_container_the_analysis_has_dropped(read_ev
             if read_every:
                 graphed.weight(inner)
         graphed.weight(inner)
-        return len(session._universes)
+        return len(session.systematics.universes)
 
     assert program() > 0, "no container was memoised, so this guard measures nothing"
     gc.collect()
-    assert session._universes == {}
+    assert session.systematics.universes == {}

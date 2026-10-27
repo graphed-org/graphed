@@ -77,7 +77,7 @@ class RetryN:
         for _ in range(self.n):
             try:
                 return process(partition, resources)
-            except Exception as exc:
+            except Exception as exc:  # a task may fail in any way; each failure is retried
                 last = exc
         raise last
 
@@ -107,7 +107,7 @@ class RetryElsewhere:
             res = self.new_resources() if self.new_resources is not None else resources
             try:
                 return process(partition, res)
-            except Exception as exc:
+            except Exception as exc:  # a task may fail in any way; each failure is retried
                 last = exc
         raise last
 
@@ -154,7 +154,7 @@ class RetrySmallerChunk:
         for sub in subs:
             try:
                 partials.append(process(sub, resources))
-            except Exception as exc:
+            except Exception as exc:  # any failed sub-range is split again
                 partials.append(
                     self._process_split(
                         sub, exc, process=process, combine=combine, resources=resources

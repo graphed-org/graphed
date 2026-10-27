@@ -10,19 +10,20 @@ from __future__ import annotations
 
 import threading
 import types
-import weakref
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 
 import graphed.core
 
-from ._points import Point
-from .array import Array
+from .array import Array, attach, handle_of, labels_carried
 from .backend import Backend, Form, ParamValue
 from .errors import GraphedTypeError, OutputTypeError
 from .provenance import Provenance, capture
 from .services import Bindable
+from .systematics.lineage import unify_contexts
+from .systematics.points import Point
+from .systematics.state import SystematicsState
 
 if TYPE_CHECKING:
     from .services import ServiceSpec
@@ -97,60 +98,18 @@ class Session:
         # stays backend-idiom-neutral; backends without array_type get it unchanged.
         factory = getattr(backend, "array_type", None)
         self._array_cls: type[Array] = factory() if callable(factory) else Array
-        # M48 §2.5: every `Varied` registers here (weakly), so `compile_ir` can report a
-        # registered label that reaches no marked output instead of paying for it silently.
-        self._varied: list[tuple[tuple[str, ...], weakref.ref[Any]]] = []
-        # M49 §2.5: the shift-after-weight ordering diagnostic. Both operands are live only at the
-        # shift `vary` call, so detection is RECORD-time and the registration is BY VALUE —
-        # `_stamp` rebuilds a context's ambient weight after `register`, so `_varied`'s weak
-        # reference is already dead at compile, and no Session-retained object ever carries a
-        # COLLECTION name.
-        self._weight_factors: list[tuple[str, tuple[int, ...]]] = []
-        # `(family, collection)` -> the offending factor's own member node ids. Carrying the ids is
-        # what keeps the report PER-PROGRAM: this registry accumulates for the Session's lifetime,
-        # and `compile_ir` ships only the pairs whose factor reaches the artifact it compiled.
-        self._shift_after_weight: dict[tuple[str, str], frozenset[int]] = {}
-        # M52 §4.5: every label `vary` mints is minted with its POINT here, so resolution stays a
-        # pure f(label) and no narrowing call site grows a Point argument. Record-time only —
-        # points are not written to disk (§5.3).
-        self._points: dict[str, Point] = {}
-        # §4.11-2's inverse of `_points` (point -> owning label), kept in sync by
-        # `vary._bind_points` so `vary._check_unique` tests "one point wears one label" in O(1)
-        # instead of rescanning the whole registry per minted label — the difference between O(N)
-        # and O(N^2) in Session universes.
-        self._points_by_point: dict[Point, str] = {}
-        # Per-node memo of `vary._source_ids` (node_id -> reachable source node_ids). The IR is
-        # append-only + hash-consed, so a node's reachable-source set is immutable and never needs
-        # invalidation; the memo turns check_members' per-member walk of a shared (deep) prefix
-        # from O(members x depth) into O(depth + members).
+        # `reachable_sources`' memo (node_id -> reachable source node_ids)
         self._source_ids_cache: dict[int, frozenset[int]] = {}
-        # Per-Session memo of `context._mul_form` ((left, right) form DESCRIPTIONS -> product
-        # form). Per-Session and not module-global because the answer depends on THIS backend
-        # instance — an `AwkwardBackend`'s registered behavior can decide an op the plain one
-        # refuses — and because a module-global would keep every form string a process ever
-        # inferred.
-        self._mul_forms: dict[tuple[str, str], Any] = {}
-        # Per-Session memo of `context._two_level`, keyed by container id -> {label: the pair of
-        # member KEYS the label resolves through}. §5's record-time check re-runs the whole
-        # composition at every registration, so without this every factor pays §4.6's point
-        # restriction once per label per registration. Keys and never members, so the memo pins
-        # nothing: a member would hold its context and through it every factor of the analysis,
-        # outliving the finalizer that drops a dead container's page. Entries are stored only where
-        # a later mint cannot move the answer (`context._settled`); `vary`'s rollback, the one
-        # place the registry is not purely extended, drops the memo wholesale.
-        self._universes: dict[int, dict[str, tuple[str, str | None]]] = {}
-        # §5's MINT EPOCH: one counter over every extension of `_points` (`vary._bind_points`) and
-        # every rollback of it. A context's composed ambient weight is a cache stamped with the
-        # epoch it was composed at, so a mint landing after the composition makes the next read
-        # remake it and resolve every factor against the registry AS OF THAT READ (§3 clause 1).
-        # A counter and not a hash of the registry: exact, and O(1) to test.
-        self._mint_epoch = 0
+        # guards `_fn_name`'s tables and every `systematics` read and write; reentrant because a
+        # `vary` transaction holds it around the state's own locked methods
+        self._lock = threading.RLock()
+        #: the variation registries `graphed.vary` writes, which the Session never interprets
+        self.systematics = SystematicsState(self._lock)
         # m60 integ-m60-O: per-Session identity for an opaque callable. `callable -> (fn, name)`
         # (the object is held, so an id used as a stand-in key cannot be recycled onto a later
         # callable) plus the ONE name space every name handed out lives in, declared or derived.
         self._fn_names: dict[object, tuple[object, str]] = {}
         self._fn_taken: set[str] = set()
-        self._fn_lock = threading.Lock()
 
     def _mine(self, arrays: Sequence[Any], located: tuple[str, Provenance] | None = None) -> None:
         """m60 integ-m60-X: refuse an `Array` this Session did not record.
@@ -161,7 +120,7 @@ class Session:
         `GraphedTypeError`; the readers pass nothing and get a plain `TypeError`
         (`GraphedTypeError` is not one, which is what separates the two halves).
         """
-        if all(a._session is self for a in arrays):
+        if all(a.session is self for a in arrays):
             return
         message = "an input was recorded in a different Session"
         if located is None:
@@ -197,7 +156,7 @@ class Session:
         Ceiling: under a concurrent build the assignment of ordinals to colliding callables
         follows thread interleaving.
         """
-        with self._fn_lock:
+        with self._lock:
             if name is not None:
                 self._fn_taken.add(name)
                 return name
@@ -230,14 +189,14 @@ class Session:
         construction. Handles on ONE ancestry chain merge to the most-derived one; divergent
         handles are an error AT THIS OP naming both, which is §2.3e's early detection.
         """
-        from .accessors import unify_contexts  # noqa: PLC0415  (import cycle: accessors -> array)
-
         array = self._array_cls(self, node_id)
         if inputs:
-            array._context = unify_contexts(*(item._context for item in inputs))
+            labels: frozenset[str] | None = None
             for item in inputs:
-                if item._labels:
-                    array._labels = (array._labels or frozenset()) | item._labels
+                carried = labels_carried(item)
+                if carried:
+                    labels = carried if labels is None else labels | carried
+            attach(array, unify_contexts(*(handle_of(item) for item in inputs)), labels)
         return array
 
     # ---- introspection ---------------------------------------------------------
@@ -245,6 +204,15 @@ class Session:
     def backend(self) -> Backend:
         """The backend this session records on."""
         return self._backend
+
+    # read-only views of `systematics`, under the names the frozen suites read
+    @property
+    def _points(self) -> Mapping[str, Point]:
+        return self.systematics.points
+
+    @property
+    def _points_by_point(self) -> Mapping[Point, str]:
+        return self.systematics.point_owners
 
     def node_count(self) -> int:
         """Return the number of interned nodes."""
@@ -351,6 +319,60 @@ class Session:
     def form_of(self, node_id: int) -> Form:
         """Return the form of node ``node_id``."""
         return self._forms[node_id]
+
+    def recorded_op(
+        self, node_id: int
+    ) -> tuple[str, Mapping[str, ParamValue], tuple[int, ...]] | None:
+        """Return ``(op, params, input ids)`` node ``node_id`` was recorded with, else ``None``.
+
+        ``None`` for a source or an External.
+        """
+        recorded = self._ops.get(node_id)
+        return None if recorded is None else (recorded[0], recorded[1], tuple(recorded[2]))
+
+    def reachable_sources(self, node_id: int) -> frozenset[int]:
+        """Return the source node ids reachable from node ``node_id``.
+
+        Memoized per node: the IR is append-only and hash-consed, so a node's set never changes,
+        and a shared (deep) prefix is walked once however many nodes read it.
+        """
+        cache = self._source_ids_cache
+        hit = cache.get(node_id)
+        if hit is not None:
+            return hit
+        # iterative post-order (a deep chain blows the recursion limit): a node is appended only
+        # after every input it reaches, so the forward pass reads each input's set resolved
+        order: list[int] = []
+        seen: set[int] = set()
+        stack: list[tuple[int, bool]] = [(node_id, False)]
+        while stack:
+            current, done = stack.pop()
+            if done:
+                order.append(current)
+                continue
+            if current in seen:
+                continue
+            seen.add(current)
+            stack.append((current, True))
+            for input_id in self._inputs_of(current):
+                if input_id not in cache and input_id not in seen:
+                    stack.append((input_id, False))
+        for current in order:
+            if current in self._sources:
+                cache[current] = frozenset((current,))
+            else:
+                reached: frozenset[int] = frozenset()
+                for input_id in self._inputs_of(current):
+                    reached |= cache[input_id]
+                cache[current] = reached
+        return cache[node_id]
+
+    def _inputs_of(self, node_id: int) -> tuple[int, ...]:
+        if node_id in self._sources:
+            return ()
+        if node_id in self._externals:
+            return tuple(self._externals[node_id][1])
+        return tuple(self._ops[node_id][2])
 
     def sourcemap(self) -> dict[int, dict[str, object]]:
         """Per-node user-source provenance (file / line / function / sub-expression text).
@@ -476,7 +498,7 @@ class Session:
     def record_external(
         self,
         op: str,
-        fn: Callable[[object], object],
+        fn: Callable[..., object],
         inputs: Sequence[Array],
         params: Mapping[str, ParamValue] | None = None,
         *,
@@ -597,13 +619,7 @@ class Session:
         """
         self._mine([array])
         cache: dict[int, object] = {} if memo is None else memo
-
-        def inputs_of(node_id: int) -> tuple[int, ...]:
-            if node_id in self._sources:
-                return ()
-            if node_id in self._externals:
-                return tuple(self._externals[node_id][1])
-            return tuple(self._ops[node_id][2])
+        inputs_of = self._inputs_of
 
         # explicit-stack post-order: a deeply chained recorded graph (a long selection/systematics
         # chain) would blow Python's recursion limit if this evaluated recursively. Inputs are

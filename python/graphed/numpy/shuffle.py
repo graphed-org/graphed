@@ -310,7 +310,7 @@ def _as_columns(record: object) -> dict[str, np.ndarray]:
 # ---- E4 Arrow-native-validity wire codec (option blocks only) --------------------------------
 def _pa() -> Any:
     try:
-        import pyarrow as pa  # noqa: PLC0415  (lazy: pyarrow is the optional [parquet] extra)
+        import pyarrow as pa
     except ImportError as exc:  # pragma: no cover - exercised where pyarrow is absent
         raise ImportError(
             "option (nullable join) blocks serialize over Arrow — install: pip install "

@@ -34,9 +34,9 @@ pytest.importorskip("pyarrow")
 def test_written_superset_is_the_union_and_each_universe_is_its_eager_row_set(tmp_path) -> None:  # type: ignore[no-untyped-def]
     _session, events = events_context()
     record, evt_mask = superset_inputs(events)
-    paths = ga.to_parquet(record, str(tmp_path / "sup"), select={0: evt_mask})  # type: ignore[call-arg]
+    paths = ga.to_parquet(record, str(tmp_path / "sup"), select={0: evt_mask})
     assert len(paths) == 1
-    got = ga.read_varied(paths[0])  # type: ignore[attr-defined]
+    got = ga.read_varied(paths[0])
 
     assert tuple(got) == JES_LABELS
     # each universe's reconstructed rows == its eager row set (independent reference)

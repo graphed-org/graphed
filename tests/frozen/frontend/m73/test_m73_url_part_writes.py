@@ -12,7 +12,7 @@ import sys
 import uuid
 from collections.abc import Iterator, Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import pytest
@@ -105,7 +105,8 @@ def run(*writes: gw.PartWrite) -> tuple[list[list[str]], list[str]]:
         reduce=paths_only, combine=add, empty=no_paths, steps_per_file=2, writes=list(writes)
     )
     named = [
-        list(plan.process.part_paths(t.partition)) for t in sorted(plan.tasks, key=lambda t: t.key)
+        list(cast(Any, plan.process).part_paths(t.partition))
+        for t in sorted(plan.tasks, key=lambda t: t.key)
     ]
     return named, SequentialRunner().run(plan).value
 

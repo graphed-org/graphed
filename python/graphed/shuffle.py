@@ -381,20 +381,15 @@ def join_plan(
     )
 
 
-def _build(
-    builder: str,
-    output: Array,
-    fold: _Monoid | None,
-    *,
-    backend: Callable[[], Any] | str | None,
-    steps_per_file: int | None,
-    names: Sequence[str] | None,
-) -> DurablePlanV2:
+def _barrier_sides(
+    builder: str, output: Array, store: GraphStore
+) -> tuple[int, tuple[int, ...], list[tuple[str, int, PartitionedSource]], set[int]]:
+    """Return the barrier node, its inputs, the source each input reads, and the cone after it.
+
+    Refuses a graph ``builder`` cannot run.
+    """
     is_join = builder == "join_plan"
     session = output.session
-    compiled = compile_ir(session, output)
-    ir = bytes(compiled.ir)
-    store = GraphStore.deserialize(ir)
     nodes = store.nodes()
     barriers = [i for i, n in enumerate(nodes) if n["kind"] == ("join" if is_join else "exchange")]
     if not barriers:
@@ -443,27 +438,62 @@ def _build(
                 f"partitioned source; one reads {sorted(read)}"
             )
         sides.append((read[0], *by_name[read[0]]))
-    refuse_chunk_partials(compiled, as_outputs=fold is None)
+    return barrier, targets, sides, post
 
-    backend_id = _backend_identity(session, backend)
-    factory = backend if backend is not None else type(session.backend)
-    wired = external_evaluators(session, compiled)
-    frames = compiled.correspondence.frames
-    fallback = 1 if steps_per_file is None else steps_per_file
+
+def _routing(
+    is_join: bool,
+    nodes: Sequence[Mapping[str, Any]],
+    params: Mapping[str, Any],
+    steps_per_file: int,
+    backend_id: str,
+) -> tuple[int, tuple[str, str, int], dict[str, Any]]:
+    """Return the destination count, the map-write route, and the map stages' routing record."""
     if is_join:
         exchanges = [n for n in nodes if n["kind"] == "exchange"]
-        parts = int(dict(exchanges[0]["params"]).get("parts", fallback)) if exchanges else fallback
-        route = ("hash", JOINKEY, parts)
+        parts = (
+            int(dict(exchanges[0]["params"]).get("parts", steps_per_file))
+            if exchanges
+            else steps_per_file
+        )
         routing: dict[str, Any] = {
             "scheme": "hash",
             "key": JOINKEY,
             "parts": parts,
             "backend_id": backend_id,
         }
-    else:
-        parts = int(params.get("parts", fallback))
-        route = (str(params["scheme"]), str(params.get("key", "")), parts)
-        routing = {**params, "parts": parts, "backend_id": backend_id}
+        return parts, ("hash", JOINKEY, parts), routing
+    parts = int(params.get("parts", steps_per_file))
+    route = (str(params["scheme"]), str(params.get("key", "")), parts)
+    return parts, route, {**params, "parts": parts, "backend_id": backend_id}
+
+
+def _build(
+    builder: str,
+    output: Array,
+    fold: _Monoid | None,
+    *,
+    backend: Callable[[], Any] | str | None,
+    steps_per_file: int | None,
+    names: Sequence[str] | None,
+) -> DurablePlanV2:
+    is_join = builder == "join_plan"
+    session = output.session
+    compiled = compile_ir(session, output)
+    ir = bytes(compiled.ir)
+    store = GraphStore.deserialize(ir)
+    nodes = store.nodes()
+    barrier, targets, sides, post = _barrier_sides(builder, output, store)
+    params = dict(nodes[barrier]["params"])
+    refuse_chunk_partials(compiled, as_outputs=fold is None)
+
+    backend_id = _backend_identity(session, backend)
+    factory = backend if backend is not None else type(session.backend)
+    wired = external_evaluators(session, compiled)
+    frames = compiled.correspondence.frames
+    parts, route, routing = _routing(
+        is_join, nodes, params, 1 if steps_per_file is None else steps_per_file, backend_id
+    )
 
     map_stages = []
     for target, (name, nid, data) in zip(targets, sides, strict=True):
@@ -506,7 +536,7 @@ def _build(
         broadcast = broadcast_join_choice(
             len(map_stages[0].tasks), len(map_stages[1].tasks), parts
         )
-        gather_routing.update(how=how, broadcast=broadcast)
+        gather_routing.update(how=str(params.get("how", "inner")), broadcast=broadcast)
     stages = [
         *map_stages,
         StageSpec(

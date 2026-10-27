@@ -33,7 +33,7 @@ def eval_histogram(resource: Any, params: Mapping[str, Any], inputs: list[Any]) 
     §6.2 ``variation`` — lets it fold multiple weights and run the axis-mode loop itself.
     """
     del resource  # the payload is a hash witness; the fill is rebuilt from params
-    from graphed_histogram.boost import FillEvaluator  # noqa: PLC0415  (optional integration)
+    from graphed_histogram.boost import FillEvaluator
 
     variation = params.get("variation")
     constants = params.get("constants")

@@ -19,6 +19,7 @@ from graphed import Array, ParamValue
 from graphed.array import _scalar_params
 from graphed.errors import GraphedTypeError
 from graphed.provenance import capture
+from graphed.varied import boundary_refusal, containers_in, expand, expand_tuple, narrow
 
 from . import payloads
 from .backend import AwkwardForm, astype_form, broadcast_form
@@ -1101,13 +1102,6 @@ def _dispatched(fn: Callable[..., Any], kind: str) -> Callable[..., Any]:
     Signatures do not change (R17.0's anti-drift pin): `functools.wraps` keeps `__wrapped__`, so
     `inspect.signature` still reports the underlying one.
     """
-    from graphed.varied import (  # noqa: PLC0415
-        boundary_refusal,
-        containers_in,
-        expand,
-        expand_tuple,
-        narrow,
-    )
 
     @functools.wraps(fn)
     def wrapper(*args: Any, **kwargs: Any) -> Any:

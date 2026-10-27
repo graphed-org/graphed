@@ -11,7 +11,7 @@ conforming implementation. Also carries §2.2's property half, classified by MEA
 from __future__ import annotations
 
 import inspect
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from vary_ctx_fixtures import (
@@ -29,6 +29,9 @@ import graphed.awkward as ga
 import graphed.numpy as gnp
 from graphed import BufferProjection, GraphedError, Projection, read_columns
 from graphed.awkward import gak
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 #: §2.3d's bound class set
 CLASSES = {"refusing", "expanding", "broadcasting", "eager-metadata", "accepting"}
@@ -146,7 +149,7 @@ def test_the_boundary_and_plan_verbs_refuse_without_silently_compiling() -> None
     _s, root = awkward_session()
     plain = root.MET.pt
     varied = graphed.vary(plain, "sig", up=plain * 1.1)
-    calls = {
+    calls: dict[str, Callable[[Any], object]] = {
         "repartition": lambda operand: graphed.repartition(operand, n=2),
         "pack_key": lambda operand: graphed.pack_key(operand, on=["MET"]),
         "join": lambda operand: graphed.join(operand, plain, on=["MET"]),
@@ -174,7 +177,11 @@ def test_the_compile_and_aggregate_verbs_refuse_naming_graphed_universe() -> Non
     """
     session, x = partitioned_vector_source()
     varied = loose_varied(x)
-    reducer = {"reduce": lambda values: values, "combine": lambda a, b: a, "empty": list}
+    reducer: dict[str, Any] = {
+        "reduce": lambda values: values,
+        "combine": lambda a, b: a,
+        "empty": list,
+    }
     with pytest.raises(GraphedError, match=r"graphed\.universe"):
         graphed.compile_ir(session, varied)
     with pytest.raises(GraphedError, match=r"graphed\.universe"):

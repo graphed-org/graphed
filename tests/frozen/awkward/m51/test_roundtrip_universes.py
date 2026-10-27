@@ -53,8 +53,8 @@ def test_bare_key_jet_skim_roundtrips_every_universe(tmp_path) -> None:  # type:
     _session, events = events_context()
     record, evt_mask, jet_mask = jet_skim_inputs(events)
     dest = str(tmp_path / "jets")
-    paths = ga.to_parquet(record, dest, select={0: evt_mask, 1: jet_mask})  # type: ignore[call-arg]
-    got = ga.read_varied(_one_part(paths))  # type: ignore[attr-defined]
+    paths = ga.to_parquet(record, dest, select={0: evt_mask, 1: jet_mask})
+    got = ga.read_varied(_one_part(paths))
 
     assert tuple(got) == JES_LABELS  # every universe reconstructed, nominal first (§2.4 order)
     for label in JES_LABELS:
@@ -65,8 +65,8 @@ def test_field_scoped_multifield_skim_roundtrips_every_universe(tmp_path) -> Non
     _session, events = events_context()
     record, evt_mask, jet_mask = multifield_skim_inputs(events)
     dest = str(tmp_path / "mixed")
-    paths = ga.to_parquet(record, dest, select={0: evt_mask, ("Jet", 1): jet_mask})  # type: ignore[call-arg]
-    got = ga.read_varied(_one_part(paths))  # type: ignore[attr-defined]
+    paths = ga.to_parquet(record, dest, select={0: evt_mask, ("Jet", 1): jet_mask})
+    got = ga.read_varied(_one_part(paths))
 
     assert tuple(got) == JES_LABELS
     for label in JES_LABELS:
@@ -91,8 +91,8 @@ def test_weight_only_labels_replicate_the_collapsed_output_and_roundtrip(tmp_pat
     assert len(set(node_ids)) < len(node_ids)  # a real de-dup: fewer distinct outputs than labels
 
     dest = str(tmp_path / "weights")
-    paths = ga.to_parquet(record, dest, select={0: evt_mask})  # type: ignore[call-arg]
-    got = ga.read_varied(_one_part(paths))  # type: ignore[attr-defined]
+    paths = ga.to_parquet(record, dest, select={0: evt_mask})
+    got = ga.read_varied(_one_part(paths))
 
     assert tuple(got) == ROW_LABELS  # e-canonical `murf_5em1` label survives verbatim
     # the collapsed label reconstructs to nominal (all-zero delta) AND the labels AFTER it

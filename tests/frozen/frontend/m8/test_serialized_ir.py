@@ -8,14 +8,19 @@ round-trip through graphed-core, are deterministic, and the optimized form is th
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 from backends import ListBackend, from_list
 
 import graphed.core
 from graphed import Session
 
+if TYPE_CHECKING:
+    from graphed import Array
 
-def _record() -> tuple[Session, object]:
+
+def _record() -> tuple[Session, Array]:
     s = Session(ListBackend())
     a = from_list(s, "a", [1, 2, 3])
     b = from_list(s, "b", [4, 5, 6])

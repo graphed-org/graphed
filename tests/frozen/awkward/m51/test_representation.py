@@ -77,7 +77,7 @@ def test_nested_field_path_flattens_and_reads_back_through_the_manifest(tmp_path
     assert value_column("jes_up", "Jet_pt") in manifest["jes_up"]
     assert not any("." in c for label in manifest if label != "levels" for c in manifest[label])
     # and the reader resolves labels THROUGH the manifest, returning the nested record intact
-    got = ga.read_varied(paths[0])  # type: ignore[attr-defined]
+    got = ga.read_varied(paths[0])
     assert set(got["jes_up"].fields) == {"Jet", "MET"}
 
 
@@ -98,7 +98,7 @@ def test_collision_between_a_nested_and_a_flat_field_is_refused_naming_both(tmp_
     _s, events = events_context()
     record, evt_mask = _collision_record(events, vary_flat=True)
     with pytest.raises(GraphedError) as excinfo:
-        ga.to_parquet(record, str(tmp_path / "coll"), select={0: evt_mask}, compute=False)  # type: ignore[call-arg]
+        ga.to_parquet(record, str(tmp_path / "coll"), select={0: evt_mask}, compute=False)
     message = str(excinfo.value)
     assert "Jet.pt" in message or "Jet_pt" in message  # names the colliding source field(s)
 
@@ -106,5 +106,5 @@ def test_collision_between_a_nested_and_a_flat_field_is_refused_naming_both(tmp_
 def test_a_nonvarying_flat_field_is_not_a_collision(tmp_path) -> None:  # type: ignore[no-untyped-def]
     _s, events = events_context()
     record, evt_mask = _collision_record(events, vary_flat=False)
-    paths = ga.to_parquet(record, str(tmp_path / "legal"), select={0: evt_mask})  # type: ignore[call-arg]
+    paths = ga.to_parquet(record, str(tmp_path / "legal"), select={0: evt_mask})
     assert len(paths) == 1  # a varying Jet.pt beside a non-varying Jet_pt is a legal nested skim

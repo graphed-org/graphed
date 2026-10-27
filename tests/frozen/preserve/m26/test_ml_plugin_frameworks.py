@@ -13,7 +13,7 @@ from __future__ import annotations
 import io
 import pathlib
 import tempfile
-from typing import Any
+from typing import Any, cast
 
 import awkward as ak
 import numpy as np
@@ -38,7 +38,7 @@ def _evaluated(
         out = plugin.evaluate(resource, params or {}, inputs)
     finally:
         plugin.close(resource)
-    return np.asarray(ak.to_numpy(ak.Array(out)), dtype="float64")
+    return cast("np.ndarray", np.asarray(ak.to_numpy(ak.Array(out)), dtype="float64"))
 
 
 # ---------------------------------- PyTorch (TorchScript) ----------------------------------------

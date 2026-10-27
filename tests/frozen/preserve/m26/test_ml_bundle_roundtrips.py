@@ -11,7 +11,7 @@ trip (lightest real framework) pins the same path for a *local-bytes* model.
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import Any, cast
 
 import awkward as ak
 import fake_triton
@@ -29,15 +29,16 @@ from graphed.preserve import (
     reproduce,
 )
 
-HIST = {"name": "met", "bins": 20, "lo": 0.0, "hi": 200.0}
+HIST: dict[str, Any] = {"name": "met", "bins": 20, "lo": 0.0, "hi": 200.0}
 
 
 def _hist(value: Any, weight: Any) -> np.ndarray:
     v = np.asarray(ak.to_numpy(ak.Array(value)), dtype="float64")
     w = np.asarray(ak.to_numpy(ak.Array(weight)), dtype="float64")
     # the triple-path _histogram convention
-    return np.histogram(v, bins=HIST["bins"], range=(HIST["lo"], HIST["hi"]), weights=w)[0].round(
-        6
+    return cast(
+        "np.ndarray",
+        np.histogram(v, bins=HIST["bins"], range=(HIST["lo"], HIST["hi"]), weights=w)[0].round(6),
     )
 
 

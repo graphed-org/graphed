@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Any
+from typing import Any, cast
 
 import awkward as ak
 import numpy as np
@@ -26,7 +26,7 @@ from graphed.awkward import AwkwardBackend, from_awkward, gak
 from graphed.awkward.payloads import correctionlib_contents_hash, onnx_weights_hash
 from graphed.preserve import PreserveError, build_bundle, reproduce
 
-HIST = {"name": "met", "bins": 16, "lo": 0.0, "hi": 120.0}
+HIST: dict[str, Any] = {"name": "met", "bins": 16, "lo": 0.0, "hi": 120.0}
 
 CSET = json.dumps(
     {
@@ -79,8 +79,9 @@ EVENTS = ak.Array(
 def _hist(value: Any, weight: Any) -> np.ndarray:
     v = np.asarray(ak.to_numpy(ak.Array(value)), dtype="float64")
     w = np.asarray(ak.to_numpy(ak.Array(weight)), dtype="float64")
-    return np.histogram(v, bins=HIST["bins"], range=(HIST["lo"], HIST["hi"]), weights=w)[0].round(
-        6
+    return cast(
+        "np.ndarray",
+        np.histogram(v, bins=HIST["bins"], range=(HIST["lo"], HIST["hi"]), weights=w)[0].round(6),
     )
 
 
@@ -172,7 +173,7 @@ def test_gh_multi_weight_fill_replays_through_a_bundle(tmp_path) -> None:  # typ
     h = gh.boost.Histogram(bh.axis.Regular(8, 0.0, 60.0), storage=bh.storage.Weight())
     h.fill(g.MET, weight=[g.w1, g.w2])  # the M29 producer surface
 
-    reference = s.materialize(h.fill_nodes()[0])
+    reference: Any = s.materialize(h.fill_nodes()[0])
     bundle = build_bundle(
         tmp_path / "b",
         session=s,
@@ -180,7 +181,7 @@ def test_gh_multi_weight_fill_replays_through_a_bundle(tmp_path) -> None:  # typ
         datasets={"events": EVENTS},
         payloads={},
     )
-    got = reproduce(bundle)
+    got: Any = reproduce(bundle)
     assert np.array_equal(got.view(flow=True)["value"], reference.view(flow=True)["value"])
     assert np.array_equal(got.view(flow=True)["variance"], reference.view(flow=True)["variance"])
 

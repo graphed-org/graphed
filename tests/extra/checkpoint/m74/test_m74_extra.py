@@ -199,10 +199,10 @@ def test_task_store_caches_dirless_roots_and_renews_a_forked_token(
     assert rs.task_store(url) is rs.task_store(url)
     directory = str(tmp_path / "dir")
     assert rs.task_store(directory) is not rs.task_store(directory)
-    monkeypatch.setattr(rs, "_TOKEN", (os.getpid() + 1, "inherited"))
+    monkeypatch.setattr(rs, "_TOKENS", {os.getpid() + 1: "inherited"})
     node = rs.task_store(str(tmp_path / "forked")).node
     assert not node.startswith("inherited")
-    assert node.startswith(rs._TOKEN[1])
+    assert node.startswith(rs._TOKENS[os.getpid()])
 
 
 class _Writer:

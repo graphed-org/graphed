@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -127,21 +127,21 @@ def test_dashboard_control_is_opt_in() -> None:
     with Dashboard() as dash:
         with pytest.raises(RuntimeError, match="control=True"):
             _ = dash.control
-        ex = _Both()
-        assert dash.attach(ex) is ex
+        ex: Any = _Both()
+        assert dash.attach(ex) is cast(object, ex)
         assert ex.monitor is dash.monitor
         assert ex.control == "sentinel"
         with pytest.raises(TypeError, match="_Neither"):
-            dash.attach(_Neither())
+            dash.attach(cast(Any, _Neither()))
 
     with Dashboard(control=True) as dash:
         assert isinstance(dash.control, gc.RunControl)
-        ex = _Both()
+        ex = cast(Any, _Both())
         dash.attach(ex)
         assert ex.monitor is dash.monitor
         assert ex.control is dash.control
         with pytest.raises(TypeError, match="_MonitorOnly"):
-            dash.attach(_MonitorOnly())
+            dash.attach(cast(Any, _MonitorOnly()))
 
 
 def _one_hot_plan(n: int, hooks: dict[int, Any]) -> Plan[tuple[int, ...]]:

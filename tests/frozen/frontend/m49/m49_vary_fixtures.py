@@ -10,6 +10,7 @@ prepend import mode a shared bare name binds to whichever sibling directory impo
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any, cast
 
 import numpy as np
 
@@ -41,7 +42,7 @@ def _tag(label: str) -> str:
     return label.split("_", 1)[1]
 
 
-def _chain_step(value: object, step: int) -> object:
+def _chain_step(value: Any, step: int) -> Any:
     return value * (1.0 + 0.01 * (step + 1))
 
 
@@ -95,7 +96,10 @@ def vary_topology(
     varied = graphed.vary(
         forks["nominal"],
         "jes",
-        **{_tag(label): forks[label] for label in FORK_FACTORS if label != "nominal"},
+        **cast(
+            "dict[str, Any]",
+            {_tag(label): forks[label] for label in FORK_FACTORS if label != "nominal"},
+        ),
     )
     chains: dict[str, list[int]] = {label: [] for label in FORK_FACTORS}
     token = token_input = None
@@ -210,7 +214,12 @@ def arena_program(session: Session, labels: tuple[str, ...]) -> list[Array]:
     value = prefix_value * FORK_FACTORS["nominal"]
     if labels:
         value = graphed.vary(
-            value, "jes", **{_tag(label): prefix_value * FORK_FACTORS[label] for label in labels}
+            value,
+            "jes",
+            **cast(
+                "dict[str, Any]",
+                {_tag(label): prefix_value * FORK_FACTORS[label] for label in labels},
+            ),
         )
     for step in range(ARENA_CHAIN_OPS):
         value = _chain_step(value, step)
@@ -268,7 +277,7 @@ def flat_projection_program() -> FlatProgram:
     )
     pt = ev["Jet_pt"]
     shifted = pt * (1.0 + 0.1 * ev["Jet_eta"])
-    opaque = ev.map(lambda record: record["Jet_pt"] * 1.02)
+    opaque = ev.map(lambda record: cast(Any, record)["Jet_pt"] * 1.02)
     varied = graphed.vary(pt, "jes", up=shifted, opaque=opaque)
     return FlatProgram(
         session=session,

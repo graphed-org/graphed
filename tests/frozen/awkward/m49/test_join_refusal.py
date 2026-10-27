@@ -14,6 +14,8 @@ builder).
 
 from __future__ import annotations
 
+from typing import Any
+
 import awkward as ak
 import pytest
 
@@ -25,7 +27,7 @@ from graphed.errors import GraphedError
 ON = ["run", "lumi", "event"]
 
 
-def _sources(session: Session) -> tuple[object, object]:
+def _sources(session: Session) -> tuple[Any, Any]:
     """m40's shape: left row 0 matches nothing, rows 1-2 each match both right rows."""
     left = from_awkward(
         session,

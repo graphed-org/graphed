@@ -7,6 +7,8 @@ container.
 
 from __future__ import annotations
 
+from typing import Any
+
 from m56_fanout_fixtures import (
     HF_SF,
     JES_SF,
@@ -23,7 +25,7 @@ from m56_fanout_fixtures import (
 import graphed
 
 
-def m56_per_universe_member(tainted: str) -> tuple[object, object, object]:
+def m56_per_universe_member(tainted: str) -> tuple[object, Any, Any]:
     """Return a `jes`-varied member whose universes are built one at a time.
 
     So a factor read can be placed in ONE of them. `tainted` picks which universe reads a `jes`

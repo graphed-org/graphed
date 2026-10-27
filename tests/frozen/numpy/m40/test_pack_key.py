@@ -26,6 +26,7 @@ from __future__ import annotations
 import itertools
 import subprocess
 import sys
+from typing import Any
 
 import numpy as np
 
@@ -63,7 +64,7 @@ def _packed(rows: list[tuple[int, int, int]]) -> list[int]:
         event=np.array([e for _, _, e in rows], dtype=np.int64),
     )
     packed = graphed.pack_key(src, on=("run", "lumi", "event"))
-    out = s.materialize(packed)
+    out: Any = s.materialize(packed)
     return [int(v) for v in np.asarray(out["__joinkey__"])]
 
 

@@ -100,7 +100,7 @@ def _replay(
         # reported (dask-awkward does the same). Then continue with a stand-in.
         for t in inputs:
             if isinstance(t, ak.Array):
-                t.layout._touch_data(recursive=True)
+                ak.typetracer.touch_data(t)
         # The stand-in is a typetracer of the node's RECORDED form (M23 `record_external(form=)`):
         # a package recording its own External family may declare a type its first input does not
         # have, and a downstream op is well-typed against that declaration alone. A recorded form
@@ -122,7 +122,7 @@ def _replay(
         # the output is materialized, so its own columns are read — touch them (covers a bare
         # field-access output that otherwise only touches shape, not leaf data).
         if isinstance(result, ak.Array):
-            result.layout._touch_data(recursive=True)
+            ak.typetracer.touch_data(result)
     return reports, conservative
 
 

@@ -15,7 +15,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 
@@ -50,7 +50,7 @@ class VectorSource:
         raise AssertionError("the whole-dataset loader must never run during a plan")
 
     def partitions(self, steps_per_file: int = 1) -> tuple[Partition, ...]:
-        edges = np.linspace(0, len(self.data), steps_per_file + 1, dtype=int)
+        edges: np.ndarray = np.linspace(0, len(self.data), steps_per_file + 1, dtype=int)
         return tuple(
             Partition("toy://vector", "", int(edges[i]), int(edges[i + 1]))
             for i in range(steps_per_file)
@@ -64,11 +64,11 @@ class VectorSource:
 # ---- the reduction spec (module-level, picklable, deterministic) --------------------------------
 def sums(values: list[Any]) -> np.ndarray:
     """One partition's composite: the per-universe sums, in marked-output order."""
-    return np.array([np.asarray(v).sum() for v in values], dtype=np.float64)
+    return cast("np.ndarray", np.array([np.asarray(v).sum() for v in values], dtype=np.float64))
 
 
 def add(a: np.ndarray, b: np.ndarray) -> np.ndarray:
-    return a + b
+    return cast("np.ndarray", a + b)
 
 
 def zeros() -> np.ndarray:

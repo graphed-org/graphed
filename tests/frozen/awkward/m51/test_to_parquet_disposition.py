@@ -37,6 +37,6 @@ def test_a_varied_record_and_varied_select_are_consumed_and_return_paths(tmp_pat
     varied_mask = gak.any(vjets.pt > 30.0, axis=1)  # a Varied select=
     assert isinstance(vjets, graphed.Varied) and isinstance(varied_mask, graphed.Varied)
 
-    result = ga.to_parquet(vjets, str(tmp_path / "j"), select={0: varied_mask, 1: vjets.pt > 25.0})  # type: ignore[call-arg]
+    result = ga.to_parquet(vjets, str(tmp_path / "j"), select={0: varied_mask, 1: vjets.pt > 25.0})
     assert _is_paths(result)  # accepting: an ordinary path list, NOT a {label: result} mapping
     assert not isinstance(result, (dict, graphed.Varied))

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from typing import TYPE_CHECKING
 
 import analyses
 import m62_url_helpers as h
@@ -11,8 +12,11 @@ import pytest
 from graphed.checkpoint import FsspecStore, run_resumable
 from graphed.checkpoint.runner import _SimulatedInterrupt
 
+if TYPE_CHECKING:
+    from pathlib import Path
 
-def test_other_process_resumes_from_the_url_alone(shared_url, tmp_path) -> None:
+
+def test_other_process_resumes_from_the_url_alone(shared_url: str, tmp_path: Path) -> None:
     plan = h.hist_plan(6)
     with pytest.raises(_SimulatedInterrupt):
         run_resumable(plan, FsspecStore(shared_url), _kill_after=4)
@@ -31,7 +35,7 @@ def test_other_process_resumes_from_the_url_alone(shared_url, tmp_path) -> None:
         assert hashlib.sha256(blob).hexdigest() == entry.blob
 
 
-def test_other_process_finds_nothing_left_to_do(shared_url, tmp_path) -> None:
+def test_other_process_finds_nothing_left_to_do(shared_url: str, tmp_path: Path) -> None:
     plan = h.hist_plan(6)
     assert run_resumable(plan, FsspecStore(shared_url)).report.executed == 6
     executed, skipped, value = h.resume_in_child(plan, shared_url, tmp_path)

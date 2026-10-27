@@ -8,7 +8,7 @@ own prediction exactly. The no-``args`` default stays the m26 single-stacked-mat
 from __future__ import annotations
 
 import io
-from typing import Any
+from typing import Any, cast
 
 import awkward as ak
 import numpy as np
@@ -29,11 +29,11 @@ def _eval(plugin: Any, payload: bytes, params: dict[str, Any], inputs: list[Any]
         out = plugin.evaluate(resource, params, inputs)
     finally:
         plugin.close(resource)
-    return np.asarray(ak.to_numpy(ak.Array(out)), dtype="float64")
+    return cast("np.ndarray", np.asarray(ak.to_numpy(ak.Array(out)), dtype="float64"))
 
 
 def test_pytorch_two_argument_module() -> None:
-    torch = pytest.importorskip("torch")
+    torch: Any = pytest.importorskip("torch")
 
     class TwoArg(torch.nn.Module):
         def forward(self, kin: Any, mask: Any) -> Any:
@@ -52,7 +52,7 @@ def test_pytorch_two_argument_module() -> None:
 
 
 def test_pytorch_default_remains_single_stacked_matrix() -> None:
-    torch = pytest.importorskip("torch")
+    torch: Any = pytest.importorskip("torch")
     model = torch.nn.Linear(2, 1)
     with torch.no_grad():
         model.weight.copy_(torch.tensor([[0.25, -0.5]]))
@@ -157,7 +157,7 @@ def test_onnx_legacy_default_is_unchanged() -> None:
 
 # ---------------------------------- keyword arguments --------------------------------------------
 def test_pytorch_keyword_arguments() -> None:
-    torch = pytest.importorskip("torch")
+    torch: Any = pytest.importorskip("torch")
 
     class KwModel(torch.nn.Module):
         def forward(self, kin: Any, mask: Any, scale: Any) -> Any:

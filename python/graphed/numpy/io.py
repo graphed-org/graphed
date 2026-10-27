@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, Literal, cast, overload
 
 import numpy as np
 
@@ -42,7 +42,7 @@ from .forms import NumpyForm
 
 def _pa() -> Any:
     try:
-        import pyarrow as pa  # noqa: PLC0415  (lazy: pyarrow is the optional extra)
+        import pyarrow as pa
     except ImportError as exc:  # pragma: no cover - exercised in the graphed base suite
         raise ImportError(
             "parquet I/O needs pyarrow — install the optional extra: pip install "
@@ -98,7 +98,7 @@ class _DatasetLoader:
     open_files: bool = False
 
     def __call__(self) -> dict[str, np.ndarray]:
-        import pyarrow.parquet as pq  # noqa: PLC0415
+        import pyarrow.parquet as pq
 
         cols = list(self.columns) if self.columns else None
         tables = [pq.read_table(p, columns=cols) for p in self.paths]
@@ -153,7 +153,7 @@ def read_parquet_partition(
     partition: Partition, columns: Sequence[str] | None = None
 ) -> dict[str, np.ndarray]:
     """Read one partition (resolving blind ones), restricted to ``columns``."""
-    import pyarrow.parquet as pq  # noqa: PLC0415
+    import pyarrow.parquet as pq
 
     part = gpq.resolve_partition(partition)
     table = pq.read_table(part.uri, columns=list(columns) if columns else None)
@@ -211,7 +211,7 @@ class _WritePart:
                 f"to_parquet writes 1-D rectilinear columns; the result has shape {result.shape}"
             )
         pa = _pa()
-        import pyarrow.parquet as pq  # noqa: PLC0415
+        import pyarrow.parquet as pq
 
         (path,) = self.part_paths(partition)
         fs, where = gw.prepare_part(path)
@@ -229,6 +229,39 @@ def _memory_step(partition: Partition, n: int, steps: int) -> int:
     raise ValueError(f"{partition} does not match any of {steps} steps over {n} rows")
 
 
+@overload
+def to_parquet(
+    array: Any,
+    destination: str,
+    *,
+    steps_per_file: int = ...,
+    compute: Literal[True] = ...,
+    executor: Any | None = ...,
+    prefix: str = ...,
+    column: str = ...,
+) -> list[str]: ...
+@overload
+def to_parquet(
+    array: Any,
+    destination: str,
+    *,
+    steps_per_file: int = ...,
+    compute: Literal[False],
+    executor: Any | None = ...,
+    prefix: str = ...,
+    column: str = ...,
+) -> Plan[list[str]]: ...
+@overload
+def to_parquet(
+    array: Any,
+    destination: str,
+    *,
+    steps_per_file: int = ...,
+    compute: bool,
+    executor: Any | None = ...,
+    prefix: str = ...,
+    column: str = ...,
+) -> list[str] | Plan[list[str]]: ...
 def to_parquet(
     array: Any,
     destination: str,

@@ -6,8 +6,9 @@ Both produce identical recorded graph structure; only their forms/evaluation dif
 from __future__ import annotations
 
 import platform
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from typing import Any
 
 from graphed import Array, Session
 from graphed.core import PayloadDescriptor
@@ -57,15 +58,15 @@ class ListBackend:
             return ListForm("object")
         raise TypeError(f"unsupported op {op!r}")
 
-    def eval_stage(
-        self, op: str, inputs: Sequence[object], params: Mapping[str, object]
-    ) -> object:
+    def eval_stage(self, op: str, inputs: Sequence[Any], params: Mapping[str, object]) -> object:
         sign = -1 if self.negate else 1
         if op in {"add", "sub", "mul"}:
             left, right = list(inputs[0]), list(inputs[1])
-            fn = {"add": lambda a, b: a + b, "sub": lambda a, b: a - b, "mul": lambda a, b: a * b}[
-                op
-            ]
+            fn: Callable[[Any, Any], Any] = {
+                "add": lambda a, b: a + b,
+                "sub": lambda a, b: a - b,
+                "mul": lambda a, b: a * b,
+            }[op]
             return [sign * fn(a, b) for a, b in zip(left, right, strict=False)]
         if op == "sum":
             return sign * sum(inputs[0])

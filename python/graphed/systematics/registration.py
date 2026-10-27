@@ -1,26 +1,32 @@
-"""`graphed.vary`: the one functional verb that registers variations (§2.1).
+"""The construction machinery `graphed.vary`'s three overloads share (§2.1).
 
-A neutral module verb — like `join`/`repartition`, never an `Array` method, never gak, never
-numpy-idiom — with three overloads distinguished by the target: the loose primitive over an
-`Array`/`Varied`, and the weight and shift forms over an event context. It NEVER mutates: the
-result is a new object of the target's kind and the target stays valid and unchanged, because
-variation history is object lineage (§2.6b).
+The tag channels, the minting, the fan-out, the member checks and §2.5's stamping, plus the loose
+overload over an `Array`/`Varied` (`vary_loose`). The verb itself is `graphed.systematics.verb`.
 """
 
 from __future__ import annotations
 
-import weakref
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any, NamedTuple
 
-from ..array import Array
-from ..errors import GraphedError, GraphedTypeError, PointError
-from ..provenance import capture
-from . import accessors
+from ..array import Array, add_labels
+from ..errors import GraphedError, PointError
 from .by_label import cone
+from .handles import reindex_to
+from .lineage import links_below, unify_contexts
 from .points import Point, coordinate, default, render
 from .tags import canonical_tag, numeric_value
-from .varied import Varied, member_of, rebuild, registered_points, session_of
+from .varied import (
+    Varied,
+    context_of,
+    member_nodes,
+    member_of,
+    members_of,
+    rebuild,
+    registered_points,
+    session_of,
+    tags_of,
+)
 
 #: §4's fanout budget: the default grid a plain `vary` mints is bounded by this many universes,
 #: above which the guard raises unless the analyst names `points=` or raises `max_universes=`. It
@@ -28,119 +34,7 @@ from .varied import Varied, member_of, rebuild, registered_points, session_of
 DEFAULT_MAX_UNIVERSES = 64
 
 
-def vary(
-    target: Array | Varied | Any,
-    name: str,
-    /,
-    nominal: Array | Varied | None = None,
-    *,
-    is_weight: bool = False,
-    points: Mapping[Any, Any] | Iterable[Any] | None = None,
-    collections: Mapping[str, Mapping[Any, Any] | Varied] | None = None,
-    composes_as_union: bool = False,
-    max_universes: int = DEFAULT_MAX_UNIVERSES,
-    **tags: Any,
-) -> Any:
-    """Register a variation family `name` on `target`, returning a NEW object (§2.1).
-
-    `**tags` and `points=` carry tag/member pairs under the §1.1 grammar; the signature's own
-    keyword names (`nominal`, `is_weight`, `points`, `collections`) are legal tags AND legal
-    collection names, so one so named arrives through a mapping channel instead.
-
-    `points=` is either a `Mapping[tag, member]` (declares only, the common case) or an iterable
-    mixing 2-`tuple` `(tag, member)` declares with `{nuisance: coordinate}` placement mappings that
-    SELECT a derived joint (dependent member) or RE-POINT a label off-grid (independent member)
-    (§2/§3). When a member is computed over another registered nuisance's varied nodes the family
-    fans out to the full grid of joint universes automatically (§2). `composes_as_union=True`
-    collapses it back to the one-at-a-time datacard union; `max_universes=` raises the §4 guard's
-    budget.
-    """
-    if not isinstance(name, str) or not name.isidentifier():
-        raise GraphedError(f"a variation name must be a Python identifier, got {name!r}")
-    declares, placements = _parse_points(points)
-    from ..context import EventContext, vary_context  # noqa: PLC0415  (import cycle)
-
-    overload: Any  # the two context overloads take one arg shape; mypy keeps its own narrowing
-    if isinstance(target, Array | Varied):
-        session = session_of(target)
-        overload = _vary_loose
-    elif isinstance(target, EventContext):
-        session = target._session
-        overload = vary_context
-    else:
-        raise GraphedError(
-            "graphed.vary takes an Array, a Varied or an event context, got "
-            f"{type(target).__name__}"
-        )
-    # §4.5's TRANSACTIONAL mint: everything that can raise after `gather_members` has minted — the
-    # label-collision check, `check_members`, `_align`/`reindex_to` — must leave no binding behind,
-    # or one failed call poisons a label for the life of the Session with no escape but a new one.
-    saved = dict(session._points)
-    saved_by_point = dict(session._points_by_point)
-    # §2.5's diagnostic registries are written per collection inside the shift form, so a refusal
-    # on a LATER collection would otherwise leave the first collection's report behind
-    saved_after_weight = dict(session._shift_after_weight)
-    saved_factors = list(session._weight_factors)
-    try:
-        return overload(
-            target,
-            name,
-            nominal,
-            is_weight,
-            declares,
-            collections,
-            placements,
-            composes_as_union,
-            max_universes,
-            tags,
-        )
-    except BaseException:
-        session._points.clear()
-        session._points.update(saved)
-        session._points_by_point.clear()
-        session._points_by_point.update(saved_by_point)
-        session._shift_after_weight.clear()
-        session._shift_after_weight.update(saved_after_weight)
-        session._weight_factors[:] = saved_factors
-        # the only place the registry is not purely extended, and so the only place a resolution
-        # can move BACKWARDS: the epoch moves for it like any mint, and `context._two_level`'s memo
-        # — which stores answers on the premise that the registry only grows — is dropped wholesale
-        session._mint_epoch += 1
-        session._universes.clear()
-        raise
-
-
-def _parse_points(
-    points: Mapping[Any, Any] | Iterable[Any] | None,
-) -> tuple[Mapping[Any, Any] | None, list[Mapping[str, Any]] | None]:
-    """Split the unified `points=` surface into the internal (declares, placements) channels.
-
-    A `Mapping` (or `None`) is declares-only — today's path, passed straight through. A non-Mapping
-    iterable mixes 2-`tuple` `(tag, member)` declares with `{nuisance: coordinate}` placement
-    mappings; an entry that is neither is ill-typed input (`GraphedTypeError`). The result feeds
-    the old two-parameter seam unchanged, so `gather_members`/`_route` stay byte-identical.
-    """
-    if points is None or isinstance(points, Mapping):
-        return points, None
-    declares: dict[Any, Any] = {}
-    placements: list[Mapping[str, Any]] = []
-    for entry in points:
-        if isinstance(entry, Mapping):
-            placements.append(entry)
-        elif isinstance(entry, tuple) and len(entry) == 2:
-            tag, member = entry
-            declares[tag] = member
-        else:
-            raise GraphedTypeError(
-                "vary",
-                capture(),
-                f"a points= entry must be a (tag, member) declare 2-tuple or a "
-                f"{{nuisance: coordinate}} placement mapping, got {entry!r}",
-            )
-    return (declares or None), (placements or None)
-
-
-def _vary_loose(
+def vary_loose(
     target: Array | Varied,
     name: str,
     nominal: object,
@@ -169,7 +63,7 @@ def _vary_loose(
         )
     if collections is not None:
         raise GraphedError("collections= needs an event-context target (the shift form)")
-    inherited = target._tags.get(name, ()) if isinstance(target, Varied) else ()
+    inherited = tags_of(target).get(name, ())
     # the loose form's own carrier for §4.11-4 is the target it registers on
     one_at_a_time, joints = gather_members(
         name,
@@ -182,7 +76,7 @@ def _vary_loose(
         composes_as_union=composes_as_union,
         max_universes=max_universes,
     )
-    existing = dict(target._members) if isinstance(target, Varied) else {"nominal": target}
+    existing = dict(members_of(target))
     # §4.6: registration resolves by the label's OWN point, so a supplied `Varied` contributes the
     # inner universe the point names instead of being flattened to its central one. A
     # machine-minted joint is already that inner cross node, so `member_of` on it is the identity.
@@ -197,8 +91,8 @@ def _vary_loose(
             raise GraphedError(f"variation label {label!r} is already carried by this container")
     handle = check_members({**existing, **resolved})
     existing = {label: _align(member, handle) for label, member in existing.items()}
-    resolved = {label: accessors.reindex_to(member, handle) for label, member in resolved.items()}
-    inherited_tags = dict(target._tags) if isinstance(target, Varied) else {}
+    resolved = {label: reindex_to(member, handle) for label, member in resolved.items()}
+    inherited_tags = dict(tags_of(target))
     # a joint is a cross-coordinate, not a tag of this single family, so it stays out of `_tags`
     inherited_tags[name] = inherited + tuple(label[len(name) + 1 :] for label in one_at_a_time)
     return register(rebuild({**existing, **resolved}, tags=inherited_tags, context=handle))
@@ -211,12 +105,12 @@ def _align(member: Any, handle: Any) -> Any:
     the identity in both row space and content, so re-indexing across it would do nothing but
     re-stamp the handle, losing the parent identity §2.3e pins on the member.
     """
-    src = accessors.context_of(member)
+    src = context_of(member)
     if src is None or src is handle:
         return member
-    if not any(kind in ("mask", "project") for kind, _payload in handle._links_below(src)):
+    if not any(kind in ("mask", "project") for kind, _payload in links_below(handle, src)):
         return member
-    return accessors.reindex_to(member, handle)
+    return reindex_to(member, handle)
 
 
 # ---- shared construction machinery (the context overloads use it too) ---------------------
@@ -283,8 +177,9 @@ def gather_members(
     )
     _mint_defaults(name, tuple(canonical), session, additive)
     if joint_points:
-        _check_unique(joint_points, session._points, session._points_by_point)
-        _bind_points(session, joint_points)
+        state = session.systematics
+        _check_unique(joint_points, state.points, state.point_owners)
+        state.bind(joint_points)
     return one_at_a_time, joints
 
 
@@ -301,23 +196,9 @@ def _mint_defaults(
         f"{name}_{tag}": default(name, tag) for tag in tags if f"{name}_{tag}" not in overrides
     }
     minted.update(overrides)
-    _check_unique(minted, session._points, session._points_by_point)
-    _bind_points(session, minted)
-
-
-def _bind_points(session: Any, minted: Mapping[str, Point]) -> None:
-    """Record `{label: point}` in the Session registry AND its point->label inverse together.
-
-    So `_check_unique`'s one-point-one-label test (§4.11-2) stays an O(1) lookup. The two maps are
-    only ever written here and rolled back together in `vary`, so the inverse never drifts from
-    `_points`.
-    """
-    session._points.update(minted)
-    for label, point in minted.items():
-        session._points_by_point[point] = label
-    # the sole extension point of the registry, so the sole place a composed ambient weight can go
-    # stale: every mint moves the epoch a context's composition memo is stamped with (§5)
-    session._mint_epoch += 1
+    state = session.systematics
+    _check_unique(minted, state.points, state.point_owners)
+    state.bind(minted)
 
 
 def _foreign(
@@ -338,7 +219,7 @@ def _foreign(
 
     * **composition** (`composed`): the member's node at that label READS a registered factor's
       member at the same label, so the weight form's label-aligned composition already resolves it
-      into the union — fanning it out would double-count it through `_two_level(old, ...)`. A
+      into the union — fanning it out would double-count it through `two_level(old, ...)`. A
       nuisance the ambient registers as a weight that the member reaches through the SHIFTED
       objects instead (a nuisance that is both a shift and a weight, m56) is a dependency like any
       other; or
@@ -359,7 +240,7 @@ def _foreign(
         if nuisances & composed:
             # the weight form always carries the ambient (context._carriers)
             assert ambient is not None
-            if _reads_ambient(ambient, member._members[label], label):
+            if _reads_ambient(ambient, members_of(member)[label], label):
                 continue
         if carrier_nuisances and not nuisances <= carrier_nuisances:
             continue
@@ -377,15 +258,8 @@ def _reads_ambient(ambient: AmbientCarrier, member: Any, label: str) -> bool:
     """
     targets = ambient.resolve(label)
     return bool(targets) and any(
-        targets & cone(ambient.session, nid) for nid in _member_nodes(member)
+        targets & cone(ambient.session, nid) for nid in member_nodes(member)
     )
-
-
-def _member_nodes(value: Any) -> tuple[int, ...]:
-    """Return a member's node ids, resolving §2.2's one legal level of nesting."""
-    if not isinstance(value, Varied):
-        return (value.node_id,)
-    return tuple(nid for inner in value._members.values() for nid in _member_nodes(inner))
 
 
 class AmbientCarrier(NamedTuple):
@@ -416,7 +290,7 @@ def _carrier_points(carrier: Any) -> Mapping[str, Point]:
     `registered_points` does for a container, so the two spellings agree entry for entry.
     """
     if isinstance(carrier, AmbientCarrier):
-        registry = carrier.session._points
+        registry = carrier.session.systematics.points
         return {label: registry[label] for label in carrier.labels if label in registry}
     if isinstance(carrier, Varied):
         return registered_points(carrier)
@@ -466,7 +340,7 @@ def _fanout(
     for tag, member in canonical.items():
         for fl, fp in foreign_by_tag[tag].items():
             joint_label = f"{name}_{tag}__{fl}"
-            joints[joint_label] = member._members[fl]
+            joints[joint_label] = members_of(member)[fl]
             joint_points[joint_label] = Point({**dict(default(name, tag)), **dict(fp)})
     if points:  # an explicit selection is the analyst's own enumeration — never guarded (§4)
         kept, additive = _route(
@@ -712,7 +586,7 @@ def check_members(labelled: Mapping[str, Any]) -> Any:
         for array in _flatten(member):
             if array.session is not session:
                 raise GraphedError(f"variation {label}: its member records into another Session")
-            sources.add(_source_ids(session, array))
+            sources.add(session.reachable_sources(array.node_id))
             if len(sources) > 1:
                 raise GraphedError(
                     f"variation {label}: its member roots in a different source; one container's "
@@ -723,14 +597,12 @@ def check_members(labelled: Mapping[str, Any]) -> Any:
                     f"variation {label}: its form {session.form(array)} is incompatible with the "
                     f"central universe's {reference}"
                 )
-    return accessors.unify_contexts(
-        *(accessors.context_of(member) for member in labelled.values())
-    )
+    return unify_contexts(*(context_of(member) for member in labelled.values()))
 
 
 def _flatten(member: object) -> list[Array]:
     if isinstance(member, Varied):
-        return [array for item in member._members.values() for array in _flatten(item)]
+        return [array for item in members_of(member).values() for array in _flatten(item)]
     if isinstance(member, Array):
         return [member]
     raise GraphedError(
@@ -756,59 +628,6 @@ def _compatible(session: Any, reference: Any, form: Any) -> bool:
     return True
 
 
-def _source_ids(session: Any, array: Array) -> frozenset[int]:
-    """Return the source node_ids reachable from `array`, memoized per node on the Session.
-
-    `check_members` calls this once per member array, and every member of a family shares the same
-    (often deep) prefix; walking it afresh each time is O(members x depth) — the dominant
-    construction cost on a realistic deep reconstruction graph. The IR is append-only and
-    hash-consed, so a node_id maps to an immutable subgraph and its reachable-source set never
-    changes: the memo needs no invalidation, and the shared prefix is resolved once and reused
-    across members.
-    """
-    cache: dict[int, frozenset[int]] = session._source_ids_cache
-    root = array.node_id
-    hit = cache.get(root)
-    if hit is not None:
-        return hit
-
-    def _inputs(node_id: int) -> Any:
-        if node_id in session._externals:
-            return session._externals[node_id][1]
-        return session._ops[node_id][2]
-
-    # Iterative post-order (a deep chain blows the recursion limit): a node is appended only after
-    # every input it reaches, so the forward pass reads each input's set already resolved. Inputs
-    # already in `cache` from an earlier call are not re-pushed — that is what shares the prefix.
-    order: list[int] = []
-    seen: set[int] = set()
-    stack: list[tuple[int, bool]] = [(root, False)]
-    while stack:
-        node_id, done = stack.pop()
-        if node_id in cache:
-            continue
-        if done:
-            order.append(node_id)
-            continue
-        if node_id in seen:
-            continue
-        seen.add(node_id)
-        stack.append((node_id, True))
-        if node_id not in session._sources:
-            for input_id in _inputs(node_id):
-                if input_id not in cache and input_id not in seen:
-                    stack.append((input_id, False))
-    for node_id in order:
-        if node_id in session._sources:
-            cache[node_id] = frozenset((node_id,))
-        else:
-            reached: frozenset[int] = frozenset()
-            for input_id in _inputs(node_id):
-                reached |= cache[input_id]
-            cache[node_id] = reached
-    return cache[root]
-
-
 def stamp_labels(container: Varied) -> Varied:
     """§2.5's MEMBER half: each non-central member carries its label for `compile_ir`'s walk.
 
@@ -817,11 +636,11 @@ def stamp_labels(container: Varied) -> Varied:
     would make any output built from one count the label as reached, silencing the very
     unreached-label diagnostic §2.5 exists for.
     """
-    for label, member in container._members.items():
+    for label, member in members_of(container).items():
         if label == "nominal":
             continue
         for array in _flatten(member):
-            array._labels = (array._labels or frozenset()) | {label}
+            add_labels(array, frozenset((label,)))
     return container
 
 
@@ -836,9 +655,9 @@ def record_labels(container: Varied) -> Varied:
     there is no diagnostic to feed, and the alternative is an attribute error on `None`.
     """
     session = session_of(container)
-    labels = tuple(label for label in container._members if label != "nominal")
+    labels = tuple(label for label in members_of(container) if label != "nominal")
     if labels and session is not None:
-        session._varied.append((labels, weakref.ref(container)))
+        session.systematics.record_varied(labels, container)
     return container
 
 

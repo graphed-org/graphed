@@ -8,9 +8,6 @@ from __future__ import annotations
 
 from .systematics.accessors import (  # isort: skip
     Introspectable as Introspectable,
-    _follow as _follow,
-    _is_context as _is_context,
-    _variation_axis_index as _variation_axis_index,
     broadcast_like as broadcast_like,
     context_of as context_of,
     labels as labels,

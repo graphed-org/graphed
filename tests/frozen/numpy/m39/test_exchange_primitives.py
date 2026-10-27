@@ -18,14 +18,14 @@ _DTYPE = np.dtype([("__joinkey__", np.uint64), ("v", np.int64)])
 
 
 def _single_key_block(key: int, rows: int = 3) -> np.ndarray:
-    block = np.zeros(rows, dtype=_DTYPE)
+    block: np.ndarray = np.zeros(rows, dtype=_DTYPE)
     block["__joinkey__"] = np.uint64(key)
     block["v"] = np.arange(rows, dtype=np.int64)
     return block
 
 
 def _block(keys: list[int]) -> np.ndarray:
-    block = np.zeros(len(keys), dtype=_DTYPE)
+    block: np.ndarray = np.zeros(len(keys), dtype=_DTYPE)
     block["__joinkey__"] = np.array(keys, dtype=np.uint64)
     block["v"] = np.arange(len(keys), dtype=np.int64)
     return block
@@ -72,8 +72,8 @@ def test_slice_rows_is_a_contiguous_record_slice() -> None:
 
 def test_estimated_bytes_scales_with_itemsize() -> None:
     be = NumpyBackend()
-    narrow = np.zeros(100, dtype=np.dtype([("k", np.uint8)]))
-    wide = np.zeros(100, dtype=np.dtype([("k", np.uint64)]))
+    narrow: np.ndarray = np.zeros(100, dtype=np.dtype([("k", np.uint8)]))
+    wide: np.ndarray = np.zeros(100, dtype=np.dtype([("k", np.uint64)]))
     assert be.estimated_bytes(wide) > be.estimated_bytes(narrow) > 0
 
 
