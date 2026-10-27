@@ -24,6 +24,7 @@ def test_the_join_form_refuses_a_shared_non_key_column() -> None:
 
 
 def test_read_varied_refuses_a_parquet_without_a_manifest(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    pytest.importorskip("pyarrow")
     path = str(tmp_path / "plain.parquet")
     ak.to_parquet(ak.Array({"x": [1, 2]}), path)
     with pytest.raises(GraphedError, match="not a variation-aware skim"):
