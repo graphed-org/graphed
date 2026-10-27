@@ -21,6 +21,12 @@ Several datasets in one Session
   source columns those Arrays use, as a plan over them would. A plan over several Sessions is
   ``graphed.collate``, which ``aggregate_plan``'s refusal now names (#103).
 
+Interrupts stop a resumable run
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``run_resumable`` lets a ``KeyboardInterrupt`` or ``SystemExit`` raised inside a task stop the
+  run: it recorded them as dead letters and carried on with the next partition (#111).
+
 A plan finalizes its value on the driver
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
