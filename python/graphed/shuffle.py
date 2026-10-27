@@ -55,7 +55,7 @@ from .projection import read_columns
 from .services import Bindable, Resolvable, bind_externals
 from .session import Session
 from .varied import refuse_boundary
-from .write import PartitionedSource, declared_columns, sources_read
+from .write import PartitionedSource, declared_columns, sources_read, steps_for
 
 V = TypeVar("V")
 #: a plan's ``(reduce, combine, empty)``
@@ -311,7 +311,7 @@ def shuffle_plan(
     combine: Callable[[V, V], V],
     empty: Callable[[], V],
     backend: Callable[[], Any] | str | None = None,
-    steps_per_file: int = 1,
+    steps_per_file: int | None = None,
     services: Sequence[str] | None = None,
 ) -> DurablePlanV2:
     """Build the :class:`~graphed.core.DurablePlanV2` of a repartition (plan §3.2, §4.4).
@@ -320,7 +320,8 @@ def shuffle_plan(
     output values), and a one-task ``reduce`` stage that folds the dests with
     ``combine``/``empty``. The barrier is the graph's first ``Exchange``; a ``target_bytes=`` one
     is refused (see the module docstring). ``services`` names services beyond those the graph's
-    External nodes name, as in ``aggregate_plan``.
+    External nodes name, and ``steps_per_file`` splits the source's files, as in
+    ``aggregate_plan``.
     """
     refuse_boundary("graphed.shuffle_plan", output)
     fold = (reduce, combine, empty)
@@ -352,7 +353,7 @@ def join_plan(
     output: Array,
     *,
     backend: Callable[[], Any] | str | None = None,
-    steps_per_file: int = 1,
+    steps_per_file: int | None = None,
     reduce: Callable[[list[Any]], V] | None = None,
     combine: Callable[[V, V], V] | None = None,
     empty: Callable[[], V] | None = None,
@@ -366,7 +367,8 @@ def join_plan(
     ``reduce``/``combine``/``empty`` (all or none), the gather reduces its values and a one-task
     ``reduce`` stage folds the dests; without them the plan's value is the tuple of per-dest
     outputs. The recorded ``broadcast`` routing field is the block engines' choice; a plan always
-    hash-routes both sides.
+    hash-routes both sides. ``steps_per_file`` splits each source's files as in ``aggregate_plan``
+    and, absent a repartition, is also the dest count (1 when ``None``).
     """
     refuse_boundary("graphed.join_plan", output)
     fold: _Monoid | None = None
@@ -472,7 +474,7 @@ def _build(
     fold: _Monoid | None,
     *,
     backend: Callable[[], Any] | str | None,
-    steps_per_file: int,
+    steps_per_file: int | None,
     names: Sequence[str] | None,
 ) -> DurablePlanV2:
     is_join = builder == "join_plan"
@@ -489,7 +491,9 @@ def _build(
     factory = backend if backend is not None else type(session.backend)
     wired = external_evaluators(session, compiled)
     frames = compiled.correspondence.frames
-    parts, route, routing = _routing(is_join, nodes, params, steps_per_file, backend_id)
+    parts, route, routing = _routing(
+        is_join, nodes, params, 1 if steps_per_file is None else steps_per_file, backend_id
+    )
 
     map_stages = []
     for target, (name, nid, data) in zip(targets, sides, strict=True):
@@ -505,7 +509,9 @@ def _build(
             frames=frames,
             route=route,
         )
-        tasks = tuple(Task(i, p) for i, p in enumerate(data.partitions(steps_per_file)))
+        tasks = tuple(
+            Task(i, p) for i, p in enumerate(data.partitions(steps_for(data, steps_per_file)))
+        )
         map_stages.append(
             StageSpec(
                 kind="map_write",

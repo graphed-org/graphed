@@ -44,6 +44,20 @@ A plan finalizes its value on the driver
   ``collate`` applies each plan's to its own name. A runner of its own returns
   ``graphed.core.finalize_result(plan, result)``. A durable plan without one keeps its bytes.
 
+A reader's ``steps_per_file`` and ``open_files`` partition its plans
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``from_parquet(steps_per_file=, open_files=)`` (awkward and numpy) were validated and dropped.
+  They are now the source's default partitioning: ``aggregate_plan``, ``shuffle_plan``,
+  ``join_plan`` and the ``to_parquet`` writers split each file into the reader's
+  ``steps_per_file`` unless given their own, whose default is now ``None``. Both are source params,
+  so reads that differ in them record different IR. ``open_files=True`` reads each file's row
+  count when the plan is built, for exact entry ranges; its default is now ``False``, the blind
+  partitions every read already planned (#109).
+* A file, or an in-memory write, with fewer rows than ``steps_per_file`` is split into its
+  distinct non-empty entry ranges (one empty range for an empty input): equal empty ranges named
+  one part, so the writers refused or overwrote them (#109).
+
 Exceptions are named ``…Error``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
