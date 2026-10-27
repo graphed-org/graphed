@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import functools
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 import awkward as ak
 import numpy as np
@@ -249,7 +249,7 @@ def jets_source() -> tuple[Session, Any, int]:
 
 
 def source_id(session: Session) -> int:
-    return next(n["id"] for n in session._store.nodes() if n["kind"] == "source")
+    return cast("int", next(n["id"] for n in session._store.nodes() if n["kind"] == "source"))
 
 
 def top_level(leaves: set[str]) -> set[str]:

@@ -14,6 +14,7 @@ import hashlib
 import pickle
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from typing import Any, cast
 
 from graphed.core import Partition
 
@@ -58,40 +59,46 @@ class ToyBackend:
 
     # ---- ShuffleBackend (exchange half, §3.0) ----
     def partition(
-        self, block: Block, key_field: str, parts: int, *, salt: int = 0, boundaries=None
-    ) -> tuple[Block, ...]:
-        out: tuple[Block, ...] = tuple([] for _ in range(parts))
+        self,
+        block: Block[Any],
+        key_field: str,
+        parts: int,
+        *,
+        salt: int = 0,
+        boundaries: object = None,
+    ) -> tuple[Block[Any], ...]:
+        out: tuple[Block[Any], ...] = tuple([] for _ in range(parts))
         for row in block:
             out[route(row[key_field], parts, salt=salt)].append(row)
         return out
 
-    def concat(self, blocks: Sequence[Block]) -> Block:
-        merged: Block = []
+    def concat(self, blocks: Sequence[Block[Any]]) -> Block[Any]:
+        merged: Block[Any] = []
         for b in blocks:
             merged.extend(b)
         return merged
 
-    def slice_rows(self, block: Block, start: int, stop: int) -> Block:
+    def slice_rows(self, block: Block[Any], start: int, stop: int) -> Block[Any]:
         return block[start:stop]
 
     def estimated_bytes(self, block_or_form: object) -> int:
         return 16 * len(block_or_form) if isinstance(block_or_form, list) else 0
 
-    def to_wire(self, block: Block) -> bytes:
+    def to_wire(self, block: Block[Any]) -> bytes:
         return pickle.dumps(block)
 
-    def from_wire(self, data: bytes) -> Block:
-        return pickle.loads(data)
+    def from_wire(self, data: bytes) -> Block[Any]:
+        return cast("Block[Any]", pickle.loads(data))
 
 
 @dataclass
 class ListSource:
     """A PartitionedSource over an in-memory list of rows (the plan-builder toy)."""
 
-    data: list
-    reads: list = field(default_factory=list)
+    data: list[Any]
+    reads: list[tuple[int, int]] = field(default_factory=list)
 
-    def __call__(self) -> list:
+    def __call__(self) -> list[Any]:
         raise AssertionError("the whole-dataset loader must never run during a plan")
 
     def partitions(self, steps_per_file: int = 1) -> tuple[Partition, ...]:
@@ -99,7 +106,7 @@ class ListSource:
             Partition.blind("toy://list", "", s, steps_per_file) for s in range(steps_per_file)
         )
 
-    def read_partition(self, partition, columns, resources) -> list:  # type: ignore[no-untyped-def]
+    def read_partition(self, partition: Partition, columns: Any, resources: Any) -> list[Any]:
         part = partition.resolve(len(self.data))
         self.reads.append((part.entry_start, part.entry_stop))
         return list(self.data[part.entry_start : part.entry_stop])

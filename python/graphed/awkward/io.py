@@ -21,7 +21,7 @@ import os
 import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import Any, ClassVar, cast, overload
+from typing import Any, ClassVar, Literal, cast, overload
 
 import awkward as ak
 import numpy as np
@@ -1195,6 +1195,45 @@ def _refuse_optimizer_merge(
     )
 
 
+@overload
+def to_parquet(
+    array: Any,
+    destination: str,
+    *,
+    select: Any = ...,
+    steps_per_file: int = ...,
+    compute: Literal[True] = ...,
+    executor: Any | None = ...,
+    prefix: str = ...,
+    column: str = ...,
+    behavior: Any = ...,
+) -> list[str]: ...
+@overload
+def to_parquet(
+    array: Any,
+    destination: str,
+    *,
+    select: Any = ...,
+    steps_per_file: int = ...,
+    compute: Literal[False],
+    executor: Any | None = ...,
+    prefix: str = ...,
+    column: str = ...,
+    behavior: Any = ...,
+) -> Plan[list[str]]: ...
+@overload
+def to_parquet(
+    array: Any,
+    destination: str,
+    *,
+    select: Any = ...,
+    steps_per_file: int = ...,
+    compute: bool,
+    executor: Any | None = ...,
+    prefix: str = ...,
+    column: str = ...,
+    behavior: Any = ...,
+) -> list[str] | Plan[list[str]]: ...
 def to_parquet(
     array: Any,
     destination: str,

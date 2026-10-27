@@ -18,7 +18,7 @@ injectable fake transport, the xgboost loud rejection, and the legacy-default pi
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, cast
 
 import awkward as ak
 import fake_triton_multi
@@ -39,14 +39,15 @@ from graphed.preserve import (
     reproduce,
 )
 
-HIST = {"name": "met", "bins": 20, "lo": 0.0, "hi": 200.0}
+HIST: dict[str, Any] = {"name": "met", "bins": 20, "lo": 0.0, "hi": 200.0}
 
 
 def _hist(value: Any, weight: Any) -> np.ndarray:
     v = np.asarray(ak.to_numpy(ak.Array(value)), dtype="float64")
     w = np.asarray(ak.to_numpy(ak.Array(weight)), dtype="float64")
-    return np.histogram(v, bins=HIST["bins"], range=(HIST["lo"], HIST["hi"]), weights=w)[0].round(
-        6
+    return cast(
+        "np.ndarray",
+        np.histogram(v, bins=HIST["bins"], range=(HIST["lo"], HIST["hi"]), weights=w)[0].round(6),
     )
 
 

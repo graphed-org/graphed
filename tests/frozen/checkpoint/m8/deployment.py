@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import functools
 import hashlib
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 
@@ -86,14 +86,17 @@ def _record_observables(ev: Any) -> list[Any]:
 def _counts(values: Any, bins: int, lo: float, hi: float) -> np.ndarray:
     from graphed_corpus.histograms import hist1d  # noqa: PLC0415
 
-    return np.asarray(
-        hist1d(values, bins=bins, start=lo, stop=hi, name="x").values(), dtype=np.int64
+    return cast(
+        "np.ndarray",
+        np.asarray(
+            hist1d(values, bins=bins, start=lo, stop=hi, name="x").values(), dtype=np.int64
+        ),
     )
 
 
 def _concat(materialized: list[Any]) -> np.ndarray:
     parts = [_counts(v, b, lo, hi) for (_, b, lo, hi), v in zip(_AXES, materialized, strict=True)]
-    return np.concatenate(parts)
+    return cast("np.ndarray", np.concatenate(parts))
 
 
 # ---- reduction spec (referenced by import path) -------------------------------------------------
@@ -109,7 +112,7 @@ def analysis_chunk(partition: Any, resources: Any) -> np.ndarray:
 
 
 def hist_add(a: np.ndarray, b: np.ndarray) -> np.ndarray:
-    return a + b
+    return cast("np.ndarray", a + b)
 
 
 def hist_empty() -> np.ndarray:

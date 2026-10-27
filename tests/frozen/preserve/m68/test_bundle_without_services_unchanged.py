@@ -11,7 +11,7 @@ import dataclasses
 import hashlib
 import json
 import pickle
-from typing import Any
+from typing import Any, cast
 
 from m68_services_fixtures import HIST, X, descriptor, new_events, score, values_plan
 
@@ -135,7 +135,7 @@ def test_a_declared_but_unreferenced_spec_is_not_written(tmp_path: Any) -> None:
         values_plan(score(ev, descriptor("unreferenced"), url="triton://unchanged:8000")).services
         == ()
     )
-    assert Plan(process=list, combine=list, empty=list).services == ()
+    assert Plan(process=cast(Any, list), combine=cast(Any, list), empty=list).services == ()
 
 
 def test_0_0_6_pickles_load_without_services() -> None:

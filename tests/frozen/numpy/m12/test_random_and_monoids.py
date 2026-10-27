@@ -11,12 +11,16 @@ this triple + aggregate). Combining over ANY chunking/tree shape must agree with
 from __future__ import annotations
 
 from functools import reduce as fold
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
 
 import graphed.numpy as gn
 from graphed import Session
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 # ----
 # random ---------------------------------------------------------------------------------------
@@ -63,7 +67,7 @@ def test_uniform_and_integers_distributions() -> None:
 DATA = np.array([3.0, 1.0, 4.0, 1.0, 5.0, 9.0, 2.0, 6.0, 5.0, 3.0, 5.0])
 CHUNKINGS = [[11], [4, 7], [1, 2, 3, 5], [2, 2, 2, 2, 2, 1]]
 
-REFERENCE = {
+REFERENCE: dict[str, Callable[..., Any]] = {
     "sum": np.sum,
     "min": np.min,
     "max": np.max,

@@ -9,6 +9,7 @@ opaque External payloads explicitly by content hash (failing loudly when one is 
 from __future__ import annotations
 
 import pickle
+from typing import cast
 
 import pytest
 from m10_toy import CountingListBackend, from_list
@@ -27,7 +28,7 @@ def _record(session: Session) -> Array:
     ab = a + b
     ba = b + a  # commuted twin -> same canonical node after reduction
     kept = ab * 1.0  # identity -> eliminated by reduction
-    return (kept + ba).reduce("sum")
+    return cast(Array, (kept + ba).reduce("sum"))
 
 
 def test_compiled_evaluation_matches_materialize() -> None:

@@ -40,10 +40,10 @@ def m62_moto_bucket() -> Iterator[str]:
 
 
 @pytest.fixture
-def store_url(m62_moto_bucket) -> str:
+def store_url(m62_moto_bucket: str) -> str:
     return f"s3://{m62_moto_bucket}/{uuid.uuid4().hex}"
 
 
 @pytest.fixture
-def shared_url(m62_moto_bucket) -> str:
+def shared_url(m62_moto_bucket: str) -> str:
     return f"s3://{m62_moto_bucket}/{uuid.uuid4().hex}"

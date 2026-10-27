@@ -13,7 +13,7 @@ import time
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -235,7 +235,7 @@ def test_steps_walk_the_opt_level_0_cone_with_user_frames(tmp_path: Path) -> Non
     assert all(
         st.node.provenance.lineno == s.provenance(Array(s, st.node.node_id)).lineno for st in steps
     )
-    assert len(steps) > len(GraphStore.deserialize(plan.process.ir).nodes())
+    assert len(steps) > len(GraphStore.deserialize(cast(Any, plan.process).ir).nodes())
 
 
 def test_steps_are_lazy_and_timed(tmp_path: Path) -> None:

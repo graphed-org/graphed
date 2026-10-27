@@ -19,7 +19,7 @@ from graphed.numpy import NumpyBackend, from_array, from_record
 
 X = np.array([0.5, 1.5], dtype=np.float32)
 Y = np.array([2.0, 0.5], dtype=np.float32)
-M2 = np.arange(6, dtype=np.float32).reshape(2, 3)
+M2: Any = np.arange(6, dtype=np.float32).reshape(2, 3)
 RA = np.array([0.5, 2.0])
 RB = np.array([1, 2])
 

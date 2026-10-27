@@ -12,7 +12,7 @@ import pickle
 import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 
@@ -73,7 +73,7 @@ def failing_op(events: Array) -> tuple[Array, int]:
 
 def sums(values: list[Any]) -> np.ndarray:
     """One total per value `reduce` receives, so the result's length is the reduce's arity."""
-    return np.array([float(np.sum(v)) for v in values])
+    return cast(np.ndarray, np.array([float(np.sum(v)) for v in values]))
 
 
 def arity(values: list[Any]) -> list[int]:
@@ -110,5 +110,5 @@ def emit_opt0_digest() -> None:
     plan = aggregate_plan(
         *merged_pair(events), reduce=sums, combine=add, empty=zero, steps_per_file=2, opt_level=0
     )
-    ir = hashlib.sha256(bytes(plan.process.ir)).hexdigest()
+    ir = hashlib.sha256(bytes(cast(Any, plan.process).ir)).hexdigest()
     print(ir, hashlib.sha256(pickle.dumps(plan)).hexdigest(), hash("graphed"))

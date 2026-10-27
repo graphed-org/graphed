@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, cast, overload
+from typing import Any, Literal, cast, overload
 
 import numpy as np
 
@@ -247,6 +247,39 @@ def _memory_step(partition: Partition, n: int, steps: int) -> int:
     raise ValueError(f"{partition} does not match any of {steps} steps over {n} rows")
 
 
+@overload
+def to_parquet(
+    array: Any,
+    destination: str,
+    *,
+    steps_per_file: int = ...,
+    compute: Literal[True] = ...,
+    executor: Any | None = ...,
+    prefix: str = ...,
+    column: str = ...,
+) -> list[str]: ...
+@overload
+def to_parquet(
+    array: Any,
+    destination: str,
+    *,
+    steps_per_file: int = ...,
+    compute: Literal[False],
+    executor: Any | None = ...,
+    prefix: str = ...,
+    column: str = ...,
+) -> Plan[list[str]]: ...
+@overload
+def to_parquet(
+    array: Any,
+    destination: str,
+    *,
+    steps_per_file: int = ...,
+    compute: bool,
+    executor: Any | None = ...,
+    prefix: str = ...,
+    column: str = ...,
+) -> list[str] | Plan[list[str]]: ...
 def to_parquet(
     array: Any,
     destination: str,

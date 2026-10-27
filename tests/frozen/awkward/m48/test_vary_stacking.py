@@ -29,7 +29,7 @@ from graphed.awkward import gak
 from graphed.varied import member_of, point_registry, rebuild
 
 
-def _corpus_shaped_selection() -> tuple[graphed.Session, object, object, object]:
+def _corpus_shaped_selection() -> tuple[graphed.Session, Any, Any, Any]:
     """Return the §2.6 sketch, in order.
 
     Ambient weight FIRST, then the lockstep shift, then the `Varied`-mask derivation. Registering
@@ -69,7 +69,7 @@ def test_stacking_on_a_loose_varied_keeps_the_members_idiom_and_the_inherited_un
     assert graphed.universe(stacked, "jer_up").node_id == (x * 1.1).node_id
 
 
-def _two_levels_deep(container: object, label: str) -> object:
+def _two_levels_deep(container: object, label: str) -> Any:
     """§2.1's `factor[L]`: the container's member for `label`, then.
 
     When that member is itself a `Varied` — its own member for `label`.
@@ -77,7 +77,7 @@ def _two_levels_deep(container: object, label: str) -> object:
     return member_of(member_of(container, label), label)
 
 
-def _values(session: Session, value: object) -> Any:
+def _values(session: Session, value: Any) -> Any:
     return as_list(session.materialize(value))
 
 

@@ -24,7 +24,7 @@ from graphed.core import (
     Task,
 )
 
-_SCHEME = {"how": "inner", "on": "event"}
+_SCHEME: dict[str, int | float | bool | str] = {"how": "inner", "on": "event"}
 
 
 def _join_ir() -> bytes:

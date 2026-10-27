@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 from graphed_corpus import make_events
@@ -24,7 +24,7 @@ from graphed.preserve import CORRECTIONLIB_PLUGIN, ONNX_PLUGIN, build_bundle, re
 
 N_EVENTS = 2500
 SEED = 2026
-HIST = {"name": "ht", "bins": 30, "lo": 0.0, "hi": 800.0}
+HIST: dict[str, Any] = {"name": "ht", "bins": 30, "lo": 0.0, "hi": 800.0}
 _DEFAULT_CONFIG = {"systematic": "nominal", "jes_factor": 1.0, "min_btag": 1}
 
 _SF_EDGES = [0.0, 2.0, 4.0, 6.0, 100.0]
@@ -138,7 +138,7 @@ def histogram(values: Any, weights: Any) -> np.ndarray:
     v = np.asarray(ak.to_numpy(ak.Array(values)), dtype="float64")
     w = np.asarray(ak.to_numpy(ak.Array(weights)), dtype="float64")
     counts, _ = np.histogram(v, bins=HIST["bins"], range=(HIST["lo"], HIST["hi"]), weights=w)
-    return np.round(counts, 6)
+    return cast("np.ndarray", np.round(counts, 6))
 
 
 def materialize_reference(session: Session, value: Any, weight: Any) -> np.ndarray:

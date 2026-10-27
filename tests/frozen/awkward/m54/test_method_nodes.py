@@ -8,6 +8,8 @@ independent builds: the same program compiled from two sessions is byte-identica
 
 from __future__ import annotations
 
+from typing import Any
+
 import awkward as ak
 import pytest
 from m54_behavior_fixtures import eager, node_of, op_count, recorded
@@ -96,7 +98,7 @@ def test_arrays_nested_in_a_dict_constant_follow_the_sorted_key_order() -> None:
 
 
 def test_two_independent_builds_compile_to_identical_ir() -> None:
-    def build() -> tuple[object, object]:
+    def build() -> tuple[Any, object]:
         session, jets, probe = recorded()
         lead, partner = gak.firsts(jets, axis=1), gak.firsts(probe, axis=1)
         return session, gak.sum(lead.near(partner, threshold=2.0) * jets.scaled(2.0, offset=1.0))

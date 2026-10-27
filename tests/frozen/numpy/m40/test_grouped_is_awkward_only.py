@@ -13,6 +13,8 @@ half-support) ``grouped`` would make this ``pytest.raises`` block report "DID NO
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import numpy as np
 import pytest
 
@@ -40,7 +42,9 @@ def test_grouped_is_rejected_on_the_neutral_numpy_join_path() -> None:
         rv=np.array([20.0]),
     )
     with pytest.raises(TypeError):
-        graphed.join(left, right, on=["run", "lumi", "event"], how="inner", grouped=True)
+        cast(Any, graphed.join)(
+            left, right, on=["run", "lumi", "event"], how="inner", grouped=True
+        )
     # the backend itself carries no grouped-join convenience either (that's an awkward-only
     # post-op).
     assert not hasattr(NumpyBackend(), "join_grouped")

@@ -13,6 +13,8 @@ external op". `correctionlib` itself is never imported; the plugin loads lazily.
 
 from __future__ import annotations
 
+from typing import Any
+
 import agc
 from vary_ctx_fixtures import awkward_session
 
@@ -41,9 +43,7 @@ def _varied_scale_factor() -> tuple[graphed.Session, graphed.Varied]:
     return session, varied
 
 
-def _external_nodes(
-    session: graphed.Session, varied: graphed.Varied
-) -> dict[str, dict[str, object]]:
+def _external_nodes(session: graphed.Session, varied: graphed.Varied) -> dict[str, dict[str, Any]]:
     nodes = session._store.nodes()
     return {
         label: nodes[graphed.universe(varied, label).node_id] for label in graphed.labels(varied)
@@ -54,7 +54,7 @@ def test_all_labels_share_one_payload_content_hash() -> None:
     session, varied = _varied_scale_factor()
     nodes = _external_nodes(session, varied)
     assert len(nodes) == 3
-    hashes = {node["descriptor"]["content_hash"] for node in nodes.values()}  # type: ignore[index]
+    hashes = {node["descriptor"]["content_hash"] for node in nodes.values()}
     assert len(hashes) == 1, "the payload was duplicated per label; §A.3.1 forbids it"
     assert all(node["kind"] == "external" for node in nodes.values())
 
@@ -62,7 +62,7 @@ def test_all_labels_share_one_payload_content_hash() -> None:
 def test_the_labels_differ_only_in_the_systematic_param() -> None:
     session, varied = _varied_scale_factor()
     nodes = _external_nodes(session, varied)
-    params = {label: dict(node["params"]) for label, node in nodes.items()}  # type: ignore[arg-type]
+    params = {label: dict(node["params"]) for label, node in nodes.items()}
     assert {p.pop("systematic") for p in params.values()} == set(SYSTEMATICS)
     remaining = list(params.values())
     assert all(other == remaining[0] for other in remaining[1:])
@@ -78,5 +78,5 @@ def test_the_three_universes_are_distinct_nodes_over_one_input() -> None:
     session, varied = _varied_scale_factor()
     nodes = _external_nodes(session, varied)
     assert len({graphed.universe(varied, label).node_id for label in graphed.labels(varied)}) == 3
-    inputs = {tuple(node["inputs"]) for node in nodes.values()}  # type: ignore[arg-type]
+    inputs = {tuple(node["inputs"]) for node in nodes.values()}
     assert len(inputs) == 1

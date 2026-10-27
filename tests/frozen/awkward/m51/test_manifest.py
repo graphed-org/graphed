@@ -32,7 +32,7 @@ pytest.importorskip("pyarrow")
 def test_object_migration_manifest_key_set_and_levels_list(tmp_path) -> None:  # type: ignore[no-untyped-def]
     _s, events = events_context()
     record, evt_mask, jet_mask = multifield_skim_inputs(events)
-    paths = ga.to_parquet(record, str(tmp_path / "mf"), select={0: evt_mask, ("Jet", 1): jet_mask})  # type: ignore[call-arg]
+    paths = ga.to_parquet(record, str(tmp_path / "mf"), select={0: evt_mask, ("Jet", 1): jet_mask})
     manifest = raw_manifest(paths[0])
 
     assert set(manifest) == {"nominal", "jes_up", "jes_down", "levels"}
@@ -42,7 +42,7 @@ def test_object_migration_manifest_key_set_and_levels_list(tmp_path) -> None:  #
 def test_weight_only_manifest_key_set_and_levels_list(tmp_path) -> None:  # type: ignore[no-untyped-def]
     _s, events = events_context()
     record, evt_mask = weight_skim_inputs(events)
-    paths = ga.to_parquet(record, str(tmp_path / "w"), select={0: evt_mask})  # type: ignore[call-arg]
+    paths = ga.to_parquet(record, str(tmp_path / "w"), select={0: evt_mask})
     manifest = raw_manifest(paths[0])
 
     assert set(manifest) == {"nominal", "murf_1", "murf_5em1", "murf_2", "levels"}
@@ -52,7 +52,7 @@ def test_weight_only_manifest_key_set_and_levels_list(tmp_path) -> None:  # type
 def test_augmented_file_roundtrips_through_ak_from_parquet(tmp_path) -> None:  # type: ignore[no-untyped-def]
     _s, events = events_context()
     record, evt_mask, jet_mask = multifield_skim_inputs(events)
-    paths = ga.to_parquet(record, str(tmp_path / "rt"), select={0: evt_mask, ("Jet", 1): jet_mask})  # type: ignore[call-arg]
+    paths = ga.to_parquet(record, str(tmp_path / "rt"), select={0: evt_mask, ("Jet", 1): jet_mask})
     # the arrow-write path must preserve awkward's own KV entries
     table = ak.from_parquet(paths[0])
     assert {"Jet", "MET"}.issubset(set(table.fields))

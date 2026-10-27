@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from m49_vary_fixtures import (
     ARENA_CHAIN_OPS,
     FORK_FACTORS,
@@ -20,19 +22,19 @@ VARIED = ("jes_up",)
 ALL_LABELS = tuple(FORK_FACTORS)
 
 
-def _reduced(session: Session, outputs: list[object]) -> list[dict[str, object]]:
+def _reduced(session: Session, outputs: list[object]) -> list[dict[str, Any]]:
     return core.GraphStore.deserialize(compile_ir(session, *outputs).ir).nodes()
 
 
-def _stages(nodes: list[dict[str, object]]) -> list[int]:
+def _stages(nodes: list[dict[str, Any]]) -> list[int]:
     return [i for i, node in enumerate(nodes) if node["kind"] == "stage"]
 
 
-def _members(nodes: list[dict[str, object]]) -> int:
+def _members(nodes: list[dict[str, Any]]) -> int:
     return sum(len(node.get("members") or ()) for node in nodes)
 
 
-def _source_consumers(nodes: list[dict[str, object]]) -> list[int]:
+def _source_consumers(nodes: list[dict[str, Any]]) -> list[int]:
     sources = {i for i, node in enumerate(nodes) if node["kind"] == "source"}
     return [i for i, node in enumerate(nodes) if sources & set(node["inputs"])]
 

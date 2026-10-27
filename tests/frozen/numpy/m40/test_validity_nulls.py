@@ -10,6 +10,8 @@ round-trip through ``to_wire``/``from_wire`` (Arrow native validity) and to surv
 
 from __future__ import annotations
 
+from typing import cast
+
 import numpy as np
 import pytest
 
@@ -20,7 +22,7 @@ _KEY = "__joinkey__"
 
 def _rec(keys: list[int], **cols: object) -> np.ndarray:
     dt = [(_KEY, np.uint64), *[(k, np.asarray(v).dtype) for k, v in cols.items()]]
-    a = np.zeros(len(keys), dtype=dt)
+    a: np.ndarray = np.zeros(len(keys), dtype=dt)
     a[_KEY] = np.asarray(keys, dtype=np.uint64)
     for k, v in cols.items():
         a[k] = np.asarray(v)
@@ -33,7 +35,7 @@ def _valid(block: object, field: str) -> np.ndarray:
     Reads the option carrier's mask. A plain (unmasked) result — what an ``np.take``-based ``take``
     returns — reports all-True here, so any assertion that a miss is invalid FAILS that buggy impl.
     """
-    col = np.ma.asanyarray(block)[field]
+    col: np.ndarray = np.ma.asanyarray(block)[field]
     return ~np.ma.getmaskarray(col)
 
 
@@ -57,7 +59,7 @@ def test_take_maps_negative_one_to_invalid_not_the_last_row() -> None:
 
 def _outer_join(be: NumpyBackend, left: np.ndarray, right: np.ndarray) -> np.ndarray:
     b, p = be.match_indices(left, right, on=[_KEY], how="outer")
-    return be.merge_records(be.take(left, b), be.take(right, p), on=[_KEY])
+    return cast(np.ndarray, be.merge_records(be.take(left, b), be.take(right, p), on=[_KEY]))
 
 
 def test_outer_join_missing_field_reads_null_on_each_side() -> None:

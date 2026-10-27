@@ -11,6 +11,7 @@ stays a flagged preservation risk. The callable receives whole (N, ...) arrays (
 from __future__ import annotations
 
 import warnings
+from typing import cast
 
 import numpy as np
 import pytest
@@ -29,7 +30,7 @@ def _s() -> Session:
 
 
 def _rowdot(x: np.ndarray, y: np.ndarray) -> np.ndarray:
-    return np.sum(x * y, axis=-1)
+    return cast(np.ndarray, np.sum(x * y, axis=-1))
 
 
 def test_pair_reduce_signature() -> None:
@@ -52,7 +53,7 @@ def test_elementwise_and_preserving_signatures() -> None:
     m = from_array(s, "m", P3)
 
     def norm_rows(x: np.ndarray) -> np.ndarray:
-        return x / np.linalg.norm(x, axis=-1, keepdims=True)
+        return cast(np.ndarray, x / np.linalg.norm(x, axis=-1, keepdims=True))
 
     out = gn.apply_gufunc(norm_rows, "(i)->(i)", m, output_dtype=np.float64)
     np.testing.assert_allclose(np.asarray(s.materialize(out)), norm_rows(P3))
@@ -65,7 +66,7 @@ def test_matrix_reduce_signature_binds_output_dims() -> None:
     m = from_array(s, "m", stackd)
 
     def colsum(x: np.ndarray) -> np.ndarray:
-        return np.sum(x, axis=-2)
+        return cast(np.ndarray, np.sum(x, axis=-2))
 
     out = gn.apply_gufunc(colsum, "(i,j)->(j)", m, output_dtype=np.float64)
     np.testing.assert_array_equal(np.asarray(s.materialize(out)), colsum(stackd))

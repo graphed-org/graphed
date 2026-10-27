@@ -14,7 +14,7 @@ tree with no m53 implementation.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 
@@ -91,6 +91,7 @@ def numeric_fanout(*, points: Any = None, **vary_kwargs: Any) -> EventContext:
     spt = shifted["pt"]  # jes-varied, numeric tags '2' / '0p5'
     members = {"2": spt * 1.1}
     variations: Any = members if points is None else [*members.items(), *points]
-    return graphed.vary(
-        shifted, "muF", spt * 1.0, is_weight=True, points=variations, **vary_kwargs
+    return cast(
+        EventContext,
+        graphed.vary(shifted, "muF", spt * 1.0, is_weight=True, points=variations, **vary_kwargs),
     )

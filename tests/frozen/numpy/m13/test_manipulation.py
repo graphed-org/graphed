@@ -9,11 +9,16 @@ Phase 2's N-D chunking lifts these.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any, cast
+
 import numpy as np
 import pytest
 
 from graphed import GraphedTypeError, Session
 from graphed.numpy import NumpyBackend, from_array
+
+if TYPE_CHECKING:
+    from graphed import Array
 
 V = np.array([5.0, 1.0, 4.0, 2.0, 8.0, 6.0, 3.0, 7.0, 9.0, 0.0, 2.5, 1.5])
 W = np.array([2.0, 0.5, 3.5, 1.0, 7.5, 6.5, 2.5, 8.0, 9.5, 0.5, 3.0, 1.0])
@@ -31,7 +36,9 @@ def test_reshape_keeps_the_partitioned_axis_leading() -> None:
     out = a.reshape(-1, 3)
     np.testing.assert_array_equal(np.asarray(s.materialize(out)), V.reshape(-1, 3))
     assert out.shape == (None, 3)
-    assert np.reshape(a, (-1, 3)).node_id == out.node_id  # function and method intern
+    assert (
+        cast("Array", np.reshape(a, (-1, 3))).node_id == out.node_id
+    )  # function and method intern
     with pytest.raises(GraphedTypeError):
         a.reshape(4, 3)  # a concrete leading dim cannot be checked against an unknown length
     with pytest.raises(GraphedTypeError):
@@ -44,7 +51,7 @@ def test_ravel_flattens_to_the_partitioned_axis() -> None:
     out = d3.ravel()
     np.testing.assert_array_equal(np.asarray(s.materialize(out)), D3.ravel())
     assert out.shape == (None,)
-    assert np.ravel(d3).node_id == out.node_id
+    assert cast("Array", np.ravel(d3)).node_id == out.node_id
 
 
 def test_squeeze_requires_an_explicit_inner_axis() -> None:
@@ -101,7 +108,7 @@ def test_transpose_of_1d_is_identity() -> None:
 
 def test_astype_clip_round_match_numpy() -> None:
     s = _s()
-    a = from_array(s, "a", V)
+    a: Any = from_array(s, "a", V)
     cast = a.astype(np.float32)
     np.testing.assert_array_equal(np.asarray(s.materialize(cast)), V.astype(np.float32))
     assert cast.dtype == np.dtype(np.float32)
@@ -158,10 +165,11 @@ def test_diff_isin_searchsorted_match_numpy() -> None:
     np.testing.assert_array_equal(np.asarray(s.materialize(np.isin(a, b))), np.isin(V, W))
     srt = from_array(s, "srt", np.sort(V))
     np.testing.assert_array_equal(
-        np.asarray(s.materialize(np.searchsorted(srt, b))), np.searchsorted(np.sort(V), W)
+        np.asarray(s.materialize(cast("Array", np.searchsorted(srt, b)))),
+        np.searchsorted(np.sort(V), W),
     )
     np.testing.assert_array_equal(
-        np.asarray(s.materialize(np.searchsorted(srt, b, side="right"))),
+        np.asarray(s.materialize(cast("Array", np.searchsorted(srt, b, side="right")))),
         np.searchsorted(np.sort(V), W, side="right"),
     )
 

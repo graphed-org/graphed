@@ -71,7 +71,7 @@ def test_manifest_mapping_keys_are_sorted_and_levels_list_is_ordered(tmp_path) -
     record, evt_mask = weight_skim_inputs(events)
     import graphed.awkward as ga  # noqa: PLC0415
 
-    paths = ga.to_parquet(record, str(tmp_path / "det"), select={0: evt_mask})  # type: ignore[call-arg]
+    paths = ga.to_parquet(record, str(tmp_path / "det"), select={0: evt_mask})
     blob = raw_manifest_bytes(paths[0])
     assert blob is not None and b"murf_5em1" in blob  # instrument live: real, non-empty content
     manifest = json.loads(blob)

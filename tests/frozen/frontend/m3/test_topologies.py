@@ -8,9 +8,13 @@ failure mode), with correct results.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from typing import TYPE_CHECKING, Any, cast
 
 from graphed import Array, Session
 from graphed.core import PayloadDescriptor
+
+if TYPE_CHECKING:
+    from graphed import Form
 
 
 class _Counting:
@@ -19,7 +23,7 @@ class _Counting:
     def __init__(self) -> None:
         self.op_evals = 0
 
-    def op_form(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> str:
+    def op_form(self, op: str, inputs: Sequence[object], params: Mapping[str, object]) -> Any:
         return "num"
 
     def eval_stage(
@@ -51,7 +55,7 @@ class _Counting:
 
 
 def _src(s: Session, name: str, value: int) -> Array:
-    return s.source(name, form="num", data=value)
+    return s.source(name, form=cast("Form", "num"), data=value)
 
 
 def test_diamond_interns_apex_once_and_evaluates_it_once() -> None:
@@ -65,7 +69,7 @@ def test_diamond_interns_apex_once_and_evaluates_it_once() -> None:
     assert s.materialize(out) == 38
     # 4 op nodes (apex, left, right, out), each evaluated once — the apex is NOT recomputed per
     # branch
-    assert s.backend.op_evals == 4
+    assert cast(_Counting, s.backend).op_evals == 4
 
 
 def test_star_hub_evaluated_once_for_many_consumers() -> None:
@@ -79,7 +83,9 @@ def test_star_hub_evaluated_once_for_many_consumers() -> None:
         out = out + hub  # each consumer reuses the hub
     # hub computed once; despite n+1 references it is a single node evaluated a single time
     assert s.materialize(out) == 7 * (n + 1)
-    assert s.backend.op_evals == s.node_count() - 2  # every op node once (2 sources excluded)
+    assert (
+        cast(_Counting, s.backend).op_evals == s.node_count() - 2
+    )  # every op node once (2 sources excluded)
 
 
 def test_repeated_subexpression_adds_no_new_nodes() -> None:
@@ -102,4 +108,4 @@ def test_nested_diamonds_materialize_correctly_each_node_once() -> None:
         v = (v + one) - (v - one)  # = 2 each level, independent of v; v fans out to two branches
     assert s.materialize(v) == 2
     # no shared node is recomputed: total op evals == number of op nodes
-    assert s.backend.op_evals == s.node_count() - 2  # exclude the two sources
+    assert cast(_Counting, s.backend).op_evals == s.node_count() - 2  # exclude the two sources

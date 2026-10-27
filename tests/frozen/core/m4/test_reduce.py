@@ -9,7 +9,7 @@ from __future__ import annotations
 import graphed.core as gc
 
 
-def _chain(n: int) -> gc.GraphStore:
+def _chain(n: int) -> tuple[gc.GraphStore, int]:
     s = gc.GraphStore()
     cur = s.add_source("x")
     for _ in range(n):

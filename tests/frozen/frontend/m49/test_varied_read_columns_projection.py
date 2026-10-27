@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from m49_vary_fixtures import flat_projection_program
 
 import graphed
@@ -32,7 +34,10 @@ def test_one_conservative_member_collapses_the_plain_union() -> None:
 
 def test_stats_report_the_shifted_labels_extra_column() -> None:
     program = flat_projection_program()
-    stats = graphed.read_columns_by_label([program.varied], program.source_nid)
+    stats = cast(
+        "dict[str, tuple[str, ...]]",
+        graphed.read_columns_by_label([program.varied], program.source_nid),
+    )
 
     assert tuple(stats) == graphed.labels(program.varied)
     assert set(stats["jes_up"]) - set(stats["nominal"]) == {EXTRA_COLUMN}
@@ -44,7 +49,10 @@ def test_stats_report_the_shifted_labels_extra_column() -> None:
 def test_a_whole_record_consumer_reports_none_not_empty() -> None:
     """`None` means "read every column"; `()` would say the opposite, so the two must not merge."""
     program = flat_projection_program()
-    stats = graphed.read_columns_by_label([program.varied], program.source_nid)
+    stats = cast(
+        "dict[str, tuple[str, ...]]",
+        graphed.read_columns_by_label([program.varied], program.source_nid),
+    )
 
     assert stats["jes_opaque"] is None
     assert stats["nominal"] is not None

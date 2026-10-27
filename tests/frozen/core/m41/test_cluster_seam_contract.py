@@ -33,6 +33,7 @@ from __future__ import annotations
 import dataclasses
 import subprocess
 import sys
+from typing import Any, cast
 
 
 def test_seam_types_import_and_are_exported_from_core() -> None:
@@ -46,7 +47,9 @@ def test_seam_types_import_and_are_exported_from_core() -> None:
 
     assert ClusterExecutor is not None and NodeStore is not None and AddressTable is not None
     for name in ("ClusterExecutor", "NodeStore", "AddressTable"):
-        assert name in gc.__all__, f"{name} must be re-exported from graphed.core.__all__"
+        assert name in cast(Any, gc).__all__, (
+            f"{name} must be re-exported from graphed.core.__all__"
+        )
         assert getattr(gc, name) is getattr(execution, name)  # the re-export is the SAME object
 
 

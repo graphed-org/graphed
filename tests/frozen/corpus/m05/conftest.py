@@ -22,7 +22,7 @@ REF_DIR = Path(__file__).resolve().parents[3] / "_corpus" / "references"
 
 def all_fixtures() -> dict[str, Callable[[ak.Array], Hist]]:
     """Map every canonical-analysis fixture name -> a callable(events) -> Hist."""
-    reg: dict[str, Callable[[ak.Array], Hist]] = {}
+    reg: dict[str, Callable[..., Hist]] = {}
     for q, fn in ADL_QUERIES.items():
         reg[f"adl_{q}"] = fn
     for name, (region, var) in TTBAR_FIXTURES.items():

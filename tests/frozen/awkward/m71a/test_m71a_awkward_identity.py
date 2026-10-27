@@ -186,7 +186,7 @@ def test_every_numerical_dtype_is_declarable() -> None:
     e = eager()
     ids = set()
     for name in NUMERIC:
-        fn: Callable[[Any], Any] = lambda a, name=name: ak.values_astype(a, name)  # noqa: E731
+        fn: Callable[..., Any] = lambda a, name=name: ak.values_astype(a, name)  # noqa: E731
         scalar_type = np.bool_ if name == "bool" else getattr(np, name)
         arrays = [
             ev.x.map(fn, name="num", output_type=spec)

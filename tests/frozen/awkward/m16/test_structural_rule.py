@@ -36,7 +36,7 @@ def test_inner_axis_reductions_are_fusible_ops(kind: str) -> None:
     out = getattr(gak, kind)(g.Jet.pt, axis=1)
     node = recorded(s, out)
     assert node["kind"] == "op", f"gak.{kind}(axis=1) is per-event work and must stay fusible"
-    assert node["params"]["axis"] == 1  # type: ignore[index]
+    assert node["params"]["axis"] == 1
 
 
 @pytest.mark.parametrize("kind", REDUCER_KINDS)

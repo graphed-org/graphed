@@ -7,6 +7,8 @@ each otherwise-unanchored class gets one named representative here.
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from vary_ctx_fixtures import EVENTS, awkward_session
 
@@ -15,7 +17,7 @@ from graphed import GraphedError
 from graphed.awkward import from_awkward, gak
 
 
-def _varied_pt() -> tuple[graphed.Session, object, graphed.Varied]:
+def _varied_pt() -> tuple[graphed.Session, Any, Any]:
     session, root = awkward_session()
     jets = root.Jet
     return session, root, graphed.vary(jets.pt, "jes", up=jets.pt * 1.05, down=jets.pt * 0.95)

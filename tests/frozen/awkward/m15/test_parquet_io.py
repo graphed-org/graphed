@@ -12,6 +12,7 @@ the compute-enabled run bit-for-bit (R15.4).
 from __future__ import annotations
 
 import os
+from typing import TYPE_CHECKING, cast
 
 import awkward as ak
 import pytest
@@ -24,6 +25,9 @@ import graphed.awkward.io as gio
 from graphed import parquet as gpq
 from graphed.awkward import AwkwardBackend, from_awkward, from_parquet, gak, project
 from graphed.core.execution import Plan, SequentialRunner
+
+if TYPE_CHECKING:
+    from graphed.awkward import AwkwardForm
 
 LENGTHS = [6, 4, 5]
 
@@ -61,7 +65,7 @@ def test_multifile_from_parquet_materializes_the_concatenation(dataset) -> None:
     where, whole = dataset
     s = _s()
     g = from_parquet(s, "events", where)
-    assert s.form(g).is_typetracer
+    assert cast("AwkwardForm", s.form(g)).is_typetracer
     out = ak.Array(s.materialize(g))
     assert ak.array_equal(out, whole)
 
@@ -95,7 +99,7 @@ def test_single_file_m3_shape_still_holds(dataset) -> None:  # type: ignore[no-u
     path = sorted(gpq.discover(where))[0]
     s = _s()
     g = from_parquet(s, "events", path)
-    assert s.form(g.Jet.pt).is_typetracer
+    assert cast("AwkwardForm", s.form(g.Jet.pt)).is_typetracer
     assert len(ak.Array(s.materialize(g))) == LENGTHS[0]
 
 

@@ -7,11 +7,16 @@ against the same call on the raw array. Forms are pinned too: a global reduction
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, cast
+
 import numpy as np
 import pytest
 
 from graphed import GraphedTypeError, Session
 from graphed.numpy import NumpyBackend, from_array
+
+if TYPE_CHECKING:
+    from graphed import Array
 
 D2 = np.array([[3.0, 1.0, 4.0], [1.0, 5.0, 9.0], [2.0, 6.0, 5.0], [3.0, 5.0, 8.0]])
 DN = np.array([[3.0, np.nan, 4.0], [np.nan, 5.0, 9.0], [2.0, 6.0, np.nan], [3.0, 5.0, 8.0]])
@@ -91,7 +96,7 @@ def test_reduction_forms_track_the_partitioned_axis() -> None:
     assert a.sum(axis=1).shape == (None,)  # partition-local: axis 0 preserved
     assert a.sum(axis=1, keepdims=True).shape == (None, 1)
     assert a.argmin().dtype == np.dtype(np.intp)
-    assert np.cumsum(a).shape == (None,)  # flattening scan: 1-D, unknown length
+    assert cast("Array", np.cumsum(a)).shape == (None,)  # flattening scan: 1-D, unknown length
     assert np.cumsum(a, axis=1).shape == (None, 3)
 
 

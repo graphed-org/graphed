@@ -7,14 +7,18 @@ with a precise 'unresolved payload <hash>' error, never a silent wrong result."
 from __future__ import annotations
 
 import shutil
+from typing import TYPE_CHECKING
 
 import agc
 import pytest
 
 from graphed.preserve import Bundle, UnresolvedPayloadError, reproduce
 
+if TYPE_CHECKING:
+    from pathlib import Path
 
-def _copy(bundle, dest):  # type: ignore[no-untyped-def]
+
+def _copy(bundle: Bundle, dest: Path) -> Bundle:
     shutil.copytree(bundle.root, dest)
     return Bundle.open(dest)
 

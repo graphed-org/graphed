@@ -8,6 +8,7 @@ operand that is not in `args`, which a positional-only encoder would drop or mis
 from __future__ import annotations
 
 from inspect import currentframe
+from typing import Any
 
 import awkward as ak
 import numpy as np
@@ -16,7 +17,7 @@ from m54_behavior_fixtures import eager, recorded
 from graphed.awkward import gak
 
 
-def _leads() -> tuple[object, object, object, ak.Array, ak.Array]:
+def _leads() -> tuple[Any, Any, Any, ak.Array, ak.Array]:
     session, jets, probe = recorded()
     lead = gak.firsts(jets, axis=1)
     partner = gak.firsts(probe, axis=1)

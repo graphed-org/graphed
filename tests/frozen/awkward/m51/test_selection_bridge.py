@@ -20,7 +20,7 @@ the two obvious wrong implementations (bare handle `is`, and Array/object `is`).
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import awkward as ak
 import pytest
@@ -30,6 +30,9 @@ import graphed
 import graphed.awkward as ga
 from graphed.awkward import gak
 from graphed.errors import GraphedError
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 pytest.importorskip("pyarrow")
 
@@ -48,14 +51,14 @@ def _eager_jets_selected() -> ak.Array:
 
 
 def _skim(record: Any, select: Any, dest: str) -> dict[str, ak.Array]:
-    paths = ga.to_parquet(record, dest, select=select)  # type: ignore[call-arg]
+    paths = ga.to_parquet(record, dest, select=select)
     assert len(paths) == 1
-    return ga.read_varied(paths[0])  # type: ignore[attr-defined]
+    return ga.read_varied(paths[0])
 
 
 def test_selection_on_a_root_context_is_none() -> None:
     _session, events = events_context()
-    assert graphed.selection(events) is None  # type: ignore[attr-defined]
+    assert graphed.selection(events) is None
 
 
 def test_bridge_write_roundtrips_identically_to_the_hand_written_mask(tmp_path) -> None:  # type: ignore[no-untyped-def]
@@ -63,7 +66,7 @@ def test_bridge_write_roundtrips_identically_to_the_hand_written_mask(tmp_path) 
     mask = _event_mask(events)
     sel = events[mask]
 
-    bridge = _skim(events.Jet, graphed.selection(sel), str(tmp_path / "bridge"))  # type: ignore[attr-defined]
+    bridge = _skim(events.Jet, graphed.selection(sel), str(tmp_path / "bridge"))
     by_hand = _skim(events.Jet, mask, str(tmp_path / "hand"))
 
     assert list(bridge) == list(by_hand) == ["nominal"]
@@ -78,8 +81,8 @@ def test_bridge_walks_vary_identity_links_and_roundtrips_the_prevary_spelling(tm
     w = gak.prod(1.0 + sel.Jet.btag, axis=1)
     sel2 = graphed.vary(sel, "btag", w, is_weight=True, up=w * 1.1, down=w * 0.9)
 
-    pre = _skim(events.Jet, graphed.selection(sel), str(tmp_path / "pre"))  # type: ignore[attr-defined]
-    post = _skim(events.Jet, graphed.selection(sel2), str(tmp_path / "post"))  # type: ignore[attr-defined]
+    pre = _skim(events.Jet, graphed.selection(sel), str(tmp_path / "pre"))
+    post = _skim(events.Jet, graphed.selection(sel2), str(tmp_path / "post"))
 
     assert list(pre) == list(post) == ["nominal"]
     assert as_list(pre["nominal"]) == as_list(post["nominal"])
@@ -105,8 +108,8 @@ def test_bridge_admits_a_vary_link_between_record_and_mask_handles(tmp_path) -> 
     mask = gak.num(e2.Jet) >= 2
     sel = e2[mask]
 
-    across_link = _skim(e1.Jet, graphed.selection(sel), str(tmp_path / "e1"))  # type: ignore[attr-defined]
-    from_e2 = _skim(e2.Jet, graphed.selection(sel), str(tmp_path / "e2"))  # type: ignore[attr-defined]
+    across_link = _skim(e1.Jet, graphed.selection(sel), str(tmp_path / "e1"))
+    from_e2 = _skim(e2.Jet, graphed.selection(sel), str(tmp_path / "e2"))
 
     assert list(across_link) == list(from_e2) == ["nominal"]
     assert as_list(across_link["nominal"]) == as_list(from_e2["nominal"])
@@ -121,14 +124,14 @@ def test_bridge_accepts_a_re_recorded_equal_mask_expression(tmp_path) -> None:  
     _session, events = events_context()
     sel = events[_event_mask(events)]
     re_recorded = _event_mask(events)  # a fresh recording; hash-consing gives it the same node id
-    assert re_recorded is not graphed.selection(sel)  # type: ignore[attr-defined]  # distinct objects
+    assert re_recorded is not graphed.selection(sel)  # distinct objects
 
     out = _skim(events.Jet, re_recorded, str(tmp_path / "rr"))
     assert as_list(out["nominal"]) == as_list(_eager_jets_selected())
 
 
 def test_selection_on_a_universe_nominal_context_is_a_grandparent_array_and_refuses_downstream(
-    tmp_path,
+    tmp_path: Path,
 ) -> None:
     """Case 2: `graphed.selection(graphed.nominal(sel))` is a GRANDparent's array.
 
@@ -141,13 +144,13 @@ def test_selection_on_a_universe_nominal_context_is_a_grandparent_array_and_refu
     mask = _event_mask(events)
     sel = events[mask]
 
-    projected = graphed.selection(graphed.nominal(sel))  # type: ignore[attr-defined]
+    projected = graphed.selection(graphed.nominal(sel))
     assert not isinstance(projected, graphed.Varied)  # an unvaried Array, not a container
     # both operands are deferred graphed arrays; materialize before ak.to_list (m48/m49 idiom)
     assert as_list(session.materialize(projected)) == as_list(session.materialize(mask))
-    assert graphed.selection(graphed.nominal(events)) is None  # type: ignore[attr-defined]  # root argument
+    assert graphed.selection(graphed.nominal(events)) is None  # root argument
 
     # (b): the projected mask lives one row space above a record read from `sel` -> record-time
     # refuse
     with pytest.raises(GraphedError):
-        ga.to_parquet(sel.Jet, str(tmp_path / "nope"), select=projected)  # type: ignore[call-arg]
+        ga.to_parquet(sel.Jet, str(tmp_path / "nope"), select=projected)

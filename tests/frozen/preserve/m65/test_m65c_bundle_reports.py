@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -92,7 +92,7 @@ def test_attach_leaves_the_fingerprint_alone(tmp_path: Path) -> None:
     reopened = gp.Bundle.open(bundle.root)
     assert reopened.fingerprint() == fp
     assert (bundle.root / "manifest.json").read_bytes() == manifest
-    assert json.loads(reopened.store.get(digest)) == r.to_json()
+    assert json.loads(cast(bytes, reopened.store.get(digest))) == r.to_json()
     assert f"run-report:{digest}" in reopened.store.completed()
 
 

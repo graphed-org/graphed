@@ -16,7 +16,7 @@ import threading
 import uuid
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 from graphed.core import (
     DurablePlan,
@@ -273,7 +273,7 @@ def staged(n_map: int = 4, n_dest: int = 2) -> DurablePlanV2:
 
 
 def stage_reused(plan: DurablePlanV2) -> list[int]:
-    return [stage.process.resolve().reused for stage in plan.stages]
+    return [cast(Any, stage.process.resolve()).reused for stage in plan.stages]
 
 
 # ---- refusals (T4) ------------------------------------------------------------------------------

@@ -19,7 +19,7 @@ Freeze-time spelling this suite pins: ``graphed.variations`` (name settled by §
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import boost_histogram as bh
 import numpy as np
@@ -58,9 +58,9 @@ def _ctx_with_families() -> Any:
 def test_variations_reports_kind_and_parsed_value_per_tag() -> None:
     v = graphed.variations(_ctx_with_families())
     # weight family: both parsers, and the non-numeric tag carries no value (does not raise)
-    assert v["sf"]["5em1"] == (Kind.WEIGHT, 0.5)
-    assert v["sf"]["m15em1"] == (Kind.WEIGHT, -1.5)
-    assert v["sf"]["2p5"] == (Kind.WEIGHT, 2.5)
+    assert cast(object, v["sf"]["5em1"]) == (Kind.WEIGHT, 0.5)
+    assert cast(object, v["sf"]["m15em1"]) == (Kind.WEIGHT, -1.5)
+    assert cast(object, v["sf"]["2p5"]) == (Kind.WEIGHT, 2.5)
     assert v["sf"]["up"] == (Kind.WEIGHT, None)
     # shift family: the OTHER kind of the two-word vocabulary; identifier tags carry no value
     assert v["jes"]["up"] == (Kind.SHIFT, None)

@@ -77,9 +77,9 @@ def test_non_integer_axis_raises() -> None:
     s = Session(ToyBackend())
     a = source(s, "a")
     with pytest.raises(TypeError):
-        a.red("sum", axis=1.5)  # type: ignore[arg-type]
+        a.red("sum", axis=1.5)
     with pytest.raises(TypeError):
-        a.red("sum", axis=True)  # type: ignore[arg-type]
+        a.red("sum", axis=True)
 
 
 def test_keepdims_and_ddof_are_recorded_only_when_non_default() -> None:
