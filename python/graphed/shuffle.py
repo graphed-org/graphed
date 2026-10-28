@@ -38,7 +38,14 @@ from typing import Any, ClassVar, TypeVar
 from graphed.core import DurablePlanV2, GraphStore, OpSpec, Partition, StageSpec, Task
 from graphed.core.execution import WorkerResources
 
-from .aggregate import attribute_failures, external_evaluators, plan_services, resolve_backend
+from .aggregate import (
+    _adopting,
+    attribute_failures,
+    external_evaluators,
+    plan_services,
+    resolve_backend,
+    worker_backend,
+)
 from .array import Array
 from .backend import ParamValue
 from .errors import GraphedError
@@ -270,7 +277,9 @@ class _Gather:
                 for nid, side in zip(self.barrier_inputs, sides, strict=True)
             },
         )
-        return pickle.dumps(values[0] if self.reduce is None else self.reduce(values), protocol=5)
+        value = values[0] if self.reduce is None else self.reduce(values)
+        adopt = getattr(backend, "adopt", None)
+        return pickle.dumps(value if adopt is None else adopt(value), protocol=5)
 
     def bind_services(self, endpoints: Mapping[str, str]) -> _Gather:
         reduce = (
@@ -488,7 +497,7 @@ def _build(
     refuse_chunk_partials(compiled, as_outputs=fold is None)
 
     backend_id = _backend_identity(session, backend)
-    factory = backend if backend is not None else type(session.backend)
+    factory = worker_backend(session, backend)
     wired = external_evaluators(session, compiled)
     frames = compiled.correspondence.frames
     parts, route, routing = _routing(
@@ -552,7 +561,9 @@ def _build(
             StageSpec(
                 kind="reduce",
                 inputs=(len(map_stages),),
-                process=OpSpec.from_callable(_Fold(fold[1], fold[2])),
+                process=OpSpec.from_callable(
+                    _Fold(_adopting(fold[1], factory), _adopting(fold[2], factory))
+                ),
                 routing={"backend_id": backend_id},
                 tasks=(Task(0, Partition("reduce", "", 0, 1)),),
             )

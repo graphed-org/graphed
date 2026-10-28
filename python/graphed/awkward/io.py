@@ -55,7 +55,7 @@ from graphed.varied import (
 )
 from graphed.write import PartitionedSource
 
-from .backend import AwkwardBackend, AwkwardForm
+from .backend import AwkwardBackend, AwkwardForm, shipped_behavior
 from .functions import fill_none
 from .projection import project_buffers
 
@@ -162,6 +162,12 @@ def _resolve_behavior(behavior: Any) -> Any:
         mod_name, _, attr = behavior.partition(":")
         return getattr(importlib.import_module(mod_name), attr)
     return behavior
+
+
+def _session_behavior(session: Session, behavior: Any) -> Any:
+    """Return ``behavior``, or when ``None`` the session backend's, as a plan ships it."""
+    own = getattr(session.backend, "_behavior", None)
+    return shipped_behavior(own) if behavior is None and own else behavior
 
 
 # ---- deferred writing ------------------------------------------------------------------------
@@ -1015,6 +1021,7 @@ def _write_varied(
     labels = union_labels(record, *masks)
     nominal_record = member_of(record, "nominal")
     session: Session = nominal_record.session
+    behavior = _session_behavior(session, behavior)
 
     # --- record-time entry checks (raise at the call; `compute=False` still raises) ---
     level0 = entries.get(0)
@@ -1280,6 +1287,7 @@ def to_parquet(
             behavior=behavior,
         )
     session: Session = array.session
+    behavior = _session_behavior(session, behavior)
     sources = gw.sources_read([array])
     if len(sources) != 1:
         raise TypeError(

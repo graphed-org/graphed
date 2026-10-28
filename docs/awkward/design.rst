@@ -254,19 +254,20 @@ another ``Session`` among the arguments is refused with ``GraphedTypeError`` at 
 any node is recorded. Column projection replays the method on the reporting typetracer, so it
 reads exactly what the method reads — here ``pt``, ``eta`` and ``phi``, never ``mass``. A behavior
 registered on the backend alone, like ``JetArray`` above, resolves exactly as one registered in
-``ak.behavior``; a process pool needs that backend rebuilt in the worker, which is what the
-``backend="module:factory"`` import reference of ``aggregate_plan`` is for.
+``ak.behavior``, and a plan's workers rebuild the backend with that behavior, so the method runs
+in a process pool as it runs here.
 
 A method runs **per partition** and must be row-wise, the same rule ``map_partitions`` has. A
 body that consumes the event axis (``self[:1]``, an ``axis=0`` reduction) still records, because
 the typetracer has forgotten the outer length, and then answers per partition rather than
 globally; only a scalar result is refused.
 
-Two consequences follow from behavior dicts holding lambdas, which do not pickle to a worker
-process. First, a worker is given the backend by *import reference*, not by value — which is why
-``to_parquet`` takes ``behavior="vector.backends.awkward:behavior"`` as well as a dict. Second,
-a worker that was built without the behaviors fails loudly on the property rather than quietly
-computing something else.
+Behavior dicts hold lambdas, which stdlib pickle cannot carry to a worker process, so
+``aggregate_plan``, ``shuffle_plan``, ``join_plan`` and ``to_parquet`` ship the Session backend's
+behavior by value, through cloudpickle. An *import reference* ships it by name instead:
+``backend="module:factory"``, or ``to_parquet(behavior="vector.backends.awkward:behavior")``. A
+behavior cloudpickle cannot copy is refused with a ``TypeError`` when the plan is built, never
+dropped silently in the worker.
 
 What a per-event reduction costs, and what a cross-event one does
 -----------------------------------------------------------------

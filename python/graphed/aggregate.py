@@ -108,19 +108,40 @@ def by_value(fn: T) -> T:
     return fn
 
 
+def worker_backend(session: Session, backend: Callable[[], Any] | str | None) -> Any:
+    """Return the backend factory or import ref a plan's workers build their backend from.
+
+    ``backend`` when given, else the session backend's ``worker_factory()`` when it has one (it
+    rebuilds what the class alone does not, e.g. an awkward behavior), else its class.
+    """
+    if backend is not None:
+        return backend
+    hook = getattr(session.backend, "worker_factory", None)
+    return type(session.backend) if hook is None else hook()
+
+
 @functools.cache
 def resolved_backend(ref: str) -> Any:
     """Return the backend the import ``ref`` names, resolved once per process."""
     return resolve_backend(ref)
 
 
-def _adopted(backend: Callable[[], Any] | str | None, value: T) -> T:
-    """``value`` with its arrays given back the behavior of the backend ``backend`` imports.
+def _adopted(backend: Any, value: T) -> T:
+    """``value`` with its arrays given back the behavior the built ``backend`` carries.
 
-    An op over several of them leaves an equal copy, which does not pickle by that import ref.
+    An op over several of them leaves an equal copy, which does not pickle as the shipped one.
     """
-    adopt = getattr(resolved_backend(backend), "adopt", None) if isinstance(backend, str) else None
+    adopt = getattr(backend, "adopt", None)
     return value if adopt is None else cast("T", adopt(value))
+
+
+def _adopting(fn: Callable[..., Any], backend: Callable[[], Any] | str) -> Callable[..., Any]:
+    """``fn``, its results' arrays given back the behavior of the backend ``backend`` builds.
+
+    Only an import ref or a ``worker_factory()`` partial builds a behavior that pickles as shipped,
+    so any other backend keeps ``fn`` itself.
+    """
+    return _Adopting(fn, backend) if isinstance(backend, str | functools.partial) else fn
 
 
 @dataclass(frozen=True)
@@ -131,10 +152,12 @@ class _Adopting:
     """
 
     fn: Callable[..., Any]
-    ref: str
+    ref: Callable[[], Any] | str
 
     def __call__(self, *args: Any) -> Any:
-        return _adopted(self.ref, self.fn(*args))
+        ref = self.ref
+        built = resolved_backend(ref) if isinstance(ref, str) else resolve_backend(ref)
+        return _adopted(built, self.fn(*args))
 
 
 def resolve_backend(ref: Callable[[], Any] | str) -> Any:
@@ -195,17 +218,18 @@ class _PartitionReduce(Generic[V]):
 
     def __call__(self, partition: Partition, resources: WorkerResources) -> V:
         chunk = self.reader.read_partition(partition, self.columns, resources)
+        backend = resolve_backend(self.backend_factory)
         if self.store is None:
             # evaluate inlined: the default path keeps its pre-capture frame count
             values = evaluate_ir(
                 self.ir,
-                resolve_backend(self.backend_factory),
+                backend,
                 {self.source_name: chunk},
                 externals=dict(self.externals),
                 on_failure=self._attribute(str(partition)),
             )
             return _adopted(
-                self.backend_factory,
+                backend,
                 self.reduce(self._write(values, partition) if self.writes else values),
             )
         import cloudpickle  # noqa: PLC0415  (only a capturing plan needs it)
@@ -214,13 +238,11 @@ class _PartitionReduce(Generic[V]):
 
         store = self._task_store()
         cid, label, codec = self.capture_id(partition), str(partition), PickleCodec()
-        capturable = getattr(
-            resolve_backend(self.backend_factory), "capturable", lambda chunk: chunk
-        )
+        capturable = getattr(backend, "capturable", lambda chunk: chunk)
         # the input is kept before evaluating, so a failing task's input survives it
         blob = store.put(cloudpickle.dumps(capturable(chunk), protocol=codec.PROTOCOL))
         store.record_done(f"{cid}:input", label, blob, stage="replay-input")
-        result = _adopted(self.backend_factory, self.reduce(self.evaluate(chunk, partition)))
+        result = _adopted(backend, self.reduce(self.evaluate(chunk, partition)))
         store.record_done(
             f"{cid}:output", label, store.put(codec.encode(result)), stage="replay-output"
         )
@@ -437,7 +459,8 @@ def aggregate_plan(
     the output Arrays (their shared sub-graph is compiled to one IR and evaluated once per
     partition); ``externals`` binds any External payload evaluator; ``backend`` is the workers'
     evaluation backend (factory, class, or ``"module:attr"`` ref; defaults to the session backend's
-    type). ``run(plan).value`` is the ``reduce``+``combine`` aggregate over all partitions.
+    class, with its behavior). ``run(plan).value`` is the ``reduce``+``combine`` aggregate over
+    all partitions.
 
     The tasks are ``partitions`` when given, else the source's partitions at ``steps_per_file``
     steps per file; ``None`` takes the source's own default (``from_parquet(steps_per_file=)``).
@@ -509,10 +532,11 @@ def aggregate_plan(
     if externals:
         wired.update((key, by_value(fn)) for key, fn in externals.items())
     declared = declared_columns(data, arrays)
+    factory = worker_backend(session, backend)
     process = _PartitionReduce(
         ir=bytes(compiled.ir),
         source_name=session.source_name(nid),
-        backend_factory=backend if backend is not None else type(session.backend),
+        backend_factory=factory,
         reader=data,
         columns=read_columns(arrays, nid) if declared is None else declared,
         externals=tuple(wired.items()),
@@ -532,12 +556,8 @@ def aggregate_plan(
     _refuse_shared_parts((process, t.partition) for t in tasks)
     return Plan(
         process=process,
-        combine=by_value(combine)
-        if not isinstance(backend, str)
-        else _Adopting(by_value(combine), backend),
-        empty=by_value(empty)
-        if not isinstance(backend, str)
-        else _Adopting(by_value(empty), backend),
+        combine=_adopting(by_value(combine), factory),
+        empty=_adopting(by_value(empty), factory),
         tasks=tasks,
         services=plan_services(session, compiled, services),
         finalize=None if finalize is None else by_value(finalize),

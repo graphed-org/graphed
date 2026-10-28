@@ -44,6 +44,17 @@ A plan finalizes its value on the driver
   ``collate`` applies each plan's to its own name. A runner of its own returns
   ``graphed.core.finalize_result(plan, result)``. A durable plan without one keeps its bytes.
 
+A plan's workers keep the Session backend's behavior
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``aggregate_plan``, ``shuffle_plan``, ``join_plan`` and the awkward ``to_parquet`` build the
+  workers' backend with the Session backend's behavior, shipped by value: workers built a bare
+  ``AwkwardBackend()``, so a behavior method only that backend registered (a ``with_name`` record
+  built in the graph) raised ``AttributeError`` in workers while it worked on the driver. Arrays
+  the tasks return carry the shipped behavior back, lambdas included. A behavior cloudpickle
+  cannot copy is refused with a ``TypeError`` when the plan is built. A behavior-less Session's
+  plan keeps its bytes (#123).
+
 A reader's ``steps_per_file`` and ``open_files`` partition its plans
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
