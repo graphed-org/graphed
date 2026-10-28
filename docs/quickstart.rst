@@ -38,7 +38,7 @@ The whole thing
     from graphed.core.execution import SequentialRunner
 
     session = Session(AwkwardBackend())
-    events = gnano.events(from_parquet(session, "events", data_dir))
+    events = gnano.events(from_parquet("events", data_dir, session=session))
 
     jets = events.Jet
     events = graphed.vary(events, "jes", collections={"Jet": {
@@ -124,7 +124,7 @@ Here is the same analysis on a process pool — the only differences are the run
 
     def build_plan(data_dir: str):
         session = Session(AwkwardBackend())
-        events = gnano.events(from_parquet(session, "events", data_dir))
+        events = gnano.events(from_parquet("events", data_dir, session=session))
         jets = events.Jet
         events = graphed.vary(events, "jes", collections={"Jet": {
             "up": gak.with_field(jets, jets.pt * 1.05, "pt"),

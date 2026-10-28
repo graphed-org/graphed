@@ -18,7 +18,7 @@ feed an operation that needs a type, such as a reduction:
     from graphed.numpy import NumpyBackend, from_array
 
     s = Session(NumpyBackend())
-    x = from_array(s, "x", np.arange(6.0))
+    x = from_array("x", np.arange(6.0), session=s)
     doubled = x.map(lambda a: a * 2, name="double")
 
     print(s.form(doubled).describe())
@@ -48,7 +48,7 @@ the type of each element of the result, and the recorded form is that type:
     from graphed.numpy import NumpyBackend, from_array
 
     s = Session(NumpyBackend())
-    x = from_array(s, "x", np.arange(6.0))
+    x = from_array("x", np.arange(6.0), session=s)
     doubled = x.map(lambda a: a * 2, name="double", output_type="float64")
     print(s.form(doubled).describe())
     print(s.materialize(doubled.reduce("sum")))

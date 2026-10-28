@@ -50,7 +50,7 @@ and the plan that drives it:
 
     # record the analysis once: this is what the plan carries
     s = Session(NumpyBackend())
-    ev = from_record(s, "events", x=np.zeros(1))
+    ev = from_record("events", x=np.zeros(1), session=s)
     counts, _edges = np.histogram(ev["x"], bins=4, range=(0, 1))
 
     plan = DurablePlan(

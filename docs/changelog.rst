@@ -7,6 +7,37 @@ Newest release first. Numbers in parentheses are the pull requests on
 0.0.10 (unreleased)
 -------------------
 
+A current Session for reads with no array input
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``graphed.current_session()`` returns the innermost ``with session:`` scope, else a process-wide
+  default Session created on first use; ``graphed.new_session(backend)`` and
+  ``graphed.set_session(s)`` replace the default, and ``graphed.set_default_backend(factory)``
+  chooses the backend of defaults no caller names. Scopes follow Python's context rules; the
+  default is visible from every thread.
+* Every reader with no array input — ``graphed.awkward``'s ``from_awkward`` and ``from_parquet``,
+  ``graphed.numpy``'s ``from_array``, ``from_record``, ``zeros``, ``ones``, ``full``, ``empty``,
+  ``arange``, ``linspace``, ``from_parquet`` and ``default_rng``, and
+  ``graphed.parquet.deferred_source`` — takes ``session=`` as an optional keyword and otherwise
+  records into ``current_session()``. A Session on a backend the reader cannot record on is
+  refused at the read. The leading positional Session still works and raises a
+  ``DeprecationWarning``; pass ``session=`` instead.
+* ``Session.source`` reuses a taken name's binding when the new data is the same source: the same
+  object, or an equal ``source_identity()`` (or ``identity=``). A re-run ``from_parquet`` with the
+  same files, columns, ``steps_per_file`` and ``open_files`` returns its node; other data under
+  the name is refused, and both refusals name ``name=`` and ``graphed.new_session()``. The numpy
+  creators and ``default_rng`` draws bind their content name atomically, so two threads creating
+  one content no longer race into a refusal.
+* A creator's or draw's content name renders array arguments exactly (dtype, shape and every
+  value): ``full`` fills and ``default_rng`` parameters that ``repr`` rounded or elided alike no
+  longer share one source.
+* ``set_session`` refuses anything that is not a Session or ``None``, naming its type.
+* Session methods lock their state, so threads may record into and compile one Session at once;
+  compiling while another thread recorded raised ``dictionary changed size during iteration``.
+* The cross-Session refusals of ``join``, ``gak.join``, ``apply``, ``apply_gufunc``,
+  ``aggregate_plan`` and the recording guard name the ``with`` scope that records both sides in
+  one Session.
+
 Several datasets in one Session
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

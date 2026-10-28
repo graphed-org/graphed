@@ -90,7 +90,7 @@ The driver runs it in a child process, waits for the corpse, then resumes in the
     from graphed.numpy import NumpyBackend, from_record
 
     s = Session(NumpyBackend())
-    ev = from_record(s, "events", x=np.zeros(1))
+    ev = from_record("events", x=np.zeros(1), session=s)
     counts, _edges = np.histogram(ev["x"], bins=4, range=(0, 1))
 
     plan = DurablePlan(
@@ -157,7 +157,7 @@ same key; re-binning the histogram does not. (``myanalysis`` here is the module 
 
     def analysis_ir(bins):
         s = Session(NumpyBackend())
-        ev = from_record(s, "events", x=np.zeros(1))
+        ev = from_record("events", x=np.zeros(1), session=s)
         counts, _edges = np.histogram(ev["x"], bins=bins, range=(0, 1))
         return s.serialized_ir(counts)
 
@@ -225,7 +225,7 @@ colliding — so a combined run over samples you have already processed individu
     from graphed.numpy import NumpyBackend, from_record
 
     s = Session(NumpyBackend())
-    ev = from_record(s, "events", x=np.zeros(1))
+    ev = from_record("events", x=np.zeros(1), session=s)
     counts, _edges = np.histogram(ev["x"], bins=4, range=(0, 1))
 
     analysis = DurablePlan(                      # recorded and optimized once
@@ -313,7 +313,7 @@ count exceeds the budget.
     from graphed.numpy import NumpyBackend, from_record
 
     s = Session(NumpyBackend())
-    ev = from_record(s, "events", x=np.zeros(1))
+    ev = from_record("events", x=np.zeros(1), session=s)
     counts, _edges = np.histogram(ev["x"], bins=4, range=(0, 1))
 
     plan = DurablePlan(
@@ -363,7 +363,7 @@ disk:
     from graphed.numpy import NumpyBackend, from_record
 
     s = Session(NumpyBackend())
-    ev = from_record(s, "events", x=np.zeros(1))
+    ev = from_record("events", x=np.zeros(1), session=s)
     counts, _edges = np.histogram(ev["x"], bins=4, range=(0, 1))
 
     plan = DurablePlan(
@@ -456,7 +456,7 @@ process that resumes is given nothing but the plan and the URL:
     from graphed.numpy import NumpyBackend, from_record
 
     s = Session(NumpyBackend())
-    ev = from_record(s, "events", x=np.zeros(1))
+    ev = from_record("events", x=np.zeros(1), session=s)
     counts, _edges = np.histogram(ev["x"], bins=4, range=(0, 1))
 
     plan = DurablePlan(

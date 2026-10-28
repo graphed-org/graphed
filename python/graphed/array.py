@@ -718,7 +718,10 @@ def apply(
         raise TypeError("apply needs at least one deferred Array operand")
     session = arrays[0].session
     if any(a.session is not session for a in arrays):
-        raise TypeError("apply operands must come from one Session")
+        raise TypeError(
+            "apply operands must come from one Session; record them in one (`with "
+            "operand.session:` around the later reads)"
+        )
     return session.record_external(
         "map", fn, list(arrays), {"fn": session._fn_name(fn, name)}, output_type=output_type
     )

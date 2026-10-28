@@ -46,8 +46,8 @@ def join(
         return graphed.join(left, right, on=on, how=how)
     if left.session is not right.session:
         raise GraphedError(
-            "gak.join: left and right must belong to the same Session; record both into one (a "
-            "reader's session=)"
+            "gak.join: left and right must belong to the same Session; record both into one (read "
+            "the right side inside `with left.session:`, or pass the reader session=)"
         )
     session = left.session
     lk = graphed.pack_key(left, on=on)

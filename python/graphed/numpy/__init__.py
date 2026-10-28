@@ -16,13 +16,14 @@ from __future__ import annotations
 
 import platform
 from collections.abc import Mapping, Sequence
-from typing import Any, cast
+from typing import Any, cast, overload
 
 import numpy as np
 
 from graphed import Array, Session
 from graphed.array import check_leading_ellipsis, decode_subscript
 from graphed.core import PayloadDescriptor
+from graphed.session import _reader
 from graphed.shuffle import join_blocks
 
 from . import shuffle
@@ -619,24 +620,46 @@ class NumpyBackend:
         return shuffle.merge_records(left, right, on=on)
 
 
-def from_array(session: Session, name: str, values: object, *, chunks: int | None = None) -> Array:
+@overload
+def from_array(
+    session: Session, name: str, values: object, *, chunks: int | None = None
+) -> Array: ...
+@overload
+def from_array(
+    name: str, values: object, *, chunks: int | None = None, session: Session | None = None
+) -> Array: ...
+@_reader(NumpyBackend)
+def from_array(
+    name: str, values: object, *, chunks: int | None = None, session: Session | None = None
+) -> Array:
     """Create a source Array from a numpy array (or anything array-like); axis 0 is partitioned.
+
+    It records into ``session``, else the current Session.
 
     ``chunks`` is axis-0 partitioning METADATA for executors (dask parity P1.5): it enters the
     source's recorded params (and therefore the IR identity) but does not change evaluation.
     """
     arr = np.asarray(values)
     form = NumpyForm(arr.dtype, shape=(None, *arr.shape[1:]))
+    into = cast("Session", session)
     if chunks is None:
-        return session.source(name, form=form, data=arr)
-    return session.source(name, form=form, data=arr, chunks=int(chunks))
+        return into.source(name, form=form, data=arr)
+    return into.source(name, form=form, data=arr, chunks=int(chunks))
 
 
-def from_record(session: Session, name: str, **columns: object) -> Array:
-    """Create a record source (named columns) — the buffer-projection target."""
+@overload
+def from_record(session: Session, name: str, **columns: object) -> Array: ...
+@overload
+def from_record(name: str, *, session: Session | None = None, **columns: object) -> Array: ...
+@_reader(NumpyBackend)
+def from_record(name: str, *, session: Session | None = None, **columns: object) -> Array:
+    """Create a record source (named columns) — the buffer-projection target.
+
+    It records into ``session``, else the current Session; ``session`` is no column name.
+    """
     cols = {k: np.asarray(v) for k, v in columns.items()}
     fields = tuple((k, v.dtype.str) for k, v in cols.items())
-    return session.source(
+    return cast("Session", session).source(
         name, form=NumpyForm(np.dtype(object), kind="record", fields=fields), data=cols
     )
 

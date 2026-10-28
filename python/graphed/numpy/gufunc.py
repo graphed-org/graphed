@@ -93,7 +93,10 @@ def apply_gufunc(
         raise TypeError("apply_gufunc needs at least one deferred array operand")
     session = arrays[0].session
     if any(a.session is not session for a in arrays):
-        raise TypeError("apply_gufunc operands must come from one Session")
+        raise TypeError(
+            "apply_gufunc operands must come from one Session; record them in one (`with "
+            "operand.session:` around the later reads)"
+        )
     fn_name: str = session._fn_name(fn, name)
     params = {"fn": fn_name, "signature": signature, "dtype": np.dtype(output_dtype).str}
     return session.record_external("gufunc", fn, list(arrays), params)

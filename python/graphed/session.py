@@ -8,11 +8,14 @@ backend.
 
 from __future__ import annotations
 
+import contextvars
+import functools
 import threading
 import types
+import warnings
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
 import graphed.core
 
@@ -27,6 +30,19 @@ from .systematics.state import SystematicsState
 
 if TYPE_CHECKING:
     from .services import ServiceSpec
+
+
+@dataclass(frozen=True)
+class _CompileView:
+    """What one compile reads of a Session, taken together under its lock."""
+
+    ir: bytes
+    #: per record id, the ``(stage, member)`` key it landed on, else ``None``
+    landings: Sequence[tuple[int, int | None] | None]
+    source_names: tuple[str, ...]
+    provenance: dict[int, Provenance]
+    registered_labels: frozenset[str]
+    shift_after_weight: Mapping[tuple[str, str], frozenset[int]]
 
 
 @dataclass(frozen=True)
@@ -74,7 +90,11 @@ class CheckedExternal:
 
 
 class Session:
-    """A recording session: the interned graph of every array recorded on ``backend``."""
+    """A recording session: the interned graph of every array recorded on ``backend``.
+
+    ``with session:`` makes it the Session array-less reads in this context record into, until the
+    block exits; see :func:`current_session`.
+    """
 
     def __init__(self, backend: Backend, *, incremental: bool = False) -> None:
         """Record on ``backend``; ``incremental`` reduces the graph as it is recorded."""
@@ -83,8 +103,8 @@ class Session:
         self._forms: dict[int, Form] = {}
         self._sources: dict[int, object] = {}
         self._source_names: dict[int, str] = {}
-        # source name -> (form description, data)
-        self._slots: dict[str, tuple[object, object]] = {}
+        # source name -> (form description, data, identity)
+        self._slots: dict[str, tuple[object, object, object]] = {}
         self._ops: dict[int, tuple[str, dict[str, ParamValue], list[int]]] = {}
         self._externals: dict[int, tuple[Callable[[object], object], list[int]]] = {}
         self._services: dict[str, ServiceSpec] = {}
@@ -100,8 +120,9 @@ class Session:
         self._array_cls: type[Array] = factory() if callable(factory) else Array
         # `reachable_sources`' memo (node_id -> reachable source node_ids)
         self._source_ids_cache: dict[int, frozenset[int]] = {}
-        # guards `_fn_name`'s tables and every `systematics` read and write; reentrant because a
-        # `vary` transaction holds it around the state's own locked methods
+        # Session methods hold it around their state access and never across a callback (a backend
+        # hook, a loader, an evaluator); code outside this module reads the tables only through
+        # methods returning copies. Reentrant: a `vary` transaction holds it around `record_*`.
         self._lock = threading.RLock()
         #: the variation registries `graphed.vary` writes, which the Session never interprets
         self.systematics = SystematicsState(self._lock)
@@ -110,6 +131,18 @@ class Session:
         # callable) plus the ONE name space every name handed out lives in, declared or derived.
         self._fn_names: dict[object, tuple[object, str]] = {}
         self._fn_taken: set[str] = set()
+
+    def __enter__(self) -> Session:
+        """Open a scope: array-less reads in this context record here until it exits."""
+        _scopes.set((*_scopes.get(), self))
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        """Close this scope; the Session and what it recorded stay usable."""
+        stack = _scopes.get()
+        if not stack or stack[-1] is not self:
+            raise RuntimeError("graphed: Session scopes exited out of order")
+        _scopes.set(stack[:-1])
 
     def _mine(self, arrays: Sequence[Any], located: tuple[str, Provenance] | None = None) -> None:
         """m60 integ-m60-X: refuse an `Array` this Session did not record.
@@ -122,7 +155,10 @@ class Session:
         """
         if all(a.session is self for a in arrays):
             return
-        message = "an input was recorded in a different Session"
+        message = (
+            "an input was recorded in a different Session; record every input in one (read the "
+            "later ones inside `with array.session:`, or pass the reader session=)"
+        )
         if located is None:
             raise TypeError(f"graphed: {message}")
         raise GraphedTypeError(located[0], located[1], message)
@@ -242,28 +278,72 @@ class Session:
         self._mine(outputs)
         if optimize and not outputs:
             raise ValueError("serialized_ir(optimize=True) needs at least one output Array")
-        ids = [arr.node_id for arr in outputs]
-        if not optimize:
-            return bytes(self._store.serialize(outputs=ids))
-        if self._reducer is not None:
-            # incremental session (M10): finish from the maintained canonical view — one linear
-            # pass over the concise form instead of a whole-history optimization.
-            return bytes(self._reducer.finalize(self._store, outputs=ids)[0].serialize())
-        return bytes(self._store.reduce(outputs=ids)[0].serialize())
+        return self._compile_view([arr.node_id for arr in outputs], optimize=optimize).ir
+
+    def _compile_view(
+        self,
+        ids: Sequence[int],
+        *,
+        optimize: bool,
+        maximal_fusion: bool = False,
+        cone: bool = False,
+    ) -> _CompileView:
+        """Compile ``ids`` (the 1:1 cone with ``cone``) beside the tables the artifact reads."""
+        with self._lock:
+            landings: Sequence[tuple[int, int | None] | None]
+            if cone:
+                graph = self._store.cone(outputs=list(ids))
+                ir, landings = bytes(graph.serialize()), graph.node_map()
+            elif not optimize:
+                ir = bytes(self._store.serialize(outputs=list(ids)))
+                # opt_level=0 is 1:1 (M6): the serialized arena keeps the record ids it was built
+                # with
+                landings = [(nid, None) for nid in range(self._store.node_count())]
+            else:
+                # incremental session (M10): finish from the maintained canonical view — one
+                # linear pass over the concise form instead of a whole-history optimization.
+                reduced = (
+                    self._reducer.finalize(
+                        self._store, maximal_fusion=maximal_fusion, outputs=list(ids)
+                    )[0]
+                    if self._reducer is not None
+                    else self._store.reduce(maximal_fusion=maximal_fusion, outputs=list(ids))[0]
+                )
+                ir, landings = bytes(reduced.serialize()), reduced.node_map()
+            return _CompileView(
+                ir=ir,
+                landings=landings,
+                source_names=tuple(self._source_names[nid] for nid in self._sources),
+                provenance=dict(self._provenance),
+                registered_labels=self.systematics.registered_labels(),
+                shift_after_weight=self.systematics.shift_after_weight,
+            )
+
+    def _nodes(self) -> list[dict[str, Any]]:
+        """Return the store's node list (a copy)."""
+        return self._store.nodes()
+
+    def _external_view(self) -> tuple[list[dict[str, Any]], dict[int, tuple[Any, list[int]]]]:
+        """Return the store's node list and the External evaluators by node id, taken together."""
+        with self._lock:
+            return self._store.nodes(), dict(self._externals)
 
     def form(self, array: Array) -> Form:
         """Return the form of ``array``."""
         self._mine([array])
-        return self._forms[array.node_id]
+        with self._lock:
+            return self._forms[array.node_id]
 
     def provenance(self, array: Array) -> Provenance:
         """Return the user source location that recorded ``array``."""
         self._mine([array])
-        return self._provenance[array.node_id]
+        with self._lock:
+            return self._provenance[array.node_id]
 
     def source_ids(self) -> list[int]:
         """Return the node ids of all source nodes (used by projection)."""
-        return list(self._sources)
+        with self._lock:
+            return list(self._sources)
 
     def sources(self) -> dict[int, object]:
         """Return the source nodes' concrete data objects, keyed by node id.
@@ -271,29 +351,33 @@ class Session:
         A public, read-only view — host-reader integrations inspect this instead of reaching into
         session internals.
         """
-        return dict(self._sources)
+        with self._lock:
+            return dict(self._sources)
 
     def declare_service(self, spec: ServiceSpec) -> None:
         """Declare a service nodes may name by ``params["service"]``.
 
         Declaring a name again must repeat the same spec.
         """
-        held = self._services.setdefault(spec.name, spec)
+        with self._lock:
+            held = self._services.setdefault(spec.name, spec)
         if held != spec:
             raise ValueError(f"service {spec.name!r} is already declared as {held}, not {spec}")
 
     def services(self) -> dict[str, ServiceSpec]:
         """Return the declared services by name (a copy)."""
-        return dict(self._services)
+        with self._lock:
+            return dict(self._services)
 
     def service_for(self, name: str) -> ServiceSpec:
         """Return the declared spec called ``name``.
 
         An undeclared name is refused naming the declared ones.
         """
-        spec = self._services.get(name)
-        if spec is None:
+        with self._lock:
+            spec = self._services.get(name)
             declared = ", ".join(sorted(self._services)) or "none"
+        if spec is None:
             raise ValueError(
                 f"service {name!r} is not declared on this Session (declared: {declared})"
             )
@@ -316,11 +400,13 @@ class Session:
 
     def source_name(self, node_id: int) -> str:
         """Return the name of source node ``node_id``."""
-        return self._source_names[node_id]
+        with self._lock:
+            return self._source_names[node_id]
 
     def form_of(self, node_id: int) -> Form:
         """Return the form of node ``node_id``."""
-        return self._forms[node_id]
+        with self._lock:
+            return self._forms[node_id]
 
     def recorded_op(
         self, node_id: int
@@ -329,7 +415,8 @@ class Session:
 
         ``None`` for a source or an External.
         """
-        recorded = self._ops.get(node_id)
+        with self._lock:
+            recorded = self._ops.get(node_id)
         return None if recorded is None else (recorded[0], recorded[1], tuple(recorded[2]))
 
     def reachable_sources(self, node_id: int) -> frozenset[int]:
@@ -338,6 +425,10 @@ class Session:
         Memoized per node: the IR is append-only and hash-consed, so a node's set never changes,
         and a shared (deep) prefix is walked once however many nodes read it.
         """
+        with self._lock:
+            return self._reachable_sources(node_id)
+
+    def _reachable_sources(self, node_id: int) -> frozenset[int]:
         cache = self._source_ids_cache
         hit = cache.get(node_id)
         if hit is not None:
@@ -382,6 +473,8 @@ class Session:
         The M6 sourcemap. M9's ``inspect`` renders it so every preserved node maps back to the
         analysis line that created it, without executing anything.
         """
+        with self._lock:
+            provenance = dict(self._provenance)
         return {
             nid: {
                 "filename": p.filename,
@@ -389,7 +482,7 @@ class Session:
                 "function": p.function,
                 "source": p.source,
             }
-            for nid, p in self._provenance.items()
+            for nid, p in provenance.items()
         }
 
     def source_value(self, node_id: int) -> object:
@@ -397,31 +490,54 @@ class Session:
 
         Used by debug execution.
         """
-        value = self._sources[node_id]
+        with self._lock:
+            value = self._sources[node_id]
         return value() if callable(value) else value
 
     # ---- builders --------------------------------------------------------------
-    def source(self, name: str, *, form: Form, data: object, **params: ParamValue) -> Array:
+    def source(
+        self,
+        name: str,
+        *,
+        form: Form,
+        data: object,
+        identity: object = None,
+        **params: ParamValue,
+    ) -> Array:
         # a name is a slot of one form bound to one data object; the store interns (name, params),
         # so a name reused for other data would silently keep its first binding
-        """Record a source called ``name`` of ``form``, bound to ``data``."""
+        """Record a source called ``name`` of ``form``, bound to ``data``.
+
+        A name already bound here is reused when ``data`` is the held object, or when both
+        bindings have an identity and they compare equal; any other data is refused. The
+        identity is ``identity``, else ``data.source_identity()`` where ``data`` defines it.
+        """
         described = getattr(form, "describe", None)
         key = described() if callable(described) else form
-        held = self._slots.setdefault(name, (key, data))
-        if held[0] != key:
-            raise ValueError(
-                f"source {name!r} is already a slot of another form in this Session; name this one"
-            )
-        if held[1] is not data:
-            raise ValueError(
-                f"source {name!r} is already bound to other data in this Session; name this one"
-            )
-        node_id = self._store.add_source(name, dict(params))
-        self._forms.setdefault(node_id, form)
-        self._sources.setdefault(node_id, data)
-        self._source_names.setdefault(node_id, name)
-        self._provenance.setdefault(node_id, capture())
-        self._step_reducer()
+        if identity is None:
+            own = getattr(data, "source_identity", None)
+            identity = own() if callable(own) else None
+        prov = capture()
+        fix = "pass name= to name this one, or call graphed.new_session() for a fresh Session"
+        with self._lock:
+            held = self._slots.setdefault(name, (key, data, identity))
+            if held[0] != key:
+                raise ValueError(
+                    f"source {name!r} is already a slot of another form in this Session; {fix}"
+                )
+            if held[1] is not data:
+                # `==` on the identities only: the data's own `==` may be elementwise (ndarrays)
+                if identity is None or held[2] is None or not bool(held[2] == identity):
+                    raise ValueError(
+                        f"source {name!r} is already bound to other data in this Session; {fix}"
+                    )
+                data = held[1]
+            node_id = self._store.add_source(name, dict(params))
+            self._forms.setdefault(node_id, form)
+            self._sources.setdefault(node_id, data)
+            self._source_names.setdefault(node_id, name)
+            self._provenance.setdefault(node_id, prov)
+            self._step_reducer()
         return self._wrap(node_id)
 
     def record_op(
@@ -436,23 +552,39 @@ class Session:
         params_d: dict[str, ParamValue] = dict(params or {})
         prov = capture()
         self._mine(inputs, (op, prov))
-        in_forms = [self._forms[a.node_id] for a in inputs]
+        ids = [a.node_id for a in inputs]
         try:
-            form = self._backend.op_form(op, in_forms, params_d)
+            form = self._backend.op_form(op, self._forms_of(ids), params_d)
         except GraphedTypeError:
             raise
         except Exception as exc:  # backend type/shape error -> user-located error
             raise GraphedTypeError(op, prov, str(exc)) from exc
-        ids = [a.node_id for a in inputs]
-        if reduction:
-            node_id = self._store.add_reduction(op, ids, params_d)
-        else:
-            node_id = self._store.add_op(op, ids, params_d)
+        with self._lock:
+            if reduction:
+                node_id = self._store.add_reduction(op, ids, params_d)
+            else:
+                node_id = self._store.add_op(op, ids, params_d)
+            self._enter(node_id, form, prov, op=(op, params_d, ids))
+        return self._wrap(node_id, inputs)
+
+    def _forms_of(self, ids: Sequence[int]) -> list[Form]:
+        with self._lock:
+            return [self._forms[nid] for nid in ids]
+
+    def _enter(
+        self,
+        node_id: int,
+        form: Form,
+        prov: Provenance,
+        *,
+        op: tuple[str, dict[str, ParamValue], list[int]] | None = None,
+    ) -> None:
+        # the caller holds `_lock` from the store add through here
         self._forms.setdefault(node_id, form)
-        self._ops.setdefault(node_id, (op, params_d, ids))
+        if op is not None:
+            self._ops.setdefault(node_id, op)
         self._provenance.setdefault(node_id, prov)
         self._step_reducer()
-        return self._wrap(node_id, inputs)
 
     def record_exchange(self, input_array: Array, params: Mapping[str, ParamValue]) -> Array:
         """Record an ``Exchange`` boundary (M39): a pure data-movement repartition of one input.
@@ -463,13 +595,11 @@ class Session:
         params_d: dict[str, ParamValue] = dict(params)
         prov = capture()
         self._mine([input_array], ("exchange", prov))
-        in_form = self._forms[input_array.node_id]
-        form = self._backend.op_form("exchange", [in_form], params_d)
-        node_id = self._store.add_exchange([input_array.node_id], params_d)
-        self._forms.setdefault(node_id, form)
-        self._ops.setdefault(node_id, ("exchange", params_d, [input_array.node_id]))
-        self._provenance.setdefault(node_id, prov)
-        self._step_reducer()
+        ids = [input_array.node_id]
+        form = self._backend.op_form("exchange", self._forms_of(ids), params_d)
+        with self._lock:
+            node_id = self._store.add_exchange(ids, params_d)
+            self._enter(node_id, form, prov, op=("exchange", params_d, ids))
         return self._wrap(node_id, [input_array])
 
     def record_join(self, left: Array, right: Array, params: Mapping[str, ParamValue]) -> Array:
@@ -482,19 +612,16 @@ class Session:
         params_d: dict[str, ParamValue] = dict(params)
         prov = capture()
         self._mine([left, right], ("join", prov))
-        in_forms = [self._forms[left.node_id], self._forms[right.node_id]]
+        ids = [left.node_id, right.node_id]
         try:
-            form = self._backend.op_form("join", in_forms, params_d)
+            form = self._backend.op_form("join", self._forms_of(ids), params_d)
         except GraphedTypeError:
             raise
         except Exception as exc:  # backend type/shape error -> user-located error (as record_op)
             raise GraphedTypeError("join", prov, str(exc)) from exc
-        ids = [left.node_id, right.node_id]
-        node_id = self._store.add_join(ids, params_d)
-        self._forms.setdefault(node_id, form)
-        self._ops.setdefault(node_id, ("join", params_d, ids))
-        self._provenance.setdefault(node_id, prov)
-        self._step_reducer()
+        with self._lock:
+            node_id = self._store.add_join(ids, params_d)
+            self._enter(node_id, form, prov, op=("join", params_d, ids))
         return self._wrap(node_id, [left, right])
 
     def record_external(
@@ -559,7 +686,7 @@ class Session:
                     op, prov, "backend returned no payload descriptor for external op"
                 )
         if form is None:
-            in_forms = [self._forms[a.node_id] for a in inputs]
+            in_forms = self._forms_of([a.node_id for a in inputs])
             try:
                 form = self._backend.op_form(op, in_forms, {**form_view, **(form_params or {})})
             except GraphedTypeError:
@@ -581,25 +708,24 @@ class Session:
             except Exception as exc:  # an unrepresentable leaf dtype -> user-located error
                 raise GraphedTypeError(op, prov, str(exc)) from exc
         ids = [a.node_id for a in inputs]
-        node_id = self._store.add_external(descriptor, ids, params_d)
-        if declared is not None and check is not None:
-            node = f"{op} node {node_id} ({params_d.get('fn', descriptor.kind)!r})"
-            fn = CheckedExternal(fn, declared[0], declared[1], check, op, prov, node)
-        prior = self._externals.get(node_id)
-        if prior is not None and isinstance(prior[0], CheckedExternal) != isinstance(
-            fn, CheckedExternal
-        ):
-            # an 'output_type' param and output_type= store the same params, so one node would drop
-            # the check
-            raise GraphedTypeError(
-                op,
-                prov,
-                "this External is already recorded with its type declared on one call only",
-            )
-        self._forms.setdefault(node_id, form)
-        self._externals.setdefault(node_id, (fn, ids))
-        self._provenance.setdefault(node_id, prov)
-        self._step_reducer()
+        with self._lock:
+            node_id = self._store.add_external(descriptor, ids, params_d)
+            if declared is not None and check is not None:
+                node = f"{op} node {node_id} ({params_d.get('fn', descriptor.kind)!r})"
+                fn = CheckedExternal(fn, declared[0], declared[1], check, op, prov, node)
+            prior = self._externals.get(node_id)
+            if prior is not None and isinstance(prior[0], CheckedExternal) != isinstance(
+                fn, CheckedExternal
+            ):
+                # an 'output_type' param and output_type= store the same params, so one node
+                # would drop the check
+                raise GraphedTypeError(
+                    op,
+                    prov,
+                    "this External is already recorded with its type declared on one call only",
+                )
+            self._externals.setdefault(node_id, (fn, ids))
+            self._enter(node_id, form, prov)
         return self._wrap(node_id, inputs)
 
     # ---- generic graph walk (shared by materialize + projection) ----------------
@@ -635,36 +761,176 @@ class Session:
             if node_id in cache:
                 stack.pop()
                 continue
-            pending = [i for i in inputs_of(node_id) if i not in cache]
+            with self._lock:
+                pending = [i for i in inputs_of(node_id) if i not in cache]
+                is_source = node_id in self._sources
+                external_entry = self._externals.get(node_id)
+                op_entry = self._ops.get(node_id)
             if pending:
                 stack.extend(reversed(pending))
                 continue
             stack.pop()
-            if node_id in self._sources:
+            # the callbacks run unlocked: they evaluate, and may record into this Session
+            if is_source:
                 cache[node_id] = source(node_id)
-            elif node_id in self._externals:
-                fn, ids = self._externals[node_id]
+            elif external_entry is not None:
+                fn, ids = external_entry
                 cache[node_id] = external(node_id, fn, [cache[i] for i in ids])
             else:
-                op_name, params, ids = self._ops[node_id]
+                op_name, params, ids = op_entry  # type: ignore[misc]  # neither source nor External
                 cache[node_id] = op(node_id, op_name, [cache[i] for i in ids], params)
         return cache[root]
 
     # ---- evaluation (reference, node-by-node; the real executor is M7) ----------
     def materialize(self, array: Array, *, memo: dict[int, object] | None = None) -> object:
         """``array``'s value; walks sharing ``memo`` evaluate each shared node once."""
-
-        def source(node_id: int) -> object:
-            value = self._sources[node_id]
-            return value() if callable(value) else value  # lazy loader (e.g. parquet)
-
         return self.walk(
             array,
-            source=source,
+            source=self.source_value,
             op=lambda _nid, name, ins, params: self._backend.eval_stage(name, ins, params),
             external=lambda _nid, fn, ins: fn(*ins),
             memo=memo,
         )
+
+
+#: the open ``with session:`` scopes of this context, innermost last; a tuple per context, so
+#: two threads entering one Session never share a push/pop
+_scopes: contextvars.ContextVar[tuple[Session, ...]] = contextvars.ContextVar(
+    "graphed_session_scopes", default=()
+)
+# module globals and not context variables: the default must be one object every thread and every
+# context sees, including those started before it existed
+_default: Session | None = None
+_default_factory: Callable[[], Backend] | None = None
+# guards the two writes; never held across `Session(...)` or a factory call, which may read back
+_default_lock = threading.Lock()
+
+
+def _factory_backend() -> Backend | None:
+    factory = _default_factory
+    return None if factory is None else factory()
+
+
+def current_session(backend: Backend | None = None) -> Session:
+    """Return the Session array-less reads record into: the innermost open scope, else the default.
+
+    With no default yet, one is created on ``backend``, else on the factory set with
+    :func:`set_default_backend`, else on ``graphed.awkward.AwkwardBackend()``. ``backend`` is
+    used only then: the Session returned may record on another backend.
+    """
+    global _default  # the process-wide default
+    stack = _scopes.get()
+    if stack:
+        return stack[-1]
+    held = _default
+    if held is not None:
+        return held
+    made = backend if backend is not None else _factory_backend()
+    if made is None:
+        try:
+            from .awkward import AwkwardBackend  # noqa: PLC0415  (an optional extra)
+        except ImportError as exc:
+            raise ImportError(
+                "graphed.current_session(): no backend for a new default Session; install "
+                "graphed[awkward], or configure one with graphed.set_default_backend(...)"
+            ) from exc
+        made = AwkwardBackend()
+    session = Session(made)
+    with _default_lock:
+        if _default is None:
+            _default = session
+        return _default
+
+
+def new_session(backend: Backend | None = None) -> None:
+    """Replace the default Session with a new one on ``backend``.
+
+    With no ``backend``, on the factory set with :func:`set_default_backend`; with neither, the
+    default is cleared and the next array-less read creates one on its own backend. An open
+    ``with`` scope still wins until it exits.
+    """
+    made = backend if backend is not None else _factory_backend()
+    set_session(None if made is None else Session(made))
+
+
+def set_session(default: Session | None, /) -> Session | None:
+    """Install ``default`` as the default Session (``None`` clears it); return the previous one.
+
+    The previous one is the restore token: ``prev = set_session(s); ...; set_session(prev)``.
+    """
+    global _default  # the process-wide default
+    if default is not None and not isinstance(default, Session):
+        raise TypeError(
+            f"set_session takes a graphed.Session or None, not {type(default).__name__} "
+            "(an array's Session is array.session)"
+        )
+    with _default_lock:
+        previous, _default = _default, default
+    return previous
+
+
+def set_default_backend(factory: Callable[[], Backend] | None, /) -> Callable[[], Backend] | None:
+    """Set the backend factory of future defaults no creator names; return the previous factory.
+
+    Process-wide. It applies to a bare :func:`current_session` and to :func:`new_session` without
+    a backend, never to a reader with its own backend, and not to a default that already exists:
+    call :func:`new_session` to apply it now. ``None`` clears it.
+    """
+    global _default_factory  # the process-wide factory
+    with _default_lock:
+        previous, _default_factory = _default_factory, factory
+    return previous
+
+
+R = TypeVar("R")
+
+
+def _reader(kind: type[Backend] | None) -> Callable[[Callable[..., R]], Callable[..., R]]:
+    """Resolve an array-less reader's ``session=``: the argument, else :func:`current_session`.
+
+    A default made here records on ``kind()``, and a Session whose backend is not a ``kind`` is
+    refused at the read (``None``: any). The legacy leading positional Session still works, with a
+    ``DeprecationWarning``.
+    """
+
+    def wrap(fn: Callable[..., R]) -> Callable[..., R]:
+        name = fn.__name__
+
+        @functools.wraps(fn)
+        def reader(*args: Any, **kwargs: Any) -> R:
+            if args and isinstance(args[0], Session):
+                if "session" in kwargs:
+                    raise TypeError(
+                        f"{name}: the Session was passed both positionally and as session="
+                    )
+                warnings.warn(
+                    f"{name}(session, ...) is deprecated; pass session= as a keyword",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+                kwargs["session"], args = args[0], args[1:]
+            session = kwargs.get("session")
+            if session is None:
+                session = current_session(None if kind is None else kind())
+            elif not isinstance(session, Session):
+                raise TypeError(
+                    f"{name}: session= must be a graphed.Session, not {type(session).__name__}; "
+                    "'session' is reserved"
+                )
+            if kind is not None and not isinstance(session.backend, kind):
+                wanted = kind.__name__
+                raise TypeError(
+                    f"{name}: the Session records on {type(session.backend).__name__}, and this "
+                    f"reader records on {wanted}; pass session=, call "
+                    f"graphed.new_session({wanted}()), or read inside "
+                    f"`with graphed.Session({wanted}()):`"
+                )
+            kwargs["session"] = session
+            return fn(*args, **kwargs)
+
+        return reader
+
+    return wrap
 
 
 def _replace_arrays(item: Any, leaf: Callable[[Array], Any]) -> Any:

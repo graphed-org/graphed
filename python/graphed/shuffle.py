@@ -133,8 +133,8 @@ def join(left: Array, right: Array, *, on: Sequence[str], how: str = "inner") ->
     refuse_boundary("graphed.join", left, right)
     if left.session is not right.session:
         raise GraphedError(
-            "join: left and right must belong to the same Session; record both into one (a "
-            "reader's session=)"
+            "join: left and right must belong to the same Session; record both into one (read the "
+            "right side inside `with left.session:`, or pass the reader session=)"
         )
     session = left.session
     lk = pack_key(left, on=on)

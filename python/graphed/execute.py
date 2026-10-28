@@ -31,7 +31,8 @@ import graphed.core
 from .array import labels_carried
 from .backend import Backend
 from .errors import GraphedError
-from .session import Session
+from .provenance import Provenance
+from .session import Session, _CompileView
 from .varied import refuse_container
 
 __all__ = [
@@ -134,21 +135,10 @@ def compile_ir(
         raise ValueError("maximal_fusion requires optimize=True")
     if optimize and not outputs:
         raise ValueError("compile_ir(optimize=True) needs at least one output Array")
-    ids = [arr.node_id for arr in outputs]
-    if not optimize:
-        blob = bytes(session._store.serialize(outputs=ids))
-        # opt_level=0 is 1:1 (M6): the serialized arena keeps the record ids it was built with
-        landings: list[Key | None] = [(nid, None) for nid in range(session._store.node_count())]
-    else:
-        reduced = (
-            session._reducer.finalize(session._store, maximal_fusion=maximal_fusion, outputs=ids)[
-                0
-            ]
-            if session._reducer is not None
-            else session._store.reduce(maximal_fusion=maximal_fusion, outputs=ids)[0]
-        )
-        blob, landings = bytes(reduced.serialize()), reduced.node_map()
-    return _compiled(session, outputs, blob, landings)
+    view = session._compile_view(
+        [arr.node_id for arr in outputs], optimize=optimize, maximal_fusion=maximal_fusion
+    )
+    return _compiled(view, outputs)
 
 
 def _compile_cone(session: Session, *outputs: Any) -> CompiledGraph:
@@ -159,39 +149,39 @@ def _compile_cone(session: Session, *outputs: Any) -> CompiledGraph:
     """
     refuse_container("graphed.compile_ir", *outputs)
     session._mine(outputs)
-    cone = session._store.cone(outputs=[arr.node_id for arr in outputs])
-    return _compiled(session, outputs, bytes(cone.serialize()), cone.node_map())
+    view = session._compile_view([arr.node_id for arr in outputs], optimize=False, cone=True)
+    return _compiled(view, outputs)
 
 
-def _compiled(
-    session: Session, outputs: tuple[Any, ...], blob: bytes, landings: Sequence[Key | None]
-) -> CompiledGraph:
-    node_map = {nid: landed for nid, landed in enumerate(landings) if landed is not None}
-    names = tuple(session.source_name(nid) for nid in session.source_ids())
+def _compiled(view: _CompileView, outputs: tuple[Any, ...]) -> CompiledGraph:
+    node_map = {nid: landed for nid, landed in enumerate(view.landings) if landed is not None}
     reached: set[str] = set()
     for arr in outputs:
         reached |= labels_carried(arr) or frozenset()
-    registered = session.systematics.registered_labels()
     return CompiledGraph(
-        ir=blob,
-        source_names=names,
-        unreached_labels=tuple(sorted(registered - reached)),
-        correspondence=Correspondence(node_map=node_map, frames=_frames_by_key(session, node_map)),
+        ir=view.ir,
+        source_names=view.source_names,
+        unreached_labels=tuple(sorted(view.registered_labels - reached)),
+        correspondence=Correspondence(
+            node_map=node_map, frames=_frames_by_key(view.provenance, node_map)
+        ),
         # per-program, like `unreached_labels` above: the Session's registry accumulates for its
         # lifetime, so a pair ships only when the offending factor's own nodes reach THIS
         # artifact. Without the filter a sound program reports a sibling program's violation.
         shift_after_weight=tuple(
             sorted(
                 pair
-                for pair, nodes in session.systematics.shift_after_weight.items()
+                for pair, nodes in view.shift_after_weight.items()
                 if not nodes.isdisjoint(node_map)
             )
         ),
     )
 
 
-def _frames_by_key(session: Session, node_map: dict[int, Key]) -> tuple[tuple[Key, Frame], ...]:
-    """Re-key ``Session._provenance`` onto §8.2(i)'s keys, in key order.
+def _frames_by_key(
+    provenance: Mapping[int, Provenance], node_map: dict[int, Key]
+) -> tuple[tuple[Key, Frame], ...]:
+    """Re-key the recorded ``provenance`` onto §8.2(i)'s keys, in key order.
 
     Many-to-one: the reducer merges record ids recorded at different user lines onto one key, even
     inside a stage where ``member_index`` cannot separate them. §8.2(ii) binds the tie-break to the
@@ -200,7 +190,7 @@ def _frames_by_key(session: Session, node_map: dict[int, Key]) -> tuple[tuple[Ke
     """
     chosen: dict[Key, Frame] = {}
     for nid in sorted(node_map):
-        prov = session._provenance.get(nid)
+        prov = provenance.get(nid)
         if prov is None or node_map[nid] in chosen:
             continue
         chosen[node_map[nid]] = (prov.filename, prov.lineno, prov.function, prov.source)

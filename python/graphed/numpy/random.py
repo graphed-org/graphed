@@ -9,13 +9,16 @@ determinism gate extends to random programs), while successive draws are distinc
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast, overload
 
 import numpy as np
+from numpy.typing import ArrayLike
 
 from graphed import Array, Session
+from graphed.session import _reader
 
-from .creation import ShapeLike, _norm_shape, _source
+from . import NumpyBackend
+from .creation import ShapeLike, _exact, _norm_shape, _source
 
 
 @dataclass
@@ -34,29 +37,42 @@ class GraphedRNG:
         name = f"random[{call},seed={self.seed},draw={self._draws}]"
         return _source(self.session, None, name, arr)
 
-    def normal(self, size: ShapeLike, loc: float = 0.0, scale: float = 1.0) -> Array:
+    def normal(self, size: ShapeLike, loc: ArrayLike = 0.0, scale: ArrayLike = 1.0) -> Array:
         """Create a source array of normal draws."""
         shape = _norm_shape(size)
-        return self._draw(f"normal({shape},{loc},{scale})", lambda r: r.normal(loc, scale, shape))
+        return self._draw(
+            f"normal({shape},{_exact(loc)},{_exact(scale)})", lambda r: r.normal(loc, scale, shape)
+        )
 
     def standard_normal(self, size: ShapeLike) -> Array:
         """Create a source array of standard-normal draws."""
         shape = _norm_shape(size)
         return self._draw(f"standard_normal({shape})", lambda r: r.standard_normal(shape))
 
-    def uniform(self, size: ShapeLike, low: float = 0.0, high: float = 1.0) -> Array:
+    def uniform(self, size: ShapeLike, low: ArrayLike = 0.0, high: ArrayLike = 1.0) -> Array:
         """Create a source array of uniform draws in ``[low, high)``."""
         shape = _norm_shape(size)
-        return self._draw(f"uniform({shape},{low},{high})", lambda r: r.uniform(low, high, shape))
+        return self._draw(
+            f"uniform({shape},{_exact(low)},{_exact(high)})", lambda r: r.uniform(low, high, shape)
+        )
 
     def integers(self, size: ShapeLike, low: int, high: int) -> Array:
         """Create a source array of integer draws in ``[low, high)``."""
         shape = _norm_shape(size)
         return self._draw(
-            f"integers({shape},{low},{high})", lambda r: r.integers(low, high, shape)
+            f"integers({shape},{_exact(low)},{_exact(high)})",
+            lambda r: r.integers(low, high, shape),
         )
 
 
-def default_rng(session: Session, seed: int) -> GraphedRNG:
-    """Return a deterministic generator of random source arrays for ``session``."""
-    return GraphedRNG(session, int(seed))
+@overload
+def default_rng(session: Session, seed: int) -> GraphedRNG: ...
+@overload
+def default_rng(seed: int, *, session: Session | None = None) -> GraphedRNG: ...
+@_reader(NumpyBackend)
+def default_rng(seed: int, *, session: Session | None = None) -> GraphedRNG:
+    """Return a deterministic generator of random source arrays for ``session``.
+
+    Else for the current Session.
+    """
+    return GraphedRNG(cast("Session", session), int(seed))

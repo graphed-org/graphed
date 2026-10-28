@@ -14,7 +14,7 @@ time.
     from graphed.numpy import NumpyBackend, from_array
 
     s = Session(NumpyBackend())
-    pt = from_array(s, "pt", np.arange(6.0))
+    pt = from_array("pt", np.arange(6.0), session=s)
     sel = (pt * 2.0 + 1.0)[pt > 2.0]     # nothing has run yet
 
     p = s.provenance(sel)

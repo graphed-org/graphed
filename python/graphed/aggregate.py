@@ -395,7 +395,7 @@ def external_evaluators(
 
     This is the SINGLE wiring point for a plan's External evaluators. Every External — a
     ``hist.graphed`` fill FillEvaluator AND an upstream correctionlib/ONNX scale factor alike — is
-    registered on ``session._externals`` at record time, so one pass over the compiled External
+    registered on its Session at record time, so one pass over the compiled External
     nodes wires them all: a fill whose input cone reads a correctionlib SF now carries that SF's
     evaluator, which is what makes "hundreds of histograms with systematic variations" run through
     a plan. The key includes the node's params, so N systematic universes off one CorrectionSet
@@ -403,8 +403,8 @@ def external_evaluators(
     digest).
     """
     by_key: dict[str, Callable[..., object]] = {}
-    recorded = session._store.nodes()
-    for node_id, (fn, _inputs) in session._externals.items():
+    recorded, externals = session._external_view()
+    for node_id, (fn, _inputs) in externals.items():
         by_key[external_key(recorded[node_id])] = fn
     wired: dict[str, Callable[..., object]] = {}
     for node in GraphStore.deserialize(bytes(compiled.ir)).nodes():
@@ -510,7 +510,8 @@ def aggregate_plan(
     if any(a.session is not session for a in arrays):
         raise TypeError(
             "all outputs of one plan must record into one session; collate one plan per Session"
-            " (graphed.collate)"
+            " (graphed.collate), or record them in one (`with output.session:` around the later"
+            " reads)"
         )
     partitioned = {
         nid: d for nid, d in sources_read(arrays).items() if isinstance(d, PartitionedSource)

@@ -44,6 +44,7 @@ from graphed.core import Partition
 from graphed.core.execution import Plan, SequentialRunner, WorkerResources
 from graphed.errors import GraphedError
 from graphed.services import bind_externals
+from graphed.session import _reader
 from graphed.systematics.lineage import is_ancestor, links_below
 from graphed.varied import (
     Varied,
@@ -94,6 +95,10 @@ class _DatasetLoader:
     steps_per_file: int = 1
     open_files: bool = False
 
+    def source_identity(self) -> object:
+        """Return what this loader reads and how it partitions it."""
+        return (type(self), self.paths, self.columns, self.steps_per_file, self.open_files)
+
     def __call__(self) -> ak.Array:
         return ak.from_parquet(
             list(self.paths), columns=list(self.columns) if self.columns else None
@@ -110,6 +115,7 @@ class _DatasetLoader:
         return read_parquet_partition(partition, columns if columns else (self.columns or None))
 
 
+@overload
 def from_parquet(
     session: Session,
     name: str,
@@ -118,8 +124,30 @@ def from_parquet(
     columns: Sequence[str] | None = None,
     steps_per_file: int = 1,
     open_files: bool = False,
+) -> Any: ...
+@overload
+def from_parquet(
+    name: str,
+    path: str | Sequence[str],
+    *,
+    columns: Sequence[str] | None = None,
+    steps_per_file: int = 1,
+    open_files: bool = False,
+    session: Session | None = None,
+) -> Any: ...
+@_reader(AwkwardBackend)
+def from_parquet(
+    name: str,
+    path: str | Sequence[str],
+    *,
+    columns: Sequence[str] | None = None,
+    steps_per_file: int = 1,
+    open_files: bool = False,
+    session: Session | None = None,
 ) -> Any:
     """Return a deferred awkward array over a parquet dataset (file / directory / glob / list).
+
+    It records into ``session``, else the current Session.
 
     The form is built from METADATA alone; no event data is read here. ``steps_per_file`` and
     ``open_files`` shape the dataset's default partitioning, which a plan takes unless its own
@@ -134,11 +162,11 @@ def from_parquet(
         raise ValueError(f"steps_per_file must be >= 1, got {steps_per_file}")
     loader = _DatasetLoader(paths, tuple(columns) if columns else None, steps_per_file, open_files)
     return gpq.deferred_source(
-        session,
         name,
         paths=paths,
         form=form,
         loader=loader,
+        session=session,
         steps_per_file=steps_per_file,
         open_files=open_files,
     )
@@ -621,7 +649,7 @@ def _varied_leaves(session: Session, record: Any, labels: tuple[str, ...]) -> li
     Those are structurally varied, §6.4b; an all-labels-equal leaf (unvaried, or coupled only
     through a zip) contributes no delta column.
     """
-    nodes = session._store.nodes()
+    nodes = session._nodes()
     leaves = _tt(session, member_of(record, "nominal")).layout.form.columns()
     varied = []
     for path in leaves:
@@ -1048,7 +1076,7 @@ def _write_varied(
         superset = None
     base = nominal_record if superset is None else nominal_record[superset]
 
-    nodes = session._store.nodes()
+    nodes = session._nodes()
     value_specs: list[_ValueSpec] = []
     outputs: list[Any] = [base]
     for path in varied:

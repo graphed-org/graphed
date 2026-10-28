@@ -244,6 +244,7 @@ def build_bundle(
     ir = session.serialized_ir(*outputs_arrays, optimize=False)
     ir_hash = store.put(ir)
     nodes = GraphStore.deserialize(ir).nodes()
+    _recorded, evaluators = session._external_view()
 
     # 2. input datasets -> content-addressed store
     sources_manifest = {name: store.put(_pack_array(arr)) for name, arr in datasets.items()}
@@ -285,7 +286,7 @@ def build_bundle(
         }
         # only a declaring node gets the key: a plugin param named `output_type` is not a
         # declaration
-        fn = session._externals[node["id"]][0]
+        fn = evaluators[node["id"]][0]
         if isinstance(fn, CheckedExternal) and fn.key == "output_type":
             entry["output_type"] = fn.declared
         externals_manifest.append(entry)

@@ -11,7 +11,7 @@ import functools
 import inspect
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, cast, overload
 
 import awkward as ak
 import numpy as np
@@ -21,6 +21,7 @@ from graphed import Array, Session
 from graphed.aggregate import resolved_backend
 from graphed.backend import PYTHON_TYPES, Form
 from graphed.core import PayloadDescriptor
+from graphed.session import _reader
 from graphed.shuffle import join_blocks
 
 from . import join, payloads, shuffle
@@ -596,13 +597,23 @@ def _typetracer(array: ak.Array) -> ak.Array:
     return ak.Array(ak.Array(array).layout.to_typetracer(forget_length=True))
 
 
-def from_awkward(session: Session, name: str, array: object, **descriptor: object) -> Any:
+@overload
+def from_awkward(session: Session, name: str, array: object, **descriptor: object) -> Any: ...
+@overload
+def from_awkward(
+    name: str, array: object, *, session: Session | None = None, **descriptor: object
+) -> Any: ...
+@_reader(AwkwardBackend)
+def from_awkward(
+    name: str, array: object, *, session: Session | None = None, **descriptor: object
+) -> Any:
     """Create a metadata-only source from an in-memory awkward array.
 
-    The form comes from the typetracer; the real array is retained only for evaluation.
+    It records into ``session``, else the current Session. The form comes from the typetracer;
+    the real array is retained only for evaluation.
     """
     real = array if isinstance(array, ak.Array) else ak.Array(array)
-    return session.source(name, form=AwkwardForm(_typetracer(real)), data=real)
+    return cast("Session", session).source(name, form=AwkwardForm(_typetracer(real)), data=real)
 
 
 # from_parquet moved to io.py (M15): the multi-file, blind-partition specialization of the

@@ -33,7 +33,7 @@ Build one, ship it, run it
    events = ak.Array({"Jet": ak.zip({"pt": ak.Array([[40.0, 25.0], [55.0], [30.0, 60.0, 20.0]])})})
 
    s = Session(AwkwardBackend())
-   ev = from_awkward(s, "events", events)
+   ev = from_awkward("events", events, session=s)
    ht = gak.sum(ev.Jet.pt, axis=1)
 
    build_bundle(

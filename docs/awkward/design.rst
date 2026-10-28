@@ -27,7 +27,7 @@ looks at one:
                        "MET": [12.0, 35.0, 8.0]})
 
     s = Session(AwkwardBackend())
-    g = from_awkward(s, "events", events)
+    g = from_awkward("events", events, session=s)
 
     njet = gak.num(g.Jet, axis=1)            # how many jets, not which jets
 
@@ -94,7 +94,7 @@ The immediate payoff is that a mistyped expression fails where you wrote it:
     print(inspect.signature(gak.sort))
 
     s = Session(AwkwardBackend())
-    g = from_awkward(s, "events", ak.Array({"Jet": [[{"pt": 50.0}], []]}))
+    g = from_awkward("events", ak.Array({"Jet": [[{"pt": 50.0}], []]}), session=s)
 
     try:
         g.Jet.energy          # no such field - and no file has been opened yet
@@ -184,11 +184,11 @@ vector``:
     vector.register_awkward()
 
     s = Session(AwkwardBackend(behavior=vector.backends.awkward.behavior))
-    g = from_awkward(s, "events", ak.Array({"Jet": [
+    g = from_awkward("events", ak.Array({"Jet": [
         [{"pt": 50.0, "eta": 0.1, "phi": 0.3, "mass": 5.0},
          {"pt": 30.0, "eta": 2.2, "phi": -1.1, "mass": 4.0}],
         [{"pt": 70.0, "eta": -0.5, "phi": 2.0, "mass": 6.0}],
-    ]}))
+    ]}), session=s)
 
     jets = gak.with_name(g.Jet, "Momentum4D")
 
@@ -219,11 +219,11 @@ Behavior *methods* record the same way, arguments and all:
     behavior = dict(vector.backends.awkward.behavior)
     behavior[("*", "Jet")] = JetArray
     s = Session(AwkwardBackend(behavior=behavior))
-    jets = gak.with_name(from_awkward(s, "events", ak.Array({"Jet": [
+    jets = gak.with_name(from_awkward("events", ak.Array({"Jet": [
         [{"pt": 50.0, "eta": 0.1, "phi": 0.3, "mass": 5.0},
          {"pt": 30.0, "eta": 2.2, "phi": -1.1, "mass": 4.0}],
         [{"pt": 70.0, "eta": -0.5, "phi": 2.0, "mass": 6.0}],
-    ]})).Jet, "Jet")
+    ]}), session=s).Jet, "Jet")
     leading = gak.firsts(jets)
 
     print(jets.deltaR)
@@ -299,7 +299,7 @@ same pass as the arithmetic around it. Scans always ride along.
 
 
     s = Session(AwkwardBackend())
-    g = from_awkward(s, "events", events)
+    g = from_awkward("events", events, session=s)
 
     jets = g.Jet[abs(g.Jet.eta) < 2.4]
     lead = gak.max(jets.pt, axis=1)                  # per-event: inside the pass
@@ -340,10 +340,10 @@ rows, and ``how`` takes ``inner``, ``left``, ``right`` or ``outer``.
     from graphed.awkward import AwkwardBackend, from_awkward, gak
 
     s = Session(AwkwardBackend())
-    events = from_awkward(s, "events", ak.Array([
-        {"event": 1, "MET": 12.0}, {"event": 2, "MET": 35.0}, {"event": 3, "MET": 8.0}]))
-    trig = from_awkward(s, "trig", ak.Array([
-        {"event": 1, "path": 0}, {"event": 1, "path": 1}, {"event": 3, "path": 2}]))
+    events = from_awkward("events", ak.Array([
+        {"event": 1, "MET": 12.0}, {"event": 2, "MET": 35.0}, {"event": 3, "MET": 8.0}]), session=s)
+    trig = from_awkward("trig", ak.Array([
+        {"event": 1, "path": 0}, {"event": 1, "path": 1}, {"event": 3, "path": 2}]), session=s)
 
     flat = gak.join(events, trig, on=["event"], how="inner")
     print(ak.to_list(s.materialize(gak.without_field(flat, "__joinkey__"))))
@@ -413,7 +413,7 @@ payload, not by a path on your filesystem:
     ).model_dump_json(exclude_unset=True).encode()
 
     s = Session(AwkwardBackend())
-    g = from_awkward(s, "events", ak.Array({"Jet": [[{"pt": 50.0}, {"pt": 30.0}], [{"pt": 70.0}]]}))
+    g = from_awkward("events", ak.Array({"Jet": [[{"pt": 50.0}, {"pt": 30.0}], [{"pt": 70.0}]]}), session=s)
 
     # unread on this path (see below): `payload` is what gets evaluated, so if the `evaluator`
     # positional were still consulted this example would raise instead of printing
@@ -492,7 +492,7 @@ named record resolves its behavior at build time.
     s = Session(AwkwardBackend(behavior={("*", "Photon"): PhotonArray}))
     events = ak.zip({"run": np.array([1, 2, 1], np.uint32),
                      "Jet": ak.zip({"pt": [[30.0, 20.0], [], [40.0]]})}, depth_limit=1)
-    ev = from_awkward(s, "events", events)
+    ev = from_awkward("events", events, session=s)
 
     golden = ev.run.map(lambda run: run == 1, name="golden", output_type="bool")
     print(s.form(golden).describe())
@@ -592,7 +592,7 @@ a source costs one such round trip, once per source, never per partition.
         }), f"{tmp}/events.parquet")
 
         s = Session(AwkwardBackend())
-        g = from_parquet(s, "events", f"{tmp}/events.parquet")
+        g = from_parquet("events", f"{tmp}/events.parquet", session=s)
 
         keep = gak.num(g.Jet_pt[g.Jet_pt > 40.0], axis=1) >= 1
         out = g.MET[keep]
@@ -744,8 +744,8 @@ together, and ``read_varied`` gives them back as ``{label: array}``.
     from graphed.awkward import AwkwardBackend, from_awkward, gak
 
     session = Session(AwkwardBackend())
-    events = ga.gnano.events(from_awkward(session, "events", ak.Array(
-        [{"Jet": [{"pt": 40.0}, {"pt": 12.0}]}, {"Jet": [{"pt": 55.0}]}, {"Jet": [{"pt": 8.0}]}])))
+    events = ga.gnano.events(from_awkward("events", ak.Array(
+        [{"Jet": [{"pt": 40.0}, {"pt": 12.0}]}, {"Jet": [{"pt": 55.0}]}, {"Jet": [{"pt": 8.0}]}]), session=session))
 
     jets = events.Jet
     up = gak.with_field(jets, jets.pt * 1.05, "pt")

@@ -39,7 +39,14 @@ from .projection import (
     read_columns,
 )
 from .provenance import Provenance, capture, is_enabled, set_enabled
-from .session import Session, materialize
+from .session import (
+    Session,
+    current_session,
+    materialize,
+    new_session,
+    set_default_backend,
+    set_session,
+)
 from .shuffle import join, join_plan, pack_key, repartition, shuffle_plan
 from .varied import SURFACE_DISPOSITIONS, Varied, broadcasting, expand, expanding, member_of
 from .vary import vary
@@ -97,6 +104,7 @@ __all__ = [
     "collate",
     "compile_ir",
     "context_of",
+    "current_session",
     "evaluate_ir",
     "expand",
     "expanding",
@@ -109,6 +117,7 @@ __all__ = [
     "labels",
     "materialize",
     "member_of",
+    "new_session",
     "nominal",
     "pack_key",
     "points",
@@ -119,7 +128,9 @@ __all__ = [
     "repartition",
     "resolve_backend",
     "selection",
+    "set_default_backend",
     "set_enabled",
+    "set_session",
     "shuffle_plan",
     "unify_contexts",
     "universe",

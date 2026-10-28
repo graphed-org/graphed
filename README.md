@@ -54,7 +54,7 @@ events = ak.Array(
 )
 
 session = Session(AwkwardBackend())
-evts = from_awkward(session, "events", events)
+evts = from_awkward("events", events, session=session)
 
 good = evts.Jet[evts.Jet.pt > 30.0]  # records, doesn't run
 leading_pt = gak.max(good.pt, axis=1)  # gak mirrors ak.* signatures

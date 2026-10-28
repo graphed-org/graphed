@@ -19,9 +19,9 @@ Install with ``pip install "graphed[numpy]"``.
     from graphed.numpy import NumpyBackend, from_record
 
     s = Session(NumpyBackend())
-    ev = from_record(s, "events",
+    ev = from_record("events",
                      pt=np.array([25.0, 55.0, 10.0, 80.0]),
-                     eta=np.array([0.1, -1.2, 2.0, 0.4]))
+                     eta=np.array([0.1, -1.2, 2.0, 0.4]), session=s)
 
     sel = ev["pt"][abs(ev["eta"]) < 1.5]     # records; nothing computes
     print(sel.shape, sel.dtype)              # known WITHOUT data
@@ -63,7 +63,7 @@ The payoff is that mistakes surface on the line you wrote, before any file is op
     from graphed.numpy import NumpyBackend, from_array
 
     s = Session(NumpyBackend())
-    x = from_array(s, "x", np.array([1.0, 2.0, 3.0]))
+    x = from_array("x", np.array([1.0, 2.0, 3.0]), session=s)
 
     # The full message is "ill-typed op 'add' at <your_file.py>:<line>: ..."
     try:
@@ -114,7 +114,7 @@ equal-length columns (the events-table shape). Creation routines (``arange``, ``
 ``full``, ``zeros``, ...) record the *recipe* rather than the bytes, so two identical calls
 are one node.
 
-Randomness is graph-friendly: ``default_rng(session, seed)`` returns a generator whose
+Randomness is graph-friendly: ``default_rng(seed, session=session)`` returns a generator whose
 draws are keyed by the seed and the draw order. The same seed and the same program produce
 the same values — and the same recorded graph — every run:
 
@@ -125,8 +125,8 @@ the same values — and the same recorded graph — every run:
     from graphed.numpy import NumpyBackend, default_rng
 
     s = Session(NumpyBackend())
-    r1 = default_rng(s, seed=42)
-    r2 = default_rng(s, seed=42)
+    r1 = default_rng(seed=42, session=s)
+    r2 = default_rng(seed=42, session=s)
     a = s.materialize(r1.normal(size=3))
     b = s.materialize(r2.normal(size=3))
     print(a)
@@ -178,7 +178,7 @@ partition.
     pq.write_table(pa.table({"pt": [25.0, 55.0, 10.0], "njet": [2, 3, 1]}), path)
 
     s = Session(NumpyBackend())
-    ev = from_parquet(s, "events", path)     # schema read; no data yet
+    ev = from_parquet("events", path, session=s)     # schema read; no data yet
     print(ev["pt"].dtype, s.materialize(ev["pt"].sum()))
 
     out = to_parquet(ev["pt"] * 2.0, os.path.join(d, "scaled"))
