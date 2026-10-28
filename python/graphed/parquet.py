@@ -35,7 +35,7 @@ from graphed.core import Partition
 
 from .array import Array
 from .backend import Form, ParamValue
-from .session import Session, _reader
+from .session import Session, reader
 from .write import blind_part_index, eager_ranges, file_bases, step_of, write_plan
 from .write import part_path as _base_part_path
 
@@ -156,7 +156,7 @@ def deferred_source(
     session: Session | None = None,
     **params: ParamValue,
 ) -> Array: ...
-@_reader(None)
+@reader(None)
 def deferred_source(
     name: str,
     *,

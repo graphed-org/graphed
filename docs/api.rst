@@ -28,6 +28,8 @@ several sources (a reader's ``session=``); a plan reads only the ones its output
 ``variations`` read the results back (each tag's ``Kind``, a flag, beside its ordering). ``join``, ``repartition``, ``join_plan`` and
 ``shuffle_plan`` move rows between partitions; ``read_columns`` and ``impact_by_label`` tell you
 what a recording will actually read off disk.
+A backend package builds its readers on ``graphed.session.reader``, which resolves ``session=``,
+and records a scalar operand's value and dtype with ``graphed.array.scalar_params``.
 
 .. autosummary::
    :toctree: generated

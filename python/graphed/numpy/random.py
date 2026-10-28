@@ -15,7 +15,7 @@ import numpy as np
 from numpy.typing import ArrayLike
 
 from graphed import Array, Session
-from graphed.session import _reader
+from graphed.session import reader
 
 from . import NumpyBackend
 from .creation import ShapeLike, _exact, _norm_shape, _source
@@ -69,7 +69,7 @@ class GraphedRNG:
 def default_rng(session: Session, seed: int) -> GraphedRNG: ...
 @overload
 def default_rng(seed: int, *, session: Session | None = None) -> GraphedRNG: ...
-@_reader(NumpyBackend)
+@reader(NumpyBackend)
 def default_rng(seed: int, *, session: Session | None = None) -> GraphedRNG:
     """Return a deterministic generator of random source arrays for ``session``.
 

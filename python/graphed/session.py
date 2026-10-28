@@ -885,19 +885,23 @@ def set_default_backend(factory: Callable[[], Backend] | None, /) -> Callable[[]
 R = TypeVar("R")
 
 
-def _reader(kind: type[Backend] | None) -> Callable[[Callable[..., R]], Callable[..., R]]:
+def reader(kind: type[Backend] | None) -> Callable[[Callable[..., R]], Callable[..., R]]:
     """Resolve an array-less reader's ``session=``: the argument, else :func:`current_session`.
 
     A default made here records on ``kind()``, and a Session whose backend is not a ``kind`` is
     refused at the read (``None``: any). The legacy leading positional Session still works, with a
     ``DeprecationWarning``.
+
+    A backend package decorates each of its source readers with it, as ``@reader(MyBackend)``
+    over a function taking ``session: Session | None = None``; the function always receives a
+    ``Session``.
     """
 
     def wrap(fn: Callable[..., R]) -> Callable[..., R]:
         name = fn.__name__
 
         @functools.wraps(fn)
-        def reader(*args: Any, **kwargs: Any) -> R:
+        def read(*args: Any, **kwargs: Any) -> R:
             if args and isinstance(args[0], Session):
                 if "session" in kwargs:
                     raise TypeError(
@@ -928,7 +932,7 @@ def _reader(kind: type[Backend] | None) -> Callable[[Callable[..., R]], Callable
             kwargs["session"] = session
             return fn(*args, **kwargs)
 
-        return reader
+        return read
 
     return wrap
 

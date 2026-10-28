@@ -14,8 +14,8 @@ from typing import Any, cast, overload
 import numpy as np
 
 from graphed import Array, Session, broadcasting
-from graphed.array import _scalar_params
-from graphed.session import _reader
+from graphed.array import scalar_params
+from graphed.session import reader
 
 from . import NumpyBackend
 from .forms import NumpyForm
@@ -55,7 +55,7 @@ def zeros(
     name: str | None = None,
     session: Session | None = None,
 ) -> Array: ...
-@_reader(NumpyBackend)
+@reader(NumpyBackend)
 def zeros(
     shape: ShapeLike,
     dtype: Any = float,
@@ -80,7 +80,7 @@ def ones(
     name: str | None = None,
     session: Session | None = None,
 ) -> Array: ...
-@_reader(NumpyBackend)
+@reader(NumpyBackend)
 def ones(
     shape: ShapeLike,
     dtype: Any = float,
@@ -111,7 +111,7 @@ def full(
     name: str | None = None,
     session: Session | None = None,
 ) -> Array: ...
-@_reader(NumpyBackend)
+@reader(NumpyBackend)
 def full(
     shape: ShapeLike,
     fill_value: Any,
@@ -139,7 +139,7 @@ def empty(
     name: str | None = None,
     session: Session | None = None,
 ) -> Array: ...
-@_reader(NumpyBackend)
+@reader(NumpyBackend)
 def empty(
     shape: ShapeLike,
     dtype: Any = float,
@@ -178,7 +178,7 @@ def arange(
     name: str | None = None,
     session: Session | None = None,
 ) -> Array: ...
-@_reader(NumpyBackend)
+@reader(NumpyBackend)
 def arange(
     start: float,
     stop: float | None = None,
@@ -222,7 +222,7 @@ def linspace(
     name: str | None = None,
     session: Session | None = None,
 ) -> Array: ...
-@_reader(NumpyBackend)
+@reader(NumpyBackend)
 def linspace(
     start: float,
     stop: float,
@@ -264,5 +264,5 @@ def empty_like(array: Array) -> Array:
 def full_like(array: Array, fill_value: object) -> Array:
     """Record ``fill_value`` shaped like ``array``."""
     return array.session.record_op(
-        "full_like", [array], _scalar_params(fill_value, "fill", "fill_dtype")
+        "full_like", [array], scalar_params(fill_value, "fill", "fill_dtype")
     )

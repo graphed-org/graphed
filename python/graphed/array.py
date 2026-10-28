@@ -225,7 +225,7 @@ def _as_param(value: object) -> ParamValue:
     raise TypeError(f"unsupported scalar operand {value!r}")
 
 
-def _scalar_params(
+def scalar_params(
     value: object, key: str = "scalar", dtype_key: str = "dtype"
 ) -> dict[str, ParamValue]:
     """Return the params a scalar operand records (M59).
@@ -234,6 +234,9 @@ def _scalar_params(
     result: the dtype, as a ``str`` param read off the object (the frontend never imports numpy),
     and the exact value. An integer too wide for the store's i64 param travels as text, so
     ``np.uint64(2**64 - 1)`` is neither collapsed to a float nor truncated.
+
+    A backend recording an op with a scalar operand stores these params under its own ``key`` /
+    ``dtype_key``, so the scalar's dtype reaches the result as it would eagerly.
     """
     dtype = getattr(value, "dtype", None)
     if dtype is None or getattr(value, "shape", None) != () or not hasattr(value, "item"):
@@ -300,7 +303,7 @@ class Array:
             inputs = [other, self] if reflected else [self, other]
             return self._session.record_op(op, inputs)
         params: dict[str, ParamValue] = {
-            **_scalar_params(other),
+            **scalar_params(other),
             "side": "l" if reflected else "r",
         }
         return self._session.record_op(op, [self], params)

@@ -107,6 +107,13 @@ Exceptions are named ``…Error``
   ``UnboundServiceError`` (``graphed.services``) and ``UnresolvedPayloadError``
   (``graphed.preserve``). The first three keep their old names as aliases.
 
+Backend seams are public
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``graphed.session.reader`` (the decorator that resolves a source reader's ``session=``) and
+  ``graphed.array.scalar_params`` (a scalar operand's recorded value and dtype) lose their leading
+  underscore, so a backend outside ``graphed`` builds on them without reaching a private name.
+
 Fixes
 ~~~~~
 
