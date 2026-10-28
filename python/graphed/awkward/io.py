@@ -44,7 +44,7 @@ from graphed.core import Partition
 from graphed.core.execution import Plan, SequentialRunner, WorkerResources
 from graphed.errors import GraphedError
 from graphed.services import bind_externals
-from graphed.session import _reader
+from graphed.session import reader
 from graphed.systematics.lineage import is_ancestor, links_below
 from graphed.varied import (
     Varied,
@@ -135,7 +135,7 @@ def from_parquet(
     open_files: bool = False,
     session: Session | None = None,
 ) -> Any: ...
-@_reader(AwkwardBackend)
+@reader(AwkwardBackend)
 def from_parquet(
     name: str,
     path: str | Sequence[str],

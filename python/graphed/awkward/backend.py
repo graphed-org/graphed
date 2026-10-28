@@ -21,7 +21,7 @@ from graphed import Array, Session
 from graphed.aggregate import resolved_backend
 from graphed.backend import PYTHON_TYPES, Form
 from graphed.core import PayloadDescriptor
-from graphed.session import _reader
+from graphed.session import reader
 from graphed.shuffle import join_blocks
 
 from . import join, payloads, shuffle
@@ -603,7 +603,7 @@ def from_awkward(session: Session, name: str, array: object, **descriptor: objec
 def from_awkward(
     name: str, array: object, *, session: Session | None = None, **descriptor: object
 ) -> Any: ...
-@_reader(AwkwardBackend)
+@reader(AwkwardBackend)
 def from_awkward(
     name: str, array: object, *, session: Session | None = None, **descriptor: object
 ) -> Any:

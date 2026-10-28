@@ -16,7 +16,7 @@ import numpy as np
 import numpy.typing as npt
 
 from graphed import Array, ParamValue
-from graphed.array import _scalar_params
+from graphed.array import scalar_params
 from graphed.errors import GraphedTypeError
 from graphed.provenance import capture
 from graphed.varied import boundary_refusal, containers_in, expand, expand_tuple, narrow
@@ -180,7 +180,7 @@ def with_field(arr: Array, value: object, where: str) -> Array:
         return arr.session.record_op("ak.with_field", [arr, value], {"field": where})
     try:
         # a scalar, which ak broadcasts, travels as a param in its own dtype (M59)
-        params = _scalar_params(value)
+        params = scalar_params(value)
     except (TypeError, ValueError) as err:
         raise GraphedTypeError(
             "with_field",
@@ -230,7 +230,7 @@ def _reduce(
     if mask_identity is not None:
         params["mask_identity"] = mask_identity
     if initial is not None:
-        params.update(_scalar_params(initial, "initial", "initial_dtype"))
+        params.update(scalar_params(initial, "initial", "initial_dtype"))
     inputs = [arr] if weight is None else [arr, weight]
     if weight is not None:
         params["weighted"] = True
@@ -487,7 +487,7 @@ def flatten(arr: Array, axis: int | None = 1) -> Array:
 
 def fill_none(arr: Array, value: object, axis: int = -1) -> Array:
     """Record ``ak.fill_none``, replacing missing values with ``value``."""
-    params = {**_scalar_params(value, "value", "value_dtype"), "axis": axis}
+    params = {**scalar_params(value, "value", "value_dtype"), "axis": axis}
     return arr.session.record_op("ak.fill_none", [arr], params)
 
 
@@ -505,7 +505,7 @@ def where(cond: Array, a: object, b: object) -> Array:
         if isinstance(operand, Array):
             inputs.append(operand)
         else:
-            params.update(_scalar_params(operand, f"const{i}", f"const{i}_dtype"))
+            params.update(scalar_params(operand, f"const{i}", f"const{i}_dtype"))
     return cond.session.record_op("ak.where", inputs, params)
 
 
@@ -808,7 +808,7 @@ def from_regular(arr: Array, axis: int = 1) -> Array:
 
 def full_like(arr: Array, value: float, *, dtype: npt.DTypeLike = None) -> Array:
     """Record ``ak.full_like`` filled with ``value``, optionally as ``dtype``."""
-    params = _scalar_params(value, "value", "value_dtype")
+    params = scalar_params(value, "value", "value_dtype")
     if dtype is not None:
         params["dtype"] = _dtype_name(dtype)
     return arr.session.record_op("ak.full_like", [arr], params)

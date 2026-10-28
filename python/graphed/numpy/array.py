@@ -17,7 +17,7 @@ from typing import Any
 import numpy as np
 
 from graphed import Array
-from graphed.array import _scalar_params
+from graphed.array import scalar_params
 from graphed.backend import ParamValue
 
 Handler = Callable[["NumpyArray", tuple[object, ...], dict[str, object]], Any]
@@ -170,9 +170,9 @@ class NumpyArray(Array):
             raise TypeError("clip needs at least one bound")
         params: dict[str, ParamValue] = {}
         if lo is not None:
-            params.update(_scalar_params(lo, "lo", "lo_dtype"))
+            params.update(scalar_params(lo, "lo", "lo_dtype"))
         if hi is not None:
-            params.update(_scalar_params(hi, "hi", "hi_dtype"))
+            params.update(scalar_params(hi, "hi", "hi_dtype"))
         return self._session.record_op("clip", [self], params)
 
     def round(self, decimals: int = 0) -> Array:
@@ -396,11 +396,11 @@ def _fn_where(arr: NumpyArray, args: tuple[object, ...], kwargs: dict[str, objec
     if isinstance(x, NumpyArray):
         inputs.append(x)
     else:
-        params.update(_scalar_params(x, "x_scalar", "x_dtype"))
+        params.update(scalar_params(x, "x_scalar", "x_dtype"))
     if isinstance(y, NumpyArray):
         inputs.append(y)
     else:
-        params.update(_scalar_params(y, "y_scalar", "y_dtype"))
+        params.update(scalar_params(y, "y_scalar", "y_dtype"))
     return cond.session.record_op("where", inputs, params)
 
 
