@@ -132,6 +132,10 @@ Fixes
 * Those two orderings change the optimized IR bytes against 0.0.9 for some programs, so a 0.0.9
   checkpoint of such a program recomputes on resume under 0.0.10; results are unchanged
   (#105, #117).
+* An error raised inside installed code (``ak.from_iter``, a histogram fill, a correction
+  evaluation) names your analysis line when the interpreter reaches that code through a layered
+  environment, such as ``uv run --with`` over a project venv. It named the library's line, because
+  only the interpreter's own ``site-packages`` counted as installed.
 
 The systematics internals, reorganized
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
