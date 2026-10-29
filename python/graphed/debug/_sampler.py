@@ -139,6 +139,26 @@ def tree_from_bytes(payload: bytes) -> dict[str, Any]:
     return result
 
 
+def is_count_tree(tree: object) -> bool:
+    """Return whether ``tree`` is a count tree :func:`merge_into` and :func:`flamegraph` can read.
+
+    Every node is a dict with an int ``count`` and a dict ``children``, and every child has a str
+    ``name``. Iterative.
+    """
+    work = [(tree, False)]
+    while work:
+        node, child = work.pop()
+        if not isinstance(node, dict):
+            return False
+        count, children = node.get("count"), node.get("children")
+        if type(count) is not int or not isinstance(children, dict):
+            return False
+        if child and not isinstance(node.get("name"), str):
+            return False
+        work.extend((c, True) for c in children.values())
+    return True
+
+
 def merge_into(acc: dict[str, Any], tree: dict[str, Any]) -> None:
     """Merge ``tree`` into ``acc`` (summing inclusive counts per identifier). Iterative."""
     work = [(acc, tree)]

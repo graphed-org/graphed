@@ -415,6 +415,8 @@ class DashboardServer:
             tree = _sampler.tree_from_bytes(base64.b64decode(msg["tree_b64"]))
         except Exception:
             return  # a malformed payload must never break the server
+        if not _sampler.is_count_tree(tree):
+            return  # checked whole first: a merge that fails halfway would leave a partial tree
         with self._lock:
             _sampler.merge_into(self._profile_tree, tree)
             self._profile_samples += int(tree.get("count", 0))
