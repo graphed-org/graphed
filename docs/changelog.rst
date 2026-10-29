@@ -4,8 +4,8 @@ What changed
 Newest release first. Numbers in parentheses are the pull requests on
 `graphed-org/graphed <https://github.com/graphed-org/graphed>`_.
 
-0.0.10 (unreleased)
--------------------
+0.0.10
+------
 
 A current Session for reads with no array input
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -119,7 +119,8 @@ Backend seams are public
 
 * ``graphed.session.reader`` (the decorator that resolves a source reader's ``session=``) and
   ``graphed.array.scalar_params`` (a scalar operand's recorded value and dtype) lose their leading
-  underscore, so a backend outside ``graphed`` builds on them without reaching a private name.
+  underscore, so a backend outside ``graphed`` builds on them without reaching a private name
+  (#126).
 
 Fixes
 ~~~~~
@@ -142,7 +143,7 @@ Fixes
 * An error raised inside installed code (``ak.from_iter``, a histogram fill, a correction
   evaluation) names your analysis line when the interpreter reaches that code through a layered
   environment, such as ``uv run --with`` over a project venv. It named the library's line, because
-  only the interpreter's own ``site-packages`` counted as installed.
+  only the interpreter's own ``site-packages`` counted as installed (#127).
 * The dashboard drops a profile payload that decodes to JSON but not to a count tree. It raised
   out of the server's ingest handler, closing the worker's connection, and could leave the merged
   flamegraph half-updated (#130).
@@ -166,6 +167,10 @@ The systematics internals, reorganized
   ``graphed.vary`` and ``graphed.systematics.vary`` are unchanged. The compatibility modules
   (``graphed.vary``, ``graphed.varied``, ``graphed.accessors``, ``graphed.context`` and the rest)
   keep every public name and stop re-exporting private ones.
+* Long modules and functions across ``graphed`` are split by concern, and function-level imports
+  move to module level. Public names are unchanged:
+  ``graphed.materialize`` now lives in ``graphed.materialization`` and the service spec in
+  ``graphed.core.services``, and ``graphed`` and ``graphed.services`` re-export them (#131).
 
 0.0.9
 -----

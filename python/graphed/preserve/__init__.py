@@ -73,4 +73,4 @@ __all__ = [
     "sha256_bytes",
     "validate_plugin",
 ]
-__version__ = "0.0.9"
+__version__ = "0.0.10"
