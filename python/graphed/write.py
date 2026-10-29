@@ -172,7 +172,7 @@ def join_part(destination: str, name: str) -> str:
 def url_fs(url: str, **storage_options: Any) -> tuple[Any, str]:
     """``(filesystem, path on it)`` for an fsspec ``url``, with ``storage_options`` given to it."""
     try:
-        from fsspec.core import url_to_fs  # noqa: PLC0415  (lazy: fsspec is the optional extra)
+        from fsspec.core import url_to_fs
     except ImportError as exc:
         raise ImportError(
             "a URL needs fsspec — install the optional extra: pip install 'graphed[checkpoint]'"

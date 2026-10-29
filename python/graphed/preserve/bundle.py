@@ -54,14 +54,14 @@ _ENV_PACKAGES = (
 
 # ---- on-disk dataset codec (deterministic; awkward via to_buffers) ------------------------------
 def _pack_array(arr: Any) -> bytes:
-    import awkward as ak  # noqa: PLC0415
+    import awkward as ak
 
     form, length, container = ak.to_buffers(ak.Array(arr))
     return pickle.dumps((form.to_json(), length, dict(container)), protocol=5)
 
 
 def _unpack_array(blob: bytes) -> Any:
-    import awkward as ak  # noqa: PLC0415
+    import awkward as ak
 
     form_json, length, container = pickle.loads(blob)
     return ak.from_buffers(ak.forms.from_json(form_json), length, container)
@@ -190,44 +190,10 @@ def _resolve(store: Store, content_hash: str, *, what: str) -> bytes:
     return blob
 
 
-# ---- build --------------------------------------------------------------------------------------
-def build_bundle(
-    root: str | os.PathLike[str],
-    *,
-    session: Any,
-    value: Any,
-    weight: Any | None = None,
-    datasets: dict[str, Any] | None = None,
-    payloads: dict[str, bytes] | None = None,
-    histogram: dict[str, Any] | None = None,
-    config: dict[str, Any] | None = None,
-    seed: int = 0,
-    environment: dict[str, Any] | None = None,
-    container_digest: str | None = None,
-) -> Bundle:
-    """Capture a recorded analysis as a self-contained bundle.
-
-    The analysis is ``session`` + the ``value`` and ``weight`` output Arrays. ``datasets`` maps
-    each source name to its input array; ``payloads`` maps each External descriptor
-    ``content_hash`` to the correction/model file bytes; ``histogram`` is the ``{name, bins, lo,
-    hi}`` spec applied to ``value`` weighted by ``weight``.
-    """
-    if (weight is None) != (histogram is None):
-        raise PreserveError(
-            "weight= and histogram= must be given together (the value/weight/spec triple) or both "
-            "omitted (a histogram-terminal analysis)"
-        )
-    datasets = dict(datasets or {})
-    payloads = dict(payloads or {})
-    root = Path(root)
-    root.mkdir(parents=True, exist_ok=True)
-    store = Store(root / "store")
-
-    # §9.2: a Varied value/weight makes this the varied path — one bundle, N universes.
-    varied = weight is not None and (isinstance(value, Varied) or isinstance(weight, Varied))
-
-    # 1. the canonical IR (opt_level=0: auditable, 1:1 with user ops, no stage fusion). The varied
-    # path marks EVERY universe's value/weight node as an output so all their subgraphs survive.
+def _marked_outputs(
+    value: Any, weight: Any | None, *, varied: bool
+) -> tuple[list[Any], dict[str, dict[str, int]], dict[str, int | None]]:
+    """Return the Arrays the IR marks, each universe's output node ids and the manifest outputs."""
     label_outputs: dict[str, dict[str, int]] = {}
     outputs_arrays: list[Any]
     if varied:
@@ -241,15 +207,24 @@ def build_bundle(
             }
     else:
         outputs_arrays = [value] if weight is None else [value, weight]
-    ir = session.serialized_ir(*outputs_arrays, optimize=False)
-    ir_hash = store.put(ir)
-    nodes = GraphStore.deserialize(ir).nodes()
-    _recorded, evaluators = session._external_view()
+    outputs: dict[str, int | None]
+    if varied:  # nominal is the singular back-compat pair; `variations` carries every universe
+        outputs = dict(label_outputs["nominal"])
+    else:
+        outputs = {
+            "value": int(value.node_id),
+            "weight": None if weight is None else int(weight.node_id),
+        }
+    return outputs_arrays, label_outputs, outputs
 
-    # 2. input datasets -> content-addressed store
-    sources_manifest = {name: store.put(_pack_array(arr)) for name, arr in datasets.items()}
 
-    # 3. external payloads (via plugins) + flag any external with no plugin as a preservation risk
+def _stored_externals(
+    store: Store,
+    nodes: Sequence[Mapping[str, Any]],
+    payloads: dict[str, bytes],
+    evaluators: Mapping[int, tuple[Any, Any]],
+) -> tuple[list[dict[str, Any]], list[int]]:
+    """Store each External's payload; return the manifest entries and the nodes no plugin keeps."""
     externals_manifest: list[dict[str, Any]] = []
     opaque_nodes: list[int] = []
     for node in nodes:
@@ -290,25 +265,74 @@ def build_bundle(
         if isinstance(fn, CheckedExternal) and fn.key == "output_type":
             entry["output_type"] = fn.declared
         externals_manifest.append(entry)
+    return externals_manifest, opaque_nodes
 
-    services_manifest = [spec.to_json() for spec in referenced_services(session, nodes)]
 
-    # 4. provenance sourcemap (basenames only -> build-location independent), stored
+def _stored_sourcemap(store: Store, session: Any) -> str:
+    """Store the provenance sourcemap with basenames only, so it is build-location independent."""
     sourcemap = {
         str(nid): {**prov, "filename": os.path.basename(str(prov.get("filename", "")))}
         for nid, prov in session.sourcemap().items()
     }
-    prov_hash = store.put(json.dumps(sourcemap, sort_keys=True).encode("utf-8"))
+    return store.put(json.dumps(sourcemap, sort_keys=True).encode("utf-8"))
+
+
+# ---- build --------------------------------------------------------------------------------------
+def build_bundle(
+    root: str | os.PathLike[str],
+    *,
+    session: Any,
+    value: Any,
+    weight: Any | None = None,
+    datasets: dict[str, Any] | None = None,
+    payloads: dict[str, bytes] | None = None,
+    histogram: dict[str, Any] | None = None,
+    config: dict[str, Any] | None = None,
+    seed: int = 0,
+    environment: dict[str, Any] | None = None,
+    container_digest: str | None = None,
+) -> Bundle:
+    """Capture a recorded analysis as a self-contained bundle.
+
+    The analysis is ``session`` + the ``value`` and ``weight`` output Arrays. ``datasets`` maps
+    each source name to its input array; ``payloads`` maps each External descriptor
+    ``content_hash`` to the correction/model file bytes; ``histogram`` is the ``{name, bins, lo,
+    hi}`` spec applied to ``value`` weighted by ``weight``.
+    """
+    if (weight is None) != (histogram is None):
+        raise PreserveError(
+            "weight= and histogram= must be given together (the value/weight/spec triple) or both "
+            "omitted (a histogram-terminal analysis)"
+        )
+    datasets = dict(datasets or {})
+    payloads = dict(payloads or {})
+    root = Path(root)
+    root.mkdir(parents=True, exist_ok=True)
+    store = Store(root / "store")
+
+    # §9.2: a Varied value/weight makes this the varied path — one bundle, N universes.
+    varied = weight is not None and (isinstance(value, Varied) or isinstance(weight, Varied))
+
+    # 1. the canonical IR (opt_level=0: auditable, 1:1 with user ops, no stage fusion). The varied
+    # path marks EVERY universe's value/weight node as an output so all their subgraphs survive.
+    outputs_arrays, label_outputs, outputs = _marked_outputs(value, weight, varied=varied)
+    ir = session.serialized_ir(*outputs_arrays, optimize=False)
+    ir_hash = store.put(ir)
+    nodes = GraphStore.deserialize(ir).nodes()
+    _recorded, evaluators = session._external_view()
+
+    # 2. input datasets -> content-addressed store
+    sources_manifest = {name: store.put(_pack_array(arr)) for name, arr in datasets.items()}
+
+    # 3. external payloads (via plugins) + flag any external with no plugin as a preservation risk
+    externals_manifest, opaque_nodes = _stored_externals(store, nodes, payloads, evaluators)
+
+    services_manifest = [spec.to_json() for spec in referenced_services(session, nodes)]
+
+    # 4. provenance sourcemap
+    prov_hash = _stored_sourcemap(store, session)
 
     # 5. the content-addressed bill-of-materials
-    outputs: dict[str, int | None]
-    if varied:  # nominal is the singular back-compat pair; `variations` carries every universe
-        outputs = dict(label_outputs["nominal"])
-    else:
-        outputs = {
-            "value": int(value.node_id),
-            "weight": None if weight is None else int(weight.node_id),
-        }
     analysis: dict[str, Any] = {
         "ir": ir_hash,
         "outputs": outputs,
@@ -342,8 +366,8 @@ def reproduce(bundle: Bundle) -> Any:
     store (raising :class:`UnresolvedPayloadError` for anything missing), interprets the IR through
     the awkward backend + payload-backed external evaluators, and applies the histogram spec.
     """
-    from graphed.awkward import AwkwardBackend  # noqa: PLC0415
-    from graphed.awkward.backend import canonical_output_type  # noqa: PLC0415
+    from graphed.awkward import AwkwardBackend
+    from graphed.awkward.backend import canonical_output_type
 
     store = bundle.store
     m = bundle.manifest
@@ -401,26 +425,30 @@ def reproduce(bundle: Bundle) -> Any:
             external=external,
             eval_op=lambda name, ins, params: backend.eval_stage(name, ins, params),
         )
-        analysis = m["analysis"]
-        spec = analysis["histogram"]
-        if "variations" in analysis:  # §9.2: one histogram per universe, {label: array}
-            return {
-                label: _histogram(values[o["value"]], values[o["weight"]], spec)
-                for label, o in analysis["variations"].items()
-            }
-        out = analysis["outputs"]
-        if spec is None:
-            # a histogram-terminal analysis: the preserved IR ends AT the fill — the evaluated
-            # value IS the histogram (M25; no value/weight/spec triple)
-            return values[out["value"]]
-        return _histogram(values[out["value"]], values[out["weight"]], spec)
+        return _reproduced(values, m["analysis"])
     finally:
         resources.close()  # release loaded models / close connections at the end of the run
 
 
+def _reproduced(values: Mapping[int, Any], analysis: Mapping[str, Any]) -> Any:
+    """Return the histogram the manifest's ``analysis`` asks of the evaluated ``values``."""
+    spec = analysis["histogram"]
+    if "variations" in analysis:  # §9.2: one histogram per universe, {label: array}
+        return {
+            label: _histogram(values[o["value"]], values[o["weight"]], spec)
+            for label, o in analysis["variations"].items()
+        }
+    out = analysis["outputs"]
+    if spec is None:
+        # a histogram-terminal analysis: the preserved IR ends AT the fill — the evaluated
+        # value IS the histogram (M25; no value/weight/spec triple)
+        return values[out["value"]]
+    return _histogram(values[out["value"]], values[out["weight"]], spec)
+
+
 def _histogram(value: Any, weight: Any, spec: dict[str, Any]) -> Any:
-    import awkward as ak  # noqa: PLC0415
-    import numpy as np  # noqa: PLC0415
+    import awkward as ak
+    import numpy as np
 
     v = np.asarray(ak.to_numpy(ak.Array(value)), dtype="float64")
     w = np.asarray(ak.to_numpy(ak.Array(weight)), dtype="float64")

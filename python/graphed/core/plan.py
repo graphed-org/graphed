@@ -33,9 +33,9 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
-from ..services import ServiceSpec
 from .execution import Partition, Task
 from .graphed_core import GraphStore
+from .services import ServiceSpec
 
 FORMAT_VERSION = 1
 FORMAT_VERSION_V2 = (
@@ -94,7 +94,7 @@ class OpSpec:
             for part in qual.split("."):
                 obj = getattr(obj, part)
             return obj  # type: ignore[no-any-return]
-        import cloudpickle  # noqa: PLC0415  (lazy: only opaque plans need it)
+        import cloudpickle
 
         fn = cloudpickle.loads(base64.b64decode(self.blob_b64))
         return fn  # type: ignore[no-any-return]
@@ -115,7 +115,7 @@ class OpSpec:
                     return cls.from_ref(f"{mod}:{qual}")
             except (ImportError, AttributeError, ValueError):
                 pass
-        import cloudpickle  # noqa: PLC0415  (lazy: only opaque plans need it)
+        import cloudpickle
 
         return cls(kind="opaque", blob_b64=base64.b64encode(cloudpickle.dumps(fn)).decode())
 

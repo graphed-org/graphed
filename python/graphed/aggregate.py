@@ -85,13 +85,13 @@ class _ByValue:
         return self.fn
 
     def __reduce__(self) -> tuple[Any, ...]:
-        import cloudpickle  # noqa: PLC0415  (only an opaque callable needs it)
+        import cloudpickle
 
         return _load_by_value, (cloudpickle.dumps(self.fn),)
 
 
 def _load_by_value(blob: bytes) -> _ByValue:
-    import cloudpickle  # noqa: PLC0415  (only an opaque callable needs it)
+    import cloudpickle
 
     return _ByValue(cloudpickle.loads(blob))
 
@@ -232,9 +232,9 @@ class _PartitionReduce(Generic[V]):
                 backend,
                 self.reduce(self._write(values, partition) if self.writes else values),
             )
-        import cloudpickle  # noqa: PLC0415  (only a capturing plan needs it)
+        import cloudpickle
 
-        from graphed.checkpoint import PickleCodec  # noqa: PLC0415  (as cloudpickle)
+        from graphed.checkpoint import PickleCodec
 
         store = self._task_store()
         cid, label, codec = self.capture_id(partition), str(partition), PickleCodec()
@@ -306,7 +306,7 @@ class _PartitionReduce(Generic[V]):
 
     def _task_store(self) -> Any:
         # only a capturing plan needs it
-        from graphed.checkpoint.resume import task_store  # noqa: PLC0415
+        from graphed.checkpoint.resume import task_store
 
         assert self.store is not None
         return task_store(self.store, self.storage_options)
@@ -314,7 +314,7 @@ class _PartitionReduce(Generic[V]):
     def open_store(self, node: str | None = None) -> Any:
         """Return the capture root as a checkpoint store, as every task and replay opens it."""
         # only a capturing plan needs it
-        from graphed.checkpoint.resume import open_store  # noqa: PLC0415
+        from graphed.checkpoint.resume import open_store
 
         assert self.store is not None
         return open_store(self.store, node, dict(self.storage_options))
@@ -492,36 +492,10 @@ def aggregate_plan(
     ``finalize`` becomes ``Plan.finalize``: the runner calls it once, on the head, on the combined
     value (``empty()``'s too), and ``run(plan).value`` is what it returns.
     """
-    if type(opt_level) is not int or opt_level not in (0, 1):
-        raise ValueError(
-            "aggregate_plan(opt_level=) is 0 (the outputs' 1:1 cone) or 1 (optimized), not "
-            f"{opt_level!r}"
-        )
     writes = tuple(writes)
-    metadata = [value for w in writes for value in (w.metadata or {}).values()]
-    refuse_container("graphed.aggregate_plan", *outputs, *(w.array for w in writes), *metadata)
-    if not outputs and not writes:
-        raise ValueError("aggregate_plan needs at least one output Array or write")
-    if writes and store is not None:
-        # the capturing path evaluates and reduces only; it would skip every write
-        raise TypeError("aggregate_plan(store=) does not capture writes")
-    arrays = [*outputs, *(w.array for w in writes), *(v for v in metadata if isinstance(v, Array))]
+    arrays = _planned_arrays(outputs, writes, store=store, opt_level=opt_level)
     session = arrays[0].session
-    if any(a.session is not session for a in arrays):
-        raise TypeError(
-            "all outputs of one plan must record into one session; collate one plan per Session"
-            " (graphed.collate), or record them in one (`with output.session:` around the later"
-            " reads)"
-        )
-    partitioned = {
-        nid: d for nid, d in sources_read(arrays).items() if isinstance(d, PartitionedSource)
-    }
-    if len(partitioned) != 1:
-        raise TypeError(
-            "aggregate_plan needs exactly one partitioned source; the outputs read "
-            f"{len(partitioned)}"
-        )
-    ((nid, data),) = partitioned.items()
+    nid, data = _partitioned_source(arrays)
     compiled = _compile_at(opt_level, session, arrays)
     slot = _slot_of(compiled)
     written = {compiled.correspondence.node_map[w.array.node_id][0] for w in writes}
@@ -563,6 +537,47 @@ def aggregate_plan(
         services=plan_services(session, compiled, services),
         finalize=None if finalize is None else by_value(finalize),
     )
+
+
+def _planned_arrays(
+    outputs: Sequence[Array], writes: tuple[PartWrite, ...], *, store: object, opt_level: int
+) -> list[Array]:
+    """Refuse what :func:`aggregate_plan` cannot plan; return every Array its tasks evaluate."""
+    if type(opt_level) is not int or opt_level not in (0, 1):
+        raise ValueError(
+            "aggregate_plan(opt_level=) is 0 (the outputs' 1:1 cone) or 1 (optimized), not "
+            f"{opt_level!r}"
+        )
+    metadata = [value for w in writes for value in (w.metadata or {}).values()]
+    refuse_container("graphed.aggregate_plan", *outputs, *(w.array for w in writes), *metadata)
+    if not outputs and not writes:
+        raise ValueError("aggregate_plan needs at least one output Array or write")
+    if writes and store is not None:
+        # the capturing path evaluates and reduces only; it would skip every write
+        raise TypeError("aggregate_plan(store=) does not capture writes")
+    arrays = [*outputs, *(w.array for w in writes), *(v for v in metadata if isinstance(v, Array))]
+    session = arrays[0].session
+    if any(a.session is not session for a in arrays):
+        raise TypeError(
+            "all outputs of one plan must record into one session; collate one plan per Session"
+            " (graphed.collate), or record them in one (`with output.session:` around the later"
+            " reads)"
+        )
+    return arrays
+
+
+def _partitioned_source(arrays: Sequence[Array]) -> tuple[int, PartitionedSource]:
+    """Return the one partitioned source ``arrays`` read, with its node id."""
+    partitioned = {
+        nid: d for nid, d in sources_read(arrays).items() if isinstance(d, PartitionedSource)
+    }
+    if len(partitioned) != 1:
+        raise TypeError(
+            "aggregate_plan needs exactly one partitioned source; the outputs read "
+            f"{len(partitioned)}"
+        )
+    ((nid, data),) = partitioned.items()
+    return nid, data
 
 
 def _shipped(w: PartWrite, slot: Callable[[Array], int]) -> _ShippedWrite:

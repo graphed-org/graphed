@@ -623,7 +623,7 @@ def _compatible(session: Any, reference: Any, form: Any) -> bool:
         return True
     try:
         session.backend.op_form("add", [reference, form], {})
-    except Exception:
+    except Exception:  # Backend.op_form refuses with any error type; every refusal is "no"
         return False
     return True
 

@@ -201,7 +201,7 @@ class RunRecorder:
         """
         if (result is None) == (error is None):
             raise ValueError("RunRecorder.report needs exactly one of result= or error=")
-        from graphed.preserve import capture_environment, fingerprint  # noqa: PLC0415
+        from graphed.preserve import capture_environment, fingerprint
 
         n = len(self._calls)  # appends racing this take land whole in the next report
         calls = self._calls[:n]

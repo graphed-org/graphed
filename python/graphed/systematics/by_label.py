@@ -46,22 +46,7 @@ def _per_label(verb: str, outputs: Outputs) -> dict[str, list[Array]]:
     `AttributeError`.
     """
     if isinstance(outputs, Mapping):
-        resolved: dict[str, list[Array]] = {}
-        for label, arrays in outputs.items():
-            if not _is_sequence(arrays):
-                raise GraphedError(
-                    f"{verb}: label {label!r} maps to {type(arrays).__name__}; a mapping operand "
-                    "maps each label to a SEQUENCE of Array"
-                )
-            for item in arrays:
-                if not isinstance(item, Array):
-                    raise GraphedError(
-                        f"{verb}: label {label!r} maps to a sequence containing "
-                        f"{type(item).__name__}; a mapping operand maps each label to a sequence "
-                        "of Array — pass a sequence of Varied instead to have the labels resolved"
-                    )
-            resolved[label] = list(arrays)
-        return resolved
+        return _per_label_mapping(verb, outputs)
     if not _is_sequence(outputs):
         raise GraphedError(
             f"{verb} takes a sequence of Varied or a mapping of label to a sequence of Array, "
@@ -87,6 +72,28 @@ def _per_label(verb: str, outputs: Outputs) -> dict[str, list[Array]]:
         label: [member_of(container, label) for container in containers]
         for label in union_labels(*containers)
     }
+
+
+def _per_label_mapping(
+    verb: str, outputs: Mapping[str, Sequence[Array]]
+) -> dict[str, list[Array]]:
+    """`_per_label`'s mapping form: each label's sequence checked to hold Arrays only."""
+    resolved: dict[str, list[Array]] = {}
+    for label, arrays in outputs.items():
+        if not _is_sequence(arrays):
+            raise GraphedError(
+                f"{verb}: label {label!r} maps to {type(arrays).__name__}; a mapping operand "
+                "maps each label to a SEQUENCE of Array"
+            )
+        for item in arrays:
+            if not isinstance(item, Array):
+                raise GraphedError(
+                    f"{verb}: label {label!r} maps to a sequence containing "
+                    f"{type(item).__name__}; a mapping operand maps each label to a sequence "
+                    "of Array — pass a sequence of Varied instead to have the labels resolved"
+                )
+        resolved[label] = list(arrays)
+    return resolved
 
 
 def _is_sequence(value: object) -> bool:
