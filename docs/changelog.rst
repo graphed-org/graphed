@@ -139,6 +139,9 @@ Fixes
   evaluation) names your analysis line when the interpreter reaches that code through a layered
   environment, such as ``uv run --with`` over a project venv. It named the library's line, because
   only the interpreter's own ``site-packages`` counted as installed.
+* The dashboard drops a profile payload that decodes to JSON but not to a count tree. It raised
+  out of the server's ingest handler, closing the worker's connection, and could leave the merged
+  flamegraph half-updated (#130).
 
 The systematics internals, reorganized
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
