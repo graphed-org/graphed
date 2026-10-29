@@ -24,6 +24,7 @@ import base64
 import contextlib
 import json
 import threading
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -173,15 +174,10 @@ class DashboardServer:
                     return True
 
                 def open(self, *args: str, **kwargs: str) -> None:
-                    owner._live.add(self)
-                    with owner._lock:
-                        owner._n_connections += 1
-                        self.cid = owner._n_connections
+                    owner._connect(self)
 
                 def on_close(self) -> None:
-                    owner._live.discard(self)
-                    with owner._lock:
-                        owner._listeners.discard(self)
+                    owner._disconnect(self)
 
                 def on_message(self, message: str | bytes) -> None:
                     owner._ingest(
@@ -193,40 +189,24 @@ class DashboardServer:
                     self.set_header("Content-Type", "text/html; charset=utf-8")
                     self.finish((_STATIC / "index.html").read_bytes())
 
-            class _Flame(RequestHandler):  # type: ignore[misc]  # the merged profile flamegraph (JSON)
-                def get(self) -> None:
-                    self.set_header("Content-Type", "application/json")
-                    self.set_header("Cache-Control", "no-store")
-                    self.finish(owner.flamegraph_json())
+            class _Json(RequestHandler):  # type: ignore[misc]  # a JSON snapshot, fresh per request
+                def initialize(self, body: Callable[[], str]) -> None:
+                    self.body = body
 
-            class _Progress(RequestHandler):  # type: ignore[misc]  # overall + per-worker progress (JSON)
                 def get(self) -> None:
                     self.set_header("Content-Type", "application/json")
                     self.set_header("Cache-Control", "no-store")
-                    self.finish(owner.progress_json())
+                    self.finish(self.body())
 
             class _Control(RequestHandler):  # type: ignore[misc]  # POST {"cmd": ...} -> the listening monitors
                 def post(self) -> None:
-                    # a cross-site form cannot send this type without a preflight nobody answers
-                    if (
-                        self.request.headers.get("Content-Type", "").partition(";")[0].strip()
-                        != "application/json"
-                    ):
-                        self.send_error(415)
-                        return
-                    try:
-                        cmd = json.loads(self.request.body)["cmd"]
-                        state = _wire.CONTROL_STATES[cmd]
-                    except (ValueError, LookupError, TypeError):
-                        self.send_error(400)
-                        return
-                    self.finish({"cmd": cmd, "delivered": owner._send_control(cmd, state)})
+                    owner._post_control(self)
 
             routes: list[Any] = [
                 (r"/websocket", PerspectiveTornadoHandler, {"perspective_server": server}),
                 (r"/ingest", _Ingest),
-                (r"/api/flamegraph.json", _Flame),
-                (r"/api/progress.json", _Progress),
+                (r"/api/flamegraph.json", _Json, {"body": owner.flamegraph_json}),
+                (r"/api/progress.json", _Json, {"body": owner.progress_json}),
                 (r"/static/(.*)", StaticFileHandler, {"path": str(_STATIC)}),
                 (r"/", _Index),
             ]
@@ -243,6 +223,33 @@ class DashboardServer:
         except BaseException as exc:  # surface a startup failure to start()
             self._error = exc
             self._ready.set()
+
+    def _connect(self, conn: Any) -> None:
+        self._live.add(conn)
+        with self._lock:
+            self._n_connections += 1
+            conn.cid = self._n_connections
+
+    def _disconnect(self, conn: Any) -> None:
+        self._live.discard(conn)
+        with self._lock:
+            self._listeners.discard(conn)
+
+    def _post_control(self, handler: Any) -> None:
+        # a cross-site form cannot send this type without a preflight nobody answers
+        if (
+            handler.request.headers.get("Content-Type", "").partition(";")[0].strip()
+            != "application/json"
+        ):
+            handler.send_error(415)
+            return
+        try:
+            cmd = json.loads(handler.request.body)["cmd"]
+            state = _wire.CONTROL_STATES[cmd]
+        except (ValueError, LookupError, TypeError):
+            handler.send_error(400)
+            return
+        handler.finish({"cmd": cmd, "delivered": self._send_control(cmd, state)})
 
     # ---- ingest (runs on the IOLoop thread) -----------------------------
 

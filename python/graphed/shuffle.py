@@ -538,38 +538,54 @@ def _build(
         n_left=len(map_stages[0].tasks) if is_join else None,
         reduce=None if fold is None else fold[0],
     )
-    gather_routing: dict[str, Any] = {"parts": parts, "backend_id": backend_id}
-    if is_join:
-        # E5/F6: the broadcast-vs-shuffle choice is a PLAN property, keyed on each side's partition
-        # count (typetracer forms carry no row count, R7.9) — never the runtime worker pool.
-        broadcast = broadcast_join_choice(
-            len(map_stages[0].tasks), len(map_stages[1].tasks), parts
-        )
-        gather_routing.update(how=str(params.get("how", "inner")), broadcast=broadcast)
     stages = [
         *map_stages,
         StageSpec(
             kind="gather_join" if is_join else "gather",
             inputs=tuple(range(len(map_stages))),  # the barrier edge: every map-write stage
             process=OpSpec.from_callable(gather),
-            routing=gather_routing,
+            routing=_gather_routing(is_join, params, parts, backend_id, map_stages),
             tasks=tuple(Task(d, Partition("dest", "p", d, d + 1)) for d in range(parts)),
         ),
     ]
     if fold is not None:
-        stages.append(
-            StageSpec(
-                kind="reduce",
-                inputs=(len(map_stages),),
-                process=OpSpec.from_callable(
-                    _Fold(_adopting(fold[1], factory), _adopting(fold[2], factory))
-                ),
-                routing={"backend_id": backend_id},
-                tasks=(Task(0, Partition("reduce", "", 0, 1)),),
-            )
-        )
+        stages.append(_reduce_stage(fold, factory, backend_id, after=len(map_stages)))
     return DurablePlanV2(
         ir=ir, stages=tuple(stages), services=plan_services(session, compiled, names)
+    )
+
+
+def _gather_routing(
+    is_join: bool,
+    params: Mapping[str, Any],
+    parts: int,
+    backend_id: str,
+    map_stages: Sequence[StageSpec],
+) -> dict[str, Any]:
+    """Return the gather stage's routing: its parts, and for a join its how and broadcast."""
+    routing: dict[str, Any] = {"parts": parts, "backend_id": backend_id}
+    if is_join:
+        # E5/F6: the broadcast-vs-shuffle choice is a PLAN property, keyed on each side's partition
+        # count (typetracer forms carry no row count, R7.9) — never the runtime worker pool.
+        broadcast = broadcast_join_choice(
+            len(map_stages[0].tasks), len(map_stages[1].tasks), parts
+        )
+        routing.update(how=str(params.get("how", "inner")), broadcast=broadcast)
+    return routing
+
+
+def _reduce_stage(
+    fold: _Monoid, factory: Callable[[], Any], backend_id: str, *, after: int
+) -> StageSpec:
+    """Return the one-task stage folding the gather stage ``after``'s outputs."""
+    return StageSpec(
+        kind="reduce",
+        inputs=(after,),
+        process=OpSpec.from_callable(
+            _Fold(_adopting(fold[1], factory), _adopting(fold[2], factory))
+        ),
+        routing={"backend_id": backend_id},
+        tasks=(Task(0, Partition("reduce", "", 0, 1)),),
     )
 
 

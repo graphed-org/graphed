@@ -304,42 +304,58 @@ def evaluate_ir(
             call = partial(backend.eval_stage, name, ins, nd["params"])
             vals.append(_dispatch(call, name, ins, (nid, None), on_failure))
         elif kind == "stage":
-            members = nd["members"]
-            member_inputs = [[i for tag, i in m["inputs"] if tag != "input"] for m in members]
-            release_member = _last_consumers(member_inputs, keep={len(members) - 1})
-            mvals: list[object] = []
-            for index, m in enumerate(members):
-                mins = [ins[i] if tag == "input" else mvals[i] for tag, i in m["inputs"]]
-                mcall = partial(backend.eval_stage, m["name"], mins, m["params"])
-                mvals.append(_dispatch(mcall, m["name"], mins, (nid, index), on_failure))
-                del mins, mcall
-                for i in release_member.get(index, ()):
-                    mvals[i] = None
-            vals.append(mvals[-1])
-            del mvals
+            vals.append(_evaluate_stage(backend, nid, nd["members"], ins, on_failure))
         elif kind == "external":
-            # Resolve by the specific (content_hash, params) `external_key` first — that is what
-            # `aggregate_plan` wires, and it keeps N systematic universes off one payload distinct.
-            # Fall back to the bare `content_hash` so a direct `evaluate_ir` caller may key by it
-            # (the single-payload case, and the frozen attribution contract).
-            chash = nd["descriptor"]["content_hash"]
-            fn = (
-                None
-                if externals is None
-                else (externals.get(external_key(nd)) or externals.get(chash))
-            )
-            if fn is None:
-                raise _unbound_external(chash)
-            # An External node carries no `name` — its identity is the descriptor — so an
-            # attributed External failure names the payload kind.
-            op = f"external:{nd['descriptor']['kind']}"
-            vals.append(_dispatch(partial(fn, *ins), op, ins, (nid, None), on_failure))
+            vals.append(_evaluate_external(nid, nd, ins, externals, on_failure))
         else:  # pragma: no cover - the codec only emits the kinds above
             raise GraphedError(f"evaluate_ir: unknown node kind {kind!r}")
         del ins
         for i in release.get(nid, ()):
             vals[i] = None
     return [vals[o] for o in wanted]
+
+
+def _evaluate_stage(
+    backend: Backend,
+    nid: int,
+    members: Sequence[Mapping[str, Any]],
+    ins: list[object],
+    on_failure: OnFailure | None,
+) -> object:
+    """Evaluate a fused stage's members inline; return the last member's value."""
+    member_inputs = [[i for tag, i in m["inputs"] if tag != "input"] for m in members]
+    release_member = _last_consumers(member_inputs, keep={len(members) - 1})
+    mvals: list[object] = []
+    for index, m in enumerate(members):
+        mins = [ins[i] if tag == "input" else mvals[i] for tag, i in m["inputs"]]
+        mcall = partial(backend.eval_stage, m["name"], mins, m["params"])
+        mvals.append(_dispatch(mcall, m["name"], mins, (nid, index), on_failure))
+        del mins, mcall
+        for i in release_member.get(index, ()):
+            mvals[i] = None
+    return mvals[-1]
+
+
+def _evaluate_external(
+    nid: int,
+    nd: Mapping[str, Any],
+    ins: list[object],
+    externals: Mapping[str, Callable[..., object]] | None,
+    on_failure: OnFailure | None,
+) -> object:
+    """Evaluate an External node with the evaluator ``externals`` binds to it."""
+    # Resolve by the specific (content_hash, params) `external_key` first — that is what
+    # `aggregate_plan` wires, and it keeps N systematic universes off one payload distinct.
+    # Fall back to the bare `content_hash` so a direct `evaluate_ir` caller may key by it
+    # (the single-payload case, and the frozen attribution contract).
+    chash = nd["descriptor"]["content_hash"]
+    fn = None if externals is None else (externals.get(external_key(nd)) or externals.get(chash))
+    if fn is None:
+        raise _unbound_external(chash)
+    # An External node carries no `name` — its identity is the descriptor — so an
+    # attributed External failure names the payload kind.
+    op = f"external:{nd['descriptor']['kind']}"
+    return _dispatch(partial(fn, *ins), op, ins, (nid, None), on_failure)
 
 
 def _last_consumers(inputs: Sequence[Sequence[int]], *, keep: set[int]) -> dict[int, list[int]]:

@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any, SupportsFloat
 
 from .backend import ParamValue
 from .errors import GraphedTypeError, MissingFieldError
-from .provenance import capture
+from .provenance import Provenance, capture
 
 if TYPE_CHECKING:
     from .session import Session
@@ -764,17 +764,15 @@ class BoundMethod:
         return _record_method(self._receiver, self._name, args, kwargs)
 
 
-def _record_method(
-    receiver: Array, name: str, args: tuple[Any, ...], kwargs: dict[str, Any]
-) -> Any:
-    """Record `receiver.<name>(*args, **kwargs)` as one `method` op per output.
+def _method_params(
+    receiver: Array, name: str, args: tuple[Any, ...], kwargs: dict[str, Any], prov: Provenance
+) -> tuple[list[Array], dict[str, ParamValue]]:
+    """Return a method call's inputs, the receiver first, and its `method` op params.
 
     Every `Array` among the arguments joins the input list and stands in the JSON as its input
     index; constants must be JSON-representable so the plan stays IR-canonical (no pickled
-    closure). A refused argument raises before anything is recorded.
+    closure).
     """
-    session = receiver._session
-    prov = capture()
     inputs: list[Array] = [receiver]
 
     def refuse(where: str, value: Any) -> GraphedTypeError:
@@ -828,6 +826,19 @@ def _record_method(
             {k: encode(kwargs[k], f"kwargs[{k!r}]") for k in sorted(kwargs)}, sort_keys=True
         ),
     }
+    return inputs, params
+
+
+def _record_method(
+    receiver: Array, name: str, args: tuple[Any, ...], kwargs: dict[str, Any]
+) -> Any:
+    """Record `receiver.<name>(*args, **kwargs)` as one `method` op per output.
+
+    A refused argument raises before anything is recorded.
+    """
+    session = receiver._session
+    prov = capture()
+    inputs, params = _method_params(receiver, name, args, kwargs, prov)
     outputs = getattr(session.backend, "method_outputs", None)
     if outputs is None:
         raise GraphedTypeError(
