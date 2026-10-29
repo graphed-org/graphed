@@ -27,7 +27,7 @@ from graphed.shuffle import join_blocks
 
 from . import functions as gak
 from . import join, payloads, shuffle
-from ._ops import apply, carrying
+from ._ops import apply
 from .array import AwkwardArray
 
 
@@ -388,7 +388,7 @@ class AwkwardBackend:
             if leaf is not None:
                 return astype_form(broadcast_form(forms), leaf)
             return forms[0]
-        operands = [f.tt for f in forms]
+        operands = [self._with_behavior(f.tt) for f in forms]
         return AwkwardForm(apply(op, operands, params, behavior=self._behavior))
 
     def eval_stage(
@@ -498,8 +498,12 @@ class AwkwardBackend:
         """
         return _AsRead(chunk)
 
-    def _with_behavior(self, tt: ak.Array) -> ak.Array:
-        return carrying(tt, self._behavior) if self._behavior else tt
+    def _with_behavior(self, tt: Any) -> Any:
+        # a new wrapper, never the stored typetracer: record-time behavior code may assign into
+        # its `self` or attrs, which would rewrite the Session's form for every later read
+        if not isinstance(tt, ak.Array):
+            return tt
+        return ak.Array(tt.layout, behavior=self._behavior or tt.behavior, attrs=tt.attrs)
 
     def _eval_join(self, inputs: Sequence[object], params: Mapping[str, object]) -> object:
         left, right = inputs[0], inputs[1]
