@@ -16,12 +16,14 @@ from dataclasses import dataclass
 from typing import Any
 
 import awkward as ak
+import cloudpickle
 import numpy as np
 import pytest
 
 import graphed
 from graphed import Array, Session
 from graphed.awkward import AwkwardBackend, AwkwardForm, gak, to_parquet
+from graphed.awkward._ops import apply
 from graphed.core import Partition, SequentialRunner
 from graphed.core.execution import LocalResources, Plan, WorkerResources
 
@@ -168,3 +170,56 @@ def test_a_behavior_that_does_not_pickle_is_refused_when_the_plan_is_built() -> 
     session = Session(AwkwardBackend(behavior={**BEHAVIOR, "lock": threading.Lock()}))
     with pytest.raises(TypeError, match="backend='module:factory'"):
         _aggregate(session)
+
+
+def test_an_equal_behavior_is_pickled_once_across_plan_builds(monkeypatch: Any) -> None:
+    pickled: list[Any] = []
+    dumps = cloudpickle.dumps
+
+    def counting(obj: Any, *args: Any, **kwargs: Any) -> bytes:
+        if isinstance(obj, dict):
+            pickled.append(obj)
+        return bytes(dumps(obj, *args, **kwargs))
+
+    monkeypatch.setattr(cloudpickle, "dumps", counting)
+    behavior = {**BEHAVIOR, "fresh": lambda x: x}  # unequal to every behavior shipped before
+    plans = [_aggregate(Session(AwkwardBackend(behavior=dict(behavior)))) for _ in range(4)]
+    assert len(pickled) == 1
+    _carries_the_behavior(_spawned(plans[-1]), 2 * EVENTS.x)
+
+    grown = {**behavior, "more": lambda x: x}
+    factory = AwkwardBackend(behavior=grown).worker_factory()
+    assert len(pickled) == 2
+    assert "more" in factory.keywords["behavior"]  # type: ignore[attr-defined]
+
+
+@pytest.mark.parametrize(
+    ("op", "params", "data"),
+    [("neg", {}, np.arange(3.0)), ("ak.with_name", {"name": "P"}, {"x": np.arange(3.0)})],
+    ids=["neg", "with_name"],
+)
+def test_an_operand_carrying_the_backend_behavior_is_not_rewrapped(
+    monkeypatch: Any, op: str, params: dict[str, Any], data: Any
+) -> None:
+    behavior = dict(BEHAVIOR)
+    made: list[None] = []
+    init = ak.Array.__init__
+
+    def counting(self: ak.Array, *args: Any, **kwargs: Any) -> None:
+        made.append(None)
+        init(self, *args, **kwargs)
+
+    monkeypatch.setattr(ak.Array, "__init__", counting)
+
+    def built(operand: ak.Array, with_behavior: Any) -> int:
+        made.clear()
+        result = apply(op, [operand], params, with_behavior)
+        if with_behavior is not None:
+            assert result.behavior is behavior
+        return len(made)
+
+    carrying = ak.Array(data, behavior=behavior)
+    assert built(carrying, behavior) == built(carrying, None)
+    # an operand without that very object still gets it
+    assert built(ak.Array(data, behavior=dict(behavior)), behavior) > built(carrying, None)
+    assert built(ak.Array(data), behavior) > built(carrying, None)

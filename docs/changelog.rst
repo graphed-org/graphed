@@ -85,6 +85,9 @@ A plan's workers keep the Session backend's behavior
   the tasks return carry the shipped behavior back, lambdas included. A behavior cloudpickle
   cannot copy is refused with a ``TypeError`` when the plan is built. A behavior-less Session's
   plan keeps its bytes (#123).
+* A behavior is pickled once per process however many plans ship it, and an op's operand that
+  already carries the backend's behavior object is not wrapped again, so plan builds and runs on a
+  behavior-carrying Session (coffea's NanoEvents) cost what they did before #123 (#128).
 
 A reader's ``steps_per_file`` and ``open_files`` partition its plans
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

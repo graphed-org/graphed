@@ -218,6 +218,13 @@ def _decode_call(text: str, operands: Sequence[Any]) -> Any:
     return walk(json.loads(text))
 
 
+def carrying(x: Any, behavior: Mapping[str, Any]) -> Any:
+    """Return array ``x`` with the ``behavior`` object; ``x`` itself when it already has it."""
+    if not isinstance(x, ak.Array) or x.behavior is behavior:
+        return x
+    return ak.Array(x.layout, behavior=behavior, attrs=x.attrs)
+
+
 def apply(
     op: str,
     operands: Sequence[Any],
@@ -228,10 +235,7 @@ def apply(
         # M54: the backend's behavior dict rides on every operand (with its own attrs), so a
         # behavior registered on the backend alone (not in the global ak.behavior) resolves its
         # properties, methods and operator overloads exactly like a globally registered one
-        operands = [
-            ak.Array(x.layout, behavior=behavior, attrs=x.attrs) if isinstance(x, ak.Array) else x
-            for x in operands
-        ]
+        operands = [carrying(x, behavior) for x in operands]
     if op in _UNARY:
         return _UNARY[op](operands[0])
     if op in _BINARY:
@@ -239,9 +243,7 @@ def apply(
         return _BINARY[op](a, b)
     if op == "ak.with_name":
         named = ak.with_name(operands[0], str(params["name"]))
-        if behavior:
-            return ak.Array(named.layout, behavior=behavior, attrs=named.attrs)
-        return named
+        return carrying(named, behavior) if behavior else named
     handler = _OPS.get(op)
     if handler is None:
         raise TypeError(f"unsupported awkward op {op!r}")
