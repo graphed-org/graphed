@@ -6,7 +6,7 @@ import awkward as ak
 import pytest
 
 from graphed.awkward import read_varied
-from graphed.awkward.functions import _parse_template
+from graphed.awkward._templates import _parse_template
 from graphed.awkward.join import join_form
 from graphed.errors import GraphedError
 
