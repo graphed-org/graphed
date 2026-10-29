@@ -10,9 +10,11 @@ non-vacuous.
 from __future__ import annotations
 
 import ast
-from pathlib import Path
+import inspect
 
-import graphed.awkward._varied_write as io_mod
+import graphed.awkward._varied_read as read_mod
+import graphed.awkward._varied_write as write_mod
+import graphed.awkward.io as io_mod
 
 
 def _imported_modules(source: str) -> set[str]:
@@ -26,9 +28,14 @@ def _imported_modules(source: str) -> set[str]:
 
 
 def test_varied_write_imports_no_private_awkward_module() -> None:
-    source = Path(io_mod.__file__).read_text()
-    private = {m for m in _imported_modules(source) if m.startswith("awkward._")}
+    sources = {mod.__name__: inspect.getsource(mod) for mod in (io_mod, read_mod, write_mod)}
+    private = {
+        (name, m)
+        for name, source in sources.items()
+        for m in _imported_modules(source)
+        if m.startswith("awkward._")
+    }
     assert not private, f"varied write reaches into private awkward internals: {sorted(private)}"
     # positive control: the module really does merge the KV through the PUBLIC arrow route, so the
     # scan above ran over real source rather than trivially passing on an empty/unread file.
-    assert "replace_schema_metadata" in source
+    assert "replace_schema_metadata" in sources[write_mod.__name__]

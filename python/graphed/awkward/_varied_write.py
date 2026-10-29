@@ -3,7 +3,7 @@
 The awkward idiom's `to_parquet(record, select=…)` materializes the SUPERSET of rows passing any
 universe's level-0 selection and augments the nominal record with same-dtype XOR value deltas +
 packbits validity masks, so every universe's post-selection values and row set reconstruct
-bit-for-bit via `read_varied`. The write task and the §7.2 node-id unpack live in `io`.
+bit-for-bit via `read_varied`.
 """
 
 from __future__ import annotations
