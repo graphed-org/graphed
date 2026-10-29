@@ -715,6 +715,10 @@ class Session:
             raise GraphedTypeError(op, prov, "output_type= collides with an 'output_type' param")
         if form is not None:
             raise GraphedTypeError(op, prov, "output_type= and form= are exclusive")
+        return self._canonical(op, prov, spec)
+
+    def _canonical(self, op: str, prov: Provenance, spec: object) -> str:
+        """Return the backend's canonical string for type ``spec``, or a user-located error."""
         canonical = getattr(self._backend, "canonical_output_type", None)
         try:
             if canonical is None:
@@ -739,14 +743,10 @@ class Session:
             return None
         if declared_type is not None:
             return ("output_type", declared_type)
-        canonical = getattr(self._backend, "canonical_output_type", None)
         dtype = (form_params or {}).get("output_dtype")
-        if canonical is None or dtype is None:
+        if getattr(self._backend, "canonical_output_type", None) is None or dtype is None:
             return None
-        try:
-            return ("output_dtype", str(canonical(dtype)))
-        except Exception as exc:  # an unrepresentable leaf dtype -> user-located error
-            raise GraphedTypeError(op, prov, str(exc)) from exc
+        return ("output_dtype", self._canonical(op, prov, dtype))
 
     # ---- generic graph walk (shared by materialize + projection) ----------------
     def walk(
