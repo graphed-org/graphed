@@ -544,7 +544,7 @@ def _build(
             kind="gather_join" if is_join else "gather",
             inputs=tuple(range(len(map_stages))),  # the barrier edge: every map-write stage
             process=OpSpec.from_callable(gather),
-            routing=_gather_routing(is_join, params, parts, backend_id, map_stages),
+            routing=_gather_routing(params, parts, backend_id, map_stages, is_join=is_join),
             tasks=tuple(Task(d, Partition("dest", "p", d, d + 1)) for d in range(parts)),
         ),
     ]
@@ -556,11 +556,12 @@ def _build(
 
 
 def _gather_routing(
-    is_join: bool,
     params: Mapping[str, Any],
     parts: int,
     backend_id: str,
     map_stages: Sequence[StageSpec],
+    *,
+    is_join: bool,
 ) -> dict[str, Any]:
     """Return the gather stage's routing: its parts, and for a join its how and broadcast."""
     routing: dict[str, Any] = {"parts": parts, "backend_id": backend_id}

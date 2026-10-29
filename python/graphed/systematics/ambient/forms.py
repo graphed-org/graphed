@@ -63,7 +63,14 @@ def weight_form(
     if match is not None and match[0] == "factor":
         _check_widening(ctx, match[1], central, name)
     factors, family = _weight_members(
-        ctx, name, central, variations, points, composes_as_union, max_universes, tags
+        ctx,
+        name,
+        central,
+        variations,
+        points,
+        composes_as_union=composes_as_union,
+        max_universes=max_universes,
+        tags=tags,
     )
     placed = _place(ctx, match, factors, name, family, base)
     # the §2.4 union is RECORDED here, never recomputed at the read: recomputing it from the
@@ -147,6 +154,7 @@ def _weight_members(
     central: object,
     variations: Mapping[Any, Any] | None,
     points: Iterable[Mapping[str, Any]] | None,
+    *,
     composes_as_union: bool,
     max_universes: int,
     tags: Mapping[str, Any],
