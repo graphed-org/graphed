@@ -33,9 +33,9 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
-from ..services import ServiceSpec
 from .execution import Partition, Task
 from .graphed_core import GraphStore
+from .services import ServiceSpec
 
 FORMAT_VERSION = 1
 FORMAT_VERSION_V2 = (

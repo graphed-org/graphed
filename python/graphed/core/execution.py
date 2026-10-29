@@ -34,11 +34,11 @@ from typing import (
     runtime_checkable,
 )
 
-from ..services import require_bound
+from .services import Bindable, UnboundServiceError
 
 if TYPE_CHECKING:
-    from ..services import ServiceSpec
     from .plan import DurablePlanV2
+    from .services import ServiceSpec
 
 R = TypeVar("R")  # a partial result (e.g. a histogram array)
 Block = TypeVar("Block")  # a backend-native partition of rows (opaque to the engine)
@@ -297,6 +297,39 @@ def finalize_result(plan: Plan[R] | DurablePlanV2, result: ExecResult[R]) -> Exe
     else:
         fn = plan.finalize.resolve()
     return result if fn is None else replace(result, value=fn(result.value))
+
+
+def _stage_processes(plan: DurablePlanV2) -> tuple[Any, ...]:
+    return tuple(stage.process.resolve() for stage in plan.stages)
+
+
+def require_bound(plan: Plan[Any] | DurablePlanV2) -> None:
+    """Raise :class:`UnboundServiceError` naming every service ``plan`` has no endpoint for.
+
+    The plan's process (a ``DurablePlanV2``'s stage processes) names them; a runner calls it before
+    its first task. A plan without ``services`` returns at once.
+    """
+    if not plan.services:
+        return
+    parts = (plan.process,) if isinstance(plan, Plan) else _stage_processes(plan)
+    _require_parts([p for p in parts if isinstance(p, Bindable)])
+
+
+def _require_parts(parts: Sequence[Bindable]) -> None:
+    missing: dict[str, str] = {}
+    while True:  # each pass through bind_services' own traversal names one more unbound service
+        try:
+            for part in parts:
+                part.bind_services(missing)
+        except UnboundServiceError as err:
+            # a part refusing a name it was handed breaks the Bindable contract
+            if err.name in missing:
+                raise
+            missing[err.name] = "tcp://unbound:0"
+            continue
+        if missing:
+            raise UnboundServiceError(*sorted(missing))
+        return
 
 
 @runtime_checkable
