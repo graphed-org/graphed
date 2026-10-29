@@ -309,16 +309,7 @@ class DashboardServer:
         ks.life.add(cls)
         if cls == _SUBMITTED:
             ks.label = (msg.get("partition", ""), msg.get("n_entries", 0))
-
-        # an indexed update keeps the columns it omits: a late event writes only the label, and an
-        # event with an empty label (a lean terminal) writes none
-        row = _wire.task_row(msg)
-        if late:
-            row = {"key": key, "partition": row["partition"], "n_entries": row["n_entries"]}
-        if not row["partition"]:
-            del row["partition"], row["n_entries"]
-        if len(row) > 1:
-            self._rows.setdefault(key, {}).update(row)
+        self._update_row(msg, key, late=late)
 
         with self._lock:
             self._stats[phase] += 1
@@ -354,6 +345,17 @@ class DashboardServer:
             # record is completed in place when it finishes/errors.
             elif worker:
                 self._ingest_worker(msg, ks, cls, worker, t, cid, derived)
+
+    def _update_row(self, msg: dict[str, Any], key: Any, *, late: bool) -> None:
+        # an indexed update keeps the columns it omits: a late event writes only the label, and an
+        # event with an empty label (a lean terminal) writes none
+        row = _wire.task_row(msg)
+        if late:
+            row = {"key": key, "partition": row["partition"], "n_entries": row["n_entries"]}
+        if not row["partition"]:
+            del row["partition"], row["n_entries"]
+        if len(row) > 1:
+            self._rows.setdefault(key, {}).update(row)
 
     def _ingest_worker(
         self,
