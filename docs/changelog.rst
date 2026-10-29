@@ -91,7 +91,7 @@ A plan's workers keep the Session backend's behavior
 * A behavior property or method evaluated while recording runs on a new wrapper of the Session's
   stored typetracer: one that assigned into its ``self`` or attrs (coffea's ``__systematics__``)
   rewrote the stored form, so a re-read of that source or a re-recorded op returned the changed
-  form.
+  form (#134).
 
 A reader's ``steps_per_file`` and ``open_files`` partition its plans
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
