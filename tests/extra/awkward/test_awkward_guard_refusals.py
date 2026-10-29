@@ -16,6 +16,21 @@ def test_a_call_template_entry_that_is_no_slot_group_or_constant_is_refused() ->
         _parse_template([object()], 1, constants=False, groups=True)
 
 
+def test_a_call_template_that_is_not_a_list_is_refused() -> None:
+    with pytest.raises(TypeError, match="must be a list"):
+        _parse_template("$0", 1, constants=True, groups=False)
+
+
+def test_a_call_template_slot_past_the_inputs_is_refused() -> None:
+    with pytest.raises(ValueError, match=r"slot \$1 out of range \(1 inputs\)"):
+        _parse_template(["$1"], 1, constants=True, groups=False)
+
+
+def test_a_group_for_a_callee_without_groups_is_refused() -> None:
+    with pytest.raises(TypeError, match="not stacked groups"):
+        _parse_template([["$0"]], 1, constants=True, groups=False)
+
+
 def test_the_join_form_refuses_a_shared_non_key_column() -> None:
     left = ak.Array([{"k": 1, "v": 2}])
     right = ak.Array([{"k": 1, "v": 3}])
