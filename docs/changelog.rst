@@ -88,6 +88,10 @@ A plan's workers keep the Session backend's behavior
 * A behavior is pickled once per process however many plans ship it, and an op's operand that
   already carries the backend's behavior object is not wrapped again, so plan builds and runs on a
   behavior-carrying Session (coffea's NanoEvents) cost what they did before #123 (#128).
+* A behavior property or method evaluated while recording runs on a new wrapper of the Session's
+  stored typetracer: one that assigned into its ``self`` or attrs (coffea's ``__systematics__``)
+  rewrote the stored form, so a re-read of that source or a re-recorded op returned the changed
+  form.
 
 A reader's ``steps_per_file`` and ``open_files`` partition its plans
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
