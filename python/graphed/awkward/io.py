@@ -68,6 +68,7 @@ from ._varied_write import (
     _normalize_select,
     _record_context,
     _refuse_optimizer_merge,
+    _SelectKey,
     _tt,
     _type_of,
     _varied_leaves,
@@ -565,24 +566,76 @@ def _write_varied(
     varied = _varied_leaves(session, record, labels)
     _check_collision(varied)
 
-    # --- superset rows: the level-0 OR over the per-label masks (ordinary graph ops, §6.4a) ---
-    if level0 is not None:
-        superset = functools.reduce(
-            operator.or_,
-            (
-                fill_none(m, True)
-                if _is_option(session, m)
-                else m  # a None row stays, as a None record
-                for m in (member_of(level0, label) for label in labels)
-            ),
-        )
-    else:
-        superset = None
+    superset = None if level0 is None else _superset(session, level0, labels)
     base = nominal_record if superset is None else nominal_record[superset]
+    value_specs, value_outputs = _value_specs(session, record, labels, varied, superset)
+    mask_specs, mask_outputs = _mask_specs(session, entries, labels, superset)
+    outputs: list[Any] = [base, *value_outputs, *mask_outputs]
 
+    compiled = compile_ir(session, *outputs)
+    refuse_chunk_partials(compiled, as_outputs=True)
+    _refuse_optimizer_merge(session, outputs, compiled)
+
+    manifest = _build_manifest(
+        labels, value_specs, mask_specs, _record_types(session, record, labels)
+    )
+    rank = {node_id: i for i, node_id in enumerate(dict.fromkeys(out.node_id for out in outputs))}
+    wrapped = _tt(session, nominal_record).ndim > 1
+
+    ((source_id, data),) = gw.sources_read(outputs).items()
+    steps_per_file = gw.steps_for(data, steps_per_file)
+    source_name = session.source_name(source_id)
+    source_form = session.form_of(source_id)
+    assert isinstance(source_form, AwkwardForm)
+    columns = gw.declared_columns(data, outputs)
+    if columns is None:
+        # `()` is this computation's OWN "read everything"; `read_partition` spells that `None`.
+        columns = _evaluation_columns_union(outputs, source_id, source_name, source_form) or None
+
+    return _write(
+        _VariedWritePart,
+        session,
+        data,
+        compute,
+        executor,
+        compiled=compiled,
+        source_name=source_name,
+        columns=columns,
+        destination=destination,
+        prefix=prefix,
+        steps_per_file=steps_per_file,
+        labels=labels,
+        rank=tuple(rank.items()),
+        base_id=base.node_id,
+        value_specs=tuple(value_specs),
+        mask_specs=tuple(mask_specs),
+        wrapped=wrapped,
+        behavior=behavior,
+        manifest=manifest,
+        externals=shipped_evaluators(session, compiled),
+    )
+
+
+def _superset(session: Session, level0: Any, labels: Sequence[str]) -> Any:
+    """Return the superset rows: the level-0 OR over the per-label masks (graph ops, §6.4a)."""
+    return functools.reduce(
+        operator.or_,
+        (
+            fill_none(m, True)
+            if _is_option(session, m)
+            else m  # a None row stays, as a None record
+            for m in (member_of(level0, label) for label in labels)
+        ),
+    )
+
+
+def _value_specs(
+    session: Session, record: Any, labels: Sequence[str], varied: Sequence[str], superset: Any
+) -> tuple[list[_ValueSpec], list[Any]]:
+    """Return a `_ValueSpec` per varied leaf, and the per-label leaves the write evaluates."""
     nodes = session._nodes()
     value_specs: list[_ValueSpec] = []
-    outputs: list[Any] = [base]
+    outputs: list[Any] = []
     for path in varied:
         parts = path.split(".")
         leaves: dict[str, Any] = {}
@@ -626,13 +679,20 @@ def _write_varied(
                 frozenset(verbatim),
             )
         )
+    return value_specs, outputs
 
+
+def _mask_specs(
+    session: Session, entries: Mapping[_SelectKey, Any], labels: Sequence[str], superset: Any
+) -> tuple[list[_MaskSpec], list[Any]]:
+    """Return a `_MaskSpec` per supplied level in §6.4e order, and the per-label masks."""
     mask_specs: list[_MaskSpec] = []
+    outputs: list[Any] = []
     for key in sorted(entries, key=_level_sort_key):
         mask = entries[key]
         field_path = None if isinstance(key, int) else key[0]
-        members = []
-        option = set()
+        members: list[tuple[str, int]] = []
+        option: set[str] = set()
         for label in labels:
             member = member_of(mask, label)
             if _is_option(session, member):
@@ -650,12 +710,12 @@ def _write_varied(
                 frozenset(option),
             )
         )
+    return mask_specs, outputs
 
-    compiled = compile_ir(session, *outputs)
-    refuse_chunk_partials(compiled, as_outputs=True)
-    _refuse_optimizer_merge(session, outputs, compiled)
 
-    nominal_form = _tt(session, nominal_record).layout.form
+def _record_types(session: Session, record: Any, labels: Sequence[str]) -> dict[str, Any]:
+    """Return each label's record form the reader cannot rebuild from the stored columns."""
+    nominal_form = _tt(session, member_of(record, "nominal")).layout.form
     record_types = {
         label: form.to_dict()
         for label in labels
@@ -666,42 +726,27 @@ def _write_varied(
     # its stored fields drop the record's own
     if nominal_form.is_record and nominal_form.parameters:
         record_types["nominal"] = nominal_form.to_dict()
-    manifest = _build_manifest(labels, value_specs, mask_specs, record_types)
-    rank = {node_id: i for i, node_id in enumerate(dict.fromkeys(out.node_id for out in outputs))}
-    wrapped = _tt(session, nominal_record).ndim > 1
+    return record_types
 
-    ((source_id, data),) = gw.sources_read(outputs).items()
-    steps_per_file = gw.steps_for(data, steps_per_file)
-    source_name = session.source_name(source_id)
-    source_form = session.form_of(source_id)
-    assert isinstance(source_form, AwkwardForm)
-    columns = gw.declared_columns(data, outputs)
-    if columns is None:
-        # `()` is this computation's OWN "read everything"; `read_partition` spells that `None`.
-        columns = _evaluation_columns_union(outputs, source_id, source_name, source_form) or None
 
-    common: dict[str, Any] = {
-        "compiled": compiled,
-        "source_name": source_name,
-        "columns": columns,
-        "destination": destination,
-        "prefix": prefix,
-        "steps_per_file": steps_per_file,
-        "labels": labels,
-        "rank": tuple(rank.items()),
-        "base_id": base.node_id,
-        "value_specs": tuple(value_specs),
-        "mask_specs": tuple(mask_specs),
-        "wrapped": wrapped,
-        "behavior": behavior,
-        "manifest": manifest,
-        "externals": shipped_evaluators(session, compiled),
-    }
+def _write(
+    task: type[_WritePart] | type[_VariedWritePart],
+    session: Session,
+    data: Any,
+    compute: bool,
+    executor: Any | None,
+    **fields: Any,
+) -> list[str] | Plan[list[str]]:
+    """Return the write plan of ``task`` over ``data``'s partitions, or run it when ``compute``.
+
+    ANY source describing its own partitioning (parquet datasets, the ROOT reader integration, ...)
+    is written partition by partition — its whole-dataset loader is never invoked; in-memory data
+    is split into ``steps_per_file`` eager steps.
+    """
+    source_name, steps_per_file = fields["source_name"], fields["steps_per_file"]
     if isinstance(data, PartitionedSource):
         partitions = data.partitions(steps_per_file)
-        writer = _VariedWritePart(
-            **_file_tables(partitions, steps_per_file), reader=data, **common
-        )
+        writer = task(**_file_tables(partitions, steps_per_file), reader=data, **fields)
     else:
         whole = ak.Array(data() if callable(data) else data)
         n = len(whole)
@@ -709,9 +754,9 @@ def _write_varied(
             Partition(f"memory://{source_name}", "", start, stop)
             for start, stop in gw.eager_ranges(n, steps_per_file)
         )
-        writer = _VariedWritePart(bases=(), memory_data=whole, memory_rows=n, **common)
+        writer = task(bases=(), memory_data=whole, memory_rows=n, **fields)
 
-    plan = gw.write_plan(partitions, writer, plan_services(session, compiled))
+    plan = gw.write_plan(partitions, writer, plan_services(session, fields["compiled"]))
     if not compute:
         return plan
     runner = executor if executor is not None else SequentialRunner()
@@ -813,50 +858,19 @@ def to_parquet(
         columns = _evaluation_columns(array, node_id, source_name, source_form) or None
     compiled = compile_ir(session, array)
     refuse_chunk_partials(compiled, as_outputs=True)
-    externals = shipped_evaluators(session, compiled)
-
-    if isinstance(data, PartitionedSource):
-        # the generic path: ANY source describing its own partitioning (parquet datasets, the
-        # ROOT reader integration, ...) is written partition by partition — its whole-dataset
-        # loader is never invoked
-        partitions = data.partitions(steps_per_file)
-        writer = _WritePart(
-            compiled=compiled,
-            source_name=source_name,
-            columns=columns,
-            destination=destination,
-            prefix=prefix,
-            steps_per_file=steps_per_file,
-            **_file_tables(partitions, steps_per_file),
-            column=column,
-            reader=data,
-            behavior=behavior,
-            externals=externals,
-        )
-    else:
-        whole = ak.Array(data() if callable(data) else data)
-        n = len(whole)
-        partitions = tuple(
-            Partition(f"memory://{source_name}", "", start, stop)
-            for start, stop in gw.eager_ranges(n, steps_per_file)
-        )
-        writer = _WritePart(
-            compiled=compiled,
-            source_name=source_name,
-            columns=columns,
-            destination=destination,
-            prefix=prefix,
-            steps_per_file=steps_per_file,
-            bases=(),
-            column=column,
-            behavior=behavior,
-            memory_data=whole,
-            memory_rows=n,
-            externals=externals,
-        )
-
-    plan = gw.write_plan(partitions, writer, plan_services(session, compiled))
-    if not compute:
-        return plan
-    runner = executor if executor is not None else SequentialRunner()
-    return list(runner.run(plan).value)
+    return _write(
+        _WritePart,
+        session,
+        data,
+        compute,
+        executor,
+        compiled=compiled,
+        source_name=source_name,
+        columns=columns,
+        destination=destination,
+        prefix=prefix,
+        steps_per_file=steps_per_file,
+        column=column,
+        behavior=behavior,
+        externals=shipped_evaluators(session, compiled),
+    )
