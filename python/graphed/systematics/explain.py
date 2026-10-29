@@ -266,32 +266,8 @@ def explain(ctx: EventContext) -> Explanation:
     kinds: dict[str, Kind] = {}
     for registration in registrations:
         kinds.setdefault(registration.name, registration.kind)
-    # §2.1: two families on ONE operation are two values of one weight; the riders are where that
-    # is recorded, and it is why their joint is absent — not a product, so not "composes with".
-    # Read off the LIVE operations, never the listing, which shows an adopted head's product run as
-    # the one operation its node is: a run is a product, and its families share nothing.
-    shared: dict[str, tuple[str, ...]] = {}
-    riders = live_riders(ctx)
-    for slot in live_factors(ctx)[1]:
-        on_slot = riders[slot].families
-        for name in on_slot:
-            shared[name] = tuple(other for other in on_slot if other != name)
-    # §2.5's registry, by (weight family, collection): the shift that moved the objects a weight
-    # family had already read, which is neither fanning out nor independence
-    flagged: dict[str, tuple[str, ...]] = {}
-    for family_name, collection in context_session(ctx).systematics.shift_after_weight:
-        flagged[family_name] = tuple(
-            dict.fromkeys(
-                (
-                    *flagged.get(family_name, ()),
-                    *(
-                        shift.name
-                        for shift in registrations
-                        if shift.kind == Kind.SHIFT and collection in shift.varies
-                    ),
-                )
-            )
-        )
+    shared = _shared(ctx)
+    flagged = _flagged(ctx, registrations)
     relations = {
         registration.name: _relations(
             registration, kinds, minted, registered, shared, flagged, sharing
@@ -314,7 +290,50 @@ def explain(ctx: EventContext) -> Explanation:
         )
         for registration in registrations
     }
-    operations = tuple(
+    return Explanation(families, _operations(ctx), variations)
+
+
+def _shared(ctx: EventContext) -> dict[str, tuple[str, ...]]:
+    """Return each weight family's partners on the live operation it shares (§2.1's join)."""
+    # §2.1: two families on ONE operation are two values of one weight; the riders are where that
+    # is recorded, and it is why their joint is absent — not a product, so not "composes with".
+    # Read off the LIVE operations, never the listing, which shows an adopted head's product run as
+    # the one operation its node is: a run is a product, and its families share nothing.
+    shared: dict[str, tuple[str, ...]] = {}
+    riders = live_riders(ctx)
+    for slot in live_factors(ctx)[1]:
+        on_slot = riders[slot].families
+        for name in on_slot:
+            shared[name] = tuple(other for other in on_slot if other != name)
+    return shared
+
+
+def _flagged(
+    ctx: EventContext, registrations: Sequence[Registration]
+) -> dict[str, tuple[str, ...]]:
+    """Return the shift families registered after each weight family read their objects (§2.5)."""
+    # §2.5's registry, by (weight family, collection): the shift that moved the objects a weight
+    # family had already read, which is neither fanning out nor independence
+    flagged: dict[str, tuple[str, ...]] = {}
+    for family_name, collection in context_session(ctx).systematics.shift_after_weight:
+        flagged[family_name] = tuple(
+            dict.fromkeys(
+                (
+                    *flagged.get(family_name, ()),
+                    *(
+                        shift.name
+                        for shift in registrations
+                        if shift.kind == Kind.SHIFT and collection in shift.varies
+                    ),
+                )
+            )
+        )
+    return flagged
+
+
+def _operations(ctx: EventContext) -> tuple[Operation, ...]:
+    """§2.7(b): the live ambient operations, in composition order, from their riders."""
+    return tuple(
         Operation(
             position,
             slot,
@@ -327,7 +346,6 @@ def explain(ctx: EventContext) -> Explanation:
         )
         for position, (slot, rider, entry) in enumerate(ambient_entries(ctx))
     )
-    return Explanation(families, operations, variations)
 
 
 def _origin_of(

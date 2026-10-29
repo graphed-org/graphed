@@ -51,8 +51,8 @@ class SystematicsState:
         # `ambient.two_level`'s memo, by container id. Keys and never members, so it pins
         # nothing; a page is stored only where no later mint can move it, and a rollback drops all
         self._universes: dict[int, Page] = {}
-        #: `ambient._mul_form`'s memo, (left, right) form descriptions -> product form. Per Session
-        #: because the answer depends on this backend instance.
+        #: `ambient.compose._mul_form`'s memo, (left, right) form descriptions -> product form. Per
+        #: Session because the answer depends on this backend instance.
         self.mul_forms: dict[tuple[str, str], Any] = {}
 
     # ---- read views ----------------------------------------------------------------------------
