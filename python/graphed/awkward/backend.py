@@ -25,7 +25,7 @@ from graphed.session import reader
 from graphed.shuffle import join_blocks
 
 from . import join, payloads, shuffle
-from ._ops import apply
+from ._ops import apply, carrying
 from .array import AwkwardArray
 
 
@@ -93,18 +93,31 @@ def _behavior_by_value(blob: bytes) -> _BehaviorByValue:
     return _BehaviorByValue(cloudpickle.loads(blob), blob)
 
 
+#: each behavior this process shipped, beside the snapshot of it that was pickled
+_SHIPPED: list[tuple[dict[Any, Any], _BehaviorByValue]] = []
+
+
 def shipped_behavior(behavior: Mapping[Any, Any]) -> _BehaviorByValue:
-    """Return ``behavior`` as a plan ships it to workers: by value, lambdas included."""
+    """Return ``behavior`` as a plan ships it to workers: by value, lambdas included.
+
+    Each distinct behavior is pickled once per process, however many plans ship it.
+    """
+    for seen, shipped in _SHIPPED:
+        if seen == behavior:
+            return shipped
     import cloudpickle  # noqa: PLC0415  (only a behavior shipped by value needs it)
 
+    snapshot = dict(behavior)
     try:
-        blob = cloudpickle.dumps(dict(behavior))
+        blob = cloudpickle.dumps(snapshot)
     except Exception as err:
         raise TypeError(
             f"the session backend's behavior does not pickle to workers ({err}); pass the plan "
             "an importable backend factory, backend='module:factory'"
         ) from err
-    return _behavior_by_value(blob)
+    shipped = _behavior_by_value(blob)
+    _SHIPPED.append((snapshot, shipped))
+    return shipped
 
 
 def _adopt(value: Any, behavior: Mapping[Any, Any] | None) -> Any:
@@ -488,9 +501,7 @@ class AwkwardBackend:
         return _AsRead(chunk)
 
     def _with_behavior(self, tt: ak.Array) -> ak.Array:
-        return (
-            ak.Array(tt.layout, behavior=self._behavior, attrs=tt.attrs) if self._behavior else tt
-        )
+        return carrying(tt, self._behavior) if self._behavior else tt
 
     def _eval_join(self, inputs: Sequence[object], params: Mapping[str, object]) -> object:
         left, right = inputs[0], inputs[1]
