@@ -59,7 +59,7 @@ class ReplayDiff:
 
 
 def _decode(store: Any, blob: str) -> Any:
-    from graphed.checkpoint import PickleCodec  # noqa: PLC0415  (workers import graphed.debug)
+    from graphed.checkpoint import PickleCodec
 
     data = store.get(blob)
     if data is None:
@@ -77,7 +77,7 @@ def _equal(a: Any, b: Any) -> bool:
         return isinstance(b, dict) and a.keys() == b.keys() and all(_equal(a[k], b[k]) for k in a)
     if isinstance(a, (tuple, list)):
         return isinstance(b, (tuple, list)) and len(a) == len(b) and all(map(_equal, a, b))
-    import numpy  # noqa: PLC0415  (graphed.debug loads no numpy)
+    import numpy
 
     return bool(numpy.array_equal(a, b))
 
@@ -139,7 +139,7 @@ class Replay:
         would.
         """
         # workers import graphed.debug
-        from graphed.preserve.interpreter import iter_ir  # noqa: PLC0415
+        from graphed.preserve.interpreter import iter_ir
 
         chunk = self._chunk
         source_name = self._process.source_name

@@ -28,6 +28,7 @@ from .by_label import impact_by_label, read_columns_by_label
 from .context import Explanation, explain
 from .errors import GraphedError, GraphedTypeError, OutputTypeError, PointError
 from .execute import CompiledGraph, compile_ir, evaluate_ir, refuse_chunk_partials
+from .materialization import materialize
 from .projection import (
     CONSERVATIVE,
     BufferNeed,
@@ -42,7 +43,6 @@ from .provenance import Provenance, capture, is_enabled, set_enabled
 from .session import (
     Session,
     current_session,
-    materialize,
     new_session,
     set_default_backend,
     set_session,

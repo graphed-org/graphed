@@ -37,6 +37,8 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Any
 
+import cloudpickle
+
 from ...services import UnboundServiceError
 from ...varied import containers_in, expand
 from ..errors import PreserveError
@@ -192,8 +194,6 @@ def validate_plugin(plugin: ExternalPlugin) -> None:
 
 
 def _hash_in_subprocess(content_hash: ContentHash, sample: bytes, *, seed: str) -> str:
-    import cloudpickle  # noqa: PLC0415
-
     # serialize the hash fn BY VALUE (embed its code) so the subprocess needs no access to the
     # user's module — exactly the source-free condition the bundle must reproduce under on machine
     # B.
@@ -203,7 +203,7 @@ def _hash_in_subprocess(content_hash: ContentHash, sample: bytes, *, seed: str) 
         try:
             cloudpickle.register_pickle_by_value(module)
             registered = True
-        except Exception:
+        except Exception:  # by value is best-effort; by reference still reaches the subprocess
             registered = False
     try:
         blob = cloudpickle.dumps((content_hash, sample))

@@ -34,7 +34,7 @@ from graphed.aggregate import shipped_evaluators
 from graphed.core import Partition
 from graphed.core.execution import Plan, SequentialRunner, WorkerResources
 from graphed.errors import GraphedError
-from graphed.session import _reader
+from graphed.session import reader
 from graphed.varied import Varied
 
 from . import NumpyBackend, project
@@ -131,7 +131,7 @@ def from_parquet(
     open_files: bool = False,
     session: Session | None = None,
 ) -> Any: ...
-@_reader(NumpyBackend)
+@reader(NumpyBackend)
 def from_parquet(
     name: str,
     path: str | Sequence[str],

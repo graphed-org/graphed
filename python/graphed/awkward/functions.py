@@ -9,19 +9,28 @@ from __future__ import annotations
 import functools
 import json
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, cast
 
+import awkward as ak
 import numpy as np
 import numpy.typing as npt
 
+import graphed
 from graphed import Array, ParamValue
-from graphed.array import _scalar_params
-from graphed.errors import GraphedTypeError
+from graphed.array import scalar_params
+from graphed.errors import GraphedError, GraphedTypeError
 from graphed.provenance import capture
+from graphed.shuffle import JOINKEY
 from graphed.varied import boundary_refusal, containers_in, expand, expand_tuple, narrow
 
 from . import payloads
+from ._dispositions import GAK_ARG_FIXTURES as GAK_ARG_FIXTURES
+from ._dispositions import GAK_DISPOSITIONS as GAK_DISPOSITIONS
+from ._dispositions import GakArgFixture as GakArgFixture
+from ._dispositions import GakSlot as GakSlot
+from ._params import _cartesian_params, _comb_params, _reduce, _reduce2, _structure_params
+from ._templates import _ml_matrix, _parse_template, _payload_bytes
 from .backend import AwkwardForm, astype_form, broadcast_form
 
 
@@ -36,12 +45,6 @@ def join(
     back to the relational result. The grouped shape lives ONLY here (numpy has no ``gak``), so the
     neutral ``graphed.join`` rejects ``grouped`` outright.
     """
-    # local imports: the neutral shuffle/join surface, kept off module-load to avoid an import
-    # cycle.
-    import graphed  # noqa: PLC0415
-    from graphed.errors import GraphedError  # noqa: PLC0415
-    from graphed.shuffle import JOINKEY  # noqa: PLC0415
-
     if not grouped:
         return graphed.join(left, right, on=on, how=how)
     if left.session is not right.session:
@@ -61,25 +64,6 @@ def join(
     )
 
 
-def _comb_params(
-    n: int,
-    replacement: bool,
-    axis: int,
-    fields: Sequence[str] | None,
-    with_name: str | None,
-    parameters: Mapping[str, ParamValue] | None,
-) -> dict[str, ParamValue]:
-    params: dict[str, ParamValue] = {"n": n}
-    if fields:
-        params["fields"] = ",".join(fields)
-    if replacement:
-        params["replacement"] = True
-    if axis != 1:
-        params["axis"] = axis
-    params.update(_structure_params(with_name=with_name, parameters=parameters))
-    return params
-
-
 def combinations(
     arr: Array,
     n: int,
@@ -96,30 +80,6 @@ def combinations(
     )
 
 
-def _cartesian_params(
-    arrays: Sequence[Array] | Mapping[str, Array],
-    axis: int,
-    nested: bool | Sequence[int] | Sequence[str] | None,
-    with_name: str | None,
-    parameters: Mapping[str, ParamValue] | None,
-) -> dict[str, ParamValue]:
-    params: dict[str, ParamValue] = {}
-    keys = list(arrays) if isinstance(arrays, Mapping) else []
-    if keys:
-        params["fields"] = ",".join(keys)
-    if isinstance(nested, bool):
-        params["nested"] = nested
-    elif nested is not None:
-        # a dict's slots nest by key, as ak.cartesian's do; the record keeps their positions
-        params["nested_axes"] = ",".join(
-            str(keys.index(str(i)) if keys else int(i)) for i in nested
-        )
-    if axis != 1:
-        params["axis"] = axis
-    params.update(_structure_params(with_name=with_name, parameters=parameters))
-    return params
-
-
 def cartesian(
     arrays: Sequence[Array] | Mapping[str, Array],
     *,
@@ -133,21 +93,6 @@ def cartesian(
     return inputs[0].session.record_op(
         "ak.cartesian", inputs, _cartesian_params(arrays, axis, nested, with_name, parameters)
     )
-
-
-def _structure_params(
-    *, with_name: str | None, parameters: Mapping[str, ParamValue] | None
-) -> dict[str, ParamValue]:
-    """Return the shared inline record-naming/parameter kwargs.
-
-    Present-only; JSON for the dict.
-    """
-    out: dict[str, ParamValue] = {}
-    if with_name is not None:
-        out["with_name"] = with_name
-    if parameters:
-        out["parameters"] = json.dumps(dict(parameters), sort_keys=True)
-    return out
 
 
 def zip(
@@ -180,7 +125,7 @@ def with_field(arr: Array, value: object, where: str) -> Array:
         return arr.session.record_op("ak.with_field", [arr, value], {"field": where})
     try:
         # a scalar, which ak broadcasts, travels as a param in its own dtype (M59)
-        params = _scalar_params(value)
+        params = scalar_params(value)
     except (TypeError, ValueError) as err:
         raise GraphedTypeError(
             "with_field",
@@ -202,40 +147,6 @@ def count(
 ) -> Array:
     """Record ``ak.count`` along ``axis``."""
     return _reduce("ak.count", arr, axis, keepdims=keepdims, mask_identity=mask_identity or None)
-
-
-def _reduce(
-    name: str,
-    arr: Array,
-    axis: int | None,
-    extra: Mapping[str, int] | None = None,
-    *,
-    keepdims: bool = False,
-    mask_identity: bool | None = None,
-    initial: float | None = None,
-    weight: Array | None = None,
-) -> Array:
-    """Record one awkward reduction under the M12/M16 STRUCTURAL RULE.
-
-    Reducing over the event (partitioned) axis — axis None or 0 — is a stage boundary executed by
-    the M7 tree reduction; an inner-axis (per-event) reduction is partition-local and fusible. The
-    ak parity kwargs are recorded PRESENT-ONLY (awkward's own defaults apply when absent); a weight
-    is a second INPUT, not a parameter.
-    """
-    params: dict[str, object] = {"axis": "none" if axis is None else axis}
-    if extra:
-        params.update(extra)
-    if keepdims:
-        params["keepdims"] = True
-    if mask_identity is not None:
-        params["mask_identity"] = mask_identity
-    if initial is not None:
-        params.update(_scalar_params(initial, "initial", "initial_dtype"))
-    inputs = [arr] if weight is None else [arr, weight]
-    if weight is not None:
-        params["weighted"] = True
-    boundary = axis is None or axis == 0
-    return arr.session.record_op(name, inputs, params, reduction=boundary)  # type: ignore[arg-type]
 
 
 def sum(
@@ -409,13 +320,6 @@ def softmax(arr: Array, axis: int = 1) -> Array:
     return arr.session.record_op("ak.softmax", [arr], {"axis": axis})
 
 
-def _reduce2(name: str, x: Array, y: Array, axis: int | None) -> Array:
-    boundary = axis is None or axis == 0
-    return x.session.record_op(
-        name, [x, y], {"axis": "none" if axis is None else axis}, reduction=boundary
-    )
-
-
 def corr(x: Array, y: Array, axis: int | None = None) -> Array:
     """Record ``ak.corr`` of ``x`` and ``y`` along ``axis``."""
     return _reduce2("ak.corr", x, y, axis)
@@ -487,7 +391,7 @@ def flatten(arr: Array, axis: int | None = 1) -> Array:
 
 def fill_none(arr: Array, value: object, axis: int = -1) -> Array:
     """Record ``ak.fill_none``, replacing missing values with ``value``."""
-    params = {**_scalar_params(value, "value", "value_dtype"), "axis": axis}
+    params = {**scalar_params(value, "value", "value_dtype"), "axis": axis}
     return arr.session.record_op("ak.fill_none", [arr], params)
 
 
@@ -505,7 +409,7 @@ def where(cond: Array, a: object, b: object) -> Array:
         if isinstance(operand, Array):
             inputs.append(operand)
         else:
-            params.update(_scalar_params(operand, f"const{i}", f"const{i}_dtype"))
+            params.update(scalar_params(operand, f"const{i}", f"const{i}_dtype"))
     return cond.session.record_op("ak.where", inputs, params)
 
 
@@ -534,52 +438,6 @@ def ones_like(arr: Array, *, dtype: npt.DTypeLike = None) -> Array:
 # filesystem paths. The template-less calls below remain the M3 path, byte-for-byte.
 
 
-def _payload_bytes(payload: str | bytes) -> bytes:
-    if isinstance(payload, bytes):
-        return payload
-    from pathlib import Path  # noqa: PLC0415
-
-    return Path(payload).read_bytes()
-
-
-_TemplateEntry = tuple[str, Any]  # ("slot", i) | ("group", [i, ...]) | ("const", value)
-
-
-def _parse_template(
-    spec: object, n_inputs: int, *, constants: bool, groups: bool
-) -> list[_TemplateEntry]:
-    if not isinstance(spec, list):
-        raise TypeError("a call template's args must be a list (use kwargs= for keywords)")
-    entries: list[_TemplateEntry] = []
-    for entry in spec:
-        if isinstance(entry, str) and entry.startswith("$"):
-            i = int(entry[1:])
-            if not 0 <= i < n_inputs:
-                raise ValueError(f"call template slot {entry} out of range ({n_inputs} inputs)")
-            entries.append(("slot", i))
-        elif isinstance(entry, list):
-            if not groups:
-                raise TypeError("this callee takes scalar/array arguments, not stacked groups")
-            entries.append(("group", [int(e[1:]) for e in entry]))
-        elif constants and isinstance(entry, (str, int, float, bool)):
-            entries.append(("const", entry))
-        else:
-            raise TypeError(
-                f"call template entry {entry!r} is not a slot, group, or allowed constant"
-            )
-    return entries
-
-
-def _ml_matrix(entry: _TemplateEntry, vals: Sequence[object]) -> object:
-    import awkward as _ak  # noqa: PLC0415
-    import numpy as _np  # noqa: PLC0415
-
-    kind, value = entry
-    idxs = [value] if kind == "slot" else list(value)
-    cols = [_np.asarray(_ak.to_numpy(_ak.Array(vals[i])), dtype="float32") for i in idxs]
-    return _np.stack(cols, axis=1)
-
-
 @dataclass
 class _TemplateExternal:
     """The template path's recorded evaluator — PICKLABLE, unlike the closure it replaced.
@@ -605,8 +463,8 @@ class _TemplateExternal:
 
     def __call__(self, *values: object) -> object:
         if self.call is None:
-            from ..preserve.externals import get_plugin  # noqa: PLC0415  (import cycle)
-            from ..preserve.externals._base import _PluginEvaluator  # noqa: PLC0415
+            from ..preserve.externals import get_plugin
+            from ..preserve.externals._base import _PluginEvaluator
 
             plugin = get_plugin(self.kind)
             if plugin is None:
@@ -808,7 +666,7 @@ def from_regular(arr: Array, axis: int = 1) -> Array:
 
 def full_like(arr: Array, value: float, *, dtype: npt.DTypeLike = None) -> Array:
     """Record ``ak.full_like`` filled with ``value``, optionally as ``dtype``."""
-    params = _scalar_params(value, "value", "value_dtype")
+    params = scalar_params(value, "value", "value_dtype")
     if dtype is not None:
         params["dtype"] = _dtype_name(dtype)
     return arr.session.record_op("ak.full_like", [arr], params)
@@ -903,9 +761,7 @@ def unzip(arr: Array) -> tuple[Array, ...]:
 
 def to_list(arr: Array) -> list[object]:
     """EAGER sugar: materializes through the session, then ak.to_list (records nothing new)."""
-    import awkward as _ak  # noqa: PLC0415  (avoid importing awkward at gak import for tooling)
-
-    out: list[object] = _ak.to_list(arr.session.materialize(arr))
+    out: list[object] = ak.to_list(arr.session.materialize(arr))
     return out
 
 
@@ -955,147 +811,7 @@ def sample(arr: Array, *, factor: int) -> object:
     return arr.session.materialize(arr[::factor])
 
 
-# ---- §2.3c: the gak dispatch layer and its per-function classification ----------------------
-# An UNDISPOSED function does not fail loudly — `Varied`'s label-mapping `getattr` turns an
-# unhandled duck-typed read into a recorded op and silently compiles nonsense — so the table below
-# is exhaustive over this module's public surface and a frozen gate enumerates it dynamically. A
-# new gak function is fixed HERE, never by editing that test.
-#
-#   *broadcast*             elementwise/structural, one recorded call per universe
-#   *container-traversing*  the arrays live INSIDE a Mapping/Sequence argument
-#   *tuple-returning*       the wrapper rebuilds its result, so it emits one Varied per position
-#   *eager-metadata*        answers on the nominal member (sound by §2.1's form compatibility)
-#   *refusing*              §5.4 boundary verbs
-_GAK_EAGER_METADATA = ("backend_of", "fields", "head", "sample", "to_list", "type_of")
-_GAK_REFUSING = ("join",)
-_GAK_TUPLE_RETURNING = ("broadcast_arrays", "unzip")
-_GAK_CONTAINER_TRAVERSING = (
-    "apply_correction", "argcartesian", "cartesian", "concatenate", "onnx_inference", "zip",
-)  # fmt: skip
-_GAK_BROADCAST = (
-    "all", "any", "argcombinations", "argmax", "argmin", "argsort", "combinations", "corr",
-    "count", "count_nonzero", "covar", "drop_none", "fill_none", "firsts", "flatten",
-    "from_regular", "full_like", "is_none", "isclose", "linear_fit", "local_index", "mask", "max",
-    "mean", "min", "moment", "nan_to_num", "num", "ones_like", "pad_none", "prod", "ptp", "ravel",
-    "run_lengths", "singletons", "softmax", "sort", "std", "sum", "to_regular", "unflatten",
-    "values_astype", "var", "where", "with_field", "with_name", "with_parameter", "without_field",
-    "without_parameters", "zeros_like",
-)  # fmt: skip
-
-GAK_DISPOSITIONS: dict[str, str] = {
-    **dict.fromkeys(_GAK_BROADCAST, "broadcast"),
-    **dict.fromkeys(_GAK_CONTAINER_TRAVERSING, "container-traversing"),
-    **dict.fromkeys(_GAK_TUPLE_RETURNING, "tuple-returning"),
-    **dict.fromkeys(_GAK_EAGER_METADATA, "eager-metadata"),
-    **dict.fromkeys(_GAK_REFUSING, "refusing"),
-}
-
-
-@dataclass(frozen=True)
-class GakSlot:
-    """A substitution SLOT in an argument fixture, naming the operand KIND it needs.
-
-    graphed type-checks the primary operand at RECORD time through the backend's `op_form`, so one
-    array cannot serve every function; §2.3e's propagation gate owns one contexted array per kind
-    and substitutes the one a slot names. The vocabulary is frozen at m48: flat numeric, jagged
-    numeric, record, boolean mask, option type.
-    """
-
-    kind: str
-
-
-@dataclass(frozen=True)
-class GakArgFixture:
-    """The AUXILIARY arguments §2.3e's propagation gate needs to call one function.
-
-    It lives here beside the classification, not in the frozen test, so a new gak function arrives
-    with both and the test stays untouched. The CONTEXTED operand is the test's, substituted into
-    the slots below — a fixture-supplied context-free primary would degrade the check to
-    `None == None`.
-    """
-
-    args: tuple[Any, ...] = ()
-    kwargs: Mapping[str, Any] = field(default_factory=dict)
-
-
-def _echo(*values: object, **_kwargs: object) -> object:
-    """Return a stand-in payload evaluator for the two External-recording fixtures below."""
-    return values[0]
-
-
-_FLAT = GakSlot("flat")
-_JAGGED = GakSlot("jagged")
-_RECORD = GakSlot("record")
-_MASK = GakSlot("mask")
-_OPTION = GakSlot("option")
-_INNER = {"axis": 1}
-
-GAK_ARG_FIXTURES: dict[str, GakArgFixture] = {
-    "all": GakArgFixture((_MASK,), _INNER),
-    "any": GakArgFixture((_MASK,), _INNER),
-    "apply_correction": GakArgFixture(
-        (b'{"schema_version":2,"corrections":[]}', "sf", [_FLAT], _echo), {"args": ["$0"]}
-    ),
-    "argcartesian": GakArgFixture(([_JAGGED, _JAGGED],)),
-    "argcombinations": GakArgFixture((_JAGGED, 2)),
-    "argmax": GakArgFixture((_JAGGED,), _INNER),
-    "argmin": GakArgFixture((_JAGGED,), _INNER),
-    "argsort": GakArgFixture((_JAGGED,)),
-    "broadcast_arrays": GakArgFixture((_FLAT, _JAGGED)),
-    "cartesian": GakArgFixture(([_JAGGED, _JAGGED],)),
-    "combinations": GakArgFixture((_JAGGED, 2)),
-    "concatenate": GakArgFixture(([_FLAT, _FLAT],)),
-    "corr": GakArgFixture((_JAGGED, _JAGGED), _INNER),
-    "count": GakArgFixture((_JAGGED,), _INNER),
-    "count_nonzero": GakArgFixture((_JAGGED,), _INNER),
-    "covar": GakArgFixture((_JAGGED, _JAGGED), _INNER),
-    "drop_none": GakArgFixture((_OPTION,)),
-    "fill_none": GakArgFixture((_OPTION, 0.0)),
-    "firsts": GakArgFixture((_JAGGED,)),
-    "flatten": GakArgFixture((_JAGGED,)),
-    "from_regular": GakArgFixture((_JAGGED,)),
-    "full_like": GakArgFixture((_JAGGED, 1.0)),
-    "is_none": GakArgFixture((_OPTION,)),
-    "isclose": GakArgFixture((_JAGGED, _JAGGED)),
-    "linear_fit": GakArgFixture((_JAGGED, _JAGGED), _INNER),
-    "local_index": GakArgFixture((_JAGGED,)),
-    "mask": GakArgFixture((_JAGGED, _MASK)),
-    "max": GakArgFixture((_JAGGED,), _INNER),
-    "mean": GakArgFixture((_JAGGED,), _INNER),
-    "min": GakArgFixture((_JAGGED,), _INNER),
-    "moment": GakArgFixture((_JAGGED, 2), _INNER),
-    "nan_to_num": GakArgFixture((_JAGGED,)),
-    "num": GakArgFixture((_JAGGED,)),
-    "ones_like": GakArgFixture((_JAGGED,)),
-    # b"" is a valid (empty) ModelProto: the weights-identity path needs a PARSEABLE model, not a
-    # real one, and the path-based form would need a file on disk.
-    "onnx_inference": GakArgFixture((b"", [_FLAT], _echo), {"args": [["$0"]]}),
-    "pad_none": GakArgFixture((_JAGGED, 2)),
-    "prod": GakArgFixture((_JAGGED,), _INNER),
-    "ptp": GakArgFixture((_JAGGED,), _INNER),
-    "ravel": GakArgFixture((_JAGGED,)),
-    "run_lengths": GakArgFixture((_FLAT,)),
-    "singletons": GakArgFixture((_OPTION,)),
-    "softmax": GakArgFixture((_JAGGED,)),
-    "sort": GakArgFixture((_JAGGED,)),
-    "std": GakArgFixture((_JAGGED,), _INNER),
-    "sum": GakArgFixture((_JAGGED,), _INNER),
-    "to_regular": GakArgFixture((_JAGGED,)),
-    "unflatten": GakArgFixture((_JAGGED, 2), _INNER),
-    "unzip": GakArgFixture((_RECORD,)),
-    "values_astype": GakArgFixture((_JAGGED, "float32")),
-    "var": GakArgFixture((_JAGGED,), _INNER),
-    "where": GakArgFixture((_MASK, 1.0, 0.0)),
-    "with_field": GakArgFixture((_RECORD, _JAGGED, "extra")),
-    "with_name": GakArgFixture((_RECORD, "Thing")),
-    "with_parameter": GakArgFixture((_RECORD, "key", "value")),
-    "without_field": GakArgFixture((_RECORD, "pt")),
-    "without_parameters": GakArgFixture((_RECORD,)),
-    "zeros_like": GakArgFixture((_JAGGED,)),
-    "zip": GakArgFixture(({"pt": _JAGGED, "eta": _JAGGED},)),
-}
-
-
+# ---- §2.3c: the gak dispatch layer; `_dispositions` classifies each function ----------
 def _dispatched(fn: Callable[..., Any], kind: str) -> Callable[..., Any]:
     """Wrap one gak function with the dispatch its classification names (§2.3c).
 

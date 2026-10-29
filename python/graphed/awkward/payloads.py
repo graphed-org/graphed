@@ -57,7 +57,7 @@ def onnx_descriptor(model_path: str) -> PayloadDescriptor:
         ins = ",".join(i.name for i in model.graph.input)
         outs = ",".join(o.name for o in model.graph.output)
         io_schema = f"{ins}->{outs}"
-    except Exception:  # pragma: no cover - missing onnx still gets a hash
+    except Exception:  # pragma: no cover - no onnx, or a file it cannot parse, still gets a hash
         pass
     return PayloadDescriptor(
         kind="onnx_model",

@@ -14,7 +14,7 @@ import threading
 import types
 import warnings
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, TypeVar
 
 import graphed.core
@@ -553,12 +553,7 @@ class Session:
         prov = capture()
         self._mine(inputs, (op, prov))
         ids = [a.node_id for a in inputs]
-        try:
-            form = self._backend.op_form(op, self._forms_of(ids), params_d)
-        except GraphedTypeError:
-            raise
-        except Exception as exc:  # backend type/shape error -> user-located error
-            raise GraphedTypeError(op, prov, str(exc)) from exc
+        form = self._located_form(op, prov, ids, params_d)
         with self._lock:
             if reduction:
                 node_id = self._store.add_reduction(op, ids, params_d)
@@ -570,6 +565,17 @@ class Session:
     def _forms_of(self, ids: Sequence[int]) -> list[Form]:
         with self._lock:
             return [self._forms[nid] for nid in ids]
+
+    def _located_form(
+        self, op: str, prov: Provenance, ids: Sequence[int], params: Mapping[str, object]
+    ) -> Form:
+        """Return the backend's ``op_form``; its type or shape error becomes a user-located one."""
+        try:
+            return self._backend.op_form(op, self._forms_of(ids), params)
+        except GraphedTypeError:
+            raise
+        except Exception as exc:
+            raise GraphedTypeError(op, prov, str(exc)) from exc
 
     def _enter(
         self,
@@ -613,12 +619,7 @@ class Session:
         prov = capture()
         self._mine([left, right], ("join", prov))
         ids = [left.node_id, right.node_id]
-        try:
-            form = self._backend.op_form("join", self._forms_of(ids), params_d)
-        except GraphedTypeError:
-            raise
-        except Exception as exc:  # backend type/shape error -> user-located error (as record_op)
-            raise GraphedTypeError("join", prov, str(exc)) from exc
+        form = self._located_form("join", prov, ids, params_d)
         with self._lock:
             node_id = self._store.add_join(ids, params_d)
             self._enter(node_id, form, prov, op=("join", params_d, ids))
@@ -664,50 +665,23 @@ class Session:
             raise GraphedTypeError(op, prov, "descriptor= and form= must be given together")
         # user params may carry any key, so op_form sees `output_type` only as declared here
         form_view = {k: v for k, v in params_d.items() if k != "output_type"}
-        spec = output_type
-        if spec is not None:
-            if "output_type" in params_d:
-                raise GraphedTypeError(
-                    op, prov, "output_type= collides with an 'output_type' param"
-                )
-            if form is not None:
-                raise GraphedTypeError(op, prov, "output_type= and form= are exclusive")
-            canonical = getattr(self._backend, "canonical_output_type", None)
-            try:
-                if canonical is None:
-                    raise TypeError(f"{type(self._backend).__name__} cannot declare output_type")
-                params_d["output_type"] = form_view["output_type"] = str(canonical(spec))
-            except Exception as exc:  # an unrepresentable declaration -> user-located error
-                raise GraphedTypeError(op, prov, str(exc)) from exc
+        declared_type = None
+        if output_type is not None:
+            declared_type = self._canonical_output_type(op, prov, output_type, params_d, form)
+            params_d["output_type"] = form_view["output_type"] = declared_type
         if descriptor is None:
             descriptor = self._backend.external_payload(op, params_d)
             if descriptor is None:
                 raise GraphedTypeError(
                     op, prov, "backend returned no payload descriptor for external op"
                 )
+        ids = [a.node_id for a in inputs]
         if form is None:
-            in_forms = self._forms_of([a.node_id for a in inputs])
-            try:
-                form = self._backend.op_form(op, in_forms, {**form_view, **(form_params or {})})
-            except GraphedTypeError:
-                raise
-            # backend type/shape error -> user-located error (as record_op)
-            except Exception as exc:
-                raise GraphedTypeError(op, prov, str(exc)) from exc
+            form = self._located_form(op, prov, ids, {**form_view, **(form_params or {})})
         # the declaration op_form honoured (or, beside form=, a leaf dtype) is checked on every
         # value
         check = getattr(self._backend, "check_output_type", None)
-        canonical = getattr(self._backend, "canonical_output_type", None)
-        dtype = (form_params or {}).get("output_dtype")
-        declared: tuple[str, str] | None = None
-        if check is not None and spec is not None:
-            declared = ("output_type", str(params_d["output_type"]))
-        elif check is not None and canonical is not None and dtype is not None:
-            try:
-                declared = ("output_dtype", str(canonical(dtype)))
-            except Exception as exc:  # an unrepresentable leaf dtype -> user-located error
-                raise GraphedTypeError(op, prov, str(exc)) from exc
-        ids = [a.node_id for a in inputs]
+        declared = self._declaration(op, prov, declared_type, form_params)
         with self._lock:
             node_id = self._store.add_external(descriptor, ids, params_d)
             if declared is not None and check is not None:
@@ -727,6 +701,52 @@ class Session:
             self._externals.setdefault(node_id, (fn, ids))
             self._enter(node_id, form, prov)
         return self._wrap(node_id, inputs)
+
+    def _canonical_output_type(
+        self,
+        op: str,
+        prov: Provenance,
+        spec: object,
+        params: Mapping[str, ParamValue],
+        form: Form | None,
+    ) -> str:
+        """Return ``output_type=`` as the backend's canonical string, refusing a conflict."""
+        if "output_type" in params:
+            raise GraphedTypeError(op, prov, "output_type= collides with an 'output_type' param")
+        if form is not None:
+            raise GraphedTypeError(op, prov, "output_type= and form= are exclusive")
+        return self._canonical(op, prov, spec)
+
+    def _canonical(self, op: str, prov: Provenance, spec: object) -> str:
+        """Return the backend's canonical string for type ``spec``, or a user-located error."""
+        canonical = getattr(self._backend, "canonical_output_type", None)
+        try:
+            if canonical is None:
+                raise TypeError(f"{type(self._backend).__name__} cannot declare output_type")
+            return str(canonical(spec))
+        except Exception as exc:  # an unrepresentable declaration -> user-located error
+            raise GraphedTypeError(op, prov, str(exc)) from exc
+
+    def _declaration(
+        self,
+        op: str,
+        prov: Provenance,
+        declared_type: str | None,
+        form_params: Mapping[str, object] | None,
+    ) -> tuple[str, str] | None:
+        """Return the ``(key, type)`` a :class:`CheckedExternal` checks, else ``None``.
+
+        The declared ``output_type``, else a ``form_params`` leaf ``output_dtype``; none without
+        the backend's ``check_output_type``.
+        """
+        if getattr(self._backend, "check_output_type", None) is None:
+            return None
+        if declared_type is not None:
+            return ("output_type", declared_type)
+        dtype = (form_params or {}).get("output_dtype")
+        if getattr(self._backend, "canonical_output_type", None) is None or dtype is None:
+            return None
+        return ("output_dtype", self._canonical(op, prov, dtype))
 
     # ---- generic graph walk (shared by materialize + projection) ----------------
     def walk(
@@ -798,16 +818,26 @@ class Session:
 _scopes: contextvars.ContextVar[tuple[Session, ...]] = contextvars.ContextVar(
     "graphed_session_scopes", default=()
 )
-# module globals and not context variables: the default must be one object every thread and every
-# context sees, including those started before it existed
-_default: Session | None = None
-_default_factory: Callable[[], Backend] | None = None
-# guards the two writes; never held across `Session(...)` or a factory call, which may read back
-_default_lock = threading.Lock()
+
+
+@dataclass
+class _Defaults:
+    """The process-wide default Session and the backend factory of future defaults."""
+
+    session: Session | None = None
+    factory: Callable[[], Backend] | None = None
+    # guards the two writes; never held across `Session(...)` or a factory call, which may read
+    # back
+    lock: threading.Lock = field(default_factory=threading.Lock)
+
+
+# one object and not context variables: every thread and every context sees the default,
+# including those started before it existed
+_defaults = _Defaults()
 
 
 def _factory_backend() -> Backend | None:
-    factory = _default_factory
+    factory = _defaults.factory
     return None if factory is None else factory()
 
 
@@ -818,17 +848,16 @@ def current_session(backend: Backend | None = None) -> Session:
     :func:`set_default_backend`, else on ``graphed.awkward.AwkwardBackend()``. ``backend`` is
     used only then: the Session returned may record on another backend.
     """
-    global _default  # the process-wide default
     stack = _scopes.get()
     if stack:
         return stack[-1]
-    held = _default
+    held = _defaults.session
     if held is not None:
         return held
     made = backend if backend is not None else _factory_backend()
     if made is None:
         try:
-            from .awkward import AwkwardBackend  # noqa: PLC0415  (an optional extra)
+            from .awkward import AwkwardBackend
         except ImportError as exc:
             raise ImportError(
                 "graphed.current_session(): no backend for a new default Session; install "
@@ -836,10 +865,10 @@ def current_session(backend: Backend | None = None) -> Session:
             ) from exc
         made = AwkwardBackend()
     session = Session(made)
-    with _default_lock:
-        if _default is None:
-            _default = session
-        return _default
+    with _defaults.lock:
+        if _defaults.session is None:
+            _defaults.session = session
+        return _defaults.session
 
 
 def new_session(backend: Backend | None = None) -> None:
@@ -858,14 +887,13 @@ def set_session(default: Session | None, /) -> Session | None:
 
     The previous one is the restore token: ``prev = set_session(s); ...; set_session(prev)``.
     """
-    global _default  # the process-wide default
     if default is not None and not isinstance(default, Session):
         raise TypeError(
             f"set_session takes a graphed.Session or None, not {type(default).__name__} "
             "(an array's Session is array.session)"
         )
-    with _default_lock:
-        previous, _default = _default, default
+    with _defaults.lock:
+        previous, _defaults.session = _defaults.session, default
     return previous
 
 
@@ -876,28 +904,31 @@ def set_default_backend(factory: Callable[[], Backend] | None, /) -> Callable[[]
     a backend, never to a reader with its own backend, and not to a default that already exists:
     call :func:`new_session` to apply it now. ``None`` clears it.
     """
-    global _default_factory  # the process-wide factory
-    with _default_lock:
-        previous, _default_factory = _default_factory, factory
+    with _defaults.lock:
+        previous, _defaults.factory = _defaults.factory, factory
     return previous
 
 
 R = TypeVar("R")
 
 
-def _reader(kind: type[Backend] | None) -> Callable[[Callable[..., R]], Callable[..., R]]:
+def reader(kind: type[Backend] | None) -> Callable[[Callable[..., R]], Callable[..., R]]:
     """Resolve an array-less reader's ``session=``: the argument, else :func:`current_session`.
 
     A default made here records on ``kind()``, and a Session whose backend is not a ``kind`` is
     refused at the read (``None``: any). The legacy leading positional Session still works, with a
     ``DeprecationWarning``.
+
+    A backend package decorates each of its source readers with it, as ``@reader(MyBackend)``
+    over a function taking ``session: Session | None = None``; the function always receives a
+    ``Session``.
     """
 
     def wrap(fn: Callable[..., R]) -> Callable[..., R]:
         name = fn.__name__
 
         @functools.wraps(fn)
-        def reader(*args: Any, **kwargs: Any) -> R:
+        def read(*args: Any, **kwargs: Any) -> R:
             if args and isinstance(args[0], Session):
                 if "session" in kwargs:
                     raise TypeError(
@@ -928,73 +959,6 @@ def _reader(kind: type[Backend] | None) -> Callable[[Callable[..., R]], Callable
             kwargs["session"] = session
             return fn(*args, **kwargs)
 
-        return reader
+        return read
 
     return wrap
-
-
-def _replace_arrays(item: Any, leaf: Callable[[Array], Any]) -> Any:
-    """Return ``item`` with each Array replaced by ``leaf(array)``.
-
-    Through lists, tuples (named ones keep their type) and mappings; other items pass through.
-    """
-    if isinstance(item, Array):
-        return leaf(item)
-    if isinstance(item, Mapping):
-        return {key: _replace_arrays(v, leaf) for key, v in item.items()}
-    if isinstance(item, list):
-        return [_replace_arrays(v, leaf) for v in item]
-    if isinstance(item, tuple):
-        values = [_replace_arrays(v, leaf) for v in item]
-        return type(item)(*values) if hasattr(item, "_fields") else tuple(values)
-    return item
-
-
-def _projected_reads(session: Session, arrays: Sequence[Array]) -> dict[int, object]:
-    """Each partitioned source ``arrays`` read, read with the columns a plan over them would read.
-
-    A source whose read list is every column, or whose partitions the backend cannot concatenate,
-    is left to its lazy loader.
-    """
-    from .core.execution import LocalResources  # noqa: PLC0415  (import cycle)
-    from .projection import read_columns  # noqa: PLC0415
-    from .write import PartitionedSource, declared_columns, sources_read  # noqa: PLC0415
-
-    concat = getattr(session.backend, "concat", None)
-    reads: dict[int, object] = {}
-    resources = LocalResources()
-    try:
-        for nid, data in sources_read(arrays).items():
-            if not isinstance(data, PartitionedSource):
-                continue
-            columns = declared_columns(data, arrays)
-            if columns is None:
-                columns = read_columns(arrays, nid)
-            if columns is None:
-                continue
-            partitions = data.partitions(1)
-            if len(partitions) == 1:
-                reads[nid] = data.read_partition(partitions[0], columns, resources)
-            elif concat is not None:
-                reads[nid] = concat(
-                    [data.read_partition(p, columns, resources) for p in partitions]
-                )
-    finally:
-        resources.close()
-    return reads
-
-
-def materialize(arrays: Any) -> Any:
-    """Evaluate ``arrays`` in this process.
-
-    An :class:`Array`, or any nesting of lists, tuples (named ones keep their type) and mappings
-    holding them (other items pass through), recorded in any number of Sessions. Returns the same
-    structure with each Array replaced by its value; the Arrays of one Session evaluate every node
-    they share once, and read only the source columns they use, as a plan over them would.
-    Evaluation only: running on an executor is a plan's job
-    (:func:`graphed.aggregate_plan`, :func:`graphed.collate`).
-    """
-    found: dict[Session, list[Array]] = {}
-    _replace_arrays(arrays, lambda a: found.setdefault(a.session, []).append(a))
-    memos = {session: _projected_reads(session, outs) for session, outs in found.items()}
-    return _replace_arrays(arrays, lambda a: a.session.materialize(a, memo=memos[a.session]))

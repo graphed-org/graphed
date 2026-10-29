@@ -38,14 +38,23 @@ class _Settings:
 
 _settings = _Settings()
 
+
+def _site_dirs() -> list[str]:
+    # a layered environment (`uv run --with`, a .pth-added base venv) installs code in site dirs
+    # on sys.path that are not this interpreter's purelib
+    named = ("site-packages", "dist-packages")
+    on_path = [p for p in sys.path if os.path.basename(os.path.normpath(p)) in named]
+    return [sysconfig.get_path("purelib"), sysconfig.get_path("platlib"), *on_path]
+
+
 #: installed third-party code (site-packages), skipped unless no frame lies outside it: an analysis
 #: installed non-editable lives there too, and its own frame is then the best answer left.
 _INSTALLED: tuple[str, ...] = tuple(
     sorted(
         {
             os.path.join(path, "")
-            for key in ("purelib", "platlib")
-            for path in (sysconfig.get_path(key), os.path.realpath(sysconfig.get_path(key)))
+            for site in _site_dirs()
+            for path in (site, os.path.realpath(site))
         }
     )
 )

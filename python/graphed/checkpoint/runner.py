@@ -112,14 +112,11 @@ def run_resumable(
 
     for part in plan.partitions:
         tid = plan.task_id(part)
-        entry = completed.get(tid)
-        if entry is not None:
-            blob = store.get(entry.blob)
-            if blob is not None:
-                value = codec.decode(blob)
-                acc, folded = (combine(acc, value) if folded else value), True
-                report.skipped += 1
-                continue
+        value = _stored_partial(store, completed.get(tid), codec)
+        if value is not _NOT_STORED:
+            acc, folded = (combine(acc, value) if folded else value), True
+            report.skipped += 1
+            continue
 
         try:
             value = _run_one(
@@ -141,20 +138,38 @@ def run_resumable(
         if _kill_after is not None and committed >= _kill_after:
             raise _SimulatedInterrupt(f"simulated kill after {committed} committed tasks")
 
-    # the run finished without the kill firing: a crash requested after more commits than the plan
-    # can ever produce is a misconfiguration, not a quietly-successful uninterrupted run.
-    if _kill_after is not None and report.stopped is None and committed < _kill_after:
-        raise ValueError(
-            f"_kill_after={_kill_after} never fired: the run committed only {committed} task(s) "
-            f"before completing, so the simulated crash could not happen. The plan has too few "
-            f"committable partitions for that kill point."
-        )
-
+    _require_kill_fired(_kill_after, report, committed)
     report.dead_letters = store.dead_letters()
     value = acc if folded else empty()
     if plan.finalize is not None:
         value = plan.finalize.resolve()(value)
     return ResumeResult(value=value, report=report)
+
+
+#: what :func:`_stored_partial` returns for a task with no committed partial
+_NOT_STORED = object()
+
+
+def _stored_partial(store: CheckpointStore, entry: Any, codec: Codec) -> Any:
+    """Return the partial a journal ``entry`` committed, else :data:`_NOT_STORED`."""
+    if entry is None:
+        return _NOT_STORED
+    blob = store.get(entry.blob)
+    return _NOT_STORED if blob is None else codec.decode(blob)
+
+
+def _require_kill_fired(kill_after: int | None, report: ResumeReport, committed: int) -> None:
+    """Refuse a finished run whose simulated kill never fired.
+
+    A crash requested after more commits than the plan can ever produce is a misconfiguration, not
+    a quietly-successful uninterrupted run.
+    """
+    if kill_after is not None and report.stopped is None and committed < kill_after:
+        raise ValueError(
+            f"_kill_after={kill_after} never fired: the run committed only {committed} task(s) "
+            f"before completing, so the simulated crash could not happen. The plan has too few "
+            f"committable partitions for that kill point."
+        )
 
 
 def _run_one(

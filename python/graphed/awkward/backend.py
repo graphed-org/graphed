@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from typing import Any, cast, overload
 
 import awkward as ak
+import cloudpickle
 import numpy as np
 from awkward.types._awkward_datashape_parser import LarkError
 
@@ -21,9 +22,10 @@ from graphed import Array, Session
 from graphed.aggregate import resolved_backend
 from graphed.backend import PYTHON_TYPES, Form
 from graphed.core import PayloadDescriptor
-from graphed.session import _reader
+from graphed.session import reader
 from graphed.shuffle import join_blocks
 
+from . import functions as gak
 from . import join, payloads, shuffle
 from ._ops import apply
 from .array import AwkwardArray
@@ -88,23 +90,32 @@ class _BehaviorByValue(dict[Any, Any]):
 
 @functools.cache
 def _behavior_by_value(blob: bytes) -> _BehaviorByValue:
-    import cloudpickle  # noqa: PLC0415  (only a behavior shipped by value needs it)
-
     return _BehaviorByValue(cloudpickle.loads(blob), blob)
 
 
-def shipped_behavior(behavior: Mapping[Any, Any]) -> _BehaviorByValue:
-    """Return ``behavior`` as a plan ships it to workers: by value, lambdas included."""
-    import cloudpickle  # noqa: PLC0415  (only a behavior shipped by value needs it)
+#: each behavior this process shipped, beside the snapshot of it that was pickled
+_SHIPPED: list[tuple[dict[Any, Any], _BehaviorByValue]] = []
 
+
+def shipped_behavior(behavior: Mapping[Any, Any]) -> _BehaviorByValue:
+    """Return ``behavior`` as a plan ships it to workers: by value, lambdas included.
+
+    Each distinct behavior is pickled once per process, however many plans ship it.
+    """
+    for seen, shipped in _SHIPPED:
+        if seen == behavior:
+            return shipped
+    snapshot = dict(behavior)
     try:
-        blob = cloudpickle.dumps(dict(behavior))
+        blob = cloudpickle.dumps(snapshot)
     except Exception as err:
         raise TypeError(
             f"the session backend's behavior does not pickle to workers ({err}); pass the plan "
             "an importable backend factory, backend='module:factory'"
         ) from err
-    return _behavior_by_value(blob)
+    shipped = _behavior_by_value(blob)
+    _SHIPPED.append((snapshot, shipped))
+    return shipped
 
 
 def _adopt(value: Any, behavior: Mapping[Any, Any] | None) -> Any:
@@ -377,7 +388,7 @@ class AwkwardBackend:
             if leaf is not None:
                 return astype_form(broadcast_form(forms), leaf)
             return forms[0]
-        operands = [f.tt for f in forms]
+        operands = [self._with_behavior(f.tt) for f in forms]
         return AwkwardForm(apply(op, operands, params, behavior=self._behavior))
 
     def eval_stage(
@@ -487,10 +498,12 @@ class AwkwardBackend:
         """
         return _AsRead(chunk)
 
-    def _with_behavior(self, tt: ak.Array) -> ak.Array:
-        return (
-            ak.Array(tt.layout, behavior=self._behavior, attrs=tt.attrs) if self._behavior else tt
-        )
+    def _with_behavior(self, tt: Any) -> Any:
+        # a new wrapper, never the stored typetracer: record-time behavior code may assign into
+        # its `self` or attrs, which would rewrite the Session's form for every later read
+        if not isinstance(tt, ak.Array):
+            return tt
+        return ak.Array(tt.layout, behavior=self._behavior or tt.behavior, attrs=tt.attrs)
 
     def _eval_join(self, inputs: Sequence[object], params: Mapping[str, object]) -> object:
         left, right = inputs[0], inputs[1]
@@ -519,9 +532,7 @@ class AwkwardBackend:
         A rectilinear idiom needs nothing here, which is why the seam is optional and
         `graphed.broadcast_like` falls back to the identity when a backend omits it.
         """
-        from .functions import broadcast_arrays  # noqa: PLC0415  (functions imports this module)
-
-        return broadcast_arrays(value, factor)[1]  # type: ignore[arg-type]
+        return gak.broadcast_arrays(value, factor)[1]  # type: ignore[arg-type]
 
     def external_payload(self, op: str, params: Mapping[str, object]) -> PayloadDescriptor | None:
         """Return the payload descriptor an External ``op`` carries, if any."""
@@ -603,7 +614,7 @@ def from_awkward(session: Session, name: str, array: object, **descriptor: objec
 def from_awkward(
     name: str, array: object, *, session: Session | None = None, **descriptor: object
 ) -> Any: ...
-@_reader(AwkwardBackend)
+@reader(AwkwardBackend)
 def from_awkward(
     name: str, array: object, *, session: Session | None = None, **descriptor: object
 ) -> Any:

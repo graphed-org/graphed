@@ -85,6 +85,13 @@ A plan's workers keep the Session backend's behavior
   the tasks return carry the shipped behavior back, lambdas included. A behavior cloudpickle
   cannot copy is refused with a ``TypeError`` when the plan is built. A behavior-less Session's
   plan keeps its bytes (#123).
+* A behavior is pickled once per process however many plans ship it, and an op's operand that
+  already carries the backend's behavior object is not wrapped again, so plan builds and runs on a
+  behavior-carrying Session (coffea's NanoEvents) cost what they did before #123 (#128).
+* A behavior property or method evaluated while recording runs on a new wrapper of the Session's
+  stored typetracer: one that assigned into its ``self`` or attrs (coffea's ``__systematics__``)
+  rewrote the stored form, so a re-read of that source or a re-recorded op returned the changed
+  form (#134).
 
 A reader's ``steps_per_file`` and ``open_files`` partition its plans
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -107,6 +114,13 @@ Exceptions are named ``…Error``
   ``UnboundServiceError`` (``graphed.services``) and ``UnresolvedPayloadError``
   (``graphed.preserve``). The first three keep their old names as aliases.
 
+Backend seams are public
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``graphed.session.reader`` (the decorator that resolves a source reader's ``session=``) and
+  ``graphed.array.scalar_params`` (a scalar operand's recorded value and dtype) lose their leading
+  underscore, so a backend outside ``graphed`` builds on them without reaching a private name.
+
 Fixes
 ~~~~~
 
@@ -125,6 +139,13 @@ Fixes
 * Those two orderings change the optimized IR bytes against 0.0.9 for some programs, so a 0.0.9
   checkpoint of such a program recomputes on resume under 0.0.10; results are unchanged
   (#105, #117).
+* An error raised inside installed code (``ak.from_iter``, a histogram fill, a correction
+  evaluation) names your analysis line when the interpreter reaches that code through a layered
+  environment, such as ``uv run --with`` over a project venv. It named the library's line, because
+  only the interpreter's own ``site-packages`` counted as installed.
+* The dashboard drops a profile payload that decodes to JSON but not to a count tree. It raised
+  out of the server's ingest handler, closing the worker's connection, and could leave the merged
+  flamegraph half-updated (#130).
 
 The systematics internals, reorganized
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

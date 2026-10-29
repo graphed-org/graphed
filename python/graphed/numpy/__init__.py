@@ -23,7 +23,7 @@ import numpy as np
 from graphed import Array, Session
 from graphed.array import check_leading_ellipsis, decode_subscript
 from graphed.core import PayloadDescriptor
-from graphed.session import _reader
+from graphed.session import reader
 from graphed.shuffle import join_blocks
 
 from . import shuffle
@@ -628,7 +628,7 @@ def from_array(
 def from_array(
     name: str, values: object, *, chunks: int | None = None, session: Session | None = None
 ) -> Array: ...
-@_reader(NumpyBackend)
+@reader(NumpyBackend)
 def from_array(
     name: str, values: object, *, chunks: int | None = None, session: Session | None = None
 ) -> Array:
@@ -651,7 +651,7 @@ def from_array(
 def from_record(session: Session, name: str, **columns: object) -> Array: ...
 @overload
 def from_record(name: str, *, session: Session | None = None, **columns: object) -> Array: ...
-@_reader(NumpyBackend)
+@reader(NumpyBackend)
 def from_record(name: str, *, session: Session | None = None, **columns: object) -> Array:
     """Create a record source (named columns) — the buffer-projection target.
 
