@@ -12,7 +12,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-import graphed.awkward.io as io_mod
+import graphed.awkward._varied_write as io_mod
 
 
 def _imported_modules(source: str) -> set[str]:

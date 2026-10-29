@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from typing import Any, cast, overload
 
 import awkward as ak
+import cloudpickle
 import numpy as np
 from awkward.types._awkward_datashape_parser import LarkError
 
@@ -24,6 +25,7 @@ from graphed.core import PayloadDescriptor
 from graphed.session import reader
 from graphed.shuffle import join_blocks
 
+from . import functions as gak
 from . import join, payloads, shuffle
 from ._ops import apply, carrying
 from .array import AwkwardArray
@@ -88,8 +90,6 @@ class _BehaviorByValue(dict[Any, Any]):
 
 @functools.cache
 def _behavior_by_value(blob: bytes) -> _BehaviorByValue:
-    import cloudpickle  # noqa: PLC0415  (only a behavior shipped by value needs it)
-
     return _BehaviorByValue(cloudpickle.loads(blob), blob)
 
 
@@ -105,8 +105,6 @@ def shipped_behavior(behavior: Mapping[Any, Any]) -> _BehaviorByValue:
     for seen, shipped in _SHIPPED:
         if seen == behavior:
             return shipped
-    import cloudpickle  # noqa: PLC0415  (only a behavior shipped by value needs it)
-
     snapshot = dict(behavior)
     try:
         blob = cloudpickle.dumps(snapshot)
@@ -530,9 +528,7 @@ class AwkwardBackend:
         A rectilinear idiom needs nothing here, which is why the seam is optional and
         `graphed.broadcast_like` falls back to the identity when a backend omits it.
         """
-        from .functions import broadcast_arrays  # noqa: PLC0415  (functions imports this module)
-
-        return broadcast_arrays(value, factor)[1]  # type: ignore[arg-type]
+        return gak.broadcast_arrays(value, factor)[1]  # type: ignore[arg-type]
 
     def external_payload(self, op: str, params: Mapping[str, object]) -> PayloadDescriptor | None:
         """Return the payload descriptor an External ``op`` carries, if any."""

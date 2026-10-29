@@ -14,7 +14,7 @@ import awkward as ak
 import graphed
 from graphed import Session
 from graphed.awkward import AwkwardBackend, from_awkward
-from graphed.awkward.io import _syntactic_fields
+from graphed.awkward._read_list import _syntactic_fields
 
 EVENTS = ak.Array([{"pt": 1.0, "eta": 0.5, "phi": 0.1}, {"pt": 2.0, "eta": 1.5, "phi": 0.2}])
 
