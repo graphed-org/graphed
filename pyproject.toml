@@ -148,8 +148,10 @@ convention = "pep257"
 "python/graphed/preserve/externals/triton_external.py" = ["PLC0415"]
 "python/graphed/preserve/externals/xgboost_external.py" = ["PLC0415"]
 # These load an installed dependency only on the path that needs it, to keep it out of their
-# importers: cloudpickle for an opaque callable, the checkpoint store for a capturing plan.
+# importers: cloudpickle for an opaque callable, the checkpoint store for a capturing plan,
+# graphed.preserve's plugins for a template External's first call.
 "python/graphed/aggregate.py" = ["PLC0415"]
+"python/graphed/awkward/functions.py" = ["PLC0415"]
 "python/graphed/core/plan.py" = ["PLC0415"]
 # Workers import graphed.debug; a replay or report alone loads the checkpoint codec, numpy or
 # graphed.preserve.

@@ -20,8 +20,6 @@ import graphed
 from graphed import Array, ParamValue
 from graphed.array import scalar_params
 from graphed.errors import GraphedError, GraphedTypeError
-from graphed.preserve.externals import get_plugin
-from graphed.preserve.externals._base import _PluginEvaluator
 from graphed.provenance import capture
 from graphed.shuffle import JOINKEY
 from graphed.varied import boundary_refusal, containers_in, expand, expand_tuple, narrow
@@ -465,6 +463,9 @@ class _TemplateExternal:
 
     def __call__(self, *values: object) -> object:
         if self.call is None:
+            from ..preserve.externals import get_plugin
+            from ..preserve.externals._base import _PluginEvaluator
+
             plugin = get_plugin(self.kind)
             if plugin is None:
                 raise RuntimeError(
