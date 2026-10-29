@@ -108,12 +108,45 @@ def _extension(ctx: EventContext, central: Any) -> tuple[str, Any] | None:
     under new coordinates, a widening in name only that moves the slot's generation and fires both
     §2.1 refusals on programs §2.1 admits.
     """
-    held = ambient_of(ctx)
     node = member_of(central, "nominal")  # ONE level in, not `two_level`, which peels a second
     if isinstance(node, Varied):  # nested past §2.2's one level; `_check_forms` names it properly
         return None
     _live, slots, overlays = live_factors(ctx)
     riders = live_riders(ctx)
+    read = _names_read(ctx, central, slots, overlays, riders)
+    if read is not None:
+        return read
+    # an OVERLAY's nominal is the ambient's own nominal, so it would answer this test in the
+    # factor's place; only a product factor names a factor. The ENTRIES are not read at all here:
+    # every candidate comes from the rider beside the slot (§3's provenance principle).
+    # §2.3: the NOMINAL arm answers FIRST over every live slot, then the projected member — one
+    # node can be both a live factor's nominal in the central's own row space and another entry's
+    # recorded member, and there the join keeps the universe projected into where the refusal would
+    # not. The arms are the outer loop, so registration order cannot pick the answer.
+    for arm in (_names_nominal, _names_member):
+        for slot in slots:
+            if slot in overlays:
+                continue
+            match = arm(ctx, riders[slot], node, slot)
+            if match is None:
+                continue
+            if match[0] == "factor":
+                covered = _fixed_cover(ctx, slot, slots, riders)
+                if covered is not None:
+                    return ("covered", covered)
+            return match
+    return None
+
+
+def _names_read(
+    ctx: EventContext,
+    central: Any,
+    slots: Sequence[int],
+    overlays: frozenset[int],
+    riders: Mapping[int, Rider],
+) -> tuple[str, Any] | None:
+    """`_extension`'s READ arm: the composition a recorded read handed out that `central` names."""
+    held = ambient_of(ctx)
     # a composition a READ recorded, WITHOUT composing anything here: its FACTORS must still be a
     # prefix of the live factors, which is what makes the handle a rescaling of the operations it
     # was built from and lets the overlay land right after them. Reads are recorded per row space,
@@ -149,25 +182,6 @@ def _extension(ctx: EventContext, central: Any) -> tuple[str, Any] | None:
     if stale:
         widened = {family for slot in stale if slot in riders for family in riders[slot].families}
         return ("stale", ", ".join(sorted(widened)))
-    # an OVERLAY's nominal is the ambient's own nominal, so it would answer this test in the
-    # factor's place; only a product factor names a factor. The ENTRIES are not read at all here:
-    # every candidate comes from the rider beside the slot (§3's provenance principle).
-    # §2.3: the NOMINAL arm answers FIRST over every live slot, then the projected member — one
-    # node can be both a live factor's nominal in the central's own row space and another entry's
-    # recorded member, and there the join keeps the universe projected into where the refusal would
-    # not. The arms are the outer loop, so registration order cannot pick the answer.
-    for arm in (_names_nominal, _names_member):
-        for slot in slots:
-            if slot in overlays:
-                continue
-            match = arm(ctx, riders[slot], node, slot)
-            if match is None:
-                continue
-            if match[0] == "factor":
-                covered = _fixed_cover(ctx, slot, slots, riders)
-                if covered is not None:
-                    return ("covered", covered)
-            return match
     return None
 
 

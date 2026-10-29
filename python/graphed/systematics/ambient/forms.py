@@ -372,19 +372,7 @@ def shift_form(
             "collection mappings (or a Varied member's own tags), so pass "
             "collections={Name: {tag: record}} or collections={Name: varied}"
         )
-    mapping: dict[str, Any] = dict(tags)
-    for collection_name, inner in (collections or {}).items():
-        if collection_name in mapping:
-            raise GraphedError(f"collection {collection_name!r} was named twice")
-        mapping[collection_name] = inner
-    if not mapping:
-        raise GraphedError(
-            f"the shift form of graphed.vary({name!r}) needs at least one collection"
-        )
-    for collection_name, inner in list(mapping.items()):
-        if isinstance(inner, Varied):  # m55: lockstep by propagation, unpacked to the hand form
-            mapping[collection_name] = _unpack_varied(ctx, name, collection_name, inner, points)
-    _check_lockstep(name, mapping)
+    mapping = _shifted_collections(ctx, name, collections, points, tags)
 
     replaced: dict[str, Any] = {}
     family: tuple[str, ...] = ()
@@ -428,6 +416,30 @@ def shift_form(
         name, Kind.SHIFT, family, ctx, "shift", varies=tuple(mapping)
     )
     return replaced, record
+
+
+def _shifted_collections(
+    ctx: EventContext,
+    name: str,
+    collections: Mapping[str, Mapping[Any, Any] | Varied] | None,
+    points: Iterable[Mapping[str, Any]] | None,
+    tags: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Return the shift form's collections as one `{collection: {tag: record}}` lockstep map."""
+    mapping: dict[str, Any] = dict(tags)
+    for collection_name, inner in (collections or {}).items():
+        if collection_name in mapping:
+            raise GraphedError(f"collection {collection_name!r} was named twice")
+        mapping[collection_name] = inner
+    if not mapping:
+        raise GraphedError(
+            f"the shift form of graphed.vary({name!r}) needs at least one collection"
+        )
+    for collection_name, inner in list(mapping.items()):
+        if isinstance(inner, Varied):  # m55: lockstep by propagation, unpacked to the hand form
+            mapping[collection_name] = _unpack_varied(ctx, name, collection_name, inner, points)
+    _check_lockstep(name, mapping)
+    return mapping
 
 
 def _report_shift_after_weight(
