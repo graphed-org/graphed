@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from ...errors import GraphedError
 from ..by_label import cone
@@ -16,7 +16,7 @@ from ..varied import Varied, labels_of, member_nodes, member_of, members_of, reb
 from .compose import _check_forms, _marks, _resolvable, _union, two_level
 from .entries import _expanded, _prefix_slots, live_riders, row_links
 from .extension import _extension
-from .join import _check_widening, _extend, _overlay
+from .join import _check_widening, _extend, _overlay, _Stood
 from .materialise import _ambient_operands, _ambient_tags, _carriers, _foldable
 from .record import _SLOT, AmbientRecord, Registration, Rider, context_labels, for_vary_link
 
@@ -41,7 +41,6 @@ def weight_form(
     folds onto (`fold`) when the factor appends to a foldable memo, else `None`. The factor is
     composed label-aligned per §2.4 with whatever is already registered.
     """
-    held = ambient_of(ctx)
     if collections is not None:
         raise GraphedError("collections= belongs to the shift form; a weight form takes tags")
     if central is None:
@@ -49,8 +48,6 @@ def weight_form(
             f"the weight form of graphed.vary({name!r}) needs the central per-event factor as its "
             "third positional argument"
         )
-    ambient_tags = _ambient_tags(ctx)
-    inherited = held.weight_tags.get(name, ())
     # What the next composition will multiply, decided HERE, before this registration mints, and by
     # the same predicate the read uses: onto a foldable memo the new factor folds (today's
     # two-element chain step, so a program reading at every intermediate context pays today's node
@@ -62,6 +59,45 @@ def weight_form(
     # read only for its answer — nothing is composed or re-indexed to reach it, so a program that
     # names nothing records exactly the nodes it records without this.
     match = _extension(ctx, central)
+    _refuse(name, match)
+    if match is not None and match[0] == "factor":
+        _check_widening(ctx, match[1], central, name)
+    factors, family = _weight_members(
+        ctx, name, central, variations, points, composes_as_union, max_universes, tags
+    )
+    placed = _place(ctx, match, factors, name, family, base)
+    # the §2.4 union is RECORDED here, never recomputed at the read: recomputing it from the
+    # context would hand the ambient every shift registered after it, and recomputing it from the
+    # factors would drop the shift labels a factor computed on shifted objects is read through.
+    recorded = _union(context_labels(ctx), tuple(factors))
+    operands = placed.operands
+    if operands is not placed.entries and not _resolvable(base, tuple(factors)):
+        operands = placed.entries  # the memo cannot answer a label this call minted (below)
+    # the record-time type check, run BEFORE anything is recorded so a refused registration leaves
+    # no trace at all
+    _check_forms(
+        context_session(ctx),
+        operands,
+        recorded,
+        _marks(placed.entries, placed.slots, placed.overlays),
+        _marks(
+            placed.entries,
+            placed.slots,
+            frozenset(s for s, rider in placed.riders.items() if rider.fixed),
+        ),
+    )
+    # §2.5's vary-time half; the members are stamped when they compose
+    record_labels(placed.factor)
+    # §2.5's shift-after-weight operand one: this factor's OWN member node ids, by value.
+    context_session(ctx).systematics.record_weight_factor(name, member_nodes(placed.factor))
+    record = _registered(ctx, name, family, match, placed, recorded)
+    # a join, and an overlay inserted before the end, remake the composition from the entry list;
+    # only an append composed onto the memo above can fold onto it (§3)
+    return record, (operands if folds and operands is not placed.entries else None)
+
+
+def _refuse(name: str, match: tuple[str, Any] | None) -> None:
+    """Raise the refusal `_extension`'s answer names, before this registration mints anything."""
     if match is not None and match[0] == "stale":
         # §2.1: the handle names a composition a later join WIDENED, so its universes are not that
         # composition's any more. Refused here, before this registration mints anything at all.
@@ -103,8 +139,24 @@ def weight_form(
             "family's own universe, where nothing re-derives that composition; read the handle "
             "again AT this context (`w = graphed.weight(ctx)`) and register this family on it"
         )
-    if match is not None and match[0] == "factor":
-        _check_widening(ctx, match[1], central, name)
+
+
+def _weight_members(
+    ctx: EventContext,
+    name: str,
+    central: object,
+    variations: Mapping[Any, Any] | None,
+    points: Iterable[Mapping[str, Any]] | None,
+    composes_as_union: bool,
+    max_universes: int,
+    tags: Mapping[str, Any],
+) -> tuple[dict[str, Any], tuple[str, ...]]:
+    """Return the factor's members, re-indexed to `ctx`, and the family's tags.
+
+    Minted and checked here: the labels, the §1.1 one-knob-per-universe rule, the members' forms.
+    """
+    ambient_tags = _ambient_tags(ctx)
+    inherited = ambient_of(ctx).weight_tags.get(name, ())
     # The families the live ambient's RIDERS carry are the CANDIDATES for composition (m56): a
     # member's coordinate on one of them is dropped iff the member's node at that label reads a
     # lineage factor's varied member there (`_reads_ambient` in `vary._foreign`), which the
@@ -154,7 +206,38 @@ def weight_form(
     # §2.1(b)'s ROW-SPACE rule: an ancestor-handled factor is re-indexed across the intervening
     # links; a descendant or divergent one is a construction-time error naming the direction.
     factors = {label: reindex_to(factor, ctx) for label, factor in factors.items()}
-    family = inherited + _tags_of(name, one_at_a_time)
+    return factors, inherited + _tags_of(name, one_at_a_time)
+
+
+class _Placed(NamedTuple):
+    """Where a weight registration's factor lands in the entry list, and what that changes."""
+
+    factor: Varied
+    entries: list[Any]
+    slots: list[int]
+    overlays: frozenset[int]
+    riders: dict[int, Rider]
+    #: what the composition multiplies: `entries` itself unless the factor is an append the memo
+    #: folds onto
+    operands: list[Any]
+    #: an overlay's prefix, the factor slots it covers
+    prefix: tuple[int, ...]
+    #: the slot a widening join bumps the generation of
+    joined_slot: int | None
+    #: what an adopted head stands for after a join of one of its operations
+    stood: _Stood | None
+
+
+def _place(
+    ctx: EventContext,
+    match: tuple[str, Any] | None,
+    factors: Mapping[str, Any],
+    name: str,
+    family: tuple[str, ...],
+    base: list[Any],
+) -> _Placed:
+    """§2.1's outcome: join the named factor, append a new one, or insert an overlay."""
+    held = ambient_of(ctx)
     if match is not None and match[0] == "factor":
         # joining an existing factor REMAKES the composition from the new entry list: the fold memo
         # is built on the premise that a registration only ever appends
@@ -162,65 +245,62 @@ def weight_form(
             ctx, match[1], factors, name, family
         )
         joined_slot: int | None = match[1] if widened else None
-        operands = updated
+        return _Placed(factor, updated, slots, overlays, riders, updated, (), joined_slot, stood)
+    slot = next(_SLOT)
+    entries, entry_slots, riders = held.factors, held.slots, held.riders
+    adopted = held.adopted
+    prefix: tuple[int, ...] = ()
+    if match is None:
+        factor = rebuild(factors, tags={name: family}, context=ctx)
+        at, overlays, kind = len(held.factors), held.overlays, "factor"
     else:
-        joined_slot = stood = None
-        slot = next(_SLOT)
-        entries, entry_slots, riders = held.factors, held.slots, held.riders
-        adopted = held.adopted
-        prefix: tuple[int, ...] = ()
-        if match is None:
-            factor = rebuild(factors, tags={name: family}, context=ctx)
-            at, overlays, kind = len(held.factors), held.overlays, "factor"
+        # §2.1: the OVERLAY lands right after the operations the handle it was built from was
+        # read over, so a factor registered after that read multiplies its result
+        factor = _overlay(ctx, factors, name, family)
+        kind = "overlay"
+        if match[0] == "prefix":
+            # §2.3: the read ends INSIDE the adopted head, so the head is expanded into the
+            # operations it stands for, re-indexed here exactly as a join of an ancestor's
+            # factor expands it, and the overlay anchors among them
+            entries, entry_slots, overlays, riders = _expanded(ctx)
+            adopted = False
+            at = entry_slots.index(match[1]) + 1
+            while at < len(entry_slots) and entry_slots[at] in overlays:
+                at += 1
         else:
-            # §2.1: the OVERLAY lands right after the operations the handle it was built from was
-            # read over, so a factor registered after that read multiplies its result
-            factor = _overlay(ctx, factors, name, family)
-            kind = "overlay"
-            if match[0] == "prefix":
-                # §2.3: the read ends INSIDE the adopted head, so the head is expanded into the
-                # operations it stands for, re-indexed here exactly as a join of an ancestor's
-                # factor expands it, and the overlay anchors among them
-                entries, entry_slots, overlays, riders = _expanded(ctx)
-                adopted = False
-                at = entry_slots.index(match[1]) + 1
-                while at < len(entry_slots) and entry_slots[at] in overlays:
-                    at += 1
-            else:
-                at, overlays = match[1], held.overlays
-            prefix = _prefix_slots(ctx, entry_slots, at, overlays, adopted)
-            overlays = overlays | {slot}
-        riders = {
-            **riders,
-            slot: Rider(
-                kind,
-                {name: family},
-                priors=(two_level(factor, "nominal"),),
-                prefix=prefix,
-                home=ctx,
-                links=row_links(ctx),
-            ),
-        }
-        updated = [*entries[:at], factor, *entries[at:]]
-        slots = [*entry_slots[:at], slot, *entry_slots[at:]]
-        # an entry at the END is an append the memo folds onto — the overlay replaces the folded
-        # composition at its own labels, which is what its members already are
-        operands = [*base, factor] if at == len(entries) else updated
-    # the §2.4 union is RECORDED here, never recomputed at the read: recomputing it from the
-    # context would hand the ambient every shift registered after it, and recomputing it from the
-    # factors would drop the shift labels a factor computed on shifted objects is read through.
-    recorded = _union(context_labels(ctx), tuple(factors))
-    if operands is not updated and not _resolvable(base, tuple(factors)):
-        operands = updated  # the memo cannot answer a label this call minted (below)
-    # the record-time type check, run BEFORE anything is recorded so a refused registration leaves
-    # no trace at all
-    _check_forms(
-        context_session(ctx),
-        operands,
-        recorded,
-        _marks(updated, slots, overlays),
-        _marks(updated, slots, frozenset(s for s, rider in riders.items() if rider.fixed)),
-    )
+            at, overlays = match[1], held.overlays
+        prefix = _prefix_slots(ctx, entry_slots, at, overlays, adopted)
+        overlays = overlays | {slot}
+    riders = {
+        **riders,
+        slot: Rider(
+            kind,
+            {name: family},
+            priors=(two_level(factor, "nominal"),),
+            prefix=prefix,
+            home=ctx,
+            links=row_links(ctx),
+        ),
+    }
+    updated = [*entries[:at], factor, *entries[at:]]
+    slots = [*entry_slots[:at], slot, *entry_slots[at:]]
+    # an entry at the END is an append the memo folds onto — the overlay replaces the folded
+    # composition at its own labels, which is what its members already are
+    operands = [*base, factor] if at == len(entries) else updated
+    return _Placed(factor, updated, slots, overlays, riders, operands, prefix, None, None)
+
+
+def _registered(
+    ctx: EventContext,
+    name: str,
+    family: tuple[str, ...],
+    match: tuple[str, Any] | None,
+    placed: _Placed,
+    recorded: tuple[str, ...],
+) -> AmbientRecord:
+    """Return the record of the `vary` child this weight registration derives."""
+    held = ambient_of(ctx)
+    riders = placed.riders
     names: tuple[str, ...] = ()
     if match is None:
         form = "factor"
@@ -233,24 +313,21 @@ def weight_form(
             sorted(
                 {
                     carried
-                    for covered_slot in prefix
+                    for covered_slot in placed.prefix
                     for carried in (
                         riders[covered_slot].families if covered_slot in riders else ()
                     )
                 }
             )
         )
-    record_labels(factor)  # §2.5's vary-time half; the members are stamped when they compose
-    # §2.5's shift-after-weight operand one: this factor's OWN member node ids, by value.
-    context_session(ctx).systematics.record_weight_factor(name, member_nodes(factor))
-
     record = for_vary_link(ctx)
     record.registration = Registration(name, Kind.WEIGHT, family, ctx, form, names)
     record.weight_tags[name] = family
-    record.factors = updated
-    record.slots = slots
-    record.overlays = overlays
+    record.factors = placed.entries
+    record.slots = placed.slots
+    record.overlays = placed.overlays
     record.riders = riders
+    joined_slot = placed.joined_slot
     if joined_slot is not None:
         # §2.1's staleness stamp: every handle read over this factor before now composed universes
         # this join has just added to, and naming one of them is refused from here on
@@ -259,14 +336,14 @@ def weight_form(
     # live operations: a join extends it and it does (`stood` is what it stands for here, the
     # operations re-indexed with that join applied); an overlay anchored inside it replaced it with
     # them and it does not
-    record.adopted = held.adopted and (stood is not None or updated[0] is held.factors[0])
-    record.head_ops = stood if record.adopted else None
+    record.adopted = held.adopted and (
+        placed.stood is not None or placed.entries[0] is held.factors[0]
+    )
+    record.head_ops = placed.stood if record.adopted else None
     record.recorded = recorded
     record.origin = None
     record.memo = None
-    # a join, and an overlay inserted before the end, remake the composition from the entry list;
-    # only an append composed onto the memo above can fold onto it (§3)
-    return record, (operands if folds and operands is not updated else None)
+    return record
 
 
 def shift_form(
