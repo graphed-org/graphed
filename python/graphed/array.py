@@ -14,9 +14,10 @@ from itertools import count
 from typing import TYPE_CHECKING, Any, SupportsFloat
 
 from .backend import ParamValue
+from .errors import GraphedTypeError, MissingFieldError
+from .provenance import capture
 
 if TYPE_CHECKING:
-    from .errors import GraphedTypeError
     from .session import Session
 
 # numpy ufunc name -> canonical op name (so np.subtract(a, b) and a - b record the same op).
@@ -252,9 +253,6 @@ def no_eager_value(op: str, missing: str) -> GraphedTypeError:
 
     It is located at the user's line.
     """
-    from .errors import GraphedTypeError  # noqa: PLC0415  (cycle: errors -> provenance -> array)
-    from .provenance import capture  # noqa: PLC0415
-
     return GraphedTypeError(
         op,
         capture(),
@@ -546,10 +544,6 @@ class Array:
             if kind == "introspection":  # answered at record time; nothing is recorded
                 backend: Any = self._session.backend  # the optional hook that goes with this kind
                 return backend.introspect(self._session.form(self), name)
-        from .errors import (  # noqa: PLC0415  (cycle: errors -> provenance -> array)
-            GraphedTypeError,
-            MissingFieldError,
-        )
 
         try:
             return self._session.record_op("field", [self], {"field": name})
@@ -576,7 +570,7 @@ class Array:
     def __getitem__(self, key: object) -> Array:
         """Record a subscript: a mask, a field name, a field list or a tuple key."""
         if getattr(key, "_varied_container", False):  # a Varied mask selects PER UNIVERSE
-            from .varied import expand  # noqa: PLC0415  (`varied` imports `Array`)
+            from .varied import expand
 
             return expand(lambda arr, mask: arr[mask], (self, key), {})  # type: ignore[no-any-return]  # a Varied in, a Varied out
         if isinstance(key, Array):
@@ -618,7 +612,7 @@ class Array:
     def filter(self, mask: Array) -> Array:
         """Record the selection of this array's rows where ``mask`` is true."""
         if getattr(mask, "_varied_container", False):
-            from .varied import expand  # noqa: PLC0415  (`varied` imports `Array`)
+            from .varied import expand
 
             return expand(lambda arr, m: arr.filter(m), (self, mask), {})  # type: ignore[no-any-return]  # a Varied in, a Varied out
         return self._session.record_op("filter", [self, mask])
@@ -660,7 +654,7 @@ class Array:
         on ``Array`` (the keyed/join repartition is the neutral module verb
         ``graphed.repartition``, per the factorization rule).
         """
-        from .shuffle import repartition as _repartition  # noqa: PLC0415  (avoid an import cycle)
+        from .shuffle import repartition as _repartition
 
         return _repartition(self, n=n, target_bytes=target_bytes)
 
@@ -711,7 +705,7 @@ def apply(
 
     ``output_type=`` declares the result's element type, as for ``Array.map``.
     """
-    from .varied import containers_in, expand  # noqa: PLC0415  (`varied` imports `Array`)
+    from .varied import containers_in, expand
 
     if containers_in(*arrays):  # §2.3d *expanding*: one External per universe
         return expand(  # type: ignore[no-any-return]  # a Varied in, a Varied out
@@ -751,7 +745,7 @@ class BoundMethod:
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """Record the method call, mapped over the label union when an operand is varied."""
-        from .varied import containers_in, expand, expand_tuple, narrow  # noqa: PLC0415  (cycle)
+        from .varied import containers_in, expand, expand_tuple, narrow
 
         if containers_in(self._receiver, *args, *kwargs.values()):
             # a `Varied` among the operands maps the call over the label union; the nominal
@@ -779,9 +773,6 @@ def _record_method(
     index; constants must be JSON-representable so the plan stays IR-canonical (no pickled
     closure). A refused argument raises before anything is recorded.
     """
-    from .errors import GraphedTypeError  # noqa: PLC0415  (cycle: errors -> provenance -> array)
-    from .provenance import capture  # noqa: PLC0415
-
     session = receiver._session
     prov = capture()
     inputs: list[Array] = [receiver]

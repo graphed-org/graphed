@@ -828,7 +828,7 @@ def current_session(backend: Backend | None = None) -> Session:
     made = backend if backend is not None else _factory_backend()
     if made is None:
         try:
-            from .awkward import AwkwardBackend  # noqa: PLC0415  (an optional extra)
+            from .awkward import AwkwardBackend
         except ImportError as exc:
             raise ImportError(
                 "graphed.current_session(): no backend for a new default Session; install "

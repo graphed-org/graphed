@@ -54,14 +54,14 @@ _ENV_PACKAGES = (
 
 # ---- on-disk dataset codec (deterministic; awkward via to_buffers) ------------------------------
 def _pack_array(arr: Any) -> bytes:
-    import awkward as ak  # noqa: PLC0415
+    import awkward as ak
 
     form, length, container = ak.to_buffers(ak.Array(arr))
     return pickle.dumps((form.to_json(), length, dict(container)), protocol=5)
 
 
 def _unpack_array(blob: bytes) -> Any:
-    import awkward as ak  # noqa: PLC0415
+    import awkward as ak
 
     form_json, length, container = pickle.loads(blob)
     return ak.from_buffers(ak.forms.from_json(form_json), length, container)
@@ -342,8 +342,8 @@ def reproduce(bundle: Bundle) -> Any:
     store (raising :class:`UnresolvedPayloadError` for anything missing), interprets the IR through
     the awkward backend + payload-backed external evaluators, and applies the histogram spec.
     """
-    from graphed.awkward import AwkwardBackend  # noqa: PLC0415
-    from graphed.awkward.backend import canonical_output_type  # noqa: PLC0415
+    from graphed.awkward import AwkwardBackend
+    from graphed.awkward.backend import canonical_output_type
 
     store = bundle.store
     m = bundle.manifest
@@ -419,8 +419,8 @@ def reproduce(bundle: Bundle) -> Any:
 
 
 def _histogram(value: Any, weight: Any, spec: dict[str, Any]) -> Any:
-    import awkward as ak  # noqa: PLC0415
-    import numpy as np  # noqa: PLC0415
+    import awkward as ak
+    import numpy as np
 
     v = np.asarray(ak.to_numpy(ak.Array(value)), dtype="float64")
     w = np.asarray(ak.to_numpy(ak.Array(weight)), dtype="float64")

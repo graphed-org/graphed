@@ -131,9 +131,13 @@ convention = "pep257"
 "python/graphed/checkpoint/codec.py" = ["PLC0415"]
 "python/graphed/debug/dashboard/_client.py" = ["PLC0415"]
 "python/graphed/debug/dashboard/_server.py" = ["PLC0415"]
+"python/graphed/numpy/forms.py" = ["PLC0415"]  # awkward, for an awkward type spec
 "python/graphed/numpy/io.py" = ["PLC0415"]
 "python/graphed/numpy/shuffle.py" = ["PLC0415"]
 "python/graphed/parquet.py" = ["PLC0415"]
+"python/graphed/preserve/bundle.py" = ["PLC0415"]  # awkward and numpy, to rebuild and compare
+"python/graphed/session.py" = ["PLC0415"]  # awkward, for a default Session no one configured
+"python/graphed/write.py" = ["PLC0415"]  # fsspec, for a remote output URL
 "python/graphed/preserve/externals/_helpers.py" = ["PLC0415"]
 "python/graphed/preserve/externals/correctionlib_external.py" = ["PLC0415"]
 "python/graphed/preserve/externals/histogram_external.py" = ["PLC0415"]
@@ -143,6 +147,17 @@ convention = "pep257"
 "python/graphed/preserve/externals/tensorflow_external.py" = ["PLC0415"]
 "python/graphed/preserve/externals/triton_external.py" = ["PLC0415"]
 "python/graphed/preserve/externals/xgboost_external.py" = ["PLC0415"]
+# These load an installed dependency only on the path that needs it, to keep it out of their
+# importers: cloudpickle for an opaque callable, the checkpoint store for a capturing plan.
+"python/graphed/aggregate.py" = ["PLC0415"]
+"python/graphed/core/plan.py" = ["PLC0415"]
+# Workers import graphed.debug; a replay or report alone loads the checkpoint codec, numpy or
+# graphed.preserve.
+"python/graphed/debug/replaying.py" = ["PLC0415"]
+"python/graphed/debug/report.py" = ["PLC0415"]
+# Array's methods take Varied operands and delegate to the shuffle verbs, and both modules build on
+# Array, so those imports wait until a method runs.
+"python/graphed/array.py" = ["PLC0415"]
 
 [tool.mypy]
 # 3.12 pin: numpy 2.5.0 (py>=3.12) ships PEP695 stubs that require mypy on 3.12+.

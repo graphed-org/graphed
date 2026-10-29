@@ -85,13 +85,13 @@ class _ByValue:
         return self.fn
 
     def __reduce__(self) -> tuple[Any, ...]:
-        import cloudpickle  # noqa: PLC0415  (only an opaque callable needs it)
+        import cloudpickle
 
         return _load_by_value, (cloudpickle.dumps(self.fn),)
 
 
 def _load_by_value(blob: bytes) -> _ByValue:
-    import cloudpickle  # noqa: PLC0415  (only an opaque callable needs it)
+    import cloudpickle
 
     return _ByValue(cloudpickle.loads(blob))
 
@@ -232,9 +232,9 @@ class _PartitionReduce(Generic[V]):
                 backend,
                 self.reduce(self._write(values, partition) if self.writes else values),
             )
-        import cloudpickle  # noqa: PLC0415  (only a capturing plan needs it)
+        import cloudpickle
 
-        from graphed.checkpoint import PickleCodec  # noqa: PLC0415  (as cloudpickle)
+        from graphed.checkpoint import PickleCodec
 
         store = self._task_store()
         cid, label, codec = self.capture_id(partition), str(partition), PickleCodec()
@@ -306,7 +306,7 @@ class _PartitionReduce(Generic[V]):
 
     def _task_store(self) -> Any:
         # only a capturing plan needs it
-        from graphed.checkpoint.resume import task_store  # noqa: PLC0415
+        from graphed.checkpoint.resume import task_store
 
         assert self.store is not None
         return task_store(self.store, self.storage_options)
@@ -314,7 +314,7 @@ class _PartitionReduce(Generic[V]):
     def open_store(self, node: str | None = None) -> Any:
         """Return the capture root as a checkpoint store, as every task and replay opens it."""
         # only a capturing plan needs it
-        from graphed.checkpoint.resume import open_store  # noqa: PLC0415
+        from graphed.checkpoint.resume import open_store
 
         assert self.store is not None
         return open_store(self.store, node, dict(self.storage_options))

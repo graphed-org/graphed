@@ -98,7 +98,7 @@ def canonical_output_type(spec: object) -> str:
     if isinstance(s, type) and s in PYTHON_TYPES:
         return PYTHON_TYPES[s]
     if type(s).__module__.startswith("awkward."):  # the object exists, so awkward is loaded
-        from graphed.awkward.backend import (  # noqa: PLC0415
+        from graphed.awkward.backend import (
             canonical_output_type as awkward_canonical,
         )
 
