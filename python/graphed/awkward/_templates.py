@@ -6,14 +6,16 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any
+
+import awkward as ak
+import numpy as np
 
 
 def _payload_bytes(payload: str | bytes) -> bytes:
     if isinstance(payload, bytes):
         return payload
-    from pathlib import Path  # noqa: PLC0415
-
     return Path(payload).read_bytes()
 
 
@@ -46,10 +48,7 @@ def _parse_template(
 
 
 def _ml_matrix(entry: _TemplateEntry, vals: Sequence[object]) -> object:
-    import awkward as _ak  # noqa: PLC0415
-    import numpy as _np  # noqa: PLC0415
-
     kind, value = entry
     idxs = [value] if kind == "slot" else list(value)
-    cols = [_np.asarray(_ak.to_numpy(_ak.Array(vals[i])), dtype="float32") for i in idxs]
-    return _np.stack(cols, axis=1)
+    cols = [np.asarray(ak.to_numpy(ak.Array(vals[i])), dtype="float32") for i in idxs]
+    return np.stack(cols, axis=1)

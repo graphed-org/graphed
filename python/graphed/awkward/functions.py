@@ -12,13 +12,18 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, cast
 
+import awkward as ak
 import numpy as np
 import numpy.typing as npt
 
+import graphed
 from graphed import Array, ParamValue
 from graphed.array import scalar_params
-from graphed.errors import GraphedTypeError
+from graphed.errors import GraphedError, GraphedTypeError
+from graphed.preserve.externals import get_plugin
+from graphed.preserve.externals._base import _PluginEvaluator
 from graphed.provenance import capture
+from graphed.shuffle import JOINKEY
 from graphed.varied import boundary_refusal, containers_in, expand, expand_tuple, narrow
 
 from . import payloads
@@ -42,12 +47,6 @@ def join(
     back to the relational result. The grouped shape lives ONLY here (numpy has no ``gak``), so the
     neutral ``graphed.join`` rejects ``grouped`` outright.
     """
-    # local imports: the neutral shuffle/join surface, kept off module-load to avoid an import
-    # cycle.
-    import graphed  # noqa: PLC0415
-    from graphed.errors import GraphedError  # noqa: PLC0415
-    from graphed.shuffle import JOINKEY  # noqa: PLC0415
-
     if not grouped:
         return graphed.join(left, right, on=on, how=how)
     if left.session is not right.session:
@@ -466,9 +465,6 @@ class _TemplateExternal:
 
     def __call__(self, *values: object) -> object:
         if self.call is None:
-            from ..preserve.externals import get_plugin  # noqa: PLC0415  (import cycle)
-            from ..preserve.externals._base import _PluginEvaluator  # noqa: PLC0415
-
             plugin = get_plugin(self.kind)
             if plugin is None:
                 raise RuntimeError(
@@ -764,9 +760,7 @@ def unzip(arr: Array) -> tuple[Array, ...]:
 
 def to_list(arr: Array) -> list[object]:
     """EAGER sugar: materializes through the session, then ak.to_list (records nothing new)."""
-    import awkward as _ak  # noqa: PLC0415  (avoid importing awkward at gak import for tooling)
-
-    out: list[object] = _ak.to_list(arr.session.materialize(arr))
+    out: list[object] = ak.to_list(arr.session.materialize(arr))
     return out
 
 

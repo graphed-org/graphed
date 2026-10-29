@@ -15,6 +15,7 @@ part index from its partition (R15.9), and writes one parquet part.
 from __future__ import annotations
 
 import functools
+import importlib
 import operator
 import os
 import tempfile
@@ -203,8 +204,6 @@ def _resolve_behavior(behavior: Any) -> Any:
     Behavior dicts often contain lambdas, which do not pickle to process workers.
     """
     if isinstance(behavior, str):
-        import importlib  # noqa: PLC0415
-
         mod_name, _, attr = behavior.partition(":")
         return getattr(importlib.import_module(mod_name), attr)
     return behavior

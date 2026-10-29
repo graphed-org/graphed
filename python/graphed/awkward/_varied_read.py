@@ -9,6 +9,7 @@ from typing import Any
 import awkward as ak
 import numpy as np
 
+from graphed import parquet as gpq
 from graphed.errors import GraphedError
 
 from ._varied_write import (
@@ -177,9 +178,7 @@ def read_varied(path: str) -> dict[str, ak.Array]:
     its objects passing the stored mask — bit-exact vs the in-memory varied run. The symmetric
     partner of `to_parquet(..., select=…)`.
     """
-    import pyarrow.parquet as pq  # noqa: PLC0415
-
-    meta = pq.ParquetFile(path).metadata.metadata or {}
+    meta = gpq._pq().ParquetFile(path).metadata.metadata or {}
     blob = meta.get(_MANIFEST_KEY)
     if blob is None:
         raise GraphedError(

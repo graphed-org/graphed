@@ -17,6 +17,7 @@ import numpy as np
 
 import graphed.core
 from graphed import Array, CompiledGraph, Session, context_of
+from graphed import parquet as gpq
 from graphed import write as gw
 from graphed.errors import GraphedError
 from graphed.systematics.lineage import is_ancestor, links_below
@@ -380,8 +381,7 @@ def _write_augmented(payload: ak.Array, path: str, manifest: Mapping[str, Any] |
     ak.to_parquet(payload, path)
     if manifest is None:
         return
-    import pyarrow.parquet as pq  # noqa: PLC0415
-
+    pq = gpq._pq()
     fs, where = gw.part_fs(path)
     table = pq.read_table(where, filesystem=fs)
     meta = dict(table.schema.metadata or {})
