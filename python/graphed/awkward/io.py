@@ -475,6 +475,20 @@ class _VariedWritePart:
             return ak.Array(values[rank[node_id]])
 
         base = resolved(self.base_id)
+        cols = {**self._value_columns(resolved), **self._mask_columns(resolved, base)}
+
+        if self.wrapped:
+            fields: dict[str, ak.Array] = {_BASE_FIELD: base}
+        else:
+            fields = {name: base[name] for name in base.fields}
+        payload = ak.zip({**fields, **cols}, depth_limit=1)
+        (path,) = self.part_paths(partition)
+        gw.prepare_part(path)
+        _write_augmented(payload, path, self.manifest)
+        return [path]
+
+    def _value_columns(self, resolved: Callable[[int], ak.Array]) -> dict[str, ak.Array]:
+        """Return each varied leaf's per-label column: an XOR delta vs nominal, or the value."""
         cols: dict[str, ak.Array] = {}
         for spec in self.value_specs:
             nominal_value = resolved(dict(spec.members)["nominal"])
@@ -502,6 +516,13 @@ class _VariedWritePart:
                     if label in spec.verbatim
                     else _encode_delta(nominal_value, value, spec.jagged)
                 )
+        return cols
+
+    def _mask_columns(
+        self, resolved: Callable[[int], ak.Array], base: ak.Array
+    ) -> dict[str, ak.Array]:
+        """Return each supplied level's per-label mask column, checked against ``base``."""
+        cols: dict[str, ak.Array] = {}
         for mask_spec in self.mask_specs:
             field_values = base if mask_spec.field_path is None else base[mask_spec.field_path]
             for label, node_id in mask_spec.members:
@@ -524,16 +545,7 @@ class _VariedWritePart:
                 cols[f"{_VARY_PREFIX}{label}__mask__{mask_spec.entry_flat}"] = (
                     mask if label in mask_spec.option else _encode_mask(mask)
                 )
-
-        if self.wrapped:
-            fields: dict[str, ak.Array] = {_BASE_FIELD: base}
-        else:
-            fields = {name: base[name] for name in base.fields}
-        payload = ak.zip({**fields, **cols}, depth_limit=1)
-        (path,) = self.part_paths(partition)
-        gw.prepare_part(path)
-        _write_augmented(payload, path, self.manifest)
-        return [path]
+        return cols
 
 
 def _write_varied(

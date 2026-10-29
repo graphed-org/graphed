@@ -108,6 +108,26 @@ def _reconstruct_universe(
     restricted to the kept rows).
     """
     columns = manifest[label]
+    rec = _select(_apply_deltas(base, full, columns), full, columns, manifest["levels"])
+    # the XOR rebuild carries no parameters: impose the universe's record type (nominal's, unless
+    # stored)
+    stored = columns.get(f"{_RECORD_TYPE}{label}") or manifest["nominal"].get(
+        f"{_RECORD_TYPE}nominal"
+    )
+    # an option level-0 mask gave None rows
+    option = isinstance(rec.type.content, ak.types.OptionType)
+    target = rec.type.content.content if option else rec.type.content
+    if stored is not None:
+        want = ak.forms.from_dict(stored["type"]).type
+    elif target.is_equal_to(base.type.content):
+        want = base.type.content
+    else:
+        return rec
+    return ak.enforce_type(rec, ak.types.OptionType(want) if option else want)
+
+
+def _apply_deltas(base: ak.Array, full: ak.Array, columns: Mapping[str, Any]) -> ak.Array:
+    """Return nominal `base` with one label's stored value columns applied (XOR or verbatim)."""
     rec = base
     for col, info in columns.items():
         if info["representation"] in ("xor", "base") and col.startswith(_VARY_PREFIX):
@@ -118,7 +138,13 @@ def _reconstruct_universe(
                 nominal_value = _get_leaf(rec, path)
                 value = _apply_xor(nominal_value, full[col], nominal_value.ndim > 1)
             rec = ak.with_field(rec, value, where=path.split("."))
+    return rec
 
+
+def _select(
+    rec: ak.Array, full: ak.Array, columns: Mapping[str, Any], levels: Sequence[Any]
+) -> ak.Array:
+    """Return `rec` kept by one label's stored level-0 row mask and level->=1 object masks."""
     packed = {  # entry -> the label's mask column, still at superset granularity
         _entry_key(info["entry"]): (info["representation"], full[col])
         for col, info in columns.items()
@@ -129,7 +155,7 @@ def _reconstruct_universe(
     # (§6.4c).
     higher: list[tuple[str | None, ak.Array]] = []
     m0: Any = None
-    for entry in manifest["levels"]:
+    for entry in levels:
         key = _entry_key(entry)
         field_path, depth = key
         representation, column = packed[key]
@@ -153,21 +179,7 @@ def _reconstruct_universe(
             rec = rec[inner]
         else:
             rec = ak.with_field(rec, rec[field_path][inner], where=field_path.split("."))
-    # the XOR rebuild carries no parameters: impose the universe's record type (nominal's, unless
-    # stored)
-    stored = columns.get(f"{_RECORD_TYPE}{label}") or manifest["nominal"].get(
-        f"{_RECORD_TYPE}nominal"
-    )
-    # an option level-0 mask gave None rows
-    option = isinstance(rec.type.content, ak.types.OptionType)
-    target = rec.type.content.content if option else rec.type.content
-    if stored is not None:
-        want = ak.forms.from_dict(stored["type"]).type
-    elif target.is_equal_to(base.type.content):
-        want = base.type.content
-    else:
-        return rec
-    return ak.enforce_type(rec, ak.types.OptionType(want) if option else want)
+    return rec
 
 
 def read_varied(path: str) -> dict[str, ak.Array]:
