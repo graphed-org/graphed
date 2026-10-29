@@ -420,7 +420,7 @@ class DashboardServer:
     def _ingest_profile(self, msg: dict[str, Any]) -> None:
         try:
             tree = _sampler.tree_from_bytes(base64.b64decode(msg["tree_b64"]))
-        except Exception:
+        except (LookupError, TypeError, ValueError, RecursionError):
             return  # a malformed payload must never break the server
         with self._lock:
             _sampler.merge_into(self._profile_tree, tree)

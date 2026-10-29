@@ -203,7 +203,7 @@ def _hash_in_subprocess(content_hash: ContentHash, sample: bytes, *, seed: str) 
         try:
             cloudpickle.register_pickle_by_value(module)
             registered = True
-        except Exception:
+        except ValueError:
             registered = False
     try:
         blob = cloudpickle.dumps((content_hash, sample))

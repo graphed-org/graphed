@@ -201,7 +201,7 @@ class NetworkMonitor:
             if messages and conn is not None:  # a failed connect drops the batch
                 try:
                     conn.send(json.dumps(_wire.batch_message(messages)))
-                except Exception:
+                except Exception:  # whatever the send raises, the run being watched goes on
                     with contextlib.suppress(Exception):
                         conn.close()
                     conn = None  # the batch is dropped; the next drain reconnects

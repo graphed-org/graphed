@@ -14,7 +14,7 @@ import threading
 import types
 import warnings
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, TypeVar
 
 import graphed.core
@@ -818,16 +818,26 @@ class Session:
 _scopes: contextvars.ContextVar[tuple[Session, ...]] = contextvars.ContextVar(
     "graphed_session_scopes", default=()
 )
-# module globals and not context variables: the default must be one object every thread and every
-# context sees, including those started before it existed
-_default: Session | None = None
-_default_factory: Callable[[], Backend] | None = None
-# guards the two writes; never held across `Session(...)` or a factory call, which may read back
-_default_lock = threading.Lock()
+
+
+@dataclass
+class _Defaults:
+    """The process-wide default Session and the backend factory of future defaults."""
+
+    session: Session | None = None
+    factory: Callable[[], Backend] | None = None
+    # guards the two writes; never held across `Session(...)` or a factory call, which may read
+    # back
+    lock: threading.Lock = field(default_factory=threading.Lock)
+
+
+# one object and not context variables: every thread and every context sees the default,
+# including those started before it existed
+_defaults = _Defaults()
 
 
 def _factory_backend() -> Backend | None:
-    factory = _default_factory
+    factory = _defaults.factory
     return None if factory is None else factory()
 
 
@@ -838,11 +848,10 @@ def current_session(backend: Backend | None = None) -> Session:
     :func:`set_default_backend`, else on ``graphed.awkward.AwkwardBackend()``. ``backend`` is
     used only then: the Session returned may record on another backend.
     """
-    global _default  # the process-wide default
     stack = _scopes.get()
     if stack:
         return stack[-1]
-    held = _default
+    held = _defaults.session
     if held is not None:
         return held
     made = backend if backend is not None else _factory_backend()
@@ -856,10 +865,10 @@ def current_session(backend: Backend | None = None) -> Session:
             ) from exc
         made = AwkwardBackend()
     session = Session(made)
-    with _default_lock:
-        if _default is None:
-            _default = session
-        return _default
+    with _defaults.lock:
+        if _defaults.session is None:
+            _defaults.session = session
+        return _defaults.session
 
 
 def new_session(backend: Backend | None = None) -> None:
@@ -878,14 +887,13 @@ def set_session(default: Session | None, /) -> Session | None:
 
     The previous one is the restore token: ``prev = set_session(s); ...; set_session(prev)``.
     """
-    global _default  # the process-wide default
     if default is not None and not isinstance(default, Session):
         raise TypeError(
             f"set_session takes a graphed.Session or None, not {type(default).__name__} "
             "(an array's Session is array.session)"
         )
-    with _default_lock:
-        previous, _default = _default, default
+    with _defaults.lock:
+        previous, _defaults.session = _defaults.session, default
     return previous
 
 
@@ -896,9 +904,8 @@ def set_default_backend(factory: Callable[[], Backend] | None, /) -> Callable[[]
     a backend, never to a reader with its own backend, and not to a default that already exists:
     call :func:`new_session` to apply it now. ``None`` clears it.
     """
-    global _default_factory  # the process-wide factory
-    with _default_lock:
-        previous, _default_factory = _default_factory, factory
+    with _defaults.lock:
+        previous, _defaults.factory = _defaults.factory, factory
     return previous
 
 
