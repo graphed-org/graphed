@@ -4,6 +4,24 @@ What changed
 Newest release first. Numbers in parentheses are the pull requests on
 `graphed-org/graphed <https://github.com/graphed-org/graphed>`_.
 
+Unreleased
+----------
+
+``graphed.materialize`` evaluates anything deferred
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``graphed.materialize`` now evaluates a :class:`~graphed.write.PartWrite` (to its part paths), a
+  plan (to ``run(plan).value``, so ``to_parquet(..., compute=False)`` writes), and any object whose
+  class defines ``__graphed_pieces__`` returning :class:`graphed.PlanPieces`, as a deferred
+  histogram does, beside Arrays and in any nesting of them. A ``Varied`` becomes
+  ``{label: value}``; it used to come back unevaluated. Other items still pass through. One
+  Session's results share one read of each source, of the columns they use together.
+* A failing operation under ``graphed.materialize`` raises a ``StageError`` at the line that
+  recorded it, as a plan does, instead of the bare backend error.
+* ``graphed.materialize`` over several files of a source that leaves unread columns as placeholders
+  (``uproot.graphed``, coffea) no longer raises ``should never have been encountered``: the
+  awkward backend's ``concat`` joins what was read and keeps the unread fields, unread.
+
 0.0.10
 ------
 

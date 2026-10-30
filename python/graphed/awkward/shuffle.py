@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import pickle
 from collections.abc import Sequence
+from typing import Any
 
 import awkward as ak
 import numpy as np
@@ -55,9 +56,57 @@ def partition(
     return tuple(block[dest == d] for d in range(parts))
 
 
+def _unread(layout: Any, length: int) -> Any:
+    """``length`` rows of ``layout``'s form with every buffer a placeholder."""
+    form, nplike = layout.form, layout.backend.nplike
+    placeholders = {
+        key: ak.typetracer.PlaceholderArray(nplike, (ak.typetracer.unknown_length,), dtype)
+        for key, dtype in form.expected_from_buffers().items()
+    }
+    return ak.from_buffers(form, length, placeholders, highlevel=False)
+
+
+def _is_read(layout: Any) -> bool:
+    return all(isinstance(b, np.ndarray) for b in ak.to_buffers(layout)[2].values())
+
+
+def _joined(parts: list[Any]) -> Any:
+    """Concatenate layouts of one form row-wise; what a read left unread stays unread.
+
+    Its fields stay too, since a behavior may look for them without reading them.
+    """
+    if all(_is_read(part) for part in parts):
+        return ak.concatenate(parts, axis=0, highlevel=False)
+    head, length = parts[0], sum(part.length for part in parts)
+    if head.is_record:
+        contents = [_joined([p.content(f) for p in parts]) for f in head.fields]
+        fields = None if head.is_tuple else head.fields
+        return ak.contents.RecordArray(contents, fields, length, parameters=head.parameters)
+    if isinstance(head, ak.contents.ListOffsetArray) and all(
+        isinstance(p.offsets.data, np.ndarray) for p in parts
+    ):
+        offsets = [np.asarray(p.offsets.data) for p in parts]
+        ends: Any = np.cumsum([o[-1] - o[0] for o in offsets])
+        shifts = np.concatenate([[0], ends[:-1]])
+        merged = [o[:-1] - o[0] + shift for o, shift in zip(offsets, shifts, strict=True)]
+        return ak.contents.ListOffsetArray(
+            ak.index.Index64(np.concatenate([*merged, ends[-1:]])),
+            _joined([p.content[o[0] : o[-1]] for p, o in zip(parts, offsets, strict=True)]),
+            parameters=head.parameters,
+        )
+    return _unread(head, length)
+
+
 def concat(blocks: Sequence[ak.Array]) -> ak.Array:
-    """Vertically concatenate blocks in order (the deterministic ascending-src_pid merge, §4.0)."""
-    return ak.concatenate(list(blocks), axis=0)
+    """Vertically concatenate blocks in order (the deterministic ascending-src_pid merge, §4.0).
+
+    Fields a projected read left as placeholders stay placeholders, of the concatenated length.
+    """
+    if all(_is_read(block.layout) for block in blocks):
+        return ak.concatenate(list(blocks), axis=0)
+    head = blocks[0]
+    joined = _joined([block.layout for block in blocks])
+    return ak.Array(joined, behavior=head.behavior, attrs=head.attrs)
 
 
 def slice_rows(block: ak.Array, start: int, stop: int) -> ak.Array:
