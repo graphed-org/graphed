@@ -26,6 +26,7 @@ LOGGER = "graphed.checkpoint"
 
 
 def leg(variant: str, root: Path, seed: str) -> dict[str, Any]:
+    pytest.importorskip("pyarrow")
     env = {**os.environ, "PYTHONHASHSEED": seed}
     env["PYTHONPATH"] = os.pathsep.join([str(HERE), env.get("PYTHONPATH", "")])
     args = [str(root / "store"), str(root), str(root / "out")]
