@@ -2,23 +2,24 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass, field, replace
-from typing import Any, cast
+from collections.abc import Callable, Container, Iterable, Mapping, Sequence, Set
+from dataclasses import dataclass, field
+from functools import partial
+from operator import add
+from typing import Any
 
-from graphed.core import Partition
-from graphed.core.execution import LocalResources, Plan, SequentialRunner, WorkerResources
+from graphed.core.execution import LocalResources, Plan, SequentialRunner
 from graphed.core.plan import DurablePlan, DurablePlanV2
 
 from .aggregate import (
-    _PartitionReduce,
+    _planned_arrays,
     _slot_of,
     aggregate_plan,
     attribute_failures,
     external_evaluators,
 )
 from .array import Array
-from .execute import CompiledGraph, Key, _compile_cone, compile_ir, evaluate_ir
+from .execute import CompiledGraph, Key, _compile_cone, evaluate_ir
 from .projection import read_columns
 from .session import Session
 from .varied import Varied, members_of
@@ -28,6 +29,9 @@ from .write import PartitionedSource, PartWrite, _concat_paths, declared_columns
 _WHOLE = "whole dataset"
 
 _PLANS = (Plan, DurablePlan, DurablePlanV2)
+
+#: node kinds whose chunks do not concatenate to their whole value
+_BOUNDARIES = ("reduction", "exchange", "join")
 
 
 @dataclass(frozen=True)
@@ -119,21 +123,6 @@ class _Joint:
         return dict(zip([*self.pieces, *map(id, self.writes)], value, strict=True))
 
 
-@dataclass(frozen=True)
-class _Kept:
-    """A reader keeping each chunk it reads, for the Arrays sharing the pass."""
-
-    source: PartitionedSource
-    chunks: list[object]
-
-    def read_partition(
-        self, partition: Partition, columns: Sequence[str] | None, resources: WorkerResources
-    ) -> object:
-        chunk = self.source.read_partition(partition, columns, resources)
-        self.chunks.append(chunk)
-        return chunk
-
-
 def _columns(data: object, arrays: Sequence[Array], nid: int) -> tuple[str, ...] | None:
     declared = declared_columns(data, arrays)
     return read_columns(arrays, nid) if declared is None else declared
@@ -148,18 +137,18 @@ def _keep(session: Session, nid: int, chunks: Sequence[object], reads: dict[int,
         reads[nid] = concat(chunks)
 
 
-def _read(session: Session, arrays: Sequence[Array], reads: dict[int, object]) -> None:
+def _read(
+    session: Session, arrays: Sequence[Array], passed: Container[int], reads: dict[int, object]
+) -> None:
     """Add to ``reads`` each source ``arrays`` read, with the columns a plan over them would read.
 
-    A source whose read list is every column, or whose partitions the backend cannot concatenate,
-    is left to its lazy loader.
+    A source in ``passed`` had its pass. One whose read list is every column, or whose partitions
+    the backend cannot concatenate, is left to its lazy loader.
     """
-    if not arrays:
-        return
     resources = LocalResources()
     try:
         for nid, data in sources_read(arrays).items():
-            if nid in reads or not isinstance(data, PartitionedSource):
+            if nid in passed or not isinstance(data, PartitionedSource):
                 continue
             columns = _columns(data, arrays, nid)
             if columns is None:
@@ -172,14 +161,80 @@ def _read(session: Session, arrays: Sequence[Array], reads: dict[int, object]) -
         resources.close()
 
 
-def _run_pass(
-    session: Session, nid: int, joint: _Joint, arrays: Sequence[Array], reads: dict[int, object]
-) -> dict[int, Any]:
-    """Run ``joint`` as one plan over source ``nid``; add the read ``arrays`` share to ``reads``.
+def _frontier(session: Session, arrays: Sequence[Array], nid: int, past: Set[int]) -> list[Array]:
+    """Return the nodes ``arrays`` take from a pass over source ``nid``.
 
-    Those of ``arrays`` that read the source widen the plan's columns to theirs.
+    Those not ``past`` a reduction, whose chunks concatenate to their whole value; whatever
+    consumes one evaluates on that concatenation.
+    """
+    nodes: dict[int, None] = {}
+
+    def consumed(ins: Sequence[Any]) -> None:
+        nodes.update(dict.fromkeys(i for i in ins if i is not None))
+
+    def onward(node: int, ins: list[Any]) -> int | None:
+        if ins and None not in ins and node not in past:
+            return node
+        consumed(ins)
+        return None
+
+    memo: dict[int, object] = {}
+    for array in arrays:
+        end = session.walk(
+            array,
+            source=lambda n: n if n == nid else None,
+            op=lambda node, _name, ins, _params: onward(node, ins),
+            external=lambda node, _fn, ins: onward(node, ins),
+            memo=memo,
+        )
+        consumed([end])
+    return [Array(session, node) for node in nodes]
+
+
+def _past_boundary(session: Session) -> set[int]:
+    """Return the nodes at or downstream of a boundary; a node's inputs precede it in the store."""
+    past: set[int] = set()
+    for nid, nd in enumerate(session._nodes()):
+        if nd["kind"] in _BOUNDARIES or not past.isdisjoint(nd["inputs"]):
+            past.add(nid)
+    return past
+
+
+def _carrying(frontier: Sequence[Array]) -> PlanPieces:
+    """Return a piece whose result is ``frontier``'s values, one tuple per partition."""
+    slots: list[int] = []
+
+    def on_compiled(compiled: CompiledGraph) -> None:
+        slots[:] = map(_slot_of(compiled), frontier)
+
+    return PlanPieces(
+        outputs=tuple(frontier),
+        reduce=lambda values: [tuple(values[slot] for slot in slots)],
+        combine=add,
+        empty=list,
+        finalize=list,
+        on_compiled=on_compiled,
+    )
+
+
+def _run_pass(
+    session: Session,
+    nid: int,
+    joint: _Joint,
+    arrays: Sequence[Array],
+    past: Set[int],
+    reads: dict[int, object],
+) -> dict[int, Any]:
+    """Run ``joint`` as one plan over source ``nid``, computing what ``arrays`` take from it.
+
+    Those of ``arrays`` that read the source add their columns to the plan's; ``reads`` gets the
+    whole value of each node they take.
     """
     sharing = [a for a in arrays if nid in session.reachable_sources(a.node_id)]
+    read_by = _planned_arrays(joint.outputs(), tuple(joint.writes), store=None, opt_level=1)
+    frontier = _frontier(session, sharing, nid, past)
+    carried = _carrying(frontier)
+    joint.pieces[id(carried)] = carried
     plan = aggregate_plan(
         *joint.outputs(),
         reduce=joint.reduce,
@@ -191,62 +246,41 @@ def _run_pass(
         finalize=joint.finalize,
         # this process's own backend: nothing ships, so nothing need rebuild it
         backend=lambda: session.backend,
-        read_for=sharing,
+        read_by=[*read_by, *sharing],
     )
-    chunks: list[object] = []
-    if sharing:
-        process = cast("_PartitionReduce[Any]", plan.process)
-        reader = cast("PartitionedSource", _Kept(process.reader, chunks))
-        plan = replace(plan, process=replace(process, reader=reader))
     value = joint.by_item(SequentialRunner().run(plan).value)
-    _keep(session, nid, chunks, reads)
+    # popped, so each column's chunks go as soon as they are joined
+    columns = list(zip(*value.pop(id(carried)), strict=True))
+    while columns:
+        _keep(session, frontier[len(columns) - 1].node_id, columns.pop(), reads)
     return value
 
 
-def _evaluate(
-    session: Session,
-    compiled: CompiledGraph,
-    outputs: Sequence[Array],
-    reads: dict[int, object],
-    *,
-    labels: Sequence[Any] | None = None,
-    externals: Mapping[str, Callable[..., object]] | None = None,
-    opt_level: int = 1,
-) -> list[object]:
-    """Evaluate ``compiled`` over whole sources; ``reads`` keeps each for the call's next one."""
-    sources = {}
-    for nid in sources_read(outputs):
-        if nid not in reads:
-            reads[nid] = session.source_value(nid)
-        sources[session.source_name(nid)] = reads[nid]
-    return evaluate_ir(
+def _run_whole(
+    session: Session, joint: _Joint, arrays: Sequence[Array], reads: Mapping[int, object]
+) -> dict[int, Any]:
+    """Evaluate ``joint`` and ``arrays`` in one graph over whole sources, cut at ``reads``."""
+    outputs = [*joint.outputs(), *arrays]
+    compiled = _compile_cone(session, *outputs)
+    labels = joint.on_compiled(compiled)
+    landed = compiled.correspondence.node_map
+    values = evaluate_ir(
         compiled,
         session.backend,
-        sources,
-        externals={**external_evaluators(session, compiled), **(externals or {})},
-        on_failure=attribute_failures(compiled.correspondence.frames, _WHOLE, labels, opt_level),
+        {
+            session.source_name(nid): partial(session.source_value, nid)
+            for nid in sources_read(outputs)
+            if nid not in reads
+        },
+        externals={**external_evaluators(session, compiled), **joint.externals()},
+        on_failure=attribute_failures(compiled.correspondence.frames, _WHOLE, labels, opt_level=0),
+        given={landed[nid][0]: value for nid, value in reads.items() if nid in landed},
     )
-
-
-def _run_whole(session: Session, joint: _Joint, reads: dict[int, object]) -> dict[int, Any]:
-    """Evaluate ``joint`` once over whole sources, as no one partitioned source covers it."""
-    outputs = joint.outputs()
-    compiled = compile_ir(session, *outputs)
-    labels = joint.on_compiled(compiled)
-    values = _evaluate(
-        session, compiled, outputs, reads, labels=labels, externals=joint.externals()
-    )
-    return joint.by_item(joint.finalize(joint.combine(joint.empty(), joint.reduce(values))))
-
-
-def _run_arrays(
-    session: Session, arrays: Sequence[Array], reads: dict[int, object]
-) -> dict[int, Any]:
-    """Evaluate ``arrays`` together over whole sources, so a dataset-wide reduction stays right."""
-    compiled = _compile_cone(session, *arrays)
-    values = _evaluate(session, compiled, arrays, reads, opt_level=0)
     slot = _slot_of(compiled)
-    return {id(array): values[slot(array)] for array in arrays}
+    return {
+        **joint.by_item(joint.finalize(joint.combine(joint.empty(), joint.reduce(values)))),
+        **{id(array): values[slot(array)] for array in arrays},
+    }
 
 
 @dataclass
@@ -254,6 +288,8 @@ class _Work:
     """What one call asks of one Session."""
 
     arrays: list[Array] = field(default_factory=list)
+    #: pieces by the ``id`` of their object, until every one has recorded what it needs
+    pieces: dict[int, PlanPieces] = field(default_factory=dict)
     #: by the one partitioned source each reads
     passes: dict[int, _Joint] = field(default_factory=dict)
     #: what reads anything else
@@ -292,21 +328,23 @@ def _evaluated(items: Iterable[Any]) -> dict[int, Any]:
             if not pieces.outputs:
                 values[id(item)] = pieces.finalize(pieces.empty())
                 continue
-            work = works.setdefault(pieces.outputs[0].session, _Work())
-            work.joint(pieces.outputs).pieces[id(item)] = pieces
+            works.setdefault(pieces.outputs[0].session, _Work()).pieces[id(item)] = pieces
     for plan in plans:
         run = plan.to_plan() if isinstance(plan, DurablePlan) else plan
         values[id(plan)] = SequentialRunner().run(run).value
     for session, work in works.items():
+        past = _past_boundary(session)
+        for key, pieces in work.pieces.items():
+            # past a boundary is whole, where a reduction has its one value
+            whole = not past.isdisjoint(a.node_id for a in pieces.outputs)
+            (work.whole if whole else work.joint(pieces.outputs)).pieces[key] = pieces
         reads: dict[int, object] = {}
         beside_passes = [*work.arrays, *work.whole.outputs()]
         for nid, joint in work.passes.items():
-            values.update(_run_pass(session, nid, joint, beside_passes, reads))
-        _read(session, beside_passes, reads)
-        if work.whole.pieces:
-            values.update(_run_whole(session, work.whole, reads))
-        if work.arrays:
-            values.update(_run_arrays(session, work.arrays, reads))
+            values.update(_run_pass(session, nid, joint, beside_passes, past, reads))
+        if beside_passes:
+            _read(session, beside_passes, work.passes, reads)
+            values.update(_run_whole(session, work.whole, work.arrays, reads))
     return values
 
 
@@ -320,12 +358,17 @@ def materialize(arrays: Any) -> Any:
     paths, a plan's ``run(plan).value``, the object's own result, and a
     :class:`~graphed.Varied` becomes ``{label: value}``. Other items pass through.
 
-    One Session's results share one read of each source, of the columns they use together. Its
-    pieces and writes over a source are one :func:`graphed.aggregate_plan`, evaluating what they
-    share once; its Arrays evaluate every node they share once, over the chunks that plan read. A
-    plan passed in is its own pass. Pieces reading anything but one partitioned source evaluate
-    once over whole sources. A failing operation raises a :class:`~graphed.errors.StageError` at
-    the line that recorded it.
+    One Session's results share one read of each source, of the columns they use together, and
+    evaluate each node they share once. Its pieces and writes over a source are one
+    :func:`graphed.aggregate_plan`, which also computes everything its Arrays need that is not
+    downstream of a reduction; the rest evaluates once over the concatenated chunks, so an Array
+    is always its whole-dataset value. As in any chunked run, that takes behavior methods, named
+    types' overloads and Externals to be row-wise, and an operation pairing two row sets raises
+    in that pass, though it broadcasts alone. A piece downstream of a reduction, or reading
+    anything but one partitioned source, evaluates with the Arrays over the whole dataset, where
+    that reduction has its one correct value. A write consuming one is refused, as it is in a
+    plan. A plan passed in is its own pass. A failing operation raises a
+    :class:`~graphed.errors.StageError` at the line that recorded it.
 
     Evaluation only: running on an executor is a plan's job
     (:func:`graphed.aggregate_plan`, :func:`graphed.collate`).

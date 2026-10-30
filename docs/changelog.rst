@@ -49,7 +49,12 @@ to fold: that is correct for a sum and yours to get right for anything else.
   ``__graphed_pieces__`` returning :class:`graphed.PlanPieces`, as a deferred histogram does,
   beside Arrays and in any nesting of them. A ``Varied`` becomes ``{label: value}``; it used to
   come back unevaluated. Other items still pass through. One Session's results share one read of
-  each source, of the columns they use together, through ``aggregate_plan``'s new ``read_for=``.
+  each source, of the columns they use together, and evaluate each node once unless it is
+  downstream of a reduction beside a piece that is not: the pass computes everything before the
+  reduction, and the rest evaluates over the concatenated chunks. ``aggregate_plan``'s new
+  ``read_by=`` sets the Arrays a plan's read covers.
+* A deferred result downstream of a reduction, such as a histogram of ``local_index(x, axis=0)``,
+  evaluates over the whole dataset under ``graphed.materialize``, where a plan refuses it.
 * ``Session.materialize`` loses ``memo=``, which only ``graphed.materialize`` used.
 * A failing operation under ``graphed.materialize`` raises a ``StageError`` at the line that
   recorded it, as a plan does, instead of the bare backend error.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import functools
+from collections import Counter
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -21,7 +22,7 @@ import pyarrow.parquet as pq
 import graphed
 import graphed.awkward as gak
 from graphed.awkward import AwkwardBackend, from_awkward
-from graphed.awkward.functions import num
+from graphed.awkward.functions import firsts, local_index, mask, num, pad_none, where, with_name
 from graphed.awkward.functions import sum as gak_sum
 from graphed.awkward.io import from_parquet, parquet_write, to_parquet
 from graphed.core import DurablePlan, OpSpec, Partition
@@ -104,7 +105,8 @@ class _Total:
             target = compiled.correspondence.node_map[self.array.node_id][0]
             store = graphed.core.GraphStore.deserialize(bytes(compiled.ir))
             slot["at"] = list(store.outputs()).index(target)
-            return (((target, None), (("nominal",), ("f.py", 1, "", ""))),)
+            frame = dict(compiled.correspondence.frames).get((target, None), ("f.py", 1, "", ""))
+            return (((target, None), (("nominal",), frame)),)
 
         return PlanPieces(
             outputs=(self.array,),
@@ -114,6 +116,28 @@ class _Total:
             finalize=lambda total: total * self.scale,
             on_compiled=on_compiled,
         )
+
+
+class _Counting(AwkwardBackend):
+    """Counts each op's evaluations, and what it was asked to concatenate."""
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.evaluated: Counter[str] = Counter()
+        self.concatenated: list[ak.Array] = []
+
+    def eval_stage(self, op: str, inputs: Any, params: Any) -> Any:
+        self.evaluated[op] += 1
+        return super().eval_stage(op, inputs, params)
+
+    def concat(self, blocks: Any) -> Any:
+        self.concatenated.extend(blocks)
+        return super().concat(blocks)
+
+
+def _counted(*chunks: ak.Array) -> tuple[_Counting, Any]:
+    backend = _Counting()
+    return backend, _files(Session(backend), *chunks)[0]
 
 
 def _labelled(labels: tuple[str, ...], _: object) -> tuple[Any, ...]:
@@ -518,6 +542,17 @@ def test_concat_of_routed_blocks_keeps_what_was_read() -> None:
     assert joined.fields == ["c", "x", "u"]
 
 
+def test_concat_keeps_a_union_around_its_unread_fields() -> None:
+    left, right = (
+        ak.zip({"p": [1.0, 2.0], "r": [4.0, 5.0]}),
+        ak.zip({"p": [7.0, 8.0], "s": [1, 2]}),
+    )
+    chunk = ak.Array({"u": ak.where(np.array([True, False]), left, right), "x": [1.0, 2.0]})
+    assert isinstance(chunk.layout.content("u"), ak.contents.UnionArray)
+    block = _projected(chunk, ["u.p"])
+    assert ak.to_list(AwkwardBackend().concat([block, block]).u.p) == [1.0, 8.0, 1.0, 8.0]
+
+
 def test_concat_keeps_the_missing_rows_of_an_indexed_option() -> None:
     chunk = ak.Array(
         {"o": [{"p": 1.0, "u": 5.0}, None, {"p": 2.0, "u": 6.0}], "x": [1.0, 2.0, 3.0]}
@@ -592,3 +627,182 @@ def test_a_mapping_building_its_values_on_each_read() -> None:
     session = Session(AwkwardBackend())
     source, _ = _files(session, *_flat())
     assert ak.to_list(graphed.materialize(Built(source))["a"]) == [1.0, 2.0, 3.0]
+
+
+def test_a_node_an_array_and_a_piece_share_runs_once_per_partition() -> None:
+    backend, source = _counted(*_flat())
+    shared = (source.a + 1.0) * 2.0
+    total, normalized = graphed.materialize([_Total(shared), shared / gak_sum(shared, axis=None)])
+    assert backend.evaluated["add"] == backend.evaluated["mul"] == 2
+
+    _, alone = _counted(*_flat())
+    alone_shared = (alone.a + 1.0) * 2.0
+    assert total == graphed.materialize(_Total(alone_shared)) == 18.0
+    assert ak.to_list(normalized) == ak.to_list(
+        graphed.materialize(alone_shared / gak_sum(alone_shared, axis=None))
+    )
+    assert float(ak.sum(normalized)) == pytest.approx(1.0)
+
+
+def test_a_piece_past_a_reduction_evaluates_whole_with_the_array_beside_it() -> None:
+    backend, source = _counted(*_flat())
+    index = local_index(source.a, axis=0)
+    total, whole, doubled = graphed.materialize([_Total(index), index, _Total(index * 2)])
+    assert backend.evaluated["ak.local_index"] == 1
+    assert ak.to_list(whole) == [0, 1, 2]
+    assert (total, doubled) == (3.0, 6.0)
+
+
+def test_an_array_past_a_reduction_takes_the_node_under_it() -> None:
+    backend, source = _counted(*_flat())
+    shared = source.a + 1.0
+    total, summed = graphed.materialize([_Total(shared), gak_sum(shared, axis=None)])
+    assert total == summed == 9.0
+    assert backend.evaluated["add"] == 2
+
+
+def test_a_write_past_a_reduction_stays_refused(tmp_path: Any) -> None:
+    session = Session(AwkwardBackend())
+    source, _ = _files(session, *_flat())
+    summed = source.a + gak_sum(source.a, axis=None)
+    write = parquet_write(summed, str(tmp_path / "w"), name=_part_name)
+    with pytest.raises(GraphedError, match="feeds another node"):
+        graphed.materialize([write, source.b])
+
+
+def test_an_array_of_one_column_keeps_only_that_column_of_the_pass() -> None:
+    backend, source = _counted(*_flat())
+    total, b = graphed.materialize([_Total(source.a), source.b])
+    assert total == 6.0
+    assert ak.to_list(b) == [10.0, 20.0, 30.0]
+    assert backend.concatenated
+    assert all(not block.fields for block in backend.concatenated)
+
+
+def test_an_external_is_shared_as_row_wise() -> None:
+    calls: list[int] = []
+
+    def double(x: Any) -> Any:
+        calls.append(len(x))
+        return x * 2.0
+
+    session = Session(AwkwardBackend())
+    source, _ = _files(session, *_flat())
+    shared = source.a.map(double, output_type="float64")
+    total, whole = graphed.materialize([_Total(shared), shared])
+    assert total == 12.0
+    assert ak.to_list(whole) == [2.0, 4.0, 6.0]
+    assert calls == [2, 1]
+
+
+def test_a_source_with_no_partitions_leaves_arrays_to_its_loader() -> None:
+    session = Session(AwkwardBackend())
+    source, files = _files(session, *_flat())
+    files.chunks = ()
+    files.__class__ = type("Loaded", (_Files,), {"__call__": lambda self: _flat()[0]})
+    total, a = graphed.materialize([_Total(source.a), source.a])
+    assert total == 0.0
+    assert ak.to_list(a) == [1.0, 2.0]
+
+
+class _Doubling(ak.Array):  # type: ignore[misc]  # awkward is untyped here
+    @property
+    def doubled(self) -> ak.Array:
+        return self.a * 2.0
+
+
+def test_a_behavior_property_is_shared_as_row_wise() -> None:
+    def chunks() -> list[ak.Array]:
+        return [ak.Array({"p": ak.with_name(ak.zip({"a": x}), "P")}) for x in ([1.0, 2.0], [3.0])]
+
+    backend = _Counting(behavior={("*", "P"): _Doubling})
+    source, _ = _files(Session(backend), *chunks())
+    doubled = source.p.doubled
+    total, whole = graphed.materialize([_Total(doubled), doubled])
+    assert backend.evaluated["field"] == 4  # `p` then `doubled`, once per partition
+    assert total == 12.0
+    assert ak.to_list(whole) == [2.0, 4.0, 6.0]
+
+
+def test_a_length_one_row_set_refuses_in_a_pass_and_broadcasts_alone() -> None:
+    session = Session(AwkwardBackend())
+    source, _ = _files(session, *_flat())
+    only = source.a - source.a[source.a == 3.0]
+    assert ak.to_list(graphed.materialize(only)) == [-2.0, -1.0, 0.0]
+    with pytest.raises(StageError, match="rows in one chunk"):
+        graphed.materialize([_Total(source.a), only])
+
+
+def test_lists_filtered_past_a_gap_keep_their_unread_content_unread() -> None:
+    def counted(chunk: ak.Array) -> ak.Array:
+        form, length, buffers = ak.to_buffers(chunk)
+        unread = form.content("p").content.form_key
+        return ak.from_buffers(
+            form,
+            length,
+            {k: _placeholder(v.dtype) if unread in k else v for k, v in buffers.items()},
+        )
+
+    chunks = (ak.Array({"p": [[1.0], [2.0, 3.0], [4.0]], "a": [1.0, 2.0, 3.0]}),) * 2
+    source, files = _files(Session(AwkwardBackend()), *chunks)
+    files.reader = lambda partition: counted(chunks[int(partition.uri[1:])])
+    kept = source.p[source.a != 2.0]
+    total, index = graphed.materialize([_Total(source.a), local_index(kept, axis=0)])
+    assert total == 12.0
+    assert ak.to_list(index) == [0, 1, 2, 3]
+
+
+def test_columns_of_one_selection_share_their_pass() -> None:
+    backend, source = _counted(*_flat())
+    kept = source[source.a > 1.0]
+    together = kept.a + kept.b
+    _, whole = graphed.materialize([_Total(together), gak_sum(together, axis=None)])
+    assert float(whole) == 55.0
+    assert backend.evaluated["add"] == 2
+
+
+def _jets(pts: list[list[float]], keep: list[bool]) -> ak.Array:
+    jets = ak.zip({"pt": pts, "eta": pts})
+    return ak.Array({"jet": jets, "lep": ak.zip({"pt": pts, "q": pts}), "keep": keep, "a": keep})
+
+
+_PARTLY_READ = {
+    "ListArray": lambda e: e.jet[e.keep],
+    "ByteMaskedArray": lambda e: mask(e.jet, e.keep),
+    "RegularArray": lambda e: pad_none(e.jet, 1, axis=1, clip=True),
+    "IndexedOptionArray": lambda e: firsts(e.jet),
+    "UnionArray": lambda e: where(e.keep, e.jet, e.lep),
+}
+
+
+@pytest.mark.parametrize("build", _PARTLY_READ.values(), ids=_PARTLY_READ.keys())
+def test_a_partly_read_value_keeps_what_was_read_across_chunks(build: Any) -> None:
+    def named(source: Any) -> Any:
+        return with_name(build(source), "Named").pt
+
+    chunks = (_jets([[1.0, 2.0], [3.0]], [True, False]), _jets([[4.0], [5.0, 6.0]], [False, True]))
+    source, files = _files(Session(AwkwardBackend()), *chunks)
+    files.projected_columns = lambda outputs: ("jet.pt", "lep.pt", "keep", "a")
+    alone, others = _files(Session(AwkwardBackend()), *chunks)
+    others.projected_columns = files.projected_columns
+
+    together = graphed.materialize([_Total(source.a), named(source)])[1]
+    assert ak.to_list(together) == ak.to_list(graphed.materialize(named(alone)))
+
+
+def test_a_bit_mask_keeps_what_was_read_across_chunks() -> None:
+    layout = ak.contents.BitMaskedArray(
+        ak.index.IndexU8(np.array([0b101], dtype=np.uint8)),
+        ak.Array({"a": [1.0, 2.0, 3.0], "b": [4.0, 5.0, 6.0]}).layout,
+        valid_when=True,
+        length=3,
+        lsb_order=True,
+    )
+    block = _projected(ak.Array(layout), ["a"])
+    assert ak.to_list(AwkwardBackend().concat([block, block]).a) == [1.0, None, 3.0] * 2
+
+
+def test_an_unmasked_array_keeps_what_was_read_across_chunks() -> None:
+    layout = ak.contents.UnmaskedArray(ak.Array({"a": [1.0], "b": [2.0]}).layout)
+    block = _projected(ak.Array(layout), ["a"])
+    assert ak.to_list(AwkwardBackend().concat([block, block]).a) == [1.0, 1.0]

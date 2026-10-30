@@ -74,6 +74,18 @@ def _is_read(layout: Any) -> bool:
     return not any(_is_placeholder(b) for b in ak.to_buffers(layout)[2].values())
 
 
+def _content_starts(parts: list[Any]) -> Any:
+    """Return where each part's content starts in their concatenated content."""
+    return np.cumsum([0, *(p.content.length for p in parts[:-1])])
+
+
+def _rebased(parts: list[Any], indexes: list[Any]) -> Any:
+    """Return each part's ``indexes`` into their content, shifted to the concatenated content."""
+    held = [np.asarray(i.data)[: p.length] for p, i in zip(parts, indexes, strict=True)]
+    shifted = [i + s for i, s in zip(held, _content_starts(parts), strict=True)]
+    return ak.index.Index64(np.concatenate(shifted))
+
+
 def _joined(parts: list[Any]) -> Any:
     """Concatenate layouts of one form row-wise; what a read left unread stays unread.
 
@@ -96,10 +108,49 @@ def _joined(parts: list[Any]) -> Any:
                 [p.content[o[0] : o[-1]] for p, o in zip(parts, offsets, strict=True)]
             ),
         )
+    if isinstance(head, ak.contents.ListArray) and not any(
+        _is_placeholder(p.starts.data) or _is_placeholder(p.stops.data) for p in parts
+    ):
+        # rebased, not compacted: compacting would carry content a read may have left unread
+        return head.copy(
+            starts=_rebased(parts, [p.starts for p in parts]),
+            stops=_rebased(parts, [p.stops for p in parts]),
+            content=_joined([p.content for p in parts]),
+        )
+    if isinstance(head, ak.contents.RegularArray):
+        return head.copy(
+            content=_joined([p.content[: p.length * p.size] for p in parts]),
+            zeros_length=length,
+        )
+    if isinstance(head, (ak.contents.ByteMaskedArray, ak.contents.BitMaskedArray)) and not any(
+        _is_placeholder(p.mask.data) for p in parts
+    ):
+        return _joined([p.to_IndexedOptionArray64() for p in parts])
+    if isinstance(head, ak.contents.UnmaskedArray):
+        return head.copy(content=_joined([p.content for p in parts]))
+    if head.is_union and not any(
+        _is_placeholder(p.tags.data) or _is_placeholder(p.index.data) for p in parts
+    ):
+        tags = [np.asarray(p.tags.data)[: p.length] for p in parts]
+        sizes = [[0] * len(head.contents), *([c.length for c in p.contents] for p in parts[:-1])]
+        return head.copy(
+            tags=ak.index.Index8(np.concatenate(tags)),
+            index=ak.index.Index64(
+                np.concatenate(
+                    [
+                        np.asarray(p.index.data)[: p.length] + s[t]
+                        for p, t, s in zip(parts, tags, np.cumsum(sizes, axis=0), strict=True)
+                    ]
+                )
+            ),
+            contents=[_joined(list(c)) for c in zip(*(p.contents for p in parts), strict=True)],
+        )
     if head.is_indexed and not any(_is_placeholder(p.index.data) for p in parts):
         indexes = [np.asarray(p.index.data) for p in parts]
-        starts: Any = np.cumsum([0, *(p.content.length for p in parts[:-1])])
-        rebased = [np.where(i < 0, -1, i + s) for i, s in zip(indexes, starts, strict=True)]
+        rebased = [
+            np.where(i < 0, -1, i + s)
+            for i, s in zip(indexes, _content_starts(parts), strict=True)
+        ]
         return head.copy(
             index=ak.index.Index64(np.concatenate(rebased)),
             content=_joined([p.content for p in parts]),
