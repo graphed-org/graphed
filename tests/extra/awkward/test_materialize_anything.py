@@ -4,15 +4,18 @@ from __future__ import annotations
 
 import functools
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import awkward as ak
 import numpy as np
-import pyarrow.parquet as pq
 import pytest
 from awkward._nplikes.numpy import Numpy
 from awkward._nplikes.placeholder import PlaceholderArray
 from awkward._nplikes.shape import unknown_length
+
+pytest.importorskip("pyarrow")
+import pyarrow.parquet as pq
 
 import graphed
 import graphed.awkward as gak
@@ -241,7 +244,7 @@ def test_a_plan_runs_and_gives_a_runners_value(tmp_path: Any) -> None:
     source, _ = _files(session, *_flat())
     plan = to_parquet(source.a, str(tmp_path / "out"), compute=False)
     paths = graphed.materialize({"written": plan})["written"]
-    assert [p.rsplit("/", 1)[1] for p in paths] == ["part-00000.parquet", "part-00001.parquet"]
+    assert [Path(p).name for p in paths] == ["part-00000.parquet", "part-00001.parquet"]
     assert ak.to_list(ak.concatenate([ak.from_parquet(p) for p in paths]).data) == [1.0, 2.0, 3.0]
 
 
