@@ -7,6 +7,61 @@ Newest release first. Numbers in parentheses are the pull requests on
 0.0.11 (unreleased)
 -------------------
 
+Plans returned wrong values for row-axis operations, and now refuse them
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**If an analysis used one of these forms in a plan, a write or a histogram fill, on 0.0.10 or
+earlier, re-check its results.** Each chunk computed the operation over its own rows, with no error,
+so the concatenated result differed from the same operation over the whole dataset. A single-chunk
+run, and ``graphed.materialize`` of an Array, were correct.
+
+* ``ak`` functions along the row axis: ``axis=0``, ``axis=None`` where the function takes it, and a
+  negative axis that reaches the rows, so the default ``axis=-1`` on a flat column is one of these.
+  That covers ``sort``, ``argsort``, ``argmin``, ``argmax``, ``local_index``, ``pad_none``,
+  ``softmax``, ``firsts``, ``combinations``, ``argcombinations``, ``cartesian``, ``argcartesian``,
+  ``concatenate``, ``num`` and the ``sum`` family, ``corr``, ``covar`` and ``linear_fit``.
+* ``ak.run_lengths`` of a flat column, and ``ak.unflatten`` along the rows by an integer other than
+  1.
+* A subscript or ``filter`` with a flat integer key, ``a[i]``, which picked rows by their position
+  in each chunk. A mask and a jagged integer key, such as ``x[ak.argsort(x)]``, work per row and
+  are unchanged.
+* numpy: ``cumsum``, ``cumprod``, ``nancumsum`` and ``nancumprod`` over axis ``None`` or 0, ``diff``
+  along axis 0, ``concatenate`` with a negative axis that means axis 0, ``isin``, ``searchsorted``,
+  and ``take`` at every axis.
+* Arrays of different row sets in one operation, such as ``a - a[a == 4]``. A chunk holding exactly
+  one such row broadcast it; a partitioned run now raises a ``StageError`` at that line.
+
+These now record as reductions, so a plan refuses them where they feed another node or a write, as
+it refuses ``x.sum()`` feeding anything. To keep the operation, evaluate over the whole dataset with
+``graphed.materialize``, or use the inner-axis form when that is what was meant. Recording, plans
+and checkpoint keys are unchanged for every other form, so a default-axis analysis on jagged columns
+resumes as before.
+
+As a plan's direct output a reduction still reaches your ``reduce`` once per chunk, for ``combine``
+to fold: that is correct for a sum and yours to get right for anything else.
+
+``graphed.materialize`` evaluates anything deferred
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``graphed.materialize`` now evaluates a :class:`~graphed.write.PartWrite` (to its part paths), a
+  plan of any kind (to ``run(plan).value``, so ``to_parquet(..., compute=False)`` writes; a V1
+  ``DurablePlan`` through the new ``DurablePlan.to_plan``), and any object whose class defines
+  ``__graphed_pieces__`` returning :class:`graphed.PlanPieces`, as a deferred histogram does,
+  beside Arrays and in any nesting of them. A ``Varied`` becomes ``{label: value}``; it used to
+  come back unevaluated. Other items still pass through. One Session's results share one read of
+  each source, of the columns they use together, and evaluate each node once unless it is
+  downstream of a reduction beside a piece that is not: the pass computes everything before the
+  reduction, and the rest evaluates over the concatenated chunks. ``aggregate_plan``'s new
+  ``read_by=`` sets the Arrays a plan's read covers.
+* A deferred result downstream of a reduction, such as a histogram of ``local_index(x, axis=0)``,
+  evaluates over the whole dataset under ``graphed.materialize``, where a plan refuses it.
+* ``Session.materialize`` loses ``memo=``, which only ``graphed.materialize`` used.
+* A failing operation under ``graphed.materialize`` raises a ``StageError`` at the line that
+  recorded it, as a plan does, instead of the bare backend error.
+* ``graphed.materialize`` over several files of a source that leaves unread columns as placeholders
+  (``uproot.graphed``, coffea) no longer raises ``should never have been encountered``: the
+  awkward backend's ``concat`` joins what was read and keeps the unread fields, unread.
+
 Fixes
 ~~~~~
 

@@ -364,6 +364,16 @@ class AwkwardBackend:
 
     #: M59: this backend evaluates the shared inner-axis tuple key (`subscript`)
     subscript_keys = True
+    #: array counts are as long as the lists they cut, not as the array they cut
+    unaligned_ops = frozenset({"ak.unflatten"})
+
+    def positional_key(self, form: AwkwardForm) -> bool:
+        """Return whether a key of ``form`` picks rows by position: a flat key that is no mask."""
+        if getattr(form.tt, "ndim", 0) != 1:
+            return False
+        layout = form.tt.layout
+        content = layout.content if layout.is_option or layout.is_indexed else layout
+        return not (content.is_numpy and content.dtype == np.bool_)
 
     def __init__(self, behavior: Mapping[str, object] | None = None) -> None:
         # M18: a registered behavior dict (e.g. vector's) makes behavior PROPERTIES work through

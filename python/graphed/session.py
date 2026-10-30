@@ -802,14 +802,13 @@ class Session:
         return cache[root]
 
     # ---- evaluation (reference, node-by-node; the real executor is M7) ----------
-    def materialize(self, array: Array, *, memo: dict[int, object] | None = None) -> object:
-        """``array``'s value; walks sharing ``memo`` evaluate each shared node once."""
+    def materialize(self, array: Array) -> object:
+        """``array``'s value."""
         return self.walk(
             array,
             source=self.source_value,
             op=lambda _nid, name, ins, params: self._backend.eval_stage(name, ins, params),
             external=lambda _nid, fn, ins: fn(*ins),
-            memo=memo,
         )
 
 

@@ -98,7 +98,12 @@ When rows have to move between partitions
 -----------------------------------------
 
 Most analysis is partition-local: each task reads its own chunk and never needs anyone else's.
-Two things are not.
+Recording marks every operation that is not as a reduction, so a plan knows which chunks are not a
+node's whole value. A chunked run, and the sharing in ``graphed.materialize``, rely on the rest
+being row-wise: concatenated chunks equal the value over the whole dataset. Behavior methods and
+properties, the ufunc overloads of named types, ``map`` callables and Externals are opaque to
+that marking, so each must be row-wise for its result to be right, whichever way it runs. Two
+things need more than a chunk.
 
 ``graphed.join`` and ``graphed.repartition`` (with ``join_plan`` and ``shuffle_plan`` for the
 plan-level form) match or redistribute rows across partitions by key. Because that means every

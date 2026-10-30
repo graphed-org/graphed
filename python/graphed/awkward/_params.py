@@ -12,6 +12,29 @@ from graphed import Array, ParamValue
 from graphed.array import scalar_params
 
 
+def crosses_rows(arr: Array, axis: int | None) -> bool:
+    """Return whether ``axis`` of ``arr`` is the row axis, so a chunk's value is not the whole's.
+
+    ``None`` is every axis, the row axis among them. A negative axis counts up from each field's
+    own depth, so it is the row axis wherever a field is that deep.
+    """
+    if axis is None:
+        return True
+    if axis >= 0:
+        return axis == 0
+    tracer = arr.session.form(arr).tt  # type: ignore[attr-defined]
+    low, high = tracer.layout.minmax_depth if hasattr(tracer, "layout") else (0, 0)
+    return bool(low <= -axis <= high)
+
+
+def _along_axis(
+    name: str, inputs: Sequence[Array], params: Mapping[str, ParamValue], axis: int | None
+) -> Array:
+    """Record ``name`` along ``axis`` of ``inputs``, a reduction when that is the row axis."""
+    head = inputs[0]
+    return head.session.record_op(name, list(inputs), params, reduction=crosses_rows(head, axis))
+
+
 def _comb_params(
     n: int,
     replacement: bool,
@@ -100,12 +123,8 @@ def _reduce(
     inputs = [arr] if weight is None else [arr, weight]
     if weight is not None:
         params["weighted"] = True
-    boundary = axis is None or axis == 0
-    return arr.session.record_op(name, inputs, params, reduction=boundary)  # type: ignore[arg-type]
+    return _along_axis(name, inputs, params, axis)  # type: ignore[arg-type]
 
 
 def _reduce2(name: str, x: Array, y: Array, axis: int | None) -> Array:
-    boundary = axis is None or axis == 0
-    return x.session.record_op(
-        name, [x, y], {"axis": "none" if axis is None else axis}, reduction=boundary
-    )
+    return _along_axis(name, [x, y], {"axis": "none" if axis is None else axis}, axis)

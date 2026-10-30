@@ -129,7 +129,7 @@ _BINARY: dict[str, Any] = {
     "logical_xor": np.logical_xor,
 }
 
-# reductions (boundary when over the partitioned axis) and scans (always partition-local). The
+# reductions and scans (both boundaries when over the partitioned axis). The
 # same callables serve record-time inference (on LENGTH-ONE unit metas — argmin/mean reject empty
 # input) and evaluation, so the two cannot drift (M12).
 _REDUCERS: dict[str, Any] = {
@@ -415,6 +415,10 @@ class NumpyBackend:
 
     #: M59: this backend evaluates the shared inner-axis tuple key (`subscript`)
     subscript_keys = True
+
+    def positional_key(self, form: NumpyForm) -> bool:
+        """Return whether a key of ``form`` picks rows by position, not by a mask."""
+        return bool(form.dtype != np.bool_)
 
     def array_type(self) -> type[Array]:
         """Return the numpy-idiomatic proxy (M11 factorization): Sessions return ``NumpyArray``."""

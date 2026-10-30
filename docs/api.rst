@@ -17,9 +17,10 @@ The recording surface. ``Session`` owns the recording and ``Array`` is the proxy
 ``aggregate_plan`` builds the task graph that computes several outputs in one pass over the
 data, part writes included (``graphed.write.PartWrite``), and ``collate`` joins plans over different
 graphs into one. ``aggregate_plan(opt_level=0)`` ships the outputs' unoptimized cone, one node per
-recorded operation, instead of the optimized graph. ``materialize`` evaluates Arrays from any
-number of Sessions in this process, with no executor, reading only the source columns they use:
-a debugging tool. One Session can record
+recorded operation, instead of the optimized graph. ``materialize`` evaluates anything deferred
+(Arrays, part writes, plans, deferred histograms, or any nesting of them) from any number of
+Sessions in this process, with no executor, reading only the source columns they use; a class
+joins it by defining ``__graphed_pieces__`` to return ``PlanPieces``. One Session can record
 several sources (a reader's ``session=``); a plan reads only the ones its outputs reach.
 ``current_session`` is the Session a read with no array input records into: the innermost
 ``with session:`` scope, else a default made on first use; ``new_session``, ``set_session`` and

@@ -251,6 +251,7 @@ def evaluate_ir(
     on_failure: OnFailure | None = None,
     outputs: Sequence[int] | None = None,
     given: Mapping[int, object] | None = None,
+    chunked: bool = False,
 ) -> list[object]:
     """Evaluate a compiled (reduced) IR.
 
@@ -266,10 +267,14 @@ def evaluate_ir(
     ``outputs`` (reduced node ids) replaces the marked outputs, and ``given`` (``{node id:
     value}``) supplies those nodes' values; either one restricts evaluation to the cone of the
     outputs, cut at the given nodes (a V2 stage evaluates its side of a barrier this way).
+
+    ``chunked`` says the sources are one chunk of a dataset: a row-wise op's arrays of unequal
+    length then refuse, since a chunk's length-1 operand broadcasts where the dataset's would not.
     """
     blob = compiled.ir if isinstance(compiled, CompiledGraph) else compiled
     store = graphed.core.GraphStore.deserialize(bytes(blob))
     nodes = store.nodes()
+    evaluate = _rows_aligned(backend) if chunked else backend.eval_stage
     wanted = list(store.outputs()) if outputs is None else list(outputs)
     cone = None if outputs is None and given is None else ir_cone(nodes, wanted, stop=given or ())
     # a value is dropped once its last consumer has run, so a task holds only live intermediates
@@ -301,10 +306,12 @@ def evaluate_ir(
             # a boundary is evaluated by its backend reference kernel, as `Session.materialize`
             # does
             name = nd["name"] if kind in ("op", "reduction") else kind
-            call = partial(backend.eval_stage, name, ins, nd["params"])
+            # a boundary's inputs need not be one row set: `isin`, axis-0 `concatenate`, a join
+            run = evaluate if kind == "op" else backend.eval_stage
+            call = partial(run, name, ins, nd["params"])
             vals.append(_dispatch(call, name, ins, (nid, None), on_failure))
         elif kind == "stage":
-            vals.append(_evaluate_stage(backend, nid, nd["members"], ins, on_failure))
+            vals.append(_evaluate_stage(evaluate, nid, nd["members"], ins, on_failure))
         elif kind == "external":
             vals.append(_evaluate_external(nid, nd, ins, externals, on_failure))
         else:  # pragma: no cover - the codec only emits the kinds above
@@ -315,8 +322,24 @@ def evaluate_ir(
     return [vals[o] for o in wanted]
 
 
+def _rows_aligned(backend: Backend) -> Callable[..., object]:
+    """Return ``backend.eval_stage``, refusing inputs that are not one row set."""
+    unaligned = getattr(backend, "unaligned_ops", ())
+
+    def evaluate(op: str, inputs: Sequence[object], params: Mapping[str, object]) -> object:
+        lengths = {len(x) for x in inputs if getattr(x, "ndim", 0) > 0}  # type: ignore[arg-type]
+        if len(lengths) > 1 and op not in unaligned:
+            raise ValueError(  # no GraphedError: those skip the attribution to the user's line
+                f"{op!r} got arrays of {sorted(lengths)} rows in one chunk: they are different "
+                "row sets, so a partitioned run cannot pair them with the dataset's rows"
+            )
+        return backend.eval_stage(op, inputs, params)
+
+    return evaluate
+
+
 def _evaluate_stage(
-    backend: Backend,
+    evaluate: Callable[..., object],
     nid: int,
     members: Sequence[Mapping[str, Any]],
     ins: list[object],
@@ -328,7 +351,7 @@ def _evaluate_stage(
     mvals: list[object] = []
     for index, m in enumerate(members):
         mins = [ins[i] if tag == "input" else mvals[i] for tag, i in m["inputs"]]
-        mcall = partial(backend.eval_stage, m["name"], mins, m["params"])
+        mcall = partial(evaluate, m["name"], mins, m["params"])
         mvals.append(_dispatch(mcall, m["name"], mins, (nid, index), on_failure))
         del mins, mcall
         for i in release_member.get(index, ()):

@@ -227,6 +227,7 @@ class _PartitionReduce(Generic[V]):
                 {self.source_name: chunk},
                 externals=dict(self.externals),
                 on_failure=self._attribute(str(partition)),
+                chunked=True,
             )
             return _adopted(
                 backend,
@@ -295,6 +296,7 @@ class _PartitionReduce(Generic[V]):
             {self.source_name: chunk},
             externals=dict(self.externals),
             on_failure=self._attribute(str(partition)),
+            chunked=True,
         )
 
     def capture_id(self, partition: Partition) -> str:
@@ -452,6 +454,7 @@ def aggregate_plan(
     writes: Sequence[PartWrite] = (),
     opt_level: int = 1,
     finalize: Callable[[V], V] | None = None,
+    read_by: Sequence[Array] | None = None,
 ) -> Plan[V]:
     """Build a one-pass partition-wise reduction :class:`~graphed.core.execution.Plan`.
 
@@ -491,6 +494,9 @@ def aggregate_plan(
 
     ``finalize`` becomes ``Plan.finalize``: the runner calls it once, on the head, on the combined
     value (``empty()``'s too), and ``run(plan).value`` is what it returns.
+
+    ``read_by`` are the Arrays whose columns the read covers, in place of those the plan evaluates,
+    for a caller using the chunks otherwise.
     """
     writes = tuple(writes)
     arrays = _planned_arrays(outputs, writes, store=store, opt_level=opt_level)
@@ -506,14 +512,15 @@ def aggregate_plan(
     wired = dict(shipped_evaluators(session, compiled))
     if externals:
         wired.update((key, by_value(fn)) for key, fn in externals.items())
-    declared = declared_columns(data, arrays)
+    read = arrays if read_by is None else read_by
+    declared = declared_columns(data, read)
     factory = worker_backend(session, backend)
     process = _PartitionReduce(
         ir=bytes(compiled.ir),
         source_name=session.source_name(nid),
         backend_factory=factory,
         reader=data,
-        columns=read_columns(arrays, nid) if declared is None else declared,
+        columns=read_columns(read, nid) if declared is None else declared,
         externals=tuple(wired.items()),
         reduce=by_value(reduce),
         variation_labels=None if on_compiled is None else on_compiled(compiled),

@@ -33,7 +33,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
-from .execution import Partition, Task
+from .execution import Partition, Plan, Task
 from .graphed_core import GraphStore
 from .services import ServiceSpec
 
@@ -167,6 +167,17 @@ class DurablePlan:
         """True if any callable is embedded by value (a preservation risk; plan A.3.1)."""
         ops = (self.process, self.combine, self.empty, self.finalize)
         return any(op is not None and op.opaque for op in ops)
+
+    def to_plan(self) -> Plan[Any]:
+        """Return this plan's runtime form, specs resolved, for a run with no checkpoint Store."""
+        return Plan(
+            process=self.process.resolve(),
+            combine=self.combine.resolve(),
+            empty=self.empty.resolve(),
+            tasks=tuple(Task(i, p) for i, p in enumerate(self.partitions)),
+            services=self.services,
+            finalize=None if self.finalize is None else self.finalize.resolve(),
+        )
 
     # ---- content addressing ---------------------------------------------------------------------
     def ir_fingerprint(self) -> str:

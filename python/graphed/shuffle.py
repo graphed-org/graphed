@@ -225,6 +225,7 @@ class _MapWrite:
             externals=dict(self.externals),
             on_failure=attribute_failures(self.frames, str(task.partition)),
             outputs=(self.target,),
+            chunked=True,
         )
         scheme, key, parts = self.route
         if scheme == "hash":
@@ -276,6 +277,7 @@ class _Gather:
                 nid: backend.concat(side)
                 for nid, side in zip(self.barrier_inputs, sides, strict=True)
             },
+            chunked=True,
         )
         value = values[0] if self.reduce is None else self.reduce(values)
         adopt = getattr(backend, "adopt", None)
