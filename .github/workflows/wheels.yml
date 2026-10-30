@@ -34,7 +34,7 @@ jobs:
           # ponytail: macos-15-intel is the last Intel runner (retires Fall 2027 with x86_64 macOS);
           # when it goes, drop this row or switch to cross-compiling x86_64 on the arm64 runner.
           - { name: macos-x86_64, os: macos-15-intel, archs: x86_64 }
-          - { name: macos-arm64, os: macos-14, archs: arm64 }
+          - { name: macos-arm64, os: macos-15, archs: arm64 }
           - { name: windows-x86_64, os: windows-latest, archs: AMD64 }
           - { name: windows-arm64, os: windows-11-arm, archs: ARM64 }
     steps:
