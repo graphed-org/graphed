@@ -49,7 +49,33 @@ class _AsRead:
         return rebuild, (form, length, buffers)
 
 
-class _BehaviorByRef(dict[Any, Any]):
+def _canonical(behavior: Mapping[Any, Any]) -> dict[Any, Any]:
+    """Return ``behavior`` in an order that does not depend on how it was built.
+
+    Awkward's ufunc fallback is first-match, and two keys can match one signature only if they
+    differ in nothing but types, so a stable sort that ignores types keeps the order of such keys.
+    """
+
+    def overload(item: tuple[Any, Any]) -> list[bytes]:
+        key = item[0]
+        parts = key if isinstance(key, tuple) else (key,)
+        # each part alone: a pickle's memo would make the order depend on shared string objects
+        return [b"" if isinstance(part, type) else cloudpickle.dumps(part) for part in parts]
+
+    return dict(sorted(behavior.items(), key=overload))
+
+
+class _KeyedBehavior(dict[Any, Any]):
+    """A backend's behavior, which a task key holds in canonical order.
+
+    Canonicalizing only here keeps a backend's construction, per task on a worker, a copy.
+    """
+
+    def _keyed_as(self) -> dict[Any, Any]:
+        return _canonical(self)
+
+
+class _BehaviorByRef(_KeyedBehavior):
     """A backend's behavior that pickles as the import ref its backend was resolved from.
 
     Its lambdas do not pickle; every array derived from one carrying it keeps this same object.
@@ -58,9 +84,6 @@ class _BehaviorByRef(dict[Any, Any]):
     def __init__(self, behavior: Mapping[Any, Any], ref: str) -> None:
         super().__init__(behavior)
         self.ref = ref
-
-    def _keyed_as(self) -> dict[Any, Any]:
-        return dict(self)
 
     def __reduce__(self) -> tuple[Any, ...]:
         return _behavior_from, (self.ref,)
@@ -93,8 +116,8 @@ def _behavior_by_value(blob: bytes) -> _BehaviorByValue:
     return _BehaviorByValue(cloudpickle.loads(blob), blob)
 
 
-#: each behavior this process shipped, beside the snapshot of it that was pickled
-_SHIPPED: list[tuple[dict[Any, Any], _BehaviorByValue]] = []
+#: each behavior this process shipped, as given, beside what it shipped as
+_SHIPPED: list[tuple[list[tuple[Any, Any]], _BehaviorByValue]] = []
 
 
 def shipped_behavior(behavior: Mapping[Any, Any]) -> _BehaviorByValue:
@@ -102,19 +125,19 @@ def shipped_behavior(behavior: Mapping[Any, Any]) -> _BehaviorByValue:
 
     Each distinct behavior is pickled once per process, however many plans ship it.
     """
+    given = list(behavior.items())  # dict equality ignores the order that picks an overload
     for seen, shipped in _SHIPPED:
-        if seen == behavior:
+        if seen == given:
             return shipped
-    snapshot = dict(behavior)
     try:
-        blob = cloudpickle.dumps(snapshot)
+        blob = cloudpickle.dumps(_canonical(behavior))
     except Exception as err:
         raise TypeError(
-            f"the session backend's behavior does not pickle to workers ({err}); pass the plan "
-            "an importable backend factory, backend='module:factory'"
+            f"this behavior does not pickle to workers ({err}); name it by an import reference: "
+            "a plan's backend='module:factory', or to_parquet's behavior='module:attr'"
         ) from err
     shipped = _behavior_by_value(blob)
-    _SHIPPED.append((snapshot, shipped))
+    _SHIPPED.append((given, shipped))
     return shipped
 
 
@@ -349,7 +372,7 @@ class AwkwardBackend:
         self._behavior: dict[Any, Any] | None = (
             behavior
             if isinstance(behavior, _BehaviorByValue)
-            else dict(behavior)
+            else _KeyedBehavior(behavior)
             if behavior
             else None
         )

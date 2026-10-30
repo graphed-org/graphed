@@ -205,7 +205,8 @@ warn_return_any = false
 [[tool.mypy.overrides]]
 module = [
   "agc", "analyses", "backends", "deployment", "fake_triton", "fake_triton_multi",
-  "fake_triton_services", "golden_route", "m10_toy", "m11_toy", "m12_toy", "m13_helpers",
+  "fake_triton_services", "golden_route", "key_order_helpers", "m10_toy", "m11_toy", "m12_toy",
+  "m13_helpers",
   "m13_toy", "m14_toy", "m15_toy", "m16_helpers", "m17_toy", "m49_analyses", "m49_ctx_fixtures",
   "m49_vary_fixtures", "m51_write_fixtures", "m52_corpus_fixtures", "m52_point_fixtures",
   "m52_projection_fixtures", "m53_fanout_fixtures", "m53_policy_fixtures",
