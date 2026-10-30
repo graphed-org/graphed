@@ -588,10 +588,14 @@ its code and the values it reads, so editing its body recomputes and adding a li
 not. A function in an installed module is keyed by its name; the module's version is covered by
 the environment record below. The codec, the global ``ak.behavior``, and the backend a graphed task
 builds (with a behavior dict an import reference names) are in the key too, so editing a
-``__main__`` mixin recomputes what it touches. Seven cases need a hand:
+``__main__`` mixin recomputes what it touches. A behavior is shipped and keyed in an order that does
+not depend on how it was built, except that entries differing only in a type keep their relative
+order, since that order picks a ufunc overload. Seven cases need a hand:
 
 - A ``reused`` of 0 after a restart, when nothing changed, means the process holds data ordered by
-  set iteration (a list built from a set, say). Sort it, or set ``salt``.
+  set iteration (a list built from a set, say). Sort it, or set ``salt``. A run that reuses nothing
+  from a store holding results for its partitions logs a warning on ``graphed.checkpoint`` naming
+  both counts; that store's keys differ from this run's.
 - State a task fills on a class defined in ``__main__`` (a class-level cache) changes that class's
   key. Keep it on instances, or define the class in an importable module.
 - Set elements that only object identity tells apart (equal-valued instances) can recompute after a

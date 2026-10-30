@@ -740,6 +740,39 @@ def check_resumable(plan: Plan[Any] | DurablePlan | DurablePlanV2) -> None:
     _task_ids(plan, PickleCodec(), "")
 
 
+def warn_unreused(
+    store: object,
+    done: Mapping[str, JournalEntry],
+    plan: DurablePlan | DurablePlanV2 | Plan[Any],
+    ids: Iterable[str],
+) -> None:
+    """Warn when no id in ``ids`` is done but ``done`` holds results for ``plan``'s partitions.
+
+    The journal names partitions and not analyses, so another analysis of them warns too.
+    """
+    if isinstance(plan, DurablePlanV2):
+        total = sum(len(s.tasks) for s in plan.stages)
+        # a stage fed by another reads no partition: every shuffle tags "dest" and "reduce"
+        partitions = [t.partition for s in plan.stages if not s.inputs for t in s.tasks]
+    else:
+        partitions = (
+            list(plan.partitions)
+            if isinstance(plan, DurablePlan)
+            else [t.partition for t in plan.tasks]
+        )
+        total = len(partitions)
+    tags = {_partition_tag(p) for p in partitions}
+    held = sum(entry.partition in tags for entry in done.values())
+    if held and not any(tid in done for tid in ids):
+        _LOG.warning(
+            "0 of %d tasks reused, but %s holds %d results for these partitions under other keys: "
+            "the analysis, its code, the salt or an order in what it ships differs",
+            total,
+            getattr(store, "root", store),
+            held,
+        )
+
+
 def _tagged(task: Task, task_id: str, done: Mapping[str, JournalEntry]) -> Task:
     entry = done.get(task_id)
     return Task(
@@ -815,6 +848,7 @@ def resumable(
     check_environment(st, done, salt, accept_environment)
     reused = [sum(tid in done for tid in stage) for stage in ids]
     _LOG.info("%d of %d tasks reused from %s", sum(reused), sum(map(len, ids)), store)
+    warn_unreused(store, done, plan, (tid for stage in ids for tid in stage))
     if isinstance(plan, DurablePlanV2):
         stages = []
         for stage, inner, stage_ids, n in zip(plan.stages, processes, ids, reused, strict=True):

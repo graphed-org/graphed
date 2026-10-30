@@ -76,7 +76,7 @@ from ._varied_write import (
     _write_augmented,
     _xor_representable,
 )
-from .backend import AwkwardBackend, AwkwardForm, shipped_behavior
+from .backend import AwkwardBackend, AwkwardForm, _canonical, shipped_behavior
 from .functions import fill_none
 
 
@@ -209,10 +209,16 @@ def _resolve_behavior(behavior: Any) -> Any:
     return behavior
 
 
+def _keyed_behavior(behavior: Any) -> Any:
+    """Return what a task key holds for ``behavior``: a reference's target, in canonical order."""
+    resolved = _resolve_behavior(behavior)
+    return _canonical(resolved) if resolved and isinstance(behavior, str) else resolved
+
+
 def _session_behavior(session: Session, behavior: Any) -> Any:
     """Return ``behavior``, or when ``None`` the session backend's, as a plan ships it."""
-    own = getattr(session.backend, "_behavior", None)
-    return shipped_behavior(own) if behavior is None and own else behavior
+    chosen = getattr(session.backend, "_behavior", None) if behavior is None else behavior
+    return shipped_behavior(chosen) if chosen and isinstance(chosen, Mapping) else behavior
 
 
 # ---- deferred writing ------------------------------------------------------------------------
@@ -222,7 +228,7 @@ class _WritePart:
 
     checkpointable: ClassVar[bool] = True
     checkpoint_resolve: ClassVar[Mapping[str, Callable[[Any], Any]]] = {
-        "behavior": _resolve_behavior
+        "behavior": _keyed_behavior
     }
 
     compiled: CompiledGraph
@@ -417,7 +423,7 @@ class _VariedWritePart:
 
     checkpointable: ClassVar[bool] = True
     checkpoint_resolve: ClassVar[Mapping[str, Callable[[Any], Any]]] = {
-        "behavior": _resolve_behavior
+        "behavior": _keyed_behavior
     }
 
     compiled: CompiledGraph
