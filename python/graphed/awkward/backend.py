@@ -49,6 +49,23 @@ class _AsRead:
         return rebuild, (form, length, buffers)
 
 
+def _canonical(behavior: Mapping[Any, Any]) -> dict[Any, Any]:
+    """Return ``behavior`` in an order that does not depend on how it was built.
+
+    Awkward's ufunc fallback is first-match, and only a key holding a type can match there, so
+    those keep their relative order; every other key is reached by exact lookup and is sorted.
+    """
+
+    def scanned(item: tuple[Any, Any]) -> bool:
+        key = item[0]
+        return isinstance(key, tuple) and any(isinstance(part, type) for part in key)
+
+    items = list(behavior.items())
+    exact = [item for item in items if not scanned(item)]
+    exact.sort(key=lambda item: cloudpickle.dumps(item[0]))
+    return dict(exact + [item for item in items if scanned(item)])
+
+
 class _BehaviorByRef(dict[Any, Any]):
     """A backend's behavior that pickles as the import ref its backend was resolved from.
 
@@ -60,7 +77,7 @@ class _BehaviorByRef(dict[Any, Any]):
         self.ref = ref
 
     def _keyed_as(self) -> dict[Any, Any]:
-        return dict(self)
+        return _canonical(self)
 
     def __reduce__(self) -> tuple[Any, ...]:
         return _behavior_from, (self.ref,)
@@ -105,8 +122,8 @@ def shipped_behavior(behavior: Mapping[Any, Any]) -> _BehaviorByValue:
     for seen, shipped in _SHIPPED:
         if seen == behavior:
             return shipped
-    snapshot = dict(behavior)
     try:
+        snapshot = _canonical(behavior)
         blob = cloudpickle.dumps(snapshot)
     except Exception as err:
         raise TypeError(

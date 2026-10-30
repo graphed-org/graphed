@@ -29,7 +29,12 @@ from graphed.services import require_bound
 
 from .codec import Codec, PickleCodec
 from .errors import dead_letter_descriptor
-from .resume import _partition_tag, check_environment, require_environment_store
+from .resume import (
+    _partition_tag,
+    check_environment,
+    require_environment_store,
+    warn_unreused,
+)
 from .retry import RetryPolicy
 from .store import CheckpointStore
 
@@ -138,6 +143,8 @@ def run_resumable(
         if _kill_after is not None and committed >= _kill_after:
             raise _SimulatedInterrupt(f"simulated kill after {committed} committed tasks")
 
+    if not report.skipped:
+        warn_unreused(store, completed, plan)
     _require_kill_fired(_kill_after, report, committed)
     report.dead_letters = store.dead_letters()
     value = acc if folded else empty()
@@ -270,6 +277,8 @@ def run_shuffle_resumable(
         stage_payloads[si] = this_payloads
         stage_hashes[si] = this_hashes
 
+    if not report.skipped:
+        warn_unreused(store, completed, plan)
     # the gather stage's content-addressed blocks
     value = tuple(stage_hashes[len(plan.stages) - 1])
     return ShuffleResumeResult(value=value, report=report)

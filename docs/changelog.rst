@@ -4,6 +4,25 @@ What changed
 Newest release first. Numbers in parentheses are the pull requests on
 `graphed-org/graphed <https://github.com/graphed-org/graphed>`_.
 
+0.0.11 (unreleased)
+-------------------
+
+Fixes
+~~~~~
+
+* A behavior-carrying plan resumes across processes. The Session backend's behavior ships, and keys,
+  in an order independent of how it was built: a behavior assembled from sets (coffea's NanoEvents)
+  gave every process its own ``resumable`` and ``run_shuffle_resumable`` keys and shuffle plan
+  bytes, so a restart recomputed everything. Entries with a type in their key keep
+  their relative order, which picks a ufunc overload. ``to_parquet(behavior=)`` gets the same order
+  from a dict or an import reference. A behavior-less Session's plan keeps its bytes and its keys.
+* The key change means a checkpoint of a behavior-carrying plan written by 0.0.10 recomputes once
+  on resume; results are unchanged.
+* ``resumable``, ``run_resumable`` and ``run_shuffle_resumable`` log a warning on
+  ``graphed.checkpoint`` when a run reuses no task from a store that holds results for its
+  partitions. Those keys differ from this run's, which was silent; another analysis of the same
+  partitions in one store warns too.
+
 0.0.10
 ------
 

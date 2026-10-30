@@ -740,6 +740,32 @@ def check_resumable(plan: Plan[Any] | DurablePlan | DurablePlanV2) -> None:
     _task_ids(plan, PickleCodec(), "")
 
 
+def warn_unreused(
+    store: object, done: Mapping[str, JournalEntry], plan: DurablePlan | DurablePlanV2 | Plan[Any]
+) -> None:
+    """Warn when no key of ``plan`` matched but ``done`` holds results for its partitions.
+
+    The journal names partitions and not analyses, so another analysis of them warns too.
+    """
+    if isinstance(plan, DurablePlan):
+        partitions = list(plan.partitions)
+    else:
+        groups = (
+            [s.tasks for s in plan.stages] if isinstance(plan, DurablePlanV2) else [plan.tasks]
+        )
+        partitions = [task.partition for tasks in groups for task in tasks]
+    tags = {_partition_tag(p) for p in partitions}
+    held = sum(entry.partition in tags for entry in done.values())
+    if held:
+        _LOG.warning(
+            "0 of %d tasks reused, but %s holds %d results for these partitions under other keys: "
+            "the analysis, its code, the salt or an order in what it ships differs",
+            len(partitions),
+            getattr(store, "root", store),
+            held,
+        )
+
+
 def _tagged(task: Task, task_id: str, done: Mapping[str, JournalEntry]) -> Task:
     entry = done.get(task_id)
     return Task(
@@ -815,6 +841,8 @@ def resumable(
     check_environment(st, done, salt, accept_environment)
     reused = [sum(tid in done for tid in stage) for stage in ids]
     _LOG.info("%d of %d tasks reused from %s", sum(reused), sum(map(len, ids)), store)
+    if not any(reused):
+        warn_unreused(store, done, plan)
     if isinstance(plan, DurablePlanV2):
         stages = []
         for stage, inner, stage_ids, n in zip(plan.stages, processes, ids, reused, strict=True):
