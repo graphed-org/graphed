@@ -29,7 +29,15 @@ from ._dispositions import GAK_ARG_FIXTURES as GAK_ARG_FIXTURES
 from ._dispositions import GAK_DISPOSITIONS as GAK_DISPOSITIONS
 from ._dispositions import GakArgFixture as GakArgFixture
 from ._dispositions import GakSlot as GakSlot
-from ._params import _cartesian_params, _comb_params, _reduce, _reduce2, _structure_params
+from ._params import (
+    _along_axis,
+    _cartesian_params,
+    _comb_params,
+    _reduce,
+    _reduce2,
+    _structure_params,
+    crosses_rows,
+)
 from ._templates import _ml_matrix, _parse_template, _payload_bytes
 from .backend import AwkwardForm, astype_form, broadcast_form
 
@@ -75,9 +83,8 @@ def combinations(
     parameters: Mapping[str, ParamValue] | None = None,
 ) -> Array:
     """Record ``ak.combinations`` of ``n`` items per list."""
-    return arr.session.record_op(
-        "ak.combinations", [arr], _comb_params(n, replacement, axis, fields, with_name, parameters)
-    )
+    params = _comb_params(n, replacement, axis, fields, with_name, parameters)
+    return _along_axis("ak.combinations", [arr], params, axis)
 
 
 def cartesian(
@@ -90,9 +97,8 @@ def cartesian(
 ) -> Array:
     """Record ``ak.cartesian`` over ``arrays``."""
     inputs = list(arrays.values() if isinstance(arrays, Mapping) else arrays)
-    return inputs[0].session.record_op(
-        "ak.cartesian", inputs, _cartesian_params(arrays, axis, nested, with_name, parameters)
-    )
+    params = _cartesian_params(arrays, axis, nested, with_name, parameters)
+    return _along_axis("ak.cartesian", inputs, params, axis)
 
 
 def zip(
@@ -139,7 +145,7 @@ def with_field(arr: Array, value: object, where: str) -> Array:
 def num(arr: Array, axis: int = 1) -> Array:
     # axis 0 counts the partitioned axis: a per-chunk partial, like any axis-0 reduction
     """Record ``ak.num`` along ``axis``."""
-    return arr.session.record_op("ak.num", [arr], {"axis": axis}, reduction=axis == 0)
+    return _along_axis("ak.num", [arr], {"axis": axis}, axis)
 
 
 def count(
@@ -316,8 +322,8 @@ def moment(
 
 
 def softmax(arr: Array, axis: int = 1) -> Array:
-    """Per-list normalization — shape-preserving, ALWAYS partition-local (never a boundary)."""
-    return arr.session.record_op("ak.softmax", [arr], {"axis": axis})
+    """Record ``ak.softmax`` along ``axis``: per list, unless that is the row axis."""
+    return _along_axis("ak.softmax", [arr], {"axis": axis}, axis)
 
 
 def corr(x: Array, y: Array, axis: int | None = None) -> Array:
@@ -337,7 +343,7 @@ def linear_fit(x: Array, y: Array, axis: int | None = None) -> Array:
 
 def firsts(arr: Array, axis: int = 1) -> Array:
     """Record ``ak.firsts`` along ``axis``."""
-    return arr.session.record_op("ak.firsts", [arr], {"axis": axis})
+    return _along_axis("ak.firsts", [arr], {"axis": axis}, axis)
 
 
 def argmin(
@@ -350,7 +356,7 @@ def argmin(
     }
     if not mask_identity:
         params["mask_identity"] = False
-    return arr.session.record_op("ak.argmin", [arr], params)
+    return _along_axis("ak.argmin", [arr], params, axis)
 
 
 def argmax(
@@ -363,7 +369,7 @@ def argmax(
     }
     if not mask_identity:
         params["mask_identity"] = False
-    return arr.session.record_op("ak.argmax", [arr], params)
+    return _along_axis("ak.argmax", [arr], params, axis)
 
 
 def argsort(arr: Array, axis: int = -1, *, ascending: bool = True, stable: bool = True) -> Array:
@@ -371,17 +377,17 @@ def argsort(arr: Array, axis: int = -1, *, ascending: bool = True, stable: bool 
     params: dict[str, ParamValue] = {"axis": axis, "ascending": ascending}
     if not stable:
         params["stable"] = False
-    return arr.session.record_op("ak.argsort", [arr], params)
+    return _along_axis("ak.argsort", [arr], params, axis)
 
 
 def local_index(arr: Array, axis: int = -1) -> Array:
     """Record ``ak.local_index`` along ``axis``."""
-    return arr.session.record_op("ak.local_index", [arr], {"axis": axis})
+    return _along_axis("ak.local_index", [arr], {"axis": axis}, axis)
 
 
 def concatenate(arrays: Sequence[Array], axis: int = 0) -> Array:
     """Record ``ak.concatenate`` of ``arrays`` along ``axis``."""
-    return arrays[0].session.record_op("ak.concatenate", list(arrays), {"axis": axis})
+    return _along_axis("ak.concatenate", list(arrays), {"axis": axis}, axis)
 
 
 def flatten(arr: Array, axis: int | None = 1) -> Array:
@@ -609,7 +615,7 @@ def sort(arr: Array, axis: int = -1, *, ascending: bool = True, stable: bool = T
     params: dict[str, ParamValue] = {"axis": axis, "ascending": ascending}
     if not stable:
         params["stable"] = False
-    return arr.session.record_op("ak.sort", [arr], params)
+    return _along_axis("ak.sort", [arr], params, axis)
 
 
 def ravel(arr: Array) -> Array:
@@ -619,7 +625,7 @@ def ravel(arr: Array) -> Array:
 
 def run_lengths(arr: Array) -> Array:
     """Record ``ak.run_lengths``."""
-    return arr.session.record_op("ak.run_lengths", [arr])
+    return _along_axis("ak.run_lengths", [arr], {}, -1)
 
 
 def mask(arr: Array, condition: Array, *, valid_when: bool = True) -> Array:
@@ -639,9 +645,7 @@ def singletons(arr: Array, axis: int = 0) -> Array:
 
 def pad_none(arr: Array, target: int, axis: int = 1, *, clip: bool = False) -> Array:
     """Record ``ak.pad_none`` to length ``target`` along ``axis``."""
-    return arr.session.record_op(
-        "ak.pad_none", [arr], {"target": target, "axis": axis, "clip": clip}
-    )
+    return _along_axis("ak.pad_none", [arr], {"target": target, "axis": axis, "clip": clip}, axis)
 
 
 def unflatten(arr: Array, counts: Array | int, axis: int = 0) -> Array:
@@ -650,7 +654,10 @@ def unflatten(arr: Array, counts: Array | int, axis: int = 0) -> Array:
     An integer is a PARAMETER, not an input, so it never enters the graph as an edge.
     """
     if isinstance(counts, int):
-        return arr.session.record_op("ak.unflatten", [arr], {"axis": axis, "counts": counts})
+        # n > 1 groups rows across a chunk edge; array counts are checked against each chunk's rows
+        reduction = counts != 1 and crosses_rows(arr, axis)
+        params: dict[str, ParamValue] = {"axis": axis, "counts": counts}
+        return arr.session.record_op("ak.unflatten", [arr], params, reduction=reduction)
     return arr.session.record_op("ak.unflatten", [arr, counts], {"axis": axis})
 
 
@@ -711,11 +718,8 @@ def argcombinations(
     parameters: Mapping[str, ParamValue] | None = None,
 ) -> Array:
     """Record ``ak.argcombinations`` of ``n`` items per list."""
-    return arr.session.record_op(
-        "ak.argcombinations",
-        [arr],
-        _comb_params(n, replacement, axis, fields, with_name, parameters),
-    )
+    params = _comb_params(n, replacement, axis, fields, with_name, parameters)
+    return _along_axis("ak.argcombinations", [arr], params, axis)
 
 
 def argcartesian(
@@ -728,9 +732,8 @@ def argcartesian(
 ) -> Array:
     """Record ``ak.argcartesian`` over ``arrays``."""
     inputs = list(arrays.values() if isinstance(arrays, Mapping) else arrays)
-    return inputs[0].session.record_op(
-        "ak.argcartesian", inputs, _cartesian_params(arrays, axis, nested, with_name, parameters)
-    )
+    params = _cartesian_params(arrays, axis, nested, with_name, parameters)
+    return _along_axis("ak.argcartesian", inputs, params, axis)
 
 
 def without_field(arr: Array, field: str) -> Array:

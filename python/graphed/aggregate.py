@@ -227,6 +227,7 @@ class _PartitionReduce(Generic[V]):
                 {self.source_name: chunk},
                 externals=dict(self.externals),
                 on_failure=self._attribute(str(partition)),
+                chunked=True,
             )
             return _adopted(
                 backend,
@@ -295,6 +296,7 @@ class _PartitionReduce(Generic[V]):
             {self.source_name: chunk},
             externals=dict(self.externals),
             on_failure=self._attribute(str(partition)),
+            chunked=True,
         )
 
     def capture_id(self, partition: Partition) -> str:

@@ -268,6 +268,7 @@ class _WritePart:
             cast("Backend", backend),
             {self.source_name: chunk},
             externals=dict(self.externals),
+            chunked=True,
         )
         payload = _payload(out, self.column)
         (path,) = self.part_paths(partition)
@@ -474,6 +475,7 @@ class _VariedWritePart:
             cast("Backend", backend),
             {self.source_name: chunk},
             externals=dict(self.externals),
+            chunked=True,
         )
         rank = dict(self.rank)
 

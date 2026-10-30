@@ -101,7 +101,7 @@ def test_scans_record_fusible_ops() -> None:
     s = Session(ToyBackend())
     a = meta_source(s, "a", ndim=2)
     flat = recorded(s, a.scan("cumsum"))
-    assert flat["kind"] == "op"
+    assert flat["kind"] == "reduction"
     assert flat["name"] == "cumsum"
     assert flat["params"] == {}
     axis = recorded(s, a.scan("cumprod", axis=1))

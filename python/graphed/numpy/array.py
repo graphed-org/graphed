@@ -184,10 +184,8 @@ class NumpyArray(Array):
         """Record ``take`` of ``indices`` along ``axis``."""
         axis = self._norm_axis(axis)
         params: dict[str, ParamValue] = {} if axis is None else {"axis": axis}
-        # gathering by global index along the partitioned axis crosses partitions: boundary
-        return self._session.record_op(
-            "take", [self, indices], params, reduction=axis is None or axis == 0
-        )
+        # the indices are one dataset-wide list, which no chunk holds: boundary at every axis
+        return self._session.record_op("take", [self, indices], params, reduction=True)
 
     def _subaxis(self, axis: int) -> int:
         """Normalize an axis that must end up addressing an INNER (non-partitioned) dimension."""
@@ -407,7 +405,8 @@ def _fn_where(arr: NumpyArray, args: tuple[object, ...], kwargs: dict[str, objec
 def _record_concat(arrays: list[NumpyArray], axis: int) -> Array:
     params: dict[str, ParamValue] = {"axis": axis} if axis else {}
     # axis 0 RESTRUCTURES the partition set: boundary; inner axes zip partitions: fusible
-    return arrays[0].session.record_op("concatenate", arrays, params, reduction=axis == 0)
+    reduction = arrays[0]._norm_axis(axis) == 0
+    return arrays[0].session.record_op("concatenate", arrays, params, reduction=reduction)
 
 
 def _seq_of_arrays(kind: str, args: tuple[object, ...]) -> list[NumpyArray]:
@@ -451,14 +450,14 @@ def _fn_diff(arr: NumpyArray, args: tuple[object, ...], kwargs: dict[str, object
     params: dict[str, ParamValue] = {"axis": normalized if normalized is not None else 0}
     if _i(n) != 1:
         params["n"] = _i(n)
-    return a.session.record_op("diff", [a], params)
+    return a.session.record_op("diff", [a], params, reduction=normalized in (None, 0))
 
 
 def _fn_isin(arr: NumpyArray, args: tuple[object, ...], kwargs: dict[str, object]) -> Any:
     if kwargs:
         raise TypeError("graphed np.isin takes (element array, test array)")
     a, b = _two_arrays("isin", args)
-    return a.session.record_op("isin", [a, b])
+    return a.session.record_op("isin", [a, b], reduction=True)
 
 
 def _fn_searchsorted(arr: NumpyArray, args: tuple[object, ...], kwargs: dict[str, object]) -> Any:
@@ -467,7 +466,7 @@ def _fn_searchsorted(arr: NumpyArray, args: tuple[object, ...], kwargs: dict[str
         raise TypeError("graphed np.searchsorted takes (sorted array, values array, side=)")
     a, v = _two_arrays("searchsorted", args)
     params: dict[str, ParamValue] = {"side": str(side)} if side != "left" else {}
-    return a.session.record_op("searchsorted", [a, v], params)
+    return a.session.record_op("searchsorted", [a, v], params, reduction=True)
 
 
 def _fn_unique(arr: NumpyArray, args: tuple[object, ...], kwargs: dict[str, object]) -> Any:

@@ -7,6 +7,39 @@ Newest release first. Numbers in parentheses are the pull requests on
 0.0.11 (unreleased)
 -------------------
 
+Plans returned wrong values for row-axis operations, and now refuse them
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**If an analysis used one of these forms in a plan, a write or a histogram fill, on 0.0.10 or
+earlier, re-check its results.** Each chunk computed the operation over its own rows, with no error,
+so the concatenated result differed from the same operation over the whole dataset. A single-chunk
+run, and ``graphed.materialize`` of an Array, were correct.
+
+* ``ak`` functions along the row axis: ``axis=0``, ``axis=None`` where the function takes it, and a
+  negative axis that reaches the rows, so the default ``axis=-1`` on a flat column is one of these.
+  That covers ``sort``, ``argsort``, ``argmin``, ``argmax``, ``local_index``, ``pad_none``,
+  ``softmax``, ``firsts``, ``combinations``, ``argcombinations``, ``cartesian``, ``argcartesian``,
+  ``concatenate``, ``num`` and the ``sum`` family, ``corr``, ``covar`` and ``linear_fit``.
+* ``ak.run_lengths`` of a flat column, and ``ak.unflatten`` along the rows by an integer other than
+  1.
+* A subscript or ``filter`` with a flat integer key, ``a[i]``, which picked rows by their position
+  in each chunk. A mask and a jagged integer key, such as ``x[ak.argsort(x)]``, work per row and
+  are unchanged.
+* numpy: ``cumsum``, ``cumprod``, ``nancumsum`` and ``nancumprod`` over axis ``None`` or 0, ``diff``
+  along axis 0, ``concatenate`` with a negative axis that means axis 0, ``isin``, ``searchsorted``,
+  and ``take`` at every axis.
+* Arrays of different row sets in one operation, such as ``a - a[a == 4]``. A chunk holding exactly
+  one such row broadcast it; a partitioned run now raises a ``StageError`` at that line.
+
+These now record as reductions, so a plan refuses them where they feed another node or a write, as
+it refuses ``x.sum()`` feeding anything. To keep the operation, evaluate over the whole dataset with
+``graphed.materialize``, or use the inner-axis form when that is what was meant. Recording, plans
+and checkpoint keys are unchanged for every other form, so a default-axis analysis on jagged columns
+resumes as before.
+
+As a plan's direct output a reduction still reaches your ``reduce`` once per chunk, for ``combine``
+to fold: that is correct for a sum and yours to get right for anything else.
+
 ``graphed.materialize`` evaluates anything deferred
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

@@ -262,6 +262,12 @@ def no_eager_value(op: str, missing: str) -> GraphedTypeError:
     )
 
 
+def _positional(key: Array) -> bool:
+    """Return whether ``key`` picks rows by position, which each chunk would read as its own."""
+    positional = getattr(key.session.backend, "positional_key", None)
+    return positional is not None and positional(key.session.form(key))
+
+
 class Array:
     # M48 adds two frontend-only slots (§2.3e): `_context` is the event-context handle a read was
     # performed through, `_labels` the variation labels flowing into this expression. Both are
@@ -519,12 +525,12 @@ class Array:
         return self._session.record_op(kind, [self], params, reduction=axis is None or axis == 0)
 
     def _scan(self, kind: str, axis: int | None = None) -> Array:
-        """Record one cumulative scan — always partition-local, always fusible."""
+        """Record one cumulative scan; like a reduction, axis None or 0 runs across the chunks."""
         axis = self._norm_axis(axis)
         params: dict[str, ParamValue] = {}
         if axis is not None:
             params["axis"] = axis
-        return self._session.record_op(kind, [self], params)
+        return self._session.record_op(kind, [self], params, reduction=axis is None or axis == 0)
 
     # ---- structural access -----------------------------------------------------
     def __getattr__(self, name: str) -> Any:
@@ -574,7 +580,7 @@ class Array:
 
             return expand(lambda arr, mask: arr[mask], (self, key), {})  # type: ignore[no-any-return]  # a Varied in, a Varied out
         if isinstance(key, Array):
-            return self._session.record_op("getitem", [self, key])
+            return self._session.record_op("getitem", [self, key], reduction=_positional(key))
         if isinstance(key, str):
             return self._session.record_op("field", [self], {"field": key})
         # M17: a list of field names selects a RECORD SUBSET — common to both array models
@@ -615,7 +621,7 @@ class Array:
             from .varied import expand
 
             return expand(lambda arr, m: arr.filter(m), (self, mask), {})  # type: ignore[no-any-return]  # a Varied in, a Varied out
-        return self._session.record_op("filter", [self, mask])
+        return self._session.record_op("filter", [self, mask], reduction=_positional(mask))
 
     def map(
         self,

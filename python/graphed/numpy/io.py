@@ -231,6 +231,7 @@ class _WritePart:
             cast("Backend", NumpyBackend()),
             {self.source_name: chunk},
             externals=dict(self.externals),
+            chunked=True,
         )
         result = np.asarray(out)
         if result.ndim != 1:
