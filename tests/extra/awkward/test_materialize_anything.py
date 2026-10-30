@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import functools
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -23,7 +24,7 @@ from graphed.awkward import AwkwardBackend, from_awkward
 from graphed.awkward.functions import num
 from graphed.awkward.functions import sum as gak_sum
 from graphed.awkward.io import from_parquet, parquet_write, to_parquet
-from graphed.core import Partition
+from graphed.core import DurablePlan, OpSpec, Partition
 from graphed.core.execution import SequentialRunner
 from graphed.errors import GraphedError, StageError
 from graphed.materialization import PlanPieces, _Joint
@@ -143,12 +144,7 @@ def test_a_list_keeps_its_offsets_when_every_record_field_under_it_is_unread() -
         return ak.from_buffers(
             form,
             length,
-            {
-                k: v
-                if k == offsets
-                else PlaceholderArray(Numpy.instance(), (unknown_length,), v.dtype)
-                for k, v in held.items()
-            },
+            {k: v if k == offsets else _placeholder(v.dtype) for k, v in held.items()},
         )
 
     files.reader = read
@@ -224,7 +220,7 @@ def test_a_failing_external_raises_a_stage_error() -> None:
     out = graphed.apply(boom, source)
     with pytest.raises(StageError) as caught:
         graphed.materialize(out)
-    assert caught.value.op == "external"
+    assert caught.value.op.startswith("external")
     assert caught.value.user_frame.lineno == out.session.provenance(out).lineno
 
 
@@ -258,6 +254,48 @@ def test_a_durable_plan_runs() -> None:
         empty=lambda: 0.0,
     )
     assert graphed.materialize([plan]) == [SequentialRunner().run(plan).value] == [6.0]
+
+
+def test_a_v1_durable_plan_runs_without_a_store() -> None:
+    plan = DurablePlan(
+        ir=b"v1",
+        process=OpSpec("ref", "m:p", live=lambda p, r: float(p.entry_start)),
+        combine=OpSpec("ref", "operator:add"),
+        empty=OpSpec("ref", "builtins:float"),
+        partitions=tuple(Partition("mem://v1", "Events", i, i + 1) for i in range(3)),
+        finalize=OpSpec("ref", "builtins:str"),
+    )
+    assert graphed.materialize({"run": plan}) == {"run": "3.0"}
+
+
+def test_a_source_read_list_is_asked_for_once_with_every_array_sharing_the_read() -> None:
+    session = Session(AwkwardBackend())
+    source, files = _files(session, *_flat())
+    asked: list[int] = []
+
+    def declare(arrays: tuple[Any, ...]) -> tuple[str, ...]:
+        asked.append(len(arrays))
+        return ("a", "b")
+
+    files.projected_columns = declare
+    done = graphed.materialize({"total": _Total(source.a), "array": source.b})
+    assert done["total"] == 6.0
+    assert ak.to_list(done["array"]) == [10.0, 20.0, 30.0]
+    assert asked == [2]
+
+
+def test_a_loaded_source_stays_loaded_for_the_arrays_beside_pieces() -> None:
+    session = Session(AwkwardBackend())
+    loads: list[int] = []
+
+    def load() -> ak.Array:
+        loads.append(1)
+        return ak.Array({"x": [1.0, 2.0]})
+
+    source = session.source("loaded", form=gak.AwkwardForm(load()), data=load)
+    loads.clear()
+    assert graphed.materialize([_Total(source.x), source.x + 1.0])[0] == 3.0
+    assert loads == [1]
 
 
 def test_a_part_write_returns_its_part_paths(tmp_path: Any) -> None:
@@ -415,3 +453,142 @@ def test_a_runner_and_materialize_agree_on_a_part_write(tmp_path: Any) -> None:
     )
     expected = SequentialRunner().run(plan).value
     assert graphed.materialize(parquet_write(source.a, str(tmp_path), name=_part_name)) == expected
+
+
+def test_pieces_over_whole_sources_share_the_read_of_a_pass_beside_them() -> None:
+    session = Session(AwkwardBackend())
+    source, files = _files(session, *_flat())
+    memory = from_awkward("m", ak.Array({"x": [1.0, 2.0, 3.0]}), session=session)
+    done = graphed.materialize(
+        {"pass": _Total(source.a), "whole": _Total(source.b + memory.x), "array": source.c}
+    )
+    assert (done["pass"], done["whole"]) == (6.0, 66.0)
+    assert ak.to_list(done["array"]) == [[1], [2, 3], [4]]
+    assert [r[0] for r in files.reads] == [0, 1]
+    assert {r[1] for r in files.reads} == {("a", "b", "c")}
+
+
+def test_pieces_alone_beside_a_pass_share_its_read() -> None:
+    session = Session(AwkwardBackend())
+    source, files = _files(session, *_flat())
+    memory = from_awkward("m", ak.Array({"x": [1.0, 2.0, 3.0]}), session=session)
+    assert graphed.materialize([_Total(source.a), _Total(source.b + memory.x)]) == [6.0, 66.0]
+    assert [r[0] for r in files.reads] == [0, 1]
+
+
+def _held(buffer: Any) -> Any:
+    return buffer
+
+
+def _virtual(chunk: ak.Array, unread: str | None = None) -> ak.Array:
+    """``chunk`` with every buffer loaded on first use, but field ``unread``'s a placeholder."""
+    form, length, buffers = ak.to_buffers(chunk)
+    skipped = None if unread is None else f"{form.content(unread).form_key}-data"
+    return ak.from_buffers(
+        form,
+        length,
+        {
+            key: _placeholder(buffer.dtype) if key == skipped else functools.partial(_held, buffer)
+            for key, buffer in buffers.items()
+        },
+    )
+
+
+def test_concat_reads_virtual_buffers_rather_than_dropping_them() -> None:
+    chunk = _virtual(ak.Array({"c": [[1], [2, 3]], "x": [1.0, 2.0]}))
+    joined = AwkwardBackend().concat([chunk, chunk])
+    assert ak.to_list(joined.x) == [1.0, 2.0, 1.0, 2.0]
+    assert ak.to_list(joined.c) == [[1], [2, 3], [1], [2, 3]]
+
+
+def test_concat_joins_virtual_offsets_around_an_unread_field() -> None:
+    chunk = _virtual(ak.Array({"c": [[1], [2, 3]], "u": [1.0, 2.0]}), unread="u")
+    joined = AwkwardBackend().concat([chunk, chunk])
+    assert ak.to_list(joined.c) == [[1], [2, 3], [1], [2, 3]]
+    assert joined.fields == ["c", "u"]
+
+
+def test_concat_of_routed_blocks_keeps_what_was_read() -> None:
+    chunk = ak.Array({"c": [[1], [2, 3], [4]], "x": [1.0, 2.0, 3.0], "u": [0.0, 0.0, 0.0]})
+    block = _projected(chunk, ["c", "x"])
+    keep, drop = np.array([True, False, True]), np.array([False, True, False])
+    joined = AwkwardBackend().concat([block[keep], block[drop]])
+    assert ak.to_list(joined.x) == [1.0, 3.0, 2.0]
+    assert ak.to_list(joined.c) == [[1], [4], [2, 3]]
+    assert joined.fields == ["c", "x", "u"]
+
+
+def test_concat_keeps_the_missing_rows_of_an_indexed_option() -> None:
+    chunk = ak.Array(
+        {"o": [{"p": 1.0, "u": 5.0}, None, {"p": 2.0, "u": 6.0}], "x": [1.0, 2.0, 3.0]}
+    )
+    assert isinstance(chunk.layout.content("o"), ak.contents.IndexedOptionArray)
+    block = _projected(chunk, ["o.p"])
+    joined = AwkwardBackend().concat([block, block])
+    assert ak.to_list(joined.o.p) == [1.0, None, 2.0, 1.0, None, 2.0]
+
+
+def test_pieces_over_whole_sources_fold_as_a_plan_does() -> None:
+    class Folded(_Total):
+        def __graphed_pieces__(self) -> PlanPieces:
+            base = super().__graphed_pieces__()
+            return PlanPieces(
+                outputs=base.outputs,
+                reduce=lambda values: [base.reduce(values)],
+                combine=lambda total, partial: {"sum": total["sum"] + sum(partial)},
+                empty=lambda: {"sum": 0.0},
+                finalize=lambda total: total["sum"],
+                on_compiled=base.on_compiled,
+            )
+
+    session = Session(AwkwardBackend())
+    source, _ = _files(session, *_flat())
+    memory = from_awkward("m", ak.Array({"x": [1.0, 2.0, 3.0]}), session=session)
+    assert graphed.materialize([Folded(source.a), Folded(memory.x)]) == [6.0, 6.0]
+
+
+def test_pieces_evaluate_on_the_sessions_own_backend() -> None:
+    class Held(AwkwardBackend):
+        def __init__(self, needed: int) -> None:
+            super().__init__()
+            self.needed = needed
+
+    session = Session(Held(1))
+    source, _ = _files(session, *_flat())
+    assert graphed.materialize(_Total(source.a)) == 6.0
+
+
+def test_a_refused_write_runs_nothing_beside_it(tmp_path: Any) -> None:
+    session = Session(AwkwardBackend())
+    source, _ = _files(session, *_flat())
+    memory = from_awkward("m", ak.Array({"x": [1.0]}), session=session)
+    written = tmp_path / "written"
+    plan = to_parquet(source.b, str(tmp_path / "plan"), compute=False)
+    with pytest.raises(TypeError, match="exactly one partitioned source"):
+        graphed.materialize(
+            [
+                plan,
+                parquet_write(source.a, str(written), name=_part_name),
+                parquet_write(memory.x, str(tmp_path / "refused"), name=_part_name),
+            ]
+        )
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_a_mapping_building_its_values_on_each_read() -> None:
+    class Built(Mapping[str, Any]):
+        def __init__(self, array: Any) -> None:
+            self.array = array
+
+        def __getitem__(self, key: str) -> Any:
+            return self.array.a
+
+        def __iter__(self) -> Iterator[str]:
+            return iter(["a"])
+
+        def __len__(self) -> int:
+            return 1
+
+    session = Session(AwkwardBackend())
+    source, _ = _files(session, *_flat())
+    assert ak.to_list(graphed.materialize(Built(source))["a"]) == [1.0, 2.0, 3.0]

@@ -11,11 +11,13 @@ Unreleased
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 * ``graphed.materialize`` now evaluates a :class:`~graphed.write.PartWrite` (to its part paths), a
-  plan (to ``run(plan).value``, so ``to_parquet(..., compute=False)`` writes), and any object whose
-  class defines ``__graphed_pieces__`` returning :class:`graphed.PlanPieces`, as a deferred
-  histogram does, beside Arrays and in any nesting of them. A ``Varied`` becomes
-  ``{label: value}``; it used to come back unevaluated. Other items still pass through. One
-  Session's results share one read of each source, of the columns they use together.
+  plan of any kind (to ``run(plan).value``, so ``to_parquet(..., compute=False)`` writes; a V1
+  ``DurablePlan`` through the new ``DurablePlan.to_plan``), and any object whose class defines
+  ``__graphed_pieces__`` returning :class:`graphed.PlanPieces`, as a deferred histogram does,
+  beside Arrays and in any nesting of them. A ``Varied`` becomes ``{label: value}``; it used to
+  come back unevaluated. Other items still pass through. One Session's results share one read of
+  each source, of the columns they use together, through ``aggregate_plan``'s new ``read_for=``.
+* ``Session.materialize`` loses ``memo=``, which only ``graphed.materialize`` used.
 * A failing operation under ``graphed.materialize`` raises a ``StageError`` at the line that
   recorded it, as a plan does, instead of the bare backend error.
 * ``graphed.materialize`` over several files of a source that leaves unread columns as placeholders

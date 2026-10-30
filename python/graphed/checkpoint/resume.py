@@ -831,18 +831,8 @@ def resumable(
                 )
             )
         return replace(plan, stages=tuple(stages))
-    if isinstance(plan, DurablePlan):
-        tasks: Iterable[Task] = (Task(i, p) for i, p in enumerate(plan.partitions))
-        base: Plan[Any] = Plan(
-            process=processes[0],
-            combine=plan.combine.resolve(),
-            empty=plan.empty.resolve(),
-            services=plan.services,
-            finalize=None if plan.finalize is None else plan.finalize.resolve(),
-        )
-    else:
-        tasks, base = plan.tasks, plan
-    keyed = tuple(_tagged(t, tid, done) for t, tid in zip(tasks, ids[0], strict=True))
+    base = plan.to_plan() if isinstance(plan, DurablePlan) else plan
+    keyed = tuple(_tagged(t, tid, done) for t, tid in zip(base.tasks, ids[0], strict=True))
     return replace(
         base, process=_Resumable(processes[0], store, options, codec, reused[0]), tasks=keyed
     )

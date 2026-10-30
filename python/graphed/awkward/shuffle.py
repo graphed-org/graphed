@@ -66,8 +66,12 @@ def _unread(layout: Any, length: int) -> Any:
     return ak.from_buffers(form, length, placeholders, highlevel=False)
 
 
+def _is_placeholder(buffer: Any) -> bool:
+    return isinstance(buffer, ak.typetracer.PlaceholderArray)
+
+
 def _is_read(layout: Any) -> bool:
-    return all(isinstance(b, np.ndarray) for b in ak.to_buffers(layout)[2].values())
+    return not any(_is_placeholder(b) for b in ak.to_buffers(layout)[2].values())
 
 
 def _joined(parts: list[Any]) -> Any:
@@ -80,19 +84,25 @@ def _joined(parts: list[Any]) -> Any:
     head, length = parts[0], sum(part.length for part in parts)
     if head.is_record:
         contents = [_joined([p.content(f) for p in parts]) for f in head.fields]
-        fields = None if head.is_tuple else head.fields
-        return ak.contents.RecordArray(contents, fields, length, parameters=head.parameters)
-    if isinstance(head, ak.contents.ListOffsetArray) and all(
-        isinstance(p.offsets.data, np.ndarray) for p in parts
+        return head.copy(contents=contents, length=length)
+    if isinstance(head, ak.contents.ListOffsetArray) and not any(
+        _is_placeholder(p.offsets.data) for p in parts
     ):
         offsets = [np.asarray(p.offsets.data) for p in parts]
-        ends: Any = np.cumsum([o[-1] - o[0] for o in offsets])
-        shifts = np.concatenate([[0], ends[:-1]])
-        merged = [o[:-1] - o[0] + shift for o, shift in zip(offsets, shifts, strict=True)]
-        return ak.contents.ListOffsetArray(
-            ak.index.Index64(np.concatenate([*merged, ends[-1:]])),
-            _joined([p.content[o[0] : o[-1]] for p, o in zip(parts, offsets, strict=True)]),
-            parameters=head.parameters,
+        counts = np.concatenate([np.diff(o) for o in offsets])
+        return head.copy(
+            offsets=ak.index.Index64(np.concatenate(([0], np.cumsum(counts, dtype=np.int64)))),
+            content=_joined(
+                [p.content[o[0] : o[-1]] for p, o in zip(parts, offsets, strict=True)]
+            ),
+        )
+    if head.is_indexed and not any(_is_placeholder(p.index.data) for p in parts):
+        indexes = [np.asarray(p.index.data) for p in parts]
+        starts: Any = np.cumsum([0, *(p.content.length for p in parts[:-1])])
+        rebased = [np.where(i < 0, -1, i + s) for i, s in zip(indexes, starts, strict=True)]
+        return head.copy(
+            index=ak.index.Index64(np.concatenate(rebased)),
+            content=_joined([p.content for p in parts]),
         )
     return _unread(head, length)
 
