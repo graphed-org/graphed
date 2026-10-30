@@ -589,7 +589,7 @@ not. A function in an installed module is keyed by its name; the module's versio
 the environment record below. The codec, the global ``ak.behavior``, and the backend a graphed task
 builds (with a behavior dict an import reference names) are in the key too, so editing a
 ``__main__`` mixin recomputes what it touches. A behavior is shipped and keyed in an order that does
-not depend on how it was built, except that entries with a type in their key keep their relative
+not depend on how it was built, except that entries differing only in a type keep their relative
 order, since that order picks a ufunc overload. Seven cases need a hand:
 
 - A ``reused`` of 0 after a restart, when nothing changed, means the process holds data ordered by

@@ -29,12 +29,7 @@ from graphed.services import require_bound
 
 from .codec import Codec, PickleCodec
 from .errors import dead_letter_descriptor
-from .resume import (
-    _partition_tag,
-    check_environment,
-    require_environment_store,
-    warn_unreused,
-)
+from .resume import _partition_tag, check_environment, require_environment_store, warn_unreused
 from .retry import RetryPolicy
 from .store import CheckpointStore
 
@@ -109,6 +104,7 @@ def run_resumable(
 
     completed = store.completed()
     check_environment(store, completed, "", accept_environment)
+    warn_unreused(store, completed, plan, map(plan.task_id, plan.partitions))
     report = ResumeReport()
     committed = 0  # tasks committed (executed) during THIS invocation, for the kill simulation
     # folded in task order as produced, the grouping functools.reduce gives, holding one partial
@@ -143,8 +139,6 @@ def run_resumable(
         if _kill_after is not None and committed >= _kill_after:
             raise _SimulatedInterrupt(f"simulated kill after {committed} committed tasks")
 
-    if not report.skipped:
-        warn_unreused(store, completed, plan)
     _require_kill_fired(_kill_after, report, committed)
     report.dead_letters = store.dead_letters()
     value = acc if folded else empty()
@@ -235,6 +229,8 @@ def run_shuffle_resumable(
     require_bound(plan)
     completed = store.completed()
     check_environment(store, completed, "", accept_environment)
+    ids = (plan.task_id(si, task) for si, stage in enumerate(plan.stages) for task in stage.tasks)
+    warn_unreused(store, completed, plan, ids)
     report = ResumeReport()
     committed = 0
     # stage index -> its blocks' payloads (in task order)
@@ -277,8 +273,6 @@ def run_shuffle_resumable(
         stage_payloads[si] = this_payloads
         stage_hashes[si] = this_hashes
 
-    if not report.skipped:
-        warn_unreused(store, completed, plan)
     # the gather stage's content-addressed blocks
     value = tuple(stage_hashes[len(plan.stages) - 1])
     return ShuffleResumeResult(value=value, report=report)

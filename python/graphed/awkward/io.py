@@ -212,7 +212,7 @@ def _resolve_behavior(behavior: Any) -> Any:
 def _keyed_behavior(behavior: Any) -> Any:
     """Return what a task key holds for ``behavior``: a reference's target, in canonical order."""
     resolved = _resolve_behavior(behavior)
-    return _canonical(resolved) if isinstance(behavior, str) else resolved
+    return _canonical(resolved) if resolved and isinstance(behavior, str) else resolved
 
 
 def _session_behavior(session: Session, behavior: Any) -> Any:

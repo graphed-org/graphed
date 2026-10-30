@@ -14,7 +14,7 @@ import awkward as ak
 import key_order_helpers as h
 
 from graphed import Session, aggregate_plan, repartition, shuffle_plan
-from graphed.awkward import AwkwardBackend, from_parquet, gak, to_parquet
+from graphed.awkward import from_parquet, gak, to_parquet
 from graphed.checkpoint import Store, resumable, run_shuffle_resumable
 from graphed.core import SequentialRunner
 
@@ -22,7 +22,7 @@ variant, store, data, dest = sys.argv[1:]
 source = os.path.join(data, "events.parquet")
 if not os.path.exists(source):
     ak.to_parquet(ak.Array({"x": [float(i) for i in range(40)]}), source)
-session = Session(AwkwardBackend(behavior=h.BEHAVIOR))
+session = Session(h.backend())
 events = from_parquet("events", source, steps_per_file=4, session=session)
 fold: dict[str, Any] = {"reduce": h.fold, "combine": h.add, "empty": h.zero}
 
@@ -40,10 +40,11 @@ else:
         plan = aggregate_plan(gak.sum(events.x), **fold)
     elif variant == "by_ref":
         plan = aggregate_plan(gak.sum(events.x), backend="key_order_helpers:backend", **fold)
-    elif variant == "write_dict":
-        plan = to_parquet(events.x, dest, compute=False, behavior=h.BEHAVIOR)
+    elif variant == "by_factory":
+        plan = aggregate_plan(gak.sum(events.x), backend=h.backend, **fold)
     else:
-        plan = to_parquet(events.x, dest, compute=False, behavior="key_order_helpers:BEHAVIOR")
+        ref = h.BEHAVIOR if variant == "write_dict" else "key_order_helpers:BEHAVIOR"
+        plan = to_parquet(events.x, dest, compute=False, behavior=ref)
     rp: Any = resumable(plan, store)
     SequentialRunner().run(rp)
     report |= {"reused": rp.process.reused, "tasks": len(rp.tasks)}

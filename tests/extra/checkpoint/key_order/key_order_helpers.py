@@ -24,8 +24,10 @@ def overload(a: Any, b: Any) -> Any:
     return a
 
 
-BEHAVIOR: dict[Any, Any] = {(np.add, n, n): overload for n in {f"M{i}" for i in range(16)}}
-BEHAVIOR[np.add, "M0", numbers.Real] = overload
+NAMES = {f"M{i}" for i in range(16)}
+BEHAVIOR: dict[Any, Any] = {(np.add, n, n): overload for n in NAMES}
+BEHAVIOR |= {(np.multiply, n, numbers.Real): overload for n in NAMES}
+NOTHING = None
 
 
 def backend() -> AwkwardBackend:
@@ -79,3 +81,13 @@ def staged(ir: bytes, partitions: Sequence[Partition]) -> DurablePlanV2:
     tasks = tuple(Task(i, p) for i, p in enumerate(partitions))
     stage = StageSpec(kind="map_write", process=OpSpec.from_callable(stage_start), tasks=tasks)
     return DurablePlanV2(ir=ir, stages=(stage,))
+
+
+def shuffled(ir: bytes, partitions: Sequence[Partition]) -> DurablePlanV2:
+    gather = StageSpec(
+        kind="gather",
+        process=OpSpec.from_callable(stage_start),
+        tasks=(Task(0, Partition("dest", "p", 0, 1)),),
+        inputs=(0,),
+    )
+    return DurablePlanV2(ir=ir, stages=(*staged(ir, partitions).stages, gather))
