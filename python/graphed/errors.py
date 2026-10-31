@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -74,6 +75,14 @@ class SourceFrame:
     lineno: int
     function: str = ""
     source: str = ""
+    #: the other lines that wrote this same expression, which recording merged into one node
+    also: tuple[Provenance, ...] = ()
+
+    @classmethod
+    def of(cls, sites: Sequence[Provenance]) -> SourceFrame:
+        """Return the first of a node's recording ``sites``, carrying the rest as ``also``."""
+        first, *rest = sites
+        return cls(first.filename, first.lineno, first.function, first.source, tuple(rest))
 
     def __str__(self) -> str:
         """Show the frame as ``filename:lineno``."""

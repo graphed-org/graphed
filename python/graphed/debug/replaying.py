@@ -99,6 +99,7 @@ class Replay:
         self.task = task
         self._process = process
         self._session = outputs[0].session
+        self._outputs = outputs
         if compiled is None:
             compiled = _compile_at(process.opt_level, self._session, outputs)
         slot, first = _slot_of(compiled), dict[int, int]()
@@ -170,7 +171,8 @@ class Replay:
             try:
                 _nid, value = next(values)
             except Exception as exc:
-                failing = lower(self._session, Array(self._session, op.node_id), opt_level=0)
+                proxy = self._session._proxies([op.node_id], self._outputs)[0]
+                failing = lower(self._session, proxy, opt_level=0)
                 raise _stage_error(failing, op.node_id, str(self.task.partition), exc) from exc
             yield Step(op, value, time.perf_counter() - start)
 
