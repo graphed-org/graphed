@@ -356,6 +356,9 @@ disk:
 
 .. code-block:: python
 
+    import os
+    import tempfile
+
     import numpy as np
 
     from graphed import Session
@@ -376,11 +379,12 @@ disk:
     print("carries an embedded callable:", plan.opaque)
     print("computation fingerprint:", plan.ir_fingerprint()[:16])
 
-    with open("plan.bin", "wb") as f:
+    path = os.path.join(tempfile.mkdtemp(), "plan.bin")
+    with open(path, "wb") as f:
         f.write(plan.to_bytes())
 
     # elsewhere, later, on another machine
-    with open("plan.bin", "rb") as f:
+    with open(path, "rb") as f:
         shipped = DurablePlan.from_bytes(f.read())
 
     print("same computation:", shipped.ir_fingerprint() == plan.ir_fingerprint())
