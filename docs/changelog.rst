@@ -40,6 +40,17 @@ resumes as before.
 As a plan's direct output a reduction still reaches your ``reduce`` once per chunk, for ``combine``
 to fold: that is correct for a sum and yours to get right for anything else.
 
+The error arrow stays on a line that feeds the output
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Writing one expression twice records one node, and the arrow used to land on the first line that
+wrote it, even an unused one, so deleting that line "moved" the error (#136). A failure now points
+at a line that reaches the output and names the lines written before it, and any others feeding
+the output: each is in ``err.user_frame.also``, and ``format_traceback`` prints ``(same expression
+also written at analysis.py:6: ...)``. A line that runs again, as a re-run notebook cell does,
+counts once. ``Session.provenance`` answers for the array you pass it. Recording and checkpoint keys
+are unchanged, and a plan's bytes are unless a line it names repeats an expression.
+
 ``graphed.materialize`` evaluates anything deferred
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

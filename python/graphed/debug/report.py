@@ -36,6 +36,18 @@ _FAILURE_FIELDS = (
 )
 
 
+def _frame_json(frame: SourceFrame) -> list[Any]:
+    plain = [frame.filename, frame.lineno, frame.function, frame.source]
+    return [*plain, [_frame_json(other) for other in frame.also]] if frame.also else plain
+
+
+def _frame(data: list[Any]) -> SourceFrame:
+    filename, lineno, function, source, *also = data
+    return SourceFrame(
+        filename, lineno, function, source, tuple(_frame(x) for x in (also[0] if also else ()))
+    )
+
+
 @dataclass(frozen=True)
 class TaskRecord:
     """One task's latest attempt: ``state`` is ``submitted|started|finished|errored``."""
@@ -88,7 +100,7 @@ class RunReport:
         failure = None
         if f is not None:
             failure = {name: getattr(f, name) for name in _FAILURE_FIELDS}
-            failure["frames"] = [[x.filename, x.lineno, x.function, x.source] for x in f.frames]
+            failure["frames"] = [_frame_json(x) for x in f.frames]
             failure["input_forms"] = list(f.input_forms)
         return {
             "version": _VERSION,
@@ -111,7 +123,7 @@ class RunReport:
         failure = None
         if f is not None:
             failure = StageError(
-                frames=tuple(SourceFrame(*x) for x in f["frames"]),
+                frames=tuple(_frame(x) for x in f["frames"]),
                 input_forms=tuple(f["input_forms"]),
                 **{name: f[name] for name in _FAILURE_FIELDS},
             )

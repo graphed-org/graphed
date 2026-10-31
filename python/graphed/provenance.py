@@ -74,6 +74,15 @@ class Provenance:
         return f"{self.filename}:{self.lineno}"
 
 
+@dataclass(frozen=True, eq=False)
+class Site:
+    """One recording of a node; compared by identity, so a hash never walks the ``reads`` chain."""
+
+    provenance: Provenance
+    #: each input's node and the Site it was read at; ``None`` is a proxy built from a bare node id
+    reads: tuple[tuple[int, Site | None], ...] = ()
+
+
 _DISABLED = Provenance("<provenance-disabled>", 0)
 
 

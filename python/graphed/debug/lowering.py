@@ -96,10 +96,10 @@ def _collect(session: Session, array: Array) -> list[LoweredOp]:
     """Topologically-ordered ops (inputs before uses) via the public graph walk."""
     boundary_ops = session.backend.boundary_ops()
     ops: list[LoweredOp] = []
+    live = session._live([array])
 
     def frame(nid: int) -> SourceFrame:
-        prov = session.provenance(Array(session, nid))
-        return SourceFrame(prov.filename, prov.lineno, prov.function, prov.source)
+        return SourceFrame.of(session._lines(nid, live))
 
     def form(nid: int) -> str:
         return _form_str(session.form(Array(session, nid)))
