@@ -30,7 +30,7 @@ import graphed.core
 
 from .array import labels_carried
 from .backend import Backend
-from .errors import GraphedError, SourceFrame
+from .errors import GraphedError
 from .provenance import Provenance
 from .session import Session, _CompileView
 from .varied import refuse_container
@@ -45,7 +45,7 @@ __all__ = [
 ]
 
 #: A user source location — `SourceFrame`'s fields, in its field order; `also` only when not empty.
-Frame = tuple[str, int, str, str] | tuple[str, int, str, str, tuple[SourceFrame, ...]]
+Frame = tuple[str, int, str, str] | tuple[str, int, str, str, tuple[Provenance, ...]]
 #: A reduced-store address: the node id, plus the position inside a fused stage (`None` when the
 #: node reduced to itself, i.e. a boundary).
 Key = tuple[int, int | None]
@@ -190,9 +190,9 @@ def _frames_by_key(
     for nid in sorted(node_map):
         if node_map[nid] in chosen:
             continue
-        frame = SourceFrame.of(provenance[nid])
-        fields = (frame.filename, frame.lineno, frame.function, frame.source)
-        chosen[node_map[nid]] = (*fields, frame.also) if frame.also else fields
+        first, *rest = provenance[nid]
+        fields = (first.filename, first.lineno, first.function, first.source)
+        chosen[node_map[nid]] = (*fields, tuple(rest)) if rest else fields
     return tuple(
         sorted(chosen.items(), key=lambda e: (e[0][0], -1 if e[0][1] is None else e[0][1]))
     )

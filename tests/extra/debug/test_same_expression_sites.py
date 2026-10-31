@@ -16,11 +16,13 @@ import graphed
 import graphed.debug as gd
 from graphed import Array
 from graphed.awkward import AwkwardBackend, from_parquet
+from graphed.context import EventContext
 from graphed.core.execution import SequentialRunner
 from graphed.debug import RunReport, StageError, format_traceback, lower
 from graphed.errors import SourceFrame
 from graphed.execute import compile_ir
 from graphed.materialization import PlanPieces
+from graphed.provenance import Provenance
 from graphed.session import Session
 
 
@@ -82,7 +84,7 @@ class Piece:
         )
 
 
-def failure(run: Callable[[Array], Any], out: Array) -> StageError:
+def failure(run: Callable[[Any], Any], out: Any) -> StageError:
     with pytest.raises(StageError) as caught:
         run(out)
     return caught.value
@@ -258,10 +260,9 @@ def test_a_pass_beside_a_piece_arrows_the_live_line(events: Any) -> None:
     peek, peek_line = ev.m[:, 0], here()
     lead, lead_line = ev.m[:, 0], here()
     assert peek.node_id == lead.node_id
-    with pytest.raises(StageError) as caught:
-        graphed.materialize([Piece(ev.m), lead])
-    assert caught.value.user_frame.lineno == lead_line
-    assert [site.lineno for site in caught.value.user_frame.also] == [peek_line]
+    err = failure(graphed.materialize, [Piece(ev.m), lead])
+    assert err.user_frame.lineno == lead_line
+    assert [site.lineno for site in err.user_frame.also] == [peek_line]
 
 
 def test_a_pass_beside_a_piece_keeps_every_line_feeding_it(events: Any) -> None:
@@ -269,14 +270,40 @@ def test_a_pass_beside_a_piece_keeps_every_line_feeding_it(events: Any) -> None:
     one, one_line = ev.m[:, 0] * 2, here()
     two, two_line = ev.m[:, 0] * 2, here()
     assert one.node_id == two.node_id
-    with pytest.raises(StageError) as caught:
-        graphed.materialize([Piece(ev.m), one, two])
-    assert caught.value.user_frame.lineno == one_line
-    assert [site.lineno for site in caught.value.user_frame.also] == [two_line]
+    err = failure(graphed.materialize, [Piece(ev.m), one, two])
+    assert err.user_frame.lineno == one_line
+    assert [site.lineno for site in err.user_frame.also] == [two_line]
+
+
+def test_a_read_through_a_context_keeps_its_line(events: Any) -> None:
+    session, ev = events()
+    context = EventContext(session, ev)
+    _peek, peek_line = context["m"], here()
+    lead, lead_line = context["m"], here()
+    frame = lower(session, lead * 2, opt_level=0).op_for(lead.node_id).provenance
+    assert (frame.lineno, [site.lineno for site in frame.also]) == (lead_line, [peek_line])
+
+
+def test_a_replayed_failure_arrows_the_line_the_run_did(events: Any, tmp_path: Path) -> None:
+    _, ev = events()
+    _peek = ev.m[:, 0]
+    lead, lead_line = ev.m[:, 0], here()
+    out = lead * 2
+    plan = graphed.aggregate_plan(
+        out,
+        reduce=lambda values: list(values),
+        combine=add,
+        empty=list,
+        store=tmp_path / "store",
+        opt_level=0,
+    )
+    assert failure(lambda _: SequentialRunner().run(plan), out).user_frame.lineno == lead_line
+    replayed = failure(lambda _: list(gd.replay(plan, 0, out).steps()), out)
+    assert replayed.user_frame.lineno == lead_line
 
 
 def test_a_site_without_source_text_prints_no_dangling_separator() -> None:
-    frame = SourceFrame("a.py", 1, "f", "y", (SourceFrame("a.py", 2),))
+    frame = SourceFrame("a.py", 1, "f", "y", (Provenance("a.py", 2),))
     err = StageError(
         op="x",
         frames=(frame,),

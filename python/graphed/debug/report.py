@@ -10,11 +10,12 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable, Mapping
-from dataclasses import asdict, dataclass, field, fields
+from dataclasses import asdict, astuple, dataclass, field, fields
 from types import MappingProxyType
 from typing import Any
 
 from graphed.core import ExecResult, Monitor, StopReason, TaskEvent, TaskPhase, WorkerProfiler
+from graphed.provenance import Provenance
 
 from .errors import SourceFrame, StageError
 
@@ -37,15 +38,14 @@ _FAILURE_FIELDS = (
 
 
 def _frame_json(frame: SourceFrame) -> list[Any]:
-    plain = [frame.filename, frame.lineno, frame.function, frame.source]
-    return [*plain, [_frame_json(other) for other in frame.also]] if frame.also else plain
+    fields = [frame.filename, frame.lineno, frame.function, frame.source]
+    return [*fields, *map(astuple, frame.also)]
 
 
 def _frame(data: list[Any]) -> SourceFrame:
     filename, lineno, function, source, *also = data
-    return SourceFrame(
-        filename, lineno, function, source, tuple(_frame(x) for x in (also[0] if also else ()))
-    )
+    sites = tuple(Provenance(*site) for site in also)
+    return SourceFrame(filename, lineno, function, source, sites)
 
 
 @dataclass(frozen=True)

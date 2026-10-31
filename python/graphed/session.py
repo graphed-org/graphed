@@ -111,7 +111,7 @@ class Session:
         self._provenance: dict[int, Provenance] = {}
         # node -> (file, line, reads) -> its Site: an interned node has many, a rerun line one, and
         # the reads keep two callers of one helper line apart
-        self._sites: dict[int, dict[tuple[str, int, tuple[Any, ...]], Site]] = {}
+        self._sites: dict[int, dict[tuple[str, int, tuple[Site, ...]], Site]] = {}
         # M10 (plan A.1): with incremental=True the session maintains the reduced view AS THE
         # GRAPH IS BUILT — every record steps an IncrementalReducer whose per-step work is the
         # delta, so compile time never pays a whole-history optimization.
@@ -298,10 +298,10 @@ class Session:
             live = self._live(outputs)
             landings: Sequence[tuple[int, int | None] | None]
             if cone:
-                graph = self._store.cone(outputs=list(ids))
+                graph = self._store.cone(outputs=ids)
                 ir, landings = bytes(graph.serialize()), graph.node_map()
             elif not optimize:
-                ir = bytes(self._store.serialize(outputs=list(ids)))
+                ir = bytes(self._store.serialize(outputs=ids))
                 # opt_level=0 is 1:1 (M6): the serialized arena keeps the record ids it was built
                 # with
                 landings = [(nid, None) for nid in range(self._store.node_count())]
@@ -310,10 +310,10 @@ class Session:
                 # linear pass over the concise form instead of a whole-history optimization.
                 reduced = (
                     self._reducer.finalize(
-                        self._store, maximal_fusion=maximal_fusion, outputs=list(ids)
+                        self._store, maximal_fusion=maximal_fusion, outputs=ids
                     )[0]
                     if self._reducer is not None
-                    else self._store.reduce(maximal_fusion=maximal_fusion, outputs=list(ids))[0]
+                    else self._store.reduce(maximal_fusion=maximal_fusion, outputs=ids)[0]
                 )
                 ir, landings = bytes(reduced.serialize()), reduced.node_map()
             return _CompileView(
@@ -352,21 +352,22 @@ class Session:
         with self._lock:
             return self._provenance[array.node_id]
 
-    def _live(self, outputs: Sequence[Array]) -> set[Site]:
-        """Return the recordings ``outputs`` were built from.
+    def _reading(self, array: Array) -> tuple[Site, ...]:
+        # a proxy built from a bare node id stands for all of its node's recordings
+        site = array._site
+        return tuple(self._sites[array.node_id].values()) if site is None else (site,)
 
-        A proxy built from a bare node id has no Site, so all of its node's recordings feed it.
-        """
+    def _live(self, outputs: Sequence[Array]) -> set[Site]:
+        """Return the recordings ``outputs`` were built from."""
         self._mine(outputs)
         with self._lock:
             live: set[Site] = set()
-            pending: list[tuple[int, Site | None]] = [(a.node_id, a._site) for a in outputs]
+            pending = [site for array in outputs for site in self._reading(array)]
             while pending:
-                nid, site = pending.pop()
-                for one in self._sites[nid].values() if site is None else (site,):
-                    if one not in live:
-                        live.add(one)
-                        pending.extend(one.reads)
+                site = pending.pop()
+                if site not in live:
+                    live.add(site)
+                    pending.extend(site.reads)
             return live
 
     def _feeding(self, nid: int, live: Set[Site]) -> list[Site]:
@@ -382,6 +383,8 @@ class Session:
         """
         with self._lock:
             sites = list(self._sites[nid].values())
+            if len(sites) == 1:
+                return (sites[0].provenance,)
             feeding = self._feeding(nid, live)
             lines: dict[tuple[str, int], Provenance] = {}
             for site in (feeding[0], *sites[: sites.index(feeding[0])], *feeding[1:]):
@@ -393,11 +396,10 @@ class Session:
         """Return a proxy of each of ``nodes``, fed only by what feeds it in ``outputs``."""
         live = self._live(outputs)
         with self._lock:
-            sites = {nid: self._feeding(nid, live) for nid in nodes}
-        return [
-            self._wrap(nid, Site(feeding[0].provenance, tuple((nid, s) for s in feeding)))
-            for nid, feeding in sites.items()
-        ]
+            feeding = ((nid, self._feeding(nid, live)) for nid in nodes)
+            return [
+                self._wrap(nid, Site(sites[0].provenance, tuple(sites))) for nid, sites in feeding
+            ]
 
     def source_ids(self) -> list[int]:
         """Return the node ids of all source nodes (used by projection)."""
@@ -594,8 +596,7 @@ class Session:
             node_id = self._store.add_source(name, dict(params))
             self._sources.setdefault(node_id, data)
             self._source_names.setdefault(node_id, name)
-            site = self._enter(node_id, form, prov)
-        return self._wrap(node_id, site)
+            return self._enter(node_id, form, prov)
 
     def record_op(
         self,
@@ -616,8 +617,7 @@ class Session:
                 node_id = self._store.add_reduction(op, ids, params_d)
             else:
                 node_id = self._store.add_op(op, ids, params_d)
-            site = self._enter(node_id, form, prov, inputs, op=(op, params_d, ids))
-        return self._wrap(node_id, site, inputs)
+            return self._enter(node_id, form, prov, inputs, op=(op, params_d, ids))
 
     def _forms_of(self, ids: Sequence[int]) -> list[Form]:
         with self._lock:
@@ -642,18 +642,18 @@ class Session:
         inputs: Sequence[Array] = (),
         *,
         op: tuple[str, dict[str, ParamValue], list[int]] | None = None,
-    ) -> Site:
+    ) -> Array:
         # the caller holds `_lock` from the store add through here
         self._forms.setdefault(node_id, form)
         if op is not None:
             self._ops.setdefault(node_id, op)
         self._provenance.setdefault(node_id, prov)
-        reads = tuple((a.node_id, a._site) for a in inputs)
+        reads = tuple(site for array in inputs for site in self._reading(array))
         site = self._sites.setdefault(node_id, {}).setdefault(
             (prov.filename, prov.lineno, reads), Site(prov, reads)
         )
         self._step_reducer()
-        return site
+        return self._wrap(node_id, site, inputs)
 
     def record_exchange(self, input_array: Array, params: Mapping[str, ParamValue]) -> Array:
         """Record an ``Exchange`` boundary (M39): a pure data-movement repartition of one input.
@@ -668,8 +668,7 @@ class Session:
         form = self._backend.op_form("exchange", self._forms_of(ids), params_d)
         with self._lock:
             node_id = self._store.add_exchange(ids, params_d)
-            site = self._enter(node_id, form, prov, [input_array], op=("exchange", params_d, ids))
-        return self._wrap(node_id, site, [input_array])
+            return self._enter(node_id, form, prov, [input_array], op=("exchange", params_d, ids))
 
     def record_join(self, left: Array, right: Array, params: Mapping[str, ParamValue]) -> Array:
         """Record a ``Join`` boundary (M40): a two-input co-partitioned relational combine.
@@ -685,8 +684,7 @@ class Session:
         form = self._located_form("join", prov, ids, params_d)
         with self._lock:
             node_id = self._store.add_join(ids, params_d)
-            site = self._enter(node_id, form, prov, [left, right], op=("join", params_d, ids))
-        return self._wrap(node_id, site, [left, right])
+            return self._enter(node_id, form, prov, [left, right], op=("join", params_d, ids))
 
     def record_external(
         self,
@@ -762,8 +760,7 @@ class Session:
                     "this External is already recorded with its type declared on one call only",
                 )
             self._externals.setdefault(node_id, (fn, ids))
-            site = self._enter(node_id, form, prov, inputs)
-        return self._wrap(node_id, site, inputs)
+            return self._enter(node_id, form, prov, inputs)
 
     def _canonical_output_type(
         self,
