@@ -501,7 +501,7 @@ def aggregate_plan(
     writes = tuple(writes)
     arrays = _planned_arrays(outputs, writes, store=store, opt_level=opt_level)
     session = arrays[0].session
-    nid, data = _partitioned_source(arrays)
+    nid, data = _partitioned_source(session, arrays)
     compiled = _compile_at(opt_level, session, arrays)
     slot = _slot_of(compiled)
     written = {compiled.correspondence.node_map[w.array.node_id][0] for w in writes}
@@ -573,15 +573,24 @@ def _planned_arrays(
     return arrays
 
 
-def _partitioned_source(arrays: Sequence[Array]) -> tuple[int, PartitionedSource]:
+def _partitioned_source(
+    session: Session, arrays: Sequence[Array]
+) -> tuple[int, PartitionedSource]:
     """Return the one partitioned source ``arrays`` read, with its node id."""
     partitioned = {
         nid: d for nid, d in sources_read(arrays).items() if isinstance(d, PartitionedSource)
     }
     if len(partitioned) != 1:
+        names = ", ".join(sorted(session.source_name(nid) for nid in partitioned))
+        fix = f" ({names})" if names else ""
+        # collate divides outputs between plans; one output reading two sources stays whole.
+        if names and all(
+            len(session.reachable_sources(a.node_id) & partitioned.keys()) < 2 for a in arrays
+        ):
+            fix += "; collate one plan per source (graphed.collate)"
         raise TypeError(
             "aggregate_plan needs exactly one partitioned source; the outputs read "
-            f"{len(partitioned)}"
+            f"{len(partitioned)}{fix}"
         )
     ((nid, data),) = partitioned.items()
     return nid, data

@@ -131,8 +131,11 @@ for its whole life.
 
 A source name is one binding per Session. Reading the same source again under its name — a
 re-run notebook cell, the same files, columns and partitioning — reuses that binding, and its node
-when the params match. Binding a taken name to other data is refused at the read, so a loop over
-datasets passes each its own name, or reads each inside its own ``with graphed.Session(...)``.
+when the params match. Binding a taken name to other data is refused at the read, so a reader
+taking an explicit name in a loop over datasets passes each its own name, or reads each inside its
+own ``with graphed.Session(...)``. ``uproot.graphed`` with no ``name=`` needs neither: the first
+read takes the tree's name and a later read of other data takes that name with a hash of what it
+reads. Which read comes first decides the names, so reordering reads moves their checkpoint keys.
 "The same source" is the same object, or two objects whose identities compare equal: the parquet
 readers' loaders define ``source_identity()``, and the numpy creators and ``default_rng`` draws
 pass their content name, which fixes their values, as ``Session.source``'s ``identity=``. An in-memory array is the same source only as the same object.

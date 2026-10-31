@@ -65,6 +65,8 @@ to fold: that is correct for a sum and yours to get right for anything else.
 Fixes
 ~~~~~
 
+* ``aggregate_plan`` over two sources of one Session names them in its refusal and, when no output
+  reads both, points to ``graphed.collate`` (#165).
 * A behavior-carrying plan resumes across processes. The Session backend's behavior ships, and keys,
   in an order independent of how it was built: a behavior assembled from sets (coffea's NanoEvents)
   gave every process its own ``resumable`` and ``run_shuffle_resumable`` keys and shuffle plan

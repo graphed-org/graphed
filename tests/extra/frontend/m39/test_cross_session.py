@@ -244,3 +244,27 @@ def test_aggregate_plan_over_several_sessions_names_collate() -> None:
         _fold([x, y])
     plan = graphed.collate({"x": _fold([x]), "y": _fold([y])})
     assert SequentialRunner().run(plan).value == {"x": [3], "y": [3]}
+
+
+def test_aggregate_plan_over_two_sources_of_one_session_names_collate() -> None:
+    s = Session(SumBackend())
+    x = s.source("x", form=_form(), data=Rows((1, 2)))
+    y = s.source("y", form=_form(), data=Rows((3,)))
+    with pytest.raises(TypeError, match=r"read 2 \(x, y\); collate one plan per source \(graphed"):
+        _fold([x, y])
+    plan = graphed.collate({"x": _fold([x]), "y": _fold([y])})
+    assert SequentialRunner().run(plan).value == {"x": [3], "y": [3]}
+
+
+def test_aggregate_plan_over_one_output_of_two_sources_does_not_offer_collate() -> None:
+    s = Session(SumBackend())
+    x = s.source("x", form=_form(), data=Rows((1, 2)))
+    y = s.source("y", form=_form(), data=Rows((3,)))
+    with pytest.raises(TypeError, match=r"the outputs read 2 \(x, y\)$"):
+        _fold([s.record_op("add", [x, y])])
+
+
+def test_aggregate_plan_over_no_partitioned_source_does_not_offer_collate() -> None:
+    x = Session(SumBackend()).source("x", form=_form(), data=Loader((1,)))
+    with pytest.raises(TypeError, match=r"the outputs read 0$"):
+        _fold([x])
