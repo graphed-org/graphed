@@ -642,7 +642,10 @@ class Array:
 
         ``output_type=`` declares the type of each element of ``fn``'s result (a type string, a
         dtype or a Python type, as the backend accepts); it becomes the recorded form and is part
-        of the node's identity. It is a claim, never a cast.
+        of the node's identity. It is a claim, never a cast. Without it, a backend that can trace
+        ``fn`` runs it on metadata at this line and records the result's type, which is not part
+        of the node's identity; if that fails, a :class:`~graphed.GraphedWarning` says so and the
+        backend's default form stands.
         """
         return self._session.record_external(
             "map", fn, [self], {"fn": self._session._fn_name(fn, name)}, output_type=output_type
@@ -709,7 +712,8 @@ def apply(
     identity, so declaring a name another callable already wears — declared or derived — means
     that same node, and the name must encode everything that changes the callable's behaviour.
 
-    ``output_type=`` declares the result's element type, as for ``Array.map``.
+    ``output_type=`` declares the result's element type, and without it the type is inferred,
+    as for ``Array.map``.
     """
     from .varied import containers_in, expand
 

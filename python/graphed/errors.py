@@ -12,6 +12,10 @@ class GraphedError(Exception):
     """Base class for graphed frontend errors."""
 
 
+class GraphedWarning(UserWarning):
+    """Something recorded, but not as well as it could have been."""
+
+
 class PointError(GraphedError):
     """A ``points=`` entry that does not fit the situation it names (design §4).
 

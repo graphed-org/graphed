@@ -21,7 +21,7 @@ import graphed.core
 
 from .array import Array, attach, handle_of, labels_carried
 from .backend import Backend, Form, ParamValue
-from .errors import GraphedTypeError, OutputTypeError
+from .errors import GraphedTypeError, GraphedWarning, OutputTypeError
 from .provenance import Provenance, capture
 from .services import Bindable
 from .systematics.lineage import unify_contexts
@@ -678,6 +678,8 @@ class Session:
         ids = [a.node_id for a in inputs]
         if form is None:
             form = self._located_form(op, prov, ids, {**form_view, **(form_params or {})})
+            if op == "map" and declared_type is None:
+                form = self._traced_form(fn, ids, prov) or form
         # the declaration op_form honoured (or, beside form=, a leaf dtype) is checked on every
         # value
         check = getattr(self._backend, "check_output_type", None)
@@ -701,6 +703,26 @@ class Session:
             self._externals.setdefault(node_id, (fn, ids))
             self._enter(node_id, form, prov)
         return self._wrap(node_id, inputs)
+
+    def _traced_form(
+        self, fn: Callable[..., object], ids: Sequence[int], prov: Provenance
+    ) -> Form | None:
+        """Return the form an undeclared ``fn`` gives its inputs, where the backend can trace it.
+
+        This runs the user's function at record time, so any failure is a warning, never fatal.
+        """
+        trace = getattr(self._backend, "traced_form", None)
+        if trace is None:
+            return None
+        try:
+            form: Form | None = trace(fn, self._forms_of(ids))
+        except Exception:
+            form = None
+        if form is None:
+            name = getattr(fn, "__name__", repr(fn))
+            message = f"could not infer the type of {name}; pass output_type="
+            warnings.warn_explicit(message, GraphedWarning, prov.filename, prov.lineno)
+        return form
 
     def _canonical_output_type(
         self,
