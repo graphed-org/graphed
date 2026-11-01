@@ -7,7 +7,8 @@ to a single node), reads each partition once (projected to the UNION of the outp
 evaluates the IR once, and reduces the result. It is the dask multi-output ``compute`` analogue at
 graphed's plan layer; the per-output REDUCTION is the caller's (``reduce`` folds one partition's
 output-node values into a partition result; ``combine``/``empty`` reduce across partitions — each
-output is whatever monoid the caller supplies: histograms add, counts sum, ...). graphed-histogram
+output is whatever monoid the caller supplies: histograms add, counts sum, ...), or the output's
+own when it is a whole-dataset reduction with a known combine (:func:`fold_of`). graphed-histogram
 specializes this for boost histograms; any other partition-wise reduction reuses it directly.
 """
 
@@ -15,6 +16,7 @@ from __future__ import annotations
 
 import functools
 import importlib
+import operator
 import os
 import types
 from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -438,11 +440,116 @@ def plan_services(
     return referenced_services(session, GraphStore.deserialize(bytes(compiled.ir)).nodes(), names)
 
 
+def _max(a: Any, b: Any) -> Any:
+    """``max``, where NaN wins as it does in ``ak.max`` and ``np.max``."""
+    return b if b != b or a < b else a
+
+
+def _min(a: Any, b: Any) -> Any:
+    """``min``, where NaN wins as it does in ``ak.min`` and ``np.min``."""
+    return b if b != b or b < a else a
+
+
+@dataclass(frozen=True)
+class Fold:
+    """How a whole-dataset reduction's chunk values fold into its value over the dataset.
+
+    ``empty`` is the value of no chunks. ``None`` is a chunk with nothing to reduce (``ak.max`` of
+    no rows), so it leaves the other side as it is.
+    """
+
+    combine: Callable[[Any, Any], Any]
+    empty: Any = None
+
+    def __call__(self, a: Any, b: Any) -> Any:
+        """Fold two chunk values."""
+        if a is None or b is None:
+            return b if a is None else a
+        return self.combine(a, b)
+
+
+_FOLDS = {
+    "sum": Fold(operator.add, 0),
+    "count": Fold(operator.add, 0),
+    "count_nonzero": Fold(operator.add, 0),
+    "any": Fold(operator.or_, False),
+    "all": Fold(operator.and_, True),
+    "max": Fold(_max),
+    "min": Fold(_min),
+}
+
+#: why these reductions' chunk values do not fold
+_NOT_FOLDABLE = {
+    "mean": "a mean of chunk means is not the dataset's mean",
+    "var": "a variance of chunk variances is not the dataset's variance",
+    "std": "a std of chunk stds is not the dataset's std",
+}
+
+
+def _fold_of(node: Mapping[str, Any]) -> Fold:
+    kind, op, params = node["kind"], node["name"], node["params"]
+    if kind != "reduction":
+        raise TypeError(f"is {'per-event' if kind == 'op' else kind}, not a reduction")
+    name = str(op).rsplit(".", 1)[-1]
+    if name in _NOT_FOLDABLE:
+        raise TypeError(f"is {op}: {_NOT_FOLDABLE[name]}")
+    if name not in _FOLDS:
+        raise TypeError(f"is {op}, which has no known combine")
+    if params.get("axis", "none") != "none" or params.get("keepdims"):
+        raise TypeError(f"is {op} with axis= or keepdims=, not one value for the dataset")
+    return replace(_FOLDS[name], empty=None) if params.get("mask_identity") else _FOLDS[name]
+
+
+def fold_of(array: Array) -> Fold:
+    """Return how ``array``, a whole-dataset reduction, folds across partitions.
+
+    Those are ``sum``, ``count``, ``count_nonzero``, ``any``, ``all``, ``min`` and ``max`` with no
+    axis. Anything else raises a ``TypeError`` completing the sentence ``output 'x' ...``.
+    """
+    return _fold_of(array.session._nodes()[array.node_id])
+
+
+@dataclass(frozen=True)
+class _Folded:
+    """``aggregate_plan``'s default reduction: one fold per output, read at its compiled slot."""
+
+    slots: tuple[int, ...]
+    folds: tuple[Fold, ...]
+    then: Callable[[Any], Any] | None = None
+
+    def reduce(self, values: list[Any]) -> tuple[Any, ...]:
+        return tuple(values[slot] for slot in self.slots)
+
+    def combine(self, a: tuple[Any, ...], b: tuple[Any, ...]) -> tuple[Any, ...]:
+        return tuple(fold(x, y) for fold, x, y in zip(self.folds, a, b, strict=True))
+
+    def empty(self) -> tuple[Any, ...]:
+        return tuple(fold.empty for fold in self.folds)
+
+    def finalize(self, value: tuple[Any, ...]) -> Any:
+        out = value[0] if len(value) == 1 else value
+        return out if self.then is None else self.then(out)
+
+
+def _folded(outputs: Sequence[Array], slot: Callable[[Array], int]) -> _Folded:
+    """Return the default reduction of ``outputs``; refuse an output no fold covers."""
+    nodes = outputs[0].session._nodes()
+    folds = []
+    for i, output in enumerate(outputs):
+        try:
+            folds.append(_fold_of(nodes[output.node_id]))
+        except TypeError as err:
+            raise TypeError(
+                f"aggregate_plan: output {i} {err}; pass reduce=, combine=, empty="
+            ) from err
+    return _Folded(tuple(slot(o) for o in outputs), tuple(folds))
+
+
 def aggregate_plan(
     *outputs: Array,
-    reduce: Callable[[list[Any]], V],
-    combine: Callable[[V, V], V],
-    empty: Callable[[], V],
+    reduce: Callable[[list[Any]], Any] | None = None,
+    combine: Callable[[Any, Any], Any] | None = None,
+    empty: Callable[[], Any] | None = None,
     externals: Mapping[str, Callable[..., object]] | None = None,
     backend: Callable[[], Any] | str | None = None,
     steps_per_file: int | None = None,
@@ -453,9 +560,9 @@ def aggregate_plan(
     services: Sequence[str] | None = None,
     writes: Sequence[PartWrite] = (),
     opt_level: int = 1,
-    finalize: Callable[[V], V] | None = None,
+    finalize: Callable[[Any], Any] | None = None,
     read_by: Sequence[Array] | None = None,
-) -> Plan[V]:
+) -> Plan[Any]:
     """Build a one-pass partition-wise reduction :class:`~graphed.core.execution.Plan`.
 
     It runs over the session's single partitioned source (see module docstring). ``outputs`` are
@@ -464,6 +571,15 @@ def aggregate_plan(
     evaluation backend (factory, class, or ``"module:attr"`` ref; defaults to the session backend's
     class, with its behavior). ``run(plan).value`` is the ``reduce``+``combine`` aggregate over
     all partitions.
+
+    With none of ``reduce``, ``combine`` and ``empty``, every output must be a whole-dataset
+    reduction with a known combine (:func:`fold_of`), and ``run(plan).value`` is its value, or a
+    tuple of them for several outputs; ``finalize`` then takes that value. A reduction with no
+    value for no rows (``ak.min``, ``ak.max``, ``mask_identity=True``) skips such a chunk, and is
+    ``None`` with no rows at all. A float sum's bits are fixed by the runner family and the
+    partition count, as any float reduction's are, and can differ from
+    ``graphed.materialize``'s in the last places. Anything else is refused, naming the output, as
+    a mean of chunk means is not the dataset's mean, and so is ``writes``.
 
     The tasks are ``partitions`` when given, else the source's partitions at ``steps_per_file``
     steps per file; ``None`` takes the source's own default (``from_parquet(steps_per_file=)``).
@@ -499,6 +615,11 @@ def aggregate_plan(
     for a caller using the chunks otherwise.
     """
     writes = tuple(writes)
+    if reduce is None and combine is None and empty is None:
+        if writes:
+            raise TypeError("aggregate_plan(writes=) needs reduce=, combine= and empty=")
+    elif reduce is None or combine is None or empty is None:
+        raise TypeError("aggregate_plan takes reduce=, combine= and empty= together, or none")
     arrays = _planned_arrays(outputs, writes, store=store, opt_level=opt_level)
     session = arrays[0].session
     nid, data = _partitioned_source(arrays)
@@ -506,6 +627,11 @@ def aggregate_plan(
     slot = _slot_of(compiled)
     written = {compiled.correspondence.node_map[w.array.node_id][0] for w in writes}
     refuse_chunk_partials(compiled, as_outputs=written)
+    if reduce is None or combine is None or empty is None:
+        folded = _folded(outputs, slot)
+        reduce, combine, empty = folded.reduce, folded.combine, folded.empty
+        # the workers' copy carries no finalize: only the head calls it
+        finalize = replace(folded, then=finalize and by_value(finalize)).finalize
     # Wire EVERY External surviving in the compiled IR from the session (fills + upstream
     # corrections alike); an explicit `externals=` (keyed by `external_key`) overrides the
     # auto-wired evaluator.
