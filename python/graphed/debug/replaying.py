@@ -2,16 +2,17 @@
 
 This is opt_level=0.
 
-``replay(plan, key, *outputs)`` re-executes the task with the input it read — from the plan's
-capture root (``aggregate_plan(store=)``) when the run kept it, else by re-reading its partition —
-through the unfused graph, so every step carries the user's line. A failing step raises the
-``StageError`` M6's ``run`` would; ``diff()`` compares the replayed partial with the recorded one.
+``replay(plan, task)`` re-executes the task with the input it read — from the plan's capture root
+(``aggregate_plan(store=)``) when the run kept it, else by re-reading its partition — one operation
+at a time, each carrying the user's line: the members of the plan's fused stages, or the recorded
+graph when the plan's ``outputs`` are given. A failing step raises the ``StageError`` M6's ``run``
+would; ``diff()`` compares the replayed partial with the recorded one.
 """
 
 from __future__ import annotations
 
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from functools import cached_property
 from typing import Any
@@ -22,13 +23,15 @@ from graphed.core import GraphStore, LocalResources
 from graphed.core.execution import Plan, Task
 from graphed.execute import (
     CompiledGraph,
+    Key,
     _unbound_external,
     _unbound_source,
     compile_ir,
     external_key,
 )
 
-from .lowering import LoweredOp, lower
+from .errors import SourceFrame
+from .lowering import LoweredGraph, LoweredOp, LoweredStage, lower
 from .runner import _stage_error
 
 
@@ -82,6 +85,42 @@ def _equal(a: Any, b: Any) -> bool:
     return bool(numpy.array_equal(a, b))
 
 
+def _unfused(
+    process: _PartitionReduce[Any],
+) -> tuple[list[dict[str, Any]], LoweredGraph, list[int]]:
+    """Return the plan's IR one operation per node, its lowering and its outputs' new ids.
+
+    A stage's members are the operations it runs and the plan's frames name each, so this needs
+    nothing the plan does not already ship.
+    """
+    arena = GraphStore.deserialize(process.ir)
+    frames = dict(process.frames)
+    nodes: list[dict[str, Any]] = []
+    ops: list[LoweredOp] = []
+    value_of: dict[int, int] = {}
+
+    def add(node: Mapping[str, Any], key: Key, inputs: list[int]) -> None:
+        new = len(nodes)
+        nodes.append({**node, "id": new, "inputs": inputs})
+        frame = SourceFrame(*frames.get(key, ("<no recorded line>", 0)))
+        name = node["name"]
+        ops.append(LoweredOp(new, name, node["kind"], frame, tuple(inputs), "", False))
+        value_of[key[0]] = new
+
+    for node in arena.nodes():
+        ins = [value_of[i] for i in node["inputs"]]
+        if node["kind"] != "stage":
+            add(node, (node["id"], None), ins)
+            continue
+        base = len(nodes)
+        for index, member in enumerate(node["members"]):
+            inputs = [ins[i] if tag == "input" else base + i for tag, i in member["inputs"]]
+            add(member, (node["id"], index), inputs)
+    stages = tuple(LoweredStage(i, (op,)) for i, op in enumerate(ops))
+    outputs = [value_of[o] for o in arena.outputs()]
+    return nodes, LoweredGraph(process.opt_level, stages, outputs[-1]), outputs
+
+
 class Replay:
     """One task of a run, ready to replay.
 
@@ -92,28 +131,34 @@ class Replay:
         self,
         process: _PartitionReduce[Any],
         task: Task,
-        outputs: tuple[Array, ...],
+        outputs: tuple[Array, ...] = (),
         compiled: CompiledGraph | None = None,
     ) -> None:
-        """Prepare ``task`` of a run for replay over ``outputs``."""
+        """Prepare ``task`` of a run for replay, over ``outputs`` when they are given."""
         self.task = task
         self._process = process
-        self._session = outputs[0].session
         self._outputs = outputs
-        if compiled is None:
-            compiled = _compile_at(process.opt_level, self._session, outputs)
-        slot, first = _slot_of(compiled), dict[int, int]()
-        for o in outputs:
-            first.setdefault(slot(o), o.node_id)
-        # one value per IR output, in its order, as the run's `reduce` receives them
-        self._reduced_ids = [first[s] for s in sorted(first)]
-        cone = {op.node_id: op for o in outputs for op in lower(self._session, o, opt_level=0).ops}
-        self._cone = [cone[i] for i in sorted(cone)]
-        # the unfused IR keeps record ids; it is the whole arena, so only the cone is evaluated
-        arena = GraphStore.deserialize(
-            bytes(compile_ir(self._session, *outputs, optimize=False).ir)
-        )
-        self._nodes = [n for n in arena.nodes() if n["id"] in cone]
+        self._lowered: LoweredGraph | None = None
+        if outputs:
+            self._session = outputs[0].session
+            if compiled is None:
+                compiled = _compile_at(process.opt_level, self._session, outputs)
+            slot, first = _slot_of(compiled), dict[int, int]()
+            for o in outputs:
+                first.setdefault(slot(o), o.node_id)
+            # one value per IR output, in its order, as the run's `reduce` receives them
+            self._reduced_ids = [first[s] for s in sorted(first)]
+            ops = (op for o in outputs for op in lower(self._session, o, opt_level=0).ops)
+            cone = {op.node_id: op for op in ops}
+            self._cone = [cone[i] for i in sorted(cone)]
+            # the unfused IR keeps record ids; it is the whole arena, so only the cone is evaluated
+            arena = GraphStore.deserialize(
+                bytes(compile_ir(self._session, *outputs, optimize=False).ir)
+            )
+            self._nodes = [n for n in arena.nodes() if n["id"] in cone]
+        else:
+            self._nodes, self._lowered, self._reduced_ids = _unfused(process)
+            self._cone = list(self._lowered.ops)
         self._store: Any = None
         self._captured: dict[str, str] = {}
         if process.store is not None:
@@ -171,8 +216,10 @@ class Replay:
             try:
                 _nid, value = next(values)
             except Exception as exc:
-                proxy = self._session._proxies([op.node_id], self._outputs)[0]
-                failing = lower(self._session, proxy, opt_level=0)
+                failing = self._lowered
+                if failing is None:
+                    proxy = self._session._proxies([op.node_id], self._outputs)[0]
+                    failing = lower(self._session, proxy, opt_level=0)
                 raise _stage_error(failing, op.node_id, str(self.task.partition), exc) from exc
             yield Step(op, value, time.perf_counter() - start)
 
@@ -203,11 +250,12 @@ class Replay:
         return ReplayDiff(reference, _equal(recorded, replayed), recorded, replayed)
 
 
-def replay(plan: Plan[Any], key: int, *outputs: Array) -> Replay:
-    """Replay task ``key`` of an ``aggregate_plan`` plan.
+def replay(plan: Plan[Any], task: int, *outputs: Array) -> Replay:
+    """Replay the task keyed ``task`` of an ``aggregate_plan`` plan.
 
-    ``outputs`` are the Arrays the plan was built from, in order: they supply the unfused graph and
-    the user's frames, and must recompile to the plan's IR.
+    Each step is one operation the plan runs. ``outputs``, the Arrays the plan was built from in
+    order, replay the recorded graph instead, op for op as written; they must recompile to the
+    plan's IR.
     """
     process = plan.process
     if not isinstance(process, _PartitionReduce):
@@ -218,13 +266,21 @@ def replay(plan: Plan[Any], key: int, *outputs: Array) -> Replay:
         raise TypeError(
             "replay does not re-run a plan's writes; replay a plan built without writes="
         )
-    task = next((t for t in plan.tasks if t.key == key), None)
-    if task is None:
-        raise ValueError(f"the plan has no task with key {key!r}")
-    compiled = _compile_at(process.opt_level, outputs[0].session, outputs) if outputs else None
-    if compiled is None or bytes(compiled.ir) != process.ir:
+    found = next((t for t in plan.tasks if t.key == task), None)
+    if found is None:
+        raise ValueError(f"the plan has no task with key {task!r}")
+    if not outputs:
+        return Replay(process, found)
+    for output in outputs:
+        if not isinstance(output, Array):
+            raise TypeError(
+                f"replay's outputs are deferred Arrays, not {type(output).__name__}; "
+                "gd.replay(plan, task) takes them from the plan"
+            )
+    compiled = _compile_at(process.opt_level, outputs[0].session, outputs)
+    if bytes(compiled.ir) != process.ir:
         raise ValueError(
             "these outputs do not recompile to the plan's IR: pass the outputs given to "
-            "aggregate_plan, in order"
+            "aggregate_plan, in order, or none to take them from the plan"
         )
-    return Replay(process, task, outputs, compiled)
+    return Replay(process, found, outputs, compiled)

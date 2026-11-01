@@ -26,6 +26,16 @@ Small samples, and one evaluation path
 * ``Partition.first(n)`` caps a partition at its first ``n`` entries, resolved when it is read.
 * A parquet partition reads only the row groups its entries lie in, not the whole file.
 
+Replay any plan, and find the cut that emptied your data
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``graphed.debug.replay(plan, task)`` needs no outputs: it steps through the operations the plan
+  runs, each at your line, for an ``aggregate_plan``, ``gh.plan`` or ``Histogram.plan`` plan, in any
+  interpreter. Passing the plan's outputs still replays your ops as written. Its second parameter is
+  now named ``task``, not ``key``.
+* ``graphed.debug.trace(x, entries=N)`` prints one row per recorded line, with the rows going in
+  and out of it, and marks the first line that empties the data.
+
 Plans returned wrong values for row-axis operations, and now refuse them
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

@@ -1,0 +1,201 @@
+"""``graphed.debug.replay(plan, task)`` with no outputs, and ``graphed.debug.trace``."""
+
+from __future__ import annotations
+
+import pickle
+import re
+from typing import Any
+
+import awkward as ak
+import cloudpickle
+import pytest
+
+import graphed
+import graphed.debug as gd
+from graphed import Session
+from graphed.awkward import AwkwardBackend, AwkwardForm, gak
+from graphed.core import Partition
+from graphed.errors import StageError
+
+gh = pytest.importorskip("graphed_histogram")
+
+DATA = ak.Array({"pt": [[1.0, 2.0], [], [3.0], [4.0, 5.0]], "met": [1.0, 2.0, 3.0, 4.0]})
+
+
+class _File:
+    """One partitioned file, recording the rows of each read."""
+
+    def __init__(self) -> None:
+        self.reads: list[int] = []
+
+    def partitions(self, steps_per_file: int) -> tuple[Partition, ...]:
+        return (Partition("f", "t", 0, len(DATA)),)
+
+    def read_partition(self, partition: Partition, columns: Any, resources: Any) -> Any:
+        part = partition.resolve(len(DATA))
+        chunk = DATA[part.entry_start : part.entry_stop]
+        self.reads.append(len(chunk))
+        return chunk
+
+    def __call__(self) -> ak.Array:
+        return DATA
+
+
+def _events() -> tuple[Any, _File]:
+    file = _File()
+    form = AwkwardForm(ak.Array(DATA.layout.to_typetracer(forget_length=True)))
+    session = Session(AwkwardBackend())
+    return session.source("ev", form=form, data=file), file
+
+
+def _plan(*outputs: Any, **options: Any) -> Any:
+    return graphed.aggregate_plan(
+        *outputs,
+        reduce=list,
+        combine=lambda a, b: a + b,
+        empty=list,
+        **options,
+    )
+
+
+def _lead() -> tuple[Any, Any]:
+    ev, _ = _events()
+    kept = ev[ev.met > 1.5]  # the line each step names
+    return kept, gak.num(kept.pt, axis=1)
+
+
+def test_replay_needs_no_outputs_and_gives_the_runs_partial() -> None:
+    _, counts = _lead()
+    plan = _plan(counts)
+    assert ak.to_list(gd.replay(plan, 0).value[0]) == [0, 1, 2]
+
+
+def test_replay_steps_every_operation_of_a_fused_stage_at_its_line() -> None:
+    _, counts = _lead()
+    plan = _plan(counts)
+    steps = list(gd.replay(plan, 0).steps())
+    assert [s.node.op for s in steps] == ["ev", "field", "gt", "getitem", "field", "ak.num"]
+    assert [s.node.op for s in gd.replay(plan, 0, counts).steps()] == [s.node.op for s in steps]
+    getitem = steps[3]
+    assert "ev[ev.met > 1.5]" in getitem.node.provenance.source
+    assert getitem.node.provenance.filename == __file__
+    assert len(getitem.value) == 3
+
+
+def test_replay_at_opt_level_zero_needs_no_outputs() -> None:
+    _, counts = _lead()
+    plan = _plan(counts, opt_level=0)
+    assert ak.to_list(gd.replay(plan, 0).value[0]) == [0, 1, 2]
+
+
+def test_replay_of_two_outputs_keeps_their_order() -> None:
+    ev, _ = _events()
+    first, second = gak.sum(ev.pt, axis=1), gak.num(ev.pt, axis=1)
+    values = gd.replay(_plan(first, second), 0).value
+    assert ak.to_list(values[0]) == [3.0, 0.0, 3.0, 9.0]
+    assert ak.to_list(values[1]) == [2, 0, 1, 2]
+
+
+def test_replay_diffs_against_the_same_input() -> None:
+    _, counts = _lead()
+    diff = gd.replay(_plan(counts), 0).diff()
+    assert diff.equal and diff.reference == "re-evaluated"
+
+
+def test_replay_works_from_a_plan_that_crossed_a_process_boundary() -> None:
+    _, counts = _lead()
+    plan = pickle.loads(cloudpickle.dumps(_plan(counts)))
+    assert ak.to_list(gd.replay(plan, 0).value[0]) == [0, 1, 2]
+
+
+def test_a_failing_step_raises_at_its_line() -> None:
+    ev, _ = _events()
+    broken = ev.map(_explode)
+    with pytest.raises(StageError) as raised:
+        list(gd.replay(_plan(broken), 0).steps())
+    assert raised.value.frames[0].filename == __file__
+
+
+def _explode(chunk: Any) -> Any:
+    raise ValueError("boom")
+
+
+def test_the_positional_form_still_replays_as_written() -> None:
+    _, counts = _lead()
+    plan = _plan(counts)
+    replayed = gd.replay(plan, 0, counts)
+    assert ak.to_list(replayed.value[0]) == [0, 1, 2]
+
+
+def test_other_outputs_name_the_fix() -> None:
+    kept, counts = _lead()
+    with pytest.raises(ValueError, match="none to take them from the plan"):
+        gd.replay(_plan(counts), 0, kept)
+
+
+def test_a_histogram_as_an_output_names_the_fix() -> None:
+    ev, _ = _events()
+    h = gh.histogram(gak.flatten(ev.pt), bins=4, range=(0, 8))
+    with pytest.raises(TypeError, match=r"gd\.replay\(plan, task\)"):
+        gd.replay(gh.plan({"h": h}), 0, h)
+
+
+def test_replay_of_histogram_plans_needs_no_outputs() -> None:
+    ev, _ = _events()
+    h = gh.histogram(gak.flatten(ev.pt), bins=4, range=(0, 8))
+    assert gd.replay(gh.plan({"h": h}), 0).value["h"].sum() == 5
+    assert gd.replay(h.plan(), 0).value.sum() == 5
+
+
+def test_replay_adds_nothing_to_a_plans_pickle() -> None:
+    _, counts = _lead()
+    process = _plan(counts).process
+    fields = {name: getattr(process, name) for name in ("ir", "frames")}
+    size = len(pickle.dumps(process))
+    gd.replay(_plan(counts), 0)
+    assert len(pickle.dumps(process)) == size
+    assert len(pickle.dumps(fields)) < size
+
+
+def test_trace_prints_a_row_per_line_and_marks_the_emptying_step(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    ev, _ = _events()
+    empty = ev[ev.met > 100.0]
+    counts = gak.num(empty.pt, axis=1)
+    gd.trace(counts, entries=4)
+    out = capsys.readouterr().out
+    lines = out.splitlines()
+    assert len(lines) == 3
+    assert re.search(
+        r"getitem +4 -> 0 +ev\[ev\.met > 100\.0\] +<-- removed every event$", lines[1]
+    )
+    assert "removed every event" not in lines[0] + lines[2]
+    assert re.search(r"ak\.num +0 -> 0 ", lines[2])
+
+
+def test_trace_reads_only_the_sample_it_was_asked_for(capsys: pytest.CaptureFixture[str]) -> None:
+    ev, file = _events()
+    gd.trace(ev.met, entries=2)
+    assert re.search(r"field +2 -> 2", capsys.readouterr().out)
+    assert file.reads == [2]
+
+
+def test_trace_shows_a_scalar_as_a_dash(capsys: pytest.CaptureFixture[str]) -> None:
+    ev, _ = _events()
+    gd.trace(gak.sum(ev.met, axis=None), entries=4)
+    assert re.search(r"ak\.sum +4 -> -", capsys.readouterr().out)
+
+
+def test_trace_marks_nothing_when_rows_survive(capsys: pytest.CaptureFixture[str]) -> None:
+    ev, _ = _events()
+    gd.trace(ev[ev.met > 1.5], entries=4)
+    assert "removed every event" not in capsys.readouterr().out
+
+
+def test_trace_refuses_a_varied_array_and_a_bad_count() -> None:
+    ev, _ = _events()
+    with pytest.raises(graphed.GraphedError, match=r"graphed\.debug\.trace"):
+        gd.trace(graphed.vary(ev.met, "sf", up=ev.met * 2, down=ev.met / 2), entries=4)
+    with pytest.raises(ValueError, match="positive int"):
+        gd.trace(ev.met, entries=0)
