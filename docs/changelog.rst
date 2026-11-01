@@ -20,6 +20,13 @@ An uncaught StageError reads on its own
   them (an optional ``num_entries(partition)`` on a ``PartitionedSource``) and its size otherwise.
 * New ``graphed.WorkerLostError``, a ``StageError`` for a worker that died, with no source frame.
 
+Chunking by events
+~~~~~~~~~~~~~~~~~~
+
+* ``aggregate_plan(events_per_task=N)`` cuts each file into tasks of ``N`` entries, on any source
+  with ``num_entries(partition)`` and on any that reports concrete ranges. A source that cannot
+  count refuses it; passing ``steps_per_file=`` or ``partitions=`` too is a ``TypeError``.
+
 Plans returned wrong values for row-axis operations, and now refuse them
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

@@ -476,6 +476,7 @@ def aggregate_plan(
     externals: Mapping[str, Callable[..., object]] | None = None,
     backend: Callable[[], Any] | str | None = None,
     steps_per_file: int | None = None,
+    events_per_task: int | None = None,
     partitions: Sequence[Partition] | None = None,
     on_compiled: Callable[[CompiledGraph], Any] | None = None,
     store: str | os.PathLike[str] | None = None,
@@ -497,6 +498,8 @@ def aggregate_plan(
 
     The tasks are ``partitions`` when given, else the source's partitions at ``steps_per_file``
     steps per file; ``None`` takes the source's own default (``from_parquet(steps_per_file=)``).
+    ``events_per_task`` instead cuts each file into tasks of that many entries, which needs a
+    source that can count them (``num_entries(partition)``).
 
     ``on_compiled`` is §7.2's seam onto the internally compiled :class:`CompiledGraph` — the
     artifact is otherwise unreachable from the caller. It fires ONCE, and whatever it returns is
@@ -562,7 +565,13 @@ def aggregate_plan(
         n_values=len({slot(o) for o in outputs}) if writes else None,
         opt_level=opt_level,
     )
-    if partitions is None:
+    if events_per_task is not None:
+        if steps_per_file is not None or partitions is not None:
+            raise TypeError(
+                "events_per_task= chunks the plan; omit steps_per_file= and partitions="
+            )
+        partitions = _event_partitions(data, events_per_task)
+    elif partitions is None:
         partitions = data.partitions(steps_for(data, steps_per_file))
     tasks = tuple(Task(i, p) for i, p in enumerate(partitions))
     _refuse_shared_parts((process, t.partition) for t in tasks)
@@ -574,6 +583,28 @@ def aggregate_plan(
         services=plan_services(session, compiled, services),
         finalize=None if finalize is None else by_value(finalize),
     )
+
+
+def _event_partitions(source: PartitionedSource, events_per_task: int) -> list[Partition]:
+    """Cut each of ``source``'s files into ranges of ``events_per_task`` entries."""
+    if events_per_task < 1:
+        raise ValueError(f"events_per_task must be >= 1, got {events_per_task}")
+    out: list[Partition] = []
+    for file in source.partitions(1):
+        start, stop = file.entry_start, file.entry_stop
+        if file.is_blind:
+            count = getattr(source, "num_entries", None)
+            if count is None:
+                raise TypeError(
+                    f"{type(source).__name__} cannot count its entries, so events_per_task= "
+                    "cannot chunk it; pass steps_per_file= instead"
+                )
+            start, stop = 0, count(file)
+        out.extend(
+            Partition(file.uri, file.tree, a, min(a + events_per_task, stop))
+            for a in range(start, stop, events_per_task)
+        )
+    return out
 
 
 def _planned_arrays(
