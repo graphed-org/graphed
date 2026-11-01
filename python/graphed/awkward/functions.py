@@ -20,7 +20,7 @@ import numpy.typing as npt
 import graphed
 from graphed import Array, ParamValue
 from graphed.array import scalar_params
-from graphed.errors import GraphedError, GraphedTypeError
+from graphed.errors import DeferredTypeError, GraphedError, GraphedTypeError
 from graphed.provenance import capture
 from graphed.shuffle import JOINKEY
 from graphed.varied import boundary_refusal, containers_in, expand, expand_tuple, narrow
@@ -134,11 +134,12 @@ def with_field(arr: Array, value: object, where: str) -> Array:
         # a scalar, which ak broadcasts, travels as a param in its own dtype (M59)
         params = scalar_params(value)
     except (TypeError, ValueError) as err:
+        fix = f": {err.detail}" if isinstance(err, DeferredTypeError) else ""
         raise GraphedTypeError(
             "with_field",
             capture(),
             "the value must be a deferred array or a bool/int/float/str scalar (numpy scalars "
-            f"keep their dtype), not {type(value).__name__}",
+            f"keep their dtype), not {type(value).__name__}{fix}",
         ) from err
     return arr.session.record_op("ak.with_field", [arr], {"field": where, **params})
 
@@ -764,11 +765,11 @@ def unzip(arr: Array) -> tuple[Array, ...]:
 
 
 def to_list(arr: Array) -> list[object]:
-    """EAGER sugar, deprecated: ``graphed.materialize(arr).to_list()`` says that it evaluates."""
+    """EAGER sugar, deprecated: ``ak.to_list(graphed.materialize(arr))`` says that it evaluates."""
     warnings.warn(
-        "gak.to_list evaluates the array; call graphed.materialize(x).to_list()",
+        "gak.to_list evaluates the array; call ak.to_list(graphed.materialize(x))",
         DeprecationWarning,
-        stacklevel=2,
+        stacklevel=3,  # past `_dispatched`'s wrapper, to the user's line
     )
     out: list[object] = ak.to_list(arr.session.materialize(arr))
     return out

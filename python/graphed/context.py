@@ -25,7 +25,7 @@ import itertools
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from .array import Array
+from .array import Array, EagerRefusals
 from .errors import GraphedError
 from .provenance import capture
 
@@ -73,7 +73,7 @@ _two_level = two_level
 _SERIAL = itertools.count()
 
 
-class EventContext(ContextNode):
+class EventContext(EagerRefusals, ContextNode):
     """An event context (§2.6). Built by an idiom constructor, never directly.
 
     Its RECORDED state — collections, selection, the registered weight factors and the label union

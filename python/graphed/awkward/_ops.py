@@ -262,7 +262,10 @@ def _field(op: str, xs: Sequence[Any], p: Mapping[str, Any]) -> Any:
     # M18: not a record field -> a behavior property (vector's .pt/.mass, the coffea pattern);
     # works on the typetracer and real arrays alike when the array carries the behavior. An
     # unknown attribute raises here -> a record-time GraphedTypeError.
-    return getattr(x, name)
+    value = getattr(x, name)
+    if callable(value):  # a typetracer scalar's own method is no field
+        raise AttributeError(f"no field named {name!r}")
+    return value
 
 
 def _method(op: str, xs: Sequence[Any], p: Mapping[str, Any]) -> Any:

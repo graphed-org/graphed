@@ -20,7 +20,7 @@ from awkward.types._awkward_datashape_parser import LarkError
 
 from graphed import Array, Session
 from graphed.aggregate import resolved_backend
-from graphed.array import NEEDS_VALUES
+from graphed.array import EAGER_VERBS, NEEDS_VALUES
 from graphed.backend import PYTHON_TYPES, Form
 from graphed.core import PayloadDescriptor
 from graphed.session import reader
@@ -190,7 +190,7 @@ _INTROSPECT_EAGER = frozenset({"fields", "type", "typestr", "ndim", "is_tuple", 
 _EAGER_METHODS = frozenset(
     getattr(cls, name)
     for cls in (ak.Array, ak.Record)
-    for name in ("to_list", "tolist", "show", "to_numpy")
+    for name in EAGER_VERBS
     if hasattr(cls, name)
 )
 

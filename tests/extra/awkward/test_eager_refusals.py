@@ -14,9 +14,9 @@ import graphed
 import graphed.numpy as gnp
 from graphed import Session
 from graphed.awkward import AwkwardBackend, AwkwardForm, from_awkward, gak
+from graphed.context import EventContext
 from graphed.errors import DeferredTypeError, GraphedTypeError, MissingFieldError
-
-hist = pytest.importorskip("hist")
+from graphed.numpy import NumpyBackend
 
 
 def _unread() -> ak.Array:
@@ -35,6 +35,7 @@ def _plt_hist(x: Any) -> object:
 
 
 def _hist_fill(x: Any) -> object:
+    hist = pytest.importorskip("hist")
     return hist.Hist.new.Reg(10, 0, 100, name="pt").Double().fill(pt=x)
 
 
@@ -62,6 +63,7 @@ MIXING: dict[str, Callable[[Any], object]] = {
     "awkward": lambda x: x + ak.Array([1.0, 2.0]),
     "list": lambda x: x * [1.0, 2.0],
     "gak argument": lambda x: gak.where(x > 0, np.ones(2), x),
+    "with_field": lambda x: gak.with_field(x, np.ones(2), "w"),
 }
 
 
@@ -114,11 +116,23 @@ def test_asarray_is_no_type_error_a_library_could_fall_back_on() -> None:
     assert "hist.graphed.Hist" in str(refused.value)
 
 
-def test_a_refusal_crosses_a_process_boundary() -> None:
-    with pytest.raises(DeferredTypeError) as refused:
-        len(_events().MET_pt)
+@pytest.mark.parametrize(
+    ("convert", "kind"),
+    [
+        (len, DeferredTypeError),
+        (bool, GraphedTypeError),
+        (np.asarray, GraphedTypeError),
+        (ak.to_list, GraphedTypeError),
+    ],
+    ids=["len", "bool", "asarray", "ak.to_list"],
+)
+def test_a_refusal_crosses_a_process_boundary(
+    convert: Callable[[Any], object], kind: type[GraphedTypeError]
+) -> None:
+    with pytest.raises(kind) as refused:
+        convert(_events().MET_pt)
     back = pickle.loads(pickle.dumps(refused.value))
-    assert type(back) is DeferredTypeError
+    assert type(back) is kind
     assert str(back) == str(refused.value)
 
 
@@ -139,10 +153,17 @@ def test_numpy_scalars_stay_operands() -> None:
         assert ak.to_list(graphed.materialize(x * scalar)) == [2.0, 4.0]
 
 
-def test_what_is_no_array_keeps_the_scalar_refusal() -> None:
+@pytest.mark.parametrize("operand", [object(), b"ab", {"a": 1}, {1.0}], ids=repr)
+def test_what_is_no_array_keeps_the_scalar_refusal(operand: object) -> None:
     with pytest.raises(TypeError, match="unsupported scalar operand") as refused:
-        _events().MET_pt * object()
+        _events().MET_pt * operand
     assert not isinstance(refused.value, GraphedTypeError)
+
+
+def test_a_deferred_value_is_no_scalar_operand() -> None:
+    ev = from_awkward("ev", ak.Array({"shape": [1.0, 2.0], "x": [3.0, 4.0]}))
+    with pytest.raises(TypeError, match="unsupported scalar operand"):
+        gak.fill_none(ev.x, ev)
 
 
 def test_a_field_named_like_a_verb_reads_the_field() -> None:
@@ -189,8 +210,16 @@ def test_a_record_refuses_like_an_array() -> None:
 
 def test_gak_to_list_evaluates_and_is_deprecated() -> None:
     x = from_awkward("x", ak.Array([1.0, 2.0]))
-    with pytest.warns(DeprecationWarning, match=r"graphed\.materialize\(x\)\.to_list\(\)"):
+    with pytest.warns(
+        DeprecationWarning, match=r"ak\.to_list\(graphed\.materialize\(x\)\)"
+    ) as caught:
         assert gak.to_list(x) == [1.0, 2.0]
+    assert caught[0].filename == __file__
+
+
+def test_the_deprecation_pointer_works_on_a_scalar() -> None:
+    total = gak.sum(from_awkward("x", ak.Array([1.0, 2.0])), axis=None)
+    assert ak.to_list(graphed.materialize(total)) == 3.0
 
 
 @pytest.mark.parametrize(
@@ -221,3 +250,35 @@ def test_a_numpy_backed_array_refuses_by_the_same_rule() -> None:
             convert(x)
     with pytest.raises(TypeError, match=r"graphed\.numpy\.from_array"):
         x * np.ones(3)
+
+
+@pytest.mark.parametrize("verb", ["to_list", "tolist", "to_numpy", "show", "compute"])
+@pytest.mark.parametrize(
+    "make",
+    [
+        lambda: gnp.from_array("x", np.arange(3.0), session=Session(NumpyBackend())),
+        lambda: gak.sum(from_awkward("x", ak.Array([1.0, 2.0])), axis=None),
+    ],
+    ids=["numpy-backed", "awkward-scalar"],
+)
+def test_a_conversion_verb_refuses_on_any_backend_and_shape(
+    make: Callable[[], Any], verb: str
+) -> None:
+    value = make()
+    nodes = value.session.node_count()
+    with pytest.raises(GraphedTypeError, match=r"graphed\.materialize") as refused:
+        getattr(value, verb)()
+    assert refused.value.provenance.filename == __file__
+    assert value.session.node_count() == nodes
+
+
+@pytest.mark.parametrize(
+    "convert",
+    [len, float, int, bool, np.asarray],
+    ids=["len", "float", "int", "bool", "asarray"],
+)
+def test_an_event_context_refuses_by_the_same_rule(convert: Callable[[Any], object]) -> None:
+    session = Session(NumpyBackend())
+    pt = gnp.from_array("pt", np.arange(3.0), session=session)
+    with pytest.raises(GraphedTypeError, match=r"graphed\.materialize"):
+        convert(EventContext(session, pt, collections={"pt": pt}))

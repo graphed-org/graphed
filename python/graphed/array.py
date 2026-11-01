@@ -221,17 +221,19 @@ def decode_subscript(spec: object) -> tuple[object, ...]:
 def _as_param(value: object) -> ParamValue:
     if isinstance(value, bool | int | str):
         return value
-    if isinstance(value, SupportsFloat) and getattr(value, "shape", ()) == ():
-        return float(value)  # coerces numpy scalars without importing numpy
-    if not hasattr(value, "__len__"):
-        raise TypeError(f"unsupported scalar operand {value!r}")
-    raise DeferredTypeError(
-        "operand",
-        capture(),
-        f"cannot combine a deferred array with an eager {type(value).__name__}: record it as an "
-        "input with from_awkward('weights', ak.Array(values)) or graphed.numpy.from_array, or "
-        "evaluate the deferred side with graphed.materialize(x)",
-    )
+    if not isinstance(value, EagerRefusals):  # whose __float__ and __array__ only refuse
+        if isinstance(value, SupportsFloat) and getattr(value, "shape", ()) == ():
+            return float(value)  # coerces numpy scalars without importing numpy
+        if isinstance(value, list | tuple) or hasattr(value, "__array__"):
+            raise DeferredTypeError(
+                "operand",
+                capture(),
+                f"cannot combine a deferred array with an eager {type(value).__name__}: record it "
+                "as an input with from_awkward('weights', ak.Array(values)) or "
+                "graphed.numpy.from_array, or evaluate the deferred side with "
+                "graphed.materialize(x)",
+            )
+    raise TypeError(f"unsupported scalar operand {value!r}")
 
 
 def scalar_params(
@@ -259,6 +261,8 @@ def scalar_params(
 #: the one rule: nothing evaluates implicitly, and every conversion names the two explicit choices
 EVALUATE = "evaluate it with graphed.materialize(x), or peek with graphed.head(x)"
 NEEDS_VALUES = f"needs values, and a deferred array has none until it runs: {EVALUATE}"
+#: attributes an array of any backend or shape refuses by that rule when no field has the name
+EAGER_VERBS = frozenset({"compute", "to_list", "tolist", "to_numpy", "show"})
 
 
 def no_eager_value(
@@ -602,8 +606,8 @@ class Array(EagerRefusals):
             return self._session.record_op("field", [self], {"field": name})
         except GraphedTypeError as err:
             detail = err.detail
-            if name == "compute":
-                detail = f"graphed arrays have no .compute(): {EVALUATE} ({detail})"
+            if name in EAGER_VERBS:
+                detail = f"graphed arrays have no .{name}(): {EVALUATE} ({detail})"
             raise MissingFieldError(err.op, err.provenance, detail) from None
 
     def __getitem__(self, key: object) -> Array:

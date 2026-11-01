@@ -44,16 +44,16 @@ class GraphedTypeError(GraphedError):
             msg = f"{msg}: {detail}"
         super().__init__(msg)
 
+    def __reduce__(self) -> tuple[Any, ...]:
+        """Pickle by constructor arguments."""
+        return (type(self), (self.op, self.provenance, self.detail))
+
 
 class OutputTypeError(GraphedTypeError):
     """An External's value disagrees with the type its node declared.
 
     Located at the declaring line.
     """
-
-    def __reduce__(self) -> tuple[Any, ...]:
-        """Pickle by constructor arguments."""
-        return (type(self), (self.op, self.provenance, self.detail))
 
 
 class DeferredTypeError(GraphedTypeError, TypeError):
@@ -63,10 +63,6 @@ class DeferredTypeError(GraphedTypeError, TypeError):
     catches ``TypeError``. ``__array__`` stays a plain ``GraphedTypeError``, so no library falls
     back to treating a deferred array as a scalar.
     """
-
-    def __reduce__(self) -> tuple[Any, ...]:
-        """Pickle by constructor arguments."""
-        return (type(self), (self.op, self.provenance, self.detail))
 
 
 class PackKeyOverflowError(ValueError):
@@ -78,10 +74,6 @@ class MissingFieldError(GraphedTypeError, AttributeError):
 
     An ill-typed ``field`` op that ``hasattr`` reads as absent.
     """
-
-    def __reduce__(self) -> tuple[Any, ...]:
-        """Pickle by constructor arguments."""
-        return (type(self), (self.op, self.provenance, self.detail))
 
 
 @dataclass(frozen=True)

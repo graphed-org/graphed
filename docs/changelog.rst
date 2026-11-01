@@ -29,8 +29,8 @@ Small samples, and one evaluation path
 One rule at the deferred/eager boundary
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-* **``ak.to_list(x)`` on a deferred array now refuses.** It evaluated the whole dataset silently;
-  call ``graphed.materialize(x).to_list()``. Nothing evaluates implicitly now.
+* **ak.to_list(x) on a deferred array now refuses.** It evaluated the whole dataset silently;
+  call ``ak.to_list(graphed.materialize(x))``. Nothing evaluates implicitly now.
   ``gak.to_list`` still evaluates and is deprecated, with the same pointer.
 * Every conversion to eager values refuses at your line and names ``graphed.materialize`` and
   ``graphed.head``: ``ak.to_numpy``, ``ak.Array``, ``np.asarray``, ``np.histogram``, ``.tolist()``,
