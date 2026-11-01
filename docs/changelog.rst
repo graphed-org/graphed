@@ -12,7 +12,7 @@ A flat systematic is a number
 
 * ``graphed.vary(1.0, "lumi", up=1.025, down=0.975)`` returns a factor to multiply into a weight,
   in place of a ``gak.ones_like`` dummy. It holds no Session, and adds its own universes with no
-  joints: ``nominal, lumi_up, lumi_down``.
+  joints: ``nominal, lumi_up, lumi_down`` (#180).
 * The ``would fan out`` guard names the families that multiplied, the factor idiom and
   ``composes_as_union=True``. A number member on an array target points at the factor.
 
