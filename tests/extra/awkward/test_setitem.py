@@ -54,7 +54,8 @@ def _slots(x: Any) -> dict[str, Any]:
             return v.node_id
         return {k: plain(m) for k, m in v.items()} if isinstance(v, dict) else v
 
-    names = [n for c in type(x).__mro__ for n in getattr(c, "__slots__", ()) if n != "__weakref__"]
+    slots = [n for c in type(x).__mro__ for n in getattr(c, "__slots__", ())]
+    names = [n for n in slots if n not in ("__weakref__", "_site")]
     return {n: plain(getattr(x, n)) for n in names}
 
 

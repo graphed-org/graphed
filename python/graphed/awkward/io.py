@@ -663,7 +663,7 @@ def _value_specs(
             key = _canonical_leaf(nodes, session, member, path)
             # a scalar leaf has no value node: project it out of the record
             leaves[label] = (
-                Array(session, key)
+                session._proxies([key], [member])[0]
                 if isinstance(key, int)
                 else functools.reduce(operator.getitem, parts, member)
             )

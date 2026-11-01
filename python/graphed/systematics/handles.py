@@ -69,7 +69,9 @@ def with_context(value: Any, ctx: Any) -> Any:
             context=ctx,
         )
     if isinstance(value, Array):
-        return attach(type(value)(value.session, value.node_id), ctx, labels_carried(value))
+        stamped = type(value)(value.session, value.node_id)
+        stamped._site = value._site
+        return attach(stamped, ctx, labels_carried(value))
     return value
 
 
