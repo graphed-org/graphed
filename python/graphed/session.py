@@ -154,6 +154,8 @@ class Session:
         self._fn_taken: set[str] = set()
         # evaluator key -> the first callable recorded under it and where
         self._fn_held: dict[str, tuple[Callable[..., object], Provenance]] = {}
+        # (evaluator key, *input types) -> what tracing that function gave
+        self._fn_traced: dict[tuple[str, ...], Form | None] = {}
 
     def __enter__(self) -> Session:
         """Open a scope: array-less reads in this context record here until it exits."""
@@ -753,19 +755,19 @@ class Session:
                     op, prov, "backend returned no payload descriptor for external op"
                 )
         ids = [a.node_id for a in inputs]
-        infer = op == "map" and form is None and declared_type is None
+        undeclared = op == "map" and form is None
         if form is None:
             form = self._located_form(op, prov, ids, {**form_view, **(form_params or {})})
-        # after the form, so a call the backend refuses never takes the name
-        if "fn" in params_d:
-            key = evaluator_key(descriptor.content_hash, params_d)
-            fn = self._hold_fn(fn, key, params_d["fn"], prov)
-        if infer:
-            form = self._traced_form(fn, ids, prov) or form
         # the declaration op_form honoured (or, beside form=, a leaf dtype) is checked on every
         # value
         check = getattr(self._backend, "check_output_type", None)
         declared = self._declaration(op, prov, declared_type, form_params)
+        # after every refusal of the call itself, so a refused function holds no name
+        if "fn" in params_d:
+            key = evaluator_key(descriptor.content_hash, params_d)
+            fn = self._hold_fn(fn, key, params_d["fn"], prov)
+            if undeclared and declared is None:
+                form = self._traced_form(fn, key, ids, prov) or form
         with self._lock:
             node_id = self._store.add_external(descriptor, ids, params_d)
             if declared is not None and check is not None:
@@ -797,37 +799,46 @@ class Session:
         from .checkpoint.resume import _key_digest
 
         try:
-            same = _key_digest(held) == _key_digest(fn)
+            differs = _key_digest(held) != _key_digest(fn)
         except Exception:
-            message = f"could not compare {_fn_label(fn)} with {_fn_label(held)} ({first}); "
-            message += "the first one answers for both"
-            warnings.warn_explicit(message, GraphedWarning, prov.filename, prov.lineno)
-            return held
-        if not same:
-            raise GraphedError(
-                f"graphed: name={name!r} at {prov} is already used by {_fn_label(held)} "
-                f"({first}); a different function needs a different name"
+            message = (
+                f"could not compare {_fn_label(fn)} with {_fn_label(held)} ({first}); "
+                "the first one answers for both"
             )
+            warnings.warn_explicit(message, GraphedWarning, prov.filename, prov.lineno)
+        else:
+            if differs:
+                raise GraphedError(
+                    f"graphed: name={name!r} at {prov} is already used by {_fn_label(held)} "
+                    f"({first}); a different function needs a different name"
+                )
         return held
 
     def _traced_form(
-        self, fn: Callable[..., object], ids: Sequence[int], prov: Provenance
+        self, fn: Callable[..., object], key: str, ids: Sequence[int], prov: Provenance
     ) -> Form | None:
         """Return the form an undeclared ``fn`` gives its inputs, where the backend can trace it.
 
         This runs the user's function at record time, so any failure is a warning, never fatal.
+        One function is traced once per input type, however many universes record it.
         """
         trace = getattr(self._backend, "traced_form", None)
         if trace is None:
             return None
+        forms = self._forms_of(ids)
+        traced = (key, *(form.describe() for form in forms))
+        with self._lock:
+            if traced in self._fn_traced:
+                return self._fn_traced[traced]
         try:
-            form: Form | None = trace(fn, self._forms_of(ids))
+            form: Form | None = trace(fn, forms)
         except Exception:
             form = None
         if form is None:
             message = f"could not infer the type of {_fn_label(fn)}; pass output_type="
             warnings.warn_explicit(message, GraphedWarning, prov.filename, prov.lineno)
-        return form
+        with self._lock:
+            return self._fn_traced.setdefault(traced, form)
 
     def _canonical_output_type(
         self,

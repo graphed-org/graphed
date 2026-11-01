@@ -1401,9 +1401,10 @@ one comes back as a ``Varied`` over the union of labels.
 lambdas, two closures of one factory, two same-named functions of different modules — would
 otherwise hash to one node and hand the second one the first one's result. They are told apart
 automatically: the second object to derive ``q`` records as ``q#1``. Passing ``name=`` to ``map``,
-``apply`` or ``apply_gufunc`` overrides that and declares the identity yourself. One name answers
-for one function: the same code and captured values under it are one function, so a rerun notebook
-cell gives the same node, and a callable that differs raises ``GraphedError``. Two that cannot be
+``apply`` or ``apply_gufunc`` overrides that and declares the identity yourself. Calls that share
+a name and an evaluator's params, such as ``output_type=``, need one function: a rerun of the same
+definition gives the same node, as a notebook cell does, and a callable with a different checkpoint
+key raises ``GraphedError``. Two that cannot be
 compared are a ``GraphedWarning``, and the first answers for both.
 
 **One session per program.** A node id only means something in the store that minted it, so every

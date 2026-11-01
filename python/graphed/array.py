@@ -637,9 +637,8 @@ class Array:
         The callable is a flagged preservation risk, plan A.3.1.
 
         Without ``name=`` two distinct callables that derive one ``__name__`` are told apart by a
-        per-Session ordinal. Pass ``name=`` to declare the identity yourself: the same code and
-        captured values under one name are one function, so a rerun notebook cell gives the same
-        node, and a callable that differs raises :class:`~graphed.GraphedError` (a
+        per-Session ordinal. Pass ``name=`` to declare the identity yourself: a rerun of the same
+        definition under one name gives the same node, as a notebook cell does, and a callable that differs raises :class:`~graphed.GraphedError` (a
         :class:`~graphed.GraphedWarning` when the two cannot be compared).
 
         ``output_type=`` declares the type of each element of ``fn``'s result (a type string, a

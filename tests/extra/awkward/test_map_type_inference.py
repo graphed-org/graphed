@@ -13,7 +13,7 @@ import graphed
 from graphed import GraphedTypeError, GraphedWarning
 from graphed.awkward import AwkwardBackend, from_awkward, gak
 from graphed.execute import compile_ir
-from graphed.numpy import NumpyBackend, NumpyForm
+from graphed.numpy import NumpyBackend, NumpyForm, from_array
 from graphed.session import Session
 
 
@@ -105,8 +105,57 @@ def test_inference_changes_neither_identity_nor_bytes(monkeypatch: pytest.Monkey
 
 def test_a_backend_that_cannot_trace_stays_silent_and_keeps_its_default_form() -> None:
     session = Session(NumpyBackend())
-    x = session.source("x", form=NumpyForm(np.dtype("f8")), data=np.array([1.0]))
+    x = from_array("x", np.array([1.0]), session=session)
     with warnings.catch_warnings():
         warnings.simplefilter("error", GraphedWarning)
         out = x.map(double)
     assert cast("NumpyForm", session.form(out)).dtype == np.dtype(object)
+
+
+def test_one_function_is_traced_once_per_input_type() -> None:
+    _, ev = events()
+    seen: list[str] = []
+
+    def spy(values: Any) -> Any:
+        seen.append(str(values.type))
+        return values
+
+    ev.x.map(spy, name="spy")
+    ev.x.map(spy, name="spy")
+    (ev.x * 2).map(spy, name="spy")
+    assert seen == ["## * float64"]
+    ev.m.map(spy, name="spy")
+    assert seen == ["## * float64", "## * var * float64"]
+
+
+def test_an_untraceable_function_warns_once_per_input_type() -> None:
+    _, ev = events()
+    with pytest.warns(GraphedWarning) as caught:
+        ev.m.map(raises_on_metadata, name="f")
+        (ev.m * 2).map(raises_on_metadata, name="f")
+    assert len(caught) == 1
+
+
+def test_a_leaf_dtype_is_a_declaration_and_is_not_traced() -> None:
+    session, ev = events()
+    called: list[object] = []
+
+    def spy(values: Any) -> Any:
+        called.append(values)
+        return values
+
+    params = {"fn": "leaf"}
+    leaf = session.record_external(
+        "map", spy, [ev.x], params, form_params={"output_dtype": "float32"}
+    )
+    assert called == []
+    assert typestr(leaf) == "## * float32"
+
+
+def test_a_map_without_a_name_param_is_refused_by_either_backend() -> None:
+    session, ev = events()
+    with pytest.raises(KeyError, match="fn"):
+        session.record_external("map", double, [ev.x])
+    numpy = Session(NumpyBackend())
+    with pytest.raises(KeyError, match="fn"):
+        numpy.record_external("map", double, [from_array("x", np.array([1.0]), session=numpy)])

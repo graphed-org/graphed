@@ -32,6 +32,15 @@ def scaled(by: Any) -> Any:
     return lambda values: values * by
 
 
+def locked(scale: float = 1.0) -> Any:
+    lock = threading.Lock()
+
+    def uses_lock(values: Any) -> Any:
+        return values * scale + lock.locked()
+
+    return uses_lock
+
+
 def double(values: Any) -> Any:
     return values * 2
 
@@ -105,33 +114,17 @@ def test_captured_arrays_compare_by_content() -> None:
 
 def test_functions_that_cannot_be_compared_warn_and_the_first_answers() -> None:
     _, ev = events()
-    lock = threading.Lock()
-
-    def uses_lock(values: Any) -> Any:
-        return values + lock.locked()
-
-    def also_uses_lock(values: Any) -> Any:
-        return values * 2 + lock.locked()
-
-    first = ev.x.map(uses_lock, name="scale")
-    with pytest.warns(GraphedWarning, match="could not compare also_uses_lock with uses_lock"):
-        second = ev.x.map(also_uses_lock, name="scale")
+    first = ev.x.map(locked(), name="scale")
+    with pytest.warns(GraphedWarning, match="could not compare uses_lock with uses_lock"):
+        second = ev.x.map(locked(2.0), name="scale")
     assert second.node_id == first.node_id
 
 
 def test_when_they_cannot_be_compared_the_first_answers_over_any_input() -> None:
     _, ev = events()
-    lock = threading.Lock()
-
-    def uses_lock(values: Any) -> Any:
-        return values + lock.locked()
-
-    def also_uses_lock(values: Any) -> Any:
-        return ak.values_astype(values * 2 + lock.locked(), "int64")
-
-    a = ev.x.map(uses_lock, name="scale")
+    a = ev.x.map(locked(), name="scale")
     with pytest.warns(GraphedWarning, match="the first one answers"):
-        b = ev.y.map(also_uses_lock, name="scale")
+        b = ev.y.map(locked(1000.0), name="scale")
     assert b.node_id != a.node_id
     assert str(b.session.form(b).describe()) == "## * float64"
     assert ak.to_list(graphed.materialize(b)) == [1.0, 2.0, 3.0]
@@ -171,16 +164,10 @@ def test_a_bound_method_reread_from_its_owner_is_one_call() -> None:
 
 def test_the_same_object_needs_no_comparison() -> None:
     _, ev = events()
-    lock = threading.Lock()
-
-    def uses_lock(values: Any) -> Any:
-        return values + lock.locked()
-
+    fn = locked()
     with warnings.catch_warnings():
         warnings.simplefilter("error", GraphedWarning)
-        assert (
-            ev.x.map(uses_lock, name="scale").node_id == ev.x.map(uses_lock, name="scale").node_id
-        )
+        assert ev.x.map(fn, name="scale").node_id == ev.x.map(fn, name="scale").node_id
 
 
 def test_a_declared_type_keeps_a_name_apart() -> None:

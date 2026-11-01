@@ -45,17 +45,18 @@ to fold: that is correct for a sum and yours to get right for anything else.
 
 **If an analysis gave one** ``name=`` **to two different functions on 0.0.10 or earlier, re-check its
 results.** One function answered for both, with no error, even over different inputs (#143). Such a
-call now raises ``GraphedError`` naming the first function and its line. The same code and captured
-values under one name stay one function, so re-running a notebook cell gives the same node; a
-closure that captures a different value is a different function. When two functions cannot be
+call now raises ``GraphedError`` naming the first function and its line. The check compares what a
+checkpoint key compares, so re-running a definition, as a notebook cell does, gives the same node,
+while a closure that captures a different value, or a copy under another function name, is a
+different function. When two functions cannot be
 compared, a ``GraphedWarning`` says so and the first one answers for both. This covers ``map``,
 ``graphed.apply`` and ``apply_gufunc``.
 
 On the awkward backend, ``map`` and ``graphed.apply`` without ``output_type=`` now run your function
 on a typetracer at the line that records it, and record the type it returns, so
 ``ev.Jet_pt.map(lambda pt: ak.num(pt, axis=1))`` is ``## * int64`` and ``gak.sum`` of it with
-``axis=1`` refuses there. **Your function therefore runs once more, on metadata, as you record it:**
-pass ``output_type=`` to skip that. If it fails on a typetracer, or returns anything else, a
+``axis=1`` refuses there. **Your function therefore also runs as you record it,** on metadata, once
+for each input type: pass ``output_type=`` to skip that. If it fails on a typetracer, or returns anything else, a
 ``GraphedWarning`` says so and the input's type is recorded as before. The inferred type is not part
 of the node's identity. Nodes, and their checkpoint keys, are unchanged; a later operation can
 record differently, or refuse, where the input's type was the wrong one to use.
