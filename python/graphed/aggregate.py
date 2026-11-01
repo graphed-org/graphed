@@ -30,7 +30,7 @@ from .errors import (
     GraphedError,
     OutputTypeError,
     PackKeyError,
-    PackKeyOverflow,
+    PackKeyOverflowError,
     SourceFrame,
     StageError,
 )
@@ -366,7 +366,7 @@ def attribute_failures(
             if frame is None:
                 return None
             labels = ()
-        kind = PackKeyError if isinstance(exc, PackKeyOverflow) else StageError
+        kind = PackKeyError if isinstance(exc, PackKeyOverflowError) else StageError
         return kind(
             op=op,
             frames=(SourceFrame(*frame),),
