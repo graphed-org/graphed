@@ -19,6 +19,9 @@ from .execution import (
     Monitor as Monitor,
 )
 from .execution import (
+    MonitorBase as MonitorBase,
+)
+from .execution import (
     Partition as Partition,
 )
 from .execution import (
@@ -70,10 +73,16 @@ from .execution import (
     lean_events as lean_events,
 )
 from .execution import (
+    observed_run as observed_run,
+)
+from .execution import (
     partition_label as partition_label,
 )
 from .execution import (
     worker_monitor_factory as worker_monitor_factory,
+)
+from .execution import (
+    worker_profiler_factory as worker_profiler_factory,
 )
 
 # the compiled extension surface

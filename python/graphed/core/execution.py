@@ -20,7 +20,7 @@ import contextlib
 import threading
 import time
 from collections import OrderedDict
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import (
@@ -560,6 +560,33 @@ class Monitor(Protocol):
         ...
 
 
+class MonitorBase:
+    """A :class:`Monitor` that ignores everything: subclass it and override what you need.
+
+    It adds the two optional run hooks, ``on_run_start`` and ``on_run_end``, which a runner calls
+    on any monitor that has them (:func:`observed_run`).
+    """
+
+    def on_task(self, event: TaskEvent) -> None:
+        """Observe a task event."""
+
+    def on_profile(self, worker: str, payload: bytes) -> None:
+        """Observe a worker's profile payload."""
+
+    def on_combine(self, leaves_done: int) -> None:
+        """Observe the reduction's progress."""
+
+    def worker_profiler_factory(self) -> Callable[[], WorkerProfiler] | None:
+        """Return no factory: workers do not sample."""
+        return None
+
+    def on_run_start(self, n_tasks: int) -> None:
+        """Observe a run starting with ``n_tasks`` known tasks."""
+
+    def on_run_end(self) -> None:
+        """Observe the run ending, however it ended."""
+
+
 class RunState(StrEnum):
     """A run's control state."""
 
@@ -652,6 +679,33 @@ def complete_events(monitor: Monitor | None) -> bool:
     True`` (exactly).
     """
     return getattr(monitor, "complete_events", False) is True
+
+
+def worker_profiler_factory(monitor: Monitor | None) -> Callable[[], WorkerProfiler] | None:
+    """Return the factory ``monitor`` gives its workers, or ``None``.
+
+    ``None`` also when it has no such method or it raises, so a broken monitor cannot end a run.
+    """
+    with contextlib.suppress(Exception):
+        return cast("Monitor", monitor).worker_profiler_factory()
+    return None
+
+
+@contextlib.contextmanager
+def observed_run(monitor: Monitor | None, plan: Plan[Any] | DurablePlanV2) -> Iterator[None]:
+    """Bracket a run in ``monitor``'s optional ``on_run_start`` and ``on_run_end``.
+
+    A runner enters this once per run; the end is reported when the run raises or is cancelled too.
+    A staged plan reports 0 tasks: it emits no task events.
+    """
+    n_tasks = len(plan.tasks) if isinstance(plan, Plan) else 0
+    with contextlib.suppress(Exception):
+        cast("MonitorBase", monitor).on_run_start(n_tasks)
+    try:
+        yield
+    finally:
+        with contextlib.suppress(Exception):
+            cast("MonitorBase", monitor).on_run_end()
 
 
 def worker_monitor_factory(monitor: Monitor | None) -> Callable[[], Monitor] | None:
@@ -753,7 +807,8 @@ class SequentialRunner:
     def run(self, plan: Plan[R] | DurablePlanV2) -> ExecResult[R] | ExecResult[Any]:
         """Run ``plan`` one task at a time in this process."""
         require_bound(plan)
-        result = self._run_tasks(plan) if isinstance(plan, Plan) else self._run_stages(plan)
+        with observed_run(self.monitor, plan):
+            result = self._run_tasks(plan) if isinstance(plan, Plan) else self._run_stages(plan)
         return finalize_result(plan, result)
 
     def _run_tasks(self, plan: Plan[R]) -> ExecResult[R]:

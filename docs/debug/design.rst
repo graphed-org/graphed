@@ -653,30 +653,34 @@ input for replay" in the checkpoint guide.
 Sending the events somewhere else
 ---------------------------------
 
-The dashboard is one consumer of a stream any executor emits. Anything with the four methods
-below is a monitor: your own progress bar, a log line per task, a metrics push. Per task you get
-exactly one ``SUBMITTED``, then one ``STARTED``, then exactly one of ``FINISHED`` or
-``ERRORED`` — except that a task a cancel kept from starting stops at ``SUBMITTED``.
+The dashboard is one consumer of a stream any executor emits. For a bar in the terminal or a
+notebook, attach ``graphed.debug.ProgressBar``, on any runner:
 
 .. code-block:: python
 
-   from graphed.core import Partition, Plan, Task
+   from graphed.debug import ProgressBar
+
+   ProcessPoolExecutor(max_workers=4, monitor=ProgressBar()).run(plan)
+
+It ticks once per finished task, uses ``tqdm`` when that is installed and a plain text line
+otherwise, and closes when the run ends, whether it finished, failed or was cancelled. A staged
+plan (a join or a repartition) emits no task events, so it shows no progress.
+
+For anything else, a log line per task or a metrics push, subclass ``graphed.core.MonitorBase`` and
+override what you need. Per task you get exactly one ``SUBMITTED``, then one ``STARTED``, then
+exactly one of ``FINISHED`` or ``ERRORED`` — except that a task a cancel kept from starting stops
+at ``SUBMITTED``. ``on_run_start(n_tasks)`` and ``on_run_end()`` bracket the run.
+
+.. code-block:: python
+
+   from graphed.core import MonitorBase, Partition, Plan, Task
    from graphed.core.execution import SequentialRunner, TaskEvent, TaskPhase
 
 
-   class PrintMonitor:
+   class PrintMonitor(MonitorBase):
        def on_task(self, event: TaskEvent) -> None:
            if event.phase is not TaskPhase.SUBMITTED:
                print(f"{event.phase.value:<8} key={event.key} {event.partition} error={event.error}")
-
-       def on_profile(self, worker: str, payload: bytes) -> None:
-           pass
-
-       def on_combine(self, leaves_done: int) -> None:
-           pass
-
-       def worker_profiler_factory(self):
-           return None
 
 
    def entries(partition, resources):
