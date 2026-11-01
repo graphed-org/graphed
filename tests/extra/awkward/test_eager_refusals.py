@@ -186,11 +186,14 @@ def test_a_missing_compute_still_reads_as_absent() -> None:
 def test_another_missing_field_gets_no_compute_advice() -> None:
     with pytest.raises(MissingFieldError) as refused:
         _ = _events().nope
-    assert "compute" not in str(refused.value)
+    assert "graphed.materialize" not in str(refused.value)
 
 
-def test_a_conversion_reads_as_absent_to_a_sniffing_library() -> None:
-    assert not hasattr(_events().MET_pt, "to_numpy")
+def test_a_conversion_stays_an_attribute_for_a_sniffing_library() -> None:
+    x = _events().MET_pt
+    assert hasattr(x, "to_numpy")
+    with pytest.raises(GraphedTypeError, match=r"graphed\.materialize"):
+        ak.from_iter([x])
 
 
 def test_a_behaviors_own_method_of_a_conversions_name_still_records() -> None:
