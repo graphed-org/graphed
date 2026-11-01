@@ -13,6 +13,7 @@ specializes this for boost histograms; any other partition-wise reduction reuses
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import importlib
 import os
@@ -24,6 +25,14 @@ from typing import Any, ClassVar, Generic, TypeVar, cast
 from graphed.core import GraphStore, Partition
 from graphed.core.execution import Plan, Task, WorkerResources
 from graphed.core.plan import _partition_bytes, _sha256_hex
+from graphed.core.worker_warnings import (
+    WarnedCombine,
+    WarnedFinalize,
+    carrying,
+    keeping_warnings,
+    mark_driver,
+    resolving,
+)
 
 from .array import Array
 from .errors import GraphedError, OutputTypeError, SourceFrame, StageError
@@ -217,22 +226,32 @@ class _PartitionReduce(Generic[V]):
     opt_level: int = 1
 
     def __call__(self, partition: Partition, resources: WorkerResources) -> V:
-        chunk = self.reader.read_partition(partition, self.columns, resources)
-        backend = resolve_backend(self.backend_factory)
-        if self.store is None:
-            # evaluate inlined: the default path keeps its pre-capture frame count
-            values = evaluate_ir(
-                self.ir,
-                backend,
-                {self.source_name: chunk},
-                externals=dict(self.externals),
-                on_failure=self._attribute(str(partition)),
-                chunked=True,
-            )
-            return _adopted(
-                backend,
-                self.reduce(self._write(values, partition) if self.writes else values),
-            )
+        with keeping_warnings() as caught:
+            chunk = self.reader.read_partition(partition, self.columns, resources)
+            backend = resolve_backend(self.backend_factory)
+            if self.store is None:
+                # evaluate inlined: the default path keeps its pre-capture frame count
+                with self._floating_point():
+                    values = evaluate_ir(
+                        self.ir,
+                        backend,
+                        {self.source_name: chunk},
+                        externals=dict(self.externals),
+                        on_failure=self._attribute(str(partition)),
+                        chunked=True,
+                    )
+                result = _adopted(
+                    backend,
+                    self.reduce(self._write(values, partition) if self.writes else values),
+                )
+            else:
+                result = self._captured(chunk, partition, backend)
+        return cast("V", carrying(result, caught, str(partition)))
+
+    def _floating_point(self) -> contextlib.AbstractContextManager[object]:
+        return contextlib.nullcontext()
+
+    def _captured(self, chunk: object, partition: Partition, backend: Any) -> V:
         import cloudpickle
 
         from graphed.checkpoint import PickleCodec
@@ -265,7 +284,7 @@ class _PartitionReduce(Generic[V]):
         """``value`` resolved by ``reduce`` when it takes it; ``value`` itself otherwise."""
         if not isinstance(self.reduce, Resolvable):
             return value
-        resolved: V = self.reduce.resolve_services(value)
+        resolved: V = resolving(self.reduce.resolve_services, value)
         return resolved
 
     def part_paths(self, partition: Partition) -> list[str]:
@@ -290,14 +309,15 @@ class _PartitionReduce(Generic[V]):
 
     def evaluate(self, chunk: object, partition: Partition) -> list[object]:
         """Evaluate the IR on ``chunk`` as a task does, its failures attributed alike."""
-        return evaluate_ir(
-            self.ir,
-            resolve_backend(self.backend_factory),
-            {self.source_name: chunk},
-            externals=dict(self.externals),
-            on_failure=self._attribute(str(partition)),
-            chunked=True,
-        )
+        with self._floating_point():
+            return evaluate_ir(
+                self.ir,
+                resolve_backend(self.backend_factory),
+                {self.source_name: chunk},
+                externals=dict(self.externals),
+                on_failure=self._attribute(str(partition)),
+                chunked=True,
+            )
 
     def capture_id(self, partition: Partition) -> str:
         """Return the id a task's captures are journaled under.
@@ -536,13 +556,14 @@ def aggregate_plan(
         partitions = data.partitions(steps_for(data, steps_per_file))
     tasks = tuple(Task(i, p) for i, p in enumerate(partitions))
     _refuse_shared_parts((process, t.partition) for t in tasks)
+    mark_driver()
     return Plan(
         process=process,
-        combine=_adopting(by_value(combine), factory),
+        combine=WarnedCombine(_adopting(by_value(combine), factory)),
         empty=_adopting(by_value(empty), factory),
         tasks=tasks,
         services=plan_services(session, compiled, services),
-        finalize=None if finalize is None else by_value(finalize),
+        finalize=WarnedFinalize(None if finalize is None else by_value(finalize)),
     )
 
 
@@ -693,6 +714,43 @@ class _CollatedCombine:
         merged = {**a, **{n: self.combines[n](a[n], v) if n in a else v for n, v in b.items()}}
         # mapping order, whatever the tree
         return {n: merged[n] for n in self.combines if n in merged}
+
+
+class _RaisingReduce(_PartitionReduce[V]):
+    """A task that raises where numpy would warn and leave an inf or a NaN.
+
+    It keys as the plain task: one that fired left no result, so a kept result is the same.
+    """
+
+    def _floating_point(self) -> contextlib.AbstractContextManager[object]:
+        import numpy as np
+
+        # not underflow: rounding to zero is ordinary, and gives no inf or NaN
+        return np.errstate(divide="raise", over="raise", invalid="raise")
+
+    def _keyed_as(self) -> _PartitionReduce[V]:
+        return _PartitionReduce(**vars(self))
+
+
+def _raising(process: Any) -> Any:
+    if isinstance(process, _PartitionReduce):
+        return _RaisingReduce(**vars(process))
+    if isinstance(process, _Collated):
+        return replace(process, processes={n: _raising(p) for n, p in process.processes.items()})
+    raise TypeError(
+        "raise_on_floating_point takes a plan from aggregate_plan, collate or a histogram's "
+        f"to_plan, before resumable wraps it; got a process of type {type(process).__name__}"
+    )
+
+
+def raise_on_floating_point(plan: Plan[V]) -> Plan[V]:
+    """Return ``plan``, its tasks raising on a division by zero, an overflow or an invalid value.
+
+    What numpy would warn about and turn into an inf or a NaN becomes a ``StageError`` at the line
+    that recorded the operation, naming the chunk, on any runner. Underflow still rounds to zero.
+    A task's key does not change: results a store holds for ``plan`` are served, unchecked.
+    """
+    return replace(plan, process=_raising(plan.process))
 
 
 def collate(plans: Mapping[str, Plan[Any]]) -> Plan[dict[str, Any]]:

@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from graphed.core import DurablePlan, DurablePlanV2, Partition
+from graphed.core.worker_warnings import without_warnings
 from graphed.services import require_bound
 
 from .codec import Codec, PickleCodec
@@ -182,7 +183,7 @@ def _run_one(
     retry: RetryPolicy | None,
 ) -> Any:
     try:
-        return process(part, resources)
+        return without_warnings(process(part, resources))
     except Exception as exc:
         if retry is None:
             raise

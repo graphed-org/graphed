@@ -45,6 +45,7 @@ import cloudpickle
 
 from graphed.core import DurablePlan, DurablePlanV2, OpSpec, Partition, Plan, Task
 from graphed.core.plan import _partition_bytes, _sha256_hex
+from graphed.core.worker_warnings import without_warnings
 from graphed.services import Bindable, Resolvable
 from graphed.write import is_url
 
@@ -526,7 +527,7 @@ class _Resumable:
 
     def __call__(self, partition: Partition, resources: Any) -> Any:
         def run(plain: Partition) -> bytes:
-            return self.codec.encode(self.inner(plain, resources))
+            return self.codec.encode(without_warnings(self.inner(plain, resources)))
 
         return self.codec.decode(_served_or_run(self.root, self.storage_options, partition, run))
 
