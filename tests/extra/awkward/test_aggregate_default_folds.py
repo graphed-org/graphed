@@ -19,6 +19,8 @@ from graphed.checkpoint import resumable
 from graphed.core.execution import LocalResources, SequentialRunner
 from graphed.numpy import NumpyBackend, from_array
 
+pytest.importorskip("pyarrow")
+
 N = 12
 
 
