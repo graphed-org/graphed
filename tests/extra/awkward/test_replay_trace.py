@@ -5,6 +5,7 @@ from __future__ import annotations
 import pickle
 import re
 from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
 import awkward as ak
@@ -14,10 +15,11 @@ import pytest
 import graphed
 import graphed.debug as gd
 from graphed import Session
-from graphed.awkward import AwkwardBackend, AwkwardForm, gak
+from graphed.awkward import AwkwardBackend, AwkwardForm, from_awkward, gak
 from graphed.core import Partition
 from graphed.core.execution import SequentialRunner
 from graphed.errors import StageError
+from graphed.preserve import build_bundle, reproduce
 
 gh = pytest.importorskip("graphed_histogram")
 
@@ -143,6 +145,19 @@ def test_a_reduction_needs_no_aligned_rows_in_replay() -> None:
     plan = _plan(joined)
     assert ak.to_list(gd.replay(plan, 0).value[0]) == want
     assert ak.to_list(gd.run(joined.session, joined, partition=plan.tasks[0].partition)) == want
+
+
+def test_a_bundle_reproduces_an_exchange_and_a_join(tmp_path: Path) -> None:
+    data = {
+        "ev": ak.Array({"k": [1, 2, 3], "a": [1.0, 2.0, 3.0]}),
+        "ot": ak.Array({"k": [2, 3], "b": [5.0, 6.0]}),
+    }
+    session = Session(AwkwardBackend())
+    ev = from_awkward("ev", data["ev"], session=session)
+    ot = from_awkward("ot", data["ot"], session=session)
+    for name, out in (("x", ev.a.repartition(n=2)), ("j", gak.join(ev, ot, on=["k"]))):
+        bundle = build_bundle(tmp_path / name, session=session, value=out, datasets=data)
+        assert ak.to_list(reproduce(bundle)) == ak.to_list(graphed.materialize(out))
 
 
 def test_a_run_of_the_whole_source_takes_no_row_check() -> None:
