@@ -488,18 +488,6 @@ def _refused(detail: str) -> GraphedTypeError:
     return GraphedTypeError("correction", capture(), detail)
 
 
-def _correction_inputs(blob: bytes, name: str, compound: bool) -> tuple[str, ...]:
-    """Return the input names of ``name``, resolved as the correctionlib plugin resolves it."""
-    regular, stacked = payloads.correctionlib_inputs(blob)
-    held = stacked if compound else {**stacked, **regular}
-    if name not in held:
-        raise _refused(
-            f"no {'compound ' if compound else ''}correction {name!r} in this set; "
-            f"it has: {', '.join(sorted(held))}"
-        )
-    return held[name]
-
-
 def _named_template(
     wanted: tuple[str, ...], name: str, named: Mapping[str, object]
 ) -> tuple[list[Array], list[object]]:
@@ -579,29 +567,30 @@ def apply_correction(
         return arrays[0].session.record_external(
             "correction", evaluator, arrays, {"path": str(payload), "name": name, **which}
         )
+    from ..preserve.externals.correctionlib_external import (
+        check_correctionlib_params,
+        correction_inputs,
+    )
+
     blob = _payload_bytes(payload)
-    wanted = _correction_inputs(blob, name, compound)
     if named:
+        wanted = correction_inputs(blob, name, compound)
         arrays, args = _named_template(wanted, name, named)
     elif args is None:
         args = [f"${i}" for i in range(len(arrays))]
     entries = _parse_template(args, len(arrays), constants=True, groups=False)
-    if len(entries) != len(wanted):
-        raise _refused(
-            f"correction {name!r} takes inputs ({', '.join(wanted)}); got {len(entries)} "
-            "positional inputs"
-        )
+    params: dict[str, ParamValue] = {
+        "name": name,
+        "args": json.dumps(args, sort_keys=False),
+        **which,
+    }
+    check_correctionlib_params(params, blob, len(arrays))
     slots = [arrays[i] for kind, i in entries if kind == "slot"]
     if not slots:
         raise _refused(f"correction {name!r} needs at least one Array input")
     session = arrays[0].session
     session._mine(arrays, ("correction", capture()))  # before `session.form` reads an input
     descriptor = payloads.correctionlib_contents_descriptor(blob, name)
-    params: dict[str, ParamValue] = {
-        "name": name,
-        "args": json.dumps(args, sort_keys=False),
-        **which,
-    }
     return session.record_external(
         "correction",
         # call=None: the plugin owns evaluation on every backend (see _TemplateExternal)

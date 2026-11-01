@@ -16,6 +16,8 @@ from graphed import Session
 from graphed.awkward import AwkwardBackend, from_awkward, gak
 from graphed.awkward._templates import _payload_bytes
 from graphed.errors import GraphedTypeError
+from graphed.preserve.externals import record_external
+from graphed.preserve.externals.correctionlib_external import CORRECTIONLIB_PLUGIN
 from graphed.varied import member_of
 
 pytest.importorskip("correctionlib")
@@ -235,3 +237,73 @@ def test_a_path_is_read_once_and_reread_when_the_file_changes(tmp_path: Path) ->
     assert _payload_bytes(str(path)) is _payload_bytes(str(path))
     path.write_bytes(CSET + b" ")
     assert _payload_bytes(str(path)) == CSET + b" "
+
+
+def _external(ev: Any, params: dict[str, Any], *inputs: Any, payload: bytes = CSET) -> Any:
+    return record_external(
+        ev.session,
+        CORRECTIONLIB_PLUGIN,
+        payload,
+        list(inputs),
+        params=params,
+        output_type="float64",
+    )
+
+
+@pytest.mark.parametrize(
+    ("params", "n_inputs", "message"),
+    [
+        ({"name": "typo", "args": '["$0"]'}, 1, "no correction 'typo' in this set; it has: "),
+        ({"name": "l1", "compound": True, "args": '["$0"]'}, 1, "no compound correction 'l1'"),
+        ({"name": "jet_sf", "args": '["$0"]'}, 1, r"takes inputs \(syst, pt, eta\); got 1"),
+        ({"name": "l1", "args": '["$0", "$1"]'}, 2, r"takes inputs \(pt\); got 2"),
+        ({"name": "l1", "systematic": "nominal"}, 1, r"takes inputs \(pt\); got 2"),
+    ],
+)
+def test_record_external_refuses_at_the_recording_line(
+    params: dict[str, Any], n_inputs: int, message: str
+) -> None:
+    _, ev = _events()
+    with pytest.raises(GraphedTypeError, match=message) as caught:
+        _external(ev, params, *[ev.pt] * n_inputs)
+    assert caught.value.provenance.filename == __file__
+
+
+def test_record_external_checks_a_varied_input() -> None:
+    _, ev = _events()
+    varied = graphed.vary(ev.pt, "s", up=ev.pt * 2.0)
+    with pytest.raises(GraphedTypeError, match="no correction 'typo'"):
+        _external(ev, {"name": "typo", "args": '["$0"]'}, varied)
+
+
+def _flat() -> Any:
+    return from_awkward("flat", ak.Array({"pt": [1.0, 3.0]}), session=Session(AwkwardBackend()))
+
+
+def test_record_external_still_runs_what_is_right() -> None:
+    ev = _flat()
+    node = _external(ev, {"name": "l1", "args": '["$0"]'}, ev.pt)
+    assert _values(ev.session, node) == [1.0, 3.0]
+
+
+def test_the_legacy_systematic_shape_stays_accepted() -> None:
+    ev = _flat()
+    legacy = json.dumps(
+        {
+            "schema_version": 2,
+            "corrections": [
+                {
+                    **_CORRECTION,
+                    "name": "by_syst",
+                    "inputs": [{"name": "syst", "type": "string"}, _INPUTS[1]],
+                    "data": {
+                        "nodetype": "category",
+                        "input": "syst",
+                        "content": [{"key": "nominal", "value": 2.0}],
+                    },
+                }
+            ],
+        }
+    ).encode()
+    node = _external(ev, {"name": "by_syst", "systematic": "nominal"}, ev.pt, payload=legacy)
+    assert _values(ev.session, node) == [2.0, 2.0]

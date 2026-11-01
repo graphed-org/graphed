@@ -7,6 +7,8 @@ import json
 from collections.abc import Callable, Mapping
 from typing import Any
 
+from ...errors import GraphedTypeError
+from ...provenance import capture
 from ..errors import PreserveError
 from ._base import ExternalPlugin
 from ._helpers import json_bytes, memoized_model_hash, parse_call_template
@@ -124,23 +126,51 @@ def _flat_buffer_fast_path(evaluate: Callable[..., Any], call: list[Any]) -> Any
     return _rebuild(layers, out)
 
 
-def _resolve(cset: Any, name: str, compound: bool) -> Any:
-    """Resolve a correction name in ``cset`` or ``cset.compound``.
+def _resolve(regular: Any, stacked: Any, name: str, compound: bool) -> Any:
+    """Return ``name``'s entry of a set's regular or compound corrections, ``None`` on a miss.
 
-    A *compound* correction (the JEC L1L2L3 stack) lives in ``cset.compound``, not in ``cset``, and
-    the schema lets one name sit in both: ``compound`` searches only the compound list, else a
-    regular correction wins and the compound list is the fallback. Both ``__getitem__``s raise
-    ``IndexError`` on a miss instead of ``KeyError``, so membership is tested against the key sets
-    rather than caught.
+    A *compound* correction (the JEC L1L2L3 stack) lives in the compound list, and the schema lets
+    one name sit in both: ``compound`` searches only that list, else a regular correction wins and
+    the compound list is the fallback. A CorrectionSet's ``__getitem__`` raises ``IndexError`` on a
+    miss instead of ``KeyError``, so membership is tested against the key sets rather than caught.
     """
-    if not compound and name in set(cset):
-        return cset[name]
-    if name in set(cset.compound):
-        return cset.compound[name]
-    raise PreserveError(
-        f"correctionlib payload has no {'compound ' if compound else ''}correction named {name!r} "
-        f"(corrections: {sorted(cset)}; compound_corrections: {sorted(cset.compound)})"
+    if not compound and name in set(regular):
+        return regular[name]
+    return stacked[name] if name in set(stacked) else None
+
+
+def correction_inputs(payload: bytes, name: str, compound: bool) -> tuple[str, ...]:
+    """Return the input names of ``name``, refusing a name the set does not hold."""
+    from graphed.awkward.payloads import correctionlib_inputs
+
+    regular, stacked = correctionlib_inputs(payload)
+    wanted: tuple[str, ...] | None = _resolve(regular, stacked, name, compound)
+    if wanted is None:
+        held = stacked if compound else {**stacked, **regular}
+        raise GraphedTypeError(
+            "correction",
+            capture(),
+            f"no {'compound ' if compound else ''}correction {name!r} in this set; "
+            f"it has: {', '.join(sorted(held))}",
+        )
+    return wanted
+
+
+def check_correctionlib_params(params: Mapping[str, Any], payload: bytes, n_inputs: int) -> None:
+    """Refuse at record time a name the set lacks, or a call of the wrong length."""
+    name = str(params.get("name", ""))
+    wanted = correction_inputs(payload, name, bool(params.get("compound", False)))
+    template = parse_call_template(
+        params, n_inputs, allow_constants=True, allow_groups=False, allow_kwargs=False
     )
+    taken = 2 if template is None else len(template[0])  # the legacy (systematic, inputs[0]) call
+    if taken != len(wanted):
+        raise GraphedTypeError(
+            "correction",
+            capture(),
+            f"correction {name!r} takes inputs ({', '.join(wanted)}); got {taken} positional "
+            "inputs",
+        )
 
 
 def eval_correctionlib(cset: Any, params: Mapping[str, Any], inputs: list[Any]) -> Any:
@@ -149,7 +179,14 @@ def eval_correctionlib(cset: Any, params: Mapping[str, Any], inputs: list[Any]) 
     import numpy as np
 
     name = str(params.get("name", ""))
-    corr = _resolve(cset, name, bool(params.get("compound", False)))
+    compound = bool(params.get("compound", False))
+    corr = _resolve(cset, cset.compound, name, compound)
+    if corr is None:
+        raise PreserveError(
+            f"correctionlib payload has no {'compound ' if compound else ''}correction named "
+            f"{name!r} (corrections: {sorted(cset)}; compound_corrections: "
+            f"{sorted(cset.compound)})"
+        )
     template = parse_call_template(
         params, len(inputs), allow_constants=True, allow_groups=False, allow_kwargs=False
     )
@@ -201,5 +238,6 @@ CORRECTIONLIB_PLUGIN = ExternalPlugin(
     samples=_correctionlib_samples,
     load=load_correctionlib,  # parse the correction set once per worker
     framework="correctionlib",
+    check_params=check_correctionlib_params,
     output_dtype="float64",
 )

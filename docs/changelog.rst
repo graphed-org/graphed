@@ -18,6 +18,10 @@ read. ``evaluator`` is optional, and ``payload`` and ``name`` are positional-onl
 carry either name. A path payload is read once, not on every call, so nodes share one copy of a
 correction set or ONNX model. The older ``evaluator``-only recording is unchanged (#170).
 
+``record_external`` with the correctionlib plugin refuses the same mistakes at its recording line.
+``ExternalPlugin.check_params`` now receives ``(params, payload, n_inputs)``, so a custom plugin's
+hook must take all three.
+
 Plans returned wrong values for row-axis operations, and now refuse them
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
