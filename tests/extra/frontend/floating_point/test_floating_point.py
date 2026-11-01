@@ -33,6 +33,7 @@ from graphed.core.worker_warnings import (
 )
 from graphed.debug import replay
 from graphed.errors import StageError
+from graphed.services import resolve_services
 
 ZEROS = ak.Array({"x": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0], "y": [0.0, 1.0, 0.0, 1.0, 1.0, 1.0]})
 ONES = ak.Array({"x": [1.0, 2.0, 3.0, 4.0], "y": [1.0, 1.0, 1.0, 1.0]})
@@ -206,6 +207,22 @@ def test_on_value_keeps_the_warnings() -> None:
     assert on_value(str, 1) == "1"
 
 
+def test_a_process_resolves_the_plain_value_and_the_warnings_stay() -> None:
+    class Resolving:
+        def __call__(self, partition: Partition, resources: Any) -> int:
+            return 1
+
+        def bind_services(self, endpoints: Any) -> Resolving:
+            return self
+
+        def resolve_services(self, value: int) -> int:
+            return value + 1
+
+    plan: Plan[Any] = Plan(process=Resolving(), combine=lambda a, b: a + b, empty=int)
+    warned = Warned(1, {(RuntimeWarning, "m"): ("f", 1, "c")})
+    assert resolve_services(plan, warned) == Warned(2, warned.caught)
+
+
 def test_carrying_nothing_is_the_value() -> None:
     assert carrying(1, {}, "c") == 1
 
@@ -334,13 +351,14 @@ def test_a_warning_class_that_cannot_travel_is_carried_as_its_builtin_base(
         warnings.warn("local", Local, stacklevel=1)
         warnings.warn(_TwoArguments("two", 2), stacklevel=1)
         warnings.warn("importable", _Importable, stacklevel=1)
-    assert {message: category for category, message in caught} == {
+    carried = carrying(0, caught, "c")
+    assert {message: category for category, message in carried.caught} == {
         "local": DeprecationWarning,
         "('two', 2)": UserWarning,
         "importable": _Importable,
     }
-    assert pickle.loads(pickle.dumps(caught)) == caught
-    assert len(_issued(Warned(0, {k: (*v, "c") for k, v in caught.items()}))) == 3
+    assert pickle.loads(pickle.dumps(carried)) == carried
+    assert len(_issued(carried)) == 3
 
 
 def _issued(warned: Warned) -> list[warnings.WarningMessage]:
