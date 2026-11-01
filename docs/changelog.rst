@@ -20,7 +20,7 @@ correction set or ONNX model. The older ``evaluator``-only recording is unchange
 
 ``record_external`` with the correctionlib plugin refuses the same mistakes at its recording line.
 ``ExternalPlugin.check_params`` now receives ``(params, payload, n_inputs)``, so a custom plugin's
-hook must take all three.
+hook must take all three (#181).
 
 Plans returned wrong values for row-axis operations, and now refuse them
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
