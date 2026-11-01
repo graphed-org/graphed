@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
 import awkward as ak
+import numpy as np
 import pytest
 
 import graphed
 from graphed import Session
-from graphed.awkward import AwkwardBackend, from_awkward, gak
+from graphed.awkward import AwkwardBackend, from_awkward, gak, payloads
 from graphed.errors import GraphedTypeError
 from graphed.varied import member_of
 
@@ -26,10 +28,10 @@ _BY_SYST = {
     "nodetype": "category",
     "input": "syst",
     "content": [
-        {"key": "nominal", "value": {"nodetype": "formula", "expression": "x+y", "parser": "TFormula",
-                                     "variables": ["pt", "eta"]}},
-        {"key": "up", "value": {"nodetype": "formula", "expression": "2*x+y", "parser": "TFormula",
-                                "variables": ["pt", "eta"]}},
+        {"key": "nominal", "value": {"nodetype": "formula", "expression": "x+y",
+                                     "parser": "TFormula", "variables": ["pt", "eta"]}},
+        {"key": "up", "value": {"nodetype": "formula", "expression": "2*x+y",
+                                "parser": "TFormula", "variables": ["pt", "eta"]}},
     ],
 }  # fmt: skip
 _SCALE = {"nodetype": "formula", "expression": "x", "parser": "TFormula", "variables": ["pt"]}
@@ -128,7 +130,7 @@ def test_a_compound_only_name_resolves_with_and_without_the_flag() -> None:
 )
 def test_wrong_keywords_are_refused_naming_both_lists(given: dict[str, str], got: str) -> None:
     _, ev = _events()
-    named = {k: (v if v == "up" else getattr(ev, v)) for k, v in given.items()}
+    named: dict[str, Any] = {k: (v if v == "up" else getattr(ev, v)) for k, v in given.items()}
     exc = _refused(lambda: gak.apply_correction(CSET, "jet_sf", **named))
     assert f"correction 'jet_sf' takes inputs (syst, pt, eta); got {got}" in str(exc)
 
@@ -138,6 +140,7 @@ def test_wrong_keywords_are_refused_naming_both_lists(given: dict[str, str], got
     [
         lambda ev: gak.apply_correction(CSET, "jet_sf", [ev.pt]),
         lambda ev: gak.apply_correction(CSET, "jet_sf", [ev.pt], None, args=["$0"]),
+        lambda ev: gak.apply_correction(CSET, "jet_sf", [ev.pt], len, args=["$0"]),
     ],
 )
 def test_a_wrong_count_is_refused_on_the_positional_forms(call: Any) -> None:
@@ -183,6 +186,35 @@ def test_keywords_of_constants_alone_are_refused() -> None:
     assert "correction 'l1' needs at least one Array input" in str(exc)
 
 
+def test_a_template_of_constants_alone_is_refused() -> None:
+    _, ev = _events()
+    exc = _refused(lambda: gak.apply_correction(CSET, "l1", [ev.pt], args=[1.0]))
+    assert "correction 'l1' needs at least one Array input" in str(exc)
+
+
+@pytest.mark.parametrize(
+    ("syst", "shown"),
+    [
+        ("$0", "'$0'"),
+        (None, "None"),
+        ([1.0], "[1.0]"),
+        (np.int64(1), "np.int64(1)"),
+        (np.ones(3), "array([1., 1., 1.])"),
+    ],
+)
+def test_a_keyword_that_is_no_input_value_is_refused_naming_it(syst: Any, shown: str) -> None:
+    _, ev = _events()
+    exc = _refused(lambda: gak.apply_correction(CSET, "jet_sf", syst=syst, pt=ev.pt, eta=ev.eta))
+    assert "correction 'jet_sf' input 'syst' takes an Array" in str(exc)
+    assert f"got {shown}" in str(exc)
+
+
+def test_a_lone_array_where_a_list_belongs_names_the_iteration() -> None:
+    _, ev = _events()
+    with pytest.raises(TypeError, match="not iterable"):
+        gak.apply_correction(CSET, "l1", ev.pt)
+
+
 def test_no_inputs_at_all_is_a_type_error() -> None:
     with pytest.raises(TypeError, match="needs inputs"):
         gak.apply_correction(CSET, "l1")
@@ -197,16 +229,14 @@ def test_a_varied_keyword_expands_per_universe() -> None:
 
 
 def test_a_set_is_parsed_once_across_validated_calls(monkeypatch: pytest.MonkeyPatch) -> None:
-    from graphed.awkward import payloads
-
     calls: list[bytes] = []
-    real = payloads._correctionlib_inputs
+    real = payloads._correctionlib_identity
 
     def counted(payload: bytes) -> Any:
         calls.append(payload)
         return real(payload)
 
-    monkeypatch.setattr(payloads, "_correctionlib_inputs", counted)
+    monkeypatch.setattr(payloads, "_correctionlib_identity", counted)
     unique = CSET + b" " * 7  # a key no other test has memoized
     _, ev = _events()
     for _ in range(3):
@@ -215,6 +245,4 @@ def test_a_set_is_parsed_once_across_validated_calls(monkeypatch: pytest.MonkeyP
 
 
 def _here() -> int:
-    import sys
-
     return sys._getframe(1).f_lineno

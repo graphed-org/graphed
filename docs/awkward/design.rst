@@ -454,7 +454,8 @@ The correction is evaluated from the payload bytes through graphed's ``correctio
 your own process exactly as in a worker — so a wrapper around ``evaluate`` cannot make one backend
 disagree with another, and the in-process call gets the plugin's flat-buffer evaluation rather than
 correctionlib's per-call ``ak.transform``. A callable passed as ``evaluator`` without ``args=`` is
-the older recording: that callable is the evaluation, and nothing checks the payload.
+the older recording: that callable is the evaluation, and nothing checks the payload. With
+``args=`` it is never called.
 
 A correction set keeps its ``corrections`` and its ``compound_corrections`` (a stack such as the JEC
 L1L2L3 chain) in separate lists, and a name may appear in both. ``apply_correction`` looks ``name``

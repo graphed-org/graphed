@@ -517,12 +517,16 @@ def _named_template(
         if isinstance(value, Array):
             args.append(f"${len(arrays)}")
             arrays.append(value)
-        else:
+        elif isinstance(value, (str, int, float)) and not str(value).startswith("$"):
             args.append(value)
-    if not arrays:
-        raise GraphedTypeError(
-            "correction", capture(), f"correction {name!r} needs at least one Array input"
-        )
+        else:
+            # a leading "$" is a template slot, and a template has no escape for it
+            raise GraphedTypeError(
+                "correction",
+                capture(),
+                f"correction {name!r} input {key!r} takes an Array or a str, int or float "
+                f"constant not starting with '$'; got {value!r}",
+            )
     return arrays, args
 
 
@@ -565,11 +569,11 @@ def apply_correction(
 
     ``evaluator`` without ``args=`` is the original M3 recording, unchanged: ``payload`` must be a
     path and the callable is the evaluation, so nothing here checks it. With ``args=`` it is
-    ignored.
+    never called.
     """
     # recorded only when set, so a regular correction's node identity is what it always was
     which: dict[str, ParamValue] = {"compound": True} if compound else {}
-    arrays = list(inputs or ())
+    arrays = [] if inputs is None else list(inputs)
     if named:
         if arrays or args is not None or evaluator is not None:
             raise GraphedTypeError(
@@ -590,8 +594,7 @@ def apply_correction(
     elif args is None:
         args = [f"${i}" for i in range(len(arrays))]
     entries = _parse_template(args, len(arrays), constants=True, groups=False)
-    # a call still carrying an evaluator is not refused: frozen m28 records a short template
-    if evaluator is None and len(entries) != len(wanted):
+    if len(entries) != len(wanted):
         raise GraphedTypeError(
             "correction",
             capture(),
@@ -599,6 +602,10 @@ def apply_correction(
             "positional inputs",
         )
     slots = [arrays[i] for kind, i in entries if kind == "slot"]
+    if not slots:
+        raise GraphedTypeError(
+            "correction", capture(), f"correction {name!r} needs at least one Array input"
+        )
     session = arrays[0].session
     session._mine(arrays, ("correction", capture()))  # before `session.form` reads an input
     descriptor = payloads.correctionlib_contents_descriptor(blob, name)
