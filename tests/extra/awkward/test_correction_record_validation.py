@@ -13,7 +13,8 @@ import pytest
 
 import graphed
 from graphed import Session
-from graphed.awkward import AwkwardBackend, from_awkward, gak, payloads
+from graphed.awkward import AwkwardBackend, from_awkward, gak
+from graphed.awkward._templates import _payload_bytes
 from graphed.errors import GraphedTypeError
 from graphed.varied import member_of
 
@@ -87,7 +88,7 @@ def test_a_wrong_name_is_refused_at_the_recording_line_listing_the_names() -> No
     session, ev = _events()
     pt, eta = ev.pt, ev.eta
     before = session.node_count()
-    line = _here() + 1
+    line = sys._getframe().f_lineno + 1
     exc = _refused(lambda: gak.apply_correction(CSET, "jet_SF", syst="up", pt=pt, eta=eta))
     assert "no correction 'jet_SF' in this set; it has: jet_sf, l1, stack" in str(exc)
     assert (exc.provenance.filename, exc.provenance.lineno) == (__file__, line)
@@ -228,21 +229,9 @@ def test_a_varied_keyword_expands_per_universe() -> None:
     assert _values(session, member_of(sf, "jes_up")) == [[2.0, 4.0], [], [6.0]]
 
 
-def test_a_set_is_parsed_once_across_validated_calls(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls: list[bytes] = []
-    real = payloads._correctionlib_identity
-
-    def counted(payload: bytes) -> Any:
-        calls.append(payload)
-        return real(payload)
-
-    monkeypatch.setattr(payloads, "_correctionlib_identity", counted)
-    unique = CSET + b" " * 7  # a key no other test has memoized
-    _, ev = _events()
-    for _ in range(3):
-        gak.apply_correction(unique, "l1", pt=ev.pt)
-    assert len(calls) == 1
-
-
-def _here() -> int:
-    return sys._getframe(1).f_lineno
+def test_a_path_is_read_once_and_reread_when_the_file_changes(tmp_path: Path) -> None:
+    path = tmp_path / "set.json"
+    path.write_bytes(CSET)
+    assert _payload_bytes(str(path)) is _payload_bytes(str(path))
+    path.write_bytes(CSET + b" ")
+    assert _payload_bytes(str(path)) == CSET + b" "

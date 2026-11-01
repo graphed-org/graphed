@@ -18,7 +18,11 @@ def correctionlib_content_hash(payload: bytes) -> str:
 
 
 def _correctionlib_content_hash_impl(payload: bytes) -> str:
-    data = json.loads(json_bytes(payload))
+    return correctionlib_contents_digest(json.loads(json_bytes(payload)))
+
+
+def correctionlib_contents_digest(data: object) -> str:
+    """Return the content hash of a parsed correction set."""
     canonical = json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return "sha256:" + hashlib.sha256(b"correctionlib-contents-v1" + canonical).hexdigest()
 

@@ -441,7 +441,7 @@ def ones_like(arr: Array, *, dtype: npt.DTypeLike = None) -> Array:
 # CONTENT: it rides the IR as canonical JSON, and record-time evaluation materializes THE SAME
 # template the preservation replay obeys — agreement by construction. Descriptors on this path use
 # the content-identity hash conventions shared with graphed-preserve, and params carry no
-# filesystem paths. The template-less calls below remain the M3 path, byte-for-byte.
+# filesystem paths. An evaluator without a template remains the M3 path, byte-for-byte.
 
 
 @dataclass
@@ -484,20 +484,20 @@ class _TemplateExternal:
         return self.call(*values)
 
 
+def _refused(detail: str) -> GraphedTypeError:
+    return GraphedTypeError("correction", capture(), detail)
+
+
 def _correction_inputs(blob: bytes, name: str, compound: bool) -> tuple[str, ...]:
     """Return the input names of ``name``, resolved as the correctionlib plugin resolves it."""
     regular, stacked = payloads.correctionlib_inputs(blob)
-    if not compound and name in regular:
-        return regular[name]
-    if name in stacked:
-        return stacked[name]
-    held = stacked if compound else {**regular, **stacked}
-    raise GraphedTypeError(
-        "correction",
-        capture(),
-        f"no {'compound ' if compound else ''}correction {name!r} in this set; "
-        f"it has: {', '.join(sorted(held))}",
-    )
+    held = stacked if compound else {**stacked, **regular}
+    if name not in held:
+        raise _refused(
+            f"no {'compound ' if compound else ''}correction {name!r} in this set; "
+            f"it has: {', '.join(sorted(held))}"
+        )
+    return held[name]
 
 
 def _named_template(
@@ -505,10 +505,8 @@ def _named_template(
 ) -> tuple[list[Array], list[object]]:
     """Order keyword inputs as the correction declares them: the inputs and ``args=`` they mean."""
     if set(named) != set(wanted):
-        raise GraphedTypeError(
-            "correction",
-            capture(),
-            f"correction {name!r} takes inputs ({', '.join(wanted)}); got ({', '.join(named)})",
+        raise _refused(
+            f"correction {name!r} takes inputs ({', '.join(wanted)}); got ({', '.join(named)})"
         )
     arrays: list[Array] = []
     args: list[object] = []
@@ -517,16 +515,15 @@ def _named_template(
         if isinstance(value, Array):
             args.append(f"${len(arrays)}")
             arrays.append(value)
-        elif isinstance(value, (str, int, float)) and not str(value).startswith("$"):
-            args.append(value)
-        else:
-            # a leading "$" is a template slot, and a template has no escape for it
-            raise GraphedTypeError(
-                "correction",
-                capture(),
+            continue
+        try:  # no slot can resolve: a "$" constant has no escape in a template
+            _parse_template([value], 0, constants=True, groups=False)
+        except (TypeError, ValueError) as err:
+            raise _refused(
                 f"correction {name!r} input {key!r} takes an Array or a str, int or float "
-                f"constant not starting with '$'; got {value!r}",
-            )
+                f"constant not starting with '$'; got {value!r}"
+            ) from err
+        args.append(value)
     return arrays, args
 
 
@@ -574,16 +571,11 @@ def apply_correction(
     # recorded only when set, so a regular correction's node identity is what it always was
     which: dict[str, ParamValue] = {"compound": True} if compound else {}
     arrays = [] if inputs is None else list(inputs)
-    if named:
-        if arrays or args is not None or evaluator is not None:
-            raise GraphedTypeError(
-                "correction",
-                capture(),
-                "pass a correction's inputs as keywords or as inputs/args=, not both",
-            )
-    elif not arrays:
+    if named and (arrays or args is not None or evaluator is not None):
+        raise _refused("pass a correction's inputs as keywords or as inputs/args=, not both")
+    if not named and not arrays:
         raise TypeError("apply_correction needs inputs")
-    elif args is None and evaluator is not None:
+    if args is None and evaluator is not None:
         return arrays[0].session.record_external(
             "correction", evaluator, arrays, {"path": str(payload), "name": name, **which}
         )
@@ -595,17 +587,13 @@ def apply_correction(
         args = [f"${i}" for i in range(len(arrays))]
     entries = _parse_template(args, len(arrays), constants=True, groups=False)
     if len(entries) != len(wanted):
-        raise GraphedTypeError(
-            "correction",
-            capture(),
+        raise _refused(
             f"correction {name!r} takes inputs ({', '.join(wanted)}); got {len(entries)} "
-            "positional inputs",
+            "positional inputs"
         )
     slots = [arrays[i] for kind, i in entries if kind == "slot"]
     if not slots:
-        raise GraphedTypeError(
-            "correction", capture(), f"correction {name!r} needs at least one Array input"
-        )
+        raise _refused(f"correction {name!r} needs at least one Array input")
     session = arrays[0].session
     session._mine(arrays, ("correction", capture()))  # before `session.form` reads an input
     descriptor = payloads.correctionlib_contents_descriptor(blob, name)

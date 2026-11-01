@@ -99,13 +99,9 @@ def opaque_callable_descriptor(fn_name: str) -> PayloadDescriptor:
 def correctionlib_contents_hash(payload: bytes) -> str:
     """sha256 of the correction set's CONTENTS (canonical JSON) — formatting is not identity."""
     from graphed.preserve.externals._helpers import json_bytes
+    from graphed.preserve.externals.correctionlib_external import correctionlib_contents_digest
 
-    return _correctionlib_contents_digest(json.loads(json_bytes(payload)))
-
-
-def _correctionlib_contents_digest(data: object) -> str:
-    canonical = json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    return "sha256:" + hashlib.sha256(b"correctionlib-contents-v1" + canonical).hexdigest()
+    return correctionlib_contents_digest(json.loads(json_bytes(payload)))
 
 
 def onnx_weights_hash(payload: bytes) -> str:
@@ -131,6 +127,7 @@ def _correctionlib_identity(
     payload: bytes,
 ) -> tuple[str, str, _CorrectionInputs, _CorrectionInputs]:
     from graphed.preserve.externals._helpers import json_bytes
+    from graphed.preserve.externals.correctionlib_external import correctionlib_contents_digest
 
     data = json.loads(json_bytes(payload))
     regular, stacked = (
@@ -138,7 +135,7 @@ def _correctionlib_identity(
         for key in ("corrections", "compound_corrections")
     )
     schema_version = str(data.get("schema_version", "unknown"))
-    return _correctionlib_contents_digest(data), schema_version, regular, stacked
+    return correctionlib_contents_digest(data), schema_version, regular, stacked
 
 
 def correctionlib_contents_descriptor(payload: bytes, correction_name: str) -> PayloadDescriptor:
@@ -163,10 +160,8 @@ def correctionlib_inputs(payload: bytes) -> tuple[_CorrectionInputs, _Correction
     """Map each name in a set's ``corrections`` and ``compound_corrections`` to its input names."""
     from graphed.preserve.externals._helpers import memoized_model_hash
 
-    _, _, regular, stacked = memoized_model_hash(
-        "correctionlib-descriptor", payload, _correctionlib_identity
-    )
-    return regular, stacked
+    identity = memoized_model_hash("correctionlib-descriptor", payload, _correctionlib_identity)
+    return identity[2:]
 
 
 def onnx_weights_descriptor(payload: bytes) -> PayloadDescriptor:
