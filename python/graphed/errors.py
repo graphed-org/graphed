@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import linecache
 import traceback
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -76,6 +77,14 @@ class SourceFrame:
     lineno: int
     function: str = ""
     source: str = ""
+    #: the other lines that wrote this same expression, which recording merged into one node
+    also: tuple[Provenance, ...] = ()
+
+    @classmethod
+    def of(cls, sites: Sequence[Provenance]) -> SourceFrame:
+        """Return the first of a node's recording ``sites``, carrying the rest as ``also``."""
+        first, *rest = sites
+        return cls(first.filename, first.lineno, first.function, first.source, tuple(rest))
 
     def __str__(self) -> str:
         """Show the frame as ``filename:lineno``."""
@@ -167,6 +176,9 @@ class StageError(Exception):
             )
             if fr.source:
                 lines.append(f"          {fr.source}")
+            for other in fr.also:
+                source = f":  {other.source}" if other.source else ""
+                lines.append(f"      (same expression also written at {other}{source})")
         if not chain:
             lines.append(f"  --> {_NO_SOURCE_LINE.filename}")
         if (raised := self.raised_at) is not None:
