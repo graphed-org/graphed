@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from graphed import Array, Session
+from graphed.errors import raising_frame
 
 from .errors import SourceFrame, StageError
 from .lowering import LoweredGraph, lower
@@ -48,6 +49,7 @@ def _stage_error(
         cause_type=type(exc).__name__,
         cause_message=str(exc),
         opt_level=lowered.opt_level,
+        raised_at=raising_frame(exc),
     )
 
 

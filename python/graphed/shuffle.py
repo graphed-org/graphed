@@ -43,6 +43,7 @@ from .aggregate import (
     attribute_failures,
     external_evaluators,
     plan_services,
+    read_label,
     resolve_backend,
     worker_backend,
 )
@@ -223,7 +224,9 @@ class _MapWrite:
             backend,
             {self.source_name: chunk},
             externals=dict(self.externals),
-            on_failure=attribute_failures(self.frames, str(task.partition)),
+            on_failure=attribute_failures(
+                self.frames, functools.partial(read_label, self.reader, task.partition, chunk)
+            ),
             outputs=(self.target,),
             chunked=True,
         )

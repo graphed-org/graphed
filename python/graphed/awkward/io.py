@@ -133,6 +133,9 @@ class _DatasetLoader:
     ) -> ak.Array:
         return read_parquet_partition(partition, columns if columns else (self.columns or None))
 
+    def num_entries(self, partition: Partition) -> int:
+        return gpq.num_rows(partition.uri)
+
 
 @overload
 def from_parquet(

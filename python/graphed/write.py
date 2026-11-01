@@ -226,7 +226,8 @@ class PartitionedSource(Protocol):
     A source MAY additionally declare its own read list with an optional
     ``projected_columns(outputs) -> Sequence[str]`` — deliberately NOT a member of this Protocol,
     since adding one would make ``isinstance`` false for every source that lacks it. See
-    :func:`declared_columns`.
+    :func:`declared_columns`. Likewise an optional ``num_entries(partition) -> int``, the entry
+    count of ``partition``'s file: it resolves a blind partition's range for an error's label.
     """
 
     def partitions(self, steps_per_file: int) -> tuple[Partition, ...]:

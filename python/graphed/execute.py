@@ -375,9 +375,10 @@ def _evaluate_external(
     fn = None if externals is None else (externals.get(external_key(nd)) or externals.get(chash))
     if fn is None:
         raise _unbound_external(chash)
-    # An External node carries no `name` — its identity is the descriptor — so an
-    # attributed External failure names the payload kind.
-    op = f"external:{nd['descriptor']['kind']}"
+    # An External node carries no `name` — its identity is the descriptor — so an attributed
+    # failure names the payload kind, and the function a `map` declared.
+    fn_name = (nd.get("params") or {}).get("fn")
+    op = f"external:{nd['descriptor']['kind']}" if fn_name is None else f"map {fn_name!r}"
     return _dispatch(partial(fn, *ins), op, ins, (nid, None), on_failure)
 
 

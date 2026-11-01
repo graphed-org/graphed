@@ -60,6 +60,9 @@ _INSTALLED: tuple[str, ...] = tuple(
 )
 
 
+_STDLIB = os.path.join(sysconfig.get_path("stdlib"), "")
+
+
 @dataclass(frozen=True)
 class Provenance:
     """A user source location: file, line, function and source text."""

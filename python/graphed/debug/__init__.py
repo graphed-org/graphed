@@ -8,7 +8,7 @@ at the user's analysis line, never a raw opaque worker traceback (plan A.3 #8).
 from __future__ import annotations
 
 from .dashboard import Dashboard, DashboardServer, NetworkMonitor
-from .errors import SourceFrame, StageError
+from .errors import SourceFrame, StageError, WorkerLostError
 from .lowering import LoweredGraph, LoweredOp, LoweredStage, lower
 from .replaying import Replay, ReplayDiff, Step, replay
 from .report import RunRecorder, RunReport, TaskRecord
@@ -31,6 +31,7 @@ __all__ = [
     "StageError",
     "Step",
     "TaskRecord",
+    "WorkerLostError",
     "format_traceback",
     "lower",
     "replay",

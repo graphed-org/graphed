@@ -69,8 +69,10 @@ rather than parse a message:
    ragged one.
 
 ``partition``
-   *Which* chunk of data tripped it. Data-dependent bugs fail on some partitions and not
-   others, and this is how you find the events to look at.
+   *Which* chunk of data tripped it, as ``chunk 7/20 of data.root:Events (entries 15000-17500)``.
+   Data-dependent bugs fail on some partitions and not others, and this is how you find the events
+   to look at. A source without an entry count gives the chunk's size instead of its range; a
+   ``graphed.debug.run`` or :func:`~graphed.debug.replay` failure shows the label you gave it.
 
 ``cause_type`` / ``cause_message``
    The underlying exception, as data — the type name and the message, not a live traceback
@@ -83,9 +85,18 @@ rather than parse a message:
    Which systematic universe failed, when the run carries variation labels. See
    `Which variation failed`_.
 
+``raised_at``
+   The frame that raised inside your own function, for a ``.map`` or ``graphed.apply`` that
+   failed. ``None`` when the failure was inside a library.
+
 ``format_traceback(err)`` renders all of it as the block above: the user-code frames with a
 ``-->`` on the faulty line, then the cause, the operation, the partition, and the input forms.
-That is the thing to print in an ``except graphed.debug.StageError`` handler.
+You do not need a handler to see it: the same block is an exception note, so an uncaught
+``StageError`` ends with it, on any runner.
+
+A worker that dies takes no source line with it. :class:`graphed.WorkerLostError`, a ``StageError``
+subclass, names the chunk it held in ``partition`` and the worker in ``worker``, and its ``frames``
+are empty.
 
 
 Running exactly what you wrote

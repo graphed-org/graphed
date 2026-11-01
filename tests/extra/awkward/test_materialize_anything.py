@@ -244,7 +244,7 @@ def test_a_failing_external_raises_a_stage_error() -> None:
     out = graphed.apply(boom, source)
     with pytest.raises(StageError) as caught:
         graphed.materialize(out)
-    assert caught.value.op.startswith("external")
+    assert caught.value.op == "map 'boom'"
     assert caught.value.user_frame.lineno == out.session.provenance(out).lineno
 
 

@@ -10,13 +10,13 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable, Mapping
-from dataclasses import asdict, dataclass, field, fields
+from dataclasses import asdict, astuple, dataclass, field, fields
 from types import MappingProxyType
 from typing import Any
 
 from graphed.core import ExecResult, Monitor, StopReason, TaskEvent, TaskPhase, WorkerProfiler
 
-from .errors import SourceFrame, StageError
+from .errors import SourceFrame, StageError, WorkerLostError
 
 _VERSION = 1
 _TERMINAL = 2
@@ -90,6 +90,10 @@ class RunReport:
             failure = {name: getattr(f, name) for name in _FAILURE_FIELDS}
             failure["frames"] = [[x.filename, x.lineno, x.function, x.source] for x in f.frames]
             failure["input_forms"] = list(f.input_forms)
+            if f.raised_at is not None:
+                failure["raised_at"] = list(astuple(f.raised_at))
+            if isinstance(f, WorkerLostError):
+                failure["worker"] = f.worker
         return {
             "version": _VERSION,
             "outcome": self.outcome,
@@ -108,11 +112,14 @@ class RunReport:
         if data["version"] != _VERSION:
             raise ValueError(f"unsupported run report version {data['version']}")
         f = data["failure"]
-        failure = None
-        if f is not None:
+        failure: StageError | None = None
+        if f is not None and "worker" in f:
+            failure = WorkerLostError(partition=f["partition"], worker=f["worker"])
+        elif f is not None:
             failure = StageError(
                 frames=tuple(SourceFrame(*x) for x in f["frames"]),
                 input_forms=tuple(f["input_forms"]),
+                raised_at=SourceFrame(*f["raised_at"]) if "raised_at" in f else None,
                 **{name: f[name] for name in _FAILURE_FIELDS},
             )
         return cls(

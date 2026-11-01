@@ -674,6 +674,26 @@ def partition_label(partition: Partition) -> str:
     return f"{partition.uri}:{partition.tree}:{partition.entry_start}-{partition.entry_stop}"
 
 
+def chunk_label(
+    partition: Partition, *, file_entries: int | None = None, rows: int | None = None
+) -> str:
+    """Return the label an error shows for ``partition``.
+
+    ``chunk 7/20 of data.root:Events (entries 15000-17500)``. A blind partition's range comes from
+    ``file_entries``, its file's entry count; without one, ``rows`` gives its size. The driver of a
+    lost worker has neither, so the label stops at the step.
+    """
+    tree = partition.tree.strip("/").partition(";")[0]
+    name = f"{partition.uri}:{tree}" if tree else partition.uri
+    if not partition.is_blind:
+        return f"{name} (entries {partition.entry_start}-{partition.entry_stop})"
+    chunk = f"chunk {cast(int, partition.blind_step) + 1}/{partition.blind_n_steps} of {name}"
+    if file_entries is not None:
+        known = partition.resolve(file_entries)
+        return f"{chunk} (entries {known.entry_start}-{known.entry_stop})"
+    return chunk if rows is None else f"{chunk} ({rows} entries)"
+
+
 def _close_handle(handle: object) -> None:
     close = getattr(handle, "close", None)
     if callable(close):
