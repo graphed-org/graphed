@@ -1,4 +1,4 @@
-"""`graphed.explain_variations` (§2.7): what varies here, how each family entered, and how they relate.
+"""`graphed.explain_variations` (§2.7): what varies, how each family entered, how they relate.
 
 A pure READER of what the context already keeps — the lineage's registrations, the ambient's riders
 through `ambient_entries`, the link chain from the root and the Session's point registry. It
@@ -219,7 +219,7 @@ def _lineage_registrations(ctx: EventContext) -> tuple[Registration, ...]:
 
 
 def explain(ctx: EventContext) -> Explanation:
-    """Deprecated alias of :func:`explain_variations`."""
+    """Warn, then answer as :func:`explain_variations`, the name that replaces this one."""
     warnings.warn(
         "graphed.explain is deprecated; use graphed.explain_variations",
         DeprecationWarning,

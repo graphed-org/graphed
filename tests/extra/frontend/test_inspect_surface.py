@@ -127,3 +127,60 @@ def test_attribute_kind_says_what_is_missing_to_a_direct_caller() -> None:
     form: AwkwardForm = session.form(muon)  # type: ignore[assignment]
     with pytest.raises(AttributeError, match=r"no field named 'ptt' in Muon \(did you mean 'pt'"):
         session.backend.attribute_kind(form, "ptt")  # type: ignore[attr-defined]
+
+
+def test_a_name_shared_across_sessions_answers_for_both_sources() -> None:
+    _, ev = _events()
+    _, other = _events()
+    assert graphed.read_columns([ev.MET_pt, other.Muon_pt]) == {"Events": ("MET_pt", "Muon_pt")}
+    assert graphed.read_columns([ev, other.Muon_pt]) == {"Events": None}
+
+
+def test_a_generator_is_as_good_as_a_list() -> None:
+    session, ev = _events()
+    assert graphed.read_columns(a for a in [ev.MET_pt]) == {"Events": ("MET_pt",)}
+    assert graphed.read_columns((a for a in [ev.MET_pt]), session.source_ids()[0]) == ("MET_pt",)
+
+
+def test_an_event_context_is_one_output() -> None:
+    session = Session(AwkwardBackend())
+    ctx = graphed.awkward.gnano.events(from_awkward("Events", EVENTS, session=session))
+    assert graphed.read_columns(ctx) == {"Events": None}
+
+
+def test_a_behaviors_own_failure_keeps_its_reason() -> None:
+    class Failing(ak.Array):  # type: ignore[misc]
+        def __getattr__(self, name: str) -> Any:
+            if name == "broken":
+                raise ValueError("corrections are missing")
+            return super().__getattr__(name)
+
+    behavior: dict[Any, Any] = {("*", "Muon"): Failing}
+    session = Session(AwkwardBackend(behavior=behavior))
+    ev = from_awkward("Events", EVENTS, session=session)
+    with pytest.raises(MissingFieldError, match="corrections are missing"):
+        ev.Muon.broken  # noqa: B018
+
+
+def test_a_scalar_says_what_is_missing_not_what_the_backend_lacks() -> None:
+    _, ev = _events()
+    with pytest.raises(MissingFieldError, match="no field named 'ptt'") as caught:
+        graphed.awkward.gak.sum(ev.MET_pt, axis=None).ptt  # noqa: B018
+    assert "TypeTracerArray" not in str(caught.value)
+
+
+@pytest.mark.parametrize(("typo", "refused"), [("layoutt", "layout"), ("maskk", "mask")])
+def test_a_suggestion_never_names_what_a_deferred_array_refuses(typo: str, refused: str) -> None:
+    _, ev = _events()
+    with pytest.raises(MissingFieldError) as caught:
+        getattr(ev.MET_pt, typo)
+    assert "did you mean" not in str(caught.value), refused
+    with pytest.raises(AttributeError, match="cannot answer"):
+        getattr(ev.MET_pt, refused)
+
+
+def test_a_field_named_like_a_refused_descriptor_is_still_suggested() -> None:
+    session = Session(AwkwardBackend())
+    ev = from_awkward("Events", ak.Array({"mask": [1.0]}), session=session)
+    with pytest.raises(MissingFieldError, match=r"did you mean 'mask'"):
+        ev.maskk  # noqa: B018

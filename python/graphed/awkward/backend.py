@@ -184,7 +184,13 @@ def _no_field(tt: ak.Array, name: str) -> str:
     where = f" in {record}" if record else ""
     if name == "form":  # a record may have a field called form, so `.form` stays a field read
         return f"no field named 'form'{where} (`.typestr` shows an array's type)"
-    names = [known for known in dir(tt) if not known.startswith("_")]
+    # the rest of ak.Array's API refuses a deferred array, so it is no suggestion
+    names = [
+        known
+        for known in dir(tt)
+        if not known.startswith("_")
+        and (not hasattr(ak.Array, known) or known in _INTROSPECT_EAGER or known in tt.fields)
+    ]
     close = difflib.get_close_matches(name, names, n=1)
     hint = f" (did you mean {close[0]!r}?)" if close else ""
     return f"no field named {name!r}{where}{hint}"
@@ -459,6 +465,8 @@ class AwkwardBackend:
         `AttributeError` saying so, and the frontend still records the `field` op.
         """
         tt = self._with_behavior(form.tt)
+        if not isinstance(tt, ak.Array | ak.Record):  # a scalar has neither fields nor behaviors
+            raise AttributeError(f"no field named {name!r}")
         if name in tt.fields:
             return "field"
         try:

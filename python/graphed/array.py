@@ -557,7 +557,10 @@ class Array:
         try:
             return self._session.record_op("field", [self], {"field": name})
         except GraphedTypeError as err:
-            raise MissingFieldError(err.op, err.provenance, missing or err.detail) from None
+            # a behavior's own failure keeps its own reason; only a failed lookup is a missing name
+            lookup = isinstance(err.__cause__, AttributeError)
+            detail = missing if lookup and missing else err.detail
+            raise MissingFieldError(err.op, err.provenance, detail) from None
 
     def __iter__(self) -> Any:
         # int __getitem__ (M13) would otherwise make Array INFINITELY iterable through Python's

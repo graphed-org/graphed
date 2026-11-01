@@ -10,10 +10,10 @@ dask-awkward.
 from __future__ import annotations
 
 import warnings
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import TYPE_CHECKING, overload
+from typing import TYPE_CHECKING, Any, overload
 
 from .backend import ParamValue
 from .errors import GraphedError
@@ -123,20 +123,28 @@ def handle_opaque(op: str, on_fail: str, detail: str = "") -> object | None:
     return None
 
 
+def _union(answers: Sequence[tuple[str, ...] | None]) -> tuple[str, ...] | None:
+    """Union read sets; a conservative ``None`` dominates, so does having no answer at all."""
+    narrowed = [answer for answer in answers if answer is not None]
+    if not narrowed or len(narrowed) != len(answers):
+        return None
+    return tuple(sorted({column for answer in narrowed for column in answer}))
+
+
 @overload
 def read_columns(
-    arrays: Array | Varied | Sequence[Array | Varied],
+    arrays: Array | Varied | Iterable[Array | Varied],
 ) -> dict[str, tuple[str, ...] | None]: ...
 
 
 @overload
 def read_columns(
-    arrays: Array | Varied | Sequence[Array | Varied], source_nid: int
+    arrays: Array | Varied | Iterable[Array | Varied], source_nid: int
 ) -> tuple[str, ...] | None: ...
 
 
 def read_columns(
-    arrays: Array | Varied | Sequence[Array | Varied], source_nid: int | None = None
+    arrays: Array | Varied | Iterable[Array | Varied], source_nid: int | None = None
 ) -> dict[str, tuple[str, ...] | None] | tuple[str, ...] | None:
     """Return the minimal set of columns the graphs read, per source or from one source.
 
@@ -159,18 +167,19 @@ def read_columns(
     A ``Varied`` entry contributes EVERY universe (§2.3d *expanding*): the answer is one union
     read set, and the ``None`` a conservative member reports dominates it (§5.3).
     """
-    outputs = list(arrays) if isinstance(arrays, list | tuple) else [arrays]
+    single = isinstance(arrays, Varied) or hasattr(arrays, "node_id")
+    outputs: list[Any] = [arrays] if single else list(arrays)
     if source_nid is None:
-        members = [member for output in outputs for member in universes_of(output)]
         readers: dict[tuple[Session, int], list[Array]] = {}
-        for member in members:
+        for member in (member for output in outputs for member in universes_of(output)):
             for nid in member.session.reachable_sources(member.node_id):
                 readers.setdefault((member.session, nid), []).append(member)
         # an array that never reaches a source would read as "every column" of it
-        return {
-            session.source_name(nid): read_columns(reading, nid)
-            for (session, nid), reading in sorted(readers.items(), key=lambda item: item[0][1])
-        }
+        by_name: dict[str, list[tuple[str, ...] | None]] = {}
+        for (session, nid), reading in sorted(readers.items(), key=lambda item: item[0][1]):
+            by_name.setdefault(session.source_name(nid), []).append(read_columns(reading, nid))
+        # a name can repeat across Sessions or source params, so one key may be several sources
+        return {name: _union(reads) for name, reads in by_name.items()}
 
     sentinel = object()
 
@@ -220,8 +229,4 @@ def read_columns(
 
     # PER graph, so a conservative one dominates the union rather than being masked by a sibling
     # that happens to narrow: reading a subset for one output still reads the whole record.
-    answers = [one(member) for arr in outputs for member in universes_of(arr)]
-    narrowed = [answer for answer in answers if answer is not None]
-    if not narrowed or len(narrowed) != len(answers):
-        return None
-    return tuple(sorted({column for answer in narrowed for column in answer}))
+    return _union([one(member) for arr in outputs for member in universes_of(arr)])

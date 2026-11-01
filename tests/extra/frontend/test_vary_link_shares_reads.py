@@ -51,4 +51,6 @@ def test_a_widening_join_on_a_vary_child_leaves_the_parents_handle_fresh_there()
 
     registered = graphed.vary(parent, "mu", handle, is_weight=True, up=handle * 1.1)
 
-    assert "mu (WEIGHT) ['up'] at the root: an overlay over hf" in str(graphed.explain_variations(registered))
+    assert "mu (WEIGHT) ['up'] at the root: an overlay over hf" in str(
+        graphed.explain_variations(registered)
+    )

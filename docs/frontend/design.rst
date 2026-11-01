@@ -292,7 +292,7 @@ itself (the target dispatch and the rollback), ``registration`` what its three o
 checks, the minting, the fan-out), ``state`` one Session's registries (``Session.systematics``),
 ``lineage`` what an event context is to these layers (its parent, link, collections and ambient
 record), ``ambient`` the event weight's record and every rule that decides over it, ``handles``
-stamping and re-indexing a value's context, ``explain_variations`` the report at the end of this section,
+stamping and re-indexing a value's context, ``explain`` the report at the end of this section,
 ``varied`` the ``Varied`` container, ``accessors`` the reader verbs above, ``by_label`` per-label
 column reads, and ``kinds`` / ``tags`` / ``points`` spell a variation's kind, its universe tags and
 a family's points, and their imports form no cycle. You never
