@@ -80,7 +80,7 @@ def num_rows(path: str) -> int:
 
 
 def row_groups_for(path: str, start: int, stop: int) -> tuple[list[int], int]:
-    """Return the row groups holding rows ``[start, stop)``, and the row the first one starts at."""
+    """Return the row groups holding rows ``[start, stop)`` and the row the first starts at."""
     meta = _pq().ParquetFile(path).metadata
     groups: list[int] = []
     first = row = 0

@@ -10,7 +10,8 @@ import awkward as ak
 import numpy as np
 import pytest
 
-pa = pytest.importorskip("pyarrow")
+pytest.importorskip("pyarrow")
+import pyarrow as pa
 import pyarrow.parquet as pq
 
 import graphed

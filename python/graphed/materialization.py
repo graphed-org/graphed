@@ -237,7 +237,7 @@ def _read_chunk(
 def _partition_chunk(
     arrays: Sequence[Array], partition: Partition
 ) -> dict[int, Callable[[], object]]:
-    """Return ``{source: its read of the chunk}`` for the source of ``arrays`` with ``partition``."""
+    """Return ``{source: its read of the chunk}`` for the source holding ``partition``."""
     place = (partition.uri, partition.tree)
     for nid, data in sources_read(arrays).items():
         if isinstance(data, PartitionedSource) and any(
@@ -473,9 +473,7 @@ def _sample_of(entries: int | None, partition: Partition | None) -> _Sample | No
         raise ValueError("materialize takes entries= or partition=, not both")
     if partition is not None:
         return _Sample(
-            lambda _, arrays: {
-                n: read() for n, read in _partition_chunk(arrays, partition).items()
-            },
+            lambda _, a: {n: read() for n, read in _partition_chunk(a, partition).items()},
             str(partition),
             chunked=True,
         )
