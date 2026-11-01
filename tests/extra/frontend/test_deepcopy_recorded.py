@@ -52,6 +52,14 @@ def test_a_copied_read_stays_in_its_context(root: Any) -> None:
     assert graphed.context_of(copy.deepcopy(pt)) is context
 
 
+def test_a_varied_keeps_its_context(root: Any) -> None:
+    ev = nano_events(root)
+    pt = ev.Jet.pt
+    varied = graphed.vary(pt * 2, "s", up=pt * 3, down=pt)
+    assert graphed.context_of(varied) is not None
+    assert graphed.context_of(copy.deepcopy(varied)) is graphed.context_of(varied)
+
+
 def test_a_long_history_copies_and_keeps_its_recording(root: Any) -> None:
     a = root.a
     for i in range(sys.getrecursionlimit()):
@@ -64,4 +72,5 @@ def test_a_long_history_copies_and_keeps_its_recording(root: Any) -> None:
 def test_a_session_and_a_context_are_themselves(root: Any, copier: Any) -> None:
     ev = nano_events(root)
     assert copier(root.session) is root.session
+    assert copier(ev) is ev
     assert copier(graphed.context_of(ev.Jet.pt)) is graphed.context_of(ev.Jet.pt)

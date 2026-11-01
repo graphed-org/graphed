@@ -135,13 +135,11 @@ class Session:
         self._fn_names: dict[object, tuple[object, str]] = {}
         self._fn_taken: set[str] = set()
 
-    def __copy__(self) -> Session:
+    def __deepcopy__(self, memo: dict[int, Any] | None = None) -> Session:
         """Return this Session: one graph has one Session, so a copy shares what it records."""
         return self
 
-    def __deepcopy__(self, memo: dict[int, Any]) -> Session:
-        """Return this Session, as :meth:`__copy__` does."""
-        return self
+    __copy__ = __deepcopy__
 
     def __enter__(self) -> Session:
         """Open a scope: array-less reads in this context record here until it exits."""

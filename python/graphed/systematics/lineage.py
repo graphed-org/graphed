@@ -49,13 +49,11 @@ class ContextNode:
         self._link = link
         self._collections: dict[str, Any] = dict(collections or {})
 
-    def __copy__(self) -> Self:
+    def __deepcopy__(self, memo: dict[int, Any] | None = None) -> Self:
         """Return this context: contexts compare by identity, so a copy would be a stranger."""
         return self
 
-    def __deepcopy__(self, memo: dict[int, Any]) -> Self:
-        """Return this context, as :meth:`__copy__` does."""
-        return self
+    __copy__ = __deepcopy__
 
 
 def context_session(ctx: ContextNode) -> Any:
