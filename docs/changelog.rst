@@ -56,7 +56,7 @@ Division by zero stops a run if you ask, and a worker's warnings reach the drive
 
 * ``graphed.raise_on_floating_point(plan)`` makes a division by zero, an overflow or an invalid
   value raise a ``StageError`` at the recording line, naming the chunk, on any runner. Task keys
-  do not change.
+  do not change (#190).
 * A warning raised in a worker process is issued on the driver, once per message per run, naming
   the first chunk that raised it. ``warnings.catch_warnings(record=True)`` around ``run`` catches
   it. In a worker process, ``RuntimeWarning`` is now shown every time rather than once per location,
