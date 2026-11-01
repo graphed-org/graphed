@@ -7,6 +7,15 @@ Newest release first. Numbers in parentheses are the pull requests on
 0.0.11 (unreleased)
 -------------------
 
+Arrays say what they are
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+* A deferred array's repr shows its type and the sources it reads,
+  ``graphed.Array<## * var * float64, from 'Events'>``, cut at 120 characters of type text.
+* ``dir(array)`` lists its fields and its behavior's properties and methods, so they tab-complete.
+  A backend joins by defining ``attribute_names(form)``.
+* ``repr(session)`` shows its node and source counts and its backend.
+
 Plans returned wrong values for row-axis operations, and now refuse them
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

@@ -461,6 +461,12 @@ class AwkwardBackend:
             )
         return "method" if callable(static) or hasattr(static, "__get__") else "property"
 
+    def attribute_names(self, form: AwkwardForm) -> set[str]:
+        """Return what `arr.<name>` answers beyond the frontend's own: fields, then behaviors."""
+        tt = self._with_behavior(form.tt)
+        hidden = set(dir(ak.Array)) - _INTROSPECT_EAGER
+        return {*tt.fields, *(n for n in dir(tt) if not n.startswith("_") and n not in hidden)}
+
     def introspect(self, form: AwkwardForm, name: str) -> object:
         """Answer an `introspection` attribute from the record-time typetracer.
 

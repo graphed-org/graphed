@@ -248,6 +248,10 @@ def scalar_params(
     return {key: _as_param(item), dtype_key: str(dtype)}
 
 
+#: the widest type text a repr shows
+_REPR_WIDTH = 120
+
+
 def no_eager_value(op: str, missing: str) -> GraphedTypeError:
     """Return the refusal for ``bool()``/``np.asarray()`` on a deferred value.
 
@@ -667,8 +671,19 @@ class Array:
         return _repartition(self, n=n, target_bytes=target_bytes)
 
     def __repr__(self) -> str:
-        """Show the node id this proxy stands for."""
-        return f"Array(node_id={self._node_id})"
+        """Show this array's type and the sources it reads; nothing is read or recorded."""
+        session = self._session
+        text = session.form(self).describe()
+        if len(text) > _REPR_WIDTH:  # a whole event record's type runs to thousands of fields
+            text = f"{text[: _REPR_WIDTH - 3]}..."
+        sources = sorted(map(session.source_name, session.reachable_sources(self._node_id)))
+        return f"graphed.Array<{text}, from {', '.join(map(repr, sources))}>"
+
+    def __dir__(self) -> list[str]:
+        """List the attributes, with the fields and behaviors the backend names for this form."""
+        names = getattr(self._session.backend, "attribute_names", None)
+        extra = () if names is None else names(self._session.form(self))
+        return sorted({*super().__dir__(), *extra})
 
 
 # ---- the two §2.3e slots, for the systematics layers ---------------------------------------

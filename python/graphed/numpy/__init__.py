@@ -523,6 +523,10 @@ class NumpyBackend:
             return _BINARY[op](a, b)
         raise TypeError(f"unsupported op {op!r}")
 
+    def attribute_names(self, form: NumpyForm) -> tuple[str, ...]:
+        """Return a record's fields, what `arr.<name>` answers beyond the frontend's own."""
+        return tuple(name for name, _ in form.fields or ())
+
     def eval_stage(
         self, op: str, inputs: Sequence[object], params: Mapping[str, object]
     ) -> object:
