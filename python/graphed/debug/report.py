@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable, Mapping
-from dataclasses import asdict, dataclass, field, fields
+from dataclasses import asdict, astuple, dataclass, field, fields
 from types import MappingProxyType
 from typing import Any
 
@@ -20,12 +20,6 @@ from graphed.provenance import Provenance
 from .errors import SourceFrame, StageError, WorkerLostError
 
 _VERSION = 1
-
-
-def _frame_json(frame: SourceFrame) -> list[Any]:
-    return [frame.filename, frame.lineno, frame.function, frame.source]
-
-
 _TERMINAL = 2
 _CLASS = {
     TaskPhase.SUBMITTED: 0,
@@ -137,7 +131,7 @@ class RunReport:
             failure = StageError(
                 frames=tuple(_frame(x) for x in f["frames"]),
                 input_forms=tuple(f["input_forms"]),
-                raised_at=SourceFrame(*f["raised_at"]) if "raised_at" in f else None,
+                raised_at=_frame(f["raised_at"]) if "raised_at" in f else None,
                 **{name: f[name] for name in _FAILURE_FIELDS},
             )
         return cls(
