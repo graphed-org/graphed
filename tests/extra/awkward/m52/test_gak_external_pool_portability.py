@@ -35,6 +35,7 @@ from graphed.awkward import AwkwardBackend, AwkwardForm, from_awkward, gak
 from graphed.awkward.payloads import correctionlib_contents_hash, onnx_weights_hash
 from graphed.core import Partition
 from graphed.core.execution import SequentialRunner, WorkerResources
+from graphed.errors import StageError
 from graphed.preserve.errors import PreserveError
 from graphed.session import CheckedExternal
 
@@ -435,7 +436,7 @@ def test_an_unknown_correction_name_names_both_key_sets() -> None:
     sf = gak.apply_correction(COMPOUND_CSET, "l3", [ev.Jet.pt], _unusable, args=["$0"])
 
     with pytest.raises(
-        PreserveError, match=r"no correction named 'l3'.*\['l1', 'l2'\].*\['jec'\]"
+        StageError, match=r"PreserveError: .*no correction named 'l3'.*\['l1', 'l2'\].*\['jec'\]"
     ):
         session.materialize(sf)
 

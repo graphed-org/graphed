@@ -20,7 +20,9 @@ graphs into one. ``aggregate_plan(opt_level=0)`` ships the outputs' unoptimized 
 recorded operation, instead of the optimized graph. ``materialize`` evaluates anything deferred
 (Arrays, part writes, plans, deferred histograms, or any nesting of them) from any number of
 Sessions in this process, with no executor, reading only the source columns they use; a class
-joins it by defining ``__graphed_pieces__`` to return ``PlanPieces``. One Session can record
+joins it by defining ``__graphed_pieces__`` to return ``PlanPieces``. ``materialize(entries=N)`` and
+``materialize(partition=)`` evaluate a small sample, and ``head`` peeks at a result's first rows. One
+Session can record
 several sources (a reader's ``session=``); a plan reads only the ones its outputs reach.
 ``current_session`` is the Session a read with no array input records into: the innermost
 ``with session:`` scope, else a default made on first use; ``new_session``, ``set_session`` and

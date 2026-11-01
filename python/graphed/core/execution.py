@@ -157,6 +157,8 @@ class Partition:
     entry_stop: int = 0
     blind_step: int | None = None
     blind_n_steps: int | None = None
+    #: a blind partition's cap on its entries; only its reader knows how many the file has
+    blind_limit: int | None = None
 
     @classmethod
     def blind(cls, uri: str, tree: str, step: int, n_steps: int) -> Partition:
@@ -180,7 +182,15 @@ class Partition:
             return self
         start = (self.blind_step * num_entries) // self.blind_n_steps
         stop = ((self.blind_step + 1) * num_entries) // self.blind_n_steps
+        if self.blind_limit is not None:
+            stop = min(stop, start + self.blind_limit)
         return Partition(self.uri, self.tree, start, stop)
+
+    def first(self, n: int) -> Partition:
+        """Return this partition's first ``n`` entries, or all of them when it has fewer."""
+        if self.is_blind:
+            return replace(self, blind_limit=n)
+        return replace(self, entry_stop=min(self.entry_stop, self.entry_start + n))
 
     @property
     def n_entries(self) -> int:

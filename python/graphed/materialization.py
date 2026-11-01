@@ -8,7 +8,8 @@ from functools import partial
 from operator import add
 from typing import Any
 
-from graphed.core.execution import LocalResources, Plan, SequentialRunner
+from graphed.core import Partition
+from graphed.core.execution import LocalResources, Plan, SequentialRunner, WorkerResources
 from graphed.core.plan import DurablePlan, DurablePlanV2
 
 from .aggregate import (
@@ -22,7 +23,7 @@ from .array import Array
 from .execute import CompiledGraph, Key, _compile_cone, evaluate_ir
 from .projection import read_columns
 from .session import Session
-from .varied import Varied, members_of
+from .varied import Varied, members_of, refuse_container
 from .write import PartitionedSource, PartWrite, _concat_paths, declared_columns, sources_read
 
 #: where a failure outside any one partition says it ran
@@ -161,6 +162,83 @@ def _read(
         resources.close()
 
 
+def _first(value: Any, n: int) -> tuple[Any, int]:
+    """Return ``value``'s first ``n`` rows and how many that is.
+
+    A Mapping is a backend's columns; a value at most ``n`` long stays itself, as slicing a chunk
+    can reach the placeholders of its unread columns.
+    """
+    if isinstance(value, Mapping):
+        columns = {name: column[:n] for name, column in value.items()}
+        return columns, max(map(len, columns.values()), default=0)
+    rows = len(value)
+    return (value, rows) if rows <= n else (value[:n], n)
+
+
+def _read_first(
+    session: Session,
+    data: PartitionedSource,
+    columns: Sequence[str] | None,
+    entries: int,
+    resources: WorkerResources,
+) -> tuple[list[object], int]:
+    """Read partitions in order until ``entries`` rows are read; return the chunks and rows.
+
+    A backend that cannot concatenate stops at the first chunk.
+    """
+    chunks: list[object] = []
+    rows = 0
+    for partition in data.partitions(1):
+        wanted = entries - rows
+        chunk, read = _first(
+            data.read_partition(partition.first(wanted), columns, resources), wanted
+        )
+        chunks.append(chunk)
+        rows += read
+        if rows == entries or not hasattr(session.backend, "concat"):
+            break
+    return chunks, rows
+
+
+def _first_entries(
+    session: Session, arrays: Sequence[Array], entries: int
+) -> tuple[dict[int, object], bool]:
+    """Return each source's first ``entries`` rows, and whether every source ran out first."""
+    reads: dict[int, object] = {}
+    exhausted = True
+    resources = LocalResources()
+    try:
+        for nid, data in sources_read(arrays).items():
+            if isinstance(data, PartitionedSource):
+                columns = _columns(data, arrays, nid)
+                chunks, rows = _read_first(session, data, columns, entries, resources)
+                _keep(session, nid, chunks, reads)
+            else:
+                reads[nid], rows = _first(session.source_value(nid), entries)
+            exhausted = exhausted and rows < entries
+    finally:
+        resources.close()
+    return reads, exhausted
+
+
+def _partition_reads(
+    session: Session, arrays: Sequence[Array], partition: Partition
+) -> dict[int, object]:
+    """Return the chunk ``partition`` holds of the source of ``arrays`` it belongs to."""
+    place = (partition.uri, partition.tree)
+    for nid, data in sources_read(arrays).items():
+        if isinstance(data, PartitionedSource) and any(
+            (p.uri, p.tree) == place for p in data.partitions(1)
+        ):
+            resources = LocalResources()
+            try:
+                columns = _columns(data, arrays, nid)
+                return {nid: data.read_partition(partition, columns, resources)}
+            finally:
+                resources.close()
+    raise ValueError(f"no source of these results holds {partition}")
+
+
 def _frontier(session: Session, arrays: Sequence[Array], nid: int, past: Set[int]) -> list[Array]:
     """Return the nodes ``arrays`` take from a pass over source ``nid``.
 
@@ -257,9 +335,18 @@ def _run_pass(
 
 
 def _run_whole(
-    session: Session, joint: _Joint, arrays: Sequence[Array], reads: Mapping[int, object]
+    session: Session,
+    joint: _Joint,
+    arrays: Sequence[Array],
+    reads: Mapping[int, object],
+    where: str = _WHOLE,
+    *,
+    chunked: bool = False,
 ) -> dict[int, Any]:
-    """Evaluate ``joint`` and ``arrays`` in one graph over whole sources, cut at ``reads``."""
+    """Evaluate ``joint`` and ``arrays`` in one graph over whole sources, cut at ``reads``.
+
+    ``where`` is what a failure says ran; ``chunked`` is :func:`evaluate_ir`'s.
+    """
     outputs = [*joint.outputs(), *arrays]
     compiled = _compile_cone(session, *outputs)
     labels = joint.on_compiled(compiled)
@@ -273,8 +360,9 @@ def _run_whole(
             if nid not in reads
         },
         externals={**external_evaluators(session, compiled), **joint.externals()},
-        on_failure=attribute_failures(compiled.correspondence.frames, _WHOLE, labels, opt_level=0),
+        on_failure=attribute_failures(compiled.correspondence.frames, where, labels, opt_level=0),
         given={landed[nid][0]: value for nid, value in reads.items() if nid in landed},
+        chunked=chunked,
     )
     slot = _slot_of(compiled)
     return {
@@ -305,7 +393,18 @@ class _Work:
         return self.whole
 
 
-def _evaluated(items: Iterable[Any]) -> dict[int, Any]:
+@dataclass(frozen=True)
+class _Sample:
+    """What one call evaluates in place of its whole sources."""
+
+    #: each source's stand-in, by node id, for ``(session, arrays)``
+    reads: Callable[[Session, Sequence[Array]], dict[int, object]]
+    #: what a failure says ran
+    where: str
+    chunked: bool = False
+
+
+def _evaluated(items: Iterable[Any], sample: _Sample | None = None) -> dict[int, Any]:
     """Return each item's value by its ``id``; a Session's results share a pass over a source."""
     values: dict[int, Any] = {}
     works: dict[Session, _Work] = {}
@@ -333,6 +432,14 @@ def _evaluated(items: Iterable[Any]) -> dict[int, Any]:
         run = plan.to_plan() if isinstance(plan, DurablePlan) else plan
         values[id(plan)] = SequentialRunner().run(run).value
     for session, work in works.items():
+        if sample is not None:
+            joint = _Joint(pieces=work.pieces)
+            stand_ins = sample.reads(session, [*work.arrays, *joint.outputs()])
+            ran = _run_whole(
+                session, joint, work.arrays, stand_ins, sample.where, chunked=sample.chunked
+            )
+            values.update(ran)
+            continue
         past = _past_boundary(session)
         for key, pieces in work.pieces.items():
             # past a boundary is whole, where a reduction has its one value
@@ -348,7 +455,24 @@ def _evaluated(items: Iterable[Any]) -> dict[int, Any]:
     return values
 
 
-def materialize(arrays: Any) -> Any:
+def _sample_of(entries: int | None, partition: Partition | None) -> _Sample | None:
+    """Return what ``entries=`` or ``partition=`` asks for, refusing a bad request."""
+    if entries is not None and partition is not None:
+        raise ValueError("materialize takes entries= or partition=, not both")
+    if partition is not None:
+        return _Sample(
+            partial(_partition_reads, partition=partition), str(partition), chunked=True
+        )
+    if entries is None:
+        return None
+    if type(entries) is not int or entries < 1:
+        raise ValueError(f"materialize(entries=) is a positive int, not {entries!r}")
+    return _Sample(lambda s, a: _first_entries(s, a, entries)[0], f"first {entries} entries")
+
+
+def materialize(
+    arrays: Any, *, entries: int | None = None, partition: Partition | None = None
+) -> Any:
     """Evaluate anything deferred in this process.
 
     An :class:`Array`, a :class:`~graphed.write.PartWrite`, a plan, an object whose class defines
@@ -370,11 +494,43 @@ def materialize(arrays: Any) -> Any:
     plan. A plan passed in is its own pass. A failing operation raises a
     :class:`~graphed.errors.StageError` at the line that recorded it.
 
+    ``entries=N`` evaluates over each source's first ``N`` input events instead, reading only those
+    partitions' used columns: a reduction, a histogram or a cut sees those events as its dataset.
+    ``partition=`` does the same over one chunk, such as a plan's ``plan.tasks[3].partition``, the
+    way a task runs it, so a task's failure raises here too. A plan or a write runs whole, so
+    neither takes them.
+
     Evaluation only: running on an executor is a plan's job
     (:func:`graphed.aggregate_plan`, :func:`graphed.collate`).
     """
     # values are found by id, and a Mapping may build its values anew on each read
     items: dict[int, Any] = {}
     held = _replace_items(arrays, lambda item: items.setdefault(id(item), item))
-    values = _evaluated(items.values())
+    sample = _sample_of(entries, partition)
+    if sample is not None and any(isinstance(i, (PartWrite, *_PLANS)) for i in items.values()):
+        raise TypeError("a plan or a write runs whole; entries= and partition= cannot sample it")
+    values = _evaluated(items.values(), sample)
     return _replace_items(held, lambda item: values[id(item)])
+
+
+def head(array: Array, n: int = 5) -> Any:
+    """Return the first ``n`` rows of ``array``'s value, reading as little as that takes.
+
+    Reads the used columns of the first entries, widening until ``n`` rows survive the cuts or the
+    data ends. Rows downstream of a reduction need the whole dataset, so they read all of it.
+    """
+    refuse_container("graphed.head", array)
+    if n < 0:
+        raise ValueError(f"head(n=) is at least 0, not {n}")
+    session = array.session
+    if array.node_id in _past_boundary(session):
+        return materialize(array[:n])
+    entries = max(n, 1)
+    while True:
+        reads, exhausted = _first_entries(session, [array], entries)
+        where = f"first {entries} entries"
+        value = _run_whole(session, _Joint(), [array], reads, where)[id(array)]
+        rows, found = _first(value, n)
+        if exhausted or found == n:
+            return rows
+        entries *= 2

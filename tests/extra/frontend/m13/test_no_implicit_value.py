@@ -57,7 +57,8 @@ def test_if_on_a_deferred_value_raises_at_the_users_line(make: Callable[[], Any]
         if value:
             pass
     assert info.value.provenance.lineno == line
-    assert "session.materialize" in str(info.value)
+    assert "graphed.materialize(x)" in str(info.value)
+    assert "graphed.head(x)" in str(info.value)
     assert _session(value).node_count() == count
 
 

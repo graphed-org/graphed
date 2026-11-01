@@ -7,6 +7,23 @@ Newest release first. Numbers in parentheses are the pull requests on
 0.0.11 (unreleased)
 -------------------
 
+Small samples, and one evaluation path
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``graphed.head(x, n)`` returns the first ``n`` rows of ``x``, reading the used columns of the
+  first entries and widening until ``n`` rows survive its cuts, on any partitioned or in-memory
+  source. Rows downstream of a reduction still read the whole dataset, as they depend on it.
+* ``graphed.materialize(x, entries=N)`` evaluates over each source's first ``N`` input events, and
+  ``graphed.materialize(x, partition=plan.tasks[3].partition)`` over one chunk, as a task runs it.
+* ``Session.materialize`` now is ``graphed.materialize``: it reads only the used columns, as
+  ``gak.head``, ``gak.sample`` and ``gak.to_list`` then do, and **a failing operation raises a
+  ``StageError``** at the recording line in place of the bare backend error. One caused by a
+  ``ValueError`` is a ``ValueError`` too. Code catching any other exception type around it needs
+  ``StageError``, or ``cause_type``. An External's ``OutputTypeError`` arrives this way as well.
+* ``graphed.debug.run(partition=)`` selects a ``Partition``. It was only a label and always read the
+  whole source, so a string now raises ``TypeError``; pass ``label=`` to name the data in a failure.
+* ``Partition.first(n)`` caps a partition at its first ``n`` entries, resolved when it is read.
+
 Plans returned wrong values for row-axis operations, and now refuse them
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

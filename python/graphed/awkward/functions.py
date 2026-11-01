@@ -805,8 +805,8 @@ def backend_of(arr: Array) -> str:
 
 
 def head(arr: Array, n: int = 5) -> object:
-    """EAGER peek at the first ``n`` rows (the common slice op + reference materialize)."""
-    return arr.session.materialize(arr[:n])
+    """EAGER peek at the first ``n`` rows: :func:`graphed.head`."""
+    return graphed.head(arr, n)
 
 
 def sample(arr: Array, *, factor: int) -> object:

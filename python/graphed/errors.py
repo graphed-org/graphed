@@ -155,3 +155,7 @@ class StageError(Exception):
                 self.variation,
             )
         )
+
+
+class ValueStageError(StageError, ValueError):
+    """A :class:`StageError` caused by a ``ValueError``, which a guard's caller still catches."""

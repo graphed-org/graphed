@@ -24,7 +24,7 @@ array, which no amount of type checking can see before real data arrives:
    bad = pt.map(lambda a: a[100], name="oob")     # only fails once real data arrives
 
    try:
-       gd.run(s, bad, opt_level=1, partition="skim@0:4")
+       gd.run(s, bad, opt_level=1, label="skim@0:4")
    except gd.StageError as err:
        print(err.op, "|", err.cause_type, "|", err.partition)
        print(err.user_frame)
@@ -167,7 +167,7 @@ worker can raise it, a pool can ship it, and your driver re-raises *the same* di
        x = from_array("x", np.arange(4.0), session=s)
        counts = x.map(lambda a: a.astype("int64") - 1, name="counts")
        unflat = counts.map(lambda a: np.repeat(a, a), name="unflatten")
-       return gd.run(s, unflat, opt_level=1, partition=f"skim@{chunk_id}")
+       return gd.run(s, unflat, opt_level=1, label=f"skim@{chunk_id}")
 
 
    if __name__ == "__main__":
