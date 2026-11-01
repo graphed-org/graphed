@@ -20,6 +20,15 @@ An uncaught StageError reads on its own
   them (an optional ``num_entries(partition)`` on a ``PartitionedSource``) and its size otherwise.
 * New ``graphed.WorkerLostError``, a ``StageError`` for a worker that died, with no source frame.
 
+A run can go on past bad chunks
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``runner.run(plan, skip_failed=10)`` gives up only after 10 failed chunks: ``res.value`` merges
+  the chunks that succeeded, ``res.failed`` lists the rest as JSON-ready ``FailedChunk`` records
+  holding the checkpoint dead-letter descriptor, and the run warns with the count. One failure past
+  the budget raises ``TooManyFailedChunksError``, which lists them.
+* ``StopCondition(max_errors=N)`` is that same budget, on every runner; it used to do nothing.
+
 Plans returned wrong values for row-axis operations, and now refuse them
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

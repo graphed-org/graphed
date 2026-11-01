@@ -13,6 +13,9 @@ from .execution import (
     Executor as Executor,
 )
 from .execution import (
+    FailedChunk as FailedChunk,
+)
+from .execution import (
     LocalResources as LocalResources,
 )
 from .execution import (
@@ -52,6 +55,9 @@ from .execution import (
     TaskPhase as TaskPhase,
 )
 from .execution import (
+    TooManyFailedChunksError as TooManyFailedChunksError,
+)
+from .execution import (
     WorkerProfiler as WorkerProfiler,
 )
 from .execution import (
@@ -64,6 +70,9 @@ from .execution import (
     complete_events as complete_events,
 )
 from .execution import (
+    dead_letter_descriptor as dead_letter_descriptor,
+)
+from .execution import (
     emit_task as emit_task,
 )
 from .execution import (
@@ -73,7 +82,16 @@ from .execution import (
     lean_events as lean_events,
 )
 from .execution import (
+    n_failed as n_failed,
+)
+from .execution import (
     partition_label as partition_label,
+)
+from .execution import (
+    skipping as skipping,
+)
+from .execution import (
+    without_lost as without_lost,
 )
 from .execution import (
     worker_monitor_factory as worker_monitor_factory,
