@@ -108,10 +108,10 @@ def test_functions_that_cannot_be_compared_warn_and_the_first_answers() -> None:
     lock = threading.Lock()
 
     def uses_lock(values: Any) -> Any:
-        return values if lock else values
+        return values + lock.locked()
 
     def also_uses_lock(values: Any) -> Any:
-        return values * 2 if lock else values
+        return values * 2 + lock.locked()
 
     first = ev.x.map(uses_lock, name="scale")
     with pytest.warns(GraphedWarning, match="could not compare also_uses_lock with uses_lock"):
@@ -124,7 +124,7 @@ def test_the_same_object_needs_no_comparison() -> None:
     lock = threading.Lock()
 
     def uses_lock(values: Any) -> Any:
-        return values if lock else values
+        return values + lock.locked()
 
     with warnings.catch_warnings():
         warnings.simplefilter("error", GraphedWarning)

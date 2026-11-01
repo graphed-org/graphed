@@ -20,7 +20,6 @@ hash, and fails loudly when one is missing.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import partial

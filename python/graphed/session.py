@@ -797,8 +797,8 @@ class Session:
         if not same:
             name = json.loads(key.partition("|")[2])["fn"]
             raise GraphedError(
-                f"graphed: name={name!r} at {prov} is already used by {_fn_label(held)} ({first}); "
-                "a different function needs a different name"
+                f"graphed: name={name!r} at {prov} is already used by {_fn_label(held)} "
+                f"({first}); a different function needs a different name"
             )
 
     def _traced_form(
