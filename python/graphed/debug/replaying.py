@@ -103,8 +103,10 @@ def _unfused(
         new = len(nodes)
         nodes.append({**node, "id": new, "inputs": inputs})
         frame = SourceFrame(*frames.get(key, ("<no recorded line>", 0)))
-        name = node["name"]
-        ops.append(LoweredOp(new, name, node["kind"], frame, tuple(inputs), "", False))
+        kind = node["kind"]
+        op = node["name"] or kind  # an External has no name
+        lowered_kind = "op" if kind == "reduction" else kind
+        ops.append(LoweredOp(new, op, lowered_kind, frame, tuple(inputs), "", kind != "op"))
         value_of[key[0]] = new
 
     for node in arena.nodes():
@@ -118,7 +120,7 @@ def _unfused(
             add(member, (node["id"], index), inputs)
     stages = tuple(LoweredStage(i, (op,)) for i, op in enumerate(ops))
     outputs = [value_of[o] for o in arena.outputs()]
-    return nodes, LoweredGraph(process.opt_level, stages, outputs[-1]), outputs
+    return nodes, LoweredGraph(0, stages, outputs[-1]), outputs
 
 
 class Replay:

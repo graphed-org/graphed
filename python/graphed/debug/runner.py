@@ -11,7 +11,6 @@ picklable).
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from functools import partial
 from pathlib import Path
 from typing import cast
 
@@ -22,10 +21,6 @@ from graphed.varied import refuse_container
 
 from .errors import SourceFrame, StageError
 from .lowering import LoweredGraph, LoweredOp, lower
-
-
-def _given(value: object) -> object:
-    return value
 
 
 def _chain(lowered: LoweredGraph, node_id: int) -> tuple[SourceFrame, ...]:
@@ -78,12 +73,11 @@ def _assert_consistent(lowered: LoweredGraph, node_id: int, value: object, parti
 def _walk(
     session: Session,
     array: Array,
-    opt_level: int,
+    lowered: LoweredGraph,
     chunks: Mapping[int, Callable[[], object]],
     where: str,
     memo: dict[int, object] | None = None,
 ) -> object:
-    lowered = lower(session, array, opt_level=opt_level)
     backend = session.backend
 
     def on_source(nid: int) -> object:
@@ -101,7 +95,7 @@ def _walk(
             raise
         except Exception as exc:
             raise _stage_error(lowered, nid, where, exc) from exc
-        if opt_level == 0:
+        if lowered.opt_level == 0:
             _assert_consistent(lowered, nid, value, where)
         return value
 
@@ -138,7 +132,7 @@ def run(
         )
     chunks = {} if partition is None else _partition_chunk([array], partition)
     where = label if label is not None else "sample" if partition is None else str(partition)
-    return _walk(session, array, opt_level, chunks, where)
+    return _walk(session, array, lower(session, array, opt_level=opt_level), chunks, where)
 
 
 def _rows(value: object) -> int | str:
@@ -149,30 +143,32 @@ def _rows(value: object) -> int | str:
 def trace(array: Array, *, entries: int) -> None:
     """Print how many rows each recorded line keeps of the first ``entries`` input events.
 
-    One row per line, for its last operation, marking the first that empties the data. This finds
-    a cut that removes everything. A failing operation raises its `StageError`.
+    One row per line, for its last operation or the one that empties the data, which is marked.
+    This finds a cut that removes everything. A failing operation raises its `StageError`.
     """
     refuse_container("graphed.debug.trace", array)
+    if not isinstance(array, Array):
+        raise TypeError(f"trace follows a deferred Array, not {type(array).__name__}")
     session = array.session
     sample = cast(_Sample, _sample_of(entries, None))
-    reads = sample.reads(session, [array])
-    chunks = {nid: partial(_given, value) for nid, value in reads.items()}
-    values: dict[int, object] = {}
-    _walk(session, array, 0, chunks, sample.where, values)
-    # a dict keeps the first position of a line and the last operation recorded on it
-    lines: dict[tuple[str, int], LoweredOp] = {}
-    for op in lower(session, array, opt_level=0).ops:
-        lines[op.provenance.filename, op.provenance.lineno] = op
-    emptied = False
-    for (filename, lineno), op in lines.items():
-        rows_in = next(
-            (rows for rows in (_rows(values[i]) for i in op.input_ids) if rows != "-"), "-"
-        )
+    lowered = lower(session, array, opt_level=0)
+    values = sample.reads(session, [array])
+    _walk(session, array, lowered, {}, sample.where, values)
+    # a dict keeps the first position of a line; its row is its last op, or the op that emptied it
+    rows: dict[tuple[str, int], tuple[LoweredOp, int | str, int | str]] = {}
+    emptied: tuple[str, int] | None = None
+    for op in lowered.ops:
+        line = op.provenance.filename, op.provenance.lineno
+        if line == emptied:
+            continue
+        rows_in = next((n for n in (_rows(values[i]) for i in op.input_ids) if n != "-"), "-")
         rows_out = _rows(values[op.node_id])
-        first_empty = not emptied and rows_out == 0 and rows_in not in ("-", 0)
-        emptied = emptied or first_empty
-        mark = "   <-- removed every event" if first_empty else ""
+        rows[line] = op, rows_in, rows_out
+        if emptied is None and rows_out == 0 and rows_in not in ("-", 0):
+            emptied = line
+    for line, (op, rows_in, rows_out) in rows.items():
+        mark = "   <-- removed every event" if line == emptied else ""
         print(
-            f"{Path(filename).name}:{lineno:<5} {op.op:<16} {rows_in:>9} -> {rows_out:<9} "
+            f"{Path(line[0]).name}:{line[1]:<5} {op.op:<16} {rows_in:>9} -> {rows_out:<9} "
             f"{op.provenance.source}{mark}"
         )

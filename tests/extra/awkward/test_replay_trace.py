@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pickle
 import re
+from dataclasses import replace
 from typing import Any
 
 import awkward as ak
@@ -114,6 +115,7 @@ def test_a_failing_step_raises_at_its_line() -> None:
     with pytest.raises(StageError) as raised:
         list(gd.replay(_plan(broken), 0).steps())
     assert raised.value.frames[0].filename == __file__
+    assert (raised.value.op, raised.value.opt_level) == ("external", 0)
 
 
 def _explode(chunk: Any) -> Any:
@@ -149,12 +151,28 @@ def test_replay_of_histogram_plans_needs_no_outputs() -> None:
 
 def test_replay_adds_nothing_to_a_plans_pickle() -> None:
     _, counts = _lead()
-    process = _plan(counts).process
-    fields = {name: getattr(process, name) for name in ("ir", "frames")}
-    size = len(pickle.dumps(process))
-    gd.replay(_plan(counts), 0)
-    assert len(pickle.dumps(process)) == size
-    assert len(pickle.dumps(fields)) < size
+    plan = _plan(counts)
+    # the fixture's reader logs each read
+    size = len(pickle.dumps(replace(plan.process, reader=None)))
+    assert gd.replay(plan, 0).diff().equal
+    assert len(pickle.dumps(replace(plan.process, reader=None))) == size
+
+
+def test_replay_lowers_alike_with_and_without_outputs() -> None:
+    ev, _ = _events()
+    total = gak.sum(ev.met.map(_double), axis=None)
+    plan = _plan(total)
+    from_plan, as_written = (
+        [(s.node.op, s.node.kind, s.node.boundary) for s in gd.replay(plan, 0, *given).steps()]
+        for given in ((), (total,))
+    )
+    assert ("external", "external", True) in from_plan
+    assert ("ak.sum", "op", True) in from_plan
+    assert from_plan == as_written
+
+
+def _double(chunk: Any) -> Any:
+    return chunk * 2
 
 
 def test_trace_prints_a_row_per_line_and_marks_the_emptying_step(
@@ -172,6 +190,26 @@ def test_trace_prints_a_row_per_line_and_marks_the_emptying_step(
     )
     assert "removed every event" not in lines[0] + lines[2]
     assert re.search(r"ak\.num +0 -> 0 ", lines[2])
+
+
+def test_trace_marks_a_cut_chained_on_one_line(capsys: pytest.CaptureFixture[str]) -> None:
+    ev, _ = _events()
+    gd.trace(gak.num(ev[ev.met > 100.0].pt, axis=1), entries=4)
+    lines = capsys.readouterr().out.splitlines()
+    assert len(lines) == 2
+    assert re.search(r"getitem +4 -> 0 .*<-- removed every event$", lines[1])
+
+
+def _cut(ev: Any, low: float) -> Any:
+    return ev[ev.met > low]
+
+
+def test_trace_marks_a_helper_line_at_the_call_that_emptied(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    ev, _ = _events()
+    gd.trace(_cut(_cut(ev, 100.0), 0.5), entries=4)
+    assert re.search(r"getitem +4 -> 0 .*<-- removed every event$", capsys.readouterr().out, re.M)
 
 
 def test_trace_reads_only_the_sample_it_was_asked_for(capsys: pytest.CaptureFixture[str]) -> None:
@@ -199,3 +237,6 @@ def test_trace_refuses_a_varied_array_and_a_bad_count() -> None:
         gd.trace(graphed.vary(ev.met, "sf", up=ev.met * 2, down=ev.met / 2), entries=4)
     with pytest.raises(ValueError, match="positive int"):
         gd.trace(ev.met, entries=0)
+    h = gh.histogram(gak.flatten(ev.pt), bins=4, range=(0, 8))
+    with pytest.raises(TypeError, match="not Histogram"):
+        gd.trace(h, entries=4)
