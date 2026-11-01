@@ -288,34 +288,18 @@ def test_record_external_still_runs_what_is_right() -> None:
     assert _values(ev.session, node) == [1.0, 3.0]
 
 
-_LEGACY = json.dumps(
-    {
-        "schema_version": 2,
-        "corrections": [
-            {
-                **_CORRECTION,
-                "name": "by_syst",
-                "inputs": [{"name": "syst", "type": "string"}, _INPUTS[1]],
-                "data": {
-                    "nodetype": "category",
-                    "input": "syst",
-                    "content": [{"key": "nominal", "value": 2.0}],
-                },
-            }
-        ],
-    }
-).encode()
+_LEGACY = CORRECTIONLIB_PLUGIN.samples()[0]
 
 
 def test_the_legacy_systematic_shape_stays_accepted() -> None:
     ev = _flat()
-    node = _external(ev, {"name": "by_syst", "systematic": "nominal"}, ev.pt, payload=_LEGACY)
-    assert _values(ev.session, node) == [2.0, 2.0]
+    node = _external(ev, {"name": "sf", "systematic": "nominal"}, ev.pt, payload=_LEGACY)
+    assert _values(ev.session, node) == [1.0, 1.0]
 
 
 def test_the_legacy_shape_needs_an_input() -> None:
     ev = _flat()
-    params = {"name": "by_syst", "systematic": "nominal"}
+    params = {"name": "sf", "systematic": "nominal"}
     with pytest.raises(GraphedTypeError, match="needs at least one Array input"):
         _external(ev, params, payload=_LEGACY)
 

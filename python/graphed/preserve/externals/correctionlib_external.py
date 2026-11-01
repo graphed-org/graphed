@@ -11,7 +11,7 @@ from ...errors import GraphedTypeError
 from ...provenance import capture
 from ..errors import PreserveError
 from ._base import ExternalPlugin
-from ._helpers import json_bytes, memoized_model_hash, parse_call_template
+from ._helpers import TemplateEntry, json_bytes, memoized_model_hash, parse_call_template
 
 
 def correctionlib_content_hash(payload: bytes) -> str:
@@ -143,11 +143,30 @@ def _refused(detail: str) -> GraphedTypeError:
     return GraphedTypeError("correction", capture(), detail)
 
 
+_CorrectionInputs = dict[str, tuple[str, ...]]
+
+
+def correctionlib_identity(
+    payload: bytes,
+) -> tuple[str, str, _CorrectionInputs, _CorrectionInputs]:
+    """Return a set's digest, schema version, and each regular and compound entry's inputs."""
+    data = json.loads(json_bytes(payload))
+    regular, stacked = (
+        {entry["name"]: tuple(i["name"] for i in entry["inputs"]) for entry in data.get(key) or ()}
+        for key in ("corrections", "compound_corrections")
+    )
+    schema_version = str(data.get("schema_version", "unknown"))
+    return correctionlib_contents_digest(data), schema_version, regular, stacked
+
+
+def memoized_identity(payload: bytes) -> tuple[str, str, _CorrectionInputs, _CorrectionInputs]:
+    """Return :func:`correctionlib_identity`, parsing a set once however often it is recorded."""
+    return memoized_model_hash("correctionlib-descriptor", payload, correctionlib_identity)
+
+
 def correction_inputs(payload: bytes, name: str, compound: bool) -> tuple[str, ...]:
     """Return the input names of ``name``, refusing a name the set does not hold."""
-    from graphed.awkward.payloads import correctionlib_inputs
-
-    regular, stacked = correctionlib_inputs(payload)
+    _, _, regular, stacked = memoized_identity(payload)
     wanted: tuple[str, ...] | None = _resolve(regular, stacked, name, compound)
     if wanted is None:
         held = stacked if compound else {**stacked, **regular}
@@ -158,20 +177,29 @@ def correction_inputs(payload: bytes, name: str, compound: bool) -> tuple[str, .
     return wanted
 
 
+def _call_template(
+    params: Mapping[str, Any], n_inputs: int
+) -> tuple[list[TemplateEntry], dict[str, TemplateEntry]] | None:
+    return parse_call_template(
+        params, n_inputs, allow_constants=True, allow_groups=False, allow_kwargs=False
+    )
+
+
 def check_correctionlib_params(params: Mapping[str, Any], payload: bytes, n_inputs: int) -> None:
     """Refuse at record time a name the set lacks, a wrong-length call, or one with no Array."""
     name = str(params.get("name", ""))
     wanted = correction_inputs(payload, name, bool(params.get("compound", False)))
-    template = parse_call_template(
-        params, n_inputs, allow_constants=True, allow_groups=False, allow_kwargs=False
-    )
-    taken = 2 if template is None else len(template[0])  # the legacy (systematic, inputs[0]) call
+    template = _call_template(params, n_inputs)
+    if template is None:  # the legacy (systematic, inputs[0]) call
+        taken, has_array = 2, n_inputs > 0
+    else:
+        taken, has_array = len(template[0]), any(kind == "slot" for kind, _ in template[0])
     if taken != len(wanted):
         raise _refused(
             f"correction {name!r} takes inputs ({', '.join(wanted)}); got {taken} positional "
             "inputs"
         )
-    if not (n_inputs if template is None else any(k == "slot" for k, _ in template[0])):
+    if not has_array:
         raise _refused(f"correction {name!r} needs at least one Array input")
 
 
@@ -189,9 +217,7 @@ def eval_correctionlib(cset: Any, params: Mapping[str, Any], inputs: list[Any]) 
             f"{name!r} (corrections: {sorted(cset)}; compound_corrections: "
             f"{sorted(cset.compound)})"
         )
-    template = parse_call_template(
-        params, len(inputs), allow_constants=True, allow_groups=False, allow_kwargs=False
-    )
+    template = _call_template(params, len(inputs))
     if template is None:  # the legacy (systematic, inputs[0]) shape, unchanged
         systematic = str(params.get("systematic", "nominal"))
         x = np.asarray(ak.to_numpy(ak.Array(inputs[0])), dtype="float64")

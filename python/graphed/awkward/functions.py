@@ -24,6 +24,11 @@ from graphed.provenance import capture
 from graphed.shuffle import JOINKEY
 from graphed.varied import boundary_refusal, containers_in, expand, expand_tuple, narrow
 
+from ..preserve.externals.correctionlib_external import (
+    _refused,
+    check_correctionlib_params,
+    correction_inputs,
+)
 from . import payloads
 from ._dispositions import GAK_ARG_FIXTURES as GAK_ARG_FIXTURES
 from ._dispositions import GAK_DISPOSITIONS as GAK_DISPOSITIONS
@@ -484,10 +489,6 @@ class _TemplateExternal:
         return self.call(*values)
 
 
-def _refused(detail: str) -> GraphedTypeError:
-    return GraphedTypeError("correction", capture(), detail)
-
-
 def _named_template(
     wanted: tuple[str, ...], name: str, named: Mapping[str, object]
 ) -> tuple[list[Array], list[object]]:
@@ -567,13 +568,8 @@ def apply_correction(
         return arrays[0].session.record_external(
             "correction", evaluator, arrays, {"path": str(payload), "name": name, **which}
         )
-    from ..preserve.externals.correctionlib_external import (
-        check_correctionlib_params,
-        correction_inputs,
-    )
-
     blob = _payload_bytes(payload)
-    wanted = correction_inputs(blob, name, compound)
+    wanted = correction_inputs(blob, name, compound)  # a wrong name outranks a bad template
     if named:
         arrays, args = _named_template(wanted, name, named)
     elif args is None:
