@@ -381,8 +381,13 @@ def _guard(
     if total > max_universes:
         grid = " x ".join(f"{family}({size})" for family, size in sizes)
         raise GraphedError(
-            f"graphed.vary({name!r}) would fan out to {total} universes ({grid}); pass points= "
-            f"placements to select a subset, or raise max_universes (currently {max_universes})"
+            f"graphed.vary({name!r}) would fan out to {total} universes ({grid}): its members "
+            f"are computed from arrays that already vary with {', '.join(foreign_coords)}.\n"
+            f"If {name} is independent of them, multiply in a factor: "
+            f"{name} = graphed.vary(1.0, {name!r}, up=..., down=...)\n"
+            "For one-at-a-time templates, pass composes_as_union=True.\n"
+            "Otherwise pass points= placements to select a subset, or raise max_universes "
+            f"(currently {max_universes})."
         )
 
 
@@ -606,7 +611,8 @@ def _flatten(member: object) -> list[Array]:
     if isinstance(member, Array):
         return [member]
     raise GraphedError(
-        f"a variation member must be an Array or a Varied, got {type(member).__name__}"
+        f"a variation member must be an Array or a Varied, got {type(member).__name__}; a flat "
+        "factor is graphed.vary(1.0, name, up=1.025, down=0.975), multiplied into the array"
     )
 
 

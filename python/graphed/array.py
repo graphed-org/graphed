@@ -301,8 +301,8 @@ class Array:
 
     # ---- elementwise recording -------------------------------------------------
     def _binary(self, op: str, other: object, *, reflected: bool = False) -> Array:
-        if getattr(other, "_varied_container", False):
-            # the container's reflected dunder maps the op per universe (mypy special-cases a
+        if getattr(other, "_varied_container", False) or getattr(other, "_scalar_factor", False):
+            # the other side's reflected dunder takes the op (mypy special-cases a
             # NotImplemented return only in the dunders themselves, not in this shared helper)
             return NotImplemented  # type: ignore[no-any-return]
         if isinstance(other, Array):
