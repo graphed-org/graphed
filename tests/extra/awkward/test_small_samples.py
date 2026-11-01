@@ -18,8 +18,10 @@ import graphed.debug as gd
 import graphed.numpy as gnp
 from graphed.awkward import AwkwardBackend, AwkwardForm, from_awkward, gak
 from graphed.awkward.io import from_parquet
+from graphed.checkpoint.errors import dead_letter_descriptor
 from graphed.core import Partition
 from graphed.core.execution import SequentialRunner
+from graphed.core.plan import _partition_bytes, _partition_from_json, _partition_json
 from graphed.errors import StageError, ValueStageError
 from graphed.materialization import PlanPieces
 from graphed.session import Session
@@ -335,3 +337,107 @@ def test_first_caps_a_partition_at_its_own_entries(
 ) -> None:
     part = partition.first(entries).resolve(10)
     assert (part.entry_start, part.entry_stop) == expected
+
+
+def test_a_second_cap_never_widens_a_blind_partition() -> None:
+    capped = Partition.blind("f", "t", 0, 1).first(2)
+    assert capped.first(5).resolve(10).entry_stop == 2
+    assert capped.first(1).resolve(10).entry_stop == 1
+
+
+def test_a_cap_survives_a_plans_json_and_keys_its_task() -> None:
+    blind = Partition.blind("f", "t", 0, 1)
+    capped = blind.first(3)
+    assert _partition_from_json(_partition_json(capped)) == capped
+    assert _partition_bytes(capped) != _partition_bytes(blind)
+    assert "blind_limit" not in _partition_json(blind)
+
+
+def test_head_refuses_a_row_set_a_prefix_would_broadcast() -> None:
+    ev, _ = _files(20)
+    misaligned = ev.a + ev.b[ev.b > 0]
+    with pytest.raises(StageError, match="different row sets"):
+        graphed.head(misaligned, 1)
+
+
+def test_entries_keeps_a_keepdims_reduction_broadcasting() -> None:
+    ev, _ = _files(5)
+    shifted = ev.a + gak.sum(ev.a, axis=0, keepdims=True)
+    assert ak.to_list(graphed.materialize(shifted, entries=3)) == [3.0, 4.0, 5.0]
+
+
+class _NoConcat(AwkwardBackend):
+    def __getattribute__(self, name: str) -> Any:
+        if name == "concat":
+            raise AttributeError(name)
+        return super().__getattribute__(name)
+
+
+@dataclass
+class _LoadedFiles(_Files):
+    def __call__(self) -> ak.Array:
+        return ak.concatenate(self.chunks)
+
+
+def test_a_backend_that_cannot_concatenate_still_reaches_the_later_files() -> None:
+    files = _LoadedFiles((ak.Array({"a": [1.0]}), ak.Array({"a": [2.0, 3.0]})))
+    session = Session(_NoConcat())
+    form = AwkwardForm(ak.Array(files.chunks[0].layout.to_typetracer(forget_length=True)))
+    ev = session.source("files", form=form, data=files)
+    assert ak.to_list(graphed.head(ev.a, 2)) == [1.0, 2.0]
+    assert ak.to_list(graphed.materialize(ev.a, entries=3)) == [1.0, 2.0, 3.0]
+
+
+def test_head_widening_loads_a_lazy_source_once() -> None:
+    values = ak.Array({"a": np.arange(100.0)})
+    calls: list[int] = []
+
+    def load() -> ak.Array:
+        calls.append(1)
+        return values
+
+    session = Session(AwkwardBackend())
+    form = AwkwardForm(ak.Array(values.layout.to_typetracer(forget_length=True)))
+    ev = session.source("lazy", form=form, data=load)
+    assert ak.to_list(graphed.head(ev.a[ev.a > 90], 2)) == [91.0, 92.0]
+    assert len(calls) == 1
+
+
+def test_head_refuses_a_count_that_is_not_an_int() -> None:
+    ev, files = _files(4)
+    with pytest.raises(TypeError):
+        graphed.head(ev.a, 2.5)  # type: ignore[arg-type]
+    assert files.reads == []
+
+
+class _Unreadable(_Files):
+    def read_partition(self, partition: Partition, columns: Any, resources: Any) -> Any:
+        raise OSError("disk gone")
+
+
+def test_gd_run_attributes_a_failed_partition_read() -> None:
+    _, files = _files(3)
+    broken = _Unreadable(files.chunks)
+    session = Session(AwkwardBackend())
+    form = AwkwardForm(ak.Array(files.chunks[0].layout.to_typetracer(forget_length=True)))
+    ev = session.source("broken", form=form, data=broken)
+    with pytest.raises(StageError) as info:
+        gd.run(session, ev.a, partition=broken.partitions(1)[0])
+    assert info.value.cause_type == "OSError"
+
+
+def test_gd_run_refuses_a_partition_no_source_holds() -> None:
+    ev, _ = _files(3)
+    with pytest.raises(ValueError, match="no source of these results holds") as info:
+        gd.run(ev.session, ev.a, partition=Partition("elsewhere", "t", 0, 1))
+    assert not isinstance(info.value, StageError)
+
+
+def test_a_dead_letter_names_the_stage_error_family() -> None:
+    session = Session(AwkwardBackend())
+    ev = from_awkward(session, "x", ak.Array({"a": [[1.0], [2.0, 3.0]], "b": [[1.0, 2.0], [3.0]]}))
+    with pytest.raises(ValueStageError) as info:
+        session.materialize(ev.a + ev.b)
+    described = dead_letter_descriptor("t", Partition("f", "t", 0, 1), info.value)
+    assert described["error_type"] == "StageError"
+    assert described["stage_error"]["cause_type"] == "ValueError"

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Callable, Container, Iterable, Mapping, Sequence, Set
 from dataclasses import dataclass, field
-from functools import partial
-from operator import add
+from functools import cache, partial
+from operator import add, index
 from typing import Any
 
 from graphed.core import Partition
@@ -138,6 +138,11 @@ def _keep(session: Session, nid: int, chunks: Sequence[object], reads: dict[int,
         reads[nid] = concat(chunks)
 
 
+def _chunks_join(session: Session, data: PartitionedSource) -> bool:
+    """Return whether ``data``'s partitions make one chunk under this session's backend."""
+    return hasattr(session.backend, "concat") or len(data.partitions(1)) == 1
+
+
 def _read(
     session: Session, arrays: Sequence[Array], passed: Container[int], reads: dict[int, object]
 ) -> None:
@@ -154,9 +159,8 @@ def _read(
             columns = _columns(data, arrays, nid)
             if columns is None:
                 continue
-            partitions = data.partitions(1)
-            if len(partitions) == 1 or hasattr(session.backend, "concat"):
-                chunks = [data.read_partition(p, columns, resources) for p in partitions]
+            if _chunks_join(session, data):
+                chunks = [data.read_partition(p, columns, resources) for p in data.partitions(1)]
                 _keep(session, nid, chunks, reads)
     finally:
         resources.close()
@@ -176,16 +180,12 @@ def _first(value: Any, n: int) -> tuple[Any, int]:
 
 
 def _read_first(
-    session: Session,
     data: PartitionedSource,
     columns: Sequence[str] | None,
     entries: int,
     resources: WorkerResources,
 ) -> tuple[list[object], int]:
-    """Read partitions in order until ``entries`` rows are read; return the chunks and rows.
-
-    A backend that cannot concatenate stops at the first chunk.
-    """
+    """Read partitions in order until ``entries`` rows are read; return the chunks and rows."""
     chunks: list[object] = []
     rows = 0
     for partition in data.partitions(1):
@@ -195,48 +195,64 @@ def _read_first(
         )
         chunks.append(chunk)
         rows += read
-        if rows == entries or not hasattr(session.backend, "concat"):
+        if rows == entries:
             break
     return chunks, rows
 
 
 def _first_entries(
-    session: Session, arrays: Sequence[Array], entries: int
+    session: Session, arrays: Sequence[Array], entries: int, load: Callable[[int], object]
 ) -> tuple[dict[int, object], bool]:
-    """Return each source's first ``entries`` rows, and whether every source ran out first."""
+    """Return each source's first ``entries`` rows, and whether every source ran out first.
+
+    ``load`` gives a source read whole: one that is not partitioned, or whose chunks do not join.
+    """
     reads: dict[int, object] = {}
     exhausted = True
     resources = LocalResources()
     try:
         for nid, data in sources_read(arrays).items():
-            if isinstance(data, PartitionedSource):
+            if isinstance(data, PartitionedSource) and _chunks_join(session, data):
                 columns = _columns(data, arrays, nid)
-                chunks, rows = _read_first(session, data, columns, entries, resources)
+                chunks, rows = _read_first(data, columns, entries, resources)
                 _keep(session, nid, chunks, reads)
             else:
-                reads[nid], rows = _first(session.source_value(nid), entries)
+                reads[nid], rows = _first(load(nid), entries)
             exhausted = exhausted and rows < entries
     finally:
         resources.close()
     return reads, exhausted
 
 
-def _partition_reads(
-    session: Session, arrays: Sequence[Array], partition: Partition
-) -> dict[int, object]:
-    """Return the chunk ``partition`` holds of the source of ``arrays`` it belongs to."""
+def _read_chunk(
+    data: PartitionedSource, partition: Partition, columns: Sequence[str] | None
+) -> object:
+    resources = LocalResources()
+    try:
+        return data.read_partition(partition, columns, resources)
+    finally:
+        resources.close()
+
+
+def _partition_chunk(
+    arrays: Sequence[Array], partition: Partition
+) -> tuple[int, Callable[[], object]]:
+    """Return the source of ``arrays`` holding ``partition``, and its read of that chunk."""
     place = (partition.uri, partition.tree)
     for nid, data in sources_read(arrays).items():
         if isinstance(data, PartitionedSource) and any(
             (p.uri, p.tree) == place for p in data.partitions(1)
         ):
-            resources = LocalResources()
-            try:
-                columns = _columns(data, arrays, nid)
-                return {nid: data.read_partition(partition, columns, resources)}
-            finally:
-                resources.close()
+            return nid, partial(_read_chunk, data, partition, _columns(data, arrays, nid))
     raise ValueError(f"no source of these results holds {partition}")
+
+
+def _partition_reads(
+    session: Session, arrays: Sequence[Array], partition: Partition
+) -> dict[int, object]:
+    """Return the chunk ``partition`` holds of the source of ``arrays`` it belongs to."""
+    nid, read = _partition_chunk(arrays, partition)
+    return {nid: read()}
 
 
 def _frontier(session: Session, arrays: Sequence[Array], nid: int, past: Set[int]) -> list[Array]:
@@ -467,7 +483,9 @@ def _sample_of(entries: int | None, partition: Partition | None) -> _Sample | No
         return None
     if type(entries) is not int or entries < 1:
         raise ValueError(f"materialize(entries=) is a positive int, not {entries!r}")
-    return _Sample(lambda s, a: _first_entries(s, a, entries)[0], f"first {entries} entries")
+    return _Sample(
+        lambda s, a: _first_entries(s, a, entries, s.source_value)[0], f"first {entries} entries"
+    )
 
 
 def materialize(
@@ -520,16 +538,20 @@ def head(array: Array, n: int = 5) -> Any:
     data ends. Rows downstream of a reduction need the whole dataset, so they read all of it.
     """
     refuse_container("graphed.head", array)
+    n = index(n)
     if n < 0:
         raise ValueError(f"head(n=) is at least 0, not {n}")
     session = array.session
     if array.node_id in _past_boundary(session):
         return materialize(array[:n])
     entries = max(n, 1)
+    load = cache(session.source_value)
     while True:
-        reads, exhausted = _first_entries(session, [array], entries)
+        reads, exhausted = _first_entries(session, [array], entries, load)
         where = f"first {entries} entries"
-        value = _run_whole(session, _Joint(), [array], reads, where)[id(array)]
+        # nothing here is past a boundary, so every operand is the prefix's rows, and a length-1
+        # operand is a row set that must not broadcast
+        value = _run_whole(session, _Joint(), [array], reads, where, chunked=True)[id(array)]
         rows, found = _first(value, n)
         if exhausted or found == n:
             return rows

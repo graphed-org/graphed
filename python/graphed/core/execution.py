@@ -189,7 +189,8 @@ class Partition:
     def first(self, n: int) -> Partition:
         """Return this partition's first ``n`` entries, or all of them when it has fewer."""
         if self.is_blind:
-            return replace(self, blind_limit=n)
+            limit = n if self.blind_limit is None else min(n, self.blind_limit)
+            return replace(self, blind_limit=limit)
         return replace(self, entry_stop=min(self.entry_stop, self.entry_start + n))
 
     @property

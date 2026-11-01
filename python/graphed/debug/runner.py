@@ -14,7 +14,7 @@ from collections.abc import Mapping
 
 from graphed import Array, Session
 from graphed.core import Partition
-from graphed.materialization import _partition_reads
+from graphed.materialization import _partition_chunk
 
 from .errors import SourceFrame, StageError
 from .lowering import LoweredGraph, lower
@@ -89,12 +89,12 @@ def run(
         )
     lowered = lower(session, array, opt_level=opt_level)
     backend = session.backend
-    reads = {} if partition is None else _partition_reads(session, [array], partition)
+    chunks = {} if partition is None else dict([_partition_chunk([array], partition)])
     where = label if label is not None else "sample" if partition is None else str(partition)
 
     def on_source(nid: int) -> object:
         try:
-            return reads[nid] if nid in reads else session.source_value(nid)
+            return chunks[nid]() if nid in chunks else session.source_value(nid)
         except StageError:
             raise
         except Exception as exc:

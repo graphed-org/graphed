@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from graphed.core import Partition
+from graphed.errors import StageError
 
 
 def dead_letter_descriptor(
@@ -23,7 +24,8 @@ def dead_letter_descriptor(
         "tree": partition.tree,
         "entry_start": partition.entry_start,
         "entry_stop": partition.entry_stop,
-        "error_type": type(exc).__name__,
+        # a durable field: which StageError subclass carried the failure is not part of it
+        "error_type": "StageError" if isinstance(exc, StageError) else type(exc).__name__,
         "error_message": str(exc),
     }
     # StageError carries structured user-source provenance (duck-typed so graphed-debug stays a
