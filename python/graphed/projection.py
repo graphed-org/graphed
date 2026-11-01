@@ -13,15 +13,13 @@ import warnings
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any, overload
+from typing import Any, overload
 
+from .array import Array
 from .backend import ParamValue
 from .errors import GraphedError
+from .systematics.lineage import ContextNode
 from .varied import Varied, universes_of
-
-if TYPE_CHECKING:
-    from .array import Array
-    from .session import Session
 
 
 class OnFail(StrEnum):
@@ -167,18 +165,16 @@ def read_columns(
     A ``Varied`` entry contributes EVERY universe (§2.3d *expanding*): the answer is one union
     read set, and the ``None`` a conservative member reports dominates it (§5.3).
     """
-    single = isinstance(arrays, Varied) or hasattr(arrays, "node_id")
+    single = isinstance(arrays, Array | Varied | ContextNode)
     outputs: list[Any] = [arrays] if single else list(arrays)
+    members = [member for output in outputs for member in universes_of(output)]
     if source_nid is None:
-        readers: dict[tuple[Session, int], list[Array]] = {}
-        for member in (member for output in outputs for member in universes_of(output)):
-            for nid in member.session.reachable_sources(member.node_id):
-                readers.setdefault((member.session, nid), []).append(member)
-        # an array that never reaches a source would read as "every column" of it
-        by_name: dict[str, list[tuple[str, ...] | None]] = {}
-        for (session, nid), reading in sorted(readers.items(), key=lambda item: item[0][1]):
-            by_name.setdefault(session.source_name(nid), []).append(read_columns(reading, nid))
         # a name can repeat across Sessions or source params, so one key may be several sources
+        by_name: dict[str, list[tuple[str, ...] | None]] = {}
+        for member in members:
+            session = member.session
+            for nid in sorted(session.reachable_sources(member.node_id)):
+                by_name.setdefault(session.source_name(nid), []).append(read_columns(member, nid))
         return {name: _union(reads) for name, reads in by_name.items()}
 
     sentinel = object()
@@ -229,4 +225,11 @@ def read_columns(
 
     # PER graph, so a conservative one dominates the union rather than being masked by a sibling
     # that happens to narrow: reading a subset for one output still reads the whole record.
-    return _union([one(member) for arr in outputs for member in universes_of(arr)])
+    # A member that never reaches the source reads nothing of it, not "every column".
+    return _union(
+        [
+            one(member)
+            for member in members
+            if source_nid in member.session.reachable_sources(member.node_id)
+        ]
+    )

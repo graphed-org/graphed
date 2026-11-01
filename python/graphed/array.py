@@ -542,12 +542,11 @@ class Array:
         # M54: a backend that can tell a behavior METHOD from a field or property answers here;
         # a method is handed back as a callable, everything else records `field` as before.
         classify = getattr(self._session.backend, "attribute_kind", None)
-        missing = ""
         if classify is not None:
             try:
                 kind = classify(self._session.form(self), name)
-            except AttributeError as err:
-                kind, missing = None, str(err)
+            except AttributeError:
+                kind = None
             if kind == "method":
                 return BoundMethod(self, name)
             if kind == "introspection":  # answered at record time; nothing is recorded
@@ -557,10 +556,7 @@ class Array:
         try:
             return self._session.record_op("field", [self], {"field": name})
         except GraphedTypeError as err:
-            # a behavior's own failure keeps its own reason; only a failed lookup is a missing name
-            lookup = isinstance(err.__cause__, AttributeError)
-            detail = missing if lookup and missing else err.detail
-            raise MissingFieldError(err.op, err.provenance, detail) from None
+            raise MissingFieldError(err.op, err.provenance, err.detail) from None
 
     def __iter__(self) -> Any:
         # int __getitem__ (M13) would otherwise make Array INFINITELY iterable through Python's
