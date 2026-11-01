@@ -174,10 +174,10 @@ def test_a_second_lost_chunk_adds_to_the_first() -> None:
 
 @pytest.mark.parametrize(
     "plan",
-    [plan_of(Chunks()), _skipping(next_tasks=lambda ctx: None)],
-    ids=["not-skipping", "pull-stream"],
+    [plan_of(Chunks()), _skipping(next_tasks=lambda ctx: None), object.__new__(DurablePlanV2)],
+    ids=["not-skipping", "pull-stream", "staged"],
 )
-def test_a_plan_that_cannot_rerun_raises_the_loss(plan: Plan[Any]) -> None:
+def test_a_plan_that_cannot_rerun_raises_the_loss(plan: Any) -> None:
     err = LostError(label(1))
     with pytest.raises(LostError) as info:
         without_lost(plan, err)

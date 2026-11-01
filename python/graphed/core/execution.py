@@ -452,13 +452,13 @@ def skipping(
     )
 
 
-def without_lost(plan: Plan[Any], err: BaseException) -> Plan[Any]:
+def without_lost(plan: Plan[Any] | DurablePlanV2, err: BaseException) -> Plan[Any]:
     """Return a skipping ``plan`` for a rerun with lost-worker ``err``'s chunk failed.
 
     Raises ``err`` when there is no such rerun: the plan is not skipping, the worker held no chunk
     of the plan, or a pull stream cannot be replayed.
     """
-    process = plan.process
+    process = plan.process if isinstance(plan, Plan) else None
     label = getattr(err, "partition", "")
     if (
         not isinstance(process, _SkipProcess)
