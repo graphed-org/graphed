@@ -34,6 +34,7 @@ def _plan(*entries: int, fail: bool = False) -> Plan[int]:
 def test_with_block_runs_a_plan() -> None:
     with SequentialRunner() as runner:
         assert isinstance(runner, SequentialRunner)
+        assert runner.max_in_flight == 1
         assert runner.run(_plan(1, 2)).value == 3
 
 
@@ -91,7 +92,6 @@ def test_close_is_safe_twice_and_the_runner_still_runs() -> None:
     runner.close()
     runner.close()
     assert runner.run(_plan(4)).value == 4
-    assert runner.max_in_flight == 1
 
 
 def test_exit_does_not_swallow_the_failure() -> None:
