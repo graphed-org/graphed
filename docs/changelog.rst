@@ -18,7 +18,7 @@ Inspecting a recording
   ``graphed.explain`` still works and raises a ``DeprecationWarning``.
 * A misspelled attribute says what is missing and offers a close name:
   ``no field named 'ptt' in Muon (did you mean 'pt'?)``, from ``ev.Muon.ptt`` and ``ev["ptt"]``
-  alike. Reading ``.form`` points at ``.typestr``.
+  alike (#177). Reading ``.form`` points at ``.typestr``.
   A coffea collection now gives this message rather than a bare ``AttributeError: ptt``.
 
 Plans returned wrong values for row-axis operations, and now refuse them
