@@ -578,7 +578,7 @@ runner equals the uninterrupted run bit for bit.
     first reused: 0  result: [1499 1493 1518 1490]
     second reused: 6  result: [1499 1493 1518 1490]
 
-``store`` is the root every worker opens, not a store object: a directory, which must be on a
+``store`` is the root every worker opens: a ``Store`` or a directory, which must be on a
 filesystem every worker mounts, or an fsspec URL with ``storage_options``. Each worker thread
 writes its own journal under it. A worker that cannot reach it raises
 ``graphed.checkpoint.StoreUnavailableError`` naming the root; errors from your own code pass through
