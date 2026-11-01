@@ -638,8 +638,9 @@ class Array:
 
         Without ``name=`` two distinct callables that derive one ``__name__`` are told apart by a
         per-Session ordinal. Pass ``name=`` to declare the identity yourself: a rerun of the same
-        definition under one name gives the same node, as a notebook cell does, and a callable that differs raises :class:`~graphed.GraphedError` (a
-        :class:`~graphed.GraphedWarning` when the two cannot be compared).
+        definition under one name gives the same node, as a notebook cell does, and a callable
+        that differs raises :class:`~graphed.GraphedError` (a :class:`~graphed.GraphedWarning`
+        when the two cannot be compared).
 
         ``output_type=`` declares the type of each element of ``fn``'s result (a type string, a
         dtype or a Python type, as the backend accepts); it becomes the recorded form and is part
