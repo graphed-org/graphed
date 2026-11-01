@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import warnings
-from typing import Any
+from typing import Any, cast
 
 import awkward as ak
 import numpy as np
@@ -29,6 +29,10 @@ def typestr(array: Any) -> str:
 
 def count(values: Any) -> Any:
     return ak.num(values, axis=1)
+
+
+def double(values: Any) -> Any:
+    return values * 2
 
 
 def raises_on_metadata(values: Any) -> Any:
@@ -65,7 +69,9 @@ def test_a_scalar_result_is_a_scalar_form() -> None:
 )
 def test_a_function_that_cannot_be_traced_warns_and_records_the_input_type(fn: Any) -> None:
     _, ev = events()
-    with pytest.warns(GraphedWarning, match="could not infer the type of .*pass output_type=") as w:
+    with pytest.warns(
+        GraphedWarning, match="could not infer the type of .*pass output_type="
+    ) as w:
         out = ev.m.map(fn)
     assert typestr(out) == typestr(ev.m)
     assert w[0].filename == __file__
@@ -106,5 +112,5 @@ def test_a_backend_that_cannot_trace_stays_silent_and_keeps_its_default_form() -
     x = session.source("x", form=NumpyForm(np.dtype("f8")), data=np.array([1.0]))
     with warnings.catch_warnings():
         warnings.simplefilter("error", GraphedWarning)
-        out = x.map(lambda values: values * 2)
-    assert session.form(out).dtype == np.dtype(object)
+        out = x.map(double)
+    assert cast("NumpyForm", session.form(out)).dtype == np.dtype(object)

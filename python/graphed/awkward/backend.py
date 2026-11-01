@@ -424,9 +424,7 @@ class AwkwardBackend:
         operands = [self._with_behavior(f.tt) for f in forms]
         return AwkwardForm(apply(op, operands, params, behavior=self._behavior))
 
-    def traced_form(
-        self, fn: Callable[..., object], inputs: Sequence[Form]
-    ) -> AwkwardForm | None:
+    def traced_form(self, fn: Callable[..., object], inputs: Sequence[Form]) -> AwkwardForm | None:
         """Return the form ``fn`` gives ``inputs``' typetracers, ``None`` if it is no typetracer."""
         forms = cast("Sequence[AwkwardForm]", inputs)
         result = fn(*(self._with_behavior(f.tt) for f in forms))
