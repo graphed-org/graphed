@@ -7,6 +7,16 @@ Newest release first. Numbers in parentheses are the pull requests on
 0.0.11 (unreleased)
 -------------------
 
+``gak.apply_correction`` takes keywords and checks the payload as you record
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``gak.apply_correction(cset, "jet_sf", syst="nominal", pt=jets.pt, eta=jets.eta)`` maps keywords
+onto the correction's named inputs and records the same node as ``args=["nominal", "$0", "$1"]``.
+A name the set does not hold, listing the names it does, and inputs the correction does not take
+raise ``GraphedTypeError`` at that line; they used to surface as a ``StageError`` after data was
+read. ``evaluator`` is optional. A template call that still passes an ``evaluator`` keeps a wrong
+input count as a run-time error. The older ``evaluator``-only recording is unchanged (#144).
+
 Plans returned wrong values for row-axis operations, and now refuse them
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

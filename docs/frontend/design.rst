@@ -644,14 +644,7 @@ underneath; it takes plain ``Array`` inputs and knows nothing about labels.
     ctx  = vary(ctx, "jes", collections={"Jet": {
         "up": gak.with_field(jets, jets.pt * 1.10, "pt")}})
 
-    # with `args=`, `payload` IS the evaluation: the correction is rebuilt from those bytes through
-    # graphed's correctionlib plugin on every backend, so the `evaluator` positional goes unread --
-    # if it did not, this example would raise instead of printing
-    def never_called(*_: object) -> object:
-        raise AssertionError("the template path does not consult the caller's callable")
-
-    sf = gak.apply_correction(payload, "jet_sf", [gak.flatten(ctx.Jet.pt)],
-                              never_called, args=["$0"])
+    sf = gak.apply_correction(payload, "jet_sf", pt=gak.flatten(ctx.Jet.pt))
     print(labels(sf))
     print(s.materialize(universe(sf, "nominal")).to_list())
     print(s.materialize(universe(sf, "jes_up")).to_list())

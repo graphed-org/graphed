@@ -149,6 +149,28 @@ def correctionlib_contents_descriptor(payload: bytes, correction_name: str) -> P
     )
 
 
+def correctionlib_inputs(
+    payload: bytes,
+) -> tuple[dict[str, tuple[str, ...]], dict[str, tuple[str, ...]]]:
+    """Map each name in a set's ``corrections`` and ``compound_corrections`` to its input names."""
+    from graphed.preserve.externals._helpers import memoized_model_hash
+
+    return memoized_model_hash("correctionlib-inputs", payload, _correctionlib_inputs)
+
+
+def _correctionlib_inputs(
+    payload: bytes,
+) -> tuple[dict[str, tuple[str, ...]], dict[str, tuple[str, ...]]]:
+    from graphed.preserve.externals._helpers import json_bytes
+
+    data = json.loads(json_bytes(payload))
+    regular, stacked = (
+        {entry["name"]: tuple(i["name"] for i in entry["inputs"]) for entry in data.get(key) or ()}
+        for key in ("corrections", "compound_corrections")
+    )
+    return regular, stacked
+
+
 def onnx_weights_descriptor(payload: bytes) -> PayloadDescriptor:
     """Describe an ONNX model payload's bytes."""
     from graphed.preserve.externals._helpers import memoized_model_hash

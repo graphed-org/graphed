@@ -484,44 +484,123 @@ class _TemplateExternal:
         return self.call(*values)
 
 
+def _correction_inputs(blob: bytes, name: str, compound: bool) -> tuple[str, ...]:
+    """Return the input names of ``name``, resolved as the correctionlib plugin resolves it."""
+    regular, stacked = payloads.correctionlib_inputs(blob)
+    if not compound and name in regular:
+        return regular[name]
+    if name in stacked:
+        return stacked[name]
+    held = stacked if compound else {**regular, **stacked}
+    raise GraphedTypeError(
+        "correction",
+        capture(),
+        f"no {'compound ' if compound else ''}correction {name!r} in this set; "
+        f"it has: {', '.join(sorted(held))}",
+    )
+
+
+def _named_template(
+    wanted: tuple[str, ...], name: str, named: Mapping[str, object]
+) -> tuple[list[Array], list[object]]:
+    """Order keyword inputs as the correction declares them: the inputs and ``args=`` they mean."""
+    if set(named) != set(wanted):
+        raise GraphedTypeError(
+            "correction",
+            capture(),
+            f"correction {name!r} takes inputs ({', '.join(wanted)}); got ({', '.join(named)})",
+        )
+    arrays: list[Array] = []
+    args: list[object] = []
+    for key in wanted:
+        value = named[key]
+        if isinstance(value, Array):
+            args.append(f"${len(arrays)}")
+            arrays.append(value)
+        else:
+            args.append(value)
+    if not arrays:
+        raise GraphedTypeError(
+            "correction", capture(), f"correction {name!r} needs at least one Array input"
+        )
+    return arrays, args
+
+
 def apply_correction(
     payload: str | bytes,
     name: str,
-    inputs: Sequence[Array],
-    evaluator: Callable[..., object],
+    /,
+    inputs: Sequence[Array] | None = None,
+    evaluator: Callable[..., object] | None = None,
     *,
     args: list[object] | None = None,
     compound: bool = False,
+    **named: object,
 ) -> Array:
     """Record a correctionlib scale-factor application as an External node.
+
+    Keywords name the correction's own inputs, in any order, and a string input such as a
+    systematic is an ordinary keyword (an input called ``inputs``, ``evaluator``, ``args`` or
+    ``compound`` takes the positional form)::
+
+        sf = gak.apply_correction(cset, "jet_sf", syst="nominal", pt=jets.pt, eta=jets.eta)
+
+    ``payload`` is the set's JSON bytes or a path to it. A name the set does not hold and inputs
+    the correction does not take raise :class:`~graphed.errors.GraphedTypeError` at this line,
+    from the payload alone; a value outside a correction's domain is still a run-time error.
 
     ``compound=True`` names an entry of the set's ``compound_corrections`` rather than its
     ``corrections``; without it a regular correction wins and a compound-only name falls back to
     ``compound_corrections``.
 
-    With ``args=`` (e.g. ``["nominal", "$0", "$1"]``): the M28 preservation-aligned path —
-    content-identity descriptor, no path in the IR, inputs passed NATIVELY (awkward/numpy, jagged
-    preserved) per the template, which replay obeys identically.
-    Without it: the original M3 recording, unchanged (``payload`` must then be a path).
+    Positionally, ``inputs`` are the correction's inputs in order. ``args=`` (e.g.
+    ``["nominal", "$0", "$1"]``) instead spells the call as a template over them, with constants
+    where the correction takes one. Both record the same node as the keywords do: content-identity
+    descriptor, no path in the IR, inputs passed NATIVELY (awkward/numpy, jagged preserved) per
+    the template, which replay obeys identically. EVERY backend — in-process included — evaluates
+    through the correctionlib preserve plugin, rebuilt from the payload bytes under the recorded
+    template: in-process gets the plugin's flat-buffer evaluation instead of correctionlib's
+    per-call ``ak.transform`` wrapper. The recorded type is the broadcast of every slotted input,
+    as that wrapper broadcasts them.
 
-    ``evaluator`` is the eager evaluation for the ``args=None`` (M3) path ONLY. On the template
-    path EVERY backend — in-process included — evaluates through the correctionlib preserve
-    plugin, rebuilt from the payload bytes under the recorded template, so ``evaluator`` is
-    ignored: the two cannot diverge, and in-process gets the plugin's flat-buffer evaluation
-    instead of correctionlib's per-call ``ak.transform`` wrapper. The recorded type is the
-    broadcast of every slotted input, as that wrapper broadcasts them.
+    ``evaluator`` without ``args=`` is the original M3 recording, unchanged: ``payload`` must be a
+    path and the callable is the evaluation, so nothing here checks it. With ``args=`` it is
+    ignored.
     """
     # recorded only when set, so a regular correction's node identity is what it always was
     which: dict[str, ParamValue] = {"compound": True} if compound else {}
-    if args is None:
-        return inputs[0].session.record_external(
-            "correction", evaluator, list(inputs), {"path": str(payload), "name": name, **which}
+    arrays = list(inputs or ())
+    if named:
+        if arrays or args is not None or evaluator is not None:
+            raise GraphedTypeError(
+                "correction",
+                capture(),
+                "pass a correction's inputs as keywords or as inputs/args=, not both",
+            )
+    elif not arrays:
+        raise TypeError("apply_correction needs inputs")
+    elif args is None and evaluator is not None:
+        return arrays[0].session.record_external(
+            "correction", evaluator, arrays, {"path": str(payload), "name": name, **which}
         )
     blob = _payload_bytes(payload)
-    entries = _parse_template(args, len(inputs), constants=True, groups=False)
-    slots = [inputs[i] for kind, i in entries if kind == "slot"]
-    session = inputs[0].session
-    session._mine(list(inputs), ("correction", capture()))  # before `session.form` reads an input
+    wanted = _correction_inputs(blob, name, compound)
+    if named:
+        arrays, args = _named_template(wanted, name, named)
+    elif args is None:
+        args = [f"${i}" for i in range(len(arrays))]
+    entries = _parse_template(args, len(arrays), constants=True, groups=False)
+    # a call still carrying an evaluator is not refused: frozen m28 records a short template
+    if evaluator is None and len(entries) != len(wanted):
+        raise GraphedTypeError(
+            "correction",
+            capture(),
+            f"correction {name!r} takes inputs ({', '.join(wanted)}); got {len(entries)} "
+            "positional inputs",
+        )
+    slots = [arrays[i] for kind, i in entries if kind == "slot"]
+    session = arrays[0].session
+    session._mine(arrays, ("correction", capture()))  # before `session.form` reads an input
     descriptor = payloads.correctionlib_contents_descriptor(blob, name)
     params: dict[str, ParamValue] = {
         "name": name,
@@ -534,7 +613,7 @@ def apply_correction(
         _TemplateExternal(
             descriptor.kind, blob, {**params, "content_hash": descriptor.content_hash}, None
         ),
-        list(inputs),
+        arrays,
         params,
         descriptor=descriptor,
         # the correctionlib plugin's value is float64 (its outputs are `real`), checked at run time
