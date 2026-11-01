@@ -27,7 +27,7 @@ from typing import Any
 import awkward as ak
 import numpy as np
 
-from graphed.errors import PackKeyOverflow
+from graphed.errors import PackKeyOverflowError
 
 #: field-width stride (bits) of the big-endian pack — 20 bits/field fits run<2^24, lumi/event<2^20
 #: into a u64 (plan §2.1; overflow→fixed-width-bytes is Phase-2).
@@ -180,7 +180,7 @@ def pack_key(rec: ak.Array, on: Sequence[str]) -> ak.Array:
         # F8: a field value >= 2**stride bleeds into the adjacent field and silently collides —
         # raise loudly instead (guard skipped on the typetracer, which carries no data to check).
         if ak.backend(col) != "typetracer" and bool(ak.any(col >= limit)):
-            raise PackKeyOverflow(
+            raise PackKeyOverflowError(
                 f"pack_key: field {f!r} has a value >= 2**{_PACK_STRIDE} (overflow->bytes is "
                 "Phase-2)"
             )
