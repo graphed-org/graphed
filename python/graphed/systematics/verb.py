@@ -1,11 +1,12 @@
 """`graphed.vary`: the one functional verb that registers variations (§2.1).
 
 A neutral module verb — like `join`/`repartition`, never an `Array` method, never gak, never
-numpy-idiom — with three overloads distinguished by the target: the loose primitive over an
-`Array`/`Varied` (`registration.vary_loose`), and the weight and shift forms over an event context
-(`graphed.context.vary_context`). It NEVER mutates: the result is a new object of the target's
-kind and the target stays valid and unchanged, because variation history is object lineage
-(§2.6b). This module is the target dispatch and the transactional mint, above both overloads.
+numpy-idiom — with overloads distinguished by the target: the loose primitive over an
+`Array`/`Varied` (`registration.vary_loose`), the weight and shift forms over an event context
+(`graphed.context.vary_context`), and a flat `ScalarFactor` over a number. It NEVER mutates: the
+result is a new object of the target's kind and the target stays valid and unchanged, because
+variation history is object lineage (§2.6b). This module is the target dispatch and the
+transactional mint, above the overloads.
 """
 
 from __future__ import annotations
@@ -24,6 +25,10 @@ from .registration import DEFAULT_MAX_UNIVERSES, vary_loose
 from .varied import Varied, member_of, session_of
 
 
+def _is_number(value: object) -> bool:
+    return isinstance(value, Real) and not isinstance(value, bool)
+
+
 class ScalarFactor:
     """A flat factor: `array * factor` registers its family on `array`.
 
@@ -34,29 +39,23 @@ class ScalarFactor:
 
     __slots__ = ("_members", "_name", "_nominal")
 
-    #: lets `Array._binary` defer to the reflected dunder below
-    _scalar_factor = True
-
-    def __init__(self, nominal: float, name: str, members: Mapping[str, float]) -> None:
-        """Hold the factor's ``nominal`` value and its ``members`` by tag."""
-        self._nominal = nominal
+    def __init__(self, nominal: Any, name: str, members: Mapping[str, Any]) -> None:
+        """Hold the factor's ``nominal`` value and its ``members`` by tag, all finite numbers."""
+        if not members or not all(map(_is_number, (nominal, *members.values()))):
+            raise GraphedError(
+                f"the scalar factor {name!r} needs number members, as in "
+                f"graphed.vary(1.0, {name!r}, up=1.025, down=0.975), got {dict(members)!r}"
+            )
+        self._nominal = float(nominal)
         self._name = name
-        self._members = dict(members)
+        self._members = {tag: float(value) for tag, value in members.items()}
+        if not all(map(isfinite, (self._nominal, *self._members.values()))):
+            raise GraphedError(f"the scalar factor {name!r} needs finite numbers, got {self!r}")
 
     def __repr__(self) -> str:
         """Show what `graphed.vary` was given."""
         members = "".join(f", {tag}={value!r}" for tag, value in self._members.items())
         return f"graphed.vary({self._nominal!r}, {self._name!r}{members})"
-
-    def __eq__(self, other: object) -> bool:
-        """Refuse an array: its `__eq__` defers here, and the default would answer a plain bool."""
-        if isinstance(other, Array | Varied):
-            raise TypeError(
-                f"unsupported operand: the scalar factor {self._name!r} only multiplies an array"
-            )
-        return self is other
-
-    __hash__ = object.__hash__
 
     def __getattr__(self, name: str) -> Any:
         """Refuse what only an array answers, naming the way to one."""
@@ -82,10 +81,6 @@ class ScalarFactor:
         return vary(target, self._name, points=points)
 
     __rmul__ = __mul__
-
-
-def _is_number(value: object) -> bool:
-    return isinstance(value, Real) and not isinstance(value, bool)
 
 
 def vary(
@@ -129,17 +124,7 @@ def vary(
             or max_universes != DEFAULT_MAX_UNIVERSES
         ):
             raise GraphedError(f"the scalar factor {name!r} takes only its members, up=1.025")
-        if not tags or not all(_is_number(value) for value in tags.values()):
-            raise GraphedError(
-                f"the scalar factor {name!r} needs number members, as in "
-                f"graphed.vary(1.0, {name!r}, up=1.025, down=0.975), got {tags!r}"
-            )
-        members = {tag: float(value) for tag, value in tags.items()}
-        if not all(map(isfinite, (float(target), *members.values()))):
-            raise GraphedError(
-                f"the scalar factor {name!r} needs finite numbers, got {target!r} and {tags!r}"
-            )
-        return ScalarFactor(float(target), name, members)
+        return ScalarFactor(target, name, tags)
     declares, placements = _parse_points(points)
     overload: Any  # the two context overloads take one arg shape; mypy keeps its own narrowing
     if isinstance(target, Array | Varied):

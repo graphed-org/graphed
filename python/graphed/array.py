@@ -301,17 +301,20 @@ class Array:
 
     # ---- elementwise recording -------------------------------------------------
     def _binary(self, op: str, other: object, *, reflected: bool = False) -> Array:
-        if getattr(other, "_varied_container", False) or getattr(other, "_scalar_factor", False):
-            # the other side's reflected dunder takes the op (mypy special-cases a
+        if getattr(other, "_varied_container", False):
+            # the container's reflected dunder maps the op per universe (mypy special-cases a
             # NotImplemented return only in the dunders themselves, not in this shared helper)
             return NotImplemented  # type: ignore[no-any-return]
         if isinstance(other, Array):
             inputs = [other, self] if reflected else [self, other]
             return self._session.record_op(op, inputs)
-        params: dict[str, ParamValue] = {
-            **scalar_params(other),
-            "side": "l" if reflected else "r",
-        }
+        try:
+            scalar = scalar_params(other)
+        except TypeError:
+            if op in ("eq", "ne"):  # Python's fallback would answer a plain bool
+                raise
+            return NotImplemented  # type: ignore[no-any-return]
+        params: dict[str, ParamValue] = {**scalar, "side": "l" if reflected else "r"}
         return self._session.record_op(op, [self], params)
 
     def _unary(self, op: str) -> Array:

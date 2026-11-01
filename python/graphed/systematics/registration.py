@@ -7,6 +7,7 @@ overload over an `Array`/`Varied` (`vary_loose`). The verb itself is `graphed.sy
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
+from numbers import Real
 from typing import Any, NamedTuple
 
 from ..array import Array, add_labels
@@ -380,9 +381,10 @@ def _guard(
         total *= size
     if total > max_universes:
         grid = " x ".join(f"{family}({size})" for family, size in sizes)
+        varying = ", ".join(sorted(foreign_coords))
         raise GraphedError(
             f"graphed.vary({name!r}) would fan out to {total} universes ({grid}): its members "
-            f"are computed from arrays that already vary with {', '.join(foreign_coords)}.\n"
+            f"are computed from arrays that already vary with {varying}.\n"
             f"If {name} is independent of them, multiply in a factor: "
             f"{name} = graphed.vary(1.0, {name!r}, up=..., down=...)\n"
             "For one-at-a-time templates, pass composes_as_union=True.\n"
@@ -610,9 +612,13 @@ def _flatten(member: object) -> list[Array]:
         return [array for item in members_of(member).values() for array in _flatten(item)]
     if isinstance(member, Array):
         return [member]
+    hint = (
+        "; a flat factor is graphed.vary(1.0, name, up=1.025, down=0.975), multiplied into it"
+        if isinstance(member, Real)
+        else ""
+    )
     raise GraphedError(
-        f"a variation member must be an Array or a Varied, got {type(member).__name__}; a flat "
-        "factor is graphed.vary(1.0, name, up=1.025, down=0.975), multiplied into the array"
+        f"a variation member must be an Array or a Varied, got {type(member).__name__}{hint}"
     )
 
 
