@@ -12,15 +12,14 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import cast
 
 from graphed import Array, Session
 from graphed.core import Partition
-from graphed.materialization import _partition_chunk, _Sample, _sample_of
+from graphed.materialization import _first_sample, _partition_chunk
 from graphed.varied import refuse_container
 
 from .errors import SourceFrame, StageError
-from .lowering import LoweredGraph, LoweredOp, lower
+from .lowering import LoweredGraph, lower
 
 
 def _chain(lowered: LoweredGraph, node_id: int) -> tuple[SourceFrame, ...]:
@@ -150,25 +149,25 @@ def trace(array: Array, *, entries: int) -> None:
     if not isinstance(array, Array):
         raise TypeError(f"trace follows a deferred Array, not {type(array).__name__}")
     session = array.session
-    sample = cast(_Sample, _sample_of(entries, None))
+    sample = _first_sample(entries, "trace")
     lowered = lower(session, array, opt_level=0)
     values = sample.reads(session, [array])
     _walk(session, array, lowered, {}, sample.where, values)
     # a dict keeps the first position of a line; its row is its last op, or the op that emptied it
-    rows: dict[tuple[str, int], tuple[LoweredOp, int | str, int | str]] = {}
+    rows: dict[tuple[str, int], str] = {}
     emptied: tuple[str, int] | None = None
     for op in lowered.ops:
-        line = op.provenance.filename, op.provenance.lineno
+        frame = op.provenance
+        line = frame.filename, frame.lineno
         if line == emptied:
             continue
         rows_in = next((n for n in (_rows(values[i]) for i in op.input_ids) if n != "-"), "-")
         rows_out = _rows(values[op.node_id])
-        rows[line] = op, rows_in, rows_out
-        if emptied is None and rows_out == 0 and rows_in not in ("-", 0):
-            emptied = line
-    for line, (op, rows_in, rows_out) in rows.items():
-        mark = "   <-- removed every event" if line == emptied else ""
-        print(
-            f"{Path(line[0]).name}:{line[1]:<5} {op.op:<16} {rows_in:>9} -> {rows_out:<9} "
-            f"{op.provenance.source}{mark}"
+        empties = emptied is None and rows_out == 0 and rows_in not in ("-", 0)
+        mark = "   <-- removed every event" if empties else ""
+        rows[line] = (
+            f"{Path(frame.filename).name}:{frame.lineno:<5} {op.op:<16} "
+            f"{rows_in:>9} -> {rows_out:<9} {frame.source}{mark}"
         )
+        emptied = line if empties else emptied
+    print("\n".join(rows.values()))

@@ -95,6 +95,7 @@ def _unfused(
     """
     arena = GraphStore.deserialize(process.ir)
     frames = dict(process.frames)
+    boundary_ops = resolve_backend(process.backend_factory).boundary_ops()
     nodes: list[dict[str, Any]] = []
     ops: list[LoweredOp] = []
     value_of: dict[int, int] = {}
@@ -104,9 +105,10 @@ def _unfused(
         nodes.append({**node, "id": new, "inputs": inputs})
         frame = SourceFrame(*frames.get(key, ("<no recorded line>", 0)))
         kind = node["kind"]
-        op = node["name"] or kind  # an External has no name
+        name = node["name"] or kind  # an External has no name
         lowered_kind = "op" if kind == "reduction" else kind
-        ops.append(LoweredOp(new, op, lowered_kind, frame, tuple(inputs), "", kind != "op"))
+        boundary = lowered_kind != "op" or name in boundary_ops
+        ops.append(LoweredOp(new, name, lowered_kind, frame, tuple(inputs), "", boundary))
         value_of[key[0]] = new
 
     for node in arena.nodes():

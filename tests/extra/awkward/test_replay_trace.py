@@ -122,13 +122,6 @@ def _explode(chunk: Any) -> Any:
     raise ValueError("boom")
 
 
-def test_the_positional_form_still_replays_as_written() -> None:
-    _, counts = _lead()
-    plan = _plan(counts)
-    replayed = gd.replay(plan, 0, counts)
-    assert ak.to_list(replayed.value[0]) == [0, 1, 2]
-
-
 def test_other_outputs_name_the_fix() -> None:
     kept, counts = _lead()
     with pytest.raises(ValueError, match="none to take them from the plan"):
@@ -158,16 +151,32 @@ def test_replay_adds_nothing_to_a_plans_pickle() -> None:
     assert len(pickle.dumps(replace(plan.process, reader=None))) == size
 
 
-def test_replay_lowers_alike_with_and_without_outputs() -> None:
+@pytest.mark.parametrize(
+    "reduced",
+    [lambda x: gak.sum(x, axis=None), lambda x: gak.max(x, axis=None), lambda x: gak.mean(x)],
+    ids=["sum", "max", "mean"],
+)
+def test_replay_lowers_alike_with_and_without_outputs(reduced: Any) -> None:
     ev, _ = _events()
-    total = gak.sum(ev.met.map(_double), axis=None)
+    total = reduced(ev.met.map(_double))
     plan = _plan(total)
     from_plan, as_written = (
         [(s.node.op, s.node.kind, s.node.boundary) for s in gd.replay(plan, 0, *given).steps()]
         for given in ((), (total,))
     )
     assert ("external", "external", True) in from_plan
-    assert ("ak.sum", "op", True) in from_plan
+    assert from_plan == as_written
+
+
+def test_a_per_event_sum_is_a_boundary_with_and_without_outputs() -> None:
+    ev, _ = _events()
+    totals = gak.sum(ev.pt, axis=1)
+    plan = _plan(totals)
+    from_plan, as_written = (
+        [(s.node.op, s.node.boundary) for s in gd.replay(plan, 0, *given).steps()]
+        for given in ((), (totals,))
+    )
+    assert ("ak.sum", True) in from_plan
     assert from_plan == as_written
 
 
@@ -235,7 +244,7 @@ def test_trace_refuses_a_varied_array_and_a_bad_count() -> None:
     ev, _ = _events()
     with pytest.raises(graphed.GraphedError, match=r"graphed\.debug\.trace"):
         gd.trace(graphed.vary(ev.met, "sf", up=ev.met * 2, down=ev.met / 2), entries=4)
-    with pytest.raises(ValueError, match="positive int"):
+    with pytest.raises(ValueError, match=r"trace\(entries=\) is a positive int"):
         gd.trace(ev.met, entries=0)
     h = gh.histogram(gak.flatten(ev.pt), bins=4, range=(0, 8))
     with pytest.raises(TypeError, match="not Histogram"):
