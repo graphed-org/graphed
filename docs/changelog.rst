@@ -43,6 +43,8 @@ One rule at the deferred/eager boundary
 * Combining a deferred array with an eager array or list (``x * np.ones(n)``) names
   ``from_awkward`` and ``graphed.materialize``. Numpy scalars stay operands.
 * ``x.compute()`` says to use ``graphed.materialize``. A real field named ``compute`` still reads.
+* An attribute of a whole-array scalar (``gak.sum(x, axis=None).shape``) raises at your line. It
+  recorded a field of the tracer, and ``.nplike`` then failed at run time.
 
 Plans returned wrong values for row-axis operations, and now refuse them
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

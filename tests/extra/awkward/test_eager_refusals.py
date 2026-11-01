@@ -166,6 +166,15 @@ def test_a_deferred_value_is_no_scalar_operand() -> None:
         gak.fill_none(ev.x, ev)
 
 
+@pytest.mark.parametrize("name", ["nplike", "tolist", "shape"])
+def test_a_scalars_tracer_attributes_are_no_fields(name: str) -> None:
+    total = gak.sum(_events().MET_pt, axis=None)
+    nodes = total.session.node_count()
+    with pytest.raises(MissingFieldError, match=f"no field named '{name}'"):
+        getattr(total, name)
+    assert total.session.node_count() == nodes
+
+
 def test_a_field_named_like_a_verb_reads_the_field() -> None:
     fields = {"compute": [1.0, 2.0], "sum": [3.0, 4.0], "to_list": [5.0, 6.0]}
     ev = from_awkward("ev", ak.Array(fields))
