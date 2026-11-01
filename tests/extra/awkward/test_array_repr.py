@@ -52,6 +52,49 @@ def test_repr_and_dir_read_nothing_and_record_nothing() -> None:
     assert ev.session.node_count() == count
 
 
+@pytest.mark.parametrize(
+    ("make", "text"),
+    [
+        (lambda ev: gak.sum(ev.MET_pt), "float64"),
+        (lambda ev: gak.max(ev.MET_pt, axis=0), "?float64"),
+        (lambda ev: gak.argmax(ev.MET_pt), "?int64"),
+    ],
+)
+def test_a_scalar_has_a_repr_and_a_dir(make: Any, text: str) -> None:
+    scalar = make(_events())
+    assert repr(scalar) == f"graphed.Array<{text}, from 'Events'>"
+    assert "map" in dir(scalar)
+    assert "ndim" not in dir(scalar)
+
+
+def test_a_behavior_property_returning_a_plain_value_keeps_a_repr_and_a_dir() -> None:
+    class Constant(ak.Array):  # type: ignore[misc]
+        @property
+        def constant(self) -> float:
+            return 1.5
+
+    behavior: Any = {("*", "C"): Constant}
+    session = Session(AwkwardBackend(behavior=behavior))
+    ev = from_awkward("x", ak.Array({"x": [1.0]}), session=session)
+    value = gak.zip({"x": ev.x}, with_name="C").constant
+    assert repr(value) == "graphed.Array<float, from 'x'>"
+    assert "map" in dir(value)
+
+
+def test_a_bound_methods_repr_names_the_receivers_node() -> None:
+    pt = _events().Jet_pt
+    mu = gak.zip({"pt": pt, "eta": pt, "phi": pt, "mass": pt}, with_name="Momentum4D")
+    assert repr(mu.deltaR) == f"BoundMethod('deltaR' of Array(node_id={mu.node_id}))"
+
+
+def test_dir_lists_only_names_attribute_access_reaches() -> None:
+    session = Session(AwkwardBackend())
+    data = ak.Array({"_private": [1.0], "not an identifier": [1.0], "kept": [1.0]})
+    names = dir(from_awkward("x", data, session=session))
+    assert "kept" in names
+    assert not {"_private", "not an identifier"} & set(names)
+
+
 def test_dir_lists_fields_and_keeps_the_frontend_names() -> None:
     names = dir(_events())
     assert {"Jet_pt", "MET_pt", "filter", "map", "session", "typestr"} <= set(names)

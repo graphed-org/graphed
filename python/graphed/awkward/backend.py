@@ -166,10 +166,16 @@ class AwkwardForm:
     tt: ak.Array
 
     def describe(self) -> str:
-        # a whole-array reduction's form is a scalar typetracer, which has a dtype but no `.type`
         """Return the awkward type string of this form."""
         tt_type = getattr(self.tt, "type", None)
-        return str(self.tt.dtype if tt_type is None else tt_type)
+        if tt_type is not None:
+            return str(tt_type)
+        # a whole-array reduction's form is a scalar typetracer, or an option scalar's MaybeNone
+        # around one; a behavior property may also hand back a plain Python value
+        content = getattr(self.tt, "content", None)
+        if content is not None:
+            return f"?{AwkwardForm(content).describe()}"
+        return str(getattr(self.tt, "dtype", type(self.tt).__name__))
 
     @property
     def is_typetracer(self) -> bool:
@@ -183,6 +189,7 @@ _BOUNDARY = frozenset(
 # ak.Array descriptors the record-time typetracer answers as the data would; it does not carry the
 # source's attrs/behavior/named axes, nor a known length, so those are refused
 _INTROSPECT_EAGER = frozenset({"fields", "type", "typestr", "ndim", "is_tuple", "positional_axis"})
+_EAGER_ONLY = frozenset(dir(ak.Array)) - _INTROSPECT_EAGER
 
 
 _EXTERNAL = frozenset({"map", "correction", "onnx", "external"})
@@ -464,8 +471,9 @@ class AwkwardBackend:
     def attribute_names(self, form: AwkwardForm) -> set[str]:
         """Return what `arr.<name>` answers beyond the frontend's own: fields, then behaviors."""
         tt = self._with_behavior(form.tt)
-        hidden = set(dir(ak.Array)) - _INTROSPECT_EAGER
-        return {*tt.fields, *(n for n in dir(tt) if not n.startswith("_") and n not in hidden)}
+        if not isinstance(tt, ak.Array | ak.Record):  # a scalar has neither
+            return set()
+        return {*tt.fields, *(n for n in dir(tt) if n[0] != "_" and n not in _EAGER_ONLY)}
 
     def introspect(self, form: AwkwardForm, name: str) -> object:
         """Answer an `introspection` attribute from the record-time typetracer.

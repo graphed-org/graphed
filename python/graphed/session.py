@@ -137,10 +137,8 @@ class Session:
 
     def __repr__(self) -> str:
         """Show how much this Session has recorded, and on what."""
-        with self._lock:
-            sources = len(self._sources)
-        backend = type(self._backend).__name__
-        return f"<graphed.Session: {self.node_count()} nodes, {sources} sources, {backend}>"
+        counts = f"{self.node_count()} nodes, {len(self.source_ids())} sources"
+        return f"<graphed.Session: {counts}, {type(self._backend).__name__}>"
 
     def __enter__(self) -> Session:
         """Open a scope: array-less reads in this context record here until it exits."""

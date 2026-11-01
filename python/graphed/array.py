@@ -683,7 +683,9 @@ class Array:
         """List the attributes, with the fields and behaviors the backend names for this form."""
         names = getattr(self._session.backend, "attribute_names", None)
         extra = () if names is None else names(self._session.form(self))
-        return sorted({*super().__dir__(), *extra})
+        # `__getattr__` refuses a leading underscore, and `arr.<name>` needs an identifier
+        reachable = (name for name in extra if name.isidentifier() and name[0] != "_")
+        return sorted({*super().__dir__(), *reachable})
 
 
 # ---- the two §2.3e slots, for the systematics layers ---------------------------------------
@@ -763,8 +765,11 @@ class BoundMethod:
         self._name = name
 
     def __repr__(self) -> str:
-        """Show the method name and its receiver."""
-        return f"BoundMethod({self._name!r} of {self._receiver!r})"
+        """Show the method name and its receiver: the node for an array, else the container."""
+        receiver = self._receiver
+        node = isinstance(receiver, Array)
+        shown = f"Array(node_id={receiver.node_id})" if node else repr(receiver)
+        return f"BoundMethod({self._name!r} of {shown})"
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """Record the method call, mapped over the label union when an operand is varied."""
