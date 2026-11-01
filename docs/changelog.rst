@@ -73,6 +73,20 @@ are unchanged, and a plan's bytes are unless a line it names repeats an expressi
   (``uproot.graphed``, coffea) no longer raises ``should never have been encountered``: the
   awkward backend's ``concat`` joins what was read and keeps the unread fields, unread.
 
+A plan says what it does, and saves
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``repr(plan)`` is one line, in place of the raw IR bytes::
+
+    Plan: 20 tasks over 1 file (dimuon.root:Events), reads 5 columns
+
+It reads no data. A ``process`` adds to it with a ``summary()`` method, and a ``reduce`` names its
+outputs with ``output_summaries()``. ``plan.save(path)`` and ``Plan.load(path)`` carry a plan to a
+later session on the same install. The file is a pickle, so load only plans you trust. A graphed
+version other than the one that wrote it refuses it with a clear error; the versions of other
+packages are not checked. It is a transport for submitting and coming back: the durable form of an
+analysis stays its IR and ``graphed.preserve``.
+
 Fixes
 ~~~~~
 

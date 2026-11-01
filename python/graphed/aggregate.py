@@ -22,7 +22,7 @@ from dataclasses import dataclass, replace
 from typing import Any, ClassVar, Generic, TypeVar, cast
 
 from graphed.core import GraphStore, Partition
-from graphed.core.execution import Plan, Task, WorkerResources
+from graphed.core.execution import Plan, Task, WorkerResources, capped, counted
 from graphed.core.plan import _partition_bytes, _sha256_hex
 
 from .array import Array
@@ -267,6 +267,19 @@ class _PartitionReduce(Generic[V]):
             return value
         resolved: V = self.reduce.resolve_services(value)
         return resolved
+
+    def output_summaries(self) -> list[str]:
+        """Describe each output, for a ``reduce`` that says what they are."""
+        hook = getattr(self.reduce, "output_summaries", None)
+        return [] if hook is None else list(hook())
+
+    def summary(self) -> str:
+        """Say what the plan's repr shows of this process; it reads no data and no IR."""
+        named = self.output_summaries()
+        outputs = f"outputs: {capped(named)}, " if named else ""
+        columns = "every column" if self.columns is None else counted(len(self.columns), "column")
+        writes = f", writes {counted(len(self.writes), 'dataset')}" if self.writes else ""
+        return f"{outputs}reads {columns}{writes}"
 
     def part_paths(self, partition: Partition) -> list[str]:
         """Where this partition's parts land, without reading."""
@@ -651,6 +664,15 @@ class _Collated:
     def __call__(self, partition: Partition, resources: WorkerResources) -> dict[str, Any]:
         name = self.route[(partition.uri, partition.tree)]
         return {name: self.processes[name](partition, resources)}
+
+    def summary(self) -> str:
+        """Say what the plan's repr shows of this process: each output, else each plan's name."""
+        named = [
+            output
+            for name, fn in self.processes.items()
+            for output in getattr(fn, "output_summaries", list)() or [name]
+        ]
+        return f"outputs: {capped(named)}"
 
     def part_paths(self, partition: Partition) -> Sequence[str]:
         return _written_parts(
