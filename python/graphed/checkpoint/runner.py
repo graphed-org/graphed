@@ -96,7 +96,6 @@ def run_resumable(
     The store's environment record is checked as :func:`graphed.checkpoint.resumable` checks it
     (salt ``""``), with ``accept_environment``.
     """
-    held: CheckpointStore = as_store(store, storage_options)
     codec = codec or PickleCodec()
     process = plan.process.resolve()
     combine = plan.combine.resolve()
@@ -105,9 +104,10 @@ def run_resumable(
         eb = plan.stopping.get("error_budget")
         error_budget = int(eb) if eb is not None else None
 
-    completed = held.completed()
-    check_environment(held, completed, "", accept_environment)
-    warn_unreused(held, completed, plan, map(plan.task_id, plan.partitions))
+    store = as_store(store, storage_options)
+    completed = store.completed()
+    check_environment(store, completed, "", accept_environment)
+    warn_unreused(store, completed, plan, map(plan.task_id, plan.partitions))
     report = ResumeReport()
     committed = 0  # tasks committed (executed) during THIS invocation, for the kill simulation
     # folded in task order as produced, the grouping functools.reduce gives, holding one partial
@@ -116,7 +116,7 @@ def run_resumable(
 
     for part in plan.partitions:
         tid = plan.task_id(part)
-        value = _stored_partial(held, completed.get(tid), codec)
+        value = _stored_partial(store, completed.get(tid), codec)
         if value is not _NOT_STORED:
             acc, folded = (combine(acc, value) if folded else value), True
             report.skipped += 1
@@ -127,15 +127,15 @@ def run_resumable(
                 part, process=process, combine=combine, resources=resources, retry=retry
             )
         except Exception as exc:  # an interrupt or exit stops the run; it is not a dead letter
-            held.record_dead(dead_letter_descriptor(tid, part, exc))
+            store.record_dead(dead_letter_descriptor(tid, part, exc))
             report.dead += 1
             if error_budget is not None and report.dead > error_budget:
                 report.stopped = "error_budget"
                 break
             continue
 
-        digest = held.put(codec.encode(value))
-        held.record_done(tid, _partition_tag(part), digest)
+        digest = store.put(codec.encode(value))
+        store.record_done(tid, _partition_tag(part), digest)
         acc, folded = (combine(acc, value) if folded else value), True
         report.executed += 1
         committed += 1
@@ -143,7 +143,7 @@ def run_resumable(
             raise _SimulatedInterrupt(f"simulated kill after {committed} committed tasks")
 
     _require_kill_fired(_kill_after, report, committed)
-    report.dead_letters = held.dead_letters()
+    report.dead_letters = store.dead_letters()
     value = acc if folded else empty()
     if plan.finalize is not None:
         value = plan.finalize.resolve()(value)
@@ -229,12 +229,12 @@ def run_shuffle_resumable(
     refused before its first task (``graphed.services.require_bound``). The store's environment
     record is checked as :func:`run_resumable` checks it.
     """
-    held: CheckpointStore = as_store(store, storage_options)
     require_bound(plan)
-    completed = held.completed()
-    check_environment(held, completed, "", accept_environment)
+    store = as_store(store, storage_options)
+    completed = store.completed()
+    check_environment(store, completed, "", accept_environment)
     ids = (plan.task_id(si, task) for si, stage in enumerate(plan.stages) for task in stage.tasks)
-    warn_unreused(held, completed, plan, ids)
+    warn_unreused(store, completed, plan, ids)
     report = ResumeReport()
     committed = 0
     # stage index -> its blocks' payloads (in task order)
@@ -252,7 +252,7 @@ def run_shuffle_resumable(
             tid = plan.task_id(si, task)
             entry = completed.get(tid)
             if entry is not None:
-                blob = held.get(entry.blob)
+                blob = store.get(entry.blob)
                 if blob is not None:
                     this_payloads.append(blob)
                     this_hashes.append(entry.blob)
@@ -260,11 +260,11 @@ def run_shuffle_resumable(
                     continue
 
             payload = process(task, tuple(upstream_payloads), resources)
-            blob_hash = held.put(payload)
+            blob_hash = store.put(payload)
             if deps is None:
                 listing = json.dumps(upstream_hashes, separators=(",", ":")).encode()
-                deps = (held.put(listing),) if upstream_hashes else ()
-            held.record_done(
+                deps = (store.put(listing),) if upstream_hashes else ()
+            store.record_done(
                 tid, _partition_tag(task.partition), blob_hash, stage=stage.kind, deps=deps
             )
             this_payloads.append(payload)

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +13,16 @@ from graphed.checkpoint import FsspecStore, Store, resumable, run_resumable
 from graphed.checkpoint import resume as resume_module
 from graphed.checkpoint.resume import as_store
 from graphed.checkpoint.runner import run_shuffle_resumable
-from graphed.core import DurablePlan, OpSpec, Partition, SequentialRunner
+from graphed.core import (
+    DurablePlan,
+    DurablePlanV2,
+    OpSpec,
+    Partition,
+    SequentialRunner,
+    StageSpec,
+    Task,
+)
+from graphed.services import ServiceSpec, UnboundServiceError
 
 
 def process(p: Partition, _r: Any) -> int:
@@ -38,6 +48,27 @@ def _plan() -> DurablePlan:
         empty=op(empty),
         partitions=tuple(Partition(f"mem://{i}", "t", 0, i + 1) for i in range(3)),
     )
+
+
+def write(task: Task, inputs: Sequence[bytes], resources: Any) -> bytes:
+    return f"block:{task.key}".encode()
+
+
+@dataclass(frozen=True)
+class _NeedsService:
+    def __call__(self, task: Task, inputs: Sequence[bytes], resources: Any) -> bytes:
+        return b""
+
+    def bind_services(self, endpoints: Mapping[str, str]) -> _NeedsService:
+        if "sf" not in endpoints:
+            raise UnboundServiceError("sf")
+        return self
+
+
+def _shuffle(process: Any = write, **fields: Any) -> DurablePlanV2:
+    tasks = tuple(Task(i, Partition("src", "e", i, i + 1)) for i in range(2))
+    stage = StageSpec("map_write", process=OpSpec("ref", "t:write", live=process), tasks=tasks)
+    return DurablePlanV2(ir=b"store-forms", stages=(stage,), **fields)
 
 
 FORMS: list[Callable[[Path], Any]] = [str, Path, Store]
@@ -98,15 +129,48 @@ def test_run_resumable_names_store_on_anything_else(value: Any) -> None:
         run_resumable(_plan(), value)
 
 
-def test_run_shuffle_resumable_takes_the_same_forms() -> None:
+@pytest.mark.parametrize("form", FORMS)
+def test_run_shuffle_resumable_runs_then_resumes_from_each_form(
+    form: Callable[[Path], Any], tmp_path: Path
+) -> None:
+    first = run_shuffle_resumable(_shuffle(), form(tmp_path))
+    assert (first.report.executed, first.report.skipped) == (2, 0)
+    again = run_shuffle_resumable(_shuffle(), form(tmp_path))
+    assert (again.report.executed, again.report.skipped) == (0, 2)
+    assert again.value == first.value
+
+
+def test_run_shuffle_resumable_names_store_on_anything_else() -> None:
     with pytest.raises(TypeError, match="is a path, a URL or a Store, got int"):
-        run_shuffle_resumable(_plan(), 3)  # type: ignore[arg-type]
+        run_shuffle_resumable(_shuffle(), 3)  # type: ignore[arg-type]
+
+
+def test_run_resumable_refuses_a_plan_before_opening_the_store(tmp_path: Path) -> None:
+    root = tmp_path / "store"
+    plan = replace(_plan(), process=OpSpec("ref", "no.such.module:process"))
+    with pytest.raises(ModuleNotFoundError):
+        run_resumable(plan, root)
+    assert not root.exists()
+
+
+def test_run_shuffle_resumable_refuses_a_plan_before_opening_the_store(tmp_path: Path) -> None:
+    root = tmp_path / "store"
+    plan = _shuffle(_NeedsService(), services=(ServiceSpec("sf", "http"),))
+    with pytest.raises(UnboundServiceError):
+        run_shuffle_resumable(plan, root)
+    assert not root.exists()
 
 
 @pytest.mark.parametrize("value", [3, None])
 def test_resumable_names_store_on_anything_else(value: Any) -> None:
     with pytest.raises(TypeError, match="takes a path, a URL or a Store, got"):
         resumable(_plan(), value)
+
+
+def test_resumable_refuses_the_store_before_keying_the_plan(tmp_path: Path) -> None:
+    already: Any = resumable(_plan(), tmp_path)
+    with pytest.raises(TypeError, match="takes a path, a URL or a Store, got int"):
+        resumable(already, 3)  # type: ignore[call-overload]
 
 
 def test_resumable_sends_an_fsspec_store_to_its_url(tmp_path: Path) -> None:

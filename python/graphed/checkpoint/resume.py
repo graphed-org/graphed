@@ -641,10 +641,10 @@ def check_environment(
 def as_store(
     store: str | os.PathLike[str] | CheckpointStore,
     storage_options: Mapping[str, Any] | None = None,
-) -> Any:
+) -> CheckpointStore:
     """``store`` as a checkpoint store: a directory, an fsspec URL, or a store as it is."""
     if isinstance(store, str | os.PathLike):
-        return open_store(os.fspath(store), None, storage_options)
+        return cast("CheckpointStore", open_store(os.fspath(store), None, storage_options))
     if not callable(getattr(store, "record_environment", None)):
         raise TypeError(
             f"a checkpoint store is a path, a URL or a Store, got {type(store).__name__}; a store "
@@ -859,10 +859,10 @@ def resumable(
     any store I/O. A store whose environment record differs raises :class:`EnvironmentChangedError`
     unless ``accept_environment``.
     """
+    store = _worker_root(store)
     codec = PickleCodec() if codec is None else codec
     processes, ids = _task_ids(plan, codec, salt)
     options = tuple((storage_options or {}).items())
-    store = _worker_root(store)
     st = open_store(store, None, dict(options))
     done = st.completed()
     check_environment(st, done, salt, accept_environment)
