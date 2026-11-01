@@ -42,6 +42,14 @@ def _fn_label(fn: object) -> str:
     return str(getattr(fn, "__name__", repr(fn)))
 
 
+def _call_identity(fn: object) -> object:
+    """Return what makes two callable objects one call: see `Session._fn_name`'s identity rule."""
+    # not isinstance: `__class__` is the callable's to claim
+    if type(fn) is types.MethodType:
+        return (id(fn.__self__), id(fn.__func__))
+    return id(fn)
+
+
 @dataclass(frozen=True)
 class _CompileView:
     """What one compile reads of a Session, taken together under its lock."""
@@ -145,7 +153,7 @@ class Session:
         self._fn_names: dict[object, tuple[object, str]] = {}
         self._fn_taken: set[str] = set()
         # evaluator key -> the first callable recorded under it and where
-        self._fn_held: dict[str, tuple[object, Provenance]] = {}
+        self._fn_held: dict[str, tuple[Callable[..., object], Provenance]] = {}
 
     def __enter__(self) -> Session:
         """Open a scope: array-less reads in this context record here until it exits."""
@@ -211,11 +219,7 @@ class Session:
             if name is not None:
                 self._fn_taken.add(name)
                 return name
-            # not isinstance: `__class__` is the callable's to claim
-            if type(fn) is types.MethodType:
-                key: object = (id(fn.__self__), id(fn.__func__))
-            else:
-                key = id(fn)
+            key = _call_identity(fn)
             held = self._fn_names.get(key)
             if held is not None:
                 return held[1]
@@ -748,13 +752,16 @@ class Session:
                 raise GraphedTypeError(
                     op, prov, "backend returned no payload descriptor for external op"
                 )
-        if "fn" in params_d:
-            self._hold_fn(fn, evaluator_key(descriptor.content_hash, params_d), prov)
         ids = [a.node_id for a in inputs]
+        infer = op == "map" and form is None and declared_type is None
         if form is None:
             form = self._located_form(op, prov, ids, {**form_view, **(form_params or {})})
-            if op == "map" and declared_type is None:
-                form = self._traced_form(fn, ids, prov) or form
+        # after the form, so a call the backend refuses never takes the name
+        if "fn" in params_d:
+            key = evaluator_key(descriptor.content_hash, params_d)
+            fn = self._hold_fn(fn, key, params_d["fn"], prov)
+        if infer:
+            form = self._traced_form(fn, ids, prov) or form
         # the declaration op_form honoured (or, beside form=, a leaf dtype) is checked on every
         # value
         check = getattr(self._backend, "check_output_type", None)
@@ -778,12 +785,14 @@ class Session:
             self._externals.setdefault(node_id, (fn, ids))
             return self._enter(node_id, form, prov, inputs)
 
-    def _hold_fn(self, fn: object, key: str, prov: Provenance) -> None:
-        """Refuse ``fn`` where another callable holds ``key``, which would answer for both."""
+    def _hold_fn(
+        self, fn: Callable[..., object], key: str, name: ParamValue, prov: Provenance
+    ) -> Callable[..., object]:
+        """Return the callable that answers for ``key``, refusing a different ``fn``."""
         with self._lock:
             held, first = self._fn_held.setdefault(key, (fn, prov))
-        if held is fn:
-            return
+        if _call_identity(held) == _call_identity(fn):
+            return held
         # a checkpoint key, so a rerun cell's new lambda still matches, however its lines moved
         from .checkpoint.resume import _key_digest
 
@@ -793,13 +802,13 @@ class Session:
             message = f"could not compare {_fn_label(fn)} with {_fn_label(held)} ({first}); "
             message += "the first one answers for both"
             warnings.warn_explicit(message, GraphedWarning, prov.filename, prov.lineno)
-            return
+            return held
         if not same:
-            name = json.loads(key.partition("|")[2])["fn"]
             raise GraphedError(
                 f"graphed: name={name!r} at {prov} is already used by {_fn_label(held)} "
                 f"({first}); a different function needs a different name"
             )
+        return held
 
     def _traced_form(
         self, fn: Callable[..., object], ids: Sequence[int], prov: Provenance

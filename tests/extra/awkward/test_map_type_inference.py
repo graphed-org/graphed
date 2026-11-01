@@ -98,13 +98,9 @@ def test_inference_changes_neither_identity_nor_bytes(monkeypatch: pytest.Monkey
         return out.node_id, session._nodes()[out.node_id]["params"], compile_ir(session, out).ir
 
     traced = recorded()
-    monkeypatch.setattr(AwkwardBackend, "traced_form", lambda *_: ev_form_of_input(*_))
+    monkeypatch.setattr(AwkwardBackend, "traced_form", lambda _self, _fn, forms: forms[0])
     assert recorded() == traced
     assert traced[1] == {"fn": "f"}
-
-
-def ev_form_of_input(_backend: Any, _fn: Any, forms: Any) -> Any:
-    return forms[0]
 
 
 def test_a_backend_that_cannot_trace_stays_silent_and_keeps_its_default_form() -> None:

@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 
 import graphed
-from graphed import GraphedError, GraphedWarning
+from graphed import GraphedError, GraphedTypeError, GraphedWarning
 from graphed.awkward import AwkwardBackend, from_awkward
 from graphed.numpy import NumpyBackend, apply_gufunc, from_array
 from graphed.session import Session
@@ -117,6 +117,56 @@ def test_functions_that_cannot_be_compared_warn_and_the_first_answers() -> None:
     with pytest.warns(GraphedWarning, match="could not compare also_uses_lock with uses_lock"):
         second = ev.x.map(also_uses_lock, name="scale")
     assert second.node_id == first.node_id
+
+
+def test_when_they_cannot_be_compared_the_first_answers_over_any_input() -> None:
+    _, ev = events()
+    lock = threading.Lock()
+
+    def uses_lock(values: Any) -> Any:
+        return values + lock.locked()
+
+    def also_uses_lock(values: Any) -> Any:
+        return ak.values_astype(values * 2 + lock.locked(), "int64")
+
+    a = ev.x.map(uses_lock, name="scale")
+    with pytest.warns(GraphedWarning, match="the first one answers"):
+        b = ev.y.map(also_uses_lock, name="scale")
+    assert b.node_id != a.node_id
+    assert str(b.session.form(b).describe()) == "## * float64"
+    assert ak.to_list(graphed.materialize(b)) == [1.0, 2.0, 3.0]
+    assert [ak.to_list(v) for v in graphed.materialize([a, b])] == [[1.0, 2.0, 3.0]] * 2
+
+
+def test_a_call_the_backend_refuses_does_not_take_the_name() -> None:
+    session = Session(NumpyBackend())
+    flat = from_array("flat", np.arange(4.0).reshape(2, 2), session=session)
+    square = from_array("square", np.arange(8.0).reshape(2, 2, 2), session=session)
+    with pytest.raises(GraphedTypeError):
+        apply_gufunc(
+            lambda a: a.sum(axis=(-2, -1)), "(i,j)->()", flat, name="g", output_dtype="f8"
+        )
+    fixed = apply_gufunc(
+        lambda a: a.max(axis=(-2, -1)), "(i,j)->()", square, name="g", output_dtype="f8"
+    )
+    assert np.asarray(session.materialize(fixed)).tolist() == [3.0, 7.0]
+
+
+class Unpicklable:
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+
+    def double(self, values: Any) -> Any:
+        return values * 2
+
+
+def test_a_bound_method_reread_from_its_owner_is_one_call() -> None:
+    _, ev = events()
+    owner = Unpicklable()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", GraphedWarning)
+        assert ev.x.map(owner.double).node_id == ev.x.map(owner.double).node_id
+        assert ev.x.map(owner.double, name="d").node_id == ev.x.map(owner.double, name="d").node_id
 
 
 def test_the_same_object_needs_no_comparison() -> None:

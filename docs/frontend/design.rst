@@ -1350,6 +1350,12 @@ beside ``form=`` declares too, as ``gak.apply_correction`` does. An undeclared n
 evaluator. An aggregate plan re-raises any other ``GraphedError`` from a worker unchanged, and turns this
 one into the ``StageError`` at the declaring line.
 
+A backend may also provide ``traced_form(fn, inputs) -> Form | None``, the form an undeclared
+``map`` gives ``inputs`` on metadata, or ``None`` if ``fn`` returned anything else. The session
+calls it at the recording line and records that form, which stays out of the node's params. A
+failure there is a ``GraphedWarning`` and ``op_form``'s answer stands, since the callable is the
+user's. A backend without the method records ``op_form``'s answer silently.
+
 A package that records its *own* call-outs — histogram fills are the example — passes
 ``descriptor=`` and ``form=`` to ``Session.record_external`` and the backend is not consulted at
 all. That is how ``graphed-histogram`` exists without teaching either backend what a histogram is,
@@ -1395,9 +1401,10 @@ one comes back as a ``Varied`` over the union of labels.
 lambdas, two closures of one factory, two same-named functions of different modules — would
 otherwise hash to one node and hand the second one the first one's result. They are told apart
 automatically: the second object to derive ``q`` records as ``q#1``. Passing ``name=`` to ``map``,
-``apply`` or ``apply_gufunc`` overrides that and declares the identity yourself, so the name must
-encode *everything* that changes what the callable does — a captured cut value, a model version, a
-configuration dict. Two calls under one name are one node.
+``apply`` or ``apply_gufunc`` overrides that and declares the identity yourself. One name answers
+for one function: the same code and captured values under it are one function, so a rerun notebook
+cell gives the same node, and a callable that differs raises ``GraphedError``. Two that cannot be
+compared are a ``GraphedWarning``, and the first answers for both.
 
 **One session per program.** A node id only means something in the store that minted it, so every
 ``Session`` method that takes an array refuses one recorded elsewhere: the ``record_*`` family with
