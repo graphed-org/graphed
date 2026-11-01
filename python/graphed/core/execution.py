@@ -665,7 +665,7 @@ def worker_monitor_factory(monitor: Monitor | None) -> Callable[[], Monitor] | N
 
 
 def partition_label(partition: Partition) -> str:
-    """Return a short human label for a partition (dashboard display only).
+    """Return a short human label for a partition (display only).
 
     A blind one names its step.
     """

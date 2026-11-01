@@ -182,12 +182,15 @@ def _run_one(
     resources: Any,
     retry: RetryPolicy | None,
 ) -> Any:
+    def plain(partition: Partition, res: Any) -> Any:
+        return without_warnings(process(partition, res))
+
     try:
-        return without_warnings(process(part, resources))
+        return plain(part, resources)
     except Exception as exc:
         if retry is None:
             raise
-        return retry.recover(part, exc, process=process, combine=combine, resources=resources)
+        return retry.recover(part, exc, process=plain, combine=combine, resources=resources)
 
 
 # ---- M39: two-phase (map-write -> gather) shuffle resume ----------------------------------------

@@ -23,7 +23,7 @@ from dataclasses import dataclass, replace
 from typing import Any, ClassVar, Generic, TypeVar, cast
 
 from graphed.core import GraphStore, Partition
-from graphed.core.execution import Plan, Task, WorkerResources
+from graphed.core.execution import Plan, Task, WorkerResources, partition_label
 from graphed.core.plan import _partition_bytes, _sha256_hex
 from graphed.core.worker_warnings import (
     WarnedCombine,
@@ -31,7 +31,7 @@ from graphed.core.worker_warnings import (
     carrying,
     keeping_warnings,
     mark_driver,
-    resolving,
+    on_value,
 )
 
 from .array import Array
@@ -231,7 +231,7 @@ class _PartitionReduce(Generic[V]):
             backend = resolve_backend(self.backend_factory)
             if self.store is None:
                 # evaluate inlined: the default path keeps its pre-capture frame count
-                with self._floating_point():
+                with self.floating_point():
                     values = evaluate_ir(
                         self.ir,
                         backend,
@@ -246,9 +246,10 @@ class _PartitionReduce(Generic[V]):
                 )
             else:
                 result = self._captured(chunk, partition, backend)
-        return cast("V", carrying(result, caught, str(partition)))
+        return cast("V", carrying(result, caught, partition_label(partition)))
 
-    def _floating_point(self) -> contextlib.AbstractContextManager[object]:
+    def floating_point(self) -> contextlib.AbstractContextManager[object]:
+        """Return what a task evaluates under: numpy's own state, unless it raises."""
         return contextlib.nullcontext()
 
     def _captured(self, chunk: object, partition: Partition, backend: Any) -> V:
@@ -284,7 +285,7 @@ class _PartitionReduce(Generic[V]):
         """``value`` resolved by ``reduce`` when it takes it; ``value`` itself otherwise."""
         if not isinstance(self.reduce, Resolvable):
             return value
-        resolved: V = resolving(self.reduce.resolve_services, value)
+        resolved: V = self.reduce.resolve_services(value)
         return resolved
 
     def part_paths(self, partition: Partition) -> list[str]:
@@ -309,7 +310,7 @@ class _PartitionReduce(Generic[V]):
 
     def evaluate(self, chunk: object, partition: Partition) -> list[object]:
         """Evaluate the IR on ``chunk`` as a task does, its failures attributed alike."""
-        with self._floating_point():
+        with self.floating_point():
             return evaluate_ir(
                 self.ir,
                 resolve_backend(self.backend_factory),
@@ -669,9 +670,10 @@ class _Collated:
     #: O(files), never O(tasks): it ships once per worker, not in any task
     route: Mapping[tuple[str, str], str]
 
-    def __call__(self, partition: Partition, resources: WorkerResources) -> dict[str, Any]:
+    def __call__(self, partition: Partition, resources: WorkerResources) -> Any:
         name = self.route[(partition.uri, partition.tree)]
-        return {name: self.processes[name](partition, resources)}
+        # what a partial carries stays on the outside, where a store and a finalize look for it
+        return on_value(lambda value: {name: value}, self.processes[name](partition, resources))
 
     def part_paths(self, partition: Partition) -> Sequence[str]:
         return _written_parts(
@@ -722,7 +724,8 @@ class _RaisingReduce(_PartitionReduce[V]):
     It keys as the plain task: one that fired left no result, so a kept result is the same.
     """
 
-    def _floating_point(self) -> contextlib.AbstractContextManager[object]:
+    def floating_point(self) -> contextlib.AbstractContextManager[object]:
+        """Trap what numpy would warn about and leave as an inf or a NaN."""
         import numpy as np
 
         # not underflow: rounding to zero is ordinary, and gives no inf or NaN
@@ -739,7 +742,7 @@ def _raising(process: Any) -> Any:
         return replace(process, processes={n: _raising(p) for n, p in process.processes.items()})
     raise TypeError(
         "raise_on_floating_point takes a plan from aggregate_plan, collate or a histogram's "
-        f"to_plan, before resumable wraps it; got a process of type {type(process).__name__}"
+        f"to_plan, before resumable or histserv wraps it; got a {type(process).__name__} process"
     )
 
 
@@ -799,10 +802,10 @@ def collate(plans: Mapping[str, Plan[Any]]) -> Plan[dict[str, Any]]:
     finalizers = {n: p.finalize for n, p in plans.items() if p.finalize is not None}
     return Plan(
         process=process,
-        combine=_CollatedCombine({n: p.combine for n, p in plans.items()}),
+        combine=WarnedCombine(_CollatedCombine({n: p.combine for n, p in plans.items()})),
         empty=dict,
         tasks=tuple(tasks),
         open_once=any(p.open_once for p in plans.values()),
         services=tuple(services[n] for n in sorted(services)),
-        finalize=_CollatedFinalize(finalizers) if finalizers else None,
+        finalize=WarnedFinalize(_CollatedFinalize(finalizers) if finalizers else None),
     )

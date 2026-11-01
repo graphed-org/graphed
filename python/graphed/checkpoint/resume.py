@@ -45,7 +45,7 @@ import cloudpickle
 
 from graphed.core import DurablePlan, DurablePlanV2, OpSpec, Partition, Plan, Task
 from graphed.core.plan import _partition_bytes, _sha256_hex
-from graphed.core.worker_warnings import without_warnings
+from graphed.core.worker_warnings import Warned
 from graphed.services import Bindable, Resolvable
 from graphed.write import is_url
 
@@ -526,10 +526,18 @@ class _Resumable:
     reused: int
 
     def __call__(self, partition: Partition, resources: Any) -> Any:
-        def run(plain: Partition) -> bytes:
-            return self.codec.encode(without_warnings(self.inner(plain, resources)))
+        caught: list[Warned] = []
 
-        return self.codec.decode(_served_or_run(self.root, self.storage_options, partition, run))
+        def run(plain: Partition) -> bytes:
+            value = self.inner(plain, resources)
+            if isinstance(value, Warned):
+                caught.append(value)  # beside the result: a store holds only the plain partial
+                value = value.value
+            return self.codec.encode(value)
+
+        served = _served_or_run(self.root, self.storage_options, partition, run)
+        value = self.codec.decode(served)
+        return Warned(value, caught[0].caught) if caught else value
 
     def bind_services(self, endpoints: Mapping[str, str]) -> _Resumable:
         return replace(

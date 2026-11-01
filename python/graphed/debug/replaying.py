@@ -169,7 +169,8 @@ class Replay:
         for op in self._cone:
             start = time.perf_counter()
             try:
-                _nid, value = next(values)
+                with self._process.floating_point():
+                    _nid, value = next(values)
             except Exception as exc:
                 proxy = self._session._proxies([op.node_id], self._outputs)[0]
                 failing = lower(self._session, proxy, opt_level=0)

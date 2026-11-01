@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import functools
 import multiprocessing
+import pickle
 import warnings
 from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import awkward as ak
@@ -17,7 +18,7 @@ import graphed
 from graphed import Session, raise_on_floating_point
 from graphed.aggregate import _Collated, aggregate_plan, collate
 from graphed.awkward import AwkwardBackend, AwkwardForm
-from graphed.checkpoint import resumable
+from graphed.checkpoint import RetryN, RetrySmallerChunk, Store, resumable, run_resumable
 from graphed.checkpoint.resume import _key_digest
 from graphed.core import DurablePlan, OpSpec, Partition, Plan, SequentialRunner, worker_warnings
 from graphed.core.execution import LocalResources
@@ -27,9 +28,10 @@ from graphed.core.worker_warnings import (
     WarnedFinalize,
     carrying,
     keeping_warnings,
-    resolving,
+    on_value,
     without_warnings,
 )
+from graphed.debug import replay
 from graphed.errors import StageError
 
 ZEROS = ak.Array({"x": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0], "y": [0.0, 1.0, 0.0, 1.0, 1.0, 1.0]})
@@ -65,16 +67,23 @@ def nothing() -> list[float]:
     return []
 
 
+def _output(data: ak.Array, expr: Callable[[Any], Any]) -> Any:
+    session = Session(AwkwardBackend())
+    form = AwkwardForm(ak.Array(data.layout.to_typetracer(forget_length=True)))
+    return expr(session.source("events", form=form, data=Events(data)))
+
+
 def _plan(
     data: ak.Array = ZEROS,
     expr: Callable[[Any], Any] = lambda ev: ev.x / ev.y,
     finalize: Callable[[Any], Any] | None = None,
 ) -> Plan[list[float]]:
-    session = Session(AwkwardBackend())
-    form = AwkwardForm(ak.Array(data.layout.to_typetracer(forget_length=True)))
-    ev = session.source("events", form=form, data=Events(data))
+    return _planned(_output(data, expr), finalize)
+
+
+def _planned(output: Any, finalize: Callable[[Any], Any] | None = None) -> Plan[list[float]]:
     return aggregate_plan(
-        expr(ev),
+        output,
         reduce=as_list,
         combine=concat,
         empty=nothing,
@@ -121,6 +130,13 @@ def test_a_worker_warning_reaches_the_driver_once(pool: ProcessPoolExecutor) -> 
     assert [w.category for w in seen] == [RuntimeWarning]
     assert "divide by zero" in str(seen[0].message)
     assert "mem://events" in str(seen[0].message)
+
+
+def test_a_collated_worker_warning_reaches_the_driver(pool: ProcessPoolExecutor) -> None:
+    plan = collate({"a": _plan()})
+    value, seen = _finalized(plan, _spawned(plan, pool))
+    assert len(value["a"]) == 6
+    assert [w.category for w in seen] == [RuntimeWarning]
 
 
 def test_a_kept_worker_warns_again_on_the_next_run(pool: ProcessPoolExecutor) -> None:
@@ -184,10 +200,10 @@ def test_combining_keeps_the_left_chunks_warning() -> None:
     assert combine([1.0], [2.0]) == [1.0, 2.0]
 
 
-def test_resolving_keeps_the_warnings() -> None:
+def test_on_value_keeps_the_warnings() -> None:
     warned = Warned(1, {(RuntimeWarning, "m"): ("f", 1, "c")})
-    assert resolving(str, warned) == Warned("1", warned.caught)
-    assert resolving(str, 1) == "1"
+    assert on_value(str, warned) == Warned("1", warned.caught)
+    assert on_value(str, 1) == "1"
 
 
 def test_carrying_nothing_is_the_value() -> None:
@@ -213,19 +229,69 @@ def test_a_durable_plan_folds_a_shipped_process_with_its_own_combine(
     assert "divide by zero" in str(seen[0].message)
 
 
+def test_a_durable_plan_finalizes_a_shipped_collated_process_plainly(
+    leave_driver: Callable[[], None],
+) -> None:
+    plan = collate({"a": _plan()})
+    leave_driver()
+    durable = DurablePlan(
+        ir=b"fp",
+        process=OpSpec.from_callable(plan.process),
+        combine=OpSpec.from_callable(plan.combine),
+        empty=OpSpec("ref", "builtins:dict"),
+        partitions=tuple(t.partition for t in plan.tasks),
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        assert len(SequentialRunner().run(durable.to_plan()).value["a"]) == 6
+
+
+@pytest.mark.parametrize(
+    "policy", [RetryN(), RetrySmallerChunk()], ids=["same-chunk", "smaller-chunk"]
+)
+def test_a_retried_task_gives_the_store_the_plain_partial(
+    policy: Any, leave_driver: Callable[[], None], tmp_path: Any
+) -> None:
+    plan = _plan()
+    leave_driver()
+    process, failed = plan.process, set()
+
+    def fails_once(partition: Partition, resources: Any) -> Any:
+        if partition.entry_stop - partition.entry_start == 2 and partition not in failed:
+            failed.add(partition)
+            raise MemoryError
+        return process(partition, resources)
+
+    shipped = OpSpec.from_callable(fails_once)
+    durable = DurablePlan(
+        ir=b"retried",
+        process=OpSpec(shipped.kind, shipped.ref, shipped.blob_b64, live=fails_once),
+        combine=OpSpec("ref", "operator:add"),
+        empty=OpSpec("ref", "builtins:list"),
+        partitions=tuple(t.partition.resolve(6) for t in plan.tasks),
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        result = run_resumable(durable, Store(str(tmp_path)), retry=policy)
+    assert failed
+    assert result.report.dead == 0
+    assert len(result.value) == 6
+
+
+class _Plain:
+    def __init__(self) -> None:
+        self.encoded: list[Any] = []
+
+    def encode(self, value: Any) -> bytes:
+        self.encoded.append(value)
+        return b""
+
+    def decode(self, data: bytes) -> Any:
+        return self.encoded[-1]
+
+
 def test_a_store_gets_the_plain_partial(leave_driver: Callable[[], None], tmp_path: Any) -> None:
-    class Plain:
-        def __init__(self) -> None:
-            self.encoded: list[Any] = []
-
-        def encode(self, value: Any) -> bytes:
-            self.encoded.append(value)
-            return b""
-
-        def decode(self, data: bytes) -> Any:
-            return []
-
-    codec = Plain()
+    codec = _Plain()
     plan = resumable(_plan(), str(tmp_path), codec=codec)
     leave_driver()
     with warnings.catch_warnings():
@@ -235,6 +301,92 @@ def test_a_store_gets_the_plain_partial(leave_driver: Callable[[], None], tmp_pa
     assert not any(isinstance(value, Warned) for value in codec.encoded)
 
 
+def test_a_store_gets_a_collated_plain_partial(
+    leave_driver: Callable[[], None], tmp_path: Any
+) -> None:
+    codec = _Plain()
+    plan = resumable(collate({"a": _plan()}), str(tmp_path), codec=codec)
+    leave_driver()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        SequentialRunner().run(plan)
+    assert [type(value["a"]) for value in codec.encoded] == [list] * 3
+
+
+class _Importable(RuntimeWarning):
+    pass
+
+
+class _TwoArguments(UserWarning):
+    def __init__(self, message: str, code: int) -> None:
+        super().__init__(message, code)
+
+
+def test_a_warning_class_that_cannot_travel_is_carried_as_its_builtin_base(
+    leave_driver: Callable[[], None],
+) -> None:
+    class Local(DeprecationWarning):
+        pass
+
+    leave_driver()
+    with warnings.catch_warnings(), keeping_warnings() as caught:
+        warnings.simplefilter("always")
+        warnings.warn("local", Local, stacklevel=1)
+        warnings.warn(_TwoArguments("two", 2), stacklevel=1)
+        warnings.warn("importable", _Importable, stacklevel=1)
+    assert {message: category for category, message in caught} == {
+        "local": DeprecationWarning,
+        "('two', 2)": UserWarning,
+        "importable": _Importable,
+    }
+    assert pickle.loads(pickle.dumps(caught)) == caught
+    assert len(_issued(Warned(0, {k: (*v, "c") for k, v in caught.items()}))) == 3
+
+
+def _issued(warned: Warned) -> list[warnings.WarningMessage]:
+    with warnings.catch_warnings(record=True) as seen:
+        warnings.simplefilter("always")
+        without_warnings(warned)
+    return seen
+
+
+def test_a_failed_task_adds_what_it_caught_to_the_error(leave_driver: Callable[[], None]) -> None:
+    leave_driver()
+    with pytest.raises(ValueError, match="boom") as raised, keeping_warnings():
+        warnings.warn("the clue", RuntimeWarning, stacklevel=1)
+        raise ValueError("boom")
+    assert len(raised.value.__notes__) == 1
+    assert "RuntimeWarning before this: the clue" in raised.value.__notes__[0]
+
+
+def fail_after_evaluating(values: list[object]) -> Any:
+    raise ValueError("boom")
+
+
+def test_a_failed_workers_warnings_reach_the_driver_on_its_error(
+    pool: ProcessPoolExecutor,
+) -> None:
+    plan = replace(
+        _plan(),
+        process=replace(_plan().process, reduce=fail_after_evaluating),  # type: ignore[type-var]
+    )
+    with pytest.raises(ValueError, match="boom") as raised:
+        _spawned(plan, pool)
+    assert "divide by zero" in raised.value.__notes__[0]
+
+
+def test_a_resumable_run_issues_a_workers_warning_and_a_served_one_does_not(
+    leave_driver: Callable[[], None], tmp_path: Any
+) -> None:
+    plan = _plan()
+    leave_driver()
+    for expected in (1, 0):
+        with warnings.catch_warnings(record=True) as seen:
+            warnings.simplefilter("always")
+            SequentialRunner().run(resumable(plan, str(tmp_path)))
+        assert len([w for w in seen if "[first in " in str(w.message)]) == expected
+
+
 def test_without_warnings_issues_them_here() -> None:
     warned = Warned(1, {(RuntimeWarning, "m"): ("f", 1, "c")})
     with pytest.warns(RuntimeWarning, match=r"m \[first in c\]"):
@@ -242,7 +394,7 @@ def test_without_warnings_issues_them_here() -> None:
 
 
 def test_a_plan_without_finalize_gets_the_value() -> None:
-    assert WarnedFinalize()(1) == 1
+    assert WarnedFinalize(None)(1) == 1
 
 
 @pytest.mark.parametrize(
@@ -294,6 +446,15 @@ def test_replay_evaluates_under_the_same_trap() -> None:
     partition = _plan().tasks[0].partition
     with pytest.raises(StageError, match="divide"):
         process.evaluate(ZEROS[:2], partition.resolve(6))  # type: ignore[attr-defined]
+
+
+def test_a_replayed_step_traps_as_the_task_did() -> None:
+    output = _output(ZEROS, lambda ev: ev.x / ev.y)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        assert replay(_planned(output), 0, output).value[0] == float("inf")
+    with pytest.raises(StageError, match="divide"):
+        replay(raise_on_floating_point(_planned(output)), 0, output).value  # noqa: B018
 
 
 def test_a_collated_plan_traps_every_part() -> None:
