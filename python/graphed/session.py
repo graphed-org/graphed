@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import contextvars
 import functools
+import json
 import threading
 import types
 import warnings
@@ -21,7 +22,7 @@ import graphed.core
 
 from .array import Array, attach, handle_of, labels_carried
 from .backend import Backend, Form, ParamValue
-from .errors import GraphedTypeError, GraphedWarning, OutputTypeError
+from .errors import GraphedError, GraphedTypeError, GraphedWarning, OutputTypeError
 from .provenance import Provenance, capture
 from .services import Bindable
 from .systematics.lineage import unify_contexts
@@ -30,6 +31,15 @@ from .systematics.state import SystematicsState
 
 if TYPE_CHECKING:
     from .services import ServiceSpec
+
+
+def evaluator_key(content_hash: str, params: Mapping[str, object]) -> str:
+    """Return what picks an External's evaluator: its payload hash plus its params."""
+    return content_hash + "|" + json.dumps(params, sort_keys=True, separators=(",", ":"))
+
+
+def _fn_label(fn: object) -> str:
+    return str(getattr(fn, "__name__", repr(fn)))
 
 
 @dataclass(frozen=True)
@@ -131,6 +141,8 @@ class Session:
         # callable) plus the ONE name space every name handed out lives in, declared or derived.
         self._fn_names: dict[object, tuple[object, str]] = {}
         self._fn_taken: set[str] = set()
+        # evaluator key -> the first callable recorded under it and where
+        self._fn_held: dict[str, tuple[object, Provenance]] = {}
 
     def __enter__(self) -> Session:
         """Open a scope: array-less reads in this context record here until it exits."""
@@ -174,8 +186,8 @@ class Session:
         `name=` is the caller's own identity declaration: returned untouched (equal names intern,
         which is the point) and entered in that space, so a later derivation cannot land on it.
 
-        A declared `name=` IS the identity: declaring a name another callable already wears —
-        declared or derived — means the same node, the caller having said so.
+        A declared `name=` IS the identity, so the callables under it must agree:
+        `record_external` refuses one that behaves differently.
 
         THE IDENTITY RULE: two callable objects share a memo entry only where PYTHON ITSELF
         defines them as the same call — an object whose TYPE is `types.MethodType`, whose call IS
@@ -675,6 +687,8 @@ class Session:
                 raise GraphedTypeError(
                     op, prov, "backend returned no payload descriptor for external op"
                 )
+        if "fn" in params_d:
+            self._hold_fn(fn, evaluator_key(descriptor.content_hash, params_d), prov)
         ids = [a.node_id for a in inputs]
         if form is None:
             form = self._located_form(op, prov, ids, {**form_view, **(form_params or {})})
@@ -704,6 +718,29 @@ class Session:
             self._enter(node_id, form, prov)
         return self._wrap(node_id, inputs)
 
+    def _hold_fn(self, fn: object, key: str, prov: Provenance) -> None:
+        """Refuse ``fn`` where another callable holds ``key``, which would answer for both."""
+        with self._lock:
+            held, first = self._fn_held.setdefault(key, (fn, prov))
+        if held is fn:
+            return
+        # a checkpoint key, so a rerun cell's new lambda still matches, however its lines moved
+        from .checkpoint.resume import _key_digest
+
+        try:
+            same = _key_digest(held) == _key_digest(fn)
+        except Exception:
+            message = f"could not compare {_fn_label(fn)} with {_fn_label(held)} ({first}); "
+            message += "the first one answers for both"
+            warnings.warn_explicit(message, GraphedWarning, prov.filename, prov.lineno)
+            return
+        if not same:
+            name = json.loads(key.partition("|")[2])["fn"]
+            raise GraphedError(
+                f"graphed: name={name!r} at {prov} is already used by {_fn_label(held)} ({first}); "
+                "a different function needs a different name"
+            )
+
     def _traced_form(
         self, fn: Callable[..., object], ids: Sequence[int], prov: Provenance
     ) -> Form | None:
@@ -719,8 +756,7 @@ class Session:
         except Exception:
             form = None
         if form is None:
-            name = getattr(fn, "__name__", repr(fn))
-            message = f"could not infer the type of {name}; pass output_type="
+            message = f"could not infer the type of {_fn_label(fn)}; pass output_type="
             warnings.warn_explicit(message, GraphedWarning, prov.filename, prov.lineno)
         return form
 
