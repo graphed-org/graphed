@@ -41,6 +41,7 @@ def _first(values: list[Any]) -> Any:
 
 def _source(tmp_path: Path, steps_per_file: int = 3) -> Any:
     path = tmp_path / "data.parquet"
+    pytest.importorskip("pyarrow")
     ak.to_parquet(ak.Array({"x": [1.0, 2.0, 3.0] * 10, "n": [[1, 2], [], [3]] * 10}), path)
     session = graphed.Session(ga.AwkwardBackend())
     return ga.from_parquet("events", str(path), steps_per_file=steps_per_file, session=session)
