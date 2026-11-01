@@ -13,14 +13,15 @@ import warnings
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, overload
 
 from .backend import ParamValue
 from .errors import GraphedError
-from .varied import universes_of
+from .varied import Varied, universes_of
 
 if TYPE_CHECKING:
     from .array import Array
+    from .session import Session
 
 
 class OnFail(StrEnum):
@@ -122,8 +123,25 @@ def handle_opaque(op: str, on_fail: str, detail: str = "") -> object | None:
     return None
 
 
-def read_columns(arrays: Sequence[Array], source_nid: int) -> tuple[str, ...] | None:
-    """Return the minimal set of source ``source_nid``'s columns the graphs read.
+@overload
+def read_columns(
+    arrays: Array | Varied | Sequence[Array | Varied],
+) -> dict[str, tuple[str, ...] | None]: ...
+
+
+@overload
+def read_columns(
+    arrays: Array | Varied | Sequence[Array | Varied], source_nid: int
+) -> tuple[str, ...] | None: ...
+
+
+def read_columns(
+    arrays: Array | Varied | Sequence[Array | Varied], source_nid: int | None = None
+) -> dict[str, tuple[str, ...] | None] | tuple[str, ...] | None:
+    """Return the minimal set of columns the graphs read, per source or from one source.
+
+    ``read_columns(x)`` takes one array or a list and answers ``{source_name: columns}`` for every
+    source they read; ``read_columns(arrays, source_nid)`` answers for that one source.
 
     The read is SYNTACTIC — every field accessed on the source across ``arrays`` via a
     ``field``/``fields`` op, sorted. Returns ``None`` (meaning "read every column") when any graph
@@ -141,6 +159,19 @@ def read_columns(arrays: Sequence[Array], source_nid: int) -> tuple[str, ...] | 
     A ``Varied`` entry contributes EVERY universe (§2.3d *expanding*): the answer is one union
     read set, and the ``None`` a conservative member reports dominates it (§5.3).
     """
+    outputs = list(arrays) if isinstance(arrays, list | tuple) else [arrays]
+    if source_nid is None:
+        members = [member for output in outputs for member in universes_of(output)]
+        readers: dict[tuple[Session, int], list[Array]] = {}
+        for member in members:
+            for nid in member.session.reachable_sources(member.node_id):
+                readers.setdefault((member.session, nid), []).append(member)
+        # an array that never reaches a source would read as "every column" of it
+        return {
+            session.source_name(nid): read_columns(reading, nid)
+            for (session, nid), reading in sorted(readers.items(), key=lambda item: item[0][1])
+        }
+
     sentinel = object()
 
     def one(array: Array) -> tuple[str, ...] | None:
@@ -189,7 +220,7 @@ def read_columns(arrays: Sequence[Array], source_nid: int) -> tuple[str, ...] | 
 
     # PER graph, so a conservative one dominates the union rather than being masked by a sibling
     # that happens to narrow: reading a subset for one output still reads the whole record.
-    answers = [one(member) for arr in arrays for member in universes_of(arr)]
+    answers = [one(member) for arr in outputs for member in universes_of(arr)]
     narrowed = [answer for answer in answers if answer is not None]
     if not narrowed or len(narrowed) != len(answers):
         return None

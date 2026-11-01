@@ -292,11 +292,11 @@ itself (the target dispatch and the rollback), ``registration`` what its three o
 checks, the minting, the fan-out), ``state`` one Session's registries (``Session.systematics``),
 ``lineage`` what an event context is to these layers (its parent, link, collections and ambient
 record), ``ambient`` the event weight's record and every rule that decides over it, ``handles``
-stamping and re-indexing a value's context, ``explain`` the report at the end of this section,
+stamping and re-indexing a value's context, ``explain_variations`` the report at the end of this section,
 ``varied`` the ``Varied`` container, ``accessors`` the reader verbs above, ``by_label`` per-label
 column reads, and ``kinds`` / ``tags`` / ``points`` spell a variation's kind, its universe tags and
 a family's points, and their imports form no cycle. You never
-import by that path: ``vary``, ``labels``, ``weight``, ``explain`` and the rest are exported from
+import by that path: ``vary``, ``labels``, ``weight``, ``explain_variations`` and the rest are exported from
 ``graphed``, and the event context they ride is ``graphed.context``, which builds child contexts
 from the records ``ambient`` returns.
 
@@ -313,7 +313,7 @@ supplies the NanoEvents-flavoured constructor, ``gnano.events``.
 
     import awkward as ak
     import graphed.awkward as ga
-    from graphed import Session, explain, labels, universe, variations, vary, weight
+    from graphed import Session, explain_variations, labels, universe, variations, vary, weight
     from graphed.awkward import AwkwardBackend, from_awkward, gak
 
     events = ak.Array({
@@ -471,7 +471,7 @@ message names the spellings that work: register the family, or read the handle, 
 before projecting; or read a fresh ``graphed.weight()`` handle at the projection, whose record is
 the projected composition's.
 
-``graphed.explain(ctx)`` is the view of all this. It answers, in one line per item: which families
+``graphed.explain_variations(ctx)`` is the view of all this. It answers, in one line per item: which families
 you registered, in order, where each was registered and how it entered the ambient — a new factor,
 a join naming the factor's other families, an overlay over the families its handle was read over,
 a shift over its collections, and any universe it placed at a point; what the ambient is made of
@@ -532,8 +532,8 @@ relative-delta family on a handle read after it.
     print("oracle ", shown(s2, universe(central, "jes_up")))   # the SF at the jes_up jets
 
     # where these variations came from, after a cut and after a projection
-    print(explain(ctx[ctx.MET.pt > 15.0]))
-    print(explain(universe(ctx, "hf_up")))
+    print(explain_variations(ctx[ctx.MET.pt > 15.0]))
+    print(explain_variations(universe(ctx, "hf_up")))
 
 Prints::
 
@@ -546,7 +546,7 @@ Prints::
     ('nominal', 'jes_up', 'hf_up', 'lf_up', 'lf_up__jes_up')
     jes_up  [0.6825, 0.5775, 1.155]
     oracle  [0.6825, 0.5775, 1.155]
-    graphed.explain: 4 registrations, 2 ambient operations, 5 universes
+    graphed.explain_variations: 4 registrations, 2 ambient operations, 5 universes
     families (registration order)
       pu (WEIGHT) ['up'] at the root: a new factor; composes with hf, lf, mu
       hf (WEIGHT) ['up'] at the root: a new factor; shares the factor with lf; composes with mu, pu
@@ -561,7 +561,7 @@ Prints::
       hf_up: hf, one at a time
       mu_up: mu's own universe, a relative-delta family
       lf_up: lf, one at a time
-    graphed.explain: 4 registrations, 1 ambient operations, 1 universes
+    graphed.explain_variations: 4 registrations, 1 ambient operations, 1 universes
     families (registration order)
       pu (WEIGHT) ['up'] at the root: a new factor; composes with hf, lf, mu
       hf (WEIGHT) ['up'] at the root: a new factor; shares the factor with lf; composes with mu, pu
@@ -577,7 +577,7 @@ nominal rather than 1.05 times a squared product; ``lf`` names ``hf``'s central,
 factor stays in the product once and the oracle line is that product built by hand. In the second
 context the joining central is the same scale factor read on the jes-shifted jets, so the union
 puts that universe on the shared nominal member and ``jes_up`` reads the weight at its own jets.
-The two ``explain`` blocks are the same four registrations read from a cut and from inside
+The two ``explain_variations`` blocks are the same four registrations read from a cut and from inside
 ``hf_up``: the joined family names the factor it joined and shares it with ``hf`` rather than
 composing with it, the overlay names the two families its handle was read over, and every operation
 says which link carried it here. The operations are what the ambient *here* is made of: after the cut
@@ -587,7 +587,7 @@ of its coordinate, so the weight there is ``pu * SF(up_hf)`` with no 1.05 in it 
 here" is the single ``nominal``, because that context IS one universe of the ambient rather than a
 container of them.
 
-The tour builds every declaration shape in this section — and the ``explain`` block each one
+The tour builds every declaration shape in this section — and the ``explain_variations`` block each one
 prints — one step at a time: :doc:`../notebooks/systematics-tour`.
 
 Three ways two things can be correlated
@@ -1066,12 +1066,12 @@ parquet files first so that it runs anywhere:
         empty=lambda: [0.0, 0.0],
     )
     print(SequentialRunner().run(plan).value)
-    print(sorted(read_columns([n_high, total_ht], s.source_ids()[0])))
+    print(read_columns([n_high, total_ht]))
 
 Prints::
 
     [4.0, 460.0]
-    ['Jet_pt']
+    {'events': ('Jet_pt',)}
 
 Both outputs share the ``ht`` sub-expression, so it is read and evaluated once per partition, not
 once per output — and of the three columns in each file, only ``Jet_pt`` is read at all.

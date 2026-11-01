@@ -1,0 +1,129 @@
+"""#146: one-argument `read_columns`, `explain_variations`, and did-you-mean on a typo."""
+
+from __future__ import annotations
+
+from typing import Any
+
+import awkward as ak
+import pytest
+
+import graphed
+from graphed import Session
+from graphed.awkward import AwkwardBackend, from_awkward
+from graphed.awkward.backend import AwkwardForm
+from graphed.errors import GraphedError, MissingFieldError
+
+
+class MuonArray(ak.Array):  # type: ignore[misc]
+    @property
+    def energy(self) -> Any:
+        return self.pt
+
+
+BEHAVIOR: dict[Any, Any] = {("*", "Muon"): MuonArray}
+EVENTS = ak.Array(
+    {
+        "MET_pt": [1.0, 2.0],
+        "Muon_pt": [[1.0], []],
+        "Muon": ak.with_name(ak.Array([[{"pt": 1.0, "eta": 0.5}], []]), "Muon"),
+    }
+)
+
+
+def _events(name: str = "Events") -> tuple[Session, Any]:
+    session = Session(AwkwardBackend(behavior=BEHAVIOR))
+    return session, from_awkward(name, EVENTS, session=session)
+
+
+def test_one_array_answers_by_source_name() -> None:
+    _, ev = _events()
+    assert graphed.read_columns(ev.MET_pt + 1.0) == {"Events": ("MET_pt",)}
+
+
+def test_a_list_unions_its_columns() -> None:
+    _, ev = _events()
+    assert graphed.read_columns([ev.MET_pt, ev.Muon_pt]) == {"Events": ("MET_pt", "Muon_pt")}
+
+
+def test_two_sources_each_answer_for_themselves() -> None:
+    session, ev = _events()
+    other = from_awkward("Other", ak.Array({"x": [1.0, 2.0], "y": [3.0, 4.0]}), session=session)
+    assert graphed.read_columns([ev.MET_pt, other.x]) == {
+        "Events": ("MET_pt",),
+        "Other": ("x",),
+    }
+
+
+def test_a_whole_record_reads_every_column() -> None:
+    _, ev = _events()
+    assert graphed.read_columns(ev) == {"Events": None}
+
+
+def test_a_varied_array_answers_for_every_universe() -> None:
+    _, ev = _events()
+    varied = graphed.vary(ev.MET_pt, "jes", up=ev.MET_pt + 1.0)
+    assert graphed.read_columns(varied) == {"Events": ("MET_pt",)}
+
+
+def test_the_source_id_form_still_answers_for_one_source() -> None:
+    session, ev = _events()
+    assert graphed.read_columns([ev.MET_pt], session.source_ids()[0]) == ("MET_pt",)
+    assert graphed.read_columns(ev.MET_pt, session.source_ids()[0]) == ("MET_pt",)
+
+
+def test_explain_is_a_deprecated_alias_of_explain_variations() -> None:
+    session = Session(AwkwardBackend())
+    ctx = graphed.awkward.gnano.events(from_awkward("Events", EVENTS, session=session))
+    assert str(graphed.explain_variations(ctx)).startswith("graphed.explain_variations: 0")
+    with pytest.warns(DeprecationWarning, match="use graphed.explain_variations"):
+        assert graphed.explain(ctx) == graphed.explain_variations(ctx)
+
+
+def test_explain_variations_refuses_what_is_not_a_context() -> None:
+    _, ev = _events()
+    with pytest.raises(GraphedError, match="explain_variations reads an event context"):
+        graphed.explain_variations(ev)
+
+
+@pytest.mark.parametrize(
+    ("read", "message"),
+    [
+        (lambda ev: ev.MET_ptt, "no field named 'MET_ptt' (did you mean 'MET_pt'?)"),
+        (lambda ev: ev.MET_pt.fieldz, "no field named 'fieldz' (did you mean 'fields'?)"),
+        (lambda ev: ev.Muon.ptt, "no field named 'ptt' in Muon (did you mean 'pt'?)"),
+        (lambda ev: ev.Muon.energi, "no field named 'energi' in Muon (did you mean 'energy'?)"),
+    ],
+)
+def test_a_typo_suggests_a_close_name(read: Any, message: str) -> None:
+    _, ev = _events()
+    with pytest.raises(MissingFieldError) as caught:
+        read(ev)
+    assert message in str(caught.value)
+
+
+def test_no_close_name_means_no_suggestion() -> None:
+    _, ev = _events()
+    with pytest.raises(MissingFieldError) as caught:
+        ev.zzzzzz  # noqa: B018
+    assert "no field named 'zzzzzz'" in str(caught.value)
+    assert "did you mean" not in str(caught.value)
+
+
+def test_form_points_at_typestr() -> None:
+    _, ev = _events()
+    with pytest.raises(MissingFieldError, match=r"`\.typestr` shows an array's type"):
+        ev.MET_pt.form  # noqa: B018
+
+
+def test_a_record_field_named_form_still_reads() -> None:
+    session = Session(AwkwardBackend())
+    ev = from_awkward("Events", ak.Array({"form": [1.0]}), session=session)
+    assert ak.to_list(session.materialize(ev.form)) == [1.0]
+
+
+def test_attribute_kind_says_what_is_missing_to_a_direct_caller() -> None:
+    session, ev = _events()
+    muon = ev.Muon
+    form: AwkwardForm = session.form(muon)  # type: ignore[assignment]
+    with pytest.raises(AttributeError, match=r"no field named 'ptt' in Muon \(did you mean 'pt'"):
+        session.backend.attribute_kind(form, "ptt")  # type: ignore[attr-defined]

@@ -1,4 +1,4 @@
-"""`graphed.explain` (§2.7): what varies here, how each family entered, and how they relate.
+"""`graphed.explain_variations` (§2.7): what varies here, how each family entered, and how they relate.
 
 A pure READER of what the context already keeps — the lineage's registrations, the ambient's riders
 through `ambient_entries`, the link chain from the root and the Session's point registry. It
@@ -7,6 +7,7 @@ decides nothing and records nothing, which is what makes calling it unobservable
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -56,7 +57,7 @@ class Entry:
 
 @dataclass(frozen=True, slots=True)
 class Family:
-    """§2.7: one ``graphed.vary`` registration, as ``graphed.explain`` reports it."""
+    """§2.7: one ``graphed.vary`` registration, as ``graphed.explain_variations`` reports it."""
 
     #: the family name and its coordinates
     name: str
@@ -174,7 +175,7 @@ class Explanation:
     def __str__(self) -> str:
         """Render the whole explanation, one fact per line."""
         lines = [
-            f"graphed.explain: {len(self.families)} registrations, "
+            f"graphed.explain_variations: {len(self.families)} registrations, "
             f"{len(self.operations)} ambient operations, {len(self.variations)} universes",
             "families (registration order)",
             *(f"  {family}" for family in self.families.values()),
@@ -218,6 +219,16 @@ def _lineage_registrations(ctx: EventContext) -> tuple[Registration, ...]:
 
 
 def explain(ctx: EventContext) -> Explanation:
+    """Deprecated alias of :func:`explain_variations`."""
+    warnings.warn(
+        "graphed.explain is deprecated; use graphed.explain_variations",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return explain_variations(ctx)
+
+
+def explain_variations(ctx: EventContext) -> Explanation:
     """§2.7: how this context's variations came to be.
 
     The families, the ambient's operations and the universes carried here, as a frozen record whose
@@ -229,7 +240,7 @@ def explain(ctx: EventContext) -> Explanation:
     reads it and nothing else is composed, so a call mints no node a `weight` read would not.
     """
     if not isinstance(ctx, ContextNode):
-        raise GraphedError("graphed.explain reads an event context")
+        raise GraphedError("graphed.explain_variations reads an event context")
     registrations = _lineage_registrations(ctx)
     ambient = weight_of(ctx)
     # a row-space change hands its child ONE composed member, which carries no labels of its own:

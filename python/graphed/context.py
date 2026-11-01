@@ -15,7 +15,7 @@ in `graphed.awkward.gnano` (the §2.1 factorization rule).
 
 A context's lineage is `graphed.systematics.lineage`'s `ContextNode`, and its ambient weight is an
 `AmbientRecord` that `graphed.systematics.ambient` builds and decides over; this module builds the
-contexts. `graphed.explain` is `graphed.systematics.explain`; it and `ambient_entries` are
+contexts. `graphed.explain_variations` is in `graphed.systematics.explain`; it and `ambient_entries` are
 re-exported here, which is where the probes and the extra suites read them from.
 """
 
@@ -51,7 +51,11 @@ from .systematics.lineage import (  # isort: skip
     collections_of,
     context_session,
 )
-from .systematics.explain import Explanation as Explanation, explain as explain  # isort: skip
+from .systematics.explain import (  # isort: skip
+    Explanation as Explanation,
+    explain as explain,
+    explain_variations as explain_variations,
+)
 from .systematics.handles import with_context  # isort: skip
 from .systematics.registration import stamp_labels as stamp_labels  # isort: skip
 from .systematics.varied import (  # isort: skip

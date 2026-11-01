@@ -32,7 +32,7 @@ def test_a_handle_read_at_a_shift_child_anchors_an_overlay_registered_on_its_par
     composed = graphed.weight(registered)
     assert composed is not None
     assert graphed.nominal(composed).node_id == graphed.nominal(handle).node_id
-    assert "an overlay over a, b" in str(graphed.explain(registered))
+    assert "an overlay over a, b" in str(graphed.explain_variations(registered))
 
 
 def test_a_widening_join_on_a_vary_child_leaves_the_parents_handle_fresh_there() -> None:
@@ -51,4 +51,4 @@ def test_a_widening_join_on_a_vary_child_leaves_the_parents_handle_fresh_there()
 
     registered = graphed.vary(parent, "mu", handle, is_weight=True, up=handle * 1.1)
 
-    assert "mu (WEIGHT) ['up'] at the root: an overlay over hf" in str(graphed.explain(registered))
+    assert "mu (WEIGHT) ['up'] at the root: an overlay over hf" in str(graphed.explain_variations(registered))

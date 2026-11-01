@@ -7,6 +7,18 @@ Newest release first. Numbers in parentheses are the pull requests on
 0.0.11 (unreleased)
 -------------------
 
+Inspecting a recording
+~~~~~~~~~~~~~~~~~~~~~~
+
+* ``graphed.read_columns(x)`` takes one array or a list and returns ``{source_name: columns}``,
+  across several sources; ``columns`` is ``None`` where every column is read. The two-argument
+  ``read_columns(arrays, source_nid)`` is unchanged.
+* ``graphed.explain`` covers systematics only, so it is now ``graphed.explain_variations``.
+  ``graphed.explain`` still works and raises a ``DeprecationWarning``.
+* A misspelled attribute says what is missing and offers a close name:
+  ``no field named 'ptt' in Muon (did you mean 'pt'?)``. Reading ``.form`` points at ``.typestr``.
+  A coffea collection now gives this message rather than a bare ``AttributeError: ptt``.
+
 Plans returned wrong values for row-axis operations, and now refuse them
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

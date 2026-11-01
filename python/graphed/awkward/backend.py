@@ -7,6 +7,7 @@ runs the same ops on real arrays. Both go through the single `apply` dispatch in
 from __future__ import annotations
 
 import contextlib
+import difflib
 import functools
 import inspect
 from collections.abc import Callable, Mapping, Sequence
@@ -175,6 +176,18 @@ class AwkwardForm:
     def is_typetracer(self) -> bool:
         """Return whether this form is backed by a typetracer."""
         return ak.backend(self.tt) == "typetracer"
+
+
+def _no_field(tt: ak.Array, name: str) -> str:
+    """Say what ``tt`` lacks: where it looked, and a close name when there is one."""
+    record = tt.layout.purelist_parameter("__record__")
+    where = f" in {record}" if record else ""
+    if name == "form":  # a record may have a field called form, so `.form` stays a field read
+        return f"no field named 'form'{where} (`.typestr` shows an array's type)"
+    names = [known for known in dir(tt) if not known.startswith("_")]
+    close = difflib.get_close_matches(name, names, n=1)
+    hint = f" (did you mean {close[0]!r}?)" if close else ""
+    return f"no field named {name!r}{where}{hint}"
 
 
 _BOUNDARY = frozenset(
@@ -443,12 +456,15 @@ class AwkwardBackend:
         function is a "method" the frontend hands back as a callable, ak.Array's own descriptors
         (`fields`, `ndim`, ...) are "introspection" answered by `introspect`, and anything else
         that resolves is a "property" recorded as a `field` op. An unresolved name raises
-        `AttributeError` and the frontend keeps today's path.
+        `AttributeError` saying so, and the frontend still records the `field` op.
         """
         tt = self._with_behavior(form.tt)
         if name in tt.fields:
             return "field"
-        static = inspect.getattr_static(tt, name)
+        try:
+            static = inspect.getattr_static(tt, name)
+        except AttributeError:
+            raise AttributeError(_no_field(tt, name)) from None
         # the PROPERTY side is the closed set (a data descriptor or a cached_property is read
         # like a field); anything else that is callable or a descriptor is a method, so a method
         # descriptor the stdlib adds later (partialmethod, singledispatchmethod, ...) still counts

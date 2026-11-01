@@ -110,7 +110,7 @@ def test_explain_during_a_concurrent_vary_does_not_raise() -> None:
 
     def explaining() -> None:
         while not done.is_set():
-            graphed.explain(ctx)
+            graphed.explain_variations(ctx)
 
     assert _run(minting, explaining) == []
 
