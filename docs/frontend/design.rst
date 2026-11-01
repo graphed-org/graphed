@@ -600,7 +600,7 @@ A flat normalisation is a number, so it is declared as one and multiplied in::
 
 ``lumi`` is a ``ScalarFactor``: it holds numbers and belongs to no Session until it meets an array,
 and that product registers the family. Its members scale the array's nominal alone, so a factor
-adds its own universes and no joints: 1 + 2 + the universes ``muon_id_sf`` carries. The members are
+adds its own universes and no joints: 1 + 2 + the universes ``muon_id_sf`` adds. The members are
 values of the factor, not of the weight; ``up=1.025`` is the factor at 1.025, and a factor whose
 nominal is 2.0 scales every universe by 2.0 before its members replace it.
 

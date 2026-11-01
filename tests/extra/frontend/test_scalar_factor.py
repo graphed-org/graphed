@@ -136,10 +136,26 @@ def test_it_multiplies_only_arrays(use: Callable[[], Any]) -> None:
         use()
 
 
-@pytest.mark.parametrize("op", [lambda x, f: x + f, lambda x, f: x / f, lambda x, f: f - x])
+@pytest.mark.parametrize(
+    "op",
+    [
+        lambda x, f: x + f,
+        lambda x, f: x / f,
+        lambda x, f: f - x,
+        lambda x, f: x == f,
+        lambda x, f: x != f,
+        lambda x, f: (x * f) == graphed.vary(1.0, "other", up=UP),
+    ],
+)
 def test_only_a_product_is_defined(op: Callable[[Any, Any], Any]) -> None:
     with pytest.raises(TypeError, match="unsupported operand"):
         op(_events().w, _lumi())
+
+
+def test_two_factors_compare_by_identity() -> None:
+    lumi = _lumi()
+    assert lumi != _lumi()
+    assert {lumi: "kept"}[lumi] == "kept"
 
 
 @pytest.mark.parametrize(
@@ -150,6 +166,7 @@ def test_only_a_product_is_defined(op: Callable[[Any, Any], Any]) -> None:
         {"points": {"up": 1.1}},
         {"collections": {}},
         {"composes_as_union": True},
+        {"max_universes": 8},
     ],
 )
 def test_a_factor_takes_only_its_members(options: dict[str, Any]) -> None:
@@ -161,6 +178,15 @@ def test_a_factor_takes_only_its_members(options: dict[str, Any]) -> None:
 def test_a_factor_needs_number_members(members: dict[str, Any]) -> None:
     with pytest.raises(GraphedError, match="needs number members"):
         graphed.vary(1.0, "lumi", **members)
+
+
+@pytest.mark.parametrize(
+    ("nominal", "member"),
+    [(float("nan"), UP), (float("inf"), UP), (1.0, float("nan")), (1.0, float("-inf"))],
+)
+def test_a_factor_needs_finite_numbers(nominal: float, member: float) -> None:
+    with pytest.raises(GraphedError, match="needs finite numbers"):
+        graphed.vary(nominal, "lumi", up=member)
 
 
 def test_a_bool_is_no_factor() -> None:

@@ -11,6 +11,7 @@ kind and the target stays valid and unchanged, because variation history is obje
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+from math import isfinite
 from numbers import Real
 from typing import Any
 
@@ -46,6 +47,16 @@ class ScalarFactor:
         """Show what `graphed.vary` was given."""
         members = "".join(f", {tag}={value!r}" for tag, value in self._members.items())
         return f"graphed.vary({self._nominal!r}, {self._name!r}{members})"
+
+    def __eq__(self, other: object) -> bool:
+        """Refuse an array: its `__eq__` defers here, and the default would answer a plain bool."""
+        if isinstance(other, Array | Varied):
+            raise TypeError(
+                f"unsupported operand: the scalar factor {self._name!r} only multiplies an array"
+            )
+        return self is other
+
+    __hash__ = object.__hash__
 
     def __getattr__(self, name: str) -> Any:
         """Refuse what only an array answers, naming the way to one."""
@@ -111,7 +122,12 @@ def vary(
         raise GraphedError(f"a variation name must be a Python identifier, got {name!r}")
     if _is_number(target):
         options = nominal, points, collections
-        if any(option is not None for option in options) or is_weight or composes_as_union:
+        if (
+            any(option is not None for option in options)
+            or is_weight
+            or composes_as_union
+            or max_universes != DEFAULT_MAX_UNIVERSES
+        ):
             raise GraphedError(f"the scalar factor {name!r} takes only its members, up=1.025")
         if not tags or not all(_is_number(value) for value in tags.values()):
             raise GraphedError(
@@ -119,6 +135,10 @@ def vary(
                 f"graphed.vary(1.0, {name!r}, up=1.025, down=0.975), got {tags!r}"
             )
         members = {tag: float(value) for tag, value in tags.items()}
+        if not all(map(isfinite, (float(target), *members.values()))):
+            raise GraphedError(
+                f"the scalar factor {name!r} needs finite numbers, got {target!r} and {tags!r}"
+            )
         return ScalarFactor(float(target), name, members)
     declares, placements = _parse_points(points)
     overload: Any  # the two context overloads take one arg shape; mypy keeps its own narrowing
