@@ -123,7 +123,7 @@ def test_a_save_that_cannot_pickle_keeps_the_plan_already_there(tmp_path: Path) 
     _plan("a.root").save(path)
     saved = path.read_bytes()
     with pytest.raises(TypeError, match="lock"):
-        _plan("a.root", services=(threading.Lock(),)).save(path)  # type: ignore[arg-type]
+        _plan("a.root", services=(threading.Lock(),)).save(path)
     assert path.read_bytes() == saved
 
 
