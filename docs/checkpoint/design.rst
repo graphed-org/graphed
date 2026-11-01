@@ -555,12 +555,6 @@ worker that runs it and enters the runner's reduction tree as it loads; any othe
 recorded as it finishes. The tree is the runner's own, so an interrupted run resumed on the same
 runner equals the uninterrupted run bit for bit.
 
-``run_resumable`` and ``run_shuffle_resumable`` keep results separate from ``resumable``'s, because
-they key a task differently: they hash the process's spec, where ``resumable`` hashes what a worker
-runs, pickled, with the behaviors, the salt and, for a ``DurablePlan``, the codec. A store written
-by one is not reused by another. Every task runs again, as on an empty store, and a warning says
-that none was reused, so pick one for a given store.
-
 .. code-block:: python
 
     from graphed.checkpoint import resumable
@@ -590,6 +584,10 @@ writes its own journal under it. A worker that cannot reach it raises
 ``graphed.checkpoint.StoreUnavailableError`` naming the root; errors from your own code pass through
 unchanged. ``reused`` on the returned process (on each stage's, for a ``DurablePlanV2``) counts the
 tasks the store held, and the same count is logged at INFO on ``graphed.checkpoint``.
+
+``run_resumable`` and ``run_shuffle_resumable`` key a task by the process's spec, not by what a
+worker runs, so a store written by one is not reused by ``resumable`` or the reverse: every task
+runs again, as on an empty store, and a warning says none was reused. Pick one for a given store.
 
 **What the key sees.** The key is what a worker runs, pickled the way cloudpickle ships it, with
 only what carries no value removed: line numbers and file names, cloudpickle's per-process ids,
