@@ -118,6 +118,23 @@ def test_a_failing_step_raises_at_its_line() -> None:
     assert (raised.value.op, raised.value.opt_level) == ("external", 0)
 
 
+def test_rows_that_do_not_line_up_fail_in_replay_as_in_the_run() -> None:
+    ev, _ = _events()
+    unaligned = ev.met + ev[ev.met > 3.5].met
+    plan = _plan(unaligned)
+    for given in ((), (unaligned,)):
+        with pytest.raises(StageError, match="different row sets") as raised:
+            list(gd.replay(plan, 0, *given).steps())
+        assert raised.value.op == "add"
+        assert raised.value.frames[0].filename == __file__
+
+
+def test_a_reduction_needs_no_aligned_rows_in_replay() -> None:
+    ev, _ = _events()
+    joined = gak.concatenate([ev.met, ev[ev.met > 3.5].met])
+    assert ak.to_list(gd.replay(_plan(joined), 0).value[0]) == [1.0, 2.0, 3.0, 4.0, 4.0]
+
+
 def _explode(chunk: Any) -> Any:
     raise ValueError("boom")
 

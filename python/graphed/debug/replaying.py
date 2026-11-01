@@ -24,6 +24,7 @@ from graphed.core.execution import Plan, Task
 from graphed.execute import (
     CompiledGraph,
     Key,
+    _rows_aligned,
     _unbound_external,
     _unbound_source,
     compile_ir,
@@ -209,11 +210,14 @@ class Replay:
                 raise _unbound_external(chash)
             return fn(*ins)
 
+        backend = resolve_backend(self._process.backend_factory)
         values = iter_ir(
             self._nodes,
             source=source,
             external=external,
-            eval_op=resolve_backend(self._process.backend_factory).eval_stage,
+            # as `evaluate_ir(chunked=True)` runs a task, so a failure the run hit replays
+            eval_op=_rows_aligned(backend),
+            eval_reduction=backend.eval_stage,
         )
         for op in self._cone:
             start = time.perf_counter()

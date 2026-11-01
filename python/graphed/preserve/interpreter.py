@@ -35,12 +35,15 @@ def iter_ir(
     source: Callable[[dict[str, Any]], Any],
     external: Callable[[dict[str, Any], list[Any]], Any],
     eval_op: Callable[[str, list[Any], dict[str, Any]], Any],
+    eval_reduction: Callable[[str, list[Any], dict[str, Any]], Any] | None = None,
 ) -> Iterator[tuple[int, Any]]:
     """Evaluate the nodes in id order, yielding ``(node_id, value)`` after each one.
 
     ``source(node)`` resolves a source node's data; ``eval_op(name, inputs, params)`` runs an
-    op/reduction (the backend); ``external(node, inputs)`` runs a payload-backed External node.
+    op/reduction (the backend), a reduction by ``eval_reduction`` when given; ``external(node,
+    inputs)`` runs a payload-backed External node.
     """
+    reduce = eval_op if eval_reduction is None else eval_reduction
     values: dict[int, Any] = {}
     for node in nodes:
         nid = node["id"]
@@ -49,7 +52,8 @@ def iter_ir(
             values[nid] = source(node)
         elif kind in ("op", "reduction"):
             ins = [values[i] for i in node["inputs"]]
-            values[nid] = eval_op(node["name"], ins, node["params"])
+            run = eval_op if kind == "op" else reduce
+            values[nid] = run(node["name"], ins, node["params"])
         elif kind == "external":
             ins = [values[i] for i in node["inputs"]]
             values[nid] = external(node, ins)
