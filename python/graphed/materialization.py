@@ -188,7 +188,7 @@ def _frontier(session: Session, arrays: Sequence[Array], nid: int, past: Set[int
             memo=memo,
         )
         consumed([end])
-    return [Array(session, node) for node in nodes]
+    return session._proxies(nodes, arrays)
 
 
 def _past_boundary(session: Session) -> set[int]:
