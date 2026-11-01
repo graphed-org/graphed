@@ -56,7 +56,7 @@ A progress bar
 
 * ``graphed.debug.ProgressBar`` is a monitor that ticks once per finished task and closes when the
   run ends, however it ends: ``ProcessPoolExecutor(max_workers=4, monitor=ProgressBar()).run(plan)``.
-  It uses ``tqdm`` when that is installed and a plain text line otherwise.
+  It uses ``tqdm`` when that is installed and a plain text line otherwise (#185).
 * ``graphed.core.MonitorBase`` has no-op defaults: subclass it and override what you need. It adds
   ``on_run_start(n_tasks)`` and ``on_run_end()``, which a runner calls on any monitor that has them.
 * A monitor without ``worker_profiler_factory``, or one whose factory raises, no longer ends a run.
