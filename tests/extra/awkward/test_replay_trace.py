@@ -16,6 +16,7 @@ import graphed.debug as gd
 from graphed import Session
 from graphed.awkward import AwkwardBackend, AwkwardForm, gak
 from graphed.core import Partition
+from graphed.core.execution import SequentialRunner
 from graphed.errors import StageError
 
 gh = pytest.importorskip("graphed_histogram")
@@ -122,17 +123,43 @@ def test_rows_that_do_not_line_up_fail_in_replay_as_in_the_run() -> None:
     ev, _ = _events()
     unaligned = ev.met + ev[ev.met > 3.5].met
     plan = _plan(unaligned)
+    with pytest.raises(StageError, match="different row sets"):
+        SequentialRunner().run(plan)
     for given in ((), (unaligned,)):
         with pytest.raises(StageError, match="different row sets") as raised:
             list(gd.replay(plan, 0, *given).steps())
         assert raised.value.op == "add"
         assert raised.value.frames[0].filename == __file__
+    chunk = plan.tasks[0].partition
+    with pytest.raises(StageError, match="different row sets") as raised:
+        gd.run(unaligned.session, unaligned, partition=chunk)
+    assert raised.value.op == "add"
 
 
 def test_a_reduction_needs_no_aligned_rows_in_replay() -> None:
     ev, _ = _events()
     joined = gak.concatenate([ev.met, ev[ev.met > 3.5].met])
-    assert ak.to_list(gd.replay(_plan(joined), 0).value[0]) == [1.0, 2.0, 3.0, 4.0, 4.0]
+    want = [1.0, 2.0, 3.0, 4.0, 4.0]
+    plan = _plan(joined)
+    assert ak.to_list(gd.replay(plan, 0).value[0]) == want
+    assert ak.to_list(gd.run(joined.session, joined, partition=plan.tasks[0].partition)) == want
+
+
+def test_a_run_of_the_whole_source_takes_no_row_check() -> None:
+    ev, _ = _events()
+    assert ak.to_list(gd.run(ev.session, ev.met + ev[ev.met > 3.5].met)) == [5.0, 6.0, 7.0, 8.0]
+
+
+def test_an_exchange_and_a_join_replay_as_the_run_ran_them() -> None:
+    ev, _ = _events()
+    kept = ev[ev.met > 3.5]
+    left, right = gak.zip({"k": ev.met, "a": ev.met}), gak.zip({"k": kept.met, "b": kept.met})
+    for output in (ev.met.repartition(n=2), gak.join(left, right, on=["k"])):
+        plan = _plan(output)
+        ran = ak.to_list(SequentialRunner().run(plan).value[0])
+        assert ran
+        for given in ((), (output,)):
+            assert ak.to_list(gd.replay(plan, 0, *given).value[0]) == ran
 
 
 def _explode(chunk: Any) -> Any:

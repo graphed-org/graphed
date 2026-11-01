@@ -33,8 +33,9 @@ Replay any plan, and find the cut that emptied your data
   runs, each at your line, for an ``aggregate_plan``, ``gh.plan`` or ``Histogram.plan`` plan, in any
   interpreter. Passing the plan's outputs still replays your ops as written. Its second parameter is
   now named ``task``, not ``key``.
-* A task that failed because its rows did not line up now fails the same way in ``replay``, which
-  broadcast them and returned a value.
+* A task that failed because its rows did not line up now fails the same way in ``replay`` and
+  ``gd.run(partition=)``, which broadcast them and returned a value.
+* A plan with a ``repartition`` or a join now replays, where its exchange or join step raised.
 * ``graphed.debug.trace(x, entries=N)`` prints one row per recorded line, with the rows going in
   and out of it, and marks the first line that empties the data.
 
