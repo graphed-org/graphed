@@ -495,7 +495,8 @@ class TaskEvent:
     worker back to the driver. ``error`` is a pre-rendered summary string, never an exception
     object; ``partition`` is a human label. Per task the contract is exactly one ``SUBMITTED``,
     then one ``STARTED``, then exactly one of ``FINISHED`` | ``ERRORED`` — except that a task a
-    :class:`RunControl` cancel kept from starting ends at its ``SUBMITTED``. For a monitor that
+    :class:`RunControl` cancel kept from starting ends at its ``SUBMITTED``, and that a backend
+    retrying a task repeats ``STARTED`` and the terminal event for each attempt. For a monitor that
     opts into lean events (:func:`lean_events`) the sequence is ``SUBMITTED``, then ``FINISHED`` |
     ``ERRORED`` with an empty ``partition``: only the driver's ``SUBMITTED`` carries the label.
     """
@@ -681,14 +682,21 @@ def complete_events(monitor: Monitor | None) -> bool:
     return getattr(monitor, "complete_events", False) is True
 
 
-def worker_profiler_factory(monitor: Monitor | None) -> Callable[[], WorkerProfiler] | None:
-    """Return the factory ``monitor`` gives its workers, or ``None``.
+def call_monitor(monitor: object, hook: str, *args: object) -> Any:
+    """Return ``monitor.hook(*args)``, or ``None`` when it has no such hook or it raises.
 
-    ``None`` also when it has no such method or it raises, so a broken monitor cannot end a run.
+    A monitor is passive: neither a missing hook nor a raising one may end a run.
     """
     with contextlib.suppress(Exception):
-        return cast("Monitor", monitor).worker_profiler_factory()
+        return getattr(monitor, hook)(*args)
     return None
+
+
+def worker_profiler_factory(monitor: Monitor | None) -> Callable[[], WorkerProfiler] | None:
+    """Return the factory ``monitor`` gives its workers, or ``None``."""
+    return cast(
+        "Callable[[], WorkerProfiler] | None", call_monitor(monitor, "worker_profiler_factory")
+    )
 
 
 @contextlib.contextmanager
@@ -698,24 +706,20 @@ def observed_run(monitor: Monitor | None, plan: Plan[Any] | DurablePlanV2) -> It
     A runner enters this once per run; the end is reported when the run raises or is cancelled too.
     A staged plan reports 0 tasks: it emits no task events.
     """
-    n_tasks = len(plan.tasks) if isinstance(plan, Plan) else 0
-    with contextlib.suppress(Exception):
-        cast("MonitorBase", monitor).on_run_start(n_tasks)
+    call_monitor(monitor, "on_run_start", len(plan.tasks) if isinstance(plan, Plan) else 0)
     try:
         yield
     finally:
-        with contextlib.suppress(Exception):
-            cast("MonitorBase", monitor).on_run_end()
+        call_monitor(monitor, "on_run_end")
 
 
 def worker_monitor_factory(monitor: Monitor | None) -> Callable[[], Monitor] | None:
     """Return the picklable zero-arg factory a monitor offers for per-worker push.
 
     ``None`` when the monitor defines no ``worker_monitor_factory`` (the ``Monitor`` protocol stays
-    four methods).
+    four methods) or it raises.
     """
-    method = getattr(monitor, "worker_monitor_factory", None)
-    return cast("Callable[[], Monitor] | None", method()) if method is not None else None
+    return cast("Callable[[], Monitor] | None", call_monitor(monitor, "worker_monitor_factory"))
 
 
 def partition_label(partition: Partition) -> str:

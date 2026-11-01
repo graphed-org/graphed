@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import runpy
+import subprocess
 import sys
 from collections.abc import Callable
-from typing import Any, cast
+from typing import Any
 
 import pytest
 
@@ -23,9 +23,10 @@ from graphed.core import (
     complete_events,
     lean_events,
     observed_run,
+    worker_monitor_factory,
     worker_profiler_factory,
 )
-from graphed.debug import ProgressBar, RunRecorder, progress
+from graphed.debug import ProgressBar, RunRecorder
 
 
 def _tasks(n: int) -> list[Task]:
@@ -41,8 +42,8 @@ def _plan(n: int, process: Callable[[Partition, object], int] | None = None) -> 
     )
 
 
-def _event(phase: TaskPhase) -> TaskEvent:
-    return TaskEvent(phase, 0, "w", 0.0)
+def _event(phase: TaskPhase, key: int = 0) -> TaskEvent:
+    return TaskEvent(phase, key, "w", 0.0)
 
 
 class OnlyOnTask:
@@ -83,30 +84,19 @@ class WithFactory(MonitorBase):
 
 
 @pytest.fixture(params=["tqdm", "text"])
-def backend(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> str:
+def backend(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
     if request.param == "text":
-        monkeypatch.setattr(progress, "tqdm", None)
-    return str(request.param)
+        monkeypatch.setitem(sys.modules, "tqdm.auto", None)
 
 
-def _count(done: int, total: int) -> str:
-    return f"{done}/{total}"
+class OverridesOnTask(OnlyOnTask, MonitorBase):
+    pass
 
 
-def test_monitor_base_subclass_overrides_only_on_task() -> None:
-    phases: list[TaskPhase] = []
-
-    class Seen(MonitorBase):
-        def on_task(self, event: TaskEvent) -> None:
-            phases.append(event.phase)
-
-    assert SequentialRunner(monitor=Seen()).run(_plan(2)).value == 3
-    assert phases.count(TaskPhase.FINISHED) == 2
-
-
-def test_a_plain_class_with_only_on_task_runs() -> None:
-    monitor = OnlyOnTask()
-    assert SequentialRunner(monitor=cast("Any", monitor)).run(_plan(2)).value == 3
+@pytest.mark.parametrize("cls", [OnlyOnTask, OverridesOnTask])
+def test_a_monitor_with_only_on_task_runs(cls: Any) -> None:
+    monitor = cls()
+    assert SequentialRunner(monitor=monitor).run(_plan(2)).value == 3
     assert monitor.phases.count(TaskPhase.FINISHED) == 2
 
 
@@ -117,6 +107,14 @@ def test_a_plain_class_with_only_on_task_runs() -> None:
 )
 def test_no_factory_from_a_monitor_without_one(monitor: Any) -> None:
     assert worker_profiler_factory(monitor) is None
+
+
+def test_a_raising_worker_monitor_factory_gives_no_factory() -> None:
+    class Raising(MonitorBase):
+        def worker_monitor_factory(self) -> Any:
+            raise RuntimeError("factory")
+
+    assert worker_monitor_factory(Raising()) is None
 
 
 def test_a_monitor_factory_comes_through() -> None:
@@ -158,13 +156,13 @@ def test_run_hook_failure_does_not_hide_the_run_error() -> None:
         raise ValueError("bad")
 
 
-def test_bar_reaches_total(backend: str, capsys: pytest.CaptureFixture[str]) -> None:
+def test_bar_reaches_total(backend: None, capsys: pytest.CaptureFixture[str]) -> None:
     result = SequentialRunner(monitor=ProgressBar()).run(_plan(3))
     assert result.value == SequentialRunner().run(_plan(3)).value
-    assert _count(3, 3) in capsys.readouterr().err
+    assert "3/3" in capsys.readouterr().err
 
 
-def test_a_cancelled_run_closes_the_bar(backend: str, capsys: pytest.CaptureFixture[str]) -> None:
+def test_a_cancelled_run_closes_the_bar(backend: None, capsys: pytest.CaptureFixture[str]) -> None:
     control = RunControl()
 
     def cancel_after_first(part: Partition, _: object) -> int:
@@ -175,13 +173,13 @@ def test_a_cancelled_run_closes_the_bar(backend: str, capsys: pytest.CaptureFixt
     result = SequentialRunner(monitor=bar, control=control).run(_plan(3, cancel_after_first))
     assert result.stopped is StopReason.CANCELLED
     err = capsys.readouterr().err
-    assert _count(1, 3) in err
-    assert _count(3, 3) not in err
+    assert "1/3" in err
+    assert "3/3" not in err
     assert err.endswith("\n")
 
 
-def test_a_failed_task_ticks_and_the_bar_closes(
-    backend: str, capsys: pytest.CaptureFixture[str]
+def test_a_failed_task_does_not_tick_and_the_bar_closes(
+    backend: None, capsys: pytest.CaptureFixture[str]
 ) -> None:
     def boom(part: Partition, _: object) -> int:
         raise ValueError("bad")
@@ -189,35 +187,57 @@ def test_a_failed_task_ticks_and_the_bar_closes(
     with pytest.raises(ValueError, match="bad"):
         SequentialRunner(monitor=ProgressBar()).run(_plan(2, boom))
     err = capsys.readouterr().err
-    assert _count(1, 2) in err
+    assert "1/2" not in err
     assert err.endswith("\n")
 
 
-def test_one_bar_watches_runs_in_turn(backend: str, capsys: pytest.CaptureFixture[str]) -> None:
+def test_one_bar_watches_runs_in_turn(backend: None, capsys: pytest.CaptureFixture[str]) -> None:
     runner = SequentialRunner(monitor=ProgressBar())
     runner.run(_plan(2))
     runner.run(_plan(3))
     err = capsys.readouterr().err
-    assert _count(2, 2) in err
-    assert _count(3, 3) in err
+    assert "2/2" in err
+    assert "3/3" in err
 
 
 def test_total_follows_tasks_beyond_the_plans_own(
-    backend: str, capsys: pytest.CaptureFixture[str]
+    backend: None, capsys: pytest.CaptureFixture[str]
 ) -> None:
     bar = ProgressBar()
     bar.on_run_start(1)
     for _ in range(3):
         bar.on_task(_event(TaskPhase.SUBMITTED))
-    for _ in range(3):
-        bar.on_task(_event(TaskPhase.STARTED))
-        bar.on_task(_event(TaskPhase.FINISHED))
+    for key in range(3):
+        bar.on_task(_event(TaskPhase.STARTED, key))
+        bar.on_task(_event(TaskPhase.FINISHED, key))
     bar.on_run_end()
-    assert _count(3, 3) in capsys.readouterr().err
+    assert "3/3" in capsys.readouterr().err
+
+
+def test_growing_the_total_does_not_redraw(
+    backend: None, capsys: pytest.CaptureFixture[str]
+) -> None:
+    bar = ProgressBar()
+    bar.on_run_start(0)
+    capsys.readouterr()
+    for _ in range(100):
+        bar.on_task(_event(TaskPhase.SUBMITTED))
+    assert capsys.readouterr().err == ""
+    bar.on_run_end()
+
+
+def test_a_retried_task_ticks_once(backend: None, capsys: pytest.CaptureFixture[str]) -> None:
+    bar = ProgressBar()
+    bar.on_run_start(2)
+    bar.on_task(_event(TaskPhase.ERRORED, 0))
+    bar.on_task(_event(TaskPhase.FINISHED, 0))
+    bar.on_task(_event(TaskPhase.FINISHED, 1))
+    bar.on_run_end()
+    assert "2/2" in capsys.readouterr().err
 
 
 def test_an_event_after_the_run_is_ignored(
-    backend: str, capsys: pytest.CaptureFixture[str]
+    backend: None, capsys: pytest.CaptureFixture[str]
 ) -> None:
     bar = ProgressBar()
     bar.on_run_start(1)
@@ -231,11 +251,11 @@ def test_an_event_after_the_run_is_ignored(
 def test_text_line_is_throttled(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(progress, "tqdm", None)
+    monkeypatch.setitem(sys.modules, "tqdm.auto", None)
     bar = ProgressBar()
     bar.on_run_start(1000)
-    for _ in range(1000):
-        bar.on_task(_event(TaskPhase.FINISHED))
+    for key in range(1000):
+        bar.on_task(_event(TaskPhase.FINISHED, key))
     bar.on_run_end()
     err = capsys.readouterr().err
     assert err.count("\r") < 10
@@ -259,6 +279,7 @@ def test_bar_asks_for_every_terminal_event_and_nothing_else() -> None:
     assert complete_events(ProgressBar())
 
 
-def test_no_tqdm_means_the_text_line(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setitem(sys.modules, "tqdm.auto", None)
-    assert runpy.run_module("graphed.debug.progress")["tqdm"] is None
+def test_importing_debug_leaves_tqdm_unimported() -> None:
+    code = "import sys, graphed.debug; print(any(m.startswith('tqdm') for m in sys.modules))"
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
+    assert out.stdout.strip() == "False"

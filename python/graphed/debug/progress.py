@@ -9,11 +9,6 @@ from typing import Any
 
 from graphed.core import MonitorBase, TaskEvent, TaskPhase
 
-try:
-    from tqdm.auto import tqdm
-except ImportError:
-    tqdm = None
-
 
 class _TextBar:
     """The part of ``tqdm`` :class:`ProgressBar` drives, as one rewritten line on stderr."""
@@ -37,6 +32,14 @@ class _TextBar:
         print(file=sys.stderr)
 
 
+def _open_bar(total: int) -> Any:
+    try:
+        from tqdm.auto import tqdm  # here, as every worker imports this module
+    except ImportError:
+        return _TextBar(total)
+    return tqdm(total=total, unit="task")
+
+
 class ProgressBar(MonitorBase):
     """One tick per finished task: ``ProcessPoolExecutor(monitor=ProgressBar()).run(plan)``.
 
@@ -49,30 +52,28 @@ class ProgressBar(MonitorBase):
 
     lean_events = True
     complete_events = True
+    _submitted: int
 
     def __init__(self) -> None:
         """Make a bar; it appears when a run starts."""
         self._lock = threading.Lock()
         self._bar: Any = None
-        self._submitted = 0
 
     def on_run_start(self, n_tasks: int) -> None:
         """Open the bar."""
         with self._lock:
             self._submitted = 0
-            self._bar = _TextBar(n_tasks) if tqdm is None else tqdm(total=n_tasks, unit="task")
+            self._bar = _open_bar(n_tasks)
 
     def on_task(self, event: TaskEvent) -> None:
-        """Tick for a task that finished or failed."""
+        """Tick for a finished task, and grow the total past the plan's own tasks."""
         with self._lock:
             if self._bar is None:
                 return
             if event.phase is TaskPhase.SUBMITTED:
                 self._submitted += 1
-                if self._submitted > self._bar.total:
-                    self._bar.total = self._submitted
-                    self._bar.refresh()
-            elif event.phase is not TaskPhase.STARTED:
+                self._bar.total = max(self._bar.total, self._submitted)  # the next tick draws it
+            elif event.phase is TaskPhase.FINISHED:
                 self._bar.update()
 
     def on_run_end(self) -> None:

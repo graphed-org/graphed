@@ -131,6 +131,7 @@ convention = "pep257"
 "python/graphed/checkpoint/codec.py" = ["PLC0415"]
 "python/graphed/debug/dashboard/_client.py" = ["PLC0415"]
 "python/graphed/debug/dashboard/_server.py" = ["PLC0415"]
+"python/graphed/debug/progress.py" = ["PLC0415"]  # tqdm, so importing graphed.debug stays cheap
 "python/graphed/numpy/forms.py" = ["PLC0415"]  # awkward, for an awkward type spec
 "python/graphed/numpy/io.py" = ["PLC0415"]
 "python/graphed/numpy/shuffle.py" = ["PLC0415"]
