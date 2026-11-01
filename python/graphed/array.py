@@ -259,8 +259,10 @@ def scalar_params(
 
 
 #: the one rule: nothing evaluates implicitly, and every conversion names the two explicit choices
-EVALUATE = "evaluate it with graphed.materialize(x), or peek with graphed.head(x)"
-NEEDS_VALUES = f"needs values, and a deferred array has none until it runs: {EVALUATE}"
+NEEDS_VALUES = (
+    "needs values, and a deferred array has none until it runs: evaluate it with "
+    "graphed.materialize(x), or peek with graphed.head(x)"
+)
 #: attributes an array of any backend or shape refuses by that rule when no field has the name
 EAGER_VERBS = frozenset({"compute", "to_list", "tolist", "to_numpy", "show"})
 
@@ -285,7 +287,9 @@ class EagerRefusals:
 
     def __len__(self) -> int:
         """Refuse a length: a deferred array has none until it runs."""
-        advice = "; for the length alone, graphed.materialize(gak.num(x, axis=0))"
+        advice = (
+            "; on an awkward array, the length alone is graphed.materialize(gak.num(x, axis=0))"
+        )
         raise no_eager_value("len(...)", advice, DeferredTypeError)
 
     def __float__(self) -> float:
@@ -607,7 +611,7 @@ class Array(EagerRefusals):
         except GraphedTypeError as err:
             detail = err.detail
             if name in EAGER_VERBS:
-                detail = f"graphed arrays have no .{name}(): {EVALUATE} ({detail})"
+                detail = f"{name}(): {NEEDS_VALUES} ({detail})"
             raise MissingFieldError(err.op, err.provenance, detail) from None
 
     def __getitem__(self, key: object) -> Array:

@@ -133,13 +133,14 @@ def with_field(arr: Array, value: object, where: str) -> Array:
     try:
         # a scalar, which ak broadcasts, travels as a param in its own dtype (M59)
         params = scalar_params(value)
+    except DeferredTypeError:
+        raise
     except (TypeError, ValueError) as err:
-        fix = f": {err.detail}" if isinstance(err, DeferredTypeError) else ""
         raise GraphedTypeError(
             "with_field",
             capture(),
             "the value must be a deferred array or a bool/int/float/str scalar (numpy scalars "
-            f"keep their dtype), not {type(value).__name__}{fix}",
+            f"keep their dtype), not {type(value).__name__}",
         ) from err
     return arr.session.record_op("ak.with_field", [arr], {"field": where, **params})
 

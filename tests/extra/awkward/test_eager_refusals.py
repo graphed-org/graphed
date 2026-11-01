@@ -40,19 +40,19 @@ def _hist_fill(x: Any) -> object:
 
 
 CONVERSIONS: dict[str, Callable[[Any], object]] = {
-    "ak.to_list": lambda x: ak.to_list(x),
-    "ak.to_numpy": lambda x: ak.to_numpy(x),
-    "ak.Array": lambda x: ak.Array(x),
-    "np.asarray": lambda x: np.asarray(x),
-    "np.histogram": lambda x: np.histogram(x),
+    "ak.to_list": ak.to_list,
+    "ak.to_numpy": ak.to_numpy,
+    "ak.Array": ak.Array,
+    "np.asarray": np.asarray,
+    "np.histogram": np.histogram,
     ".tolist": lambda x: x.tolist(),
     ".to_list": lambda x: x.to_list(),
     ".to_numpy": lambda x: x.to_numpy(),
     ".show": lambda x: x.show(),
     "float": lambda x: float(gak.sum(x, axis=None)),
     "int": lambda x: int(gak.sum(x, axis=None)),
-    "len": lambda x: len(x),
-    "list": lambda x: list(x),
+    "len": len,
+    "list": list,
     "plt.hist": _plt_hist,
     "hist.Hist.fill": _hist_fill,
     ".compute": lambda x: x.compute(),
@@ -177,7 +177,9 @@ def test_a_field_named_like_a_verb_reads_the_field() -> None:
 def test_a_missing_compute_still_reads_as_absent() -> None:
     x = _events().MET_pt
     assert not hasattr(x, "compute")
-    with pytest.raises(MissingFieldError, match=r"no \.compute\(\).*no field named 'compute'"):
+    with pytest.raises(
+        MissingFieldError, match=r"compute\(\): needs values.*no field named 'compute'"
+    ):
         _ = x.compute
 
 
@@ -187,8 +189,8 @@ def test_another_missing_field_gets_no_compute_advice() -> None:
     assert "compute" not in str(refused.value)
 
 
-def test_a_conversion_stays_an_attribute_for_a_sniffing_library() -> None:
-    assert hasattr(_events().MET_pt, "to_numpy")
+def test_a_conversion_reads_as_absent_to_a_sniffing_library() -> None:
+    assert not hasattr(_events().MET_pt, "to_numpy")
 
 
 def test_a_behaviors_own_method_of_a_conversions_name_still_records() -> None:
@@ -225,13 +227,13 @@ def test_the_deprecation_pointer_works_on_a_scalar() -> None:
 @pytest.mark.parametrize(
     "convert",
     [
-        lambda v: len(v),
-        lambda v: float(v),
-        lambda v: int(v),
-        lambda v: list(v),
-        lambda v: np.asarray(v),
+        len,
+        float,
+        int,
+        list,
+        np.asarray,
         lambda v: v.to_numpy(),
-        lambda v: ak.to_list(v),
+        ak.to_list,
         lambda v: v.compute(),
     ],
     ids=["len", "float", "int", "list", "asarray", "to_numpy", "ak.to_list", "compute"],

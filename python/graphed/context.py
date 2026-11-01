@@ -131,12 +131,6 @@ class EventContext(EagerRefusals, ContextNode):
             f"as its subscript, not {key!r}"
         )
 
-    def __iter__(self) -> Any:
-        """Refuse iteration over an event context."""
-        raise TypeError(
-            "an event context is not iterable; subscript it with a mask or a field name"
-        )
-
     def _read(self, name: str) -> Any:
         value = collections_of(self).get(name)
         if value is None:

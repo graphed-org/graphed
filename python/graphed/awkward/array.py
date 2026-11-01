@@ -18,7 +18,7 @@ import numpy as np
 from awkward._connect.numpy import implemented as _ak_numpy
 
 from graphed import Array
-from graphed.array import NEEDS_VALUES, no_eager_value
+from graphed.array import no_eager_value
 from graphed.errors import GraphedTypeError
 from graphed.provenance import capture, register_internal
 from graphed.varied import Varied, register_varied
@@ -55,9 +55,7 @@ def _awkward_function(
             ),
             f"{dispatch.__module__}.{name}",
         )
-        raise GraphedTypeError(
-            spelled, capture(), f"graphed records no deferred {spelled}; it {NEEDS_VALUES}"
-        )
+        raise no_eager_value(spelled, f"; graphed records no deferred {spelled}")
     fn = getattr(gak, name)
     signature = inspect.signature(dispatch)
     bound = signature.bind(*args, **kwargs).arguments
