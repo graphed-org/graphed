@@ -171,4 +171,4 @@ class StageError(Exception):
 
 
 class PackKeyError(StageError, ValueError):
-    """A :class:`PackKeyOverflowError` at the line that recorded it, still the ``ValueError`` it was."""
+    """A :class:`PackKeyOverflowError` at its recording line, still a ``ValueError``."""
