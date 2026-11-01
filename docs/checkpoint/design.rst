@@ -555,6 +555,11 @@ worker that runs it and enters the runner's reduction tree as it loads; any othe
 recorded as it finishes. The tree is the runner's own, so an interrupted run resumed on the same
 runner equals the uninterrupted run bit for bit.
 
+``run_resumable`` and ``resumable`` keep separate results, because they key a task differently:
+``resumable``'s key also covers the codec, the behaviors and the salt. A store written by one is
+not reused by the other. Every task runs again, the value is the same, and a warning says that
+none was reused, so pick one for a given store.
+
 .. code-block:: python
 
     from graphed.checkpoint import resumable

@@ -766,7 +766,8 @@ def warn_unreused(
     if held and not any(tid in done for tid in ids):
         _LOG.warning(
             "0 of %d tasks reused, but %s holds %d results for these partitions under other keys: "
-            "the analysis, its code, the salt or an order in what it ships differs",
+            "the analysis, its code, the salt or an order in what it ships differs, or the other "
+            "of run_resumable and resumable wrote them",
             total,
             getattr(store, "root", store),
             held,
