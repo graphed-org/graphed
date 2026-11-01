@@ -89,6 +89,10 @@ Fixes
   ``graphed.checkpoint`` when a run reuses no task from a store that holds results for its
   partitions. Those keys differ from this run's, which was silent; another analysis of the same
   partitions in one store warns too.
+* ``copy.deepcopy`` of a recorded ``Array``, a ``Varied``, or anything holding one works, which
+  raised ``cannot pickle 'builtins.GraphStore' object``. The copy shares its Session, event
+  context and recorded lines; ``copy.copy`` and ``copy.deepcopy`` of a Session or a context
+  return it.
 
 0.0.10
 ------
