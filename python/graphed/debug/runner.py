@@ -14,8 +14,8 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from graphed import Array, Session
-from graphed.core import GraphStore, Partition
-from graphed.execute import _rows_aligned, compile_ir
+from graphed.core import Partition
+from graphed.execute import _rows_aligned
 from graphed.materialization import _first_sample, _partition_chunk
 from graphed.varied import refuse_container
 
@@ -77,16 +77,11 @@ def _walk(
     chunks: Mapping[int, Callable[[], object]],
     where: str,
     memo: dict[int, object] | None = None,
-    *,
-    chunked: bool = False,
 ) -> object:
     backend = session.backend
-    # as `evaluate_ir(chunked=True)` runs a task, so a failure the task hit reproduces here
-    evaluate = _rows_aligned(backend) if chunked else backend.eval_stage
-    ops = frozenset[int]()
-    if chunked:
-        graph = GraphStore.deserialize(bytes(compile_ir(session, array, optimize=False).ir))
-        ops = frozenset(node["id"] for node in graph.nodes() if node["kind"] == "op")
+    aligned = _rows_aligned(backend)
+    # one chunk runs as `evaluate_ir(chunked=True)` runs a task, so the task's failures reproduce
+    ops = {node["id"] for node in session._nodes() if node["kind"] == "op"} if chunks else ()
 
     def on_source(nid: int) -> object:
         try:
@@ -98,7 +93,7 @@ def _walk(
 
     def on_op(nid: int, name: str, ins: list[object], params: Mapping[str, object]) -> object:
         try:
-            value = (evaluate if nid in ops else backend.eval_stage)(name, ins, params)
+            value = (aligned if nid in ops else backend.eval_stage)(name, ins, params)
         except StageError:
             raise
         except Exception as exc:
@@ -140,8 +135,7 @@ def run(
         )
     chunks = {} if partition is None else _partition_chunk([array], partition)
     where = label if label is not None else "sample" if partition is None else str(partition)
-    lowered = lower(session, array, opt_level=opt_level)
-    return _walk(session, array, lowered, chunks, where, chunked=partition is not None)
+    return _walk(session, array, lower(session, array, opt_level=opt_level), chunks, where)
 
 
 def _rows(value: object) -> int | str:
