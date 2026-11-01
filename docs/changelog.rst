@@ -11,8 +11,10 @@ Newest release first. Numbers in parentheses are the pull requests on
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 ``with SequentialRunner() as runner:`` works, and it gains ``submit``, ``close`` and
-``max_in_flight``, so swapping a runner to debug changes only its name. ``submit`` runs the plan
-before it returns a finished ``concurrent.futures.Future``, which holds the result or the failure.
+``max_in_flight``, so swapping a runner to debug changes only the line that builds it; the pool's
+sizing arguments do not carry over. ``submit`` runs the plan before it returns a finished
+``concurrent.futures.Future``, which holds the result or the failure, so a paused ``control`` blocks
+the call and a cancel sent after it lands on the next run.
 
 Plans returned wrong values for row-axis operations, and now refuse them
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

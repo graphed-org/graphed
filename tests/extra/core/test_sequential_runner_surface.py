@@ -2,12 +2,23 @@
 
 from __future__ import annotations
 
+import pickle
+from collections.abc import Sequence
 from concurrent.futures import Future
 from typing import Any
 
 import pytest
 
-from graphed.core import ExecResult, Partition, Plan, SequentialRunner, Task
+from graphed.core import (
+    DurablePlanV2,
+    ExecResult,
+    OpSpec,
+    Partition,
+    Plan,
+    SequentialRunner,
+    StageSpec,
+    Task,
+)
 
 
 def _plan(*entries: int, fail: bool = False) -> Plan[int]:
@@ -40,6 +51,31 @@ def test_submit_carries_a_failure_in_the_future() -> None:
     assert isinstance(fut.exception(), ValueError)
     with pytest.raises(ValueError, match="bad chunk"):
         fut.result()
+
+
+def test_submit_runs_a_staged_plan() -> None:
+    def stage(task: Task, inputs: Sequence[bytes], resources: Any) -> bytes:
+        return pickle.dumps(task.key + 1)
+
+    tasks = (Task(0, Partition("mem://x", "t", 0, 1)), Task(1, Partition("mem://x", "t", 1, 2)))
+    plan = DurablePlanV2(
+        ir=b"v2", stages=(StageSpec("map", process=OpSpec("ref", "t:m", live=stage), tasks=tasks),)
+    )
+    assert SequentialRunner().submit(plan).result().value == (1, 2)
+
+
+def test_a_failed_future_is_not_in_its_own_traceback() -> None:
+    fut = SequentialRunner().submit(_plan(1, fail=True))
+    failure = fut.exception()
+    assert failure is not None
+    tb = failure.__traceback__
+    assert tb is not None
+    frames = 0
+    while tb is not None:
+        frames += 1
+        assert not any(v is fut for v in tb.tb_frame.f_locals.values())
+        tb = tb.tb_next
+    assert frames >= 3
 
 
 def test_submitted_plans_run_in_submit_order() -> None:

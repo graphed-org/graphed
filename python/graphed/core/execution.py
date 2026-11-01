@@ -764,14 +764,25 @@ class SequentialRunner:
     def close(self) -> None:
         """Do nothing: every plan has finished, and the runner holds no pool."""
 
-    def submit(self, plan: Plan[R]) -> Future[ExecResult[R]]:
-        """Run ``plan`` and return a finished future of its result, or of the failure."""
-        fut: Future[ExecResult[R]] = Future()
+    @overload
+    def submit(self, plan: Plan[R]) -> Future[ExecResult[R]]: ...
+    @overload
+    def submit(self, plan: DurablePlanV2) -> Future[ExecResult[Any]]: ...
+    def submit(self, plan: Plan[R] | DurablePlanV2) -> Future[Any]:
+        """Run ``plan`` and return a finished future of its result, or of the failure.
+
+        The run holds the caller: a paused ``control`` blocks this call, and a cancel sent after it
+        returns lands on the next run.
+        """
+        fut: Future[Any] = Future()
         try:
             fut.set_result(self.run(plan))
         except Exception as exc:
             fut.set_exception(exc)
-        return fut
+        try:
+            return fut
+        finally:
+            del fut  # a failure's traceback holds this frame, so ``fut`` here would be a cycle
 
     @overload
     def run(self, plan: Plan[R]) -> ExecResult[R]: ...
