@@ -22,6 +22,9 @@ def format_traceback(err: StageError) -> str:
         lines.append(f'{marker}File "{fr.filename}", line {fr.lineno}, in {func}')
         if fr.source:
             lines.append(f"          {fr.source}")
+        for other in fr.also:
+            source = f":  {other.source}" if other.source else ""
+            lines.append(f"      (same expression also written at {other}{source})")
     lines.append(
         f"{err.cause_type}: {err.cause_message}  "
         f"[stage op {err.op!r}, partition {err.partition}, opt_level={err.opt_level}]"

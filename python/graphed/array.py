@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any, SupportsFloat
 
 from .backend import ParamValue
 from .errors import GraphedTypeError, MissingFieldError
-from .provenance import Provenance, capture
+from .provenance import Provenance, Site, capture
 
 if TYPE_CHECKING:
     from .session import Session
@@ -275,7 +275,7 @@ class Array:
     # reaches NodeKey params/tokens/hashes — interning and §1.2 stay intact.
     """A deferred array: a proxy for one node of a Session's recorded graph."""
 
-    __slots__ = ("_context", "_labels", "_node_id", "_session")
+    __slots__ = ("_context", "_labels", "_node_id", "_session", "_site")
 
     # let numpy defer to us for ufuncs (np.cos(array), np.hypot(a, b), ...)
     __array_priority__ = 1000.0
@@ -286,6 +286,8 @@ class Array:
         self._node_id = node_id
         self._context: object = None
         self._labels: frozenset[str] | None = None
+        # the recording this proxy came from: interning shares the node, not the line
+        self._site: Site | None = None
 
     @property
     def node_id(self) -> int:
