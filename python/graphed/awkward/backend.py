@@ -473,7 +473,7 @@ class AwkwardBackend:
         tt = self._with_behavior(form.tt)
         if not isinstance(tt, ak.Array | ak.Record):  # a scalar has neither
             return set()
-        return {*tt.fields, *(n for n in dir(tt) if n[0] != "_" and n not in _EAGER_ONLY)}
+        return {*tt.fields, *(set(dir(tt)) - _EAGER_ONLY)}
 
     def introspect(self, form: AwkwardForm, name: str) -> object:
         """Answer an `introspection` attribute from the record-time typetracer.

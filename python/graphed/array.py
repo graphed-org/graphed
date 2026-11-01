@@ -248,8 +248,13 @@ def scalar_params(
     return {key: _as_param(item), dtype_key: str(dtype)}
 
 
-#: the widest type text a repr shows
+#: the widest type or source text a repr shows
 _REPR_WIDTH = 120
+
+
+def _clip(text: str) -> str:
+    """Cut `text` to the repr's width: a whole event record's type runs to thousands of fields."""
+    return text if len(text) <= _REPR_WIDTH else f"{text[: _REPR_WIDTH - 3]}..."
 
 
 def no_eager_value(op: str, missing: str) -> GraphedTypeError:
@@ -673,11 +678,9 @@ class Array:
     def __repr__(self) -> str:
         """Show this array's type and the sources it reads; nothing is read or recorded."""
         session = self._session
-        text = session.form(self).describe()
-        if len(text) > _REPR_WIDTH:  # a whole event record's type runs to thousands of fields
-            text = f"{text[: _REPR_WIDTH - 3]}..."
         sources = sorted(map(session.source_name, session.reachable_sources(self._node_id)))
-        return f"graphed.Array<{text}, from {', '.join(map(repr, sources))}>"
+        shown = ", ".join(map(repr, sources))
+        return f"graphed.Array<{_clip(session.form(self).describe())}, from {_clip(shown)}>"
 
     def __dir__(self) -> list[str]:
         """List the attributes, with the fields and behaviors the backend names for this form."""
@@ -767,8 +770,8 @@ class BoundMethod:
     def __repr__(self) -> str:
         """Show the method name and its receiver: the node for an array, else the container."""
         receiver = self._receiver
-        node = isinstance(receiver, Array)
-        shown = f"Array(node_id={receiver.node_id})" if node else repr(receiver)
+        array = isinstance(receiver, Array)
+        shown = f"Array(node_id={receiver.node_id})" if array else repr(receiver)
         return f"BoundMethod({self._name!r} of {shown})"
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:

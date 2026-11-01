@@ -35,12 +35,23 @@ def test_repr_names_every_source_read_once() -> None:
     assert repr(ev.MET_pt * other.w).endswith("from 'Events', 'Other'>")
 
 
-def test_repr_cuts_a_long_type_and_never_the_source() -> None:
+def test_repr_cuts_a_long_type_and_keeps_a_short_source() -> None:
     session = Session(AwkwardBackend())
     data = ak.Array({f"branch_{i}": [1.0] for i in range(40)})
     text = repr(from_awkward("Events", data, session=session))
     assert "..., from 'Events'>" in text
     assert len(text) < 160
+
+
+def test_repr_cuts_a_long_source_list() -> None:
+    ev = _events()
+    total = ev.MET_pt
+    for i in range(1000):
+        total = total + from_awkward(f"s{i:04}", ak.Array({"w": [1.0, 2.0]}), session=ev.session).w
+    text = repr(total)
+    assert ", from 'Events', 's0000'" in text
+    assert text.endswith("...>")
+    assert len(text) < 280
 
 
 def test_repr_and_dir_read_nothing_and_record_nothing() -> None:
