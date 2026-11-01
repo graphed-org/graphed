@@ -15,8 +15,8 @@ onto the correction's named inputs and records the same node as ``args=["nominal
 A name the set does not hold, listing the names it does, and inputs the correction does not take
 raise ``GraphedTypeError`` at that line; they used to surface as a ``StageError`` after data was
 read. ``evaluator`` is optional, and ``payload`` and ``name`` are positional-only, so an input may
-carry either name. A path payload is read once, not per call, so nodes share one copy of the set
-and an ONNX model. The older ``evaluator``-only recording is unchanged (#144).
+carry either name. A path payload is read once, not on every call, so nodes share one copy of a
+correction set or ONNX model. The older ``evaluator``-only recording is unchanged (#170).
 
 Plans returned wrong values for row-axis operations, and now refuse them
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
