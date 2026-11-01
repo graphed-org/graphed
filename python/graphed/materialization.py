@@ -514,7 +514,8 @@ def materialize(
     partitions' used columns: a reduction, a histogram or a cut sees those events as its dataset.
     ``partition=`` does the same over one chunk, such as a plan's ``plan.tasks[3].partition``, the
     way a task runs it, so a task's failure raises here too. A plan or a write runs whole, so
-    neither takes them.
+    neither takes them. A sample of ``entries=`` is not checked as one row set: an operand cut down
+    to one row broadcasts here, where the whole dataset raises.
 
     Evaluation only: running on an executor is a plan's job
     (:func:`graphed.aggregate_plan`, :func:`graphed.collate`).

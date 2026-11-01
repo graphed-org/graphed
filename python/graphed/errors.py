@@ -56,7 +56,7 @@ class OutputTypeError(GraphedTypeError):
         return (type(self), (self.op, self.provenance, self.detail))
 
 
-class PackKeyError(GraphedError, ValueError):
+class PackKeyOverflow(ValueError):
     """A key field too wide for ``pack_key``: its rows would collide, so the run stops here."""
 
 
@@ -168,3 +168,7 @@ class StageError(Exception):
                 self.variation,
             )
         )
+
+
+class PackKeyError(StageError, ValueError):
+    """A :class:`PackKeyOverflow` at the line that recorded it, still the ``ValueError`` it was."""

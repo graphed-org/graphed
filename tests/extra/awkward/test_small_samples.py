@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pickle
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -307,12 +308,34 @@ def test_session_materialize_raises_an_attributed_error() -> None:
     assert info.value.user_frame.source.endswith("ev.a + ev.b")
 
 
-def test_a_pack_key_overflow_stays_a_value_error_past_the_attribution() -> None:
+def test_a_pack_key_overflow_is_a_located_value_error() -> None:
     session = Session(AwkwardBackend())
     ev = from_awkward(session, "x", ak.Array({"run": [1], "event": [2**20]}))
+    key = graphed.pack_key(ev, on=("run", "event"))
     with pytest.raises(PackKeyError, match="pack_key: field 'event'") as info:
-        session.materialize(graphed.pack_key(ev, on=("run", "event")))
+        session.materialize(key)
     assert isinstance(info.value, ValueError)
+    assert isinstance(info.value, StageError)
+    assert info.value.user_frame.source.startswith("graphed.pack_key")
+    assert pickle.loads(pickle.dumps(info.value)) == info.value
+
+
+def test_a_pack_key_overflow_in_a_plan_names_the_line_and_the_partition(tmp_path: Path) -> None:
+    path = _parquet(tmp_path, "keys.parquet", [1.0])
+    ak.to_parquet(ak.Array({"run": [1], "event": [2**20]}), path)
+    ev = from_parquet("ds", path, session=Session(AwkwardBackend()))
+    key = graphed.pack_key(ev, on=("run", "event"))
+    plan = graphed.aggregate_plan(
+        key,
+        reduce=lambda values: 0,
+        combine=lambda a, b: a,
+        empty=lambda: 0,
+        backend=lambda: ev.session.backend,
+    )
+    with pytest.raises(PackKeyError) as info:
+        SequentialRunner().run(plan)
+    assert info.value.user_frame.source.startswith("graphed.pack_key")
+    assert info.value.partition == str(plan.tasks[0].partition)
 
 
 def test_a_foreign_array_is_refused_by_session_materialize() -> None:

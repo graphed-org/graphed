@@ -19,8 +19,8 @@ Small samples, and one evaluation path
   ``gak.head``, ``gak.sample`` and ``gak.to_list`` then do, and **a failing operation raises a
   ``StageError``** at the recording line in place of the bare backend error. Code catching the
   original type around it needs ``StageError`` and its ``cause_type``; an External's
-  ``OutputTypeError`` arrives this way too. ``pack_key``'s overflow is the exception: it stays a
-  ``ValueError``, as ``graphed.errors.PackKeyError``, on every path.
+  ``OutputTypeError`` arrives this way too. ``pack_key``'s overflow is also a ``ValueError``:
+  ``graphed.errors.PackKeyError`` is both.
 * ``graphed.debug.run(partition=)`` selects a ``Partition``. It was only a label and always read the
   whole source, so a string now raises ``TypeError``; pass ``label=`` to name the data in a failure.
 * ``Partition.first(n)`` caps a partition at its first ``n`` entries, resolved when it is read.
