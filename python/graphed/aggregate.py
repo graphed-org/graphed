@@ -26,7 +26,7 @@ from graphed.core.execution import Plan, Task, WorkerResources
 from graphed.core.plan import _partition_bytes, _sha256_hex
 
 from .array import Array
-from .errors import GraphedError, OutputTypeError, SourceFrame, StageError, ValueStageError
+from .errors import GraphedError, OutputTypeError, SourceFrame, StageError
 from .execute import (
     CompiledGraph,
     Frame,
@@ -359,8 +359,7 @@ def attribute_failures(
             if frame is None:
                 return None
             labels = ()
-        kind = ValueStageError if isinstance(exc, ValueError) else StageError
-        return kind(
+        return StageError(
             op=op,
             frames=(SourceFrame(*frame),),
             # a worker holds values, not forms: the runtime types are what it can honestly report

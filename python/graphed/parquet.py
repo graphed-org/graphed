@@ -79,6 +79,20 @@ def num_rows(path: str) -> int:
     return int(_pq().ParquetFile(path).metadata.num_rows)
 
 
+def row_groups_for(path: str, start: int, stop: int) -> tuple[list[int], int]:
+    """Return the row groups holding rows ``[start, stop)``, and the row the first one starts at."""
+    meta = _pq().ParquetFile(path).metadata
+    groups: list[int] = []
+    first = row = 0
+    for group in range(meta.num_row_groups):
+        end = row + meta.row_group(group).num_rows
+        if row < stop and start < end:
+            first = first if groups else row
+            groups.append(group)
+        row = end
+    return groups, first
+
+
 def schema_of(paths: Sequence[str]) -> Any:
     """Return the dataset's arrow schema — the FIRST file is authoritative (MVP convention)."""
     return _pq().ParquetFile(paths[0]).schema_arrow
@@ -191,6 +205,7 @@ __all__ = [
     "num_rows",
     "part_path",
     "resolve_partition",
+    "row_groups_for",
     "schema_of",
     "step_of",
     "write_plan",

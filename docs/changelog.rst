@@ -17,12 +17,14 @@ Small samples, and one evaluation path
   ``graphed.materialize(x, partition=plan.tasks[3].partition)`` over one chunk, as a task runs it.
 * ``Session.materialize`` now is ``graphed.materialize``: it reads only the used columns, as
   ``gak.head``, ``gak.sample`` and ``gak.to_list`` then do, and **a failing operation raises a
-  ``StageError``** at the recording line in place of the bare backend error. One caused by a
-  ``ValueError`` is a ``ValueError`` too. Code catching any other exception type around it needs
-  ``StageError``, or ``cause_type``. An External's ``OutputTypeError`` arrives this way as well.
+  ``StageError``** at the recording line in place of the bare backend error. Code catching the
+  original type around it needs ``StageError`` and its ``cause_type``; an External's
+  ``OutputTypeError`` arrives this way too. ``pack_key``'s overflow is the exception: it stays a
+  ``ValueError``, as ``graphed.errors.PackKeyError``, on every path.
 * ``graphed.debug.run(partition=)`` selects a ``Partition``. It was only a label and always read the
   whole source, so a string now raises ``TypeError``; pass ``label=`` to name the data in a failure.
 * ``Partition.first(n)`` caps a partition at its first ``n`` entries, resolved when it is read.
+* A parquet partition reads only the row groups its entries lie in, not the whole file.
 
 Plans returned wrong values for row-axis operations, and now refuse them
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pickle
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -11,19 +10,20 @@ import awkward as ak
 import numpy as np
 import pytest
 
-pytest.importorskip("pyarrow")
+pa = pytest.importorskip("pyarrow")
+import pyarrow.parquet as pq
 
 import graphed
 import graphed.debug as gd
 import graphed.numpy as gnp
 from graphed.awkward import AwkwardBackend, AwkwardForm, from_awkward, gak
-from graphed.awkward.io import from_parquet
-from graphed.checkpoint.errors import dead_letter_descriptor
+from graphed.awkward.io import from_parquet, read_parquet_partition
 from graphed.core import Partition
 from graphed.core.execution import SequentialRunner
 from graphed.core.plan import _partition_bytes, _partition_from_json, _partition_json
-from graphed.errors import StageError, ValueStageError
+from graphed.errors import PackKeyError, StageError
 from graphed.materialization import PlanPieces
+from graphed.parquet import row_groups_for
 from graphed.session import Session
 
 
@@ -306,14 +306,12 @@ def test_session_materialize_raises_an_attributed_error() -> None:
     assert info.value.user_frame.source.endswith("ev.a + ev.b")
 
 
-def test_a_stage_error_over_a_value_error_stays_one_and_pickles() -> None:
+def test_a_pack_key_overflow_stays_a_value_error_past_the_attribution() -> None:
     session = Session(AwkwardBackend())
-    ev = from_awkward(session, "x", ak.Array({"a": [[1.0], [2.0, 3.0]], "b": [[1.0, 2.0], [3.0]]}))
-    with pytest.raises(ValueError, match="StageError") as info:
-        session.materialize(ev.a + ev.b)
-    clone = pickle.loads(pickle.dumps(info.value))
-    assert isinstance(clone, ValueStageError)
-    assert clone == info.value
+    ev = from_awkward(session, "x", ak.Array({"run": [1], "event": [2**20]}))
+    with pytest.raises(PackKeyError, match="pack_key: field 'event'") as info:
+        session.materialize(graphed.pack_key(ev, on=("run", "event")))
+    assert isinstance(info.value, ValueError)
 
 
 def test_a_foreign_array_is_refused_by_session_materialize() -> None:
@@ -433,11 +431,36 @@ def test_gd_run_refuses_a_partition_no_source_holds() -> None:
     assert not isinstance(info.value, StageError)
 
 
-def test_a_dead_letter_names_the_stage_error_family() -> None:
-    session = Session(AwkwardBackend())
-    ev = from_awkward(session, "x", ak.Array({"a": [[1.0], [2.0, 3.0]], "b": [[1.0, 2.0], [3.0]]}))
-    with pytest.raises(ValueStageError) as info:
-        session.materialize(ev.a + ev.b)
-    described = dead_letter_descriptor("t", Partition("f", "t", 0, 1), info.value)
-    assert described["error_type"] == "StageError"
-    assert described["stage_error"]["cause_type"] == "ValueError"
+def _row_groups(tmp_path: Path) -> str:
+    path = tmp_path / "groups.parquet"
+    pq.write_table(pa.table({"x": np.arange(10.0)}), path, row_group_size=4)
+    return str(path)
+
+
+@pytest.mark.parametrize(
+    ("start", "stop", "expected"),
+    [(0, 3, ([0], 0)), (3, 5, ([0, 1], 0)), (5, 7, ([1], 4)), (8, 99, ([2], 8)), (4, 4, ([], 0))],
+)
+def test_row_groups_for_covers_a_range(
+    tmp_path: Path, start: int, stop: int, expected: tuple[list[int], int]
+) -> None:
+    assert row_groups_for(_row_groups(tmp_path), start, stop) == expected
+
+
+def test_a_parquet_partition_reads_only_its_row_groups(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = _row_groups(tmp_path)
+    asked: list[Any] = []
+    read = ak.from_parquet
+
+    def counting(*args: Any, **kwargs: Any) -> Any:
+        asked.append(kwargs["row_groups"])
+        return read(*args, **kwargs)
+
+    monkeypatch.setattr(ak, "from_parquet", counting)
+    chunk = read_parquet_partition(Partition(path, "", 5, 9))
+    assert ak.to_list(chunk.x) == [5.0, 6.0, 7.0, 8.0]
+    assert asked == [[1, 2]]
+    assert len(read_parquet_partition(Partition(path, "", 4, 4))) == 0
+    assert asked[-1] is None

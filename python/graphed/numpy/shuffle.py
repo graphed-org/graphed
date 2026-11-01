@@ -21,6 +21,8 @@ from typing import Any, cast
 
 import numpy as np
 
+from graphed.errors import PackKeyError
+
 #: the pinned §4 route hash (the golden vectors require exactly this; measured in exec-local's
 #: benchmark against a non-crypto alternative).
 PINNED_ROUTING_HASH = "sha256"
@@ -274,7 +276,7 @@ def pack_key(record: object, on: Sequence[str]) -> np.ndarray:
     # F8: a field value >= 2**20 bleeds into the adjacent field and silently collides
     for nm in names:
         if np.any(np.asarray(cols[nm]).astype(np.uint64) >= np.uint64(1 << 20)):
-            raise ValueError(
+            raise PackKeyError(
                 f"pack_key: field {nm!r} has a value >= 2**20 (overflow->fixed-width bytes is "
                 "Phase-2)"
             )

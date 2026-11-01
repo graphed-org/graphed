@@ -55,6 +55,10 @@ class OutputTypeError(GraphedTypeError):
         return (type(self), (self.op, self.provenance, self.detail))
 
 
+class PackKeyError(GraphedError, ValueError):
+    """A key field too wide for ``pack_key``: its rows would collide, so the run stops here."""
+
+
 class MissingFieldError(GraphedTypeError, AttributeError):
     """``arr.<name>`` naming no field.
 
@@ -155,7 +159,3 @@ class StageError(Exception):
                 self.variation,
             )
         )
-
-
-class ValueStageError(StageError, ValueError):
-    """A :class:`StageError` caused by a ``ValueError``, which a guard's caller still catches."""

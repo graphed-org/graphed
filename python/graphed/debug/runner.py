@@ -89,7 +89,7 @@ def run(
         )
     lowered = lower(session, array, opt_level=opt_level)
     backend = session.backend
-    chunks = {} if partition is None else dict([_partition_chunk([array], partition)])
+    chunks = {} if partition is None else _partition_chunk([array], partition)
     where = label if label is not None else "sample" if partition is None else str(partition)
 
     def on_source(nid: int) -> object:

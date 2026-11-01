@@ -194,8 +194,11 @@ def from_parquet(
 def read_parquet_partition(partition: Partition, columns: Sequence[str] | None = None) -> ak.Array:
     """Read one partition (resolving blind ones at read time), restricted to ``columns``."""
     part = gpq.resolve_partition(partition)
-    arr = ak.from_parquet(part.uri, columns=list(columns) if columns else None)
-    return arr[part.entry_start : part.entry_stop]
+    groups, first = gpq.row_groups_for(part.uri, part.entry_start, part.entry_stop)
+    arr = ak.from_parquet(
+        part.uri, columns=list(columns) if columns else None, row_groups=groups or None
+    )
+    return arr[part.entry_start - first : part.entry_stop - first]
 
 
 def _resolve_behavior(behavior: Any) -> Any:

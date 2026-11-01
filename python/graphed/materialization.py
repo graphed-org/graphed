@@ -236,23 +236,15 @@ def _read_chunk(
 
 def _partition_chunk(
     arrays: Sequence[Array], partition: Partition
-) -> tuple[int, Callable[[], object]]:
-    """Return the source of ``arrays`` holding ``partition``, and its read of that chunk."""
+) -> dict[int, Callable[[], object]]:
+    """Return ``{source: its read of the chunk}`` for the source of ``arrays`` with ``partition``."""
     place = (partition.uri, partition.tree)
     for nid, data in sources_read(arrays).items():
         if isinstance(data, PartitionedSource) and any(
             (p.uri, p.tree) == place for p in data.partitions(1)
         ):
-            return nid, partial(_read_chunk, data, partition, _columns(data, arrays, nid))
+            return {nid: partial(_read_chunk, data, partition, _columns(data, arrays, nid))}
     raise ValueError(f"no source of these results holds {partition}")
-
-
-def _partition_reads(
-    session: Session, arrays: Sequence[Array], partition: Partition
-) -> dict[int, object]:
-    """Return the chunk ``partition`` holds of the source of ``arrays`` it belongs to."""
-    nid, read = _partition_chunk(arrays, partition)
-    return {nid: read()}
 
 
 def _frontier(session: Session, arrays: Sequence[Array], nid: int, past: Set[int]) -> list[Array]:
@@ -456,7 +448,7 @@ def _evaluated(items: Iterable[Any], sample: _Sample | None = None) -> dict[int,
             )
             values.update(ran)
             continue
-        past = _past_boundary(session)
+        past = _past_boundary(session) if work.pieces or work.passes else frozenset[int]()
         for key, pieces in work.pieces.items():
             # past a boundary is whole, where a reduction has its one value
             whole = not past.isdisjoint(a.node_id for a in pieces.outputs)
@@ -471,20 +463,28 @@ def _evaluated(items: Iterable[Any], sample: _Sample | None = None) -> dict[int,
     return values
 
 
+def _first_label(entries: int) -> str:
+    return f"first {entries} entries"
+
+
 def _sample_of(entries: int | None, partition: Partition | None) -> _Sample | None:
     """Return what ``entries=`` or ``partition=`` asks for, refusing a bad request."""
     if entries is not None and partition is not None:
         raise ValueError("materialize takes entries= or partition=, not both")
     if partition is not None:
         return _Sample(
-            partial(_partition_reads, partition=partition), str(partition), chunked=True
+            lambda _, arrays: {
+                n: read() for n, read in _partition_chunk(arrays, partition).items()
+            },
+            str(partition),
+            chunked=True,
         )
     if entries is None:
         return None
     if type(entries) is not int or entries < 1:
         raise ValueError(f"materialize(entries=) is a positive int, not {entries!r}")
     return _Sample(
-        lambda s, a: _first_entries(s, a, entries, s.source_value)[0], f"first {entries} entries"
+        lambda s, a: _first_entries(s, a, entries, s.source_value)[0], _first_label(entries)
     )
 
 
@@ -548,9 +548,9 @@ def head(array: Array, n: int = 5) -> Any:
     load = cache(session.source_value)
     while True:
         reads, exhausted = _first_entries(session, [array], entries, load)
-        where = f"first {entries} entries"
         # nothing here is past a boundary, so every operand is the prefix's rows, and a length-1
         # operand is a row set that must not broadcast
+        where = _first_label(entries)
         value = _run_whole(session, _Joint(), [array], reads, where, chunked=True)[id(array)]
         rows, found = _first(value, n)
         if exhausted or found == n:
