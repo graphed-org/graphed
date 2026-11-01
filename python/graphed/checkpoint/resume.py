@@ -437,6 +437,9 @@ class _OpenStores(threading.local):
 
 _OPEN = _OpenStores()
 #: filesystems with no directories, so a cached store cannot outlive its root
+#: what `resumable` turns into the root its workers reopen
+_StoreRoot = str | os.PathLike[str] | Store | FsspecStore
+
 _DIRLESS = frozenset({"s3", "s3a", "gcs", "gs", "abfs", "az", "adl", "memory"})
 #: each process's journal token, keyed by pid so a forked child never writes its parent's journals
 _TOKENS: dict[int, str] = {os.getpid(): uuid.uuid4().hex}
@@ -444,7 +447,7 @@ _TOKENS: dict[int, str] = {os.getpid(): uuid.uuid4().hex}
 
 def open_store(
     root: str, node: str | None = None, storage_options: Mapping[str, Any] | None = None
-) -> Any:
+) -> CheckpointStore:
     """``root`` as a checkpoint store.
 
     An :class:`FsspecStore` when it contains ``://``, else a directory :class:`Store`.
@@ -639,12 +642,11 @@ def check_environment(
 
 
 def as_store(
-    store: str | os.PathLike[str] | CheckpointStore,
-    storage_options: Mapping[str, Any] | None = None,
+    store: str | os.PathLike[str] | CheckpointStore, storage_options: Mapping[str, Any] | None
 ) -> CheckpointStore:
     """``store`` as a checkpoint store: a directory, an fsspec URL, or a store as it is."""
     if isinstance(store, str | os.PathLike):
-        return cast("CheckpointStore", open_store(os.fspath(store), None, storage_options))
+        return open_store(os.fspath(store), None, storage_options)
     if not callable(getattr(store, "record_environment", None)):
         raise TypeError(
             f"a checkpoint store is a path, a URL or a Store, got {type(store).__name__}; a store "
@@ -653,16 +655,18 @@ def as_store(
     return store
 
 
-def _worker_root(store: str | os.PathLike[str] | Store) -> str:
-    """Return the root each worker reopens ``store`` from."""
+def _worker_root(
+    store: _StoreRoot, storage_options: Mapping[str, Any] | None
+) -> tuple[str, dict[str, Any]]:
+    """Return the root and options each worker reopens ``store`` from."""
+    options = dict(storage_options or {})
     if isinstance(store, str | os.PathLike):
-        return os.fspath(store)
+        return os.fspath(store), options
     if isinstance(store, Store):
-        return str(store.root)
-    raise TypeError(
-        f"resumable takes a path, a URL or a Store, got {type(store).__name__}; workers reopen "
-        "the store, so an FsspecStore goes as its URL with storage_options="
-    )
+        return str(store.root), options
+    if isinstance(store, FsspecStore):
+        return store.url, {**store.storage_options, **options}
+    raise TypeError(f"resumable takes a path, a URL or a Store, got {type(store).__name__}")
 
 
 # ---- the transform ----------------------------------------------------------------------------
@@ -806,7 +810,7 @@ def _tagged(task: Task, task_id: str, done: Mapping[str, JournalEntry]) -> Task:
 @overload
 def resumable(
     plan: DurablePlanV2,
-    store: str | os.PathLike[str] | Store,
+    store: _StoreRoot,
     *,
     storage_options: Mapping[str, Any] | None = ...,
     codec: Codec | None = ...,
@@ -816,7 +820,7 @@ def resumable(
 @overload
 def resumable(
     plan: DurablePlan,
-    store: str | os.PathLike[str] | Store,
+    store: _StoreRoot,
     *,
     storage_options: Mapping[str, Any] | None = ...,
     codec: Codec | None = ...,
@@ -826,7 +830,7 @@ def resumable(
 @overload
 def resumable(
     plan: Plan[R],
-    store: str | os.PathLike[str] | Store,
+    store: _StoreRoot,
     *,
     storage_options: Mapping[str, Any] | None = ...,
     codec: Codec | None = ...,
@@ -835,7 +839,7 @@ def resumable(
 ) -> Plan[R]: ...
 def resumable(
     plan: Plan[Any] | DurablePlan | DurablePlanV2,
-    store: str | os.PathLike[str] | Store,
+    store: _StoreRoot,
     *,
     storage_options: Mapping[str, Any] | None = None,
     codec: Codec | None = None,
@@ -845,7 +849,8 @@ def resumable(
     """``plan`` made to resume from the checkpoint store at ``store`` on whatever runner runs it.
 
     ``store`` is the root every worker opens: a directory (a ``str``, an ``os.PathLike`` or a
-    :class:`Store`), or an fsspec URL with ``storage_options``. Each task's result is recorded
+    :class:`Store`), or an fsspec URL with ``storage_options`` (or an :class:`FsspecStore`, whose
+    options these extend). Each task's result is recorded
     there as it finishes; a task the store already holds is decoded by the worker that runs it
     instead of recomputed. ``codec`` (default :class:`PickleCodec`) turns a runtime plan's partials
     into bytes; a ``DurablePlanV2``'s stage payloads are stored as they are. ``salt`` goes into
@@ -859,11 +864,11 @@ def resumable(
     any store I/O. A store whose environment record differs raises :class:`EnvironmentChangedError`
     unless ``accept_environment``.
     """
-    store = _worker_root(store)
+    store, opened = _worker_root(store, storage_options)
     codec = PickleCodec() if codec is None else codec
     processes, ids = _task_ids(plan, codec, salt)
-    options = tuple((storage_options or {}).items())
-    st = open_store(store, None, dict(options))
+    options = tuple(opened.items())
+    st = open_store(store, None, opened)
     done = st.completed()
     check_environment(st, done, salt, accept_environment)
     reused = [sum(tid in done for tid in stage) for stage in ids]

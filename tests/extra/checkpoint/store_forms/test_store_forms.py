@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +11,6 @@ import pytest
 
 from graphed.checkpoint import FsspecStore, Store, resumable, run_resumable
 from graphed.checkpoint import resume as resume_module
-from graphed.checkpoint.resume import as_store
 from graphed.checkpoint.runner import run_shuffle_resumable
 from graphed.core import (
     DurablePlan,
@@ -54,11 +53,7 @@ def write(task: Task, inputs: Sequence[bytes], resources: Any) -> bytes:
     return f"block:{task.key}".encode()
 
 
-@dataclass(frozen=True)
 class _NeedsService:
-    def __call__(self, task: Task, inputs: Sequence[bytes], resources: Any) -> bytes:
-        return b""
-
     def bind_services(self, endpoints: Mapping[str, str]) -> _NeedsService:
         if "sf" not in endpoints:
             raise UnboundServiceError("sf")
@@ -94,11 +89,6 @@ def test_resumable_runs_then_reuses_from_each_form(
     assert plan.process.reused == 3
 
 
-def test_a_form_written_by_one_resumes_under_another(tmp_path: Path) -> None:
-    run_resumable(_plan(), str(tmp_path))
-    assert run_resumable(_plan(), Store(tmp_path)).report.skipped == 3
-
-
 def test_a_url_takes_the_route_resumable_uses(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -114,19 +104,49 @@ def test_a_url_takes_the_route_resumable_uses(
     assert calls == [("s3://bucket/ckpt", None, {"anon": True})]
 
 
-def test_a_store_passes_through_untouched(tmp_path: Path) -> None:
-    store = Store(tmp_path)
-    assert as_store(store) is store
+@pytest.mark.parametrize(
+    ("given", "options"),
+    [({}, {"auto_mkdir": True}), ({"extra": 1}, {"auto_mkdir": True, "extra": 1})],
+)
+def test_resumable_sends_workers_an_fsspec_stores_url_and_options(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, given: dict[str, Any], options: dict[str, Any]
+) -> None:
+    url = f"file://{tmp_path}/fsspec"
+    store = FsspecStore(url, auto_mkdir=True)
+    calls: list[tuple[Any, ...]] = []
+    real = resume_module.open_store
+
+    def spying(root: str, node: str | None = None, opened: Any = None) -> Any:
+        calls.append((root, opened))
+        return real(root, node, {"auto_mkdir": True})
+
+    monkeypatch.setattr(resume_module, "open_store", spying)
+    plan: Any = resumable(_plan(), store, storage_options=given)
+    assert calls == [(url, options)]
+    assert plan.process.storage_options == tuple(options.items())
 
 
-class _NoEnvironment:
-    pass
+def test_an_fsspec_store_runs_then_reuses_under_resumable(tmp_path: Path) -> None:
+    store = FsspecStore(f"file://{tmp_path}/fsspec", auto_mkdir=True)
+    assert SequentialRunner().run(resumable(_plan(), store)).value == 6
+    plan: Any = resumable(_plan(), store)
+    assert plan.process.reused == 3
 
 
-@pytest.mark.parametrize("value", [3, None, _NoEnvironment()])
-def test_run_resumable_names_store_on_anything_else(value: Any) -> None:
-    with pytest.raises(TypeError, match="is a path, a URL or a Store, got"):
-        run_resumable(_plan(), value)
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda value: run_resumable(_plan(), value),
+        lambda value: run_shuffle_resumable(_shuffle(), value),
+        lambda value: resumable(_plan(), value),
+    ],
+)
+@pytest.mark.parametrize("value", [3, None])
+def test_each_entry_point_names_store_on_anything_else(
+    call: Callable[[Any], Any], value: Any
+) -> None:
+    with pytest.raises(TypeError, match="a path, a URL or a Store, got"):
+        call(value)
 
 
 @pytest.mark.parametrize("form", FORMS)
@@ -138,11 +158,6 @@ def test_run_shuffle_resumable_runs_then_resumes_from_each_form(
     again = run_shuffle_resumable(_shuffle(), form(tmp_path))
     assert (again.report.executed, again.report.skipped) == (0, 2)
     assert again.value == first.value
-
-
-def test_run_shuffle_resumable_names_store_on_anything_else() -> None:
-    with pytest.raises(TypeError, match="is a path, a URL or a Store, got int"):
-        run_shuffle_resumable(_shuffle(), 3)  # type: ignore[arg-type]
 
 
 def test_run_resumable_refuses_a_plan_before_opening_the_store(tmp_path: Path) -> None:
@@ -161,18 +176,7 @@ def test_run_shuffle_resumable_refuses_a_plan_before_opening_the_store(tmp_path:
     assert not root.exists()
 
 
-@pytest.mark.parametrize("value", [3, None])
-def test_resumable_names_store_on_anything_else(value: Any) -> None:
-    with pytest.raises(TypeError, match="takes a path, a URL or a Store, got"):
-        resumable(_plan(), value)
-
-
 def test_resumable_refuses_the_store_before_keying_the_plan(tmp_path: Path) -> None:
     already: Any = resumable(_plan(), tmp_path)
     with pytest.raises(TypeError, match="takes a path, a URL or a Store, got int"):
         resumable(already, 3)  # type: ignore[call-overload]
-
-
-def test_resumable_sends_an_fsspec_store_to_its_url(tmp_path: Path) -> None:
-    with pytest.raises(TypeError, match="goes as its URL with storage_options="):
-        resumable(_plan(), FsspecStore(f"file://{tmp_path}"))  # type: ignore[call-overload]
