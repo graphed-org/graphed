@@ -1,6 +1,6 @@
 """m51 extra witnesses (impl-review MUT-M5e MED + malformed-key LOW).
 
-Two ``select=`` guardrails the frozen suite happens not to drive. Self-contained (the frozen
+Three ``select=`` guardrails the frozen suite happens not to drive. Self-contained (the frozen
 ``m51_write_fixtures`` live in a sibling tree that is not on this process's path), built from
 ``graphed_corpus`` + the public graphed API.
 
@@ -12,6 +12,7 @@ Two ``select=`` guardrails the frozen suite happens not to drive. Self-contained
     per-jet mask writes.
   * LOW — the malformed ``select=`` key guard (``_normalize_select``): a key that is neither a bare
     depth ``int`` nor a ``(field_name, depth>=1)`` tuple is refused at the call.
+  * The two-source refusal, which both the varied and the plain ``to_parquet`` share.
 
 Extra (non-frozen): both guards are load-bearing but the frozen anchors leave the firing direction
 unwitnessed (see the m51 impl-review kill-matrix, MUT-M5e).
@@ -19,9 +20,11 @@ unwitnessed (see the m51 impl-review kill-matrix, MUT-M5e).
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import awkward as ak
+import numpy as np
 import pytest
 from graphed_corpus import make_events
 
@@ -31,6 +34,9 @@ from graphed import Session
 from graphed.awkward import AwkwardBackend, from_awkward, gak
 from graphed.core.execution import Plan
 from graphed.errors import GraphedError
+from graphed.numpy import NumpyBackend
+from graphed.numpy import from_array as np_from_array
+from graphed.numpy.io import to_parquet as np_to_parquet
 
 pytest.importorskip("pyarrow")
 
@@ -116,3 +122,44 @@ def test_malformed_select_key_is_refused(tmp_path) -> None:  # type: ignore[no-u
     assert "bare depth" in str(excinfo.value)
     # positive control: a well-formed key on the same record is accepted (returns a Plan)
     assert isinstance(_write(record, str(tmp_path / "ok"), {0: evt_mask}, compute=False), Plan)
+
+
+@pytest.fixture
+def two_sources(tmp_path: Path) -> tuple[Any, Any]:
+    paths = [str(tmp_path / f"{name}.parquet") for name in "ab"]
+    for path in paths:
+        ak.to_parquet(ak.Array({"a": [1.0, 2.0, 3.0], "j": [[1.0], [2.0, 3.0], []]}), path)
+    session = Session(AwkwardBackend())
+    x, y = (ga.from_parquet(n, [p], session=session) for n, p in zip("xy", paths, strict=True))
+    return x, y
+
+
+def test_a_mask_over_another_source_refuses(two_sources: tuple[Any, Any], tmp_path: Path) -> None:
+    x, y = two_sources
+    mask = graphed.vary(x.a > 1.5, "s", up=x.a > 0.5, down=x.a > 2.5)
+    assert isinstance(_write(x, str(tmp_path / "ok"), mask, compute=False), Plan)
+    with pytest.raises(TypeError, match="exactly one source; these arrays read 2"):
+        _write(y, str(tmp_path / "out"), mask, compute=False)
+
+
+def test_two_sources_refuse_ahead_of_the_mask_depth(
+    two_sources: tuple[Any, Any], tmp_path: Path
+) -> None:
+    x, y = two_sources
+    mask = graphed.vary(y.j > 1.5, "s", up=y.j > 0.5, down=y.j > 2.5)
+    with pytest.raises(TypeError, match="exactly one source"):
+        _write(x, str(tmp_path / "out"), mask, compute=False)
+
+
+def test_the_plain_writes_refuse_two_sources_alike(tmp_path: Path) -> None:
+    session = Session(AwkwardBackend())
+    a = from_awkward("a", ak.Array({"x": [1.0]}), session=session)
+    b = from_awkward("b", ak.Array({"x": [2.0]}), session=session)
+    with pytest.raises(TypeError, match="exactly one source; these arrays read 2"):
+        ga.to_parquet(a.x + b.x, str(tmp_path / "out"), compute=False)
+
+    numpy_session = Session(NumpyBackend())
+    c = np_from_array(numpy_session, "c", np.arange(2.0))
+    d = np_from_array(numpy_session, "d", np.arange(2.0))
+    with pytest.raises(TypeError, match="exactly one source; these arrays read 2"):
+        np_to_parquet(c + d, str(tmp_path / "np"), compute=False)
