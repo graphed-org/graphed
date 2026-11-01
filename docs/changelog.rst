@@ -26,6 +26,24 @@ Small samples, and one evaluation path
 * ``Partition.first(n)`` caps a partition at its first ``n`` entries, resolved when it is read.
 * A parquet partition reads only the row groups its entries lie in, not the whole file.
 
+One rule at the deferred/eager boundary
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* **``ak.to_list(x)`` on a deferred array now refuses.** It evaluated the whole dataset silently;
+  call ``graphed.materialize(x).to_list()``. Nothing evaluates implicitly now.
+  ``gak.to_list`` still evaluates and is deprecated, with the same pointer.
+* Every conversion to eager values refuses at your line and names ``graphed.materialize`` and
+  ``graphed.head``: ``ak.to_numpy``, ``ak.Array``, ``np.asarray``, ``np.histogram``, ``.tolist()``,
+  ``.to_list()``, ``.to_numpy()``, ``.show()``, ``float()``, ``int()``, ``len()``, ``list()``,
+  and so ``plt.hist`` and an eager ``hist.Hist.fill``. ``bool(x)`` keeps its ``where`` advice.
+* ``len()``, ``float()``, ``int()``, ``iter()`` and an eager operand raise
+  ``graphed.errors.DeferredTypeError``, which is a ``GraphedTypeError`` and a ``TypeError``.
+* ``ak.<fn>`` with no deferred form now raises ``GraphedTypeError`` at your line in place of a bare
+  ``GraphedError``.
+* Combining a deferred array with an eager array or list (``x * np.ones(n)``) names
+  ``from_awkward`` and ``graphed.materialize``. Numpy scalars stay operands.
+* ``x.compute()`` says to use ``graphed.materialize``. A real field named ``compute`` still reads.
+
 Plans returned wrong values for row-axis operations, and now refuse them
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

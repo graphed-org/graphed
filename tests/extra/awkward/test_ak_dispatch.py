@@ -141,7 +141,7 @@ def test_functions_without_a_gak_equivalent_refuse(
     count = arrays["s"].node_count()
     with pytest.raises(
         GraphedError,
-        match=rf"^graphed records no deferred {re.escape(spelled)}: .*gak has no equivalent",
+        match=rf"graphed records no deferred {re.escape(spelled)}; .*graphed\.materialize",
     ):
         call(arrays["a"])
     assert arrays["s"].node_count() == count

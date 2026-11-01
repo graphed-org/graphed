@@ -18,8 +18,8 @@ import numpy as np
 from awkward._connect.numpy import implemented as _ak_numpy
 
 from graphed import Array
-from graphed.array import no_eager_value
-from graphed.errors import GraphedError, GraphedTypeError
+from graphed.array import NEEDS_VALUES, no_eager_value
+from graphed.errors import GraphedTypeError
 from graphed.provenance import capture, register_internal
 from graphed.varied import Varied, register_varied
 
@@ -46,7 +46,7 @@ def _awkward_function(
 ) -> Any:
     name = dispatch.__name__
     # identity, not the name alone: ak.str.join is also named "join"
-    if getattr(ak, name, None) is not dispatch or not hasattr(gak, name):
+    if name == "to_list" or getattr(ak, name, None) is not dispatch or not hasattr(gak, name):
         spelled = next(
             (
                 f"{prefix}.{name}"
@@ -55,10 +55,8 @@ def _awkward_function(
             ),
             f"{dispatch.__module__}.{name}",
         )
-        raise GraphedError(
-            f"graphed records no deferred {spelled}: graphed.awkward.gak has no "
-            "equivalent; evaluate it with graphed.materialize(x), or peek with graphed.head(x), "
-            "and use the values eagerly"
+        raise GraphedTypeError(
+            spelled, capture(), f"graphed records no deferred {spelled}; it {NEEDS_VALUES}"
         )
     fn = getattr(gak, name)
     signature = inspect.signature(dispatch)
@@ -132,7 +130,7 @@ def _array_function(self: object, func: Any, types: object, args: Any, kwargs: A
     """
     impl = _clip if func is np.clip else _ak_numpy.get(func)
     if impl is None:  # awkward would convert eagerly; a deferred array has nothing to convert
-        raise no_eager_value(f"np.{func.__name__}(...)", "numpy value")
+        raise no_eager_value(f"np.{func.__name__}(...)")
     return impl(*args, **kwargs)
 
 

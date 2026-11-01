@@ -1,0 +1,223 @@
+"""One rule at the deferred/eager boundary: a conversion refuses, naming the explicit choices."""
+
+from __future__ import annotations
+
+import pickle
+from collections.abc import Callable
+from typing import Any
+
+import awkward as ak
+import numpy as np
+import pytest
+
+import graphed
+import graphed.numpy as gnp
+from graphed import Session
+from graphed.awkward import AwkwardBackend, AwkwardForm, from_awkward, gak
+from graphed.errors import DeferredTypeError, GraphedTypeError, MissingFieldError
+
+hist = pytest.importorskip("hist")
+
+
+def _unread() -> ak.Array:
+    raise AssertionError("a refused conversion read the source")
+
+
+def _events(behavior: dict[Any, Any] | None = None) -> Any:
+    data = ak.Array({"Jet_pt": [[1.0, 2.0], []], "MET_pt": [1.0, 2.0]})
+    form = AwkwardForm(ak.Array(data.layout.to_typetracer(forget_length=True)))
+    return Session(AwkwardBackend(behavior=behavior)).source("Events", form=form, data=_unread)
+
+
+def _plt_hist(x: Any) -> object:
+    plt = pytest.importorskip("matplotlib.pyplot")
+    return plt.hist(x)
+
+
+def _hist_fill(x: Any) -> object:
+    return hist.Hist.new.Reg(10, 0, 100, name="pt").Double().fill(pt=x)
+
+
+CONVERSIONS: dict[str, Callable[[Any], object]] = {
+    "ak.to_list": lambda x: ak.to_list(x),
+    "ak.to_numpy": lambda x: ak.to_numpy(x),
+    "ak.Array": lambda x: ak.Array(x),
+    "np.asarray": lambda x: np.asarray(x),
+    "np.histogram": lambda x: np.histogram(x),
+    ".tolist": lambda x: x.tolist(),
+    ".to_list": lambda x: x.to_list(),
+    ".to_numpy": lambda x: x.to_numpy(),
+    ".show": lambda x: x.show(),
+    "float": lambda x: float(gak.sum(x, axis=None)),
+    "int": lambda x: int(gak.sum(x, axis=None)),
+    "len": lambda x: len(x),
+    "list": lambda x: list(x),
+    "plt.hist": _plt_hist,
+    "hist.Hist.fill": _hist_fill,
+    ".compute": lambda x: x.compute(),
+}
+MIXING: dict[str, Callable[[Any], object]] = {
+    "numpy": lambda x: x * np.ones(2),
+    "reflected numpy": lambda x: np.ones(2) * x,
+    "awkward": lambda x: x + ak.Array([1.0, 2.0]),
+    "list": lambda x: x * [1.0, 2.0],
+    "gak argument": lambda x: gak.where(x > 0, np.ones(2), x),
+}
+
+
+@pytest.mark.parametrize("convert", CONVERSIONS.values(), ids=CONVERSIONS)
+def test_a_conversion_refuses_at_the_users_line_and_reads_nothing(
+    convert: Callable[[Any], object],
+) -> None:
+    x = _events().MET_pt
+    with pytest.raises(GraphedTypeError) as refused:
+        convert(x)
+    text = str(refused.value)
+    assert "graphed.materialize" in text
+    assert not [word for word in ("np.where", "typetracer", "nplike") if word in text]
+    assert refused.value.provenance.filename == __file__
+
+
+def test_a_refused_ak_function_records_nothing() -> None:
+    x = _events().MET_pt
+    nodes = x.session.node_count()
+    with pytest.raises(GraphedTypeError):
+        ak.to_list(x)
+    assert x.session.node_count() == nodes
+
+
+@pytest.mark.parametrize("mix", MIXING.values(), ids=MIXING)
+def test_mixing_with_an_eager_array_names_both_fixes_at_the_users_line(
+    mix: Callable[[Any], object],
+) -> None:
+    with pytest.raises(GraphedTypeError) as refused:
+        mix(_events().MET_pt)
+    assert "from_awkward" in str(refused.value)
+    assert "graphed.materialize" in str(refused.value)
+    assert refused.value.provenance.filename == __file__
+
+
+@pytest.mark.parametrize(
+    "sniff",
+    [len, float, int, iter, lambda x: x * np.ones(2)],
+    ids=["len", "float", "int", "iter", "operand"],
+)
+def test_a_protocol_sniffer_still_reads_a_type_error(sniff: Callable[[Any], object]) -> None:
+    with pytest.raises(TypeError):
+        sniff(_events().MET_pt)
+
+
+def test_asarray_is_no_type_error_a_library_could_fall_back_on() -> None:
+    with pytest.raises(GraphedTypeError) as refused:
+        np.asarray(_events().MET_pt)
+    assert not isinstance(refused.value, TypeError)
+    assert "hist.graphed.Hist" in str(refused.value)
+
+
+def test_a_refusal_crosses_a_process_boundary() -> None:
+    with pytest.raises(DeferredTypeError) as refused:
+        len(_events().MET_pt)
+    back = pickle.loads(pickle.dumps(refused.value))
+    assert type(back) is DeferredTypeError
+    assert str(back) == str(refused.value)
+
+
+def test_bool_keeps_its_elementwise_advice() -> None:
+    with pytest.raises(GraphedTypeError, match=r"np\.where.*gak\.where") as refused:
+        bool(_events().MET_pt)
+    assert "graphed.materialize" in str(refused.value)
+
+
+def test_len_names_how_to_get_the_length() -> None:
+    with pytest.raises(TypeError, match=r"graphed\.materialize\(gak\.num\(x, axis=0\)\)"):
+        len(_events())
+
+
+def test_numpy_scalars_stay_operands() -> None:
+    x = from_awkward("x", ak.Array([1.0, 2.0]))
+    for scalar in (np.float64(2.0), np.array(2.0), np.int32(2), 2.0):
+        assert ak.to_list(graphed.materialize(x * scalar)) == [2.0, 4.0]
+
+
+def test_what_is_no_array_keeps_the_scalar_refusal() -> None:
+    with pytest.raises(TypeError, match="unsupported scalar operand") as refused:
+        _events().MET_pt * object()
+    assert not isinstance(refused.value, GraphedTypeError)
+
+
+def test_a_field_named_like_a_verb_reads_the_field() -> None:
+    fields = {"compute": [1.0, 2.0], "sum": [3.0, 4.0], "to_list": [5.0, 6.0]}
+    ev = from_awkward("ev", ak.Array(fields))
+    assert ak.to_list(graphed.materialize(ev.compute)) == [1.0, 2.0]
+    assert ak.to_list(graphed.materialize(ev.sum)) == [3.0, 4.0]
+    assert ak.to_list(graphed.materialize(ev.to_list)) == [5.0, 6.0]
+
+
+def test_a_missing_compute_still_reads_as_absent() -> None:
+    x = _events().MET_pt
+    assert not hasattr(x, "compute")
+    with pytest.raises(MissingFieldError, match=r"no \.compute\(\).*no field named 'compute'"):
+        _ = x.compute
+
+
+def test_another_missing_field_gets_no_compute_advice() -> None:
+    with pytest.raises(MissingFieldError) as refused:
+        _ = _events().nope
+    assert "compute" not in str(refused.value)
+
+
+def test_a_conversion_stays_an_attribute_for_a_sniffing_library() -> None:
+    assert hasattr(_events().MET_pt, "to_numpy")
+
+
+def test_a_behaviors_own_method_of_a_conversions_name_still_records() -> None:
+    class Jets(ak.Array):  # type: ignore[misc]
+        def to_list(self, scale: float) -> Any:
+            return self.pt * scale
+
+    behavior: dict[Any, Any] = {("*", "Jet"): Jets}
+    data = ak.with_name(ak.Array([{"pt": 1.0}, {"pt": 2.0}]), "Jet")
+    jets = from_awkward("j", data, session=Session(AwkwardBackend(behavior=behavior)))
+    assert ak.to_list(graphed.materialize(jets.to_list(2.0))) == [2.0, 4.0]
+
+
+def test_a_record_refuses_like_an_array() -> None:
+    ev = _events()
+    with pytest.raises(GraphedTypeError, match="needs values"):
+        ev[0].to_list()
+
+
+def test_gak_to_list_evaluates_and_is_deprecated() -> None:
+    x = from_awkward("x", ak.Array([1.0, 2.0]))
+    with pytest.warns(DeprecationWarning, match=r"graphed\.materialize\(x\)\.to_list\(\)"):
+        assert gak.to_list(x) == [1.0, 2.0]
+
+
+@pytest.mark.parametrize(
+    "convert",
+    [
+        lambda v: len(v),
+        lambda v: float(v),
+        lambda v: int(v),
+        lambda v: list(v),
+        lambda v: np.asarray(v),
+        lambda v: v.to_numpy(),
+        lambda v: ak.to_list(v),
+        lambda v: v.compute(),
+    ],
+    ids=["len", "float", "int", "list", "asarray", "to_numpy", "ak.to_list", "compute"],
+)
+def test_a_varied_refuses_by_the_same_rule(convert: Callable[[Any], object]) -> None:
+    x = from_awkward("x", ak.Array([1.0, 2.0]))
+    with pytest.raises(GraphedTypeError, match=r"graphed\.materialize") as refused:
+        convert(graphed.vary(x, "sf", up=x * 2, down=x / 2))
+    assert refused.value.provenance.filename == __file__
+
+
+def test_a_numpy_backed_array_refuses_by_the_same_rule() -> None:
+    x = gnp.from_array("x", np.arange(3.0))
+    for convert in (len, float, int):
+        with pytest.raises(TypeError, match=r"graphed\.materialize"):
+            convert(x)
+    with pytest.raises(TypeError, match=r"graphed\.numpy\.from_array"):
+        x * np.ones(3)

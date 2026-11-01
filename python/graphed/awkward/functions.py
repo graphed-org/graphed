@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import functools
 import json
+import warnings
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, cast
@@ -763,7 +764,12 @@ def unzip(arr: Array) -> tuple[Array, ...]:
 
 
 def to_list(arr: Array) -> list[object]:
-    """EAGER sugar: materializes through the session, then ak.to_list (records nothing new)."""
+    """EAGER sugar, deprecated: ``graphed.materialize(arr).to_list()`` says that it evaluates."""
+    warnings.warn(
+        "gak.to_list evaluates the array; call graphed.materialize(x).to_list()",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     out: list[object] = ak.to_list(arr.session.materialize(arr))
     return out
 

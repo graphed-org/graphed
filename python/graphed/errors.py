@@ -56,6 +56,19 @@ class OutputTypeError(GraphedTypeError):
         return (type(self), (self.op, self.provenance, self.detail))
 
 
+class DeferredTypeError(GraphedTypeError, TypeError):
+    """A deferred value refused where Python's protocols expect ``TypeError``.
+
+    ``len()``, ``float()``, ``iter()`` and an operand's coercion: a library sniffing one of them
+    catches ``TypeError``. ``__array__`` stays a plain ``GraphedTypeError``, so no library falls
+    back to treating a deferred array as a scalar.
+    """
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        """Pickle by constructor arguments."""
+        return (type(self), (self.op, self.provenance, self.detail))
+
+
 class PackKeyOverflowError(ValueError):
     """A key field too wide for ``pack_key``: its rows would collide, so the run stops here."""
 

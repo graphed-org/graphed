@@ -20,6 +20,7 @@ from awkward.types._awkward_datashape_parser import LarkError
 
 from graphed import Array, Session
 from graphed.aggregate import resolved_backend
+from graphed.array import NEEDS_VALUES
 from graphed.backend import PYTHON_TYPES, Form
 from graphed.core import PayloadDescriptor
 from graphed.session import reader
@@ -184,6 +185,14 @@ _BOUNDARY = frozenset(
 # source's attrs/behavior/named axes, nor a known length, so those are refused
 _INTROSPECT_EAGER = frozenset({"fields", "type", "typestr", "ndim", "is_tuple", "positional_axis"})
 
+
+#: awkward's own conversions, not a behavior's method of the same name
+_EAGER_METHODS = frozenset(
+    getattr(cls, name)
+    for cls in (ak.Array, ak.Record)
+    for name in ("to_list", "tolist", "show", "to_numpy")
+    if hasattr(cls, name)
+)
 
 _EXTERNAL = frozenset({"map", "correction", "onnx", "external"})
 
@@ -484,10 +493,10 @@ class AwkwardBackend:
         leaf (M59 — the shape `metric_table(return_combinations=True)` answers in). Anything else
         raises.
         """
-        result = apply(
-            "method", [self._with_behavior(f.tt) for f in forms], params, behavior=self._behavior
-        )
-        return self._output_shape(result, params)
+        inputs = [self._with_behavior(f.tt) for f in forms]
+        if getattr(type(inputs[0]), str(params["method"]), None) in _EAGER_METHODS:
+            raise TypeError(NEEDS_VALUES)
+        return self._output_shape(apply("method", inputs, params, behavior=self._behavior), params)
 
     def _output_shape(
         self, result: object, params: Mapping[str, object]
