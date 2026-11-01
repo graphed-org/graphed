@@ -555,10 +555,11 @@ worker that runs it and enters the runner's reduction tree as it loads; any othe
 recorded as it finishes. The tree is the runner's own, so an interrupted run resumed on the same
 runner equals the uninterrupted run bit for bit.
 
-``run_resumable`` and ``resumable`` keep separate results, because they key a task differently:
-``resumable``'s key also covers the codec, the behaviors and the salt. A store written by one is
-not reused by the other. Every task runs again, the value is the same, and a warning says that
-none was reused, so pick one for a given store.
+``run_resumable`` and ``run_shuffle_resumable`` keep results separate from ``resumable``'s, because
+they key a task differently: they hash the process's spec, where ``resumable`` hashes what a worker
+runs, pickled, with the behaviors, the salt and, for a ``DurablePlan``, the codec. A store written
+by one is not reused by another. Every task runs again, as on an empty store, and a warning says
+that none was reused, so pick one for a given store.
 
 .. code-block:: python
 
@@ -604,7 +605,8 @@ order, since that order picks a ufunc overload. Seven cases need a hand:
 - A ``reused`` of 0 after a restart, when nothing changed, means the process holds data ordered by
   set iteration (a list built from a set, say). Sort it, or set ``salt``. A run that reuses nothing
   from a store holding results for its partitions logs a warning on ``graphed.checkpoint`` naming
-  both counts; that store's keys differ from this run's.
+  both counts; that store's keys differ from this run's, as they do when another entry point wrote
+  it.
 - State a task fills on a class defined in ``__main__`` (a class-level cache) changes that class's
   key. Keep it on instances, or define the class in an importable module.
 - Set elements that only object identity tells apart (equal-valued instances) can recompute after a

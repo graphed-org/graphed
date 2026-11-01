@@ -185,17 +185,13 @@ def test_a_shuffle_warns_for_its_input_partitions_and_not_for_its_destinations(
     assert "holds 1 results" in message
 
 
-def _with_resumable(plan: Any, root: Path) -> Any:
-    return SequentialRunner().run(resumable(plan, str(root)))
-
-
 def _with_run_resumable(plan: Any, root: Path) -> Any:
     return run_resumable(plan, Store(root))
 
 
 @pytest.mark.parametrize(
     ("first", "second"),
-    [(_with_run_resumable, _with_resumable), (_with_resumable, _with_run_resumable)],
+    [(_with_run_resumable, run), (run, _with_run_resumable)],
     ids=["run_resumable-first", "resumable-first"],
 )
 def test_the_other_entry_point_is_named_when_it_reuses_nothing(
@@ -206,7 +202,18 @@ def test_the_other_entry_point_is_named_when_it_reuses_nothing(
     second(plan, tmp_path)
     (message,) = warned()
     assert "0 of 2 tasks reused" in message
-    assert "run_resumable and resumable" in message
+    assert "run_resumable, run_shuffle_resumable and resumable" in message
+
+
+def test_the_shuffle_runner_is_named_when_resumable_reuses_nothing(
+    tmp_path: Path, warned: Warned
+) -> None:
+    plan = h.staged(b"one", h.parts(0, 10))
+    run_shuffle_resumable(plan, Store(tmp_path))
+    resumable(plan, str(tmp_path))
+    (message,) = warned()
+    assert "0 of 2 tasks reused" in message
+    assert "run_shuffle_resumable" in message
 
 
 @pytest.mark.parametrize("build", [h.durable, h.staged])

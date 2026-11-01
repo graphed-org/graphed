@@ -76,8 +76,8 @@ are unchanged, and a plan's bytes are unless a line it names repeats an expressi
 Fixes
 ~~~~~
 
-* The checkpoint guide says ``run_resumable`` and ``resumable`` keep separate results, and the
-  warning that no task was reused names that cause.
+* The checkpoint guide says ``run_resumable`` and ``run_shuffle_resumable`` keep results separate
+  from ``resumable``'s, and the warning that no task was reused names that cause.
 * A behavior-carrying plan resumes across processes. The Session backend's behavior ships, and keys,
   in an order independent of how it was built: a behavior assembled from sets (coffea's NanoEvents)
   gave every process its own ``resumable`` and ``run_shuffle_resumable`` keys and shuffle plan
