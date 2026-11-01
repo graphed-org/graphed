@@ -21,6 +21,7 @@ import threading
 import time
 from collections import OrderedDict
 from collections.abc import Callable, Iterable, Sequence
+from concurrent.futures import Future
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import (
@@ -739,12 +740,38 @@ class SequentialRunner:
     emits no task events.
 
     The plan's ``finalize`` runs on the value it returns (:func:`finalize_result`).
+
+    It has the shape of a pooled runner, so one ``with`` block serves both: ``submit`` runs the
+    plan before returning a finished future, and ``close`` has nothing to release.
     """
+
+    #: ``submit`` returns once its plan has finished, so none is ever waiting on another.
+    max_in_flight = 1
 
     def __init__(self, monitor: Monitor | None = None, control: RunControl | None = None) -> None:
         """Run in-process, reporting to ``monitor`` and obeying ``control``."""
         self.monitor = monitor
         self.control = control
+
+    def __enter__(self) -> SequentialRunner:
+        """Return the runner."""
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        """Close the runner."""
+        self.close()
+
+    def close(self) -> None:
+        """Do nothing: every plan has finished, and the runner holds no pool."""
+
+    def submit(self, plan: Plan[R]) -> Future[ExecResult[R]]:
+        """Run ``plan`` and return a finished future of its result, or of the failure."""
+        fut: Future[ExecResult[R]] = Future()
+        try:
+            fut.set_result(self.run(plan))
+        except Exception as exc:
+            fut.set_exception(exc)
+        return fut
 
     @overload
     def run(self, plan: Plan[R]) -> ExecResult[R]: ...
