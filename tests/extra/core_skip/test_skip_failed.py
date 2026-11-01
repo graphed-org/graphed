@@ -83,6 +83,12 @@ def test_the_budget_allows_exactly_its_count() -> None:
     assert len(res.failed) == 10
 
 
+def test_failures_read_in_label_order_whatever_the_merge_order() -> None:
+    with pytest.warns(UserWarning, match="2 failed"):
+        res = SequentialRunner().run(plan_of(Chunks(1, 2)), skip_failed=2)
+    assert [f.partition for f in res.failed] == [label(1), label(2)]
+
+
 def test_no_budget_raises_on_the_first_error() -> None:
     with pytest.raises(OSError, match="bad chunk 2"):
         SequentialRunner().run(plan_of(Chunks(2, 3)))
