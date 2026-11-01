@@ -139,6 +139,10 @@ def _resolve(regular: Any, stacked: Any, name: str, compound: bool) -> Any:
     return stacked[name] if name in set(stacked) else None
 
 
+def _refused(detail: str) -> GraphedTypeError:
+    return GraphedTypeError("correction", capture(), detail)
+
+
 def correction_inputs(payload: bytes, name: str, compound: bool) -> tuple[str, ...]:
     """Return the input names of ``name``, refusing a name the set does not hold."""
     from graphed.awkward.payloads import correctionlib_inputs
@@ -147,17 +151,15 @@ def correction_inputs(payload: bytes, name: str, compound: bool) -> tuple[str, .
     wanted: tuple[str, ...] | None = _resolve(regular, stacked, name, compound)
     if wanted is None:
         held = stacked if compound else {**stacked, **regular}
-        raise GraphedTypeError(
-            "correction",
-            capture(),
+        raise _refused(
             f"no {'compound ' if compound else ''}correction {name!r} in this set; "
-            f"it has: {', '.join(sorted(held))}",
+            f"it has: {', '.join(sorted(held))}"
         )
     return wanted
 
 
 def check_correctionlib_params(params: Mapping[str, Any], payload: bytes, n_inputs: int) -> None:
-    """Refuse at record time a name the set lacks, or a call of the wrong length."""
+    """Refuse at record time a name the set lacks, a wrong-length call, or one with no Array."""
     name = str(params.get("name", ""))
     wanted = correction_inputs(payload, name, bool(params.get("compound", False)))
     template = parse_call_template(
@@ -165,12 +167,12 @@ def check_correctionlib_params(params: Mapping[str, Any], payload: bytes, n_inpu
     )
     taken = 2 if template is None else len(template[0])  # the legacy (systematic, inputs[0]) call
     if taken != len(wanted):
-        raise GraphedTypeError(
-            "correction",
-            capture(),
+        raise _refused(
             f"correction {name!r} takes inputs ({', '.join(wanted)}); got {taken} positional "
-            "inputs",
+            "inputs"
         )
+    if not (n_inputs if template is None else any(k == "slot" for k, _ in template[0])):
+        raise _refused(f"correction {name!r} needs at least one Array input")
 
 
 def eval_correctionlib(cset: Any, params: Mapping[str, Any], inputs: list[Any]) -> Any:

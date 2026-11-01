@@ -573,8 +573,8 @@ def apply_correction(
     )
 
     blob = _payload_bytes(payload)
+    wanted = correction_inputs(blob, name, compound)
     if named:
-        wanted = correction_inputs(blob, name, compound)
         arrays, args = _named_template(wanted, name, named)
     elif args is None:
         args = [f"${i}" for i in range(len(arrays))]
@@ -586,8 +586,6 @@ def apply_correction(
     }
     check_correctionlib_params(params, blob, len(arrays))
     slots = [arrays[i] for kind, i in entries if kind == "slot"]
-    if not slots:
-        raise _refused(f"correction {name!r} needs at least one Array input")
     session = arrays[0].session
     session._mine(arrays, ("correction", capture()))  # before `session.form` reads an input
     descriptor = payloads.correctionlib_contents_descriptor(blob, name)

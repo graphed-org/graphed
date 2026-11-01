@@ -258,6 +258,8 @@ def _external(ev: Any, params: dict[str, Any], *inputs: Any, payload: bytes = CS
         ({"name": "jet_sf", "args": '["$0"]'}, 1, r"takes inputs \(syst, pt, eta\); got 1"),
         ({"name": "l1", "args": '["$0", "$1"]'}, 2, r"takes inputs \(pt\); got 2"),
         ({"name": "l1", "systematic": "nominal"}, 1, r"takes inputs \(pt\); got 2"),
+        ({"name": "l1", "args": "[1.0]"}, 1, "'l1' needs at least one Array input"),
+        ({"name": "l1", "args": '{"pt": "$0"}'}, 1, "'l1' needs at least one Array input"),
     ],
 )
 def test_record_external_refuses_at_the_recording_line(
@@ -286,24 +288,39 @@ def test_record_external_still_runs_what_is_right() -> None:
     assert _values(ev.session, node) == [1.0, 3.0]
 
 
+_LEGACY = json.dumps(
+    {
+        "schema_version": 2,
+        "corrections": [
+            {
+                **_CORRECTION,
+                "name": "by_syst",
+                "inputs": [{"name": "syst", "type": "string"}, _INPUTS[1]],
+                "data": {
+                    "nodetype": "category",
+                    "input": "syst",
+                    "content": [{"key": "nominal", "value": 2.0}],
+                },
+            }
+        ],
+    }
+).encode()
+
+
 def test_the_legacy_systematic_shape_stays_accepted() -> None:
     ev = _flat()
-    legacy = json.dumps(
-        {
-            "schema_version": 2,
-            "corrections": [
-                {
-                    **_CORRECTION,
-                    "name": "by_syst",
-                    "inputs": [{"name": "syst", "type": "string"}, _INPUTS[1]],
-                    "data": {
-                        "nodetype": "category",
-                        "input": "syst",
-                        "content": [{"key": "nominal", "value": 2.0}],
-                    },
-                }
-            ],
-        }
-    ).encode()
-    node = _external(ev, {"name": "by_syst", "systematic": "nominal"}, ev.pt, payload=legacy)
+    node = _external(ev, {"name": "by_syst", "systematic": "nominal"}, ev.pt, payload=_LEGACY)
     assert _values(ev.session, node) == [2.0, 2.0]
+
+
+def test_the_legacy_shape_needs_an_input() -> None:
+    ev = _flat()
+    params = {"name": "by_syst", "systematic": "nominal"}
+    with pytest.raises(GraphedTypeError, match="needs at least one Array input"):
+        _external(ev, params, payload=_LEGACY)
+
+
+def test_a_wrong_name_outranks_a_bad_template() -> None:
+    _, ev = _events()
+    exc = _refused(lambda: gak.apply_correction(CSET, "typo", [ev.pt], args=["$7"]))
+    assert "no correction 'typo'" in str(exc)
