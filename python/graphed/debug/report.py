@@ -10,11 +10,12 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable, Mapping
-from dataclasses import asdict, dataclass, field, fields
+from dataclasses import asdict, astuple, dataclass, field, fields
 from types import MappingProxyType
 from typing import Any
 
 from graphed.core import ExecResult, Monitor, StopReason, TaskEvent, TaskPhase, WorkerProfiler
+from graphed.provenance import Provenance
 
 from .errors import SourceFrame, StageError
 
@@ -34,6 +35,17 @@ _FAILURE_FIELDS = (
     "opt_level",
     "variation",
 )
+
+
+def _frame_json(frame: SourceFrame) -> list[Any]:
+    fields = [frame.filename, frame.lineno, frame.function, frame.source]
+    return [*fields, *map(astuple, frame.also)]
+
+
+def _frame(data: list[Any]) -> SourceFrame:
+    filename, lineno, function, source, *also = data
+    sites = tuple(Provenance(*site) for site in also)
+    return SourceFrame(filename, lineno, function, source, sites)
 
 
 @dataclass(frozen=True)
@@ -88,7 +100,7 @@ class RunReport:
         failure = None
         if f is not None:
             failure = {name: getattr(f, name) for name in _FAILURE_FIELDS}
-            failure["frames"] = [[x.filename, x.lineno, x.function, x.source] for x in f.frames]
+            failure["frames"] = [_frame_json(x) for x in f.frames]
             failure["input_forms"] = list(f.input_forms)
         return {
             "version": _VERSION,
@@ -111,7 +123,7 @@ class RunReport:
         failure = None
         if f is not None:
             failure = StageError(
-                frames=tuple(SourceFrame(*x) for x in f["frames"]),
+                frames=tuple(_frame(x) for x in f["frames"]),
                 input_forms=tuple(f["input_forms"]),
                 **{name: f[name] for name in _FAILURE_FIELDS},
             )

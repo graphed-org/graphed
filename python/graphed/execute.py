@@ -20,7 +20,6 @@ hash, and fails loudly when one is missing.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import partial
@@ -32,7 +31,7 @@ from .array import labels_carried
 from .backend import Backend
 from .errors import GraphedError
 from .provenance import Provenance
-from .session import Session, _CompileView
+from .session import Session, _CompileView, evaluator_key
 from .varied import refuse_container
 
 __all__ = [
@@ -44,8 +43,8 @@ __all__ = [
     "refuse_chunk_partials",
 ]
 
-#: A user source location as plain string/int data — `SourceFrame`'s fields, in its field order.
-Frame = tuple[str, int, str, str]
+#: A user source location — `SourceFrame`'s fields, in its field order; `also` only when not empty.
+Frame = tuple[str, int, str, str] | tuple[str, int, str, str, tuple[Provenance, ...]]
 #: A reduced-store address: the node id, plus the position inside a fused stage (`None` when the
 #: node reduced to itself, i.e. a boundary).
 Key = tuple[int, int | None]
@@ -135,9 +134,7 @@ def compile_ir(
         raise ValueError("maximal_fusion requires optimize=True")
     if optimize and not outputs:
         raise ValueError("compile_ir(optimize=True) needs at least one output Array")
-    view = session._compile_view(
-        [arr.node_id for arr in outputs], optimize=optimize, maximal_fusion=maximal_fusion
-    )
+    view = session._compile_view(outputs, optimize=optimize, maximal_fusion=maximal_fusion)
     return _compiled(view, outputs)
 
 
@@ -149,7 +146,7 @@ def _compile_cone(session: Session, *outputs: Any) -> CompiledGraph:
     """
     refuse_container("graphed.compile_ir", *outputs)
     session._mine(outputs)
-    view = session._compile_view([arr.node_id for arr in outputs], optimize=False, cone=True)
+    view = session._compile_view(outputs, optimize=False, cone=True)
     return _compiled(view, outputs)
 
 
@@ -179,7 +176,7 @@ def _compiled(view: _CompileView, outputs: tuple[Any, ...]) -> CompiledGraph:
 
 
 def _frames_by_key(
-    provenance: Mapping[int, Provenance], node_map: dict[int, Key]
+    provenance: Mapping[int, Sequence[Provenance]], node_map: dict[int, Key]
 ) -> tuple[tuple[Key, Frame], ...]:
     """Re-key the recorded ``provenance`` onto §8.2(i)'s keys, in key order.
 
@@ -190,10 +187,11 @@ def _frames_by_key(
     """
     chosen: dict[Key, Frame] = {}
     for nid in sorted(node_map):
-        prov = provenance.get(nid)
-        if prov is None or node_map[nid] in chosen:
+        if node_map[nid] in chosen:
             continue
-        chosen[node_map[nid]] = (prov.filename, prov.lineno, prov.function, prov.source)
+        first, *rest = provenance[nid]
+        fields = (first.filename, first.lineno, first.function, first.source)
+        chosen[node_map[nid]] = (*fields, tuple(rest)) if rest else fields
     return tuple(
         sorted(chosen.items(), key=lambda e: (e[0][0], -1 if e[0][1] is None else e[0][1]))
     )
@@ -236,10 +234,7 @@ def external_key(node: Mapping[str, Any]) -> str:
     ``content_hash`` shared (§A.3.1). Two nodes that agree on both genuinely evaluate identically,
     so sharing one evaluator is correct.
     """
-    descriptor = node["descriptor"]
-    params = node.get("params") or {}
-    chash: str = descriptor["content_hash"]
-    return chash + "|" + json.dumps(params, sort_keys=True, separators=(",", ":"))
+    return evaluator_key(node["descriptor"]["content_hash"], node.get("params") or {})
 
 
 def evaluate_ir(

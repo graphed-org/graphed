@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any, SupportsFloat
 
 from .backend import ParamValue
 from .errors import GraphedTypeError, MissingFieldError
-from .provenance import Provenance, capture
+from .provenance import Provenance, Site, capture
 
 if TYPE_CHECKING:
     from .session import Session
@@ -275,7 +275,7 @@ class Array:
     # reaches NodeKey params/tokens/hashes — interning and §1.2 stay intact.
     """A deferred array: a proxy for one node of a Session's recorded graph."""
 
-    __slots__ = ("_context", "_labels", "_node_id", "_session")
+    __slots__ = ("_context", "_labels", "_node_id", "_session", "_site")
 
     # let numpy defer to us for ufuncs (np.cos(array), np.hypot(a, b), ...)
     __array_priority__ = 1000.0
@@ -286,6 +286,8 @@ class Array:
         self._node_id = node_id
         self._context: object = None
         self._labels: frozenset[str] | None = None
+        # the recording this proxy came from: interning shares the node, not the line
+        self._site: Site | None = None
 
     @property
     def node_id(self) -> int:
@@ -635,14 +637,17 @@ class Array:
         The callable is a flagged preservation risk, plan A.3.1.
 
         Without ``name=`` two distinct callables that derive one ``__name__`` are told apart by a
-        per-Session ordinal. Pass ``name=`` to declare the identity yourself: a declared name IS
-        the identity, so declaring a name another callable already wears — declared or derived —
-        means that same node, and the name must encode everything that changes the callable's
-        behaviour (a captured cut value, a model version, a configuration dict).
+        per-Session ordinal. Pass ``name=`` to declare the identity yourself: a rerun of the same
+        definition under one name gives the same node, as a notebook cell does, and a callable
+        that differs raises :class:`~graphed.GraphedError` (a :class:`~graphed.GraphedWarning`
+        when the two cannot be compared).
 
         ``output_type=`` declares the type of each element of ``fn``'s result (a type string, a
         dtype or a Python type, as the backend accepts); it becomes the recorded form and is part
-        of the node's identity. It is a claim, never a cast.
+        of the node's identity. It is a claim, never a cast. Without it, a backend that can trace
+        ``fn`` runs it on metadata at this line and records the result's type, which is not part
+        of the node's identity; if that fails, a :class:`~graphed.GraphedWarning` says so and the
+        backend's default form stands.
         """
         return self._session.record_external(
             "map", fn, [self], {"fn": self._session._fn_name(fn, name)}, output_type=output_type
@@ -704,12 +709,10 @@ def apply(
     The node carries the backend's ``PayloadDescriptor``: the opaque callable stays a flagged
     preservation risk (plan A.3.1). With one array this IS ``Array.map`` (interns with it).
 
-    Without ``name=`` two distinct callables that derive one ``__name__`` are told apart by a
-    per-Session ordinal. Pass ``name=`` to declare the identity yourself: a declared name IS the
-    identity, so declaring a name another callable already wears — declared or derived — means
-    that same node, and the name must encode everything that changes the callable's behaviour.
+    ``name=`` works as for ``Array.map``: a callable that differs under one name raises.
 
-    ``output_type=`` declares the result's element type, as for ``Array.map``.
+    ``output_type=`` declares the result's element type, and without it the type is inferred,
+    as for ``Array.map``.
     """
     from .varied import containers_in, expand
 

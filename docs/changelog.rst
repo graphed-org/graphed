@@ -7,6 +7,15 @@ Newest release first. Numbers in parentheses are the pull requests on
 0.0.11 (unreleased)
 -------------------
 
+``SequentialRunner`` stands in for the pooled runners
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``with SequentialRunner() as runner:`` works, and it gains ``submit``, ``close`` and
+``max_in_flight``, so swapping a runner to debug changes only the line that builds it; the pool's
+sizing arguments do not carry over. ``submit`` runs the plan before it returns a finished
+``concurrent.futures.Future``, which holds the result or the failure, so a paused ``control`` blocks
+the call and a cancel sent after it lands on the next run.
+
 Plans returned wrong values for row-axis operations, and now refuse them
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -40,6 +49,50 @@ resumes as before.
 As a plan's direct output a reduction still reaches your ``reduce`` once per chunk, for ``combine``
 to fold: that is correct for a sum and yours to get right for anything else.
 
+``map`` refuses a reused name and records the type its function returns
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**If an analysis gave one** ``name=`` **to two different functions on 0.0.10 or earlier, re-check its
+results.** One function answered for both, with no error, even over different inputs (#143). Such a
+call now raises ``GraphedError`` naming the first function and its line. The check compares what a
+checkpoint key compares, so re-running a definition, as a notebook cell does, gives the same node,
+while a closure that captures a different value, or a copy under another function name, is a
+different function. When two functions cannot be
+compared, a ``GraphedWarning`` says so and the first one answers for both. This covers ``map``,
+``graphed.apply`` and ``apply_gufunc``.
+
+On the awkward backend, ``map`` and ``graphed.apply`` without ``output_type=`` now run your function
+on a typetracer at the line that records it, and record the type it returns, so
+``ev.Jet_pt.map(lambda pt: ak.num(pt, axis=1))`` is ``## * int64`` and ``gak.sum`` of it with
+``axis=1`` refuses there. **Your function therefore also runs as you record it,** on metadata, once
+for each input type: pass ``output_type=`` to skip that. If it fails on a typetracer, or returns anything else, a
+``GraphedWarning`` says so and the input's type is recorded as before. The inferred type is not part
+of the node's identity. Nodes, and their checkpoint keys, are unchanged; a later operation can
+record differently, or refuse, where the input's type was the wrong one to use.
+
+The error arrow stays on a line that feeds the output
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Writing one expression twice records one node, and the arrow used to land on the first line that
+wrote it, even an unused one, so deleting that line "moved" the error (#136). A failure now points
+at a line that reaches the output and names the lines written before it, and any others feeding
+the output: each is in ``err.user_frame.also``, and ``format_traceback`` prints ``(same expression
+also written at analysis.py:6: ...)``. A line that runs again, as a re-run notebook cell does,
+counts once. ``Session.provenance`` answers for the array you pass it. Recording and checkpoint keys
+are unchanged, and a plan's bytes are unless a line it names repeats an expression.
+
+Division by zero stops a run if you ask, and a worker's warnings reach the driver
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``graphed.raise_on_floating_point(plan)`` makes a division by zero, an overflow or an invalid
+  value raise a ``StageError`` at the recording line, naming the chunk, on any runner. Task keys
+  do not change (#190).
+* A warning raised in a worker process is issued on the driver, once per message per run, naming
+  the first chunk that raised it. ``warnings.catch_warnings(record=True)`` around ``run`` catches
+  it. In a worker process, ``RuntimeWarning`` is now shown every time rather than once per location,
+  so that a worker that outlives a run warns again on the next.
+* Every plan from ``aggregate_plan`` now has a ``finalize``, and its ``combine`` is a wrapper.
+
 ``graphed.materialize`` evaluates anything deferred
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -62,11 +115,28 @@ to fold: that is correct for a sum and yours to get right for anything else.
   (``uproot.graphed``, coffea) no longer raises ``should never have been encountered``: the
   awkward backend's ``concat`` joins what was read and keeps the unread fields, unread.
 
+Whole-dataset sums need no ``reduce``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``aggregate_plan`` takes ``reduce``, ``combine`` and ``empty`` together or not at all. Without them,
+each output must be an ``axis=None`` ``sum``, ``count``, ``count_nonzero``, ``any``, ``all``, ``min``
+or ``max``, and ``run(plan).value`` is its value, or a tuple for several::
+
+    plan = graphed.aggregate_plan(gak.sum(os_mask), gak.sum(ev.MET_pt > 50))
+    n_os, n_met = runner.run(plan).value
+
+``min`` and ``max`` skip a chunk with no rows, and NaN wins as it does in ``ak.max``. A float sum's
+bits are fixed by the runner family and the partition count, so a pool's can differ from
+``SequentialRunner``'s in the last places. A per-event output, ``mean``, ``var``, ``std`` and any
+other reduction refuse, naming the output, as do ``writes=`` without a ``reduce``.
+
 Fixes
 ~~~~~
 
 * ``aggregate_plan`` over two sources of one Session names them in its refusal and, when no output
   reads both, points to ``graphed.collate`` (#165).
+* The checkpoint guide says ``run_resumable`` and ``run_shuffle_resumable`` keep results separate
+  from ``resumable``'s, and the warning that no task was reused names that cause (#191).
 * A behavior-carrying plan resumes across processes. The Session backend's behavior ships, and keys,
   in an order independent of how it was built: a behavior assembled from sets (coffea's NanoEvents)
   gave every process its own ``resumable`` and ``run_shuffle_resumable`` keys and shuffle plan
@@ -80,6 +150,10 @@ Fixes
   ``graphed.checkpoint`` when a run reuses no task from a store that holds results for its
   partitions. Those keys differ from this run's, which was silent; another analysis of the same
   partitions in one store warns too.
+* ``copy.deepcopy`` of a recorded ``Array``, a ``Varied``, or anything holding one works, which
+  raised ``cannot pickle 'builtins.GraphStore' object``. The copy shares its Session, event
+  context and recorded lines; ``copy.copy`` and ``copy.deepcopy`` of a Session or a context
+  return it.
 
 0.0.10
 ------

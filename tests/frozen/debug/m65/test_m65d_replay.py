@@ -345,7 +345,7 @@ def test_failing_task_raises_at_its_node(tmp_path: Path) -> None:
 def test_diff_reports_a_difference(tmp_path: Path) -> None:
     _DROP.clear()
     _s, ev = _events(tmp_path)
-    rows = ev.x.map(_drop_after_first, name="drop")
+    rows = ev.x.map(_drop_after_first, name="drop", output_type="float64")
     plan = _plan(rows, reduce=_rows, combine=_rows_add, empty=_rows_empty, store=tmp_path / "cap")
     SequentialRunner().run(plan)
     d = gd.replay(plan, 0, rows).diff()

@@ -10,10 +10,11 @@ from __future__ import annotations
 
 import contextvars
 import functools
+import json
 import threading
 import types
 import warnings
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence, Set
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, TypeVar
 
@@ -21,8 +22,8 @@ import graphed.core
 
 from .array import Array, attach, handle_of, labels_carried
 from .backend import Backend, Form, ParamValue
-from .errors import GraphedTypeError, OutputTypeError
-from .provenance import Provenance, capture
+from .errors import GraphedError, GraphedTypeError, GraphedWarning, OutputTypeError
+from .provenance import Provenance, Site, capture
 from .services import Bindable
 from .systematics.lineage import unify_contexts
 from .systematics.points import Point
@@ -30,6 +31,23 @@ from .systematics.state import SystematicsState
 
 if TYPE_CHECKING:
     from .services import ServiceSpec
+
+
+def evaluator_key(content_hash: str, params: Mapping[str, object]) -> str:
+    """Return what picks an External's evaluator: its payload hash plus its params."""
+    return content_hash + "|" + json.dumps(params, sort_keys=True, separators=(",", ":"))
+
+
+def _fn_label(fn: object) -> str:
+    return str(getattr(fn, "__name__", repr(fn)))
+
+
+def _call_identity(fn: object) -> object:
+    """Return what makes two callable objects one call: see `Session._fn_name`'s identity rule."""
+    # not isinstance: `__class__` is the callable's to claim
+    if type(fn) is types.MethodType:
+        return (id(fn.__self__), id(fn.__func__))
+    return id(fn)
 
 
 @dataclass(frozen=True)
@@ -40,7 +58,7 @@ class _CompileView:
     #: per record id, the ``(stage, member)`` key it landed on, else ``None``
     landings: Sequence[tuple[int, int | None] | None]
     source_names: tuple[str, ...]
-    provenance: dict[int, Provenance]
+    provenance: dict[int, tuple[Provenance, ...]]
     registered_labels: frozenset[str]
     shift_after_weight: Mapping[tuple[str, str], frozenset[int]]
 
@@ -109,6 +127,9 @@ class Session:
         self._externals: dict[int, tuple[Callable[[object], object], list[int]]] = {}
         self._services: dict[str, ServiceSpec] = {}
         self._provenance: dict[int, Provenance] = {}
+        # node -> (file, line, reads) -> its Site: an interned node has many, a rerun line one, and
+        # the reads keep two callers of one helper line apart
+        self._sites: dict[int, dict[tuple[str, int, tuple[Site, ...]], Site]] = {}
         # M10 (plan A.1): with incremental=True the session maintains the reduced view AS THE
         # GRAPH IS BUILT — every record steps an IncrementalReducer whose per-step work is the
         # delta, so compile time never pays a whole-history optimization.
@@ -131,6 +152,16 @@ class Session:
         # callable) plus the ONE name space every name handed out lives in, declared or derived.
         self._fn_names: dict[object, tuple[object, str]] = {}
         self._fn_taken: set[str] = set()
+        # evaluator key -> the first callable recorded under it and where
+        self._fn_held: dict[str, tuple[Callable[..., object], Provenance]] = {}
+        # (evaluator key, *input types) -> what tracing that function gave
+        self._fn_traced: dict[tuple[str, ...], Form | None] = {}
+
+    def __deepcopy__(self, memo: dict[int, Any] | None = None) -> Session:
+        """Return this Session: one graph has one Session, so a copy shares what it records."""
+        return self
+
+    __copy__ = __deepcopy__
 
     def __enter__(self) -> Session:
         """Open a scope: array-less reads in this context record here until it exits."""
@@ -174,8 +205,8 @@ class Session:
         `name=` is the caller's own identity declaration: returned untouched (equal names intern,
         which is the point) and entered in that space, so a later derivation cannot land on it.
 
-        A declared `name=` IS the identity: declaring a name another callable already wears —
-        declared or derived — means the same node, the caller having said so.
+        A declared `name=` IS the identity, so the callables under it must agree:
+        `record_external` refuses one that behaves differently.
 
         THE IDENTITY RULE: two callable objects share a memo entry only where PYTHON ITSELF
         defines them as the same call — an object whose TYPE is `types.MethodType`, whose call IS
@@ -196,11 +227,7 @@ class Session:
             if name is not None:
                 self._fn_taken.add(name)
                 return name
-            # not isinstance: `__class__` is the callable's to claim
-            if type(fn) is types.MethodType:
-                key: object = (id(fn.__self__), id(fn.__func__))
-            else:
-                key = id(fn)
+            key = _call_identity(fn)
             held = self._fn_names.get(key)
             if held is not None:
                 return held[1]
@@ -217,7 +244,7 @@ class Session:
         if self._reducer is not None:
             self._reducer.step(self._store)
 
-    def _wrap(self, node_id: int, inputs: Sequence[Array] = ()) -> Array:
+    def _wrap(self, node_id: int, site: Site, inputs: Sequence[Array] = ()) -> Array:
         """Build the frontend proxy for a recorded node, carrying the M48 §2.3e merge.
 
         This is the propagation CHOKEPOINT: every `Array` in the repo is constructed here, so gak
@@ -226,6 +253,7 @@ class Session:
         handles are an error AT THIS OP naming both, which is §2.3e's early detection.
         """
         array = self._array_cls(self, node_id)
+        array._site = site
         if inputs:
             labels: frozenset[str] | None = None
             for item in inputs:
@@ -278,24 +306,26 @@ class Session:
         self._mine(outputs)
         if optimize and not outputs:
             raise ValueError("serialized_ir(optimize=True) needs at least one output Array")
-        return self._compile_view([arr.node_id for arr in outputs], optimize=optimize).ir
+        return self._compile_view(outputs, optimize=optimize).ir
 
     def _compile_view(
         self,
-        ids: Sequence[int],
+        outputs: Sequence[Array],
         *,
         optimize: bool,
         maximal_fusion: bool = False,
         cone: bool = False,
     ) -> _CompileView:
-        """Compile ``ids`` (the 1:1 cone with ``cone``) beside the tables the artifact reads."""
+        """Compile ``outputs`` (their 1:1 cone with ``cone``) beside what the artifact reads."""
+        ids = [arr.node_id for arr in outputs]
         with self._lock:
+            live = self._live(outputs)
             landings: Sequence[tuple[int, int | None] | None]
             if cone:
-                graph = self._store.cone(outputs=list(ids))
+                graph = self._store.cone(outputs=ids)
                 ir, landings = bytes(graph.serialize()), graph.node_map()
             elif not optimize:
-                ir = bytes(self._store.serialize(outputs=list(ids)))
+                ir = bytes(self._store.serialize(outputs=ids))
                 # opt_level=0 is 1:1 (M6): the serialized arena keeps the record ids it was built
                 # with
                 landings = [(nid, None) for nid in range(self._store.node_count())]
@@ -304,17 +334,21 @@ class Session:
                 # linear pass over the concise form instead of a whole-history optimization.
                 reduced = (
                     self._reducer.finalize(
-                        self._store, maximal_fusion=maximal_fusion, outputs=list(ids)
+                        self._store, maximal_fusion=maximal_fusion, outputs=ids
                     )[0]
                     if self._reducer is not None
-                    else self._store.reduce(maximal_fusion=maximal_fusion, outputs=list(ids))[0]
+                    else self._store.reduce(maximal_fusion=maximal_fusion, outputs=ids)[0]
                 )
                 ir, landings = bytes(reduced.serialize()), reduced.node_map()
             return _CompileView(
                 ir=ir,
                 landings=landings,
                 source_names=tuple(self._source_names[nid] for nid in self._sources),
-                provenance=dict(self._provenance),
+                provenance={
+                    nid: self._lines(nid, live)
+                    for nid, landed in enumerate(landings)
+                    if landed is not None
+                },
                 registered_labels=self.systematics.registered_labels(),
                 shift_after_weight=self.systematics.shift_after_weight,
             )
@@ -337,8 +371,59 @@ class Session:
     def provenance(self, array: Array) -> Provenance:
         """Return the user source location that recorded ``array``."""
         self._mine([array])
+        if array._site is not None:
+            return array._site.provenance
         with self._lock:
             return self._provenance[array.node_id]
+
+    def _reading(self, array: Array) -> tuple[Site, ...]:
+        # a proxy built from a bare node id stands for all of its node's recordings
+        site = array._site
+        return tuple(self._sites[array.node_id].values()) if site is None else (site,)
+
+    def _live(self, outputs: Sequence[Array]) -> set[Site]:
+        """Return the recordings ``outputs`` were built from."""
+        self._mine(outputs)
+        with self._lock:
+            live: set[Site] = set()
+            pending = [site for array in outputs for site in self._reading(array)]
+            while pending:
+                site = pending.pop()
+                if site not in live:
+                    live.add(site)
+                    pending.extend(site.reads)
+            return live
+
+    def _feeding(self, nid: int, live: Set[Site]) -> list[Site]:
+        sites = list(self._sites[nid].values())
+        return [site for site in sites if site in live] or sites[:1]
+
+    def _lines(self, nid: int, live: Set[Site]) -> tuple[Provenance, ...]:
+        """Return ``nid``'s lines: the first feeding ``live``, then those a frame names.
+
+        A frame names the lines written before that one and the other lines feeding ``live``.
+        A later line feeding nothing here is left out, since a plan's bytes carry its frames and
+        must not change when the Session records more.
+        """
+        with self._lock:
+            sites = list(self._sites[nid].values())
+            if len(sites) == 1:
+                return (sites[0].provenance,)
+            feeding = self._feeding(nid, live)
+            lines: dict[tuple[str, int], Provenance] = {}
+            for site in (feeding[0], *sites[: sites.index(feeding[0])], *feeding[1:]):
+                prov = site.provenance
+                lines.setdefault((prov.filename, prov.lineno), prov)
+            return tuple(lines.values())
+
+    def _proxies(self, nodes: Iterable[int], outputs: Sequence[Array]) -> list[Array]:
+        """Return a proxy of each of ``nodes``, fed only by what feeds it in ``outputs``."""
+        live = self._live(outputs)
+        with self._lock:
+            feeding = ((nid, self._feeding(nid, live)) for nid in nodes)
+            return [
+                self._wrap(nid, Site(sites[0].provenance, tuple(sites))) for nid, sites in feeding
+            ]
 
     def source_ids(self) -> list[int]:
         """Return the node ids of all source nodes (used by projection)."""
@@ -533,12 +618,9 @@ class Session:
                     )
                 data = held[1]
             node_id = self._store.add_source(name, dict(params))
-            self._forms.setdefault(node_id, form)
             self._sources.setdefault(node_id, data)
             self._source_names.setdefault(node_id, name)
-            self._provenance.setdefault(node_id, prov)
-            self._step_reducer()
-        return self._wrap(node_id)
+            return self._enter(node_id, form, prov)
 
     def record_op(
         self,
@@ -559,8 +641,7 @@ class Session:
                 node_id = self._store.add_reduction(op, ids, params_d)
             else:
                 node_id = self._store.add_op(op, ids, params_d)
-            self._enter(node_id, form, prov, op=(op, params_d, ids))
-        return self._wrap(node_id, inputs)
+            return self._enter(node_id, form, prov, inputs, op=(op, params_d, ids))
 
     def _forms_of(self, ids: Sequence[int]) -> list[Form]:
         with self._lock:
@@ -582,15 +663,21 @@ class Session:
         node_id: int,
         form: Form,
         prov: Provenance,
+        inputs: Sequence[Array] = (),
         *,
         op: tuple[str, dict[str, ParamValue], list[int]] | None = None,
-    ) -> None:
+    ) -> Array:
         # the caller holds `_lock` from the store add through here
         self._forms.setdefault(node_id, form)
         if op is not None:
             self._ops.setdefault(node_id, op)
         self._provenance.setdefault(node_id, prov)
+        reads = tuple(site for array in inputs for site in self._reading(array))
+        site = self._sites.setdefault(node_id, {}).setdefault(
+            (prov.filename, prov.lineno, reads), Site(prov, reads)
+        )
         self._step_reducer()
+        return self._wrap(node_id, site, inputs)
 
     def record_exchange(self, input_array: Array, params: Mapping[str, ParamValue]) -> Array:
         """Record an ``Exchange`` boundary (M39): a pure data-movement repartition of one input.
@@ -605,8 +692,7 @@ class Session:
         form = self._backend.op_form("exchange", self._forms_of(ids), params_d)
         with self._lock:
             node_id = self._store.add_exchange(ids, params_d)
-            self._enter(node_id, form, prov, op=("exchange", params_d, ids))
-        return self._wrap(node_id, [input_array])
+            return self._enter(node_id, form, prov, [input_array], op=("exchange", params_d, ids))
 
     def record_join(self, left: Array, right: Array, params: Mapping[str, ParamValue]) -> Array:
         """Record a ``Join`` boundary (M40): a two-input co-partitioned relational combine.
@@ -622,8 +708,7 @@ class Session:
         form = self._located_form("join", prov, ids, params_d)
         with self._lock:
             node_id = self._store.add_join(ids, params_d)
-            self._enter(node_id, form, prov, op=("join", params_d, ids))
-        return self._wrap(node_id, [left, right])
+            return self._enter(node_id, form, prov, [left, right], op=("join", params_d, ids))
 
     def record_external(
         self,
@@ -676,12 +761,19 @@ class Session:
                     op, prov, "backend returned no payload descriptor for external op"
                 )
         ids = [a.node_id for a in inputs]
+        undeclared = op == "map" and form is None
         if form is None:
             form = self._located_form(op, prov, ids, {**form_view, **(form_params or {})})
         # the declaration op_form honoured (or, beside form=, a leaf dtype) is checked on every
         # value
         check = getattr(self._backend, "check_output_type", None)
         declared = self._declaration(op, prov, declared_type, form_params)
+        # after every refusal of the call itself, so a refused function holds no name
+        if "fn" in params_d:
+            key = evaluator_key(descriptor.content_hash, params_d)
+            fn = self._hold_fn(fn, key, params_d["fn"], prov)
+            if undeclared and declared is None:
+                form = self._traced_form(fn, key, ids, prov) or form
         with self._lock:
             node_id = self._store.add_external(descriptor, ids, params_d)
             if declared is not None and check is not None:
@@ -699,8 +791,60 @@ class Session:
                     "this External is already recorded with its type declared on one call only",
                 )
             self._externals.setdefault(node_id, (fn, ids))
-            self._enter(node_id, form, prov)
-        return self._wrap(node_id, inputs)
+            return self._enter(node_id, form, prov, inputs)
+
+    def _hold_fn(
+        self, fn: Callable[..., object], key: str, name: ParamValue, prov: Provenance
+    ) -> Callable[..., object]:
+        """Return the callable that answers for ``key``, refusing a different ``fn``."""
+        with self._lock:
+            held, first = self._fn_held.setdefault(key, (fn, prov))
+        if _call_identity(held) == _call_identity(fn):
+            return held
+        # a checkpoint key, so a rerun cell's new lambda still matches, however its lines moved
+        from .checkpoint.resume import _key_digest
+
+        try:
+            differs = _key_digest(held) != _key_digest(fn)
+        except Exception:
+            message = (
+                f"could not compare {_fn_label(fn)} with {_fn_label(held)} ({first}); "
+                "the first one answers for both"
+            )
+            warnings.warn_explicit(message, GraphedWarning, prov.filename, prov.lineno)
+        else:
+            if differs:
+                raise GraphedError(
+                    f"graphed: name={name!r} at {prov} is already used by {_fn_label(held)} "
+                    f"({first}); a different function needs a different name"
+                )
+        return held
+
+    def _traced_form(
+        self, fn: Callable[..., object], key: str, ids: Sequence[int], prov: Provenance
+    ) -> Form | None:
+        """Return the form an undeclared ``fn`` gives its inputs, where the backend can trace it.
+
+        This runs the user's function at record time, so any failure is a warning, never fatal.
+        One function is traced once per input type, however many universes record it.
+        """
+        trace = getattr(self._backend, "traced_form", None)
+        if trace is None:
+            return None
+        forms = self._forms_of(ids)
+        traced = (key, *(form.describe() for form in forms))
+        with self._lock:
+            if traced in self._fn_traced:
+                return self._fn_traced[traced]
+        try:
+            form: Form | None = trace(fn, forms)
+        except Exception:
+            form = None
+        if form is None:
+            message = f"could not infer the type of {_fn_label(fn)}; pass output_type="
+            warnings.warn_explicit(message, GraphedWarning, prov.filename, prov.lineno)
+        with self._lock:
+            return self._fn_traced.setdefault(traced, form)
 
     def _canonical_output_type(
         self,
