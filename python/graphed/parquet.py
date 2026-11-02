@@ -122,7 +122,7 @@ def make_partitions(
 
 def resolve_partition(partition: Partition) -> Partition:
     """Resolve a blind partition against its file's metadata row count (non-blind: unchanged)."""
-    if not partition.is_blind:
+    if partition.blind_step is None:
         return partition
     return partition.resolve(num_rows(partition.uri))
 
