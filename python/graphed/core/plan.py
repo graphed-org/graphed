@@ -36,6 +36,7 @@ from typing import Any, Literal
 from .execution import Partition, Plan, Task
 from .graphed_core import GraphStore
 from .services import ServiceSpec
+from .worker_warnings import WarnedCombine, WarnedFinalize
 
 FORMAT_VERSION = 1
 FORMAT_VERSION_V2 = (
@@ -172,11 +173,12 @@ class DurablePlan:
         """Return this plan's runtime form, specs resolved, for a run with no checkpoint Store."""
         return Plan(
             process=self.process.resolve(),
-            combine=self.combine.resolve(),
+            # a shipped process's partials may carry warnings, whatever these two were built for
+            combine=WarnedCombine(self.combine.resolve()),
             empty=self.empty.resolve(),
             tasks=tuple(Task(i, p) for i, p in enumerate(self.partitions)),
             services=self.services,
-            finalize=None if self.finalize is None else self.finalize.resolve(),
+            finalize=WarnedFinalize(None if self.finalize is None else self.finalize.resolve()),
         )
 
     # ---- content addressing ---------------------------------------------------------------------
