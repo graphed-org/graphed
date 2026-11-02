@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import sys
 import threading
 from collections.abc import Callable, Iterator
@@ -54,12 +55,13 @@ def test_compiling_while_other_threads_record_raises_nothing() -> None:
     session = Session(NumpyBackend())
     x = from_array("x", np.arange(10.0), session=session)
     out = apply(lambda a: a + 1, x, output_type="float64").sum()
-    counter = iter(range(10**9))
+    before = session.node_count()
 
     def record(stop: threading.Event) -> None:
-        while not stop.is_set():
-            i = next(counter)
-            own = from_array(f"src{i}", np.arange(3.0), session=session)
+        for i in itertools.count():
+            if stop.is_set():
+                return
+            own = from_array(f"src{threading.get_ident()}_{i}", np.arange(3.0), session=session)
             apply(lambda a, i=i: a * i, own, output_type="float64")
 
     def compile_repeatedly() -> None:
@@ -68,13 +70,15 @@ def test_compiling_while_other_threads_record_raises_nothing() -> None:
             session.sourcemap()
 
     assert _race(record, compile_repeatedly) == []
+    assert session.node_count() > before
 
 
 def _finishes(fn: Callable[[], object], timeout: float = 5.0) -> bool:
-    thread = threading.Thread(target=fn, daemon=True)
+    done: list[object] = []  # filled only if ``fn`` returned: a raising thread dies too
+    thread = threading.Thread(target=lambda: done.append(fn()), daemon=True)
     thread.start()
     thread.join(timeout)
-    return not thread.is_alive()
+    return bool(done)
 
 
 def test_the_lock_is_reentrant() -> None:

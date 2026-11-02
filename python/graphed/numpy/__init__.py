@@ -563,7 +563,7 @@ class NumpyBackend:
         """Return the payload descriptor a ``map`` or ``gufunc`` op carries."""
         if op not in ("map", "gufunc"):
             return None
-        fn_name = str(params.get("fn", "lambda"))
+        fn_name = str(params["fn"])
         # M14: a gufunc node's io_schema IS its signature — the descriptor carries the contract
         io_schema = str(params["signature"]) if op == "gufunc" else "opaque->opaque"
         return PayloadDescriptor(
