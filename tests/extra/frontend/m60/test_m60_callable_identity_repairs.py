@@ -23,7 +23,7 @@ import pytest
 from m13_toy import ToyBackend, ToyForm
 
 import graphed.core
-from graphed import Array, Session, apply
+from graphed import Array, GraphedError, Session, apply
 
 #: the toy source value; every answer below is exact on it
 DATUM = 2
@@ -427,18 +427,18 @@ def test_a_declaration_stays_the_callers_identity_after_a_derivation_of_that_nam
     session, x = toy_session()
 
     derived = x.map(q)
-    declared = x.map(zero, name="q")
 
-    assert derived.node_id == declared.node_id
+    with pytest.raises(GraphedError, match="already used by q"):
+        x.map(zero, name="q")
     assert fn_params(session, derived) == ["q"]
 
 
-def test_two_callables_under_one_declared_name_are_still_one_node() -> None:
-    """O4's control, unchanged by the name space: equal declared names intern."""
+def test_two_callables_under_one_declared_name_are_refused() -> None:
     session, x = toy_session()
 
     shared = x.map(zero, name="shared")
-    also_shared = x.map(scale, name="shared")
 
-    assert shared.node_id == also_shared.node_id
+    with pytest.raises(GraphedError, match="name='shared'"):
+        x.map(scale, name="shared")
+    assert x.map(zero, name="shared").node_id == shared.node_id
     assert session.node_count() == 2
