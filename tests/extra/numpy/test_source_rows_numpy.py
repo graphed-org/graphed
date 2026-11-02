@@ -20,6 +20,7 @@ from graphed.numpy.io import from_parquet
 
 @pytest.fixture
 def reads(tmp_path: Path) -> tuple[Any, Any]:
+    pytest.importorskip("pyarrow")
     session = graphed.Session(NumpyBackend())
     tables = {"a": [1.0, 2.0, 3.0], "b": [2.0, 3.0, 4.0]}
     for name, xs in tables.items():

@@ -17,6 +17,8 @@ from graphed.core.execution import LocalResources
 from graphed.errors import GraphedTypeError, SourceRowsError, StageError
 from graphed.shuffle import pick, split
 
+pytest.importorskip("pyarrow")
+
 WIDE = 2**40
 
 
