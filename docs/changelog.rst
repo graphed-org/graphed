@@ -115,6 +115,21 @@ Division by zero stops a run if you ask, and a worker's warnings reach the drive
   (``uproot.graphed``, coffea) no longer raises ``should never have been encountered``: the
   awkward backend's ``concat`` joins what was read and keeps the unread fields, unread.
 
+Whole-dataset sums need no ``reduce``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``aggregate_plan`` takes ``reduce``, ``combine`` and ``empty`` together or not at all. Without them,
+each output must be an ``axis=None`` ``sum``, ``count``, ``count_nonzero``, ``any``, ``all``, ``min``
+or ``max``, and ``run(plan).value`` is its value, or a tuple for several::
+
+    plan = graphed.aggregate_plan(gak.sum(os_mask), gak.sum(ev.MET_pt > 50))
+    n_os, n_met = runner.run(plan).value
+
+``min`` and ``max`` skip a chunk with no rows, and NaN wins as it does in ``ak.max``. A float sum's
+bits are fixed by the runner family and the partition count, so a pool's can differ from
+``SequentialRunner``'s in the last places. A per-event output, ``mean``, ``var``, ``std`` and any
+other reduction refuse, naming the output, as do ``writes=`` without a ``reduce``.
+
 Fixes
 ~~~~~
 

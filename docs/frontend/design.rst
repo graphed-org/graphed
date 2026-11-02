@@ -1026,8 +1026,10 @@ One pass over the dataset, many outputs
 
 Most analyses want several results out of one read. ``aggregate_plan`` compiles the outputs you
 name into one graph, then builds a plan that reads each partition once, evaluates all of them, and
-folds partial results with the reduce/combine functions you supply. The example writes two small
-parquet files first so that it runs anywhere:
+folds partial results with the reduce/combine functions you supply. Whole-dataset ``sum``,
+``count``, ``count_nonzero``, ``any``, ``all``, ``min`` and ``max`` know their own combine, so with
+only those as outputs you can leave all three out. The example writes two small parquet files first
+so that it runs anywhere:
 
 .. code-block:: python
 
