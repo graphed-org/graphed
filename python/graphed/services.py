@@ -28,6 +28,7 @@ from .core.services import (
     UnboundServiceError,
     split_endpoint,
 )
+from .core.worker_warnings import on_value
 
 if TYPE_CHECKING:
     from .core.execution import Plan
@@ -113,7 +114,7 @@ def resolve_services(plan: Plan[R] | DurablePlanV2, value: Any) -> Any:
     parts = _stage_processes(plan) if isinstance(plan, DurablePlanV2) else (plan.process,)
     for part in parts:
         if isinstance(part, Resolvable):
-            value = part.resolve_services(value)
+            value = on_value(part.resolve_services, value)
     return value
 
 

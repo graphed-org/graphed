@@ -81,6 +81,18 @@ also written at analysis.py:6: ...)``. A line that runs again, as a re-run noteb
 counts once. ``Session.provenance`` answers for the array you pass it. Recording and checkpoint keys
 are unchanged, and a plan's bytes are unless a line it names repeats an expression.
 
+Division by zero stops a run if you ask, and a worker's warnings reach the driver
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``graphed.raise_on_floating_point(plan)`` makes a division by zero, an overflow or an invalid
+  value raise a ``StageError`` at the recording line, naming the chunk, on any runner. Task keys
+  do not change (#190).
+* A warning raised in a worker process is issued on the driver, once per message per run, naming
+  the first chunk that raised it. ``warnings.catch_warnings(record=True)`` around ``run`` catches
+  it. In a worker process, ``RuntimeWarning`` is now shown every time rather than once per location,
+  so that a worker that outlives a run warns again on the next.
+* Every plan from ``aggregate_plan`` now has a ``finalize``, and its ``combine`` is a wrapper.
+
 ``graphed.materialize`` evaluates anything deferred
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
