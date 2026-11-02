@@ -22,12 +22,19 @@ import graphed.core
 
 from .array import Array, attach, handle_of, labels_carried
 from .backend import Backend, Form, ParamValue
-from .errors import GraphedError, GraphedTypeError, GraphedWarning, OutputTypeError
+from .errors import (
+    GraphedError,
+    GraphedTypeError,
+    GraphedWarning,
+    OutputTypeError,
+    SourceRowsError,
+)
 from .provenance import Provenance, Site, capture
 from .services import Bindable
 from .systematics.lineage import unify_contexts
 from .systematics.points import Point
 from .systematics.state import SystematicsState
+from .write import PartitionedSource
 
 if TYPE_CHECKING:
     from .services import ServiceSpec
@@ -141,6 +148,10 @@ class Session:
         self._array_cls: type[Array] = factory() if callable(factory) else Array
         # `reachable_sources`' memo (node_id -> reachable source node_ids)
         self._source_ids_cache: dict[int, frozenset[int]] = {}
+        # node -> the row sets it carries: partitioned sources, or the join that matched them, in
+        # row order, as appending two either way round holds different rows. A value past its row
+        # axis carries none, so it may combine across sources, unlike `reachable_sources`.
+        self._row_sources: dict[int, tuple[int, ...]] = {}
         # Session methods hold it around their state access and never across a callback (a backend
         # hook, a loader, an evaluator); code outside this module reads the tables only through
         # methods returning copies. Reentrant: a `vary` transaction holds it around `record_*`.
@@ -614,7 +625,9 @@ class Session:
             node_id = self._store.add_source(name, dict(params))
             self._sources.setdefault(node_id, data)
             self._source_names.setdefault(node_id, name)
-            return self._enter(node_id, form, prov)
+            # a loader reads a dataset, as `source_value` reads it; in-memory data pairs as numpy's
+            read = callable(data) or isinstance(data, PartitionedSource)
+            return self._enter(node_id, form, prov, rows=(node_id,) if read else ())
 
     def record_op(
         self,
@@ -623,11 +636,18 @@ class Session:
         params: Mapping[str, ParamValue] | None = None,
         *,
         reduction: bool = False,
+        rows_from: Iterable[int] | None = None,
     ) -> Array:
-        """Record ``op`` over ``inputs`` and return its array."""
+        """Record ``op`` over ``inputs`` and return its array.
+
+        Its inputs' rows pair, so they must be one row set; ``rows_from`` is for an op that pairs
+        none, naming the inputs whose rows the result holds.
+        """
         params_d: dict[str, ParamValue] = dict(params or {})
         prov = capture()
         self._mine(inputs, (op, prov))
+        if rows_from is None:
+            self._same_rows(op, prov, inputs)
         ids = [a.node_id for a in inputs]
         form = self._located_form(op, prov, ids, params_d)
         with self._lock:
@@ -635,7 +655,37 @@ class Session:
                 node_id = self._store.add_reduction(op, ids, params_d)
             else:
                 node_id = self._store.add_op(op, ids, params_d)
-            return self._enter(node_id, form, prov, inputs, op=(op, params_d, ids))
+            rows = None if rows_from is None else self._carried([inputs[i] for i in rows_from])
+            return self._enter(node_id, form, prov, inputs, op=(op, params_d, ids), rows=rows)
+
+    def _same_rows(self, op: str, prov: Provenance, inputs: Sequence[Array]) -> None:
+        """Refuse an op pairing rows of different partitioned sources."""
+        if len(inputs) < 2:
+            return
+        with self._lock:
+            carried = {self._row_sources[a.node_id] for a in inputs} - {()}
+            if len(carried) < 2:
+                return
+            names = sorted(
+                {
+                    self._source_names[nid]
+                    for rows in carried
+                    for row_set in rows
+                    for nid in self._reachable_sources(row_set)
+                }
+            )
+        raise SourceRowsError(
+            op,
+            prov,
+            "an elementwise op needs one partitioned source for its rows, and "
+            f"{' and '.join(map(repr, names))} are {len(names)}; match them with "
+            "graphed.join(left, right, on=[...]), or how='positional' if they are the same events "
+            "in the same order, or run each alone and combine the results with graphed.collate",
+        )
+
+    def _carried(self, inputs: Sequence[Array]) -> tuple[int, ...]:
+        rows = dict.fromkeys(self._row_sources[a.node_id] for a in inputs)
+        return tuple(row_set for sets in rows for row_set in sets)
 
     def _forms_of(self, ids: Sequence[int]) -> list[Form]:
         with self._lock:
@@ -660,12 +710,16 @@ class Session:
         inputs: Sequence[Array] = (),
         *,
         op: tuple[str, dict[str, ParamValue], list[int]] | None = None,
+        rows: tuple[int, ...] | None = None,
     ) -> Array:
         # the caller holds `_lock` from the store add through here
         self._forms.setdefault(node_id, form)
         if op is not None:
             self._ops.setdefault(node_id, op)
         self._provenance.setdefault(node_id, prov)
+        if rows is None:
+            rows = self._carried(inputs) if getattr(form, "has_rows", True) else ()
+        self._row_sources.setdefault(node_id, rows)
         reads = tuple(site for array in inputs for site in self._reading(array))
         site = self._sites.setdefault(node_id, {}).setdefault(
             (prov.filename, prov.lineno, reads), Site(prov, reads)
@@ -702,7 +756,10 @@ class Session:
         form = self._located_form("join", prov, ids, params_d)
         with self._lock:
             node_id = self._store.add_join(ids, params_d)
-            return self._enter(node_id, form, prov, [left, right], op=("join", params_d, ids))
+            # a join's rows are its own, so two joins of one pair are two row sets
+            rows = (node_id,) if self._carried([left, right]) else ()
+            op_entry = ("join", params_d, ids)
+            return self._enter(node_id, form, prov, [left, right], op=op_entry, rows=rows)
 
     def record_external(
         self,
@@ -740,6 +797,7 @@ class Session:
         params_d: dict[str, ParamValue] = dict(params or {})
         prov = capture()
         self._mine(inputs, (op, prov))
+        self._same_rows(op, prov, inputs)
         if (descriptor is None) != (form is None):
             raise GraphedTypeError(op, prov, "descriptor= and form= must be given together")
         # user params may carry any key, so op_form sees `output_type` only as declared here

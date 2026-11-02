@@ -406,7 +406,11 @@ def _record_concat(arrays: list[NumpyArray], axis: int) -> Array:
     params: dict[str, ParamValue] = {"axis": axis} if axis else {}
     # axis 0 RESTRUCTURES the partition set: boundary; inner axes zip partitions: fusible
     reduction = arrays[0]._norm_axis(axis) == 0
-    return arrays[0].session.record_op("concatenate", arrays, params, reduction=reduction)
+    # along the rows it appends them, and an inner axis pairs them
+    rows_from = range(len(arrays)) if reduction else None
+    return arrays[0].session.record_op(
+        "concatenate", arrays, params, reduction=reduction, rows_from=rows_from
+    )
 
 
 def _seq_of_arrays(kind: str, args: tuple[object, ...]) -> list[NumpyArray]:
@@ -457,7 +461,7 @@ def _fn_isin(arr: NumpyArray, args: tuple[object, ...], kwargs: dict[str, object
     if kwargs:
         raise TypeError("graphed np.isin takes (element array, test array)")
     a, b = _two_arrays("isin", args)
-    return a.session.record_op("isin", [a, b], reduction=True)
+    return a.session.record_op("isin", [a, b], reduction=True, rows_from=(0,))
 
 
 def _fn_searchsorted(arr: NumpyArray, args: tuple[object, ...], kwargs: dict[str, object]) -> Any:
@@ -466,7 +470,7 @@ def _fn_searchsorted(arr: NumpyArray, args: tuple[object, ...], kwargs: dict[str
         raise TypeError("graphed np.searchsorted takes (sorted array, values array, side=)")
     a, v = _two_arrays("searchsorted", args)
     params: dict[str, ParamValue] = {"side": str(side)} if side != "left" else {}
-    return a.session.record_op("searchsorted", [a, v], params, reduction=True)
+    return a.session.record_op("searchsorted", [a, v], params, reduction=True, rows_from=(1,))
 
 
 def _fn_unique(arr: NumpyArray, args: tuple[object, ...], kwargs: dict[str, object]) -> Any:
