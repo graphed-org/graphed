@@ -118,6 +118,8 @@ Division by zero stops a run if you ask, and a worker's warnings reach the drive
 Fixes
 ~~~~~
 
+* The checkpoint guide says ``run_resumable`` and ``run_shuffle_resumable`` keep results separate
+  from ``resumable``'s, and the warning that no task was reused names that cause (#191).
 * A behavior-carrying plan resumes across processes. The Session backend's behavior ships, and keys,
   in an order independent of how it was built: a behavior assembled from sets (coffea's NanoEvents)
   gave every process its own ``resumable`` and ``run_shuffle_resumable`` keys and shuffle plan
