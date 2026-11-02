@@ -323,14 +323,13 @@ class _SkipProcess(Generic[R]):
 
     process: Callable[[Partition, WorkerResources], R]
     empty: Callable[[], R]
-    attempts: int
     lost: Mapping[str, BaseException] = field(default_factory=dict)
 
     def __call__(self, partition: Partition, resources: WorkerResources) -> _Partial[R]:
         """Return the chunk's partial, or an empty one naming why there is none."""
         label = chunk_label(partition)
         error = self.lost.get(label)
-        for _ in range(0 if error else self.attempts):
+        if error is None:
             try:
                 return _Partial(self.process(partition, resources))
             except Exception as exc:  # an interrupt or exit stops the run; it is not a dead letter
@@ -338,7 +337,7 @@ class _SkipProcess(Generic[R]):
         failed = FailedChunk(
             label,
             f"{type(error).__name__}: {error}",
-            dead_letter_descriptor(label, partition, cast(BaseException, error)),
+            dead_letter_descriptor(label, partition, error),
         )
         return _Partial(self.empty(), (failed,))
 
@@ -428,13 +427,10 @@ def finalize_result(plan: Plan[R] | DurablePlanV2, result: ExecResult[R]) -> Exe
     return result if fn is None else replace(result, value=fn(result.value))
 
 
-def skipping(
-    plan: Plan[Any] | DurablePlanV2, skip_failed: int = 0, *, attempts: int = 1
-) -> Plan[Any] | DurablePlanV2:
+def skipping(plan: Plan[Any] | DurablePlanV2, skip_failed: int = 0) -> Plan[Any] | DurablePlanV2:
     """Return ``plan`` going on past ``skip_failed`` failed chunks, or ``plan.stop.max_errors``.
 
-    Every runner calls it on entry. A chunk gets ``attempts`` tries in its worker, because a
-    failure caught here is one a backend's retries never see. With no budget it returns ``plan``.
+    Every runner calls it on entry. With no budget it returns ``plan``.
     """
     if not isinstance(plan, Plan):
         if skip_failed:
@@ -445,7 +441,7 @@ def skipping(
         return plan
     return replace(
         plan,
-        process=_SkipProcess(plan.process, plan.empty, attempts),
+        process=_SkipProcess(plan.process, plan.empty),
         combine=_SkipCombine(plan.combine, budget),
         empty=functools.partial(_empty_partial, plan.empty),
         stop=replace(plan.stop or StopCondition(), max_errors=budget),
@@ -458,15 +454,16 @@ def without_lost(plan: Plan[Any] | DurablePlanV2, err: BaseException) -> Plan[An
     Raises ``err`` when there is no such rerun: the plan is not skipping, the worker held no chunk
     of the plan, or a pull stream cannot be replayed.
     """
-    process = plan.process if isinstance(plan, Plan) else None
     label = getattr(err, "partition", "")
     if (
-        not isinstance(process, _SkipProcess)
+        not isinstance(plan, Plan)
+        or not isinstance(plan.process, _SkipProcess)
         or plan.next_tasks is not None
-        or label in process.lost
+        or label in plan.process.lost
         or label not in {chunk_label(t.partition) for t in plan.tasks}
     ):
         raise err
+    process = plan.process
     return replace(plan, process=replace(process, lost={**process.lost, label: err}))
 
 

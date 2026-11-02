@@ -32,14 +32,10 @@ N = 20
 
 
 class Chunks:
-    def __init__(self, *bad: int, flaky: int = 0) -> None:
+    def __init__(self, *bad: int) -> None:
         self.bad = set(bad)
-        self.flaky = flaky
 
     def __call__(self, part: Partition, res: object) -> int:
-        if self.flaky:
-            self.flaky -= 1
-            raise OSError("flaky")
         if part.entry_start in self.bad:
             raise OSError(f"bad chunk {part.entry_start}")
         return 1 << part.entry_start
@@ -121,16 +117,6 @@ def test_the_budget_error_crosses_a_process_boundary() -> None:
     back = pickle.loads(pickle.dumps(TooManyFailedChunksError(failed)))
     assert back.failed == failed
     assert "a: OSError: x" in str(back)
-
-
-def test_attempts_run_inside_the_worker() -> None:
-    wrapped: Any = skipping(plan_of(Chunks(flaky=1)), 1, attempts=2)
-    assert n_failed(wrapped.process(wrapped.tasks[0].partition, None)) == 0
-
-
-def test_one_attempt_fails_a_flaky_chunk() -> None:
-    wrapped: Any = skipping(plan_of(Chunks(flaky=1)), 1)
-    assert n_failed(wrapped.process(wrapped.tasks[0].partition, None)) == 1
 
 
 def test_an_interrupt_is_not_a_failed_chunk() -> None:
