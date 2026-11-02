@@ -172,6 +172,11 @@ class AwkwardForm:
         return str(self.tt.dtype if tt_type is None else tt_type)
 
     @property
+    def has_rows(self) -> bool:
+        """Return whether a row axis is left; a whole-array reduction's scalar has none."""
+        return _is_array(self.tt)
+
+    @property
     def is_typetracer(self) -> bool:
         """Return whether this form is backed by a typetracer."""
         return ak.backend(self.tt) == "typetracer"

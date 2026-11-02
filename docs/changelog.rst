@@ -7,6 +7,29 @@ Newest release first. Numbers in parentheses are the pull requests on
 0.0.11 (unreleased)
 -------------------
 
+Two datasets in one Session no longer pair their rows by accident
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+An elementwise op over two reads of different data ran and paired unrelated events, and a one-event
+source broadcast over the other (#193). It now raises ``graphed.errors.SourceRowsError``, a located
+``GraphedTypeError`` that is also a ``TypeError``, at the line that wrote it, naming both sources.
+A fill, a mask, a weight and an External refuse the same way, as does appending two sources in
+different orders on either side of an op. Scalars such as ``gak.sum(tt.w)`` and ``np.histogram``
+counts still combine across sources, ``gak.concatenate`` along the rows still appends,
+``gak.cartesian`` along the rows still crosses, ``np.isin`` and ``np.searchsorted`` still read the
+other source as a set, and in-memory arrays still pair as numpy arrays do.
+
+To say how two sources match:
+
+* ``graphed.join(a, b, on=["run", "luminosityBlock", "event"])`` matches by key. A key field may
+  now exceed 2\ :sup:`20`; ``graphed.pack_key`` called directly still refuses it.
+* ``graphed.join(a, b, how="positional")`` is new: row i pairs with row i, for friend trees holding
+  the same events in the same order with no key column. ``join_plan`` runs it a block at a time, so
+  both sides need the same number of partitions; a differing row count is refused when it runs.
+  ``on=`` is now optional on ``graphed.join`` and ``gak.join``.
+
+A join reads each side whole unless you select fields first, as in ``graphed.join(a[["x"]],
+b[["y"]], how="positional")``.
 ``SequentialRunner`` stands in for the pooled runners
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

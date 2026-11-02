@@ -49,6 +49,10 @@ class GraphedTypeError(GraphedError):
         super().__init__(msg)
 
 
+class SourceRowsError(GraphedTypeError, TypeError):
+    """An op pairing the rows of two partitioned sources, which need not be the same events."""
+
+
 class OutputTypeError(GraphedTypeError):
     """An External's value disagrees with the type its node declared.
 
