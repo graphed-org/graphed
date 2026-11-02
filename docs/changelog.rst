@@ -31,6 +31,13 @@ To say how two sources match:
 A join reads each side whole unless you select fields first, as in ``graphed.join(a[["x"]],
 b[["y"]], how="positional")``.
 
+``graphed.aggregate_plan``, and so ``h.plan()`` and ``gh.plan()``, now run over a join, keyed or
+positional, with several outputs. The plan is the join's, stage by stage, so it runs on
+``SequentialRunner`` and ``SubmitRunner``, and takes no ``partitions=``, ``store=``, ``writes=``,
+``read_by=`` or ``opt_level=0``; it cannot be collated. ``graphed.join_plan`` takes several outputs
+with ``reduce``, ``combine`` and ``empty``. A keyed join of one source, which ran per chunk and lost
+its matches across chunks, is refused by every partitioned plan and write.
+
 Plans returned wrong values for row-axis operations, and now refuse them
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

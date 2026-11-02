@@ -497,12 +497,44 @@ def aggregate_plan(
 
     ``read_by`` are the Arrays whose columns the read covers, in place of those the plan evaluates,
     for a caller using the chunks otherwise.
+
+    Outputs past a :func:`graphed.join` read two sources, so the plan is the join's
+    :class:`~graphed.core.DurablePlanV2`: a stage per side and one per destination, with ``reduce``
+    per destination. It runs on ``SequentialRunner`` and ``SubmitRunner``.
     """
     writes = tuple(writes)
     arrays = _planned_arrays(outputs, writes, store=store, opt_level=opt_level)
     session = arrays[0].session
-    nid, data = _partitioned_source(arrays)
     compiled = _compile_at(opt_level, session, arrays)
+    partitioned = _partitioned(arrays)
+    if len(partitioned) == 2 and _has_join(compiled):
+        for name, given in (
+            ("partitions", partitions),
+            ("store", store),
+            ("writes", writes or None),
+            ("read_by", read_by),
+        ):
+            if given is not None:
+                raise TypeError(f"aggregate_plan over a join takes no {name}=")
+        if opt_level != 1:
+            raise TypeError("aggregate_plan over a join takes no opt_level=0")
+        from .shuffle import _build  # shuffle imports this module
+
+        plan = _build(
+            "join_plan",
+            outputs,
+            (reduce, combine, empty),
+            backend=backend,
+            steps_per_file=steps_per_file,
+            names=services,
+            compiled=compiled,
+            externals=externals,
+            on_compiled=on_compiled,
+            finalize=finalize,
+        )
+        # which plan a graph needs is not visible to the type system
+        return cast("Plan[V]", plan)
+    nid, data = _one_source(partitioned)
     slot = _slot_of(compiled)
     written = {compiled.correspondence.node_map[w.array.node_id][0] for w in writes}
     refuse_chunk_partials(compiled, as_outputs=written)
@@ -573,11 +605,16 @@ def _planned_arrays(
     return arrays
 
 
-def _partitioned_source(arrays: Sequence[Array]) -> tuple[int, PartitionedSource]:
-    """Return the one partitioned source ``arrays`` read, with its node id."""
-    partitioned = {
-        nid: d for nid, d in sources_read(arrays).items() if isinstance(d, PartitionedSource)
-    }
+def _partitioned(arrays: Sequence[Array]) -> dict[int, PartitionedSource]:
+    return {nid: d for nid, d in sources_read(arrays).items() if isinstance(d, PartitionedSource)}
+
+
+def _has_join(compiled: CompiledGraph) -> bool:
+    return any(n["kind"] == "join" for n in GraphStore.deserialize(bytes(compiled.ir)).nodes())
+
+
+def _one_source(partitioned: Mapping[int, PartitionedSource]) -> tuple[int, PartitionedSource]:
+    """Return the one partitioned source in ``partitioned``, with its node id."""
     if len(partitioned) != 1:
         raise TypeError(
             "aggregate_plan needs exactly one partitioned source; the outputs read "
@@ -723,6 +760,8 @@ def collate(plans: Mapping[str, Plan[Any]]) -> Plan[dict[str, Any]]:
     route: dict[tuple[str, str], str] = {}
     tasks: list[Task] = []
     for name, plan in plans.items():
+        if not isinstance(plan, Plan):
+            raise TypeError(f"collate needs plans with fixed tasks; {name!r} runs in stages")
         if plan.next_tasks is not None or plan.stop is not None:
             raise TypeError(
                 f"collate needs plans with fixed tasks; {name!r} is adaptive or stoppable"
