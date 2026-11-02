@@ -18,6 +18,8 @@ from graphed.errors import GraphedError, StageError
 from graphed.execute import compile_ir
 from graphed.write import PartWrite
 
+pytest.importorskip("pyarrow")
+
 
 def _sums(values: list[Any]) -> tuple[float, ...]:
     return tuple(float(v) for v in values)
