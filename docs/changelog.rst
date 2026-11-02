@@ -23,7 +23,8 @@ Small samples, and one evaluation path
   ``graphed.errors.PackKeyError`` is both.
 * ``graphed.debug.run(partition=)`` selects a ``Partition``. It was only a label and always read the
   whole source, so a string now raises ``TypeError``; pass ``label=`` to name the data in a failure.
-* ``Partition.first(n)`` caps a partition at its first ``n`` entries, resolved when it is read.
+* ``Partition.first(n)`` caps a partition at its first ``n`` entries, resolved when it is read. A
+  capped range is exact, so ``is_blind`` is false and a reader that moves blind ranges leaves it.
 * A parquet partition reads only the row groups its entries lie in, not the whole file.
 
 Plans returned wrong values for row-axis operations, and now refuse them

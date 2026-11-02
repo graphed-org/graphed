@@ -36,6 +36,8 @@ class _Files:
     chunks: tuple[ak.Array, ...]
     reads: list[tuple[int, int, tuple[str, ...]]] = field(default_factory=list)
     honours_ranges: bool = True
+    #: moves a blind range to multiples of this, which uproot's align_baskets does to baskets
+    basket: int | None = None
 
     def partitions(self, steps_per_file: int) -> tuple[Partition, ...]:
         return tuple(Partition.blind(f"f{i}", "t", 0, 1) for i in range(len(self.chunks)))
@@ -45,7 +47,10 @@ class _Files:
         chunk = self.chunks[i]
         if self.honours_ranges:
             part = partition.resolve(len(chunk))
-            chunk = chunk[part.entry_start : part.entry_stop]
+            start, stop = part.entry_start, part.entry_stop
+            if self.basket and partition.is_blind and stop != len(chunk):
+                start, stop = (round(e / self.basket) * self.basket for e in (start, stop))
+            chunk = chunk[start:stop]
         self.reads.append((i, len(chunk), tuple(columns or chunk.fields)))
         return chunk
 
@@ -53,14 +58,16 @@ class _Files:
         raise AssertionError("the whole-dataset loader must stay unused")
 
 
-def _files(*sizes: int, honours_ranges: bool = True) -> tuple[Any, _Files]:
+def _files(
+    *sizes: int, honours_ranges: bool = True, basket: int | None = None
+) -> tuple[Any, _Files]:
     start = 0
     chunks: list[ak.Array] = []
     for size in sizes:
         values: Any = np.arange(start, start + size, dtype=np.float64)
         chunks.append(ak.Array({"a": values, "b": values * 10, "c": values * 100}))
         start += size
-    files = _Files(tuple(chunks), honours_ranges=honours_ranges)
+    files = _Files(tuple(chunks), honours_ranges=honours_ranges, basket=basket)
     session = Session(AwkwardBackend())
     form = AwkwardForm(ak.Array(chunks[0].layout.to_typetracer(forget_length=True)))
     return session.source("files", form=form, data=files), files
@@ -85,6 +92,24 @@ def test_head_widens_past_a_cut_that_empties_the_first_file() -> None:
 def test_head_returns_what_there_is_when_the_data_ends() -> None:
     ev, _ = _files(4, 4)
     assert ak.to_list(graphed.head(ev.a[ev.a >= 6], 5)) == [6.0, 7.0]
+
+
+@pytest.mark.parametrize("entries", [5, 50, 70, 100])
+def test_entries_is_exact_when_the_reader_moves_blind_ranges(entries: int) -> None:
+    ev, files = _files(100, basket=40)
+    assert ak.to_list(graphed.materialize(ev.a, entries=entries)) == list(range(entries))
+    assert _rows_read(files) == entries
+
+
+def test_head_is_exact_when_the_reader_moves_blind_ranges() -> None:
+    ev, _ = _files(100, basket=40)
+    assert ak.to_list(graphed.head(ev.a, 5)) == [0.0, 1.0, 2.0, 3.0, 4.0]
+
+
+def test_a_cap_makes_a_blind_partitions_range_exact() -> None:
+    blind = Partition.blind("f", "t", 0, 1)
+    assert blind.is_blind
+    assert not blind.first(3).is_blind
 
 
 def test_head_of_nothing_reads_one_entry_and_returns_no_rows() -> None:
