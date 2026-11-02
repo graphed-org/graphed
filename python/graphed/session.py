@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import contextvars
 import functools
+import json
 import threading
 import types
 import warnings
@@ -21,7 +22,7 @@ import graphed.core
 
 from .array import Array, attach, handle_of, labels_carried
 from .backend import Backend, Form, ParamValue
-from .errors import GraphedTypeError, OutputTypeError
+from .errors import GraphedError, GraphedTypeError, GraphedWarning, OutputTypeError
 from .provenance import Provenance, Site, capture
 from .services import Bindable
 from .systematics.lineage import unify_contexts
@@ -30,6 +31,23 @@ from .systematics.state import SystematicsState
 
 if TYPE_CHECKING:
     from .services import ServiceSpec
+
+
+def evaluator_key(content_hash: str, params: Mapping[str, object]) -> str:
+    """Return what picks an External's evaluator: its payload hash plus its params."""
+    return content_hash + "|" + json.dumps(params, sort_keys=True, separators=(",", ":"))
+
+
+def _fn_label(fn: object) -> str:
+    return str(getattr(fn, "__name__", repr(fn)))
+
+
+def _call_identity(fn: object) -> object:
+    """Return what makes two callable objects one call: see `Session._fn_name`'s identity rule."""
+    # not isinstance: `__class__` is the callable's to claim
+    if type(fn) is types.MethodType:
+        return (id(fn.__self__), id(fn.__func__))
+    return id(fn)
 
 
 @dataclass(frozen=True)
@@ -134,6 +152,10 @@ class Session:
         # callable) plus the ONE name space every name handed out lives in, declared or derived.
         self._fn_names: dict[object, tuple[object, str]] = {}
         self._fn_taken: set[str] = set()
+        # evaluator key -> the first callable recorded under it and where
+        self._fn_held: dict[str, tuple[Callable[..., object], Provenance]] = {}
+        # (evaluator key, *input types) -> what tracing that function gave
+        self._fn_traced: dict[tuple[str, ...], Form | None] = {}
 
     def __deepcopy__(self, memo: dict[int, Any] | None = None) -> Session:
         """Return this Session: one graph has one Session, so a copy shares what it records."""
@@ -183,8 +205,8 @@ class Session:
         `name=` is the caller's own identity declaration: returned untouched (equal names intern,
         which is the point) and entered in that space, so a later derivation cannot land on it.
 
-        A declared `name=` IS the identity: declaring a name another callable already wears —
-        declared or derived — means the same node, the caller having said so.
+        A declared `name=` IS the identity, so the callables under it must agree:
+        `record_external` refuses one that behaves differently.
 
         THE IDENTITY RULE: two callable objects share a memo entry only where PYTHON ITSELF
         defines them as the same call — an object whose TYPE is `types.MethodType`, whose call IS
@@ -205,11 +227,7 @@ class Session:
             if name is not None:
                 self._fn_taken.add(name)
                 return name
-            # not isinstance: `__class__` is the callable's to claim
-            if type(fn) is types.MethodType:
-                key: object = (id(fn.__self__), id(fn.__func__))
-            else:
-                key = id(fn)
+            key = _call_identity(fn)
             held = self._fn_names.get(key)
             if held is not None:
                 return held[1]
@@ -743,12 +761,19 @@ class Session:
                     op, prov, "backend returned no payload descriptor for external op"
                 )
         ids = [a.node_id for a in inputs]
+        undeclared = op == "map" and form is None
         if form is None:
             form = self._located_form(op, prov, ids, {**form_view, **(form_params or {})})
         # the declaration op_form honoured (or, beside form=, a leaf dtype) is checked on every
         # value
         check = getattr(self._backend, "check_output_type", None)
         declared = self._declaration(op, prov, declared_type, form_params)
+        # after every refusal of the call itself, so a refused function holds no name
+        if "fn" in params_d:
+            key = evaluator_key(descriptor.content_hash, params_d)
+            fn = self._hold_fn(fn, key, params_d["fn"], prov)
+            if undeclared and declared is None:
+                form = self._traced_form(fn, key, ids, prov) or form
         with self._lock:
             node_id = self._store.add_external(descriptor, ids, params_d)
             if declared is not None and check is not None:
@@ -767,6 +792,59 @@ class Session:
                 )
             self._externals.setdefault(node_id, (fn, ids))
             return self._enter(node_id, form, prov, inputs)
+
+    def _hold_fn(
+        self, fn: Callable[..., object], key: str, name: ParamValue, prov: Provenance
+    ) -> Callable[..., object]:
+        """Return the callable that answers for ``key``, refusing a different ``fn``."""
+        with self._lock:
+            held, first = self._fn_held.setdefault(key, (fn, prov))
+        if _call_identity(held) == _call_identity(fn):
+            return held
+        # a checkpoint key, so a rerun cell's new lambda still matches, however its lines moved
+        from .checkpoint.resume import _key_digest
+
+        try:
+            differs = _key_digest(held) != _key_digest(fn)
+        except Exception:
+            message = (
+                f"could not compare {_fn_label(fn)} with {_fn_label(held)} ({first}); "
+                "the first one answers for both"
+            )
+            warnings.warn_explicit(message, GraphedWarning, prov.filename, prov.lineno)
+        else:
+            if differs:
+                raise GraphedError(
+                    f"graphed: name={name!r} at {prov} is already used by {_fn_label(held)} "
+                    f"({first}); a different function needs a different name"
+                )
+        return held
+
+    def _traced_form(
+        self, fn: Callable[..., object], key: str, ids: Sequence[int], prov: Provenance
+    ) -> Form | None:
+        """Return the form an undeclared ``fn`` gives its inputs, where the backend can trace it.
+
+        This runs the user's function at record time, so any failure is a warning, never fatal.
+        One function is traced once per input type, however many universes record it.
+        """
+        trace = getattr(self._backend, "traced_form", None)
+        if trace is None:
+            return None
+        forms = self._forms_of(ids)
+        traced = (key, *(form.describe() for form in forms))
+        with self._lock:
+            if traced in self._fn_traced:
+                return self._fn_traced[traced]
+        try:
+            form: Form | None = trace(fn, forms)
+        except Exception:
+            form = None
+        if form is None:
+            message = f"could not infer the type of {_fn_label(fn)}; pass output_type="
+            warnings.warn_explicit(message, GraphedWarning, prov.filename, prov.lineno)
+        with self._lock:
+            return self._fn_traced.setdefault(traced, form)
 
     def _canonical_output_type(
         self,

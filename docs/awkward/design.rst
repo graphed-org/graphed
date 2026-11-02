@@ -465,10 +465,11 @@ over a per-event ``rho`` and a per-jet ``pt`` records a per-jet result.
 Declaring what an external call returns
 ---------------------------------------
 
-graphed cannot look inside a callable, so an undeclared ``map``, ``graphed.apply`` or external
-call records its first input's type. When the value has another type, say so with
-``output_type=``, and the recorded type is that one: a boolean mask indexes as a mask, and a
-named record resolves its behavior at build time.
+An undeclared ``map`` or ``graphed.apply`` runs its callable on tracing types as you record it and
+records the type that gives. A callable that cannot be traced, with a ``GraphedWarning``, and any
+other undeclared external call record their first input's type. When the value has another type,
+say so with ``output_type=``, and the recorded type is that one: a boolean mask indexes as a mask,
+and a named record resolves its behavior at build time.
 
 .. code-block:: python
 

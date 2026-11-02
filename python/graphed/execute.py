@@ -20,7 +20,6 @@ hash, and fails loudly when one is missing.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import partial
@@ -32,7 +31,7 @@ from .array import labels_carried
 from .backend import Backend
 from .errors import GraphedError
 from .provenance import Provenance
-from .session import Session, _CompileView
+from .session import Session, _CompileView, evaluator_key
 from .varied import refuse_container
 
 __all__ = [
@@ -235,10 +234,7 @@ def external_key(node: Mapping[str, Any]) -> str:
     ``content_hash`` shared (§A.3.1). Two nodes that agree on both genuinely evaluate identically,
     so sharing one evaluator is correct.
     """
-    descriptor = node["descriptor"]
-    params = node.get("params") or {}
-    chash: str = descriptor["content_hash"]
-    return chash + "|" + json.dumps(params, sort_keys=True, separators=(",", ":"))
+    return evaluator_key(node["descriptor"]["content_hash"], node.get("params") or {})
 
 
 def evaluate_ir(
