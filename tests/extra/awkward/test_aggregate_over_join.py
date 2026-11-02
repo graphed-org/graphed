@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 
 import graphed
+import graphed.debug as gd
 from graphed.aggregate import external_evaluators
 from graphed.awkward import AwkwardBackend, from_parquet, gak, to_parquet
 from graphed.core import DurablePlanV2, SequentialRunner
@@ -227,6 +228,14 @@ def test_a_staged_plan_is_not_collated(tmp_path: Path) -> None:
     plan = graphed.aggregate_plan(gak.sum(joined.x), reduce=_sums, combine=_add, empty=_zeros)
     with pytest.raises(TypeError, match="'staged' runs in stages"):
         graphed.collate({"staged": plan})
+
+
+def test_a_staged_plan_is_not_replayed(tmp_path: Path) -> None:
+    joined = _joined(tmp_path, "positional")
+    output = gak.sum(joined.x)
+    plan = graphed.aggregate_plan(output, reduce=_sums, combine=_add, empty=_zeros)
+    with pytest.raises(TypeError, match="runs in stages"):
+        gd.replay(plan, 0, output)
 
 
 def test_join_plan_needs_an_output() -> None:

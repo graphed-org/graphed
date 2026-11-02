@@ -36,7 +36,9 @@ positional, with several outputs. The plan is the join's, stage by stage, so it 
 ``SequentialRunner`` and ``SubmitRunner``, and takes no ``partitions=``, ``store=``, ``writes=``,
 ``read_by=`` or ``opt_level=0``; it cannot be collated. ``graphed.join_plan`` takes several outputs
 with ``reduce``, ``combine`` and ``empty``. A keyed join of one source, which ran per chunk and lost
-its matches across chunks, is refused by every partitioned plan and write.
+its matches across chunks, is refused by every partitioned plan and write. ``aggregate_plan`` is
+annotated ``Plan[V] | DurablePlanV2``: code that reads ``plan.tasks`` or ``plan.process`` narrows
+with ``isinstance(plan, graphed.core.Plan)``. ``graphed.debug.replay`` refuses a join's plan.
 
 Plans returned wrong values for row-axis operations, and now refuse them
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

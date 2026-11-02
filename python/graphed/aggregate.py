@@ -23,7 +23,7 @@ from typing import Any, ClassVar, Generic, TypeVar, cast
 
 from graphed.core import GraphStore, Partition
 from graphed.core.execution import Plan, Task, WorkerResources
-from graphed.core.plan import _partition_bytes, _sha256_hex
+from graphed.core.plan import DurablePlanV2, _partition_bytes, _sha256_hex
 
 from .array import Array
 from .errors import GraphedError, OutputTypeError, SourceFrame, StageError
@@ -455,7 +455,7 @@ def aggregate_plan(
     opt_level: int = 1,
     finalize: Callable[[V], V] | None = None,
     read_by: Sequence[Array] | None = None,
-) -> Plan[V]:
+) -> Plan[V] | DurablePlanV2:
     """Build a one-pass partition-wise reduction :class:`~graphed.core.execution.Plan`.
 
     It runs over the session's single partitioned source (see module docstring). ``outputs`` are
@@ -500,7 +500,8 @@ def aggregate_plan(
 
     Outputs past a :func:`graphed.join` read two sources, so the plan is the join's
     :class:`~graphed.core.DurablePlanV2`: a stage per side and one per destination, with ``reduce``
-    per destination. It runs on ``SequentialRunner`` and ``SubmitRunner``.
+    per destination. It runs on ``SequentialRunner`` and ``SubmitRunner``, and has no ``tasks`` or
+    ``process``; ``isinstance(plan, graphed.core.Plan)`` tells the two apart.
     """
     writes = tuple(writes)
     arrays = _planned_arrays(outputs, writes, store=store, opt_level=opt_level)
@@ -520,7 +521,7 @@ def aggregate_plan(
             raise TypeError("aggregate_plan over a join takes no opt_level=0")
         from .shuffle import _build  # shuffle imports this module
 
-        plan = _build(
+        return _build(
             "join_plan",
             outputs,
             (reduce, combine, empty),
@@ -532,8 +533,6 @@ def aggregate_plan(
             on_compiled=on_compiled,
             finalize=finalize,
         )
-        # which plan a graph needs is not visible to the type system
-        return cast("Plan[V]", plan)
     nid, data = _one_source(partitioned)
     slot = _slot_of(compiled)
     written = {compiled.correspondence.node_map[w.array.node_id][0] for w in writes}
@@ -732,7 +731,7 @@ class _CollatedCombine:
         return {n: merged[n] for n in self.combines if n in merged}
 
 
-def collate(plans: Mapping[str, Plan[Any]]) -> Plan[dict[str, Any]]:
+def collate(plans: Mapping[str, Plan[Any] | DurablePlanV2]) -> Plan[dict[str, Any]]:
     """ONE executable plan over several plans' tasks.
 
     Plans over different sources or graphs (data and MC, say) — whose value is ``{name: that plan's
@@ -746,7 +745,8 @@ def collate(plans: Mapping[str, Plan[Any]]) -> Plan[dict[str, Any]]:
     A name is in the value exactly when its plan has at least one task. ``Plan.services`` is the
     union of the plans' services; one name declared as two different specs is refused. Each name's
     value passes through its plan's ``finalize``, if it has one. Running each plan on its own and
-    collecting ``{name: value}`` gives the same product when each ``combine`` is exact.
+    collecting ``{name: value}`` gives the same product when each ``combine`` is exact. A plan that
+    runs in stages, is adaptive or can stop early has no fixed tasks and is refused.
     """
     if not plans:
         raise ValueError("collate needs at least one plan")
@@ -759,6 +759,7 @@ def collate(plans: Mapping[str, Plan[Any]]) -> Plan[dict[str, Any]]:
                 )
     route: dict[tuple[str, str], str] = {}
     tasks: list[Task] = []
+    fixed: dict[str, Plan[Any]] = {}
     for name, plan in plans.items():
         if not isinstance(plan, Plan):
             raise TypeError(f"collate needs plans with fixed tasks; {name!r} runs in stages")
@@ -766,6 +767,7 @@ def collate(plans: Mapping[str, Plan[Any]]) -> Plan[dict[str, Any]]:
             raise TypeError(
                 f"collate needs plans with fixed tasks; {name!r} is adaptive or stoppable"
             )
+        fixed[name] = plan
         for task in sorted(plan.tasks, key=lambda t: t.key):
             key = (task.partition.uri, task.partition.tree)
             owner = route.setdefault(key, name)
@@ -775,15 +777,15 @@ def collate(plans: Mapping[str, Plan[Any]]) -> Plan[dict[str, Any]]:
                     "source so one read serves both graphs"
                 )
             tasks.append(Task(len(tasks), task.partition))
-    process = _Collated({n: p.process for n, p in plans.items()}, route)
+    process = _Collated({n: p.process for n, p in fixed.items()}, route)
     _refuse_shared_parts((process, t.partition) for t in tasks)
-    finalizers = {n: p.finalize for n, p in plans.items() if p.finalize is not None}
+    finalizers = {n: p.finalize for n, p in fixed.items() if p.finalize is not None}
     return Plan(
         process=process,
-        combine=_CollatedCombine({n: p.combine for n, p in plans.items()}),
+        combine=_CollatedCombine({n: p.combine for n, p in fixed.items()}),
         empty=dict,
         tasks=tuple(tasks),
-        open_once=any(p.open_once for p in plans.values()),
+        open_once=any(p.open_once for p in fixed.values()),
         services=tuple(services[n] for n in sorted(services)),
         finalize=_CollatedFinalize(finalizers) if finalizers else None,
     )

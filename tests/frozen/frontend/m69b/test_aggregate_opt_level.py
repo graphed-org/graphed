@@ -24,9 +24,11 @@ from graphed.write import PartWrite
 
 
 def _plan(*outputs: Array, **kw: Any) -> Plan[Any]:
-    return aggregate_plan(
+    plan = aggregate_plan(
         *outputs, reduce=fx.sums, combine=fx.add, empty=fx.zero, steps_per_file=2, **kw
     )
+    assert isinstance(plan, Plan)
+    return plan
 
 
 def _node_count(ir: bytes) -> int:

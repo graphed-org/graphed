@@ -22,7 +22,7 @@ import graphed
 import graphed.numpy as gn
 from graphed import GraphedError, compile_ir, refuse_chunk_partials
 from graphed.awkward import AwkwardBackend, from_parquet, gak, to_parquet
-from graphed.core.execution import SequentialRunner
+from graphed.core.execution import Plan, SequentialRunner
 from graphed.numpy import io as npio
 
 pytest.importorskip("pyarrow")
@@ -50,13 +50,15 @@ def _total(plan: graphed.core.execution.Plan[float]) -> float:
 
 
 def _sum_plan(out: graphed.Array, steps: int) -> graphed.core.execution.Plan[float]:
-    return graphed.aggregate_plan(
+    plan = graphed.aggregate_plan(
         out,
         reduce=lambda v: float(v[0]),
         combine=lambda a, b: a + b,
         empty=lambda: 0.0,
         steps_per_file=steps,
     )
+    assert isinstance(plan, Plan)
+    return plan
 
 
 # ---- reductions inside a partitioned plan ----------------------------------------------------

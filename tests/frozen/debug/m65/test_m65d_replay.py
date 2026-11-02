@@ -133,7 +133,9 @@ def _plan(*outputs: Array, **kw: Any) -> Plan[Any]:
     kw.setdefault("reduce", _first)
     kw.setdefault("combine", _add)
     kw.setdefault("empty", _zero)
-    return aggregate_plan(*outputs, steps_per_file=4, **kw)
+    plan = aggregate_plan(*outputs, steps_per_file=4, **kw)
+    assert isinstance(plan, Plan)
+    return plan
 
 
 def _task(plan: Plan[Any], key: int) -> Task:

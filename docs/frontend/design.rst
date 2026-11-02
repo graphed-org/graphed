@@ -1271,8 +1271,11 @@ Each side is read, evaluated up to the join and routed by its own map stage; one
 destination depends on both, joins that destination's rows and runs what you recorded after the
 join. Without ``reduce``/``combine``/``empty`` the value is one output per destination; with them,
 ``join_plan`` adds a one-task ``reduce`` stage that folds the destinations, as ``aggregate_plan``
-folds partitions. ``shuffle_plan`` is the single-source counterpart for a plain repartition: a
-map-write stage, a gather stage and a ``reduce`` stage, with the barrier edge after the map-write.
+folds partitions. ``aggregate_plan`` over a join builds this same plan, so its return type is
+``Plan[V] | DurablePlanV2``; code that reads ``plan.tasks`` narrows with
+``isinstance(plan, graphed.core.Plan)``. ``shuffle_plan`` is the single-source counterpart for a
+plain repartition: a map-write stage, a gather stage and a ``reduce`` stage, with the barrier edge
+after the map-write.
 Both builders produce a durable, byte-deterministic plan that carries the services its operations
 call (``bind_services`` binds them as for any plan). Three runners run one: ``SequentialRunner``
 in-process, ``graphed.checkpoint.run_shuffle_resumable`` against a checkpoint store, and

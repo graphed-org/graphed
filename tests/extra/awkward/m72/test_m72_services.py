@@ -85,6 +85,7 @@ def test_a_writes_only_plan_carries_and_binds_the_written_service(tmp_path: Path
     _x, y = _served(MC_FILES, "Events", SVC)
     write = PartWrite(array=y, destination=str(tmp_path), name=by_step, codec=json_codec)
     plan = graphed.aggregate_plan(reduce=paths_only, combine=add, empty=no_paths, writes=[write])
+    assert isinstance(plan, Plan)
     paths = _run_bound(plan, (SVC,))
     assert read_part(paths[0])["values"] == (MC_FILES["mc-a"] + 1).tolist()
 
@@ -95,6 +96,7 @@ def test_writes_beside_a_plain_reduction_carry_the_written_service(tmp_path: Pat
     plan = graphed.aggregate_plan(
         gak.sum(x), reduce=data_reduce, combine=data_combine, empty=data_empty, writes=[write]
     )
+    assert isinstance(plan, Plan)
     total, paths = _run_bound(plan, (SVC,))
     assert total == sum(int(v.sum()) for v in DATA_FILES.values())
     assert read_part(paths[0])["values"] == (DATA_FILES["mc-a"] + 1).tolist()
@@ -130,7 +132,9 @@ def test_collate_refuses_one_service_name_declared_two_ways() -> None:
 
 def _writes(array: Any, tmp_path: Path, sub: str) -> Plan[Any]:
     write = PartWrite(array=array, destination=str(tmp_path / sub), name=by_step, codec=json_codec)
-    return graphed.aggregate_plan(reduce=paths_only, combine=add, empty=no_paths, writes=[write])
+    plan = graphed.aggregate_plan(reduce=paths_only, combine=add, empty=no_paths, writes=[write])
+    assert isinstance(plan, Plan)
+    return plan
 
 
 def _two_sources(tmp_path: Path) -> tuple[Plan[Any], Plan[Any]]:
