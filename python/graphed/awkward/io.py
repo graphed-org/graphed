@@ -294,9 +294,9 @@ def _file_tables(partitions: Sequence[Partition], steps_per_file: int) -> dict[s
     files = [
         _file_key(p)
         for p in partitions
-        if p.blind_step == 0 or (not p.is_blind and p.entry_start == 0)
+        if p.blind_step == 0 or (p.blind_step is None and p.entry_start == 0)
     ]
-    rows = {_file_key(p): p.entry_stop for p in partitions if not p.is_blind}
+    rows = {_file_key(p): p.entry_stop for p in partitions if p.blind_step is None}
     return {
         "bases": tuple(gw.file_bases(files, steps_per_file).items()),
         "rows": tuple(rows.items()),
@@ -307,7 +307,7 @@ def _part_paths(writer: _WritePart | _VariedWritePart, partition: Partition) -> 
     """Return a deferred writer's one part for ``partition``: its ``part_paths`` hook."""
     if writer.reader is None:
         index = _memory_step(partition, writer.memory_rows, writer.steps_per_file)
-    elif partition.is_blind:
+    elif partition.blind_step is not None:
         index = gw.blind_part_index(partition, dict(writer.bases))
     else:
         key = _file_key(partition)
