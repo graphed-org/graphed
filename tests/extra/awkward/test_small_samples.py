@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pickle
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -19,13 +19,13 @@ import graphed
 import graphed.debug as gd
 import graphed.numpy as gnp
 from graphed.awkward import AwkwardBackend, AwkwardForm, from_awkward, gak
-from graphed.awkward.io import from_parquet, read_parquet_partition
+from graphed.awkward.io import _file_tables, from_parquet, read_parquet_partition, to_parquet
 from graphed.core import Partition
 from graphed.core.execution import SequentialRunner
 from graphed.core.plan import _partition_bytes, _partition_from_json, _partition_json
 from graphed.errors import PackKeyError, StageError
 from graphed.materialization import PlanPieces
-from graphed.parquet import row_groups_for
+from graphed.parquet import derive_part_index, row_groups_for
 from graphed.session import Session
 
 
@@ -36,7 +36,7 @@ class _Files:
     chunks: tuple[ak.Array, ...]
     reads: list[tuple[int, int, tuple[str, ...]]] = field(default_factory=list)
     honours_ranges: bool = True
-    #: moves a blind range to multiples of this, which uproot's align_baskets does to baskets
+    #: moves a blind range to multiples of this
     basket: int | None = None
 
     def partitions(self, steps_per_file: int) -> tuple[Partition, ...]:
@@ -48,7 +48,7 @@ class _Files:
         if self.honours_ranges:
             part = partition.resolve(len(chunk))
             start, stop = part.entry_start, part.entry_stop
-            if self.basket and partition.is_blind and stop != len(chunk):
+            if self.basket and partition.is_blind:
                 start, stop = (round(e / self.basket) * self.basket for e in (start, stop))
             chunk = chunk[start:stop]
         self.reads.append((i, len(chunk), tuple(columns or chunk.fields)))
@@ -110,6 +110,27 @@ def test_a_cap_makes_a_blind_partitions_range_exact() -> None:
     blind = Partition.blind("f", "t", 0, 1)
     assert blind.is_blind
     assert not blind.first(3).is_blind
+
+
+@pytest.mark.parametrize("step", [0, 1])
+def test_a_capped_partition_keeps_the_part_of_its_step(step: int) -> None:
+    capped = Partition.blind("f", "", step, 2).first(3)
+    assert derive_part_index(capped, steps_per_file=2, bases={"f": 4}) == 4 + step
+
+
+def test_a_writers_file_tables_key_a_capped_partition_by_its_step() -> None:
+    capped = [Partition.blind("f", "", step, 2).first(3) for step in (0, 1)]
+    assert _file_tables(capped, 2) == {"bases": (("f", 0),), "rows": ()}
+
+
+def test_a_write_plan_runs_over_capped_partitions(tmp_path: Path) -> None:
+    path = _parquet(tmp_path, "data.parquet", [float(i) for i in range(10)])
+    ev = from_parquet("events", path, session=Session(AwkwardBackend()))
+    plan = to_parquet(ev.x, str(tmp_path / "out"), steps_per_file=2, compute=False)
+    tasks = tuple(replace(task, partition=task.partition.first(2)) for task in plan.tasks)
+    written = SequentialRunner().run(replace(plan, tasks=tasks)).value
+    assert [Path(part).name for part in written] == ["part-00000.parquet", "part-00001.parquet"]
+    assert [ak.to_list(ak.from_parquet(part).data) for part in written] == [[0, 1], [5, 6]]
 
 
 def test_head_of_nothing_reads_one_entry_and_returns_no_rows() -> None:

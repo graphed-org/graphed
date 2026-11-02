@@ -121,7 +121,7 @@ def make_partitions(
 
 
 def resolve_partition(partition: Partition) -> Partition:
-    """Resolve a blind partition against its file's metadata row count (non-blind: unchanged)."""
+    """Resolve a blind partition against its file's metadata row count (no step: unchanged)."""
     if partition.blind_step is None:
         return partition
     return partition.resolve(num_rows(partition.uri))
@@ -136,7 +136,7 @@ def derive_part_index(
     Blind partitions carry their step (no I/O); an eager partition's step is reconstructed
     exactly against the file's metadata row count (``graphed.write.step_of``).
     """
-    if partition.is_blind:
+    if partition.blind_step is not None:
         return blind_part_index(partition, bases)
     n = num_rows(partition.uri)
     return bases[partition.uri] + step_of(
