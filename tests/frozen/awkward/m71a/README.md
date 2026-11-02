@@ -25,7 +25,7 @@ values AND types against eager awkward.
 | `…::test_a_scalar_input_records_the_declared_scalar` | A-C1 | `gak.sum(x).map(..., "bool")` → `bool` |
 | `…::test_every_universe_of_a_varied_apply_records_the_declared_type` | A-C1 | all three `graphed.labels` universes record `## * bool` (a Varied path that drops the keyword records `float32`) |
 | `…::test_a_declared_named_record_resolves_its_behavior` | A-C3 | `var * Photon[...]`; `g.pt2`, `g.scaled(3)` record `## * var * float32` and equal eager; projection of `g.pt2` reads exactly `Jet.pt` |
-| `test_m71a_awkward_identity.py::test_declared_and_undeclared_are_two_nodes_with_two_forms` | A-C2 | two nodes; undeclared keeps `## * var * float64` and no `output_type` param |
+| `test_m71a_awkward_identity.py::test_declared_and_undeclared_are_two_nodes_with_two_forms` | A-C2 | two nodes; undeclared records the traced `## * var * bool` and no `output_type` param |
 | `…::test_two_declared_types_are_two_nodes` | A-C2 | `var * bool` vs `var * int8` |
 | `…::test_spellings_of_one_type_are_one_node_carrying_the_canonical_string` | A-C2 | `"var*bool"`, `"var * bool"`, `Type`, `Form` → one node; params and IR carry `var * bool`, IR never `var*bool` |
 | `…::test_each_spelling_family_is_one_node_with_the_canonical_string` | A-C7 | every family in `FAMILIES` (float32, bool, int64, float64, complex128, string, bytes, float16, `3 * float32`, record incl. structured dtype + `ScalarType`, `Photon`, `var * float32`, option-list-record, `ArrayType`/`.content`/`str`) → one node, canonical params + IR + form; string/bytes/float16/regular/record families equal eager |

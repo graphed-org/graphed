@@ -424,6 +424,13 @@ class AwkwardBackend:
         operands = [self._with_behavior(f.tt) for f in forms]
         return AwkwardForm(apply(op, operands, params, behavior=self._behavior))
 
+    def traced_form(self, fn: Callable[..., object], inputs: Sequence[Form]) -> AwkwardForm | None:
+        """Return the form ``fn`` gives ``inputs``' typetracers, ``None`` if not a typetracer."""
+        forms = cast("Sequence[AwkwardForm]", inputs)
+        result = fn(*(self._with_behavior(f.tt) for f in forms))
+        traced = isinstance(result, ak.Array) and ak.backend(result) == "typetracer"
+        return AwkwardForm(result) if traced or ak.typetracer.is_unknown_scalar(result) else None
+
     def eval_stage(
         self, op: str, inputs: Sequence[object], params: Mapping[str, object]
     ) -> object:
@@ -574,7 +581,7 @@ class AwkwardBackend:
         if op == "onnx":
             return payloads.onnx_descriptor(str(params["path"]))
         if op == "map":
-            return payloads.opaque_callable_descriptor(str(params.get("fn", "lambda")))
+            return payloads.opaque_callable_descriptor(str(params["fn"]))
         if op == "external":
             # a generic, user-defined External: the caller supplies a pre-computed *deterministic*
             # content hash (e.g. via a graphed-preserve plugin) — the backend is just the conduit.
