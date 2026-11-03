@@ -18,6 +18,7 @@ from graphed.awkward._templates import _payload_bytes
 from graphed.errors import GraphedTypeError
 from graphed.preserve.externals import record_external
 from graphed.preserve.externals.correctionlib_external import CORRECTIONLIB_PLUGIN
+from graphed.preserve.externals.onnx_external import ONNX_PLUGIN
 from graphed.varied import member_of
 
 pytest.importorskip("correctionlib")
@@ -330,6 +331,41 @@ def test_the_legacy_shape_refuses_a_second_input() -> None:
     with pytest.raises(GraphedTypeError, match="takes one Array input, 'x'; got 2") as caught:
         _external(ev, params, ev.pt, ev.pt * 2.0, payload=_LEGACY)
     assert caught.value.provenance.filename == __file__
+
+
+def _onnx() -> bytes:
+    return ONNX_PLUGIN.samples()[0]
+
+
+@pytest.mark.parametrize(
+    "record",
+    [
+        lambda ev: _external(ev, {"name": "l1", "args": '["$0"]'}, ev.pt, ev.eta),
+        lambda ev: _external(ev, {"name": "jet_sf", "args": '["n", "$0", "$0"]'}, ev.pt, ev.eta),
+        lambda ev: gak.apply_correction(CSET, "l1", [ev.pt, ev.eta], args=["$0"]),
+        lambda ev: gak.onnx_inference(_onnx(), [ev.pt, ev.eta], lambda m: m, args=[["$0"]]),
+    ],
+    ids=["record_external", "repeated-slot", "apply_correction", "onnx_inference"],
+)
+def test_an_input_no_slot_reads_is_refused(record: Any) -> None:
+    _, ev = _events()
+    with pytest.raises(GraphedTypeError, match=r"reads no \$1;") as caught:
+        record(ev)
+    assert caught.value.provenance.filename == __file__
+
+
+@pytest.mark.parametrize(
+    "record",
+    [
+        lambda ev: _external(ev, {"name": "jet_sf", "args": '["n", "$1", "$0"]'}, ev.eta, ev.pt),
+        lambda ev: gak.apply_correction(CSET, "jet_sf", [ev.pt, ev.eta], args=["n", "$0", "$1"]),
+        lambda ev: gak.onnx_inference(_onnx(), [ev.pt, ev.eta], lambda m: m, args=[["$0", "$1"]]),
+    ],
+    ids=["record_external", "apply_correction", "onnx_inference"],
+)
+def test_every_input_a_slot_reads_records(record: Any) -> None:
+    _, ev = _events()
+    assert record(ev).session is ev.session
 
 
 def test_a_wrong_name_outranks_a_bad_template() -> None:

@@ -7,9 +7,11 @@ import hashlib
 import json
 import threading
 from collections import OrderedDict
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any, TypeVar
 
+from ...errors import GraphedTypeError
+from ...provenance import capture
 from ..errors import PreserveError
 
 
@@ -154,6 +156,30 @@ def parse_call_template(
         for e in (raw_args or [])
     ]
     return (args, kwargs)
+
+
+def refuse_unread_inputs(op: str, params: Mapping[str, Any], n_inputs: int) -> None:
+    """Refuse a call template that leaves an input unread: it would be recorded, then ignored."""
+    template = parse_call_template(params, n_inputs, allow_constants=True)
+    if template is None:
+        return
+    read: set[int] = set()
+    entries = [*template[0], *template[1].values()]
+    while entries:
+        kind, value = entries.pop()
+        if kind == "slot":
+            read.add(value)
+        elif kind == "group":
+            read.update(value)
+        elif kind == "named":
+            entries.extend(value.values())
+    unread = [str(i) for i in range(n_inputs) if i not in read]
+    if unread:
+        raise GraphedTypeError(
+            op,
+            capture(),
+            f"the call template reads no ${', $'.join(unread)}; pass only the inputs it reads",
+        )
 
 
 def ml_matrix(entry: TemplateEntry, inputs: list[Any]) -> Any:

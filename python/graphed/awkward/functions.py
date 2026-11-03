@@ -24,6 +24,7 @@ from graphed.provenance import capture
 from graphed.shuffle import JOINKEY, route_key
 from graphed.varied import boundary_refusal, containers_in, expand, expand_tuple, narrow
 
+from ..preserve.externals._helpers import refuse_unread_inputs
 from ..preserve.externals.correctionlib_external import (
     _refused,
     check_correctionlib_params,
@@ -586,9 +587,10 @@ def apply_correction(
         **which,
     }
     check_correctionlib_params(params, blob, len(arrays))
-    slots = [arrays[i] for kind, i in entries if kind == "slot"]
     session = arrays[0].session
     session._mine(arrays, ("correction", capture()))  # before `session.form` reads an input
+    refuse_unread_inputs("correction", params, len(arrays))
+    slots = [arrays[i] for kind, i in entries if kind == "slot"]
     descriptor = payloads.correctionlib_contents_descriptor(blob, name)
     return session.record_external(
         "correction",
@@ -652,6 +654,7 @@ def onnx_inference(
         params["args"] = json.dumps(args, sort_keys=False)
     if kwargs is not None:
         params["kwargs"] = json.dumps(kwargs, sort_keys=True)
+    refuse_unread_inputs("onnx", params, len(inputs))
     descriptor = payloads.onnx_weights_descriptor(blob)
     return session.record_external(
         "onnx",

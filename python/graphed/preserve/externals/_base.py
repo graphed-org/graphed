@@ -39,9 +39,11 @@ from typing import Any
 
 import cloudpickle
 
+from ...provenance import capture
 from ...services import UnboundServiceError
 from ...varied import containers_in, expand
 from ..errors import PreserveError
+from ._helpers import refuse_unread_inputs
 
 ContentHash = Callable[[bytes], str]
 Load = Callable[[bytes, Mapping[str, Any]], Any]
@@ -287,8 +289,10 @@ def record_external(
             tuple(inputs),
             {},
         )
+    session._mine(inputs, ("external", capture()))  # a foreign input outranks a bad template
     if plugin.check_params is not None:
         plugin.check_params(params or {}, payload, len(inputs))
+    refuse_unread_inputs("external", params or {}, len(inputs))
     if params and "service" in params:
         session.service_for(str(params["service"]))  # refuses an undeclared name
     content_hash = plugin.content_hash(payload)
