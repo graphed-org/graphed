@@ -215,3 +215,39 @@ def test_a_durable_plan_warns_through_resumable(
     Store(tmp_path).record_done("other", "f.root@0:10", Store(tmp_path).put(b"x"))
     resumable(build(b"two", h.parts(0)), str(tmp_path))
     assert len(warned()) == 1
+
+
+def _array() -> ak.Array:
+    return ak.Array({"x": [1.0, 2.0], "y": [0.0, 1.0]})
+
+
+@pytest.mark.parametrize("held", [_array, lambda: ak.Record({"x": 1.0})], ids=["array", "record"])
+@pytest.mark.parametrize("read", [repr, lambda a: a.attrs], ids=["repr", "attrs"])
+def test_reading_awkward_attrs_moves_no_key(held: Callable[[], Any], read: Any) -> None:
+    value = held()
+    before = _key_digest(value)
+    read(value)
+    assert value._attrs == {}
+    assert _key_digest(value) == before
+
+
+def test_a_resume_after_reading_the_array_reuses_every_task(tmp_path: Path) -> None:
+    data = _array()
+    plan = h.runtime(h.Holding(data), h.parts(0, 1))
+    first = SequentialRunner().run(resumable(plan, str(tmp_path)))
+    repr(data)
+    h.CALLS.clear()
+    assert SequentialRunner().run(resumable(plan, str(tmp_path))) == first
+    assert h.CALLS == []
+
+
+def test_transient_awkward_attrs_key_as_unset() -> None:
+    assert _key_digest(ak.Array([1.0], attrs={"@live": object()})) == _key_digest(ak.Array([1.0]))
+
+
+def test_awkward_attrs_with_content_still_key() -> None:
+    held = (None, {"a": 1}, {"a": 2}, {"a": 1, "@live": 3})
+    keys = [_key_digest(ak.Array([1.0], attrs=attrs)) for attrs in held]
+    assert keys[0] not in keys[1:]
+    assert keys[1] != keys[2]
+    assert keys[1] == keys[3]

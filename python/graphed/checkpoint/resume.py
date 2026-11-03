@@ -17,6 +17,7 @@ a changed environment refuses on, rather than in them.
 from __future__ import annotations
 
 import collections
+import copy
 import copyreg
 import dataclasses
 import dis
@@ -177,6 +178,8 @@ class _KeyPickler(pickle._Pickler):
     ) -> None:
         super().__init__(file, protocol=5)
         self._cp = _cloudpickle()
+        ak = sys.modules.get("awkward")
+        self._arrays: tuple[type, ...] = (ak.Array, ak.Record) if ak else ()
         self.globals_ref: dict[int, dict[str, Any]] = {}
         self.proto = 5
         self._seen = dict(seen)
@@ -238,6 +241,11 @@ class _KeyPickler(pickle._Pickler):
         kind = type(obj)
         if kind is set or kind is frozenset:
             return kind, (self._sorted(cast("Iterable[Any]", obj)),)
+        # reading an unset attrs fills it with {}, and pickling drops "@" keys
+        if isinstance(obj, self._arrays) and all(k.startswith("@") for k in obj._attrs or ()):
+            bare = copy.copy(obj)
+            bare._attrs = None
+            return bare.__reduce_ex__(5)
         if isinstance(obj, type) and id(obj) in self._seen:
             return _key_only, (obj.__module__, obj.__qualname__)
         if id(obj) in self._classdicts:  # a class's own dict, reached from its annotate function
@@ -382,6 +390,7 @@ def _key_digest(obj: object) -> bytes:
 
     - sets, frozensets, a ``weakref.WeakSet`` and an ABC's registry are written sorted by their
       elements' key bytes;
+    - an awkward array or record whose attrs are empty or all transient is written with them unset;
     - interpreter-filled class caches (``__slotnames__``, typing's protocol-member caches) are
       dropped, and a class's ``__annotations_cache__`` is written as ``__annotations__`` when it
       has none;

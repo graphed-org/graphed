@@ -156,6 +156,10 @@ other reduction refuse, naming the output, as do ``writes=`` without a ``reduce`
 Fixes
 ~~~~~
 
+* Reading an awkward array no longer changes the checkpoint key of a plan that holds it. Awkward
+  fills an unset ``attrs`` with ``{}`` when something reads it, which ``repr`` and ``ak.zip`` do,
+  and before awkward 2.14 so did slicing, so a resume could recompute everything. An empty or
+  all-transient ``attrs`` now keys as unset, and keys of arrays nothing has read do not move.
 * The checkpoint guide says ``run_resumable`` and ``run_shuffle_resumable`` keep results separate
   from ``resumable``'s, and the warning that no task was reused names that cause (#191).
 * A behavior-carrying plan resumes across processes. The Session backend's behavior ships, and keys,
