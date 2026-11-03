@@ -165,9 +165,6 @@ Division by zero stops a run if you ask, and a worker's warnings reach the drive
   the first chunk that raised it. ``warnings.catch_warnings(record=True)`` around ``run`` catches
   it. In a worker process, ``RuntimeWarning`` is now shown every time rather than once per location,
   so that a worker that outlives a run warns again on the next.
-* A worker keeps its warnings once its runner calls ``graphed.core.worker_warnings.enter_worker``
-  with the driver's ``process_id()``. A plan unpickled in a fresh interpreter now warns there as
-  usual and leaves ``warnings.showwarning`` and the filters alone (#197).
 * Every plan from ``aggregate_plan`` now has a ``finalize``, and its ``combine`` is a wrapper.
 
 ``graphed.materialize`` evaluates anything deferred

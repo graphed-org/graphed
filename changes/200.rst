@@ -1,0 +1,5 @@
+.. under: Division by zero stops a run if you ask, and a worker's warnings reach the driver
+
+* A worker keeps its warnings once its runner calls ``graphed.core.worker_warnings.enter_worker``
+  with the driver's ``process_id()``. A plan unpickled in a fresh interpreter now warns there as
+  usual and leaves ``warnings.showwarning`` and the filters alone (#197).
