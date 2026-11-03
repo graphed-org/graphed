@@ -20,7 +20,6 @@ hash, and fails loudly when one is missing.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import partial
@@ -32,7 +31,7 @@ from .array import labels_carried
 from .backend import Backend
 from .errors import GraphedError
 from .provenance import Provenance
-from .session import Session, _CompileView
+from .session import Session, _CompileView, evaluator_key
 from .varied import refuse_container
 
 __all__ = [
@@ -222,6 +221,15 @@ def _dispatch(
         raise replacement from exc
 
 
+def external_op(node: Mapping[str, Any]) -> str:
+    """Return the op an External ``node``'s failure names.
+
+    That is the function a ``map`` declared, else the payload kind: an External has no ``name``.
+    """
+    fn_name = (node.get("params") or {}).get("fn")
+    return f"external:{node['descriptor']['kind']}" if fn_name is None else f"map {fn_name!r}"
+
+
 def external_key(node: Mapping[str, Any]) -> str:
     """Return the execution-resolution key for an External node.
 
@@ -235,10 +243,7 @@ def external_key(node: Mapping[str, Any]) -> str:
     ``content_hash`` shared (§A.3.1). Two nodes that agree on both genuinely evaluate identically,
     so sharing one evaluator is correct.
     """
-    descriptor = node["descriptor"]
-    params = node.get("params") or {}
-    chash: str = descriptor["content_hash"]
-    return chash + "|" + json.dumps(params, sort_keys=True, separators=(",", ":"))
+    return evaluator_key(node["descriptor"]["content_hash"], node.get("params") or {})
 
 
 def evaluate_ir(
@@ -374,11 +379,7 @@ def _evaluate_external(
     fn = None if externals is None else (externals.get(external_key(nd)) or externals.get(chash))
     if fn is None:
         raise _unbound_external(chash)
-    # An External node carries no `name` — its identity is the descriptor — so an attributed
-    # failure names the payload kind, and the function a `map` declared.
-    fn_name = (nd.get("params") or {}).get("fn")
-    op = f"external:{nd['descriptor']['kind']}" if fn_name is None else f"map {fn_name!r}"
-    return _dispatch(partial(fn, *ins), op, ins, (nid, None), on_failure)
+    return _dispatch(partial(fn, *ins), external_op(nd), ins, (nid, None), on_failure)
 
 
 def _last_consumers(inputs: Sequence[Sequence[int]], *, keep: set[int]) -> dict[int, list[int]]:
@@ -439,14 +440,21 @@ def refuse_chunk_partials(
     plan output the driver's ``combine`` folds; consumed by another node it is silently the wrong
     number (``sum(x[2:8])`` over two chunks). ``as_outputs=True`` refuses partials as outputs as
     well: a writer has no combine, and every row it writes is a row of the dataset. A collection of
-    compiled output ids refuses partials at exactly those outputs (a plan's writes).
+    compiled output ids refuses partials at exactly those outputs (a plan's writes). A keyed join
+    of one source is refused the same way: a key's matches can sit in other chunks.
     """
     blob = compiled.ir if isinstance(compiled, CompiledGraph) else compiled
     store = graphed.core.GraphStore.deserialize(bytes(blob))
     nodes = store.nodes()
     consumed = {i for nd in nodes for i in nd["inputs"]}
     refused = set(store.outputs()) if as_outputs is True else set(as_outputs or ())
+    one_source = sum(nd["kind"] == "source" for nd in nodes) < 2
     for nid, nd in enumerate(nodes):
+        if one_source and nd["kind"] == "join" and dict(nd["params"]).get("how") != "positional":
+            raise GraphedError(
+                "a partitioned run cannot join one source by key: each chunk sees only its own "
+                "matches. Read the other side as its own source, or use graphed.materialize"
+            )
         if nd["kind"] != "reduction":
             continue
         if nid in consumed:

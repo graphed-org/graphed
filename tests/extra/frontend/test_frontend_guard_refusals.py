@@ -22,7 +22,7 @@ def _context() -> tuple[Session, EventContext]:
 
 def test_an_event_context_is_not_iterable() -> None:
     _, ctx = _context()
-    with pytest.raises(TypeError, match="an event context is not iterable"):
+    with pytest.raises(TypeError, match=r"graphed\.materialize"):
         iter(ctx)
 
 

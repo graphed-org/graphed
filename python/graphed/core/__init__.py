@@ -14,6 +14,7 @@ from .execution import (
     Executor,
     LocalResources,
     Monitor,
+    MonitorBase,
     NodeStore,
     Partition,
     Plan,
@@ -33,8 +34,10 @@ from .execution import (
     emit_task,
     finalize_result,
     lean_events,
+    observed_run,
     partition_label,
     worker_monitor_factory,
+    worker_profiler_factory,
 )
 from .graphed_core import GraphStore, IncrementalReducer, PayloadDescriptor, version
 from .plan import (
@@ -60,6 +63,7 @@ __all__ = [
     "IncrementalReducer",
     "LocalResources",
     "Monitor",
+    "MonitorBase",
     "NodeStore",
     "OpSpec",
     "Partition",
@@ -82,9 +86,11 @@ __all__ = [
     "emit_task",
     "finalize_result",
     "lean_events",
+    "observed_run",
     "partition_dataset",
     "partition_datasets",
     "partition_label",
     "version",
     "worker_monitor_factory",
+    "worker_profiler_factory",
 ]

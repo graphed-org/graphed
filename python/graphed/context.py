@@ -15,8 +15,9 @@ in `graphed.awkward.gnano` (the §2.1 factorization rule).
 
 A context's lineage is `graphed.systematics.lineage`'s `ContextNode`, and its ambient weight is an
 `AmbientRecord` that `graphed.systematics.ambient` builds and decides over; this module builds the
-contexts. `graphed.explain` is `graphed.systematics.explain`; it and `ambient_entries` are
-re-exported here, which is where the probes and the extra suites read them from.
+contexts. `graphed.explain_variations` is in `graphed.systematics.explain`; it and
+`ambient_entries` are re-exported here, which is where the probes and the extra suites read them
+from.
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ import itertools
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from .array import Array
+from .array import Array, EagerRefusals
 from .errors import GraphedError
 from .provenance import capture
 
@@ -51,7 +52,11 @@ from .systematics.lineage import (  # isort: skip
     collections_of,
     context_session,
 )
-from .systematics.explain import Explanation as Explanation, explain as explain  # isort: skip
+from .systematics.explain import (  # isort: skip
+    Explanation as Explanation,
+    explain as explain,
+    explain_variations as explain_variations,
+)
 from .systematics.handles import with_context  # isort: skip
 from .systematics.registration import stamp_labels as stamp_labels  # isort: skip
 from .systematics.varied import (  # isort: skip
@@ -73,7 +78,7 @@ _two_level = two_level
 _SERIAL = itertools.count()
 
 
-class EventContext(ContextNode):
+class EventContext(EagerRefusals, ContextNode):
     """An event context (§2.6). Built by an idiom constructor, never directly.
 
     Its RECORDED state — collections, selection, the registered weight factors and the label union
@@ -129,12 +134,6 @@ class EventContext(ContextNode):
         raise GraphedError(
             f"an event context takes a field name, a list of field names, or an Array/Varied mask "
             f"as its subscript, not {key!r}"
-        )
-
-    def __iter__(self) -> Any:
-        """Refuse iteration over an event context."""
-        raise TypeError(
-            "an event context is not iterable; subscript it with a mask or a field name"
         )
 
     def _read(self, name: str) -> Any:

@@ -79,12 +79,17 @@ def test_a_non_field_key_is_refused_as_ak_refuses_it(key: Any) -> None:
         ev[key] = ev.m
 
 
-@pytest.mark.parametrize(
-    "value", [None, 1j, np.datetime64("2020-01-01"), np.array([1.0]), [1.0]], ids=repr
-)
+@pytest.mark.parametrize("value", [None, 1j, np.datetime64("2020-01-01")], ids=repr)
 def test_a_non_scalar_value_is_refused_naming_with_field(value: Any) -> None:
     _, ev = _source()
     with pytest.raises(GraphedTypeError, match=r"with_field.*bool/int/float/str scalar"):
+        ev["w"] = value
+
+
+@pytest.mark.parametrize("value", [np.array([1.0]), [1.0]], ids=repr)
+def test_an_eager_array_value_is_refused_naming_the_input_fix(value: Any) -> None:
+    _, ev = _source()
+    with pytest.raises(GraphedTypeError, match=r"from_awkward.*graphed\.materialize"):
         ev["w"] = value
 
 

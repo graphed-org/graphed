@@ -75,10 +75,10 @@ def test_a_served_mask_declared_bool_is_refused_at_its_line(
 def test_a_plugin_breaking_its_output_dtype_is_refused() -> None:
     s, x = _x()
     out, line = record_external(s, _plugin("float32", "float64"), b"m", [x]), here()
-    with pytest.raises(GraphedTypeError) as info:
+    with pytest.raises(StageError) as info:
         s.materialize(out)
-    assert info.value.provenance.lineno == line
-    assert "declares output_dtype 'float64'; its value is 'float32'" in info.value.detail
+    assert info.value.user_frame.lineno == line
+    assert "declares output_dtype 'float64'; its value is 'float32'" in info.value.cause_message
 
 
 def test_output_type_wins_over_output_dtype() -> None:

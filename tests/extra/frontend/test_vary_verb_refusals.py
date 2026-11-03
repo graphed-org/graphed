@@ -22,9 +22,9 @@ def test_a_name_that_is_not_an_identifier_is_refused() -> None:
 
 def test_a_target_that_is_no_array_varied_or_context_is_refused() -> None:
     with pytest.raises(
-        GraphedError, match="takes an Array, a Varied or an event context, got int"
+        GraphedError, match="takes an Array, a Varied, an event context or a number, got str"
     ):
-        graphed.vary(3, "jes")
+        graphed.vary("3", "jes")
 
 
 def test_a_value_with_no_handle_passes_through_unstamped() -> None:

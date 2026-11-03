@@ -20,8 +20,12 @@ graphs into one. ``aggregate_plan(opt_level=0)`` ships the outputs' unoptimized 
 recorded operation, instead of the optimized graph. ``materialize`` evaluates anything deferred
 (Arrays, part writes, plans, deferred histograms, or any nesting of them) from any number of
 Sessions in this process, with no executor, reading only the source columns they use; a class
-joins it by defining ``__graphed_pieces__`` to return ``PlanPieces``. One Session can record
-several sources (a reader's ``session=``); a plan reads only the ones its outputs reach.
+joins it by defining ``__graphed_pieces__`` to return ``PlanPieces``. ``materialize(entries=N)`` and
+``materialize(partition=)`` evaluate a small sample, and ``head`` peeks at a result's first rows. One
+Session can record several sources (a reader's ``session=``); a plan reads only the ones its outputs
+reach. An op pairing rows of two partitioned sources raises ``graphed.errors.SourceRowsError``: say
+how they match with ``join``, keyed or ``how="positional"``, and ``aggregate_plan`` over the join
+runs its stages.
 ``current_session`` is the Session a read with no array input records into: the innermost
 ``with session:`` scope, else a default made on first use; ``new_session``, ``set_session`` and
 ``set_default_backend`` replace the default or choose its backend.
@@ -71,9 +75,10 @@ Debugging a run
 ``StageError`` is what you catch: it carries the operation, the input shapes, the partition and
 your source frame, and it survives the trip back from a worker process. ``format_traceback``
 renders it with an arrow at your line. ``lower`` gives you the unfused, one-operation-at-a-time
-view of a recording. ``Dashboard`` streams a live run; ``RunRecorder`` keeps a report of one.
-``replay`` re-runs one task of a finished or failed run on your machine, step by step, and diffs it
-against what the run recorded.
+view of a recording. ``Dashboard`` streams a live run; ``ProgressBar`` shows one in a terminal or
+notebook; ``RunRecorder`` keeps a report of one. ``replay`` re-runs one task of a finished or failed
+run on your machine, step by step, and diffs it against what the run recorded. ``trace`` prints how
+many rows each line keeps of a sample and marks the one that empties it.
 
 .. autosummary::
    :toctree: generated
@@ -105,6 +110,7 @@ Plans, partitions and contracts
 
 The types you touch when you drive a runner yourself or save a compiled analysis: ``Plan``,
 ``Task``, ``Partition``, ``SequentialRunner``, the ``Executor`` and ``Monitor`` protocols,
+``MonitorBase`` for a monitor that overrides only what it needs,
 ``RunControl`` for pausing and cancelling a run, and
 ``DurablePlan`` with ``with_partitions`` / ``for_dataset`` / ``for_datasets`` for re-aiming one
 compiled analysis at many datasets. The rest of this module is the compiled optimizer.

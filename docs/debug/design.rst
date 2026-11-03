@@ -24,7 +24,7 @@ array, which no amount of type checking can see before real data arrives:
    bad = pt.map(lambda a: a[100], name="oob")     # only fails once real data arrives
 
    try:
-       gd.run(s, bad, opt_level=1, partition="skim@0:4")
+       gd.run(s, bad, opt_level=1, label="skim@0:4")
    except gd.StageError as err:
        print(err.op, "|", err.cause_type, "|", err.partition)
        print(err.user_frame)
@@ -34,7 +34,7 @@ Transcripts on this page show your analysis file by name; you will see its full 
 
 ::
 
-   external | IndexError | skim@0:4
+   map 'oob' | IndexError | skim@0:4
    analysis.py:9
    Traceback (most recent call last) — user analysis frames:
          File "analysis.py", line 7, in <module>
@@ -43,7 +43,8 @@ Transcripts on this page show your analysis file by name; you will see its full 
              x * 2.0
      --> File "analysis.py", line 9, in <module>
              pt.map(lambda a: a[100], name='oob')
-   IndexError: index 100 is out of bounds for axis 0 with size 4  [stage op 'external', partition skim@0:4, opt_level=1]
+         raised in <lambda>(), analysis.py line 9:  bad = pt.map(lambda a: a[100], name="oob")     # only fails once real data arrives
+   IndexError: index 100 is out of bounds for axis 0 with size 4  [stage op "map 'oob'", partition skim@0:4, opt_level=1]
      input forms: vector[float64]
 
 The arrow is on the line you wrote. Above it is the trail of how that value was built, oldest
@@ -72,7 +73,8 @@ rather than parse a message:
    *Which* chunk of data tripped it, as ``chunk 7/20 of data.root:Events (entries 15000-17500)``.
    Data-dependent bugs fail on some partitions and not others, and this is how you find the events
    to look at. A source without an entry count gives the chunk's size instead of its range; a
-   ``graphed.debug.run`` or :func:`~graphed.debug.replay` failure shows the label you gave it.
+   ``graphed.debug.run`` or :func:`~graphed.debug.replay` failure shows the label you gave it. A
+   failure after a join or a repartition names its destination, ``dest N``, not a chunk.
 
 ``cause_type`` / ``cause_message``
    The underlying exception, as data — the type name and the message, not a live traceback
@@ -178,7 +180,7 @@ worker can raise it, a pool can ship it, and your driver re-raises *the same* di
        x = from_array("x", np.arange(4.0), session=s)
        counts = x.map(lambda a: a.astype("int64") - 1, name="counts")
        unflat = counts.map(lambda a: np.repeat(a, a), name="unflatten")
-       return gd.run(s, unflat, opt_level=1, partition=f"skim@{chunk_id}")
+       return gd.run(s, unflat, opt_level=1, label=f"skim@{chunk_id}")
 
 
    if __name__ == "__main__":
@@ -194,7 +196,7 @@ worker can raise it, a pool can ship it, and your driver re-raises *the same* di
 ::
 
    re-raised in the driver: StageError
-   partition: skim@16384 | op: external | opt_level: 1
+   partition: skim@16384 | op: map 'unflatten' | opt_level: 1
    your line: 14 | counts.map(lambda a: np.repeat(a, a), name='unflatten')
    cause: ValueError - repeats may not contain negative values.
 
@@ -579,13 +581,15 @@ Replaying a task
 
 One task failed, or returned a partial you do not believe, and you want to watch it happen on
 your own machine rather than read about it in a log. After a run, finished or failed,
-``replay(plan, key, *outputs)`` re-executes one task of an
+``replay(plan, task)`` re-executes one task of an
 ``aggregate_plan`` plan on your machine, one operation at a time at ``opt_level=0``, with the
 exact input that task read. Build the plan with ``store=`` (a directory every worker shares, or
 an fsspec URL) and each task keeps its input chunk and its partial there as it runs; without it,
-replay re-reads the task's partition. ``outputs`` are the Arrays you gave ``aggregate_plan``, in
-the same order: the session they were recorded in supplies the unfused graph and your source
-lines, so replay works while that session is alive.
+replay re-reads the task's partition. Its steps are the operations the plan runs, each at your
+line, and it needs only the plan, so it works in a fresh interpreter. ``replay(plan, task,
+*outputs)`` steps through your ops as written instead: ``outputs`` are the Arrays you gave
+``aggregate_plan``, in the same order, and the session they were recorded in supplies the unfused
+graph, so that form works while that session is alive.
 
 .. code-block:: python
 
@@ -642,14 +646,14 @@ lines, so replay works while that session is alive.
    input from: store
      events   line 21
      field    line 22
-     failed at external on line 22: no calibration for this block
+     failed at map 'calibrate' on line 22: no calibration for this block
    recorded True 94561.25
 
-``steps()`` is lazy: each ``Step`` carries the lowered operation (its op, kind, form and your
-source frame), its value, and the seconds it took, and nothing runs until you ask for the next
-one. A step that fails raises the same ``StageError`` ``gd.run`` would, pointing at your line.
-``value`` is the task's partial, the plan's ``reduce`` over the replayed outputs, one value per
-output of the plan's graph as the run's ``reduce`` received them. ``diff()`` compares it with what
+``steps()`` is lazy: each ``Step`` carries the lowered operation (its op, kind, your source frame
+and, given ``outputs``, its form), its value, and the seconds it took, and nothing runs until you
+ask for the next one. A step that fails raises a ``StageError`` as the task did, pointing at your
+line. ``value`` is the task's partial, the plan's ``reduce`` over the replayed outputs, one value
+per output of the plan's graph as the run's ``reduce`` received them. ``diff()`` compares it with what
 the run recorded (``reference == "recorded"``), or, when the run kept no output for that task,
 with the plan's graph (fused, unless the plan was built with ``opt_level=0``) run again on the same
 input (``"re-evaluated"``), so a difference between the fused and the one-at-a-time evaluation
@@ -664,30 +668,35 @@ input for replay" in the checkpoint guide.
 Sending the events somewhere else
 ---------------------------------
 
-The dashboard is one consumer of a stream any executor emits. Anything with the four methods
-below is a monitor: your own progress bar, a log line per task, a metrics push. Per task you get
-exactly one ``SUBMITTED``, then one ``STARTED``, then exactly one of ``FINISHED`` or
-``ERRORED`` — except that a task a cancel kept from starting stops at ``SUBMITTED``.
+The dashboard is one consumer of a stream any executor emits. For a bar in the terminal or a
+notebook, attach ``graphed.debug.ProgressBar``, on any runner:
 
 .. code-block:: python
 
-   from graphed.core import Partition, Plan, Task
+   from graphed.debug import ProgressBar
+
+   ProcessPoolExecutor(max_workers=4, monitor=ProgressBar()).run(plan)
+
+It ticks once per finished task, uses ``tqdm`` when that is installed and a plain text line
+otherwise, and closes when the run ends, whether it finished, failed or was cancelled. A staged
+plan (a join or a repartition) emits no task events, so its bar shows no tasks.
+
+For anything else, a log line per task or a metrics push, subclass ``graphed.core.MonitorBase`` and
+override what you need. Per task you get exactly one ``SUBMITTED``, then one ``STARTED``, then
+exactly one of ``FINISHED`` or ``ERRORED`` — except that a task a cancel kept from starting stops
+at ``SUBMITTED``, and that a backend retrying a task repeats the last two for each attempt.
+``on_run_start(n_tasks)`` and ``on_run_end()`` bracket the run.
+
+.. code-block:: python
+
+   from graphed.core import MonitorBase, Partition, Plan, Task
    from graphed.core.execution import SequentialRunner, TaskEvent, TaskPhase
 
 
-   class PrintMonitor:
+   class PrintMonitor(MonitorBase):
        def on_task(self, event: TaskEvent) -> None:
            if event.phase is not TaskPhase.SUBMITTED:
                print(f"{event.phase.value:<8} key={event.key} {event.partition} error={event.error}")
-
-       def on_profile(self, worker: str, payload: bytes) -> None:
-           pass
-
-       def on_combine(self, leaves_done: int) -> None:
-           pass
-
-       def worker_profiler_factory(self):
-           return None
 
 
    def entries(partition, resources):
@@ -716,6 +725,38 @@ exactly one ``SUBMITTED``, then one ``STARTED``, then exactly one of ``FINISHED`
 timestamp, partition label, entry count, bytes read, error string. It is not a handle on the run:
 a monitor cannot reorder tasks, change the reduction tree, or touch a result, which is what lets
 you attach one to a production job without thinking about it.
+
+
+Division by zero, and a worker's warnings
+-----------------------------------------
+
+numpy warns about a division by zero and leaves an ``inf``, which a histogram files as overflow. To
+stop at it instead, wrap the plan:
+
+.. code-block:: python
+
+   runner.run(graphed.raise_on_floating_point(plan))
+
+A task then raises a ``StageError`` at the line that recorded the operation, naming the chunk, for
+a division by zero, an overflow or an invalid value. Underflow still rounds to zero. It works on any
+runner, and on a plan from ``aggregate_plan``, ``collate`` or a histogram's ``to_plan``, except one
+over a join, which runs in stages and is refused; wrap it before ``resumable`` or histserv. A task's
+key does not change, so results a store already holds are served as they are, unchecked.
+
+Without it, the warning itself still reaches you. A task in a marked worker process (below) keeps
+what it raises, and the run issues each message once on the driver, naming the first chunk that
+raised it, so ``warnings.catch_warnings(record=True)`` around ``run`` catches it. A task in the
+driver's process warns as usual. A task that fails adds what it caught to the error as notes, and a
+result served from a store warns nothing, since the store holds only the result. A warning class
+that cannot be pickled, or built from a message, arrives as its builtin base. A join's or a
+repartition's tasks keep warning on the worker's stderr. A plan you build yourself around a shipped
+``plan.process`` needs ``plan.combine`` and ``plan.finalize`` with it, or a ``DurablePlan``.
+
+A worker keeps its warnings only once its runner calls
+``graphed.core.worker_warnings.enter_worker(driver)`` there, with the driver's ``process_id()``.
+graphed-executors' runners do, and so does any backend under its ``SubmitRunner``. A runner that
+never calls it, such as a TaskVine adapter that runs tasks in workers of its own, leaves their
+warnings on the workers' stderr: safe, but for it this is off.
 
 
 Not supported yet

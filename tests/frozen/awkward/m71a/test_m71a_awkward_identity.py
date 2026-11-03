@@ -122,12 +122,12 @@ def _column(ev: Any, column: str) -> Any:
 
 def test_declared_and_undeclared_are_two_nodes_with_two_forms() -> None:
     s, ev = recorded()
-    declared = ev.Jet.pt.map(f, name="j", output_type="var * bool")
+    declared = ev.Jet.pt.map(f, name="j", output_type="var * int8")
     undeclared = ev.Jet.pt.map(f, name="j")
 
     assert declared.node_id != undeclared.node_id
-    assert describe(s, declared) == "## * var * bool"
-    assert describe(s, undeclared) == "## * var * float64"
+    assert describe(s, declared) == "## * var * int8"
+    assert describe(s, undeclared) == "## * var * bool"
     assert "output_type" not in params_of(s, undeclared)
 
 

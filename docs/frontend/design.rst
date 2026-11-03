@@ -131,8 +131,12 @@ for its whole life.
 
 A source name is one binding per Session. Reading the same source again under its name — a
 re-run notebook cell, the same files, columns and partitioning — reuses that binding, and its node
-when the params match. Binding a taken name to other data is refused at the read, so a loop over
-datasets passes each its own name, or reads each inside its own ``with graphed.Session(...)``.
+when the params match. Binding a taken name to other data is refused at the read, so a reader
+taking an explicit name in a loop over datasets passes each its own name, or reads each inside its
+own ``with graphed.Session(...)``. ``uproot.graphed`` with no ``name=`` (uproot newer than 5.7.7)
+needs neither: the first read takes the tree's name and a later read of other data takes that name
+with a hash of what it reads. Which read comes first decides the names, so reordering reads moves
+their checkpoint keys.
 "The same source" is the same object, or two objects whose identities compare equal: the parquet
 readers' loaders define ``source_identity()``, and the numpy creators and ``default_rng`` draws
 pass their content name, which fixes their values, as ``Session.source``'s ``identity=``. An in-memory array is the same source only as the same object.
@@ -296,7 +300,7 @@ stamping and re-indexing a value's context, ``explain`` the report at the end of
 ``varied`` the ``Varied`` container, ``accessors`` the reader verbs above, ``by_label`` per-label
 column reads, and ``kinds`` / ``tags`` / ``points`` spell a variation's kind, its universe tags and
 a family's points, and their imports form no cycle. You never
-import by that path: ``vary``, ``labels``, ``weight``, ``explain`` and the rest are exported from
+import by that path: ``vary``, ``labels``, ``weight``, ``explain_variations`` and the rest are exported from
 ``graphed``, and the event context they ride is ``graphed.context``, which builds child contexts
 from the records ``ambient`` returns.
 
@@ -313,7 +317,7 @@ supplies the NanoEvents-flavoured constructor, ``gnano.events``.
 
     import awkward as ak
     import graphed.awkward as ga
-    from graphed import Session, explain, labels, universe, variations, vary, weight
+    from graphed import Session, explain_variations, labels, universe, variations, vary, weight
     from graphed.awkward import AwkwardBackend, from_awkward, gak
 
     events = ak.Array({
@@ -471,7 +475,7 @@ message names the spellings that work: register the family, or read the handle, 
 before projecting; or read a fresh ``graphed.weight()`` handle at the projection, whose record is
 the projected composition's.
 
-``graphed.explain(ctx)`` is the view of all this. It answers, in one line per item: which families
+``graphed.explain_variations(ctx)`` is the view of all this. It answers, in one line per item: which families
 you registered, in order, where each was registered and how it entered the ambient — a new factor,
 a join naming the factor's other families, an overlay over the families its handle was read over,
 a shift over its collections, and any universe it placed at a point; what the ambient is made of
@@ -532,8 +536,8 @@ relative-delta family on a handle read after it.
     print("oracle ", shown(s2, universe(central, "jes_up")))   # the SF at the jes_up jets
 
     # where these variations came from, after a cut and after a projection
-    print(explain(ctx[ctx.MET.pt > 15.0]))
-    print(explain(universe(ctx, "hf_up")))
+    print(explain_variations(ctx[ctx.MET.pt > 15.0]))
+    print(explain_variations(universe(ctx, "hf_up")))
 
 Prints::
 
@@ -546,7 +550,7 @@ Prints::
     ('nominal', 'jes_up', 'hf_up', 'lf_up', 'lf_up__jes_up')
     jes_up  [0.6825, 0.5775, 1.155]
     oracle  [0.6825, 0.5775, 1.155]
-    graphed.explain: 4 registrations, 2 ambient operations, 5 universes
+    graphed.explain_variations: 4 registrations, 2 ambient operations, 5 universes
     families (registration order)
       pu (WEIGHT) ['up'] at the root: a new factor; composes with hf, lf, mu
       hf (WEIGHT) ['up'] at the root: a new factor; shares the factor with lf; composes with mu, pu
@@ -561,7 +565,7 @@ Prints::
       hf_up: hf, one at a time
       mu_up: mu's own universe, a relative-delta family
       lf_up: lf, one at a time
-    graphed.explain: 4 registrations, 1 ambient operations, 1 universes
+    graphed.explain_variations: 4 registrations, 1 ambient operations, 1 universes
     families (registration order)
       pu (WEIGHT) ['up'] at the root: a new factor; composes with hf, lf, mu
       hf (WEIGHT) ['up'] at the root: a new factor; shares the factor with lf; composes with mu, pu
@@ -577,7 +581,7 @@ nominal rather than 1.05 times a squared product; ``lf`` names ``hf``'s central,
 factor stays in the product once and the oracle line is that product built by hand. In the second
 context the joining central is the same scale factor read on the jes-shifted jets, so the union
 puts that universe on the shared nominal member and ``jes_up`` reads the weight at its own jets.
-The two ``explain`` blocks are the same four registrations read from a cut and from inside
+The two ``explain_variations`` blocks are the same four registrations read from a cut and from inside
 ``hf_up``: the joined family names the factor it joined and shares it with ``hf`` rather than
 composing with it, the overlay names the two families its handle was read over, and every operation
 says which link carried it here. The operations are what the ambient *here* is made of: after the cut
@@ -587,8 +591,29 @@ of its coordinate, so the weight there is ``pu * SF(up_hf)`` with no 1.05 in it 
 here" is the single ``nominal``, because that context IS one universe of the ambient rather than a
 container of them.
 
-The tour builds every declaration shape in this section — and the ``explain`` block each one
+The tour builds every declaration shape in this section — and the ``explain_variations`` block each one
 prints — one step at a time: :doc:`../notebooks/systematics-tour`.
+
+A flat factor, and why it is not a grid
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A flat normalisation is a number, so it is declared as one and multiplied in::
+
+    lumi = graphed.vary(1.0, "lumi", up=1.025, down=0.975)
+    weight = ev.genWeight * muon_id_sf * lumi
+
+``lumi`` is a ``ScalarFactor``: it holds numbers and belongs to no Session until it meets an array,
+and that product registers the family. Its members scale the array's nominal alone, so a factor
+adds its own universes and no joints: 1 + 2 + the universes ``muon_id_sf`` adds. The members are
+values of the factor, not of the weight; ``up=1.025`` is the factor at 1.025, and a factor whose
+nominal is 2.0 scales every universe by 2.0 before its members replace it.
+
+Chaining ``w = graphed.vary(w, "lumi", up=w * 1.025, down=w * 0.975)`` means something else: those
+members are computed from a ``w`` that varies, so the family fans out to the grid of joints. The
+guard names the families that caused it when that grid passes ``max_universes``.
+
+A number on an array target, ``graphed.vary(ev.genWeight, "lumi", up=1.025)``, stays refused: an
+absolute value and a scale would both be reasonable readings.
 
 Three ways two things can be correlated
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -644,14 +669,7 @@ underneath; it takes plain ``Array`` inputs and knows nothing about labels.
     ctx  = vary(ctx, "jes", collections={"Jet": {
         "up": gak.with_field(jets, jets.pt * 1.10, "pt")}})
 
-    # with `args=`, `payload` IS the evaluation: the correction is rebuilt from those bytes through
-    # graphed's correctionlib plugin on every backend, so the `evaluator` positional goes unread --
-    # if it did not, this example would raise instead of printing
-    def never_called(*_: object) -> object:
-        raise AssertionError("the template path does not consult the caller's callable")
-
-    sf = gak.apply_correction(payload, "jet_sf", [gak.flatten(ctx.Jet.pt)],
-                              never_called, args=["$0"])
+    sf = gak.apply_correction(payload, "jet_sf", pt=gak.flatten(ctx.Jet.pt))
     print(labels(sf))
     print(s.materialize(universe(sf, "nominal")).to_list())
     print(s.materialize(universe(sf, "jes_up")).to_list())
@@ -1026,8 +1044,10 @@ One pass over the dataset, many outputs
 
 Most analyses want several results out of one read. ``aggregate_plan`` compiles the outputs you
 name into one graph, then builds a plan that reads each partition once, evaluates all of them, and
-folds partial results with the reduce/combine functions you supply. The example writes two small
-parquet files first so that it runs anywhere:
+folds partial results with the reduce/combine functions you supply. Whole-dataset ``sum``,
+``count``, ``count_nonzero``, ``any``, ``all``, ``min`` and ``max`` know their own combine, so with
+only those as outputs you can leave all three out. The example writes two small parquet files first
+so that it runs anywhere:
 
 .. code-block:: python
 
@@ -1066,12 +1086,12 @@ parquet files first so that it runs anywhere:
         empty=lambda: [0.0, 0.0],
     )
     print(SequentialRunner().run(plan).value)
-    print(sorted(read_columns([n_high, total_ht], s.source_ids()[0])))
+    print(read_columns([n_high, total_ht]))
 
 Prints::
 
     [4.0, 460.0]
-    ['Jet_pt']
+    {'events': ('Jet_pt',)}
 
 Both outputs share the ``ht`` sub-expression, so it is read and evaluated once per partition, not
 once per output — and of the three columns in each file, only ``Jet_pt`` is read at all.
@@ -1271,8 +1291,12 @@ Each side is read, evaluated up to the join and routed by its own map stage; one
 destination depends on both, joins that destination's rows and runs what you recorded after the
 join. Without ``reduce``/``combine``/``empty`` the value is one output per destination; with them,
 ``join_plan`` adds a one-task ``reduce`` stage that folds the destinations, as ``aggregate_plan``
-folds partitions. ``shuffle_plan`` is the single-source counterpart for a plain repartition: a
-map-write stage, a gather stage and a ``reduce`` stage, with the barrier edge after the map-write.
+folds partitions. ``aggregate_plan`` over a join builds this same plan, so its return type is
+``Plan[Any] | DurablePlanV2``; code that reads ``plan.tasks`` narrows with
+``isinstance(plan, graphed.core.Plan)``. Left without the three, it folds whole-dataset reductions
+by their own combine, where ``join_plan`` refuses them. ``shuffle_plan`` is the single-source
+counterpart for a plain repartition: a map-write stage, a gather stage and a ``reduce`` stage, with
+the barrier edge after the map-write.
 Both builders produce a durable, byte-deterministic plan that carries the services its operations
 call (``bind_services`` binds them as for any plan). Three runners run one: ``SequentialRunner``
 in-process, ``graphed.checkpoint.run_shuffle_resumable`` against a checkpoint store, and
@@ -1350,6 +1374,12 @@ beside ``form=`` declares too, as ``gak.apply_correction`` does. An undeclared n
 evaluator. An aggregate plan re-raises any other ``GraphedError`` from a worker unchanged, and turns this
 one into the ``StageError`` at the declaring line.
 
+A backend may also provide ``traced_form(fn, inputs) -> Form | None``, the form an undeclared
+``map`` gives ``inputs`` on metadata, or ``None`` if ``fn`` returned anything else. The session
+calls it at the recording line and records that form, which stays out of the node's params. A
+failure there is a ``GraphedWarning`` and ``op_form``'s answer stands, since the callable is the
+user's. A backend without the method records ``op_form``'s answer silently.
+
 A package that records its *own* call-outs — histogram fills are the example — passes
 ``descriptor=`` and ``form=`` to ``Session.record_external`` and the backend is not consulted at
 all. That is how ``graphed-histogram`` exists without teaching either backend what a histogram is,
@@ -1395,9 +1425,11 @@ one comes back as a ``Varied`` over the union of labels.
 lambdas, two closures of one factory, two same-named functions of different modules — would
 otherwise hash to one node and hand the second one the first one's result. They are told apart
 automatically: the second object to derive ``q`` records as ``q#1``. Passing ``name=`` to ``map``,
-``apply`` or ``apply_gufunc`` overrides that and declares the identity yourself, so the name must
-encode *everything* that changes what the callable does — a captured cut value, a model version, a
-configuration dict. Two calls under one name are one node.
+``apply`` or ``apply_gufunc`` overrides that and declares the identity yourself. Calls that share
+a name and an evaluator's params, such as ``output_type=``, need one function: a rerun of the same
+definition gives the same node, as a notebook cell does, and a callable with a different checkpoint
+key raises ``GraphedError``. Two that cannot be
+compared are a ``GraphedWarning``, and the first answers for both.
 
 **One session per program.** A node id only means something in the store that minted it, so every
 ``Session`` method that takes an array refuses one recorded elsewhere: the ``record_*`` family with

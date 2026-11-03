@@ -45,6 +45,7 @@ import cloudpickle
 
 from graphed.core import DurablePlan, DurablePlanV2, OpSpec, Partition, Plan, Task
 from graphed.core.plan import _partition_bytes, _sha256_hex
+from graphed.core.worker_warnings import Warned
 from graphed.services import Bindable, Resolvable
 from graphed.write import is_url
 
@@ -161,6 +162,13 @@ def _resolves(module: str, qualname: str, obj: object) -> bool:
     return found is obj
 
 
+def _attrs_unset(array: Any) -> Any:
+    # reading an unset attrs fills it with {}; awkward's constructor would rerun validators
+    bare = object.__new__(type(array))
+    vars(bare).update(vars(array), _attrs=None)
+    return bare
+
+
 class _KeyPickler(pickle._Pickler):
     """Cloudpickle's by-value/by-name partition and reducers on the pure-Python pickler.
 
@@ -176,13 +184,16 @@ class _KeyPickler(pickle._Pickler):
     ) -> None:
         super().__init__(file, protocol=5)
         self._cp = _cloudpickle()
+        ak = sys.modules.get("awkward")
+        self._arrays: tuple[Any, ...] = (ak.Array, ak.Record) if ak else ()
         self.globals_ref: dict[int, dict[str, Any]] = {}
         self.proto = 5
         self._seen = dict(seen)
         self._classdicts: dict[int, type] = {}
         self._globals: dict[int, dict[str, Any]] = {}
         self._rebound = rebound
-        self._keyed: dict[int, Any] = {}
+        # holds each original, so its id is not reused mid-pickle
+        self._keyed: dict[int, tuple[Any, Any]] = {}
         own: dict[type, Callable[[Any], Any]] = {
             weakref.WeakSet: lambda ws: (weakref.WeakSet, (self._sorted(ws),)),
             types.ModuleType: self._module_reduce,
@@ -212,7 +223,15 @@ class _KeyPickler(pickle._Pickler):
     def save(self, obj: Any, save_persistent_id: bool = True) -> None:
         # a transport wrapper keys as what it carries, so wrapping moves no task key
         while (keyed_as := getattr(type(obj), "_keyed_as", None)) is not None:
-            obj = self._keyed.setdefault(id(obj), keyed_as(obj))
+            obj = self._keyed.setdefault(id(obj), (obj, keyed_as(obj)))[1]
+        # pickling drops "@" attrs; dispatch holds no awkward type and skips ABCMeta's isinstance
+        if (
+            type(obj) not in self.dispatch
+            and isinstance(obj, self._arrays)
+            and obj._attrs is not None
+            and all(k.startswith("@") for k in obj._attrs)
+        ):
+            obj = self._keyed.setdefault(id(obj), (obj, _attrs_unset(obj)))[1]
         _PURE._Pickler.save(self, obj, save_persistent_id)
 
     def memoize(self, obj: Any) -> None:
@@ -381,6 +400,7 @@ def _key_digest(obj: object) -> bytes:
 
     - sets, frozensets, a ``weakref.WeakSet`` and an ABC's registry are written sorted by their
       elements' key bytes;
+    - an awkward array or record whose attrs are empty or all transient is written with them unset;
     - interpreter-filled class caches (``__slotnames__``, typing's protocol-member caches) are
       dropped, and a class's ``__annotations_cache__`` is written as ``__annotations__`` when it
       has none;
@@ -437,6 +457,9 @@ class _OpenStores(threading.local):
 
 _OPEN = _OpenStores()
 #: filesystems with no directories, so a cached store cannot outlive its root
+#: what `resumable` turns into the root its workers reopen
+_StoreRoot = str | os.PathLike[str] | Store | FsspecStore
+
 _DIRLESS = frozenset({"s3", "s3a", "gcs", "gs", "abfs", "az", "adl", "memory"})
 #: each process's journal token, keyed by pid so a forked child never writes its parent's journals
 _TOKENS: dict[int, str] = {os.getpid(): uuid.uuid4().hex}
@@ -444,7 +467,7 @@ _TOKENS: dict[int, str] = {os.getpid(): uuid.uuid4().hex}
 
 def open_store(
     root: str, node: str | None = None, storage_options: Mapping[str, Any] | None = None
-) -> Any:
+) -> CheckpointStore:
     """``root`` as a checkpoint store.
 
     An :class:`FsspecStore` when it contains ``://``, else a directory :class:`Store`.
@@ -525,10 +548,18 @@ class _Resumable:
     reused: int
 
     def __call__(self, partition: Partition, resources: Any) -> Any:
-        def run(plain: Partition) -> bytes:
-            return self.codec.encode(self.inner(plain, resources))
+        caught: list[Warned] = []
 
-        return self.codec.decode(_served_or_run(self.root, self.storage_options, partition, run))
+        def run(plain: Partition) -> bytes:
+            value = self.inner(plain, resources)
+            if isinstance(value, Warned):
+                caught.append(value)  # beside the result: a store holds only the plain partial
+                value = value.value
+            return self.codec.encode(value)
+
+        served = _served_or_run(self.root, self.storage_options, partition, run)
+        value = self.codec.decode(served)
+        return Warned(value, caught[0].caught) if caught else value
 
     def bind_services(self, endpoints: Mapping[str, str]) -> _Resumable:
         return replace(
@@ -638,13 +669,32 @@ def check_environment(
     cast("Any", store).record_environment(f"{prefix}{top + 1:08d}:{blob}", blob)
 
 
-def require_environment_store(store: object) -> None:
-    """Refuse a store that cannot hold the environment record, before any call to it."""
+def as_store(
+    store: str | os.PathLike[str] | CheckpointStore, storage_options: Mapping[str, Any] | None
+) -> CheckpointStore:
+    """``store`` as a checkpoint store: a directory, an fsspec URL, or a store as it is."""
+    if isinstance(store, str | os.PathLike):
+        return open_store(os.fspath(store), None, storage_options)
     if not callable(getattr(store, "record_environment", None)):
         raise TypeError(
-            f"{type(store).__name__} has no record_environment, so it cannot hold the environment "
-            "record"
+            f"a checkpoint store is a path, a URL or a Store, got {type(store).__name__}; a store "
+            "also needs record_environment, to hold the environment record"
         )
+    return store
+
+
+def _worker_root(
+    store: _StoreRoot, storage_options: Mapping[str, Any] | None
+) -> tuple[str, dict[str, Any]]:
+    """Return the root and options each worker reopens ``store`` from."""
+    options = dict(storage_options or {})
+    if isinstance(store, str | os.PathLike):
+        return os.fspath(store), options
+    if isinstance(store, Store):
+        return str(store.root), options
+    if isinstance(store, FsspecStore):
+        return store.url, {**store.storage_options, **options}
+    raise TypeError(f"resumable takes a path, a URL or a Store, got {type(store).__name__}")
 
 
 # ---- the transform ----------------------------------------------------------------------------
@@ -766,7 +816,8 @@ def warn_unreused(
     if held and not any(tid in done for tid in ids):
         _LOG.warning(
             "0 of %d tasks reused, but %s holds %d results for these partitions under other keys: "
-            "the analysis, its code, the salt or an order in what it ships differs",
+            "the analysis, its code, the salt or an order in what it ships differs, or another of "
+            "run_resumable, run_shuffle_resumable and resumable wrote them",
             total,
             getattr(store, "root", store),
             held,
@@ -788,7 +839,7 @@ def _tagged(task: Task, task_id: str, done: Mapping[str, JournalEntry]) -> Task:
 @overload
 def resumable(
     plan: DurablePlanV2,
-    store: str,
+    store: _StoreRoot,
     *,
     storage_options: Mapping[str, Any] | None = ...,
     codec: Codec | None = ...,
@@ -798,7 +849,7 @@ def resumable(
 @overload
 def resumable(
     plan: DurablePlan,
-    store: str,
+    store: _StoreRoot,
     *,
     storage_options: Mapping[str, Any] | None = ...,
     codec: Codec | None = ...,
@@ -808,7 +859,7 @@ def resumable(
 @overload
 def resumable(
     plan: Plan[R],
-    store: str,
+    store: _StoreRoot,
     *,
     storage_options: Mapping[str, Any] | None = ...,
     codec: Codec | None = ...,
@@ -817,7 +868,7 @@ def resumable(
 ) -> Plan[R]: ...
 def resumable(
     plan: Plan[Any] | DurablePlan | DurablePlanV2,
-    store: str,
+    store: _StoreRoot,
     *,
     storage_options: Mapping[str, Any] | None = None,
     codec: Codec | None = None,
@@ -826,12 +877,14 @@ def resumable(
 ) -> Plan[Any] | DurablePlanV2:
     """``plan`` made to resume from the checkpoint store at ``store`` on whatever runner runs it.
 
-    ``store`` is the root every worker opens: a directory, or an fsspec URL with
-    ``storage_options``. Each task's result is recorded there as it finishes; a task the store
-    already holds is decoded by the worker that runs it instead of recomputed. ``codec`` (default
-    :class:`PickleCodec`) turns a runtime plan's partials into bytes; a ``DurablePlanV2``'s stage
-    payloads are stored as they are. ``salt`` goes into every key: change it to recompute what the
-    key cannot see (an editable install, an environment variable or file a task reads).
+    ``store`` is the root every worker opens: a directory (a ``str``, an ``os.PathLike`` or a
+    :class:`Store`), or an fsspec URL with ``storage_options`` (or an :class:`FsspecStore`, whose
+    options these extend). Each task's result is recorded
+    there as it finishes; a task the store already holds is decoded by the worker that runs it
+    instead of recomputed. ``codec`` (default :class:`PickleCodec`) turns a runtime plan's partials
+    into bytes; a ``DurablePlanV2``'s stage payloads are stored as they are. ``salt`` goes into
+    every key: change it to recompute what the key cannot see (an editable install, an environment
+    variable or file a task reads).
 
     A ``DurablePlan`` becomes a runtime :class:`~graphed.core.Plan`; a ``DurablePlanV2`` stays one.
     The returned process (each stage's) has ``reused``, the tasks the store held. A plan without a
@@ -840,10 +893,11 @@ def resumable(
     any store I/O. A store whose environment record differs raises :class:`EnvironmentChangedError`
     unless ``accept_environment``.
     """
+    store, opened = _worker_root(store, storage_options)
     codec = PickleCodec() if codec is None else codec
     processes, ids = _task_ids(plan, codec, salt)
-    options = tuple((storage_options or {}).items())
-    st = open_store(store, None, dict(options))
+    options = tuple(opened.items())
+    st = open_store(store, None, opened)
     done = st.completed()
     check_environment(st, done, salt, accept_environment)
     reused = [sum(tid in done for tid in stage) for stage in ids]

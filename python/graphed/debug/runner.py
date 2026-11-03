@@ -10,10 +10,15 @@ picklable).
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from pathlib import Path
 
 from graphed import Array, Session
+from graphed.core import Partition
 from graphed.errors import raising_frame
+from graphed.execute import _rows_aligned
+from graphed.materialization import _first_sample, _partition_chunk
+from graphed.varied import refuse_container
 
 from .errors import SourceFrame, StageError
 from .lowering import LoweredGraph, lower
@@ -53,7 +58,9 @@ def _stage_error(
     )
 
 
-def _assert_consistent(lowered: LoweredGraph, node_id: int, value: object, partition: str) -> None:
+def _assert_consistent(
+    lowered: LoweredGraph, node_id: int, value: object, partition: Callable[[], str]
+) -> None:
     """Check inter-op consistency, only at opt_level=0.
 
     A debug scaffold; richer dtype/shape contracts are a tracked improvement.
@@ -62,38 +69,44 @@ def _assert_consistent(lowered: LoweredGraph, node_id: int, value: object, parti
         raise _stage_error(
             lowered,
             node_id,
-            partition,
+            partition(),
             AssertionError("op produced None (inter-op consistency check)"),
         )
 
 
-def run(
-    session: Session, array: Array, *, opt_level: int = 1, partition: str = "sample"
+def _walk(
+    session: Session,
+    array: Array,
+    lowered: LoweredGraph,
+    chunks: Mapping[int, Callable[[], object]],
+    where: str | Callable[[], str],
+    memo: dict[int, object] | None = None,
 ) -> object:
-    """Execute the analysis reaching ``array`` on the session's source data.
-
-    Raise a `StageError` (mapped to the user's analysis line) on the first failing op.
-    """
-    lowered = lower(session, array, opt_level=opt_level)
     backend = session.backend
+    aligned = _rows_aligned(backend)
+    # one chunk runs as `evaluate_ir(chunked=True)` runs a task, so the task's failures reproduce
+    ops = {node["id"] for node in session._nodes() if node["kind"] == "op"} if chunks else ()
+
+    def label() -> str:
+        return where if isinstance(where, str) else where()
 
     def on_source(nid: int) -> object:
         try:
-            return session.source_value(nid)
+            return chunks[nid]() if nid in chunks else session.source_value(nid)
         except StageError:
             raise
         except Exception as exc:
-            raise _stage_error(lowered, nid, partition, exc) from exc
+            raise _stage_error(lowered, nid, label(), exc) from exc
 
     def on_op(nid: int, name: str, ins: list[object], params: Mapping[str, object]) -> object:
         try:
-            value = backend.eval_stage(name, ins, params)
+            value = (aligned if nid in ops else backend.eval_stage)(name, ins, params)
         except StageError:
             raise
         except Exception as exc:
-            raise _stage_error(lowered, nid, partition, exc) from exc
-        if opt_level == 0:
-            _assert_consistent(lowered, nid, value, partition)
+            raise _stage_error(lowered, nid, label(), exc) from exc
+        if lowered.opt_level == 0:
+            _assert_consistent(lowered, nid, value, label)
         return value
 
     def on_external(nid: int, fn: object, ins: list[object]) -> object:
@@ -102,6 +115,75 @@ def run(
         except StageError:
             raise
         except Exception as exc:
-            raise _stage_error(lowered, nid, partition, exc) from exc
+            raise _stage_error(lowered, nid, label(), exc) from exc
 
-    return session.walk(array, source=on_source, op=on_op, external=on_external)
+    return session.walk(array, source=on_source, op=on_op, external=on_external, memo=memo)
+
+
+def run(
+    session: Session,
+    array: Array,
+    *,
+    opt_level: int = 1,
+    partition: Partition | None = None,
+    label: str | None = None,
+) -> object:
+    """Execute the analysis reaching ``array`` on the session's source data.
+
+    ``partition`` runs that one chunk (``plan.tasks[3].partition``) instead of the whole source.
+    ``label`` names the data in a failure, by default the chunk as a plan's task names it, else
+    ``"sample"``.
+
+    Raise a `StageError` (mapped to the user's analysis line) on the first failing op.
+    """
+    if isinstance(partition, str):
+        raise TypeError(
+            f"run(partition=) selects a graphed.core.Partition, not {partition!r}; name the data "
+            "in a failure with label=, or evaluate a sample with graphed.materialize(x, entries=N)"
+        )
+    chunks: dict[int, Callable[[], object]] = {}
+    sampled: Callable[[], str] | None = None
+    if partition is not None:
+        nid, read, sampled = _partition_chunk([array], partition)
+        chunks[nid] = read
+    where = label if label is not None else sampled or "sample"
+    return _walk(session, array, lower(session, array, opt_level=opt_level), chunks, where)
+
+
+def _rows(value: object) -> int | str:
+    """Return how many rows ``value`` has; a scalar's length means nothing, so it shows ``-``."""
+    return len(value) if getattr(value, "ndim", 0) else "-"  # type: ignore[arg-type]
+
+
+def trace(array: Array, *, entries: int) -> None:
+    """Print how many rows each recorded line keeps of the first ``entries`` input events.
+
+    One row per line, for its last operation or the one that empties the data, which is marked.
+    This finds a cut that removes everything. A failing operation raises its `StageError`.
+    """
+    refuse_container("graphed.debug.trace", array)
+    if not isinstance(array, Array):
+        raise TypeError(f"trace follows a deferred Array, not {type(array).__name__}")
+    session = array.session
+    sample = _first_sample(entries, "trace")
+    lowered = lower(session, array, opt_level=0)
+    values = sample.reads(session, [array])
+    _walk(session, array, lowered, {}, sample.where, values)
+    # a dict keeps the first position of a line; its row is its last op, or the op that emptied it
+    rows: dict[tuple[str, int], str] = {}
+    emptied: tuple[str, int] | None = None
+    for op in lowered.ops:
+        frame = op.provenance
+        line = frame.filename, frame.lineno
+        if line == emptied:
+            continue
+        rows_in = next((n for n in (_rows(values[i]) for i in op.input_ids) if n != "-"), "-")
+        rows_out = _rows(values[op.node_id])
+        empties = emptied is None and rows_out == 0 and rows_in not in ("-", 0)
+        mark = "   <-- removed every event" if empties else ""
+        rows[line] = (
+            f"{Path(frame.filename).name}:{frame.lineno:<5} {op.op:<16} "
+            f"{rows_in:>9} -> {rows_out:<9} {frame.source}{mark}"
+        )
+        emptied = line if empties else emptied
+    print("\n".join(rows.values()))

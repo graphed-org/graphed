@@ -22,7 +22,7 @@ import graphed.parquet as gpq
 import graphed.write as gw
 from graphed import Array, Session
 from graphed.core import Partition
-from graphed.core.execution import SequentialRunner
+from graphed.core.execution import Plan, SequentialRunner
 from graphed.numpy import NumpyBackend, NumpyForm
 
 FILES = {"fa": np.arange(0.0, 6.0), "fb": np.arange(20.0, 24.0)}
@@ -104,6 +104,7 @@ def run(*writes: gw.PartWrite) -> tuple[list[list[str]], list[str]]:
     plan = graphed.aggregate_plan(
         reduce=paths_only, combine=add, empty=no_paths, steps_per_file=2, writes=list(writes)
     )
+    assert isinstance(plan, Plan)
     named = [
         list(cast(Any, plan.process).part_paths(t.partition))
         for t in sorted(plan.tasks, key=lambda t: t.key)

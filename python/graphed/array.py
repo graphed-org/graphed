@@ -14,7 +14,7 @@ from itertools import count
 from typing import TYPE_CHECKING, Any, SupportsFloat
 
 from .backend import ParamValue
-from .errors import GraphedTypeError, MissingFieldError
+from .errors import DeferredTypeError, GraphedTypeError, MissingFieldError
 from .provenance import Provenance, Site, capture
 
 if TYPE_CHECKING:
@@ -221,8 +221,18 @@ def decode_subscript(spec: object) -> tuple[object, ...]:
 def _as_param(value: object) -> ParamValue:
     if isinstance(value, bool | int | str):
         return value
-    if isinstance(value, SupportsFloat):  # coerces numpy scalars without importing numpy
-        return float(value)
+    if not isinstance(value, EagerRefusals):  # whose __float__ and __array__ only refuse
+        if isinstance(value, SupportsFloat) and getattr(value, "shape", ()) == ():
+            return float(value)  # coerces numpy scalars without importing numpy
+        if isinstance(value, list | tuple) or hasattr(value, "__array__"):
+            raise DeferredTypeError(
+                "operand",
+                capture(),
+                f"cannot combine a deferred array with an eager {type(value).__name__}: record it "
+                "as an input with from_awkward('weights', ak.Array(values)) or "
+                "graphed.numpy.from_array, or evaluate the deferred side with "
+                "graphed.materialize(x)",
+            )
     raise TypeError(f"unsupported scalar operand {value!r}")
 
 
@@ -248,18 +258,61 @@ def scalar_params(
     return {key: _as_param(item), dtype_key: str(dtype)}
 
 
-def no_eager_value(op: str, missing: str) -> GraphedTypeError:
-    """Return the refusal for ``bool()``/``np.asarray()`` on a deferred value.
+#: the one rule: nothing evaluates implicitly, and every conversion names the two explicit choices
+NEEDS_VALUES = (
+    "needs values, and a deferred array has none until it runs: evaluate it with "
+    "graphed.materialize(x), or peek with graphed.head(x)"
+)
+#: attributes an array of any backend or shape refuses by that rule when no field has the name
+EAGER_VERBS = frozenset({"compute", "to_list", "tolist", "to_numpy", "show"})
 
-    It is located at the user's line.
-    """
-    return GraphedTypeError(
-        op,
-        capture(),
-        f"a deferred graphed array has no {missing} until it runs; select elementwise with "
-        "np.where on a numpy-backed array or ak.where/gak.where on an awkward-backed one (or "
-        "&/|/~), or evaluate it first with session.materialize(...)",
-    )
+
+def no_eager_value(
+    op: str, advice: str = "", kind: type[GraphedTypeError] = GraphedTypeError
+) -> GraphedTypeError:
+    """Return the refusal for converting a deferred value to an eager one, at the user's line."""
+    return kind(op, capture(), f"{NEEDS_VALUES}{advice}")
+
+
+class EagerRefusals:
+    """The conversions a deferred value refuses, common to an array and a container of them."""
+
+    __slots__ = ()
+
+    def __iter__(self) -> Any:
+        # int __getitem__ (M13) would otherwise make Array INFINITELY iterable through Python's
+        # legacy iteration protocol (a[0], a[1], ... never raises IndexError on a deferred graph)
+        """Refuse iteration: a deferred array has no known length."""
+        raise no_eager_value("iter(...)", kind=DeferredTypeError)
+
+    def __len__(self) -> int:
+        """Refuse a length: a deferred array has none until it runs."""
+        advice = (
+            "; on an awkward array, the length alone is graphed.materialize(gak.num(x, axis=0))"
+        )
+        raise no_eager_value("len(...)", advice, DeferredTypeError)
+
+    def __float__(self) -> float:
+        """Refuse a Python float: a deferred scalar has no value until it runs."""
+        raise no_eager_value("float(...)", kind=DeferredTypeError)
+
+    def __int__(self) -> int:
+        """Refuse a Python int: a deferred scalar has no value until it runs."""
+        raise no_eager_value("int(...)", kind=DeferredTypeError)
+
+    def __bool__(self) -> bool:
+        """Refuse a truth value: a deferred value has none."""
+        raise no_eager_value(
+            "bool(...)",
+            "; to select elementwise, use np.where on a numpy-backed array or ak.where/gak.where "
+            "on an awkward-backed one (or &/|/~)",
+        )
+
+    def __array__(self, dtype: object = None, copy: object = None) -> Any:
+        """Refuse an eager numpy value: a deferred value has none."""
+        raise no_eager_value(
+            "np.asarray(...)", "; a histogram fills deferred with hist.graphed.Hist"
+        )
 
 
 def _positional(key: Array) -> bool:
@@ -268,7 +321,7 @@ def _positional(key: Array) -> bool:
     return positional is not None and positional(key.session.form(key))
 
 
-class Array:
+class Array(EagerRefusals):
     # M48 adds two frontend-only slots (§2.3e): `_context` is the event-context handle a read was
     # performed through, `_labels` the variation labels flowing into this expression. Both are
     # underscore-prefixed so `__getattr__`'s guard keeps them out of field access, and NEITHER
@@ -308,10 +361,15 @@ class Array:
         if isinstance(other, Array):
             inputs = [other, self] if reflected else [self, other]
             return self._session.record_op(op, inputs)
-        params: dict[str, ParamValue] = {
-            **scalar_params(other),
-            "side": "l" if reflected else "r",
-        }
+        try:
+            scalar = scalar_params(other)
+        except DeferredTypeError:  # an eager array: its own reflected dunder cannot answer
+            raise
+        except TypeError:
+            if op in ("eq", "ne"):  # Python's fallback would answer a plain bool
+                raise
+            return NotImplemented  # type: ignore[no-any-return]
+        params: dict[str, ParamValue] = {**scalar, "side": "l" if reflected else "r"}
         return self._session.record_op(op, [self], params)
 
     def _unary(self, op: str) -> Array:
@@ -556,24 +614,10 @@ class Array:
         try:
             return self._session.record_op("field", [self], {"field": name})
         except GraphedTypeError as err:
-            raise MissingFieldError(err.op, err.provenance, err.detail) from None
-
-    def __iter__(self) -> Any:
-        # int __getitem__ (M13) would otherwise make Array INFINITELY iterable through Python's
-        # legacy iteration protocol (a[0], a[1], ... never raises IndexError on a deferred graph)
-        """Refuse iteration: a deferred array has no known length."""
-        raise TypeError(
-            "deferred graphed arrays are not iterable (unknown partitioned length); materialize "
-            "first"
-        )
-
-    def __bool__(self) -> bool:
-        """Refuse a truth value: a deferred value has none."""
-        raise no_eager_value("bool(...)", "truth value")
-
-    def __array__(self, dtype: object = None, copy: object = None) -> Any:
-        """Refuse an eager numpy value: a deferred value has none."""
-        raise no_eager_value("np.asarray(...)", "numpy value")
+            detail = err.detail
+            if name in EAGER_VERBS:
+                detail = f"{name}(): {NEEDS_VALUES} ({detail})"
+            raise MissingFieldError(err.op, err.provenance, detail) from None
 
     def __getitem__(self, key: object) -> Array:
         """Record a subscript: a mask, a field name, a field list or a tuple key."""
@@ -637,14 +681,17 @@ class Array:
         The callable is a flagged preservation risk, plan A.3.1.
 
         Without ``name=`` two distinct callables that derive one ``__name__`` are told apart by a
-        per-Session ordinal. Pass ``name=`` to declare the identity yourself: a declared name IS
-        the identity, so declaring a name another callable already wears — declared or derived —
-        means that same node, and the name must encode everything that changes the callable's
-        behaviour (a captured cut value, a model version, a configuration dict).
+        per-Session ordinal. Pass ``name=`` to declare the identity yourself: a rerun of the same
+        definition under one name gives the same node, as a notebook cell does, and a callable
+        that differs raises :class:`~graphed.GraphedError` (a :class:`~graphed.GraphedWarning`
+        when the two cannot be compared).
 
         ``output_type=`` declares the type of each element of ``fn``'s result (a type string, a
         dtype or a Python type, as the backend accepts); it becomes the recorded form and is part
-        of the node's identity. It is a claim, never a cast.
+        of the node's identity. It is a claim, never a cast. Without it, a backend that can trace
+        ``fn`` runs it on metadata at this line and records the result's type, which is not part
+        of the node's identity; if that fails, a :class:`~graphed.GraphedWarning` says so and the
+        backend's default form stands.
         """
         return self._session.record_external(
             "map", fn, [self], {"fn": self._session._fn_name(fn, name)}, output_type=output_type
@@ -706,12 +753,10 @@ def apply(
     The node carries the backend's ``PayloadDescriptor``: the opaque callable stays a flagged
     preservation risk (plan A.3.1). With one array this IS ``Array.map`` (interns with it).
 
-    Without ``name=`` two distinct callables that derive one ``__name__`` are told apart by a
-    per-Session ordinal. Pass ``name=`` to declare the identity yourself: a declared name IS the
-    identity, so declaring a name another callable already wears — declared or derived — means
-    that same node, and the name must encode everything that changes the callable's behaviour.
+    ``name=`` works as for ``Array.map``: a callable that differs under one name raises.
 
-    ``output_type=`` declares the result's element type, as for ``Array.map``.
+    ``output_type=`` declares the result's element type, and without it the type is inferred,
+    as for ``Array.map``.
     """
     from .varied import containers_in, expand
 

@@ -20,7 +20,7 @@ The rest of the package is for everything around that error:
    leading = pt.map(lambda a: a[100], name="leading")
 
    try:
-       gd.run(s, leading, opt_level=1, partition="skim@0:4")
+       gd.run(s, leading, opt_level=1, label="skim@0:4")
    except gd.StageError as err:
        print(err.user_frame.source)      # the line you wrote
        print(err.cause_type, "|", err.partition)
@@ -42,6 +42,8 @@ Which prints::
      - ``opt_level=0`` in ``run`` and ``lower``
    * - re-run the one task that failed, on your own machine, with the input it actually read
      - ``replay``
+   * - find the line whose cut removes every event
+     - ``trace``
    * - watch a long run in your browser, and pause, resume or cancel it there
      - ``Dashboard`` (``control=True`` adds the buttons)
    * - keep a record of how a run went — timings, failures, environment — next to the analysis

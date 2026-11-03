@@ -17,12 +17,16 @@ contract stays a stable, minimal seam. A `Plan` is reduced to a single result by
 from __future__ import annotations
 
 import contextlib
+import os
+import pickle
 import threading
 import time
 from collections import OrderedDict
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
+from concurrent.futures import Future
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
+from pathlib import PureWindowsPath
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -34,6 +38,7 @@ from typing import (
     runtime_checkable,
 )
 
+from .graphed_core import version
 from .services import Bindable, UnboundServiceError
 
 if TYPE_CHECKING:
@@ -157,6 +162,8 @@ class Partition:
     entry_stop: int = 0
     blind_step: int | None = None
     blind_n_steps: int | None = None
+    #: a blind partition's cap on its entries; only its reader knows how many the file has
+    blind_limit: int | None = None
 
     @classmethod
     def blind(cls, uri: str, tree: str, step: int, n_steps: int) -> Partition:
@@ -167,20 +174,29 @@ class Partition:
 
     @property
     def is_blind(self) -> bool:
-        """Whether this partition's entry range is not resolved yet."""
-        return self.blind_step is not None
+        """Whether its reader may move its range; a capped one is exact, but unresolved too."""
+        return self.blind_step is not None and self.blind_limit is None
 
     def resolve(self, num_entries: int) -> Partition:
         """Resolve a blind partition against the file's actual entry count.
 
-        Every entry is read exactly once across the file's n_steps partitions. A non-blind
-        partition returns itself.
+        Every entry is read exactly once across the file's n_steps partitions. A partition with no
+        blind step returns itself.
         """
         if self.blind_step is None or self.blind_n_steps is None:
             return self
         start = (self.blind_step * num_entries) // self.blind_n_steps
         stop = ((self.blind_step + 1) * num_entries) // self.blind_n_steps
+        if self.blind_limit is not None:
+            stop = min(stop, start + self.blind_limit)
         return Partition(self.uri, self.tree, start, stop)
+
+    def first(self, n: int) -> Partition:
+        """Return the first ``n`` entries of its unmoved range, or all of them if fewer."""
+        if self.blind_step is not None:
+            limit = n if self.blind_limit is None else min(n, self.blind_limit)
+            return replace(self, blind_limit=limit)
+        return replace(self, entry_stop=min(self.entry_stop, self.entry_start + n))
 
     @property
     def n_entries(self) -> int:
@@ -254,9 +270,30 @@ class StopCondition:
         return None
 
 
-@dataclass
+#: first bytes of a file :meth:`Plan.save` wrote; the graphed version and a newline follow
+_SAVED_PLAN = b"graphed-plan "
+
+
+def counted(n: int, noun: str) -> str:
+    """Return ``n`` and ``noun``, plural unless ``n`` is 1."""
+    return f"{n} {noun}{'' if n == 1 else 's'}"
+
+
+def capped(items: Sequence[str]) -> str:
+    """Return ``items`` joined for a summary line, those past the sixth counted."""
+    rest = f", +{len(items) - 6} more" if len(items) > 6 else ""
+    return ", ".join(items[:6]) + rest
+
+
+@dataclass(repr=False)
 class Plan(Generic[R]):
-    """A minimal, PROVISIONAL execution plan (the real serializable Plan is M8)."""
+    """A partition-wise execution plan: what a runner runs.
+
+    Its repr is a one-line summary that reads no data. :meth:`save` and :meth:`load` carry a plan
+    from the session that built it to a later one, on the same install. That file is a transport,
+    a pickle: the durable, preservable form of an analysis is its IR
+    (:class:`~graphed.core.plan.DurablePlan`, :mod:`graphed.preserve`).
+    """
 
     process: Callable[[Partition, WorkerResources], R]  # picklable; runs analysis on a chunk
     combine: Callable[[R, R], R]  # associative (and commutative) reducer
@@ -271,6 +308,57 @@ class Plan(Generic[R]):
     services: tuple[ServiceSpec, ...] = ()  # the services the plan's nodes name (graphed.services)
     # the run's value in its final form, called once on the head after the last combine
     finalize: Callable[[R], R] | None = None
+
+    def __repr__(self) -> str:
+        """Summarize the tasks, files, and whatever ``process.summary()`` adds."""
+        head = f"Plan: {counted(len(self.tasks), 'task')}"
+        sources = {(t.partition.uri, t.partition.tree) for t in self.tasks}
+        if len(sources) == 1:
+            uri, tree = next(iter(sources))
+            # PureWindowsPath splits on both separators
+            head += f" over 1 file ({PureWindowsPath(uri).name}{f':{tree}' if tree else ''})"
+        elif sources:
+            head += f" over {counted(len({uri for uri, _ in sources}), 'file')}"
+        parts = [head, "adaptive"] if self.next_tasks is not None else [head]
+        hook = getattr(self.process, "summary", None)
+        name = getattr(self.process, "__qualname__", type(self.process).__name__)
+        parts.append(f"runs {name}" if hook is None else hook())
+        return ", ".join(parts)
+
+    def save(self, path: str | os.PathLike[str]) -> None:
+        """Write this plan to ``path``, for :meth:`load` on this install.
+
+        It is a pickle, not the preservation format: see the class docstring. What a script
+        defines goes by value, so it loads in a later session.
+        """
+        import cloudpickle
+
+        # pickled first: one that cannot pickle leaves a plan already at ``path`` alone
+        data = cloudpickle.dumps(self)
+        with open(path, "wb") as file:
+            file.write(_SAVED_PLAN + version().encode() + b"\n" + data)
+
+    @classmethod
+    def load(cls, path: str | os.PathLike[str]) -> Plan[Any]:
+        """Return the plan :meth:`save` wrote to ``path``.
+
+        Loading runs pickle, which can run any code, so load only plans you trust. A plan saved by
+        another graphed version is refused, as what it pickles is private to its version. The
+        versions of the other packages a plan pickles are not recorded, so they are not checked.
+        """
+        with open(path, "rb") as file:
+            header = file.readline()
+            if not header.startswith(_SAVED_PLAN):
+                raise ValueError(f"{os.fspath(path)!r} is not a file Plan.save wrote")
+            saved = header.removeprefix(_SAVED_PLAN).strip().decode(errors="replace")
+            if saved != version():
+                raise ValueError(
+                    f"{os.fspath(path)!r} was saved by graphed {saved} and this is graphed "
+                    f"{version()}: a saved plan loads only on the version that wrote it, so "
+                    "rebuild it from the analysis"
+                )
+            plan: Plan[Any] = pickle.load(file)
+        return plan
 
 
 @dataclass(frozen=True)
@@ -495,7 +583,8 @@ class TaskEvent:
     worker back to the driver. ``error`` is a pre-rendered summary string, never an exception
     object; ``partition`` is a human label. Per task the contract is exactly one ``SUBMITTED``,
     then one ``STARTED``, then exactly one of ``FINISHED`` | ``ERRORED`` — except that a task a
-    :class:`RunControl` cancel kept from starting ends at its ``SUBMITTED``. For a monitor that
+    :class:`RunControl` cancel kept from starting ends at its ``SUBMITTED``, and that a backend
+    retrying a task repeats ``STARTED`` and the terminal event for each attempt. For a monitor that
     opts into lean events (:func:`lean_events`) the sequence is ``SUBMITTED``, then ``FINISHED`` |
     ``ERRORED`` with an empty ``partition``: only the driver's ``SUBMITTED`` carries the label.
     """
@@ -558,6 +647,33 @@ class Monitor(Protocol):
     def worker_profiler_factory(self) -> Callable[[], WorkerProfiler] | None:
         """Return the factory workers build their profiler with, or ``None``."""
         ...
+
+
+class MonitorBase:
+    """A :class:`Monitor` that ignores everything: subclass it and override what you need.
+
+    It adds the two optional run hooks, ``on_run_start`` and ``on_run_end``, which a runner calls
+    on any monitor that has them (:func:`observed_run`).
+    """
+
+    def on_task(self, event: TaskEvent) -> None:
+        """Observe a task event."""
+
+    def on_profile(self, worker: str, payload: bytes) -> None:
+        """Observe a worker's profile payload."""
+
+    def on_combine(self, leaves_done: int) -> None:
+        """Observe the reduction's progress."""
+
+    def worker_profiler_factory(self) -> Callable[[], WorkerProfiler] | None:
+        """Return no factory: workers do not sample."""
+        return None
+
+    def on_run_start(self, n_tasks: int) -> None:
+        """Observe a run starting with ``n_tasks`` known tasks."""
+
+    def on_run_end(self) -> None:
+        """Observe the run ending, however it ended."""
 
 
 class RunState(StrEnum):
@@ -654,18 +770,48 @@ def complete_events(monitor: Monitor | None) -> bool:
     return getattr(monitor, "complete_events", False) is True
 
 
+def call_monitor(monitor: object, hook: str, *args: object) -> Any:
+    """Return ``monitor.hook(*args)``, or ``None`` when it has no such hook or it raises.
+
+    A monitor is passive: neither a missing hook nor a raising one may end a run.
+    """
+    with contextlib.suppress(Exception):
+        return getattr(monitor, hook)(*args)
+    return None
+
+
+def worker_profiler_factory(monitor: Monitor | None) -> Callable[[], WorkerProfiler] | None:
+    """Return the factory ``monitor`` gives its workers, or ``None``."""
+    return cast(
+        "Callable[[], WorkerProfiler] | None", call_monitor(monitor, "worker_profiler_factory")
+    )
+
+
+@contextlib.contextmanager
+def observed_run(monitor: Monitor | None, plan: Plan[Any] | DurablePlanV2) -> Iterator[None]:
+    """Bracket a run in ``monitor``'s optional ``on_run_start`` and ``on_run_end``.
+
+    A runner enters this once per run; the end is reported when the run raises or is cancelled too.
+    A staged plan reports 0 tasks: it emits no task events.
+    """
+    call_monitor(monitor, "on_run_start", len(plan.tasks) if isinstance(plan, Plan) else 0)
+    try:
+        yield
+    finally:
+        call_monitor(monitor, "on_run_end")
+
+
 def worker_monitor_factory(monitor: Monitor | None) -> Callable[[], Monitor] | None:
     """Return the picklable zero-arg factory a monitor offers for per-worker push.
 
     ``None`` when the monitor defines no ``worker_monitor_factory`` (the ``Monitor`` protocol stays
-    four methods).
+    four methods) or it raises.
     """
-    method = getattr(monitor, "worker_monitor_factory", None)
-    return cast("Callable[[], Monitor] | None", method()) if method is not None else None
+    return cast("Callable[[], Monitor] | None", call_monitor(monitor, "worker_monitor_factory"))
 
 
 def partition_label(partition: Partition) -> str:
-    """Return a short human label for a partition (dashboard display only).
+    """Return a short human label for a partition (display only).
 
     A blind one names its step.
     """
@@ -759,12 +905,49 @@ class SequentialRunner:
     emits no task events.
 
     The plan's ``finalize`` runs on the value it returns (:func:`finalize_result`).
+
+    It has the shape of a pooled runner, so one ``with`` block serves both: ``submit`` runs the
+    plan before returning a finished future, and ``close`` has nothing to release.
     """
+
+    #: ``submit`` returns once its plan has finished, so none is ever waiting on another.
+    max_in_flight = 1
 
     def __init__(self, monitor: Monitor | None = None, control: RunControl | None = None) -> None:
         """Run in-process, reporting to ``monitor`` and obeying ``control``."""
         self.monitor = monitor
         self.control = control
+
+    def __enter__(self) -> SequentialRunner:
+        """Return the runner."""
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        """Close the runner."""
+        self.close()
+
+    def close(self) -> None:
+        """Do nothing: every plan has finished, and the runner holds no pool."""
+
+    @overload
+    def submit(self, plan: Plan[R]) -> Future[ExecResult[R]]: ...
+    @overload
+    def submit(self, plan: DurablePlanV2) -> Future[ExecResult[Any]]: ...
+    def submit(self, plan: Plan[R] | DurablePlanV2) -> Future[Any]:
+        """Run ``plan`` and return a finished future of its result, or of the failure.
+
+        The run holds the caller: a paused ``control`` blocks this call, and a cancel sent after it
+        returns lands on the next run.
+        """
+        fut: Future[Any] = Future()
+        try:
+            fut.set_result(self.run(plan))
+        except Exception as exc:
+            fut.set_exception(exc)
+        try:
+            return fut
+        finally:
+            del fut  # a failure's traceback holds this frame, so ``fut`` here would be a cycle
 
     @overload
     def run(self, plan: Plan[R]) -> ExecResult[R]: ...
@@ -773,7 +956,8 @@ class SequentialRunner:
     def run(self, plan: Plan[R] | DurablePlanV2) -> ExecResult[R] | ExecResult[Any]:
         """Run ``plan`` one task at a time in this process."""
         require_bound(plan)
-        result = self._run_tasks(plan) if isinstance(plan, Plan) else self._run_stages(plan)
+        with observed_run(self.monitor, plan):
+            result = self._run_tasks(plan) if isinstance(plan, Plan) else self._run_stages(plan)
         return finalize_result(plan, result)
 
     def _run_tasks(self, plan: Plan[R]) -> ExecResult[R]:
