@@ -31,7 +31,7 @@ from m72_multiout_fixtures import (
 import graphed
 from graphed import GraphedError, compile_ir, refuse_chunk_partials
 from graphed.core import GraphStore, Partition
-from graphed.core.execution import SequentialRunner
+from graphed.core.execution import Plan, SequentialRunner
 
 FILES = {"fa": np.arange(0.0, 12.0), "fb": np.arange(20.0, 26.0)}
 F32 = {"fa": np.array([0.1, 0.2, 0.7, 0.4], dtype=np.float32)}
@@ -59,6 +59,7 @@ def test_write_and_reduce_share_one_read_and_one_evaluation(tmp_path: Path) -> N
         steps_per_file=3,
         writes=[_write(y, tmp_path)],
     )
+    assert isinstance(plan, Plan)
     value = SequentialRunner().run(plan).value
     n = len(plan.tasks)
     assert n == 6
@@ -81,6 +82,7 @@ def test_reduce_sees_todays_values_then_one_path_per_write(tmp_path: Path) -> No
     plan = graphed.aggregate_plan(
         a, b, a, reduce=spy_reduce, combine=add, empty=zero, writes=writes
     )
+    assert isinstance(plan, Plan)
     SequentialRunner().run(plan)
     assert len(SEEN) == len(plan.tasks) == 2
     for task, seen in zip(sorted(plan.tasks, key=lambda t: t.key), SEEN, strict=True):
@@ -127,6 +129,7 @@ def test_part_metadata_holds_this_chunks_reduction(tmp_path: Path) -> None:
             _write(x, tmp_path / "none"),
         ],
     )
+    assert isinstance(plan, Plan)
     assert _Static.calls == 1
     SequentialRunner().run(plan)
     assert _Static.calls == 1
@@ -170,6 +173,7 @@ def test_part_path_is_destination_joined_with_name_of_the_tasks_partition(tmp_pa
         steps_per_file=2,
         writes=[_write(x, blind_dest, by_step_in_dir)],
     )
+    assert isinstance(plan, Plan)
     tasks = sorted(plan.tasks, key=lambda t: t.key)
     assert all(t.partition.is_blind for t in tasks)
     paths = SequentialRunner().run(plan).value
@@ -229,6 +233,7 @@ def test_write_root_reduction_refused_metadata_reduction_allowed(tmp_path: Path)
         steps_per_file=2,
         writes=[_write(x * 2.0, tmp_path / "ok", metadata={"sumx": x.sum()})],
     )
+    assert isinstance(plan, Plan)
     assert SequentialRunner().run(plan).value == float(sum(v.sum() for v in FILES.values()))
     for task in plan.tasks:
         kv = read_part(os.path.join(tmp_path / "ok", by_step(task.partition)))["kv"]

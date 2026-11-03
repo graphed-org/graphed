@@ -318,12 +318,7 @@ def to_parquet(
             "column — write varied skims through the awkward backend (graphed.awkward.to_parquet)"
         )
     session: Session = array.session
-    sources = gw.sources_read([array])
-    if len(sources) != 1:
-        raise TypeError(
-            f"to_parquet needs an array recorded over exactly one source, got {len(sources)}"
-        )
-    ((node_id, data),) = sources.items()
+    node_id, data = gw.sole_source([array])
     if steps_per_file is None:
         steps_per_file = data.steps_per_file if isinstance(data, _DatasetLoader) else 1
     source_name = session.source_name(node_id)

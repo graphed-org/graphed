@@ -55,7 +55,7 @@ none of them either (every optional dependency of its dashboard is imported lazi
 | O2 | `test_callable_identity.py::test_one_callable_object_recorded_twice_is_one_node_and_apply_interns_with_map` | one node id across `map`/`map`/`apply`, node count, the materialized value |
 | O3 | `test_callable_identity.py::test_a_program_without_name_collisions_records_the_bare_names_and_the_same_ir_twice` | the literal `fn` params and the IR bytes of two independent builds |
 | O3 (collisions) | `test_callable_identity.py::test_two_builds_of_a_colliding_program_agree_byte_for_byte` | one distinct byte string across two builds of the colliding program |
-| O4 | `test_callable_identity.py::test_an_explicit_name_is_the_callers_identity_declaration` | equal `name=` interns two distinct callables, distinct `name=` does not, the literal params, and `name=` in each recording verb's docstring |
+| O4 | `test_callable_identity.py::test_an_explicit_name_is_the_callers_identity_declaration` | equal `name=` interns one function and refuses a different one, distinct `name=` does not, the literal params, and `name=` in each recording verb's docstring |
 | V1 | `test_internal_frames.py::test_a_registered_prefix_matches_whole_dotted_components` | the file / line / function / sub-expression of an op the library recorded, for `m60_lib`, `m60_lib.sub` and `m60_libx` |
 | V2 | `test_internal_frames.py::test_registration_is_idempotent_and_survives_concurrent_registrars` | a repeated registration's provenance, then 8 threads registering and recording concurrently |
 | V2 (control) | `test_internal_frames.py::test_an_unregistered_module_and_the_built_in_graphed_rule_keep_their_own_lines` | `m60_libx`'s own frame, and the test's own frame for a directly recorded op |

@@ -17,7 +17,7 @@ from typing import Any, cast
 import numpy as np
 
 from graphed import Array, Session, aggregate_plan
-from graphed.core import Partition
+from graphed.core import Partition, Plan
 from graphed.numpy import NumpyBackend, NumpyForm
 
 COLUMNS = {
@@ -110,5 +110,6 @@ def emit_opt0_digest() -> None:
     plan = aggregate_plan(
         *merged_pair(events), reduce=sums, combine=add, empty=zero, steps_per_file=2, opt_level=0
     )
+    assert isinstance(plan, Plan)
     ir = hashlib.sha256(bytes(cast(Any, plan.process).ir)).hexdigest()
     print(ir, hashlib.sha256(pickle.dumps(plan)).hexdigest(), hash("graphed"))

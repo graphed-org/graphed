@@ -387,7 +387,8 @@ def _join_form(left: NumpyForm, right: NumpyForm, params: Mapping[str, object]) 
     shared_nonkey = sorted(n for n in lnames & rnames if n not in on_set)
     if shared_nonkey:  # F7: mirror merge_records — no silent SQL suffixing
         raise ValueError(
-            f"op_form(join): shared non-key column(s) {shared_nonkey} — rename or add to `on`"
+            f"op_form(join): shared non-key column(s) {shared_nonkey} — rename, select fields "
+            "on one side, or add to `on`"
         )
     right_only = [(n, t) for n, t in right.fields if n not in lnames]
     left_only = [(n, t) for n, t in left.fields if n not in rnames]
@@ -535,12 +536,14 @@ class NumpyBackend:
             # a pure data-movement boundary is identity on values in-process (§3.3a)
             return inputs[0]
         if op == "pack_key":
-            return shuffle.pack_key(inputs[0], _decode_on(params["on"]))
+            return shuffle.pack_key(
+                inputs[0], _decode_on(params["on"]), route=bool(params.get("route"))
+            )
         if op == "join":
             return join_blocks(
                 self,
-                inputs[0],
-                inputs[1],
+                shuffle.as_records(inputs[0]),
+                shuffle.as_records(inputs[1]),
                 on=_decode_on(params["on"]),
                 how=str(params.get("how", "inner")),
             )
@@ -567,7 +570,7 @@ class NumpyBackend:
         """Return the payload descriptor a ``map`` or ``gufunc`` op carries."""
         if op not in ("map", "gufunc"):
             return None
-        fn_name = str(params.get("fn", "lambda"))
+        fn_name = str(params["fn"])
         # M14: a gufunc node's io_schema IS its signature — the descriptor carries the contract
         io_schema = str(params["signature"]) if op == "gufunc" else "opaque->opaque"
         return PayloadDescriptor(

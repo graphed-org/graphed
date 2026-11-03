@@ -45,6 +45,7 @@ import cloudpickle
 
 from graphed.core import DurablePlan, DurablePlanV2, OpSpec, Partition, Plan, Task
 from graphed.core.plan import _partition_bytes, _sha256_hex
+from graphed.core.worker_warnings import Warned
 from graphed.services import Bindable, Resolvable
 from graphed.write import is_url
 
@@ -161,6 +162,13 @@ def _resolves(module: str, qualname: str, obj: object) -> bool:
     return found is obj
 
 
+def _attrs_unset(array: Any) -> Any:
+    # reading an unset attrs fills it with {}; awkward's constructor would rerun validators
+    bare = object.__new__(type(array))
+    vars(bare).update(vars(array), _attrs=None)
+    return bare
+
+
 class _KeyPickler(pickle._Pickler):
     """Cloudpickle's by-value/by-name partition and reducers on the pure-Python pickler.
 
@@ -176,13 +184,16 @@ class _KeyPickler(pickle._Pickler):
     ) -> None:
         super().__init__(file, protocol=5)
         self._cp = _cloudpickle()
+        ak = sys.modules.get("awkward")
+        self._arrays: tuple[Any, ...] = (ak.Array, ak.Record) if ak else ()
         self.globals_ref: dict[int, dict[str, Any]] = {}
         self.proto = 5
         self._seen = dict(seen)
         self._classdicts: dict[int, type] = {}
         self._globals: dict[int, dict[str, Any]] = {}
         self._rebound = rebound
-        self._keyed: dict[int, Any] = {}
+        # holds each original, so its id is not reused mid-pickle
+        self._keyed: dict[int, tuple[Any, Any]] = {}
         own: dict[type, Callable[[Any], Any]] = {
             weakref.WeakSet: lambda ws: (weakref.WeakSet, (self._sorted(ws),)),
             types.ModuleType: self._module_reduce,
@@ -212,7 +223,15 @@ class _KeyPickler(pickle._Pickler):
     def save(self, obj: Any, save_persistent_id: bool = True) -> None:
         # a transport wrapper keys as what it carries, so wrapping moves no task key
         while (keyed_as := getattr(type(obj), "_keyed_as", None)) is not None:
-            obj = self._keyed.setdefault(id(obj), keyed_as(obj))
+            obj = self._keyed.setdefault(id(obj), (obj, keyed_as(obj)))[1]
+        # pickling drops "@" attrs; dispatch holds no awkward type and skips ABCMeta's isinstance
+        if (
+            type(obj) not in self.dispatch
+            and isinstance(obj, self._arrays)
+            and obj._attrs is not None
+            and all(k.startswith("@") for k in obj._attrs)
+        ):
+            obj = self._keyed.setdefault(id(obj), (obj, _attrs_unset(obj)))[1]
         _PURE._Pickler.save(self, obj, save_persistent_id)
 
     def memoize(self, obj: Any) -> None:
@@ -381,6 +400,7 @@ def _key_digest(obj: object) -> bytes:
 
     - sets, frozensets, a ``weakref.WeakSet`` and an ABC's registry are written sorted by their
       elements' key bytes;
+    - an awkward array or record whose attrs are empty or all transient is written with them unset;
     - interpreter-filled class caches (``__slotnames__``, typing's protocol-member caches) are
       dropped, and a class's ``__annotations_cache__`` is written as ``__annotations__`` when it
       has none;
@@ -525,10 +545,18 @@ class _Resumable:
     reused: int
 
     def __call__(self, partition: Partition, resources: Any) -> Any:
-        def run(plain: Partition) -> bytes:
-            return self.codec.encode(self.inner(plain, resources))
+        caught: list[Warned] = []
 
-        return self.codec.decode(_served_or_run(self.root, self.storage_options, partition, run))
+        def run(plain: Partition) -> bytes:
+            value = self.inner(plain, resources)
+            if isinstance(value, Warned):
+                caught.append(value)  # beside the result: a store holds only the plain partial
+                value = value.value
+            return self.codec.encode(value)
+
+        served = _served_or_run(self.root, self.storage_options, partition, run)
+        value = self.codec.decode(served)
+        return Warned(value, caught[0].caught) if caught else value
 
     def bind_services(self, endpoints: Mapping[str, str]) -> _Resumable:
         return replace(
@@ -766,7 +794,8 @@ def warn_unreused(
     if held and not any(tid in done for tid in ids):
         _LOG.warning(
             "0 of %d tasks reused, but %s holds %d results for these partitions under other keys: "
-            "the analysis, its code, the salt or an order in what it ships differs",
+            "the analysis, its code, the salt or an order in what it ships differs, or another of "
+            "run_resumable, run_shuffle_resumable and resumable wrote them",
             total,
             getattr(store, "root", store),
             held,

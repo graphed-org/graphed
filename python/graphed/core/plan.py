@@ -36,6 +36,7 @@ from typing import Any, Literal
 from .execution import Partition, Plan, Task
 from .graphed_core import GraphStore
 from .services import ServiceSpec
+from .worker_warnings import WarnedCombine, WarnedFinalize
 
 FORMAT_VERSION = 1
 FORMAT_VERSION_V2 = (
@@ -172,11 +173,12 @@ class DurablePlan:
         """Return this plan's runtime form, specs resolved, for a run with no checkpoint Store."""
         return Plan(
             process=self.process.resolve(),
-            combine=self.combine.resolve(),
+            # a shipped process's partials may carry warnings, whatever these two were built for
+            combine=WarnedCombine(self.combine.resolve()),
             empty=self.empty.resolve(),
             tasks=tuple(Task(i, p) for i, p in enumerate(self.partitions)),
             services=self.services,
-            finalize=None if self.finalize is None else self.finalize.resolve(),
+            finalize=WarnedFinalize(None if self.finalize is None else self.finalize.resolve()),
         )
 
     # ---- content addressing ---------------------------------------------------------------------
@@ -461,14 +463,17 @@ def _partition_json(p: Partition) -> dict[str, str | int]:
     if p.blind_step is not None and p.blind_n_steps is not None:
         d["blind_step"] = p.blind_step
         d["blind_n_steps"] = p.blind_n_steps
+    if p.blind_limit is not None:
+        d["blind_limit"] = p.blind_limit
     return d
 
 
 def _partition_from_json(d: Mapping[str, Any]) -> Partition:
     if "blind_step" in d:
-        return Partition.blind(
+        blind = Partition.blind(
             d["uri"], d.get("tree", ""), int(d["blind_step"]), int(d["blind_n_steps"])
         )
+        return blind.first(int(d["blind_limit"])) if "blind_limit" in d else blind
     return Partition(
         uri=d["uri"],
         tree=d.get("tree", ""),
