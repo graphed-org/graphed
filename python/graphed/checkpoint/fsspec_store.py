@@ -57,6 +57,7 @@ class FsspecStore:
     def __init__(self, url: str, node: str | None = None, **storage_options: Any) -> None:
         """Open the store at ``url``; ``node`` names this writer's own journal."""
         self.url = url
+        self.storage_options = storage_options
         self.node = node
         # a caching backend (s3) would serve a listing taken before another process wrote
         self.fs, self.root = url_fs(url, **{**storage_options, "use_listings_cache": False})

@@ -42,6 +42,8 @@ Which prints::
      - ``opt_level=0`` in ``run`` and ``lower``
    * - re-run the one task that failed, on your own machine, with the input it actually read
      - ``replay``
+   * - find the line whose cut removes every event
+     - ``trace``
    * - watch a long run in your browser, and pause, resume or cancel it there
      - ``Dashboard`` (``control=True`` adds the buttons)
    * - keep a record of how a run went — timings, failures, environment — next to the analysis

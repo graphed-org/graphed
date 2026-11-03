@@ -317,10 +317,13 @@ class Array:
         if isinstance(other, Array):
             inputs = [other, self] if reflected else [self, other]
             return self._session.record_op(op, inputs)
-        params: dict[str, ParamValue] = {
-            **scalar_params(other),
-            "side": "l" if reflected else "r",
-        }
+        try:
+            scalar = scalar_params(other)
+        except TypeError:
+            if op in ("eq", "ne"):  # Python's fallback would answer a plain bool
+                raise
+            return NotImplemented  # type: ignore[no-any-return]
+        params: dict[str, ParamValue] = {**scalar, "side": "l" if reflected else "r"}
         return self._session.record_op(op, [self], params)
 
     def _unary(self, op: str) -> Array:
