@@ -899,7 +899,11 @@ class Session:
             form: Form | None = trace(fn, forms)
         except Exception as exc:
             form = None
-            reason = f" ({type(exc).__name__}: {(str(exc).splitlines() or [''])[0]})"
+            try:  # the exception's own __str__ is user code too
+                line = next((s for s in str(exc).splitlines() if s.strip()), "")
+            except Exception:
+                line = ""
+            reason = f" ({type(exc).__name__}{': ' + line if line else ''})"
         if form is None:
             message = f"could not infer the type of {_fn_label(fn)}{reason}; pass output_type="
             warnings.warn_explicit(message, GraphedWarning, prov.filename, prov.lineno)
