@@ -167,9 +167,9 @@ def test_a_run_of_the_whole_source_takes_no_row_check() -> None:
 
 def test_an_exchange_and_a_join_replay_as_the_run_ran_them() -> None:
     ev, _ = _events()
-    kept = ev[ev.met > 3.5]
-    left, right = gak.zip({"k": ev.met, "a": ev.met}), gak.zip({"k": kept.met, "b": kept.met})
-    for output in (ev.met.repartition(n=2), gak.join(left, right, on=["k"])):
+    # a partitioned plan refuses a keyed join of one source, so the join here is positional
+    left, right = gak.zip({"a": ev.met}), gak.zip({"b": ev.met * 2})
+    for output in (ev.met.repartition(n=2), gak.join(left, right, how="positional")):
         plan = _plan(output)
         ran = ak.to_list(SequentialRunner().run(plan).value[0])
         assert ran
