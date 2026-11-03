@@ -2,5 +2,5 @@
 
 * A task that failed because its rows did not line up now fails the same way in ``replay`` and
   ``gd.run(partition=)``, which broadcast them and returned a value.
-* A plan with a ``repartition`` or a join now replays, where its exchange or join step raised, and
-  ``reproduce`` runs them in a bundle the same way.
+* A plan with a ``repartition`` or a positional join now replays, where its exchange or join step
+  raised, and ``reproduce`` runs them in a bundle the same way.

@@ -175,6 +175,12 @@ def test_an_exchange_and_a_join_replay_as_the_run_ran_them() -> None:
         assert ran
         for given in ((), (output,)):
             assert ak.to_list(gd.replay(plan, 0, *given).value[0]) == ran
+    short = gak.join(left, gak.zip({"b": ev[ev.met > 3.5].met}), how="positional")
+    plan = _plan(short)
+    with pytest.raises(StageError, match="got 4 rows against 1"):
+        SequentialRunner().run(plan)
+    with pytest.raises(StageError, match="got 4 rows against 1"):
+        list(gd.replay(plan, 0).steps())
 
 
 def _explode(chunk: Any) -> Any:
