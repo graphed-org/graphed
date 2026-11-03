@@ -15,6 +15,7 @@ from pathlib import Path
 
 from graphed import Array, Session
 from graphed.core import Partition
+from graphed.errors import raising_frame
 from graphed.execute import _rows_aligned
 from graphed.materialization import _first_sample, _partition_chunk
 from graphed.varied import refuse_container
@@ -53,10 +54,13 @@ def _stage_error(
         cause_type=type(exc).__name__,
         cause_message=str(exc),
         opt_level=lowered.opt_level,
+        raised_at=raising_frame(exc),
     )
 
 
-def _assert_consistent(lowered: LoweredGraph, node_id: int, value: object, partition: str) -> None:
+def _assert_consistent(
+    lowered: LoweredGraph, node_id: int, value: object, partition: Callable[[], str]
+) -> None:
     """Check inter-op consistency, only at opt_level=0.
 
     A debug scaffold; richer dtype/shape contracts are a tracked improvement.
@@ -65,7 +69,7 @@ def _assert_consistent(lowered: LoweredGraph, node_id: int, value: object, parti
         raise _stage_error(
             lowered,
             node_id,
-            partition,
+            partition(),
             AssertionError("op produced None (inter-op consistency check)"),
         )
 
@@ -75,7 +79,7 @@ def _walk(
     array: Array,
     lowered: LoweredGraph,
     chunks: Mapping[int, Callable[[], object]],
-    where: str,
+    where: str | Callable[[], str],
     memo: dict[int, object] | None = None,
 ) -> object:
     backend = session.backend
@@ -83,13 +87,16 @@ def _walk(
     # one chunk runs as `evaluate_ir(chunked=True)` runs a task, so the task's failures reproduce
     ops = {node["id"] for node in session._nodes() if node["kind"] == "op"} if chunks else ()
 
+    def label() -> str:
+        return where if isinstance(where, str) else where()
+
     def on_source(nid: int) -> object:
         try:
             return chunks[nid]() if nid in chunks else session.source_value(nid)
         except StageError:
             raise
         except Exception as exc:
-            raise _stage_error(lowered, nid, where, exc) from exc
+            raise _stage_error(lowered, nid, label(), exc) from exc
 
     def on_op(nid: int, name: str, ins: list[object], params: Mapping[str, object]) -> object:
         try:
@@ -97,9 +104,9 @@ def _walk(
         except StageError:
             raise
         except Exception as exc:
-            raise _stage_error(lowered, nid, where, exc) from exc
+            raise _stage_error(lowered, nid, label(), exc) from exc
         if lowered.opt_level == 0:
-            _assert_consistent(lowered, nid, value, where)
+            _assert_consistent(lowered, nid, value, label)
         return value
 
     def on_external(nid: int, fn: object, ins: list[object]) -> object:
@@ -108,7 +115,7 @@ def _walk(
         except StageError:
             raise
         except Exception as exc:
-            raise _stage_error(lowered, nid, where, exc) from exc
+            raise _stage_error(lowered, nid, label(), exc) from exc
 
     return session.walk(array, source=on_source, op=on_op, external=on_external, memo=memo)
 
@@ -124,7 +131,8 @@ def run(
     """Execute the analysis reaching ``array`` on the session's source data.
 
     ``partition`` runs that one chunk (``plan.tasks[3].partition``) instead of the whole source.
-    ``label`` names the data in a failure, by default ``partition``.
+    ``label`` names the data in a failure, by default the chunk as a plan's task names it, else
+    ``"sample"``.
 
     Raise a `StageError` (mapped to the user's analysis line) on the first failing op.
     """
@@ -133,8 +141,12 @@ def run(
             f"run(partition=) selects a graphed.core.Partition, not {partition!r}; name the data "
             "in a failure with label=, or evaluate a sample with graphed.materialize(x, entries=N)"
         )
-    chunks = {} if partition is None else _partition_chunk([array], partition)
-    where = label if label is not None else "sample" if partition is None else str(partition)
+    chunks: dict[int, Callable[[], object]] = {}
+    sampled: Callable[[], str] | None = None
+    if partition is not None:
+        nid, read, sampled = _partition_chunk([array], partition)
+        chunks[nid] = read
+    where = label if label is not None else sampled or "sample"
     return _walk(session, array, lower(session, array, opt_level=opt_level), chunks, where)
 
 

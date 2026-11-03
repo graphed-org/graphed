@@ -18,7 +18,13 @@ from functools import cached_property
 from typing import Any
 
 from graphed import Array
-from graphed.aggregate import _compile_at, _PartitionReduce, _slot_of, resolve_backend
+from graphed.aggregate import (
+    _compile_at,
+    _PartitionReduce,
+    _slot_of,
+    read_label,
+    resolve_backend,
+)
 from graphed.core import DurablePlanV2, GraphStore, LocalResources
 from graphed.core.execution import Plan, Task
 from graphed.execute import (
@@ -29,6 +35,7 @@ from graphed.execute import (
     _unbound_source,
     compile_ir,
     external_key,
+    external_op,
 )
 
 from .errors import SourceFrame
@@ -106,7 +113,7 @@ def _unfused(
         nodes.append({**node, "id": new, "inputs": inputs})
         frame = SourceFrame(*frames.get(key, ("<no recorded line>", 0)))
         kind = node["kind"]
-        name = node["name"] or kind  # an External has no name
+        name = external_op(node) if kind == "external" else node["name"] or kind
         lowered_kind = "op" if kind == "reduction" else kind
         boundary = lowered_kind != "op" or name in boundary_ops
         ops.append(LoweredOp(new, name, lowered_kind, frame, tuple(inputs), "", boundary))
@@ -229,7 +236,8 @@ class Replay:
                 if failing is None:
                     proxy = self._session._proxies([op.node_id], self._outputs)[0]
                     failing = lower(self._session, proxy, opt_level=0)
-                raise _stage_error(failing, op.node_id, str(self.task.partition), exc) from exc
+                where = read_label(self._process.reader, self.task.partition, chunk)
+                raise _stage_error(failing, op.node_id, where, exc) from exc
             yield Step(op, value, time.perf_counter() - start)
 
     @cached_property

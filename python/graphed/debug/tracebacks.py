@@ -13,22 +13,4 @@ from .errors import StageError
 
 def format_traceback(err: StageError) -> str:
     """Format ``err`` as a user-source-mapped traceback string."""
-    lines = ["Traceback (most recent call last) — user analysis frames:"]
-    # oldest ancestor first, failing line last
-    chain = list(reversed(err.frames))
-    for i, fr in enumerate(chain):
-        marker = "  --> " if i == len(chain) - 1 else "      "
-        func = fr.function or "<module>"
-        lines.append(f'{marker}File "{fr.filename}", line {fr.lineno}, in {func}')
-        if fr.source:
-            lines.append(f"          {fr.source}")
-        for other in fr.also:
-            source = f":  {other.source}" if other.source else ""
-            lines.append(f"      (same expression also written at {other}{source})")
-    lines.append(
-        f"{err.cause_type}: {err.cause_message}  "
-        f"[stage op {err.op!r}, partition {err.partition}, opt_level={err.opt_level}]"
-    )
-    if err.input_forms:
-        lines.append(f"  input forms: {', '.join(err.input_forms)}")
-    return "\n".join(lines)
+    return f"Traceback (most recent call last) — user analysis frames:\n{err.view()}"

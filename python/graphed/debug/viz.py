@@ -56,13 +56,17 @@ def visualize(
     if fmt == "mermaid":
         lines = [f"flowchart TD  %% opt_level={graph.opt_level}"]
         for stage in graph.stages:
-            lines.append(f'  n{stage.node_id}["{_stage_label(stage, projection)}"]')
+            label = _stage_label(stage, projection)
+            # a map's op can read map "it's" or map '<lambda>'
+            for ch, code in (('"', "#quot;"), ("<", "#lt;"), (">", "#gt;")):
+                label = label.replace(ch, code)
+            lines.append(f'  n{stage.node_id}["{label}"]')
         for a, b in edges:
             lines.append(f"  n{a} --> n{b}")
         return "\n".join(lines)
     lines = [f"digraph graphed_debug {{  // opt_level={graph.opt_level}", "  rankdir=TB;"]
     for stage in graph.stages:
-        label = _stage_label(stage, projection).replace("\\n", "\\l") + "\\l"
+        label = _stage_label(stage, projection).replace('"', '\\"').replace("\\n", "\\l") + "\\l"
         lines.append(f'  n{stage.node_id} [shape=box, label="{label}"];')
     for a, b in edges:
         lines.append(f"  n{a} -> n{b};")

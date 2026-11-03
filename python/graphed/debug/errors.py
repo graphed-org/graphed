@@ -13,6 +13,6 @@ Both are defined in :mod:`graphed.errors`, below the frontend that raises them, 
 
 from __future__ import annotations
 
-from graphed.errors import SourceFrame, StageError
+from graphed.errors import SourceFrame, StageError, WorkerLostError
 
-__all__ = ["SourceFrame", "StageError"]
+__all__ = ["SourceFrame", "StageError", "WorkerLostError"]

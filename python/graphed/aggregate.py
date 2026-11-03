@@ -25,7 +25,14 @@ from dataclasses import dataclass, replace
 from typing import Any, ClassVar, Generic, TypeVar, cast
 
 from graphed.core import GraphStore, Partition
-from graphed.core.execution import Plan, Task, WorkerResources, capped, counted, partition_label
+from graphed.core.execution import (
+    Plan,
+    Task,
+    WorkerResources,
+    capped,
+    chunk_label,
+    counted,
+)
 from graphed.core.plan import DurablePlanV2, _partition_bytes, _sha256_hex
 from graphed.core.worker_warnings import (
     WarnedCombine,
@@ -43,6 +50,7 @@ from .errors import (
     PackKeyOverflowError,
     SourceFrame,
     StageError,
+    raising_frame,
 )
 from .execute import (
     CompiledGraph,
@@ -245,7 +253,7 @@ class _PartitionReduce(Generic[V]):
                         backend,
                         {self.source_name: chunk},
                         externals=dict(self.externals),
-                        on_failure=self._attribute(str(partition)),
+                        on_failure=self._attribute(self._label(partition, chunk)),
                         chunked=True,
                     )
                 result = _adopted(
@@ -254,7 +262,7 @@ class _PartitionReduce(Generic[V]):
                 )
             else:
                 result = self._captured(chunk, partition, backend)
-        return cast("V", carrying(result, caught, partition_label(partition)))
+        return cast("V", carrying(result, caught, self._label(partition, chunk)))
 
     def floating_point(self) -> contextlib.AbstractContextManager[object]:
         """Return what a task evaluates under: numpy's own state, unless it raises."""
@@ -337,7 +345,7 @@ class _PartitionReduce(Generic[V]):
                 resolve_backend(self.backend_factory),
                 {self.source_name: chunk},
                 externals=dict(self.externals),
-                on_failure=self._attribute(str(partition)),
+                on_failure=self._attribute(self._label(partition, chunk)),
                 chunked=True,
             )
 
@@ -363,13 +371,41 @@ class _PartitionReduce(Generic[V]):
         assert self.store is not None
         return open_store(self.store, node, dict(self.storage_options))
 
-    def _attribute(self, partition: str) -> OnFailure | None:
+    def _attribute(self, partition: str | Callable[[], str]) -> OnFailure | None:
         return attribute_failures(self.frames, partition, self.variation_labels, self.opt_level)
+
+    def _label(self, partition: Partition, chunk: object) -> Callable[[], str]:
+        return functools.partial(read_label, self.reader, partition, chunk)
+
+
+def read_label(reader: Any, partition: Partition, chunk: Any) -> str:
+    """Return ``partition``'s :func:`chunk_label`, resolved as far as this worker can."""
+    entries: int | None = None
+    rows: int | None = None
+    if partition.is_blind:
+        # a label must not mask the failure it reports
+        with contextlib.suppress(Exception):
+            entries = reader.num_entries(partition)
+        with contextlib.suppress(Exception):
+            rows = len(chunk)
+    return chunk_label(partition, file_entries=entries, rows=rows)
+
+
+def _type_string(value: object, limit: int = 200) -> str:
+    """Return ``value``'s type as an array library prints it, its class name otherwise."""
+    text = getattr(value, "typestr", None)  # awkward
+    if not isinstance(text, str):
+        dtype = getattr(value, "dtype", None)
+        shape = getattr(value, "shape", ())
+        text = (
+            type(value).__name__ if dtype is None else " * ".join((*map(str, shape), str(dtype)))
+        )
+    return text if len(text) <= limit else f"{text[:limit]}..."  # a NanoEvents record runs long
 
 
 def attribute_failures(
     frames: Sequence[tuple[Key, Frame]],
-    partition: str,
+    partition: str | Callable[[], str],
     variation_labels: Sequence[Any] | None = None,
     opt_level: int = 1,
 ) -> OnFailure | None:
@@ -378,6 +414,7 @@ def attribute_failures(
     A RAW failure at any key with a frame becomes a `StageError` pointing at the user's line,
     carrying the key's variation label when the label channel has an entry; a key with no frame
     re-raises the original untouched, since `StageError` needs frames at construction.
+    ``partition`` may be a callable, so a task pays for its label only when it fails.
     """
     entries = dict(variation_labels or ())
     by_key = dict(frames)
@@ -405,13 +442,13 @@ def attribute_failures(
         return kind(
             op=op,
             frames=(SourceFrame(*frame),),
-            # a worker holds values, not forms: the runtime types are what it can honestly report
-            input_forms=tuple(type(value).__name__ for value in ins),
-            partition=partition,
+            input_forms=tuple(_type_string(value) for value in ins),
+            partition=partition if isinstance(partition, str) else partition(),
             cause_type=type(exc).__name__,
             cause_message=str(exc),
             opt_level=opt_level,
             variation=",".join(sorted(labels)),
+            raised_at=raising_frame(exc),
         )
 
     return attribute

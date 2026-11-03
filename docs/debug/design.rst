@@ -34,7 +34,7 @@ Transcripts on this page show your analysis file by name; you will see its full 
 
 ::
 
-   external | IndexError | skim@0:4
+   map 'oob' | IndexError | skim@0:4
    analysis.py:9
    Traceback (most recent call last) — user analysis frames:
          File "analysis.py", line 7, in <module>
@@ -43,7 +43,8 @@ Transcripts on this page show your analysis file by name; you will see its full 
              x * 2.0
      --> File "analysis.py", line 9, in <module>
              pt.map(lambda a: a[100], name='oob')
-   IndexError: index 100 is out of bounds for axis 0 with size 4  [stage op 'external', partition skim@0:4, opt_level=1]
+         raised in <lambda>(), analysis.py line 9:  bad = pt.map(lambda a: a[100], name="oob")     # only fails once real data arrives
+   IndexError: index 100 is out of bounds for axis 0 with size 4  [stage op "map 'oob'", partition skim@0:4, opt_level=1]
      input forms: vector[float64]
 
 The arrow is on the line you wrote. Above it is the trail of how that value was built, oldest
@@ -69,8 +70,11 @@ rather than parse a message:
    ragged one.
 
 ``partition``
-   *Which* chunk of data tripped it. Data-dependent bugs fail on some partitions and not
-   others, and this is how you find the events to look at.
+   *Which* chunk of data tripped it, as ``chunk 7/20 of data.root:Events (entries 15000-17500)``.
+   Data-dependent bugs fail on some partitions and not others, and this is how you find the events
+   to look at. A source without an entry count gives the chunk's size instead of its range; a
+   ``graphed.debug.run`` or :func:`~graphed.debug.replay` failure shows the label you gave it. A
+   failure after a join or a repartition names its destination, ``dest N``, not a chunk.
 
 ``cause_type`` / ``cause_message``
    The underlying exception, as data — the type name and the message, not a live traceback
@@ -83,9 +87,18 @@ rather than parse a message:
    Which systematic universe failed, when the run carries variation labels. See
    `Which variation failed`_.
 
+``raised_at``
+   The frame that raised inside your own function, for a ``.map`` or ``graphed.apply`` that
+   failed. ``None`` when the failure was inside a library.
+
 ``format_traceback(err)`` renders all of it as the block above: the user-code frames with a
 ``-->`` on the faulty line, then the cause, the operation, the partition, and the input forms.
-That is the thing to print in an ``except graphed.debug.StageError`` handler.
+You do not need a handler to see it: the same block is an exception note, so an uncaught
+``StageError`` ends with it, on any runner.
+
+A worker that dies takes no source line with it. :class:`graphed.WorkerLostError`, a ``StageError``
+subclass, names the chunk it held in ``partition`` and the worker in ``worker``, and its ``frames``
+are empty.
 
 
 Running exactly what you wrote
@@ -183,7 +196,7 @@ worker can raise it, a pool can ship it, and your driver re-raises *the same* di
 ::
 
    re-raised in the driver: StageError
-   partition: skim@16384 | op: external | opt_level: 1
+   partition: skim@16384 | op: map 'unflatten' | opt_level: 1
    your line: 14 | counts.map(lambda a: np.repeat(a, a), name='unflatten')
    cause: ValueError - repeats may not contain negative values.
 
@@ -633,7 +646,7 @@ graph, so that form works while that session is alive.
    input from: store
      events   line 21
      field    line 22
-     failed at external on line 22: no calibration for this block
+     failed at map 'calibrate' on line 22: no calibration for this block
    recorded True 94561.25
 
 ``steps()`` is lazy: each ``Step`` carries the lowered operation (its op, kind, your source frame

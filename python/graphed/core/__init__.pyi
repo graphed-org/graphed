@@ -61,6 +61,9 @@ from .execution import (
     WorkerResources as WorkerResources,
 )
 from .execution import (
+    chunk_label as chunk_label,
+)
+from .execution import (
     complete_events as complete_events,
 )
 from .execution import (

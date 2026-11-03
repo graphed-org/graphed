@@ -118,7 +118,7 @@ def test_a_failing_step_raises_at_its_line() -> None:
     with pytest.raises(StageError) as raised:
         list(gd.replay(_plan(broken), 0).steps())
     assert raised.value.frames[0].filename == __file__
-    assert (raised.value.op, raised.value.opt_level) == ("external", 0)
+    assert (raised.value.op, raised.value.opt_level) == ("map '_explode'", 0)
 
 
 def test_rows_that_do_not_line_up_fail_in_replay_as_in_the_run() -> None:
@@ -229,7 +229,7 @@ def test_replay_lowers_alike_with_and_without_outputs(reduced: Any) -> None:
         [(s.node.op, s.node.kind, s.node.boundary) for s in gd.replay(plan, 0, *given).steps()]
         for given in ((), (total,))
     )
-    assert ("external", "external", True) in from_plan
+    assert ("map '_double'", "external", True) in from_plan
     assert from_plan == as_written
 
 

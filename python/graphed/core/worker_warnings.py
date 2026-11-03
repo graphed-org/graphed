@@ -113,10 +113,12 @@ class Warned:
     caught: Mapping[tuple[type[Warning], str], tuple[str, int, str]]
 
 
-def carrying(value: Any, caught: _Caught, chunk: str) -> Any:
-    """Return ``value``, carrying ``caught`` if there is any."""
+def carrying(value: Any, caught: _Caught, chunk: str | Callable[[], str]) -> Any:
+    """Return ``value``, carrying ``caught`` if any; a callable ``chunk`` is called only then."""
     if not caught:
         return value
+    if not isinstance(chunk, str):
+        chunk = chunk()
     return Warned(
         value,
         {(_carried(kind), message): (*where, chunk) for (kind, message), where in caught.items()},

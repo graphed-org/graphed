@@ -26,7 +26,14 @@ from .array import Array, BoundMethod, apply
 from .backend import Backend, Form, ParamValue
 from .by_label import impact_by_label, read_columns_by_label
 from .context import Explanation, explain, explain_variations
-from .errors import GraphedError, GraphedTypeError, GraphedWarning, OutputTypeError, PointError
+from .errors import (
+    GraphedError,
+    GraphedTypeError,
+    GraphedWarning,
+    OutputTypeError,
+    PointError,
+    WorkerLostError,
+)
 from .execute import CompiledGraph, compile_ir, evaluate_ir, refuse_chunk_partials
 from .materialization import PlanPieces, head, materialize
 from .projection import (
@@ -99,6 +106,7 @@ __all__ = [
     "Provenance",
     "Session",
     "Varied",
+    "WorkerLostError",
     "aggregate_plan",
     "apply",
     "broadcast_like",

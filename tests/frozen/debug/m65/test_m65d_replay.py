@@ -312,9 +312,10 @@ def test_failing_task_raises_at_its_node(tmp_path: Path) -> None:
     m = ev.x.map(_fail_on_key1, name="fail")
     y = gak.sum(m * 2.0, axis=None)
     plan = _plan(y, store=tmp_path / "cap")
-    with pytest.raises(gd.StageError):
+    with pytest.raises(gd.StageError) as ran:
         SequentialRunner().run(plan)
-    part = str(_task(plan, 1).partition)
+    part = f"chunk 2/4 of {_task(plan, 1).partition.uri} (entries {ROWS}-{2 * ROWS})"
+    assert ran.value.partition == part
 
     r = gd.replay(plan, 1, y)
     assert r.input_source == "store"
@@ -329,7 +330,7 @@ def test_failing_task_raises_at_its_node(tmp_path: Path) -> None:
         gd.lower(s, Array(s, m.node_id), opt_level=0), m.node_id, part, err.__cause__
     )
     assert err.opt_level == 0
-    assert err.op == "external" == want.op
+    assert err.op == "map 'fail'" == want.op == ran.value.op
     assert err.partition == part
     assert err.user_frame.lineno == s.provenance(m).lineno
     assert len(err.frames) >= 2
