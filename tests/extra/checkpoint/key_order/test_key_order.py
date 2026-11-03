@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copyreg
 import json
 import logging
 import numbers
@@ -10,7 +11,7 @@ import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import awkward as ak
 import key_order_helpers as h
@@ -215,3 +216,70 @@ def test_a_durable_plan_warns_through_resumable(
     Store(tmp_path).record_done("other", "f.root@0:10", Store(tmp_path).put(b"x"))
     resumable(build(b"two", h.parts(0)), str(tmp_path))
     assert len(warned()) == 1
+
+
+def _array() -> ak.Array:
+    return ak.Array({"x": [1.0, 2.0], "y": [0.0, 1.0]})
+
+
+@pytest.mark.parametrize("held", [_array, lambda: ak.Record({"x": 1.0})], ids=["array", "record"])
+def test_reading_awkward_attrs_moves_no_key(held: Callable[[], Any]) -> None:
+    value = held()
+    before = _key_digest(value)
+    assert value._attrs is None
+    assert value.attrs == {}
+    assert value._attrs is not None
+    assert _key_digest(value) == before
+
+
+def test_a_resume_after_reading_the_array_reuses_every_task(tmp_path: Path) -> None:
+    data = _array()
+    plan = h.runtime(lambda partition, resources: float(len(data)), h.parts(0, 1))
+    assert run(plan, tmp_path) == 0
+    assert data.attrs == {}
+    assert run(plan, tmp_path) == 2
+
+
+def test_transient_awkward_attrs_key_as_unset_and_stay_on_the_array() -> None:
+    held = ak.Array([1.0], attrs={"@live": 1})
+    assert _key_digest(held) == _key_digest(ak.Array([1.0]))
+    assert held.attrs == {"@live": 1}
+
+
+def test_awkward_attrs_with_content_still_key() -> None:
+    held = (None, {"a": 1}, {"a": 2}, {"a": 1, "@live": 3})
+    keys = [_key_digest(ak.Array([1.0], attrs=attrs)) for attrs in held]
+    assert keys[0] not in keys[1:]
+    assert keys[1] != keys[2]
+    assert keys[1] == keys[3]
+
+
+class _Marked(ak.Array):  # type: ignore[misc]
+    validated: ClassVar[list[int]] = []
+
+    def __awkward_validation__(self) -> None:
+        self.validated.append(1)
+
+
+def _marked(mark: int) -> Any:
+    array = ak.with_name(ak.Array([{"x": 1.0}]), "Marked", behavior={("*", "Marked"): _Marked})
+    array._mark = mark
+    assert array.attrs == {}
+    return array
+
+
+def test_a_registered_reducer_of_a_behavior_class_still_keys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(copyreg.dispatch_table, _Marked, lambda a: (int, (a._mark,)))
+    assert type(_marked(1)) is _Marked
+    assert _key_digest(_marked(1)) == _key_digest(_marked(1))
+    assert _key_digest(_marked(1)) != _key_digest(_marked(2))
+
+
+def test_keying_a_read_array_reruns_no_validator() -> None:
+    held = _marked(1)
+    assert _Marked.validated
+    _Marked.validated.clear()
+    _key_digest(held)
+    assert _Marked.validated == []
