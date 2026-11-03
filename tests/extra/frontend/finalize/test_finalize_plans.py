@@ -30,7 +30,6 @@ def test_aggregate_plan_finalizes_the_combined_value() -> None:
         calls.append(v)
         return ("final", float(np.sum(v)))
 
-    assert _plan().finalize is None
     assert SequentialRunner().run(_plan()).value.tolist() == [10.0]
     assert SequentialRunner().run(_plan(finalize=finalize)).value == ("final", 10.0)
     assert len(calls) == 1
@@ -38,7 +37,7 @@ def test_aggregate_plan_finalizes_the_combined_value() -> None:
 
 def test_collate_finalizes_each_name_by_its_own_plan() -> None:
     plain = collate({"a": _plan(), "b": _plan(partitions=())})
-    assert plain.finalize is None
+    assert SequentialRunner().run(plain).value["a"].tolist() == [10.0]
     collated = collate(
         {
             "a": _plan(finalize=lambda v: ("a", v.tolist())),

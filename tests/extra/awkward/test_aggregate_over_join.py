@@ -42,6 +42,10 @@ def _labelled(compiled: Any) -> tuple[Any, ...]:
     return tuple((key, (("sig_up",), frame)) for key, frame in compiled.correspondence.frames)
 
 
+def _doubled(value: float) -> float:
+    return value * 2
+
+
 def _listed(value: tuple[float, ...]) -> Any:
     return list(value)
 
@@ -221,6 +225,40 @@ def test_a_positional_join_of_one_source_runs_per_partition(tmp_path: Path) -> N
     joined = graphed.join(left[["x"]], left[["run"]], how="positional")
     plan = graphed.aggregate_plan(gak.sum(joined.x), reduce=_sums, combine=_add, empty=_zero)
     assert SequentialRunner().run(plan).value == (66.0,)
+
+
+@pytest.mark.parametrize("how", ["positional", "inner"])
+def test_a_join_folds_each_output_by_default(tmp_path: Path, how: str) -> None:
+    joined = _joined(tmp_path, how)
+    plan = graphed.aggregate_plan(
+        gak.sum(joined.x), gak.count(joined.x), gak.max(joined.y), steps_per_file=2
+    )
+    assert SequentialRunner().run(plan).value == (66.0, 12, 22.0)
+
+
+@pytest.mark.parametrize(("first", "expected"), [(9, (3, 9.0, 22.0)), (12, (0, None, None))])
+def test_a_default_fold_skips_destinations_with_no_rows(
+    tmp_path: Path, first: int, expected: tuple[Any, ...]
+) -> None:
+    left, right = _pair(tmp_path)
+    kept = right[right.event >= 2**33 + first]
+    joined = graphed.join(left, kept, on=["run", "event"])
+    plan = graphed.aggregate_plan(
+        gak.count(joined.x), gak.min(joined.x), gak.max(joined.y), steps_per_file=8
+    )
+    assert SequentialRunner().run(plan).value == expected
+
+
+def test_a_default_fold_over_a_join_runs_finalize(tmp_path: Path) -> None:
+    joined = _joined(tmp_path, "positional")
+    plan = graphed.aggregate_plan(gak.sum(joined.x), finalize=_doubled)
+    assert SequentialRunner().run(plan).value == 132.0
+
+
+def test_a_staged_plan_refuses_floating_point_traps(tmp_path: Path) -> None:
+    joined = _joined(tmp_path, "positional")
+    with pytest.raises(TypeError, match="runs in stages"):
+        graphed.raise_on_floating_point(graphed.aggregate_plan(gak.sum(joined.x)))
 
 
 def test_a_staged_plan_is_not_collated(tmp_path: Path) -> None:

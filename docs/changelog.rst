@@ -37,8 +37,18 @@ positional, with several outputs. The plan is the join's, stage by stage, so it 
 ``read_by=`` or ``opt_level=0``; it cannot be collated. ``graphed.join_plan`` takes several outputs
 with ``reduce``, ``combine`` and ``empty``. A keyed join of one source, which ran per chunk and lost
 its matches across chunks, is refused by every partitioned plan and write. ``aggregate_plan`` is
-annotated ``Plan[V] | DurablePlanV2``: code that reads ``plan.tasks`` or ``plan.process`` narrows
-with ``isinstance(plan, graphed.core.Plan)``. ``graphed.debug.replay`` refuses a join's plan.
+annotated ``Plan[Any] | DurablePlanV2``: code that reads ``plan.tasks`` or ``plan.process`` narrows
+with ``isinstance(plan, graphed.core.Plan)``. ``graphed.debug.replay`` and
+``graphed.raise_on_floating_point`` refuse a join's plan.
+
+``SequentialRunner`` stands in for the pooled runners
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``with SequentialRunner() as runner:`` works, and it gains ``submit``, ``close`` and
+``max_in_flight``, so swapping a runner to debug changes only the line that builds it; the pool's
+sizing arguments do not carry over. ``submit`` runs the plan before it returns a finished
+``concurrent.futures.Future``, which holds the result or the failure, so a paused ``control`` blocks
+the call and a cancel sent after it lands on the next run.
 
 Plans returned wrong values for row-axis operations, and now refuse them
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -105,6 +115,18 @@ also written at analysis.py:6: ...)``. A line that runs again, as a re-run noteb
 counts once. ``Session.provenance`` answers for the array you pass it. Recording and checkpoint keys
 are unchanged, and a plan's bytes are unless a line it names repeats an expression.
 
+Division by zero stops a run if you ask, and a worker's warnings reach the driver
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``graphed.raise_on_floating_point(plan)`` makes a division by zero, an overflow or an invalid
+  value raise a ``StageError`` at the recording line, naming the chunk, on any runner. Task keys
+  do not change (#190).
+* A warning raised in a worker process is issued on the driver, once per message per run, naming
+  the first chunk that raised it. ``warnings.catch_warnings(record=True)`` around ``run`` catches
+  it. In a worker process, ``RuntimeWarning`` is now shown every time rather than once per location,
+  so that a worker that outlives a run warns again on the next.
+* Every plan from ``aggregate_plan`` now has a ``finalize``, and its ``combine`` is a wrapper.
+
 ``graphed.materialize`` evaluates anything deferred
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -127,9 +149,26 @@ are unchanged, and a plan's bytes are unless a line it names repeats an expressi
   (``uproot.graphed``, coffea) no longer raises ``should never have been encountered``: the
   awkward backend's ``concat`` joins what was read and keeps the unread fields, unread.
 
+Whole-dataset sums need no ``reduce``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``aggregate_plan`` takes ``reduce``, ``combine`` and ``empty`` together or not at all. Without them,
+each output must be an ``axis=None`` ``sum``, ``count``, ``count_nonzero``, ``any``, ``all``, ``min``
+or ``max``, and ``run(plan).value`` is its value, or a tuple for several::
+
+    plan = graphed.aggregate_plan(gak.sum(os_mask), gak.sum(ev.MET_pt > 50))
+    n_os, n_met = runner.run(plan).value
+
+``min`` and ``max`` skip a chunk with no rows, and NaN wins as it does in ``ak.max``. A float sum's
+bits are fixed by the runner family and the partition count, so a pool's can differ from
+``SequentialRunner``'s in the last places. A per-event output, ``mean``, ``var``, ``std`` and any
+other reduction refuse, naming the output, as do ``writes=`` without a ``reduce``.
+
 Fixes
 ~~~~~
 
+* The checkpoint guide says ``run_resumable`` and ``run_shuffle_resumable`` keep results separate
+  from ``resumable``'s, and the warning that no task was reused names that cause (#191).
 * A behavior-carrying plan resumes across processes. The Session backend's behavior ships, and keys,
   in an order independent of how it was built: a behavior assembled from sets (coffea's NanoEvents)
   gave every process its own ``resumable`` and ``run_shuffle_resumable`` keys and shuffle plan
@@ -143,6 +182,12 @@ Fixes
   ``graphed.checkpoint`` when a run reuses no task from a store that holds results for its
   partitions. Those keys differ from this run's, which was silent; another analysis of the same
   partitions in one store warns too.
+* ``to_parquet(select=)`` with a record and masks over two sources raises an "exactly one source"
+  ``TypeError`` at the call, instead of a bare unpack ``ValueError``.
+* ``copy.deepcopy`` of a recorded ``Array``, a ``Varied``, or anything holding one works, which
+  raised ``cannot pickle 'builtins.GraphStore' object``. The copy shares its Session, event
+  context and recorded lines; ``copy.copy`` and ``copy.deepcopy`` of a Session or a context
+  return it.
 
 0.0.10
 ------

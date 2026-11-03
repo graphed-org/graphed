@@ -168,6 +168,12 @@ class Session:
         # (evaluator key, *input types) -> what tracing that function gave
         self._fn_traced: dict[tuple[str, ...], Form | None] = {}
 
+    def __deepcopy__(self, memo: dict[int, Any] | None = None) -> Session:
+        """Return this Session: one graph has one Session, so a copy shares what it records."""
+        return self
+
+    __copy__ = __deepcopy__
+
     def __enter__(self) -> Session:
         """Open a scope: array-less reads in this context record here until it exits."""
         _scopes.set((*_scopes.get(), self))

@@ -21,7 +21,7 @@ from .accessors import (
     variations,
     weight,
 )
-from .aggregate import aggregate_plan, collate, resolve_backend
+from .aggregate import aggregate_plan, collate, raise_on_floating_point, resolve_backend
 from .array import Array, BoundMethod, apply
 from .backend import Backend, Form, ParamValue
 from .by_label import impact_by_label, read_columns_by_label
@@ -123,6 +123,7 @@ __all__ = [
     "nominal",
     "pack_key",
     "points",
+    "raise_on_floating_point",
     "read_columns",
     "read_columns_by_label",
     "refuse_chunk_partials",
