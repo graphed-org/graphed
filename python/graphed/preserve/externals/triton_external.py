@@ -38,7 +38,7 @@ def triton_content_hash(payload: bytes) -> str:
     return _canonical_json_hash(b"triton-descriptor-v1", payload)
 
 
-def _check_triton_params(params: Mapping[str, Any]) -> None:
+def _check_triton_params(params: Mapping[str, Any], _payload: bytes, _n_inputs: int) -> None:
     if ("url" in params) == ("service" in params):
         raise PreserveError(
             "a Triton node names exactly one of params['url'] or params['service']"
