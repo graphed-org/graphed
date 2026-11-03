@@ -13,10 +13,9 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 
 from graphed import Array, Session
-from graphed.aggregate import read_label
 from graphed.core import Partition
 from graphed.errors import raising_frame
-from graphed.materialization import _partition_chunk, _partition_source
+from graphed.materialization import _partition_chunk
 
 from .errors import SourceFrame, StageError
 from .lowering import LoweredGraph, lower
@@ -94,24 +93,18 @@ def run(
         )
     lowered = lower(session, array, opt_level=opt_level)
     backend = session.backend
-    chunks = {} if partition is None else _partition_chunk([array], partition)
-    read: list[object] = []
+    chunks: dict[int, Callable[[], object]] = {}
+    sampled: Callable[[], str] | None = None
+    if partition is not None:
+        nid, read, sampled = _partition_chunk([array], partition)
+        chunks[nid] = read
 
     def where() -> str:
-        if label is not None:
-            return label
-        if partition is None:
-            return "sample"
-        # a plan's task names this chunk the same way
-        _, data = _partition_source([array], partition)
-        return read_label(data, partition, read[-1] if read else None)
+        return label if label is not None else "sample" if sampled is None else sampled()
 
     def on_source(nid: int) -> object:
         try:
-            if nid not in chunks:
-                return session.source_value(nid)
-            read.append(chunks[nid]())
-            return read[-1]
+            return chunks[nid]() if nid in chunks else session.source_value(nid)
         except StageError:
             raise
         except Exception as exc:

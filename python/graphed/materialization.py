@@ -235,25 +235,33 @@ def _read_chunk(
         resources.close()
 
 
-def _partition_source(
-    arrays: Sequence[Array], partition: Partition
-) -> tuple[int, PartitionedSource]:
-    """Return the source node holding ``partition``, and its data."""
-    place = (partition.uri, partition.tree)
-    for nid, data in sources_read(arrays).items():
-        if isinstance(data, PartitionedSource) and any(
-            (p.uri, p.tree) == place for p in data.partitions(1)
-        ):
-            return nid, data
-    raise ValueError(f"no source of these results holds {partition}")
-
-
 def _partition_chunk(
     arrays: Sequence[Array], partition: Partition
-) -> dict[int, Callable[[], object]]:
-    """Return ``{source: its read of the chunk}`` for the source holding ``partition``."""
-    nid, data = _partition_source(arrays, partition)
-    return {nid: partial(_read_chunk, data, partition, _columns(data, arrays, nid))}
+) -> tuple[int, Callable[[], object], Callable[[], str]]:
+    """Return the source holding ``partition``, its read of the chunk, and the chunk's label.
+
+    The label is the one a plan's task gives the chunk, worked out only when asked for.
+    """
+    place = (partition.uri, partition.tree)
+    found = [
+        (nid, data)
+        for nid, data in sources_read(arrays).items()
+        if isinstance(data, PartitionedSource)
+        and any((p.uri, p.tree) == place for p in data.partitions(1))
+    ]
+    if not found:
+        raise ValueError(f"no source of these results holds {partition}")
+    nid, data = found[0]
+    read: list[object] = []
+
+    def chunk() -> object:
+        read.append(_read_chunk(data, partition, _columns(data, arrays, nid)))
+        return read[-1]
+
+    def label() -> str:
+        return read_label(data, partition, read[-1] if read else None)
+
+    return nid, chunk, label
 
 
 def _frontier(session: Session, arrays: Sequence[Array], nid: int, past: Set[int]) -> list[Array]:
@@ -481,14 +489,12 @@ def _sample_of(entries: int | None, partition: Partition | None) -> _Sample | No
     if entries is not None and partition is not None:
         raise ValueError("materialize takes entries= or partition=, not both")
     if partition is not None:
-        # a plan's task names this chunk the same way
         labels: list[Callable[[], str]] = []
 
         def reads(_: Session, arrays: Sequence[Array]) -> dict[int, object]:
-            nid, data = _partition_source(arrays, partition)
-            chunk = _read_chunk(data, partition, _columns(data, arrays, nid))
-            labels.append(partial(read_label, data, partition, chunk))
-            return {nid: chunk}
+            nid, chunk, label = _partition_chunk(arrays, partition)
+            labels.append(label)
+            return {nid: chunk()}
 
         return _Sample(reads, lambda: labels[-1](), chunked=True)
     if entries is None:
