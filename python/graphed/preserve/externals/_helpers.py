@@ -93,7 +93,10 @@ def _parse_entry(
     entry: Any, n_inputs: int, *, allow_constants: bool, allow_groups: bool
 ) -> TemplateEntry:
     if isinstance(entry, str) and entry.startswith("$"):
-        i = int(entry[1:])
+        try:
+            i = int(entry[1:])
+        except ValueError as err:
+            raise PreserveError(f"call template slot {entry!r} is not '$<int>'") from err
         if not 0 <= i < n_inputs:
             raise PreserveError(
                 f"call template slot {entry} out of range (node has {n_inputs} inputs)"

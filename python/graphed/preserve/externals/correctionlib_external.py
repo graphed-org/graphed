@@ -191,14 +191,17 @@ def check_correctionlib_params(params: Mapping[str, Any], payload: bytes, n_inpu
     wanted = correction_inputs(payload, name, bool(params.get("compound", False)))
     try:
         template = _call_template(params, n_inputs)
-    except (PreserveError, ValueError) as err:  # int() of a malformed "$" slot raises ValueError
+    except PreserveError as err:
         raise _refused(str(err)) from err
     if template is None:  # the legacy (systematic, inputs[0]) call
         taken, has_array = 2, n_inputs > 0
-    elif template[0][:1] and template[0][0][0] == "named":
-        raise _refused(f"correction {name!r} takes args= as a list in input order, not a mapping")
     else:
-        taken, has_array = len(template[0]), any(kind == "slot" for kind, _ in template[0])
+        args = template[0]
+        if len(args) == 1 and args[0][0] == "named":
+            raise _refused(
+                f"correction {name!r} takes args= as a list in input order, not a mapping"
+            )
+        taken, has_array = len(args), any(kind == "slot" for kind, _ in args)
     if taken != len(wanted):
         raise _refused(
             f"correction {name!r} takes inputs ({', '.join(wanted)}); got {taken} positional "

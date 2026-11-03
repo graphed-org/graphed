@@ -277,7 +277,7 @@ def _external(ev: Any, params: dict[str, Any], *inputs: Any, payload: bytes = CS
         ({"name": "l1", "args": '{"pt": "$0"}'}, 1, "'l1' takes args= as a list"),
         ({"name": "jet_sf", "args": '{"syst": "n", "pt": "$0", "eta": "$0"}'}, 1, "as a list"),
         ({"name": "l1", "args": '["$7"]'}, 1, r"slot \$7 out of range"),
-        ({"name": "l1", "args": '["$x"]'}, 1, "invalid literal"),
+        ({"name": "l1", "args": '["$x"]'}, 1, r"slot '\$x' is not"),
         ({"name": "l1", "args": '["$0"'}, 1, "not valid JSON"),
         ({"name": "l1", "kwargs": '{"pt": "$0"}'}, 1, "does not take keyword arguments"),
     ],
