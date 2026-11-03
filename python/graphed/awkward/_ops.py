@@ -283,7 +283,7 @@ def _field(op: str, xs: Sequence[Any], p: Mapping[str, Any]) -> Any:
     # M18: not a record field -> a behavior property (vector's .pt/.mass, the coffea pattern);
     # works on the typetracer and real arrays alike when the array carries the behavior. An
     # unknown attribute raises here -> a record-time GraphedTypeError.
-    if not isinstance(x, ak.Array | ak.Record):  # a typetracer scalar's attributes are no fields
+    if not isinstance(x, ak.Array | ak.Record):  # a scalar has no fields
         raise AttributeError(_no_field(x, name))
     try:
         return getattr(x, name)
