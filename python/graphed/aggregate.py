@@ -32,7 +32,6 @@ from graphed.core.worker_warnings import (
     WarnedFinalize,
     carrying,
     keeping_warnings,
-    mark_driver,
     on_value,
 )
 
@@ -738,7 +737,6 @@ def aggregate_plan(
         partitions = data.partitions(steps_for(data, steps_per_file))
     tasks = tuple(Task(i, p) for i, p in enumerate(partitions))
     _refuse_shared_parts((process, t.partition) for t in tasks)
-    mark_driver()
     return Plan(
         process=process,
         combine=WarnedCombine(_adopting(by_value(combine), factory)),
