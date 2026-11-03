@@ -248,7 +248,7 @@ class _PartitionReduce(Generic[V]):
                 )
             else:
                 result = self._captured(chunk, partition, backend)
-        return cast("V", carrying(result, caught, chunk_label(partition)))
+        return cast("V", carrying(result, caught, self._label(partition, chunk)))
 
     def floating_point(self) -> contextlib.AbstractContextManager[object]:
         """Return what a task evaluates under: numpy's own state, unless it raises."""

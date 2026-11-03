@@ -181,7 +181,7 @@ def test_a_warning_and_an_error_name_a_chunk_alike(leave_driver: Callable[[], No
     assert isinstance(partial, Warned)
     with pytest.raises(StageError) as raised:
         raise_on_floating_point(plan).process(partition, LocalResources())
-    assert {chunk for *_, chunk in partial.caught.values()} == {"chunk 1/3 of mem://events"}
+    assert {chunk for *_, chunk in partial.caught.values()} == {raised.value.partition}
     assert raised.value.partition.startswith("chunk 1/3 of mem://events")
 
 
