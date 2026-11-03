@@ -120,6 +120,7 @@ def build_plan(
         steps_per_file=N_PARTITIONS,
         on_compiled=hook,
     )
+    assert isinstance(plan, Plan)
     return plan, seen[0], tags
 
 

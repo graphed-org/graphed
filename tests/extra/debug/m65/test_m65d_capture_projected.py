@@ -94,6 +94,7 @@ def test_a_captured_projected_read_replays_as_the_run(tmp_path: Path, projected:
     ev = from_parquet(s, "events", str(tmp_path / "d.parquet"))
     y = gak.sum(ev.x, axis=None)
     built = aggregate_plan(y, reduce=_first, combine=_add, empty=_zero, store=tmp_path / "capture")
+    assert isinstance(built, Plan)
     assert isinstance(built.process, _PartitionReduce)
     plan: Plan[float] = dataclasses.replace(
         built,
