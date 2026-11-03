@@ -20,7 +20,7 @@ import graphed.debug as gd
 import graphed.numpy as gnp
 from graphed.awkward import AwkwardBackend, AwkwardForm, from_awkward, gak
 from graphed.awkward.io import _file_tables, from_parquet, read_parquet_partition, to_parquet
-from graphed.core import Partition
+from graphed.core import Partition, Plan
 from graphed.core.execution import SequentialRunner
 from graphed.core.plan import _partition_bytes, _partition_from_json, _partition_json
 from graphed.errors import PackKeyError, StageError
@@ -298,6 +298,7 @@ def test_partition_reproduces_a_tasks_failure() -> None:
         empty=lambda: 0,
         backend=lambda: ev.session.backend,
     )
+    assert isinstance(plan, Plan)
     with pytest.raises(StageError) as ran:
         SequentialRunner().run(plan)
     with pytest.raises(StageError) as again:
@@ -378,6 +379,7 @@ def test_a_pack_key_overflow_in_a_plan_names_the_line_and_the_partition(tmp_path
         empty=lambda: 0,
         backend=lambda: ev.session.backend,
     )
+    assert isinstance(plan, Plan)
     with pytest.raises(PackKeyError) as info:
         SequentialRunner().run(plan)
     assert info.value.user_frame.source.startswith("graphed.pack_key")
