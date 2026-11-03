@@ -27,7 +27,7 @@ from graphed.shuffle import join_blocks
 
 from . import functions as gak
 from . import join, payloads, shuffle
-from ._ops import apply
+from ._ops import _INTROSPECT_EAGER, _no_field, apply
 from .array import AwkwardArray
 
 
@@ -185,9 +185,6 @@ class AwkwardForm:
 _BOUNDARY = frozenset(
     {"source", "external", "correction", "onnx", "map", "ak.sum", "ak.any", "ak.all", "ak.count"}
 )
-# ak.Array descriptors the record-time typetracer answers as the data would; it does not carry the
-# source's attrs/behavior/named axes, nor a known length, so those are refused
-_INTROSPECT_EAGER = frozenset({"fields", "type", "typestr", "ndim", "is_tuple", "positional_axis"})
 
 
 _EXTERNAL = frozenset({"map", "correction", "onnx", "external"})
@@ -455,12 +452,17 @@ class AwkwardBackend:
         function is a "method" the frontend hands back as a callable, ak.Array's own descriptors
         (`fields`, `ndim`, ...) are "introspection" answered by `introspect`, and anything else
         that resolves is a "property" recorded as a `field` op. An unresolved name raises
-        `AttributeError` and the frontend keeps today's path.
+        `AttributeError` saying so, and the frontend still records the `field` op.
         """
         tt = self._with_behavior(form.tt)
+        if not isinstance(tt, ak.Array | ak.Record):
+            raise AttributeError(_no_field(tt, name))
         if name in tt.fields:
             return "field"
-        static = inspect.getattr_static(tt, name)
+        try:
+            static = inspect.getattr_static(tt, name)
+        except AttributeError:
+            raise AttributeError(_no_field(tt, name)) from None
         # the PROPERTY side is the closed set (a data descriptor or a cached_property is read
         # like a field); anything else that is callable or a descriptor is a method, so a method
         # descriptor the stdlib adds later (partialmethod, singledispatchmethod, ...) still counts
