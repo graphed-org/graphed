@@ -21,14 +21,14 @@ from .accessors import (
     variations,
     weight,
 )
-from .aggregate import aggregate_plan, collate, resolve_backend
+from .aggregate import aggregate_plan, collate, raise_on_floating_point, resolve_backend
 from .array import Array, BoundMethod, apply
 from .backend import Backend, Form, ParamValue
 from .by_label import impact_by_label, read_columns_by_label
 from .context import Explanation, explain
-from .errors import GraphedError, GraphedTypeError, OutputTypeError, PointError
+from .errors import GraphedError, GraphedTypeError, GraphedWarning, OutputTypeError, PointError
 from .execute import CompiledGraph, compile_ir, evaluate_ir, refuse_chunk_partials
-from .materialization import PlanPieces, materialize
+from .materialization import PlanPieces, head, materialize
 from .projection import (
     CONSERVATIVE,
     BufferNeed,
@@ -60,6 +60,7 @@ VERB_DISPOSITIONS: dict[str, str] = {
     "broadcast_like": "broadcasting",
     "compile_ir": "refusing",
     "context_of": "eager-metadata",
+    "head": "refusing",
     "impact_by_label": "expanding",
     "join": "refusing",
     "join_plan": "refusing",
@@ -86,6 +87,7 @@ __all__ = [
     "Form",
     "GraphedError",
     "GraphedTypeError",
+    "GraphedWarning",
     "Kind",
     "OnFail",
     "OutputTypeError",
@@ -111,6 +113,7 @@ __all__ = [
     "expanding",
     "explain",
     "handle_opaque",
+    "head",
     "impact_by_label",
     "is_enabled",
     "join",
@@ -122,6 +125,7 @@ __all__ = [
     "nominal",
     "pack_key",
     "points",
+    "raise_on_floating_point",
     "read_columns",
     "read_columns_by_label",
     "refuse_chunk_partials",

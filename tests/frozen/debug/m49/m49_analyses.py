@@ -212,6 +212,7 @@ def plan_for(
         steps_per_file=2,
         on_compiled=hook,
     )
+    assert isinstance(plan, Plan)
     return session, out, poisoned, plan
 
 

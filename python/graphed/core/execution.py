@@ -21,6 +21,7 @@ import threading
 import time
 from collections import OrderedDict
 from collections.abc import Callable, Iterable, Sequence
+from concurrent.futures import Future
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import (
@@ -157,6 +158,8 @@ class Partition:
     entry_stop: int = 0
     blind_step: int | None = None
     blind_n_steps: int | None = None
+    #: a blind partition's cap on its entries; only its reader knows how many the file has
+    blind_limit: int | None = None
 
     @classmethod
     def blind(cls, uri: str, tree: str, step: int, n_steps: int) -> Partition:
@@ -167,20 +170,29 @@ class Partition:
 
     @property
     def is_blind(self) -> bool:
-        """Whether this partition's entry range is not resolved yet."""
-        return self.blind_step is not None
+        """Whether its reader may move its range; a capped one is exact, but unresolved too."""
+        return self.blind_step is not None and self.blind_limit is None
 
     def resolve(self, num_entries: int) -> Partition:
         """Resolve a blind partition against the file's actual entry count.
 
-        Every entry is read exactly once across the file's n_steps partitions. A non-blind
-        partition returns itself.
+        Every entry is read exactly once across the file's n_steps partitions. A partition with no
+        blind step returns itself.
         """
         if self.blind_step is None or self.blind_n_steps is None:
             return self
         start = (self.blind_step * num_entries) // self.blind_n_steps
         stop = ((self.blind_step + 1) * num_entries) // self.blind_n_steps
+        if self.blind_limit is not None:
+            stop = min(stop, start + self.blind_limit)
         return Partition(self.uri, self.tree, start, stop)
+
+    def first(self, n: int) -> Partition:
+        """Return the first ``n`` entries of its unmoved range, or all of them if fewer."""
+        if self.blind_step is not None:
+            limit = n if self.blind_limit is None else min(n, self.blind_limit)
+            return replace(self, blind_limit=limit)
+        return replace(self, entry_stop=min(self.entry_stop, self.entry_start + n))
 
     @property
     def n_entries(self) -> int:
@@ -665,7 +677,7 @@ def worker_monitor_factory(monitor: Monitor | None) -> Callable[[], Monitor] | N
 
 
 def partition_label(partition: Partition) -> str:
-    """Return a short human label for a partition (dashboard display only).
+    """Return a short human label for a partition (display only).
 
     A blind one names its step.
     """
@@ -739,12 +751,49 @@ class SequentialRunner:
     emits no task events.
 
     The plan's ``finalize`` runs on the value it returns (:func:`finalize_result`).
+
+    It has the shape of a pooled runner, so one ``with`` block serves both: ``submit`` runs the
+    plan before returning a finished future, and ``close`` has nothing to release.
     """
+
+    #: ``submit`` returns once its plan has finished, so none is ever waiting on another.
+    max_in_flight = 1
 
     def __init__(self, monitor: Monitor | None = None, control: RunControl | None = None) -> None:
         """Run in-process, reporting to ``monitor`` and obeying ``control``."""
         self.monitor = monitor
         self.control = control
+
+    def __enter__(self) -> SequentialRunner:
+        """Return the runner."""
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        """Close the runner."""
+        self.close()
+
+    def close(self) -> None:
+        """Do nothing: every plan has finished, and the runner holds no pool."""
+
+    @overload
+    def submit(self, plan: Plan[R]) -> Future[ExecResult[R]]: ...
+    @overload
+    def submit(self, plan: DurablePlanV2) -> Future[ExecResult[Any]]: ...
+    def submit(self, plan: Plan[R] | DurablePlanV2) -> Future[Any]:
+        """Run ``plan`` and return a finished future of its result, or of the failure.
+
+        The run holds the caller: a paused ``control`` blocks this call, and a cancel sent after it
+        returns lands on the next run.
+        """
+        fut: Future[Any] = Future()
+        try:
+            fut.set_result(self.run(plan))
+        except Exception as exc:
+            fut.set_exception(exc)
+        try:
+            return fut
+        finally:
+            del fut  # a failure's traceback holds this frame, so ``fut`` here would be a cycle
 
     @overload
     def run(self, plan: Plan[R]) -> ExecResult[R]: ...

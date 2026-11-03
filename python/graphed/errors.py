@@ -13,6 +13,10 @@ class GraphedError(Exception):
     """Base class for graphed frontend errors."""
 
 
+class GraphedWarning(UserWarning):
+    """Something recorded, but not as well as it could have been."""
+
+
 class PointError(GraphedError):
     """A ``points=`` entry that does not fit the situation it names (design §4).
 
@@ -45,6 +49,10 @@ class GraphedTypeError(GraphedError):
         super().__init__(msg)
 
 
+class SourceRowsError(GraphedTypeError, TypeError):
+    """An op pairing the rows of two partitioned sources, which need not be the same events."""
+
+
 class OutputTypeError(GraphedTypeError):
     """An External's value disagrees with the type its node declared.
 
@@ -54,6 +62,10 @@ class OutputTypeError(GraphedTypeError):
     def __reduce__(self) -> tuple[Any, ...]:
         """Pickle by constructor arguments."""
         return (type(self), (self.op, self.provenance, self.detail))
+
+
+class PackKeyOverflowError(ValueError):
+    """A key field too wide for ``pack_key``: its rows would collide, so the run stops here."""
 
 
 class MissingFieldError(GraphedTypeError, AttributeError):
@@ -164,3 +176,7 @@ class StageError(Exception):
                 self.variation,
             )
         )
+
+
+class PackKeyError(StageError, ValueError):
+    """A :class:`PackKeyOverflowError` at its recording line, still a ``ValueError``."""

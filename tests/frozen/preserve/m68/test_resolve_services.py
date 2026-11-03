@@ -53,7 +53,9 @@ def _elsewhere() -> Plan[Any]:
     """
     ev = new_events()
     parts = (Partition.blind("mem://elsewhere", "", 0, 1),)
-    return aggregate_plan(ev.x, reduce=_rows, combine=_cat, empty=list, partitions=parts)
+    plan = aggregate_plan(ev.x, reduce=_rows, combine=_cat, empty=list, partitions=parts)
+    assert isinstance(plan, Plan)
+    return plan
 
 
 def _plain(partition: Partition, resources: WorkerResources) -> list[int]:

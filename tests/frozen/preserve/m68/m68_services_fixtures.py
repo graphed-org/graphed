@@ -111,6 +111,8 @@ def _cat(a: list[list[float]], b: list[list[float]]) -> list[list[float]]:
 def values_plan(*outputs: Any, reduce: Any = _rows, services: Sequence[str] = ()) -> Plan[Any]:
     """One output row per output Array, over two partitions; ``services=`` only when given."""
     extra: dict[str, Any] = {"services": tuple(services)} if services else {}
-    return aggregate_plan(
+    plan = aggregate_plan(
         *outputs, reduce=reduce, combine=_cat, empty=list, steps_per_file=2, **extra
     )
+    assert isinstance(plan, Plan)
+    return plan
