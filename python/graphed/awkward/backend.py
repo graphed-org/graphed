@@ -20,6 +20,7 @@ from awkward.types._awkward_datashape_parser import LarkError
 
 from graphed import Array, Session
 from graphed.aggregate import resolved_backend
+from graphed.array import NEEDS_VALUES
 from graphed.backend import PYTHON_TYPES, Form
 from graphed.core import PayloadDescriptor
 from graphed.session import reader
@@ -498,10 +499,13 @@ class AwkwardBackend:
         leaf (M59 — the shape `metric_table(return_combinations=True)` answers in). Anything else
         raises.
         """
-        result = apply(
-            "method", [self._with_behavior(f.tt) for f in forms], params, behavior=self._behavior
-        )
-        return self._output_shape(result, params)
+        inputs = [self._with_behavior(f.tt) for f in forms]
+        name = str(params["method"])
+        static = inspect.getattr_static(inputs[0], name)
+        # ak.from_iter sniffs `hasattr(x, "to_list")`, so ak's own conversions refuse at the call
+        if any(static is inspect.getattr_static(c, name, None) for c in (ak.Array, ak.Record)):
+            raise TypeError(NEEDS_VALUES)
+        return self._output_shape(apply("method", inputs, params, behavior=self._behavior), params)
 
     def _output_shape(
         self, result: object, params: Mapping[str, object]

@@ -12,10 +12,10 @@ and method set). The idiom comes from the MEMBERS, never from the container.
 from __future__ import annotations
 
 import functools
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
-from ..array import Array, BoundMethod, handle_of, no_eager_value
+from ..array import Array, BoundMethod, EagerRefusals, handle_of
 from ..errors import GraphedError
 from .lineage import unify_contexts
 from .points import Point, restrict
@@ -27,7 +27,7 @@ RESERVED = ("node_id", "session")
 Member = Any  # an `Array`, or a `Varied` when the container is a registered weight factor (§2.1)
 
 
-class Varied:
+class Varied(EagerRefusals):
     """A mapping of universes, `"nominal"` first (§2.2)."""
 
     __slots__ = ("__weakref__", "_context", "_members", "_tags")
@@ -136,21 +136,6 @@ class Varied:
                 )
             return probe
         return expand(lambda member: getattr(member, name), (self,), {})
-
-    def __iter__(self) -> Iterator[Any]:
-        """Refuse iteration: a deferred value has no known length."""
-        raise TypeError(
-            "deferred graphed arrays are not iterable (unknown partitioned length); materialize "
-            "first"
-        )
-
-    def __bool__(self) -> bool:
-        """Refuse a truth value: a deferred value has none."""
-        raise no_eager_value("bool(...)", "truth value")
-
-    def __array__(self, dtype: object = None, copy: object = None) -> Any:
-        """Refuse an eager numpy value: a deferred value has none."""
-        raise no_eager_value("np.asarray(...)", "numpy value")
 
     def __repr__(self) -> str:
         """Show the labels this container carries."""
