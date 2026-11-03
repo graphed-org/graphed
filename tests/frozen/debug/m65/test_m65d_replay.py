@@ -133,7 +133,9 @@ def _plan(*outputs: Array, **kw: Any) -> Plan[Any]:
     kw.setdefault("reduce", _first)
     kw.setdefault("combine", _add)
     kw.setdefault("empty", _zero)
-    return aggregate_plan(*outputs, steps_per_file=4, **kw)
+    plan = aggregate_plan(*outputs, steps_per_file=4, **kw)
+    assert isinstance(plan, Plan)
+    return plan
 
 
 def _task(plan: Plan[Any], key: int) -> Task:
@@ -310,9 +312,10 @@ def test_failing_task_raises_at_its_node(tmp_path: Path) -> None:
     m = ev.x.map(_fail_on_key1, name="fail")
     y = gak.sum(m * 2.0, axis=None)
     plan = _plan(y, store=tmp_path / "cap")
-    with pytest.raises(gd.StageError):
+    with pytest.raises(gd.StageError) as ran:
         SequentialRunner().run(plan)
-    part = str(_task(plan, 1).partition)
+    part = f"chunk 2/4 of {_task(plan, 1).partition.uri} (entries {ROWS}-{2 * ROWS})"
+    assert ran.value.partition == part
 
     r = gd.replay(plan, 1, y)
     assert r.input_source == "store"
@@ -327,7 +330,7 @@ def test_failing_task_raises_at_its_node(tmp_path: Path) -> None:
         gd.lower(s, Array(s, m.node_id), opt_level=0), m.node_id, part, err.__cause__
     )
     assert err.opt_level == 0
-    assert err.op == "external" == want.op
+    assert err.op == "map 'fail'" == want.op == ran.value.op
     assert err.partition == part
     assert err.user_frame.lineno == s.provenance(m).lineno
     assert len(err.frames) >= 2
@@ -345,7 +348,7 @@ def test_failing_task_raises_at_its_node(tmp_path: Path) -> None:
 def test_diff_reports_a_difference(tmp_path: Path) -> None:
     _DROP.clear()
     _s, ev = _events(tmp_path)
-    rows = ev.x.map(_drop_after_first, name="drop")
+    rows = ev.x.map(_drop_after_first, name="drop", output_type="float64")
     plan = _plan(rows, reduce=_rows, combine=_rows_add, empty=_rows_empty, store=tmp_path / "cap")
     SequentialRunner().run(plan)
     d = gd.replay(plan, 0, rows).diff()

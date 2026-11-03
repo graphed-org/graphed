@@ -578,12 +578,16 @@ runner equals the uninterrupted run bit for bit.
     first reused: 0  result: [1499 1493 1518 1490]
     second reused: 6  result: [1499 1493 1518 1490]
 
-``store`` is the root every worker opens, not a store object: a directory, which must be on a
-filesystem every worker mounts, or an fsspec URL with ``storage_options``. Each worker thread
-writes its own journal under it. A worker that cannot reach it raises
+``store`` is the root every worker opens: a ``Store`` or a directory, which must be on a
+filesystem every worker mounts, or an ``FsspecStore`` or fsspec URL with ``storage_options``. Each
+worker thread writes its own journal under it. A worker that cannot reach it raises
 ``graphed.checkpoint.StoreUnavailableError`` naming the root; errors from your own code pass through
 unchanged. ``reused`` on the returned process (on each stage's, for a ``DurablePlanV2``) counts the
 tasks the store held, and the same count is logged at INFO on ``graphed.checkpoint``.
+
+``run_resumable`` and ``run_shuffle_resumable`` key a task by the process's spec, not by what a
+worker runs, so a store written by one is not reused by ``resumable`` or the reverse: every task
+runs again, as on an empty store, and a warning says none was reused. Pick one for a given store.
 
 **What the key sees.** The key is what a worker runs, pickled the way cloudpickle ships it, with
 only what carries no value removed: line numbers and file names, cloudpickle's per-process ids,
@@ -599,7 +603,8 @@ order, since that order picks a ufunc overload. Seven cases need a hand:
 - A ``reused`` of 0 after a restart, when nothing changed, means the process holds data ordered by
   set iteration (a list built from a set, say). Sort it, or set ``salt``. A run that reuses nothing
   from a store holding results for its partitions logs a warning on ``graphed.checkpoint`` naming
-  both counts; that store's keys differ from this run's.
+  both counts; that store's keys differ from this run's, as they do when another entry point wrote
+  it.
 - State a task fills on a class defined in ``__main__`` (a class-level cache) changes that class's
   key. Keep it on instances, or define the class in an importable module.
 - Set elements that only object identity tells apart (equal-valued instances) can recompute after a

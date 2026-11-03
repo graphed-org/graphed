@@ -12,15 +12,21 @@ import numpy as np
 import pytest
 
 from graphed import Session
-from graphed.awkward import AwkwardBackend, AwkwardForm, from_awkward, gak, payloads
+from graphed.awkward import AwkwardBackend, AwkwardForm, from_awkward, gak
 from graphed.awkward.payloads import correctionlib_contents_hash, onnx_weights_hash
 from graphed.preserve import CORRECTIONLIB_PLUGIN, XGBOOST_PLUGIN
-from graphed.preserve.externals import ExternalPlugin, record_external
+from graphed.preserve.externals import ExternalPlugin, correctionlib_external, record_external
 from graphed.preserve.externals._helpers import _HASH_MEMO
 
 N = 5
-CSET = json.dumps({"schema_version": 2, "corrections": []}).encode()
-OTHER_CSET = json.dumps({"schema_version": 2, "corrections": [], "description": "other"}).encode()
+_CORRECTIONS = [
+    {"name": name, "inputs": [{"name": "x", "type": "real"}]}
+    for name in ("sf", *(f"src{i}" for i in range(N)))
+]
+CSET = json.dumps({"schema_version": 2, "corrections": _CORRECTIONS}).encode()
+OTHER_CSET = json.dumps(
+    {"schema_version": 2, "corrections": _CORRECTIONS, "description": "other"}
+).encode()
 
 
 @pytest.fixture(autouse=True)
@@ -153,10 +159,14 @@ def test_record_external_hashes_a_payload_once_across_recorded_calls(
 
 
 def test_apply_correction_digests_one_payload_object_once(monkeypatch: pytest.MonkeyPatch) -> None:
-    payload = json.dumps({"schema_version": 2, "corrections": [], "description": "once"}).encode()
+    payload = json.dumps(
+        {"schema_version": 2, "corrections": _CORRECTIONS, "description": "once"}
+    ).encode()
     s, x = _x()
     digests = _count_parses(monkeypatch, hashlib, "sha256", payload)
-    identities = _count_parses(monkeypatch, payloads, "_correctionlib_identity", payload)
+    identities = _count_parses(
+        monkeypatch, correctionlib_external, "correctionlib_identity", payload
+    )
     arrs = [
         gak.apply_correction(payload, "sf", [x], lambda *a: a[0], args=["$0"]) for _ in range(N)
     ]

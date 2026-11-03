@@ -18,7 +18,7 @@ import graphed.awkward as ga
 import graphed.awkward.functions as gak
 import graphed.debug as gd
 from graphed.aggregate import _type_string, read_label
-from graphed.core import Partition, SequentialRunner, chunk_label
+from graphed.core import Partition, Plan, SequentialRunner, chunk_label
 from graphed.debug.report import RunReport
 from graphed.errors import SourceFrame
 
@@ -171,6 +171,7 @@ def test_blind_label_falls_back_to_the_chunk_size(tmp_path: Path, count: bool) -
     events = _source(tmp_path)
     output = gak.sum(events.x.map(_calib, name="calib"), axis=None)
     plan = graphed.aggregate_plan(output, reduce=_first, combine=_sum, empty=_zero)
+    assert isinstance(plan, Plan)
     shipped: Any = plan.process
     process = replace(shipped, reader=_Unknowing(shipped.reader, count=count))
     with pytest.raises(gd.StageError) as info:
@@ -251,3 +252,43 @@ def test_run_report_round_trips_a_lost_worker() -> None:
     loaded = RunReport.from_json(json.loads(json.dumps(report.to_json())))
     assert type(loaded.failure) is graphed.WorkerLostError
     assert loaded.failure == err
+
+
+def test_every_path_names_a_failing_map_and_its_chunk_alike(tmp_path: Path) -> None:
+    events = _source(tmp_path)
+    mapped = events.x.map(_calib, name="calib")
+    output = gak.sum(mapped, axis=None)
+    plan = graphed.aggregate_plan(
+        output, reduce=_first, combine=_sum, empty=_zero, store=tmp_path / "cap"
+    )
+    assert isinstance(plan, Plan)
+    with pytest.raises(gd.StageError) as ran:
+        SequentialRunner().run(plan)
+    partition = plan.tasks[0].partition
+    seen = [ran.value]
+    for again in (
+        lambda: graphed.materialize(mapped, partition=partition),
+        lambda: gd.run(events.session, mapped, partition=partition),
+        lambda: list(gd.replay(plan, plan.tasks[0].key, output).steps()),
+    ):
+        with pytest.raises(gd.StageError) as info:
+            again()
+        seen.append(info.value)
+    expected = ("map 'calib'", f"chunk 1/3 of {tmp_path / 'data.parquet'} (entries 0-10)")
+    assert [(err.op, err.partition) for err in seen] == [expected] * 4
+    with pytest.raises(gd.StageError) as traced:
+        gd.trace(mapped, entries=2)
+    assert traced.value.op == "map 'calib'"
+
+
+def test_a_quoted_map_name_keeps_the_graph_source_well_formed(tmp_path: Path) -> None:
+    events = _source(tmp_path)
+    mapped = events.x.map(_calib, name="it's").map(lambda a: a)
+    graph = gd.lower(events.session, mapped, opt_level=1)
+    assert [op.op for op in graph.ops][-2:] == ['map "it\'s"', "map '<lambda>'"]
+    mermaid = gd.visualize(graph, fmt="mermaid")
+    assert "map #quot;it's#quot;" in mermaid
+    assert "map '#lt;lambda#gt;'" in mermaid
+    assert all(line.count('"') == 2 for line in mermaid.splitlines() if "[" in line)
+    graphviz = gd.visualize(graph, fmt="graphviz")
+    assert 'map \\"it\'s\\"' in graphviz

@@ -47,6 +47,7 @@ def _captured(tmp_path: Path) -> tuple[Plan[Any], Array, gcp.Store]:
     plan = aggregate_plan(
         y, reduce=_first, combine=_add, empty=_zero, steps_per_file=4, store=root
     )
+    assert isinstance(plan, Plan)
     SequentialRunner().run(plan)
     return plan, y, gcp.Store(str(root))
 

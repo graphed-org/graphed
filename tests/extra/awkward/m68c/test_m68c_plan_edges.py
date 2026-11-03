@@ -57,7 +57,7 @@ def test_a_join_side_reading_no_partitioned_source_is_refused() -> None:
     graphed.join_plan(graphed.join(ev, lu, on=["run"]))
     with pytest.raises(TypeError, match="exactly two partitioned sources; the output reads 1"):
         graphed.join_plan(graphed.join(ev, table, on=["run"]))
-    both = gak.zip({"run": ev.run + lu.run})
+    both = gak.zip({"run": gak.concatenate([ev.run, lu.run])})
     with pytest.raises(
         TypeError, match="exactly one partitioned source; one reads \\['events', 'lumi'\\]"
     ):

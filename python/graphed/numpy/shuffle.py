@@ -16,10 +16,12 @@ from __future__ import annotations
 
 import hashlib
 import io
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any, cast
 
 import numpy as np
+
+from graphed.errors import PackKeyOverflowError
 
 #: the pinned §4 route hash (the golden vectors require exactly this; measured in exec-local's
 #: benchmark against a non-crypto alternative).
@@ -253,7 +255,7 @@ def merge_records(left: np.ndarray, right: np.ndarray, *, on: Sequence[str]) -> 
     return np.ma.MaskedArray(data, mask=mask)
 
 
-def pack_key(record: object, on: Sequence[str]) -> np.ndarray:
+def pack_key(record: object, on: Sequence[str], *, route: bool = False) -> np.ndarray:
     """Add a flat u64 ``__joinkey__`` column to a record from the ``on`` fields.
 
     It is big-endian integer bit-packing — ``run`` (first) most-significant … the last field
@@ -263,7 +265,8 @@ def pack_key(record: object, on: Sequence[str]) -> np.ndarray:
     Returns a structured ndarray (all original columns + ``__joinkey__``) so the exchange/join path
     can route on it directly. ponytail: pinned 20-bit-per-field HEP layout
     (``run<<40|lumi<<20|event`` for the 3-field key); wider keys / overflow→fixed-width-bytes is
-    Phase-2.
+    Phase-2. ``route`` keeps a value too wide for its field, for a key that only picks a
+    destination.
     """
     cols = _as_columns(record)
     names = [str(c) for c in on]
@@ -273,15 +276,24 @@ def pack_key(record: object, on: Sequence[str]) -> np.ndarray:
         )
     # F8: a field value >= 2**20 bleeds into the adjacent field and silently collides
     for nm in names:
-        if np.any(np.asarray(cols[nm]).astype(np.uint64) >= np.uint64(1 << 20)):
-            raise ValueError(
+        if not route and np.any(np.asarray(cols[nm]).astype(np.uint64) >= np.uint64(1 << 20)):
+            raise PackKeyOverflowError(
                 f"pack_key: field {nm!r} has a value >= 2**20 (overflow->fixed-width bytes is "
                 "Phase-2)"
             )
     key = _pack_key_column([cols[nm] for nm in names])
     cols["__joinkey__"] = key
+    return _structured(cols)
+
+
+def as_records(block: object) -> Any:
+    """Return a dict of columns as a structured ndarray, and any other block as it is."""
+    return _structured(block) if isinstance(block, dict) else block
+
+
+def _structured(cols: Mapping[str, np.ndarray]) -> np.ndarray:
     out_dt = np.dtype([(nm, np.asarray(v).dtype) for nm, v in cols.items()])
-    out = np.zeros(len(key), dtype=out_dt)
+    out = np.zeros(len(next(iter(cols.values()))), dtype=out_dt)
     for nm, v in cols.items():
         out[nm] = np.asarray(v)
     return out

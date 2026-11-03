@@ -15,6 +15,7 @@ import sysconfig
 import threading
 from dataclasses import dataclass
 from types import FrameType
+from typing import Any
 
 try:  # executing gives sub-expression text; degrade gracefully if unavailable
     import executing
@@ -84,6 +85,10 @@ class Site:
     provenance: Provenance
     #: the recordings this one read, which for a proxy of several recordings are those recordings
     reads: tuple[Site, ...] = ()
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> Site:
+        """Return this Site: sessions find recordings by identity, and they never change."""
+        return self
 
 
 _DISABLED = Provenance("<provenance-disabled>", 0)

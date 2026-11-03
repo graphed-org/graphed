@@ -52,12 +52,13 @@ def _session(value: Any) -> Session:
 def test_if_on_a_deferred_value_raises_at_the_users_line(make: Callable[[], Any]) -> None:
     value = make()
     count = _session(value).node_count()
-    with pytest.raises(GraphedTypeError, match=r"'bool\(\.\.\.\)'.*no truth value") as info:
+    with pytest.raises(GraphedTypeError, match=r"'bool\(\.\.\.\)'.*needs values") as info:
         line = sys._getframe().f_lineno + 1
         if value:
             pass
     assert info.value.provenance.lineno == line
-    assert "session.materialize" in str(info.value)
+    assert "graphed.materialize(x)" in str(info.value)
+    assert "graphed.head(x)" in str(info.value)
     assert _session(value).node_count() == count
 
 
@@ -67,7 +68,7 @@ def test_numpy_conversion_of_a_deferred_value_raises(
     make: Callable[[], Any], convert: Callable[[Any], Any]
 ) -> None:
     value = make()
-    with pytest.raises(GraphedTypeError, match=r"'np\.asarray\(\.\.\.\)'.*no numpy value") as info:
+    with pytest.raises(GraphedTypeError, match=r"'np\.asarray\(\.\.\.\)'.*needs values") as info:
         line = sys._getframe().f_lineno + 1
         convert(value)
     assert info.value.provenance.lineno == line
