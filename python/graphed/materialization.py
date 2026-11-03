@@ -482,15 +482,15 @@ def _sample_of(entries: int | None, partition: Partition | None) -> _Sample | No
         raise ValueError("materialize takes entries= or partition=, not both")
     if partition is not None:
         # a plan's task names this chunk the same way
-        labels: list[str] = []
+        labels: list[Callable[[], str]] = []
 
         def reads(_: Session, arrays: Sequence[Array]) -> dict[int, object]:
             nid, data = _partition_source(arrays, partition)
             chunk = _read_chunk(data, partition, _columns(data, arrays, nid))
-            labels.append(read_label(data, partition, chunk))
+            labels.append(partial(read_label, data, partition, chunk))
             return {nid: chunk}
 
-        return _Sample(reads, lambda: labels[-1], chunked=True)
+        return _Sample(reads, lambda: labels[-1](), chunked=True)
     if entries is None:
         return None
     if type(entries) is not int or entries < 1:

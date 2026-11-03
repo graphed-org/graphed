@@ -308,6 +308,25 @@ def test_partition_reproduces_a_tasks_failure() -> None:
     assert (again.value.cause_type, again.value.cause_message) == ("RuntimeError", "too large")
 
 
+def test_partition_counts_its_file_only_for_a_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    ev, files = _files(3, 3)
+    counted: list[Partition] = []
+
+    def num_entries(partition: Partition) -> int:
+        counted.append(partition)
+        return 3
+
+    monkeypatch.setattr(files, "num_entries", num_entries, raising=False)
+    part = files.partitions(1)[1]
+    graphed.materialize(ev.a, partition=part)
+    assert counted == []
+    bad = ev.a.map(_explode_above(-1.0), name="bad", output_type="float64")
+    with pytest.raises(StageError) as info:
+        graphed.materialize(bad, partition=part)
+    assert counted == [part]
+    assert info.value.partition == "chunk 1/1 of f1:t (entries 0-3)"
+
+
 def test_partition_refuses_rows_that_are_not_one_row_set() -> None:
     ev, files = _files(3)
     short = ev.a[:2]
