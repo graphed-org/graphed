@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import functools
 import multiprocessing
+import os
 import pickle
+import subprocess
+import sys
 import warnings
 from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor
@@ -27,8 +30,10 @@ from graphed.core.worker_warnings import (
     WarnedCombine,
     WarnedFinalize,
     carrying,
+    enter_worker,
     keeping_warnings,
     on_value,
+    process_id,
     without_warnings,
 )
 from graphed.debug import replay
@@ -107,14 +112,19 @@ def _spawned(plan: Plan[Any], pool: ProcessPoolExecutor) -> Any:
 
 @pytest.fixture(scope="module")
 def pool() -> Any:
-    with ProcessPoolExecutor(2, mp_context=multiprocessing.get_context("spawn")) as workers:
+    with ProcessPoolExecutor(
+        2,
+        mp_context=multiprocessing.get_context("spawn"),
+        initializer=enter_worker,
+        initargs=(process_id(),),
+    ) as workers:
         yield workers
 
 
 @pytest.fixture
 def leave_driver(monkeypatch: pytest.MonkeyPatch) -> Callable[[], None]:
-    """Call after building a plan, which marks this process a driver."""
-    return lambda: monkeypatch.setattr(worker_warnings, "_driver_pid", None)
+    """Mark this process a worker of another driver."""
+    return lambda: monkeypatch.setattr(worker_warnings, "_worker_pid", os.getpid())
 
 
 def _finalized(plan: Plan[Any], partial: Any) -> tuple[Any, list[warnings.WarningMessage]]:
@@ -163,6 +173,51 @@ def test_the_driver_leaves_warnings_alone() -> None:
     assert not isinstance(partial, Warned)
     assert [w.category for w in seen] == [RuntimeWarning]
     assert warnings.showwarning is warnings._showwarning_orig  # type: ignore[attr-defined]
+
+
+_LOADED = """
+import pickle, sys, warnings
+sys.path[:0] = {path!r}
+from graphed.core import SequentialRunner
+seen = []
+warnings.showwarning = lambda message, *args, **kwargs: seen.append(str(message))
+plan = pickle.loads(open({plan!r}, "rb").read())
+shown, filters = warnings.showwarning, list(warnings.filters)
+SequentialRunner().run(plan)
+print(repr((seen, warnings.showwarning is shown, warnings.filters == filters)))
+"""
+
+
+def test_a_plan_loaded_in_a_fresh_driver_warns_there_as_usual(tmp_path: Any) -> None:
+    plan = tmp_path / "plan.pkl"
+    plan.write_bytes(pickle.dumps(_plan()))
+    script = _LOADED.format(path=sys.path, plan=str(plan))
+    out = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True)
+    expected = (["divide by zero encountered in divide"], True, True)
+    assert out.stdout.strip() == repr(expected), out.stderr
+
+
+@pytest.mark.parametrize(
+    ("driver", "forked", "kept"),
+    [
+        (process_id, False, []),
+        (lambda: "elsewhere:1", False, ["task"]),
+        (process_id, True, ["task"]),
+    ],
+)
+def test_a_process_keeps_warnings_only_as_another_drivers_worker(
+    driver: Callable[[], str], forked: bool, kept: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(worker_warnings, "_worker_pid", None)
+    parent, pid = driver(), os.getpid()
+    if forked:
+        # a forked child keeps its parent's interpreter uuid under a new pid
+        monkeypatch.setattr(os, "getpid", lambda: pid + 1)
+    enter_worker(parent)
+    with warnings.catch_warnings(record=True), keeping_warnings() as caught:
+        warnings.simplefilter("always")
+        warnings.warn("task", RuntimeWarning, stacklevel=1)
+    assert [message for _, message in caught] == kept
 
 
 def test_finalize_runs_on_the_plain_value(leave_driver: Callable[[], None]) -> None:

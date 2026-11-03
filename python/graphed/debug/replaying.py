@@ -5,8 +5,8 @@ This is opt_level=0.
 ``replay(plan, task)`` re-executes the task with the input it read — from the plan's capture root
 (``aggregate_plan(store=)``) when the run kept it, else by re-reading its partition — one operation
 at a time, each carrying the user's line: the members of the plan's fused stages, or the recorded
-graph when the plan's ``outputs`` are given. A failing step raises the ``StageError`` M6's ``run``
-would; ``diff()`` compares the replayed partial with the recorded one.
+graph when the plan's ``outputs`` are given. A failing step raises a ``StageError`` at the user's
+line, as the task did; ``diff()`` compares the replayed partial with the recorded one.
 """
 
 from __future__ import annotations
@@ -30,6 +30,7 @@ from graphed.core.execution import Plan, Task
 from graphed.execute import (
     CompiledGraph,
     Key,
+    _rows_aligned,
     _unbound_external,
     _unbound_source,
     compile_ir,
@@ -216,11 +217,14 @@ class Replay:
                 raise _unbound_external(chash)
             return fn(*ins)
 
+        backend = resolve_backend(self._process.backend_factory)
         values = iter_ir(
             self._nodes,
             source=source,
             external=external,
-            eval_op=resolve_backend(self._process.backend_factory).eval_stage,
+            # as `evaluate_ir(chunked=True)` runs a task, so a failure the run hit replays
+            eval_op=_rows_aligned(backend),
+            eval_boundary=backend.eval_stage,
         )
         for op in self._cone:
             start = time.perf_counter()
