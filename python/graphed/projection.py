@@ -10,17 +10,16 @@ dask-awkward.
 from __future__ import annotations
 
 import warnings
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import TYPE_CHECKING
+from typing import Any, overload
 
+from .array import Array
 from .backend import ParamValue
 from .errors import GraphedError
-from .varied import universes_of
-
-if TYPE_CHECKING:
-    from .array import Array
+from .systematics.lineage import ContextNode
+from .varied import Varied, universes_of
 
 
 class OnFail(StrEnum):
@@ -122,8 +121,33 @@ def handle_opaque(op: str, on_fail: str, detail: str = "") -> object | None:
     return None
 
 
-def read_columns(arrays: Sequence[Array], source_nid: int) -> tuple[str, ...] | None:
-    """Return the minimal set of source ``source_nid``'s columns the graphs read.
+def _union(answers: Sequence[tuple[str, ...] | None]) -> tuple[str, ...] | None:
+    """Union read sets; a conservative ``None`` dominates, so does having no answer at all."""
+    narrowed = [answer for answer in answers if answer is not None]
+    if not narrowed or len(narrowed) != len(answers):
+        return None
+    return tuple(sorted({column for answer in narrowed for column in answer}))
+
+
+@overload
+def read_columns(
+    arrays: Array | Varied | Iterable[Array | Varied],
+) -> dict[str, tuple[str, ...] | None]: ...
+
+
+@overload
+def read_columns(
+    arrays: Array | Varied | Iterable[Array | Varied], source_nid: int
+) -> tuple[str, ...] | None: ...
+
+
+def read_columns(
+    arrays: Array | Varied | Iterable[Array | Varied], source_nid: int | None = None
+) -> dict[str, tuple[str, ...] | None] | tuple[str, ...] | None:
+    """Return the minimal set of columns the graphs read, per source or from one source.
+
+    ``read_columns(x)`` takes one array or a list and answers ``{source_name: columns}`` for every
+    source they read; ``read_columns(arrays, source_nid)`` answers for that one source.
 
     The read is SYNTACTIC — every field accessed on the source across ``arrays`` via a
     ``field``/``fields`` op, sorted. Returns ``None`` (meaning "read every column") when any graph
@@ -141,6 +165,18 @@ def read_columns(arrays: Sequence[Array], source_nid: int) -> tuple[str, ...] | 
     A ``Varied`` entry contributes EVERY universe (§2.3d *expanding*): the answer is one union
     read set, and the ``None`` a conservative member reports dominates it (§5.3).
     """
+    single = isinstance(arrays, Array | Varied | ContextNode)
+    outputs: list[Any] = [arrays] if single else list(arrays)
+    members = [member for output in outputs for member in universes_of(output)]
+    if source_nid is None:
+        # a name can repeat across Sessions or source params, so one key may be several sources
+        by_name: dict[str, list[tuple[str, ...] | None]] = {}
+        for member in members:
+            session = member.session
+            for nid in sorted(session.reachable_sources(member.node_id)):
+                by_name.setdefault(session.source_name(nid), []).append(read_columns(member, nid))
+        return {name: _union(reads) for name, reads in by_name.items()}
+
     sentinel = object()
 
     def one(array: Array) -> tuple[str, ...] | None:
@@ -189,8 +225,10 @@ def read_columns(arrays: Sequence[Array], source_nid: int) -> tuple[str, ...] | 
 
     # PER graph, so a conservative one dominates the union rather than being masked by a sibling
     # that happens to narrow: reading a subset for one output still reads the whole record.
-    answers = [one(member) for arr in arrays for member in universes_of(arr)]
-    narrowed = [answer for answer in answers if answer is not None]
-    if not narrowed or len(narrowed) != len(answers):
-        return None
-    return tuple(sorted({column for answer in narrowed for column in answer}))
+    return _union(
+        [
+            one(member)
+            for member in members
+            if source_nid in member.session.reachable_sources(member.node_id)
+        ]
+    )
