@@ -61,7 +61,7 @@ def _plan(k: float, backend: str | None = None) -> Plan[Any]:
     form = AwkwardForm(ak.Array(EVENTS.layout.to_typetracer(forget_length=True)))
     ev = session.source("events", form=form, data=Events(EVENTS))
     pt = graphed.apply(lambda x: x * k, ev.Jet.pt)  # a closure over k
-    return aggregate_plan(
+    plan = aggregate_plan(
         gak.sum(pt, axis=1),
         reduce=lambda values: ak.Array(values[0]),
         combine=lambda a, b: ak.concatenate([a, b]),
@@ -69,6 +69,8 @@ def _plan(k: float, backend: str | None = None) -> Plan[Any]:
         steps_per_file=4,
         backend=backend,
     )
+    assert isinstance(plan, Plan)
+    return plan
 
 
 def _task(process: Callable[[Partition, WorkerResources], Any], partition: Partition) -> Any:
@@ -144,7 +146,7 @@ def _ref_plan(op: Callable[[Any], Any]) -> Plan[Any]:
     session = Session(make_backend())
     form = AwkwardForm(ak.Array(EVENTS.layout.to_typetracer(forget_length=True)))
     ev = session.source("events", form=form, data=Events(EVENTS))
-    return aggregate_plan(
+    plan = aggregate_plan(
         op(ev.Jet.pt),
         reduce=_first,
         combine=_cat,
@@ -152,6 +154,8 @@ def _ref_plan(op: Callable[[Any], Any]) -> Plan[Any]:
         steps_per_file=2,
         backend=f"{__name__}:make_backend",
     )
+    assert isinstance(plan, Plan)
+    return plan
 
 
 @pytest.mark.parametrize("op", MERGING_OPS)
@@ -182,6 +186,7 @@ def test_an_apply_of_a_partial_around_a_lambda_runs_in_spawned_workers() -> None
         empty=_empty,
         steps_per_file=4,
     )
+    assert isinstance(plan, Plan)
     got = _spawned(plan)
     assert ak.to_list(got) == ak.to_list(3.0 * _jet_pt_sums(EVENTS))
 
@@ -208,6 +213,7 @@ def test_an_op_output_held_by_a_user_object_stays_picklable() -> None:
         steps_per_file=2,
         backend=f"{__name__}:make_backend",
     )
+    assert isinstance(plan, Plan)
     boxed = plan.process(plan.tasks[0].partition, LocalResources())
     assert ak.to_list(pickle.loads(pickle.dumps(boxed)).value) == ak.to_list(boxed.value)
 
@@ -232,6 +238,7 @@ def test_a_partial_whose_reduce_merges_arrays_inside_containers_stays_picklable(
         steps_per_file=2,
         backend=f"{__name__}:make_backend",
     )
+    assert isinstance(plan, Plan)
     partial = plan.process(plan.tasks[0].partition, LocalResources())
     loaded = pickle.loads(pickle.dumps(partial))
     assert [ak.to_list(p) for p in loaded["pairs"]] == [ak.to_list(p) for p in partial["pairs"]]

@@ -185,6 +185,28 @@ def test_a_shuffle_warns_for_its_input_partitions_and_not_for_its_destinations(
     assert "holds 1 results" in message
 
 
+@BOTH_RUNNERS
+def test_resumable_reuses_nothing_from_a_runner_store(
+    tmp_path: Path, warned: Warned, build: Any, resume: Any
+) -> None:
+    plan = build(b"one", h.parts(0, 10))
+    resume(plan, Store(tmp_path))
+    resumable(plan, str(tmp_path))
+    (message,) = warned()
+    assert "0 of 2 tasks reused" in message
+    assert "run_resumable, run_shuffle_resumable and resumable" in message
+
+
+def test_run_resumable_reuses_nothing_from_a_resumable_store(
+    tmp_path: Path, warned: Warned
+) -> None:
+    plan = h.durable(b"one", h.parts(0, 10))
+    run(plan, tmp_path)
+    assert run_resumable(plan, Store(tmp_path)).report.executed == 2
+    (message,) = warned()
+    assert "0 of 2 tasks reused" in message
+
+
 @pytest.mark.parametrize("build", [h.durable, h.staged])
 def test_a_durable_plan_warns_through_resumable(
     tmp_path: Path, warned: Warned, build: Any

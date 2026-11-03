@@ -13,6 +13,10 @@ class GraphedError(Exception):
     """Base class for graphed frontend errors."""
 
 
+class GraphedWarning(UserWarning):
+    """Something recorded, but not as well as it could have been."""
+
+
 class PointError(GraphedError):
     """A ``points=`` entry that does not fit the situation it names (design §4).
 
@@ -43,6 +47,10 @@ class GraphedTypeError(GraphedError):
         if detail:
             msg = f"{msg}: {detail}"
         super().__init__(msg)
+
+
+class SourceRowsError(GraphedTypeError, TypeError):
+    """An op pairing the rows of two partitioned sources, which need not be the same events."""
 
 
 class OutputTypeError(GraphedTypeError):
