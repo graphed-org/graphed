@@ -64,8 +64,19 @@ def test_a_second_chunking_is_refused(tmp_path: Path, other: dict[str, Any]) -> 
 
 
 def test_a_non_positive_count_is_refused(tmp_path: Path) -> None:
+    seen: list[Any] = []
     with pytest.raises(ValueError, match="events_per_task must be >= 1, got 0"):
-        _plan(_events(tmp_path), events_per_task=0)
+        _plan(_events(tmp_path), events_per_task=0, on_compiled=seen.append)
+    assert seen == []
+
+
+def test_an_empty_file_keeps_one_task(tmp_path: Path) -> None:
+    pytest.importorskip("pyarrow")
+    path = str(tmp_path / "empty.parquet")
+    ak.to_parquet(ak.Array({"x": []}), path)
+    events = ga.from_parquet("events", [path], session=graphed.Session(ga.AwkwardBackend()))
+    parts = [t.partition for t in _plan(events, events_per_task=10).tasks]
+    assert [(p.entry_start, p.entry_stop) for p in parts] == [(0, 0)]
 
 
 class Uncounted:
@@ -85,13 +96,14 @@ class Counted(Uncounted):
     opened = 0
 
     def num_entries(self, partition: Partition) -> int:
-        Counted.opened += 1
+        self.opened += 1
         return 7
 
 
 def test_a_counted_source_is_asked_once_per_file() -> None:
-    parts = _event_partitions(Counted(), 3)
-    assert Counted.opened == 1
+    source = Counted()
+    parts = _event_partitions(source, 3)
+    assert source.opened == 1
     assert [(p.entry_start, p.entry_stop) for p in parts] == [(0, 3), (3, 6), (6, 7)]
 
 
