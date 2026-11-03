@@ -26,6 +26,16 @@ Small samples, and one evaluation path
 * ``Partition.first(n)`` caps a partition at its first ``n`` entries, resolved when it is read. A
   capped range is exact, so ``is_blind`` is false and a reader that moves blind ranges leaves it.
 * A parquet partition reads only the row groups its entries lie in, not the whole file.
+``gak.apply_correction`` takes keywords and checks the payload as you record
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``gak.apply_correction(cset, "jet_sf", syst="nominal", pt=jets.pt, eta=jets.eta)`` maps keywords
+onto the correction's named inputs and records the same node as ``args=["nominal", "$0", "$1"]``.
+A name the set does not hold, listing the names it does, and inputs the correction does not take
+raise ``GraphedTypeError`` at that line; they used to surface as a ``StageError`` after data was
+read. ``evaluator`` is optional, and ``payload`` and ``name`` are positional-only, so an input may
+carry either name. A path payload is read once, not on every call, so nodes share one copy of a
+correction set or ONNX model. The older ``evaluator``-only recording is unchanged (#170).
 Two datasets in one Session no longer pair their rows by accident
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -49,6 +59,17 @@ To say how two sources match:
 
 A join reads each side whole unless you select fields first, as in ``graphed.join(a[["x"]],
 b[["y"]], how="positional")``.
+
+``graphed.aggregate_plan``, and so ``h.plan()`` and ``gh.plan()``, now run over a join, keyed or
+positional, with several outputs. The plan is the join's, stage by stage, so it runs on
+``SequentialRunner`` and ``SubmitRunner``, and takes no ``partitions=``, ``store=``, ``writes=``,
+``read_by=`` or ``opt_level=0``; it cannot be collated. ``graphed.join_plan`` takes several outputs
+with ``reduce``, ``combine`` and ``empty``. A keyed join of one source, which ran per chunk and lost
+its matches across chunks, is refused by every partitioned plan and write. ``aggregate_plan`` is
+annotated ``Plan[Any] | DurablePlanV2``: code that reads ``plan.tasks`` or ``plan.process`` narrows
+with ``isinstance(plan, graphed.core.Plan)``. ``graphed.debug.replay`` and
+``graphed.raise_on_floating_point`` refuse a join's plan.
+
 ``SequentialRunner`` stands in for the pooled runners
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

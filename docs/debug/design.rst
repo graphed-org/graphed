@@ -719,9 +719,9 @@ stop at it instead, wrap the plan:
 
 A task then raises a ``StageError`` at the line that recorded the operation, naming the chunk, for
 a division by zero, an overflow or an invalid value. Underflow still rounds to zero. It works on any
-runner, and on a plan from ``aggregate_plan``, ``collate`` or a histogram's ``to_plan``; wrap it
-before ``resumable`` or histserv. A task's key does not change, so results a store already holds are served
-as they are, unchecked.
+runner, and on a plan from ``aggregate_plan``, ``collate`` or a histogram's ``to_plan``, except one
+over a join, which runs in stages and is refused; wrap it before ``resumable`` or histserv. A task's
+key does not change, so results a store already holds are served as they are, unchecked.
 
 Without it, the warning itself still reaches you. A task in a worker process keeps what it raises,
 and the run issues each message once on the driver, naming the first chunk that raised it, so
