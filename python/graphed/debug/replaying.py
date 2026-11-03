@@ -19,7 +19,7 @@ from typing import Any
 
 from graphed import Array
 from graphed.aggregate import _compile_at, _PartitionReduce, _slot_of, resolve_backend
-from graphed.core import GraphStore, LocalResources
+from graphed.core import DurablePlanV2, GraphStore, LocalResources
 from graphed.core.execution import Plan, Task
 from graphed.execute import (
     CompiledGraph,
@@ -218,7 +218,8 @@ class Replay:
         for op in self._cone:
             start = time.perf_counter()
             try:
-                _nid, value = next(values)
+                with self._process.floating_point():
+                    _nid, value = next(values)
             except Exception as exc:
                 failing = self._lowered
                 if failing is None:
@@ -254,13 +255,15 @@ class Replay:
         return ReplayDiff(reference, _equal(recorded, replayed), recorded, replayed)
 
 
-def replay(plan: Plan[Any], task: int, *outputs: Array) -> Replay:
+def replay(plan: Plan[Any] | DurablePlanV2, task: int, *outputs: Array) -> Replay:
     """Replay the task keyed ``task`` of an ``aggregate_plan`` plan.
 
     Each step is one operation the plan runs. ``outputs``, the Arrays the plan was built from in
     order, replay the recorded graph instead, op for op as written; they must recompile to the
-    plan's IR.
+    plan's IR. A plan over a join runs in stages and is refused.
     """
+    if not isinstance(plan, Plan):
+        raise TypeError("replay needs a plan with fixed tasks; this one runs in stages")
     process = plan.process
     if not isinstance(process, _PartitionReduce):
         raise TypeError(

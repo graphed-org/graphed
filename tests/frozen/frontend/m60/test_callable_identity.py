@@ -145,10 +145,12 @@ def test_an_explicit_name_is_the_callers_identity_declaration() -> None:
     session, x = toy_session()
 
     shared = x.map(lambda value: value + 1, name="shared")
-    also_shared = x.map(lambda value: value * 100, name="shared")
+    also_shared = x.map(lambda value: value + 1, name="shared")
     other = x.map(lambda value: value + 1, name="other")
 
     assert shared.node_id == also_shared.node_id != other.node_id
+    with pytest.raises(graphed.GraphedError, match="name='shared'"):
+        x.map(lambda value: value * 100, name="shared")
     assert fn_params(session, shared, other) == ["shared", "other"]
     for verb in (Array.map, graphed.apply, gnp.apply_gufunc):
         assert verb.__doc__ is not None and "name=" in verb.__doc__

@@ -21,7 +21,7 @@ from graphed import Array, ParamValue
 from graphed.array import scalar_params
 from graphed.errors import GraphedError, GraphedTypeError
 from graphed.provenance import capture
-from graphed.shuffle import JOINKEY
+from graphed.shuffle import JOINKEY, route_key
 from graphed.varied import boundary_refusal, containers_in, expand, expand_tuple, narrow
 
 from . import payloads
@@ -43,7 +43,7 @@ from .backend import AwkwardForm, astype_form, broadcast_form
 
 
 def join(
-    left: Array, right: Array, *, on: Sequence[str], how: str = "inner", grouped: bool = False
+    left: Array, right: Array, *, on: Sequence[str] = (), how: str = "inner", grouped: bool = False
 ) -> Array:
     """Return the awkward-only ``gak.join`` verb (plan §3.1, a4).
 
@@ -55,14 +55,16 @@ def join(
     """
     if not grouped:
         return graphed.join(left, right, on=on, how=how)
+    if how == "positional" or not on:
+        raise TypeError("gak.join(grouped=True) takes on=[...]; a positional row has one match")
     if left.session is not right.session:
         raise GraphedError(
             "gak.join: left and right must belong to the same Session; record both into one (read "
             "the right side inside `with left.session:`, or pass the reader session=)"
         )
     session = left.session
-    lk = graphed.pack_key(left, on=on)
-    rk = graphed.pack_key(right, on=on)
+    lk = route_key(left, on)
+    rk = route_key(right, on)
     le = session.record_exchange(lk, {"scheme": "hash", "key": JOINKEY})
     re = session.record_exchange(rk, {"scheme": "hash", "key": JOINKEY})
     # same co-partitioning + full-key coalescing as graphed.join; grouped flips the Join to the
@@ -98,7 +100,7 @@ def cartesian(
     """Record ``ak.cartesian`` over ``arrays``."""
     inputs = list(arrays.values() if isinstance(arrays, Mapping) else arrays)
     params = _cartesian_params(arrays, axis, nested, with_name, parameters)
-    return _along_axis("ak.cartesian", inputs, params, axis)
+    return _along_axis("ak.cartesian", inputs, params, axis, unpaired=True)
 
 
 def zip(
@@ -387,7 +389,7 @@ def local_index(arr: Array, axis: int = -1) -> Array:
 
 def concatenate(arrays: Sequence[Array], axis: int = 0) -> Array:
     """Record ``ak.concatenate`` of ``arrays`` along ``axis``."""
-    return _along_axis("ak.concatenate", list(arrays), {"axis": axis}, axis)
+    return _along_axis("ak.concatenate", list(arrays), {"axis": axis}, axis, unpaired=True)
 
 
 def flatten(arr: Array, axis: int | None = 1) -> Array:
@@ -441,7 +443,7 @@ def ones_like(arr: Array, *, dtype: npt.DTypeLike = None) -> Array:
 # CONTENT: it rides the IR as canonical JSON, and record-time evaluation materializes THE SAME
 # template the preservation replay obeys — agreement by construction. Descriptors on this path use
 # the content-identity hash conventions shared with graphed-preserve, and params carry no
-# filesystem paths. The template-less calls below remain the M3 path, byte-for-byte.
+# filesystem paths. An evaluator without a template remains the M3 path, byte-for-byte.
 
 
 @dataclass
@@ -484,44 +486,118 @@ class _TemplateExternal:
         return self.call(*values)
 
 
+def _refused(detail: str) -> GraphedTypeError:
+    return GraphedTypeError("correction", capture(), detail)
+
+
+def _correction_inputs(blob: bytes, name: str, compound: bool) -> tuple[str, ...]:
+    """Return the input names of ``name``, resolved as the correctionlib plugin resolves it."""
+    regular, stacked = payloads.correctionlib_inputs(blob)
+    held = stacked if compound else {**stacked, **regular}
+    if name not in held:
+        raise _refused(
+            f"no {'compound ' if compound else ''}correction {name!r} in this set; "
+            f"it has: {', '.join(sorted(held))}"
+        )
+    return held[name]
+
+
+def _named_template(
+    wanted: tuple[str, ...], name: str, named: Mapping[str, object]
+) -> tuple[list[Array], list[object]]:
+    """Order keyword inputs as the correction declares them: the inputs and ``args=`` they mean."""
+    if set(named) != set(wanted):
+        raise _refused(
+            f"correction {name!r} takes inputs ({', '.join(wanted)}); got ({', '.join(named)})"
+        )
+    arrays: list[Array] = []
+    args: list[object] = []
+    for key in wanted:
+        value = named[key]
+        if isinstance(value, Array):
+            args.append(f"${len(arrays)}")
+            arrays.append(value)
+            continue
+        try:  # no slot can resolve: a "$" constant has no escape in a template
+            _parse_template([value], 0, constants=True, groups=False)
+        except (TypeError, ValueError) as err:
+            raise _refused(
+                f"correction {name!r} input {key!r} takes an Array or a str, int or float "
+                f"constant not starting with '$'; got {value!r}"
+            ) from err
+        args.append(value)
+    return arrays, args
+
+
 def apply_correction(
     payload: str | bytes,
     name: str,
-    inputs: Sequence[Array],
-    evaluator: Callable[..., object],
+    /,
+    inputs: Sequence[Array] | None = None,
+    evaluator: Callable[..., object] | None = None,
     *,
     args: list[object] | None = None,
     compound: bool = False,
+    **named: object,
 ) -> Array:
     """Record a correctionlib scale-factor application as an External node.
+
+    Keywords name the correction's own inputs, in any order, and a string input such as a
+    systematic is an ordinary keyword (an input called ``inputs``, ``evaluator``, ``args`` or
+    ``compound`` takes the positional form)::
+
+        sf = gak.apply_correction(cset, "jet_sf", syst="nominal", pt=jets.pt, eta=jets.eta)
+
+    ``payload`` is the set's JSON bytes or a path to it. A name the set does not hold and inputs
+    the correction does not take raise :class:`~graphed.errors.GraphedTypeError` at this line,
+    from the payload alone; a value outside a correction's domain is still a run-time error.
 
     ``compound=True`` names an entry of the set's ``compound_corrections`` rather than its
     ``corrections``; without it a regular correction wins and a compound-only name falls back to
     ``compound_corrections``.
 
-    With ``args=`` (e.g. ``["nominal", "$0", "$1"]``): the M28 preservation-aligned path —
-    content-identity descriptor, no path in the IR, inputs passed NATIVELY (awkward/numpy, jagged
-    preserved) per the template, which replay obeys identically.
-    Without it: the original M3 recording, unchanged (``payload`` must then be a path).
+    Positionally, ``inputs`` are the correction's inputs in order. ``args=`` (e.g.
+    ``["nominal", "$0", "$1"]``) instead spells the call as a template over them, with constants
+    where the correction takes one. Both record the same node as the keywords do: content-identity
+    descriptor, no path in the IR, inputs passed NATIVELY (awkward/numpy, jagged preserved) per
+    the template, which replay obeys identically. EVERY backend — in-process included — evaluates
+    through the correctionlib preserve plugin, rebuilt from the payload bytes under the recorded
+    template: in-process gets the plugin's flat-buffer evaluation instead of correctionlib's
+    per-call ``ak.transform`` wrapper. The recorded type is the broadcast of every slotted input,
+    as that wrapper broadcasts them.
 
-    ``evaluator`` is the eager evaluation for the ``args=None`` (M3) path ONLY. On the template
-    path EVERY backend — in-process included — evaluates through the correctionlib preserve
-    plugin, rebuilt from the payload bytes under the recorded template, so ``evaluator`` is
-    ignored: the two cannot diverge, and in-process gets the plugin's flat-buffer evaluation
-    instead of correctionlib's per-call ``ak.transform`` wrapper. The recorded type is the
-    broadcast of every slotted input, as that wrapper broadcasts them.
+    ``evaluator`` without ``args=`` is the original M3 recording, unchanged: ``payload`` must be a
+    path and the callable is the evaluation, so nothing here checks it. With ``args=`` it is
+    never called.
     """
     # recorded only when set, so a regular correction's node identity is what it always was
     which: dict[str, ParamValue] = {"compound": True} if compound else {}
-    if args is None:
-        return inputs[0].session.record_external(
-            "correction", evaluator, list(inputs), {"path": str(payload), "name": name, **which}
+    arrays = [] if inputs is None else list(inputs)
+    if named and (arrays or args is not None or evaluator is not None):
+        raise _refused("pass a correction's inputs as keywords or as inputs/args=, not both")
+    if not named and not arrays:
+        raise TypeError("apply_correction needs inputs")
+    if args is None and evaluator is not None:
+        return arrays[0].session.record_external(
+            "correction", evaluator, arrays, {"path": str(payload), "name": name, **which}
         )
     blob = _payload_bytes(payload)
-    entries = _parse_template(args, len(inputs), constants=True, groups=False)
-    slots = [inputs[i] for kind, i in entries if kind == "slot"]
-    session = inputs[0].session
-    session._mine(list(inputs), ("correction", capture()))  # before `session.form` reads an input
+    wanted = _correction_inputs(blob, name, compound)
+    if named:
+        arrays, args = _named_template(wanted, name, named)
+    elif args is None:
+        args = [f"${i}" for i in range(len(arrays))]
+    entries = _parse_template(args, len(arrays), constants=True, groups=False)
+    if len(entries) != len(wanted):
+        raise _refused(
+            f"correction {name!r} takes inputs ({', '.join(wanted)}); got {len(entries)} "
+            "positional inputs"
+        )
+    slots = [arrays[i] for kind, i in entries if kind == "slot"]
+    if not slots:
+        raise _refused(f"correction {name!r} needs at least one Array input")
+    session = arrays[0].session
+    session._mine(arrays, ("correction", capture()))  # before `session.form` reads an input
     descriptor = payloads.correctionlib_contents_descriptor(blob, name)
     params: dict[str, ParamValue] = {
         "name": name,
@@ -534,7 +610,7 @@ def apply_correction(
         _TemplateExternal(
             descriptor.kind, blob, {**params, "content_hash": descriptor.content_hash}, None
         ),
-        list(inputs),
+        arrays,
         params,
         descriptor=descriptor,
         # the correctionlib plugin's value is float64 (its outputs are `real`), checked at run time
@@ -733,7 +809,7 @@ def argcartesian(
     """Record ``ak.argcartesian`` over ``arrays``."""
     inputs = list(arrays.values() if isinstance(arrays, Mapping) else arrays)
     params = _cartesian_params(arrays, axis, nested, with_name, parameters)
-    return _along_axis("ak.argcartesian", inputs, params, axis)
+    return _along_axis("ak.argcartesian", inputs, params, axis, unpaired=True)
 
 
 def without_field(arr: Array, field: str) -> Array:

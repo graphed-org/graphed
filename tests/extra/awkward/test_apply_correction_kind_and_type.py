@@ -14,7 +14,7 @@ import pytest
 
 from graphed import Array, Session
 from graphed.awkward import AwkwardBackend, AwkwardForm, from_awkward, gak
-from graphed.errors import StageError
+from graphed.errors import GraphedTypeError
 from graphed.preserve.externals import get_plugin
 from graphed.preserve.externals._base import record_external
 
@@ -124,10 +124,9 @@ def test_a_compound_only_name_without_the_flag_falls_back_to_the_compound_list()
 def test_the_compound_flag_on_a_regular_only_name_is_refused() -> None:
     session = Session(AwkwardBackend())
     pt = from_awkward(session, "events", EVENTS).pt
-    out = gak.apply_correction(CSET, "a", [pt], _unusable, args=["$0"], compound=True)
 
-    with pytest.raises(StageError, match=r"PreserveError: .*no compound correction named 'a'"):
-        session.materialize(out)
+    with pytest.raises(GraphedTypeError, match=r"no compound correction 'a'"):
+        gak.apply_correction(CSET, "a", [pt], _unusable, args=["$0"], compound=True)
 
 
 def _template(rho: Array, pt: Array) -> Array:

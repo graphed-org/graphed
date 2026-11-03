@@ -583,6 +583,9 @@ def _write_varied(
     _lineage_refusal(
         _record_context(record), _record_context(level0) if level0 is not None else None
     )
+    source_id, data = gw.sole_source(
+        [member_of(array, label) for array in (record, *masks) for label in labels]
+    )
     _check_depth(session, entries)
     _check_bare_key(session, record, tuple(entries))
     varied = _varied_leaves(session, record, labels)
@@ -604,7 +607,6 @@ def _write_varied(
     rank = {node_id: i for i, node_id in enumerate(dict.fromkeys(out.node_id for out in outputs))}
     wrapped = _tt(session, nominal_record).ndim > 1
 
-    ((source_id, data),) = gw.sources_read(outputs).items()
     steps_per_file = gw.steps_for(data, steps_per_file)
     source_name = session.source_name(source_id)
     source_form = session.form_of(source_id)
@@ -865,12 +867,7 @@ def to_parquet(
         )
     session: Session = array.session
     behavior = _session_behavior(session, behavior)
-    sources = gw.sources_read([array])
-    if len(sources) != 1:
-        raise TypeError(
-            f"to_parquet needs an array recorded over exactly one source, got {len(sources)}"
-        )
-    ((node_id, data),) = sources.items()
+    node_id, data = gw.sole_source([array])
     steps_per_file = gw.steps_for(data, steps_per_file)
     source_name = session.source_name(node_id)
     source_form = session.form_of(node_id)
