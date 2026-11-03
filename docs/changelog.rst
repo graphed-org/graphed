@@ -27,16 +27,6 @@ Small samples, and one evaluation path
   capped range is exact, so ``is_blind`` is false and a reader that moves blind ranges leaves it.
 * A parquet partition reads only the row groups its entries lie in, not the whole file.
 
-Replay any plan, and find the cut that emptied your data
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-* ``graphed.debug.replay(plan, task)`` needs no outputs: it steps through the operations the plan
-  runs, each at your line, for an ``aggregate_plan``, ``gh.plan`` or ``Histogram.plan`` plan, in any
-  interpreter. Passing the plan's outputs still replays your ops as written. Its second parameter is
-  now named ``task``, not ``key``.
-* ``graphed.debug.trace(x, entries=N)`` prints one row per recorded line, with the rows going in
-  and out of it, and marks the first line that empties the data.
-
 ``gak.apply_correction`` takes keywords and checks the payload as you record
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
