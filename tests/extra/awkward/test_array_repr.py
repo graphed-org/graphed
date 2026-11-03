@@ -130,6 +130,32 @@ def test_a_field_named_like_an_eager_method_is_listed() -> None:
     assert "to_list" in dir(ev)
 
 
+def test_a_behaviors_override_of_an_awkward_name_is_listed() -> None:
+    class Jets(ak.Array):  # type: ignore[misc]
+        def to_list(self, scale: float) -> Any:
+            return self.pt * scale
+
+        @property
+        def mask(self) -> Any:
+            return self.pt > 1
+
+    behavior: dict[Any, Any] = {("*", "Jet"): Jets}
+    data = ak.with_name(ak.Array([{"pt": 1.0}]), "Jet")
+    session = Session(AwkwardBackend(behavior=behavior))
+    names = set(dir(from_awkward("j", data, session=session)))
+    assert {"to_list", "mask"} <= names
+    assert not {"show", "layout"} & names
+
+
+def test_a_record_lists_and_answers_its_introspection() -> None:
+    record = _events()[0]
+    assert {"fields", "typestr"} <= set(dir(record))
+    assert not {"layout", "to_list"} & set(dir(record))
+    assert record.fields == ["Jet_pt", "Muon_pt", "MET_pt"]
+    with pytest.raises(AttributeError, match="cannot answer 'layout'"):
+        _ = record.layout
+
+
 def test_a_numpy_array_gets_a_repr_and_a_records_fields() -> None:
     session = Session(gnp.NumpyBackend())
     x = gnp.from_array("y", np.arange(3.0), session=session)

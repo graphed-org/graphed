@@ -28,7 +28,7 @@ from graphed.shuffle import join_blocks
 
 from . import functions as gak
 from . import join, payloads, shuffle
-from ._ops import _INTROSPECT_EAGER, _no_field, apply
+from ._ops import _INTROSPECT_EAGER, _ak_own, _listed_names, _no_field, apply
 from .array import AwkwardArray
 
 
@@ -192,7 +192,6 @@ class AwkwardForm:
 _BOUNDARY = frozenset(
     {"source", "external", "correction", "onnx", "map", "ak.sum", "ak.any", "ak.all", "ak.count"}
 )
-_EAGER_ONLY = frozenset(dir(ak.Array)) - _INTROSPECT_EAGER
 
 
 _EXTERNAL = frozenset({"map", "correction", "onnx", "external"})
@@ -476,11 +475,7 @@ class AwkwardBackend:
         # descriptor the stdlib adds later (partialmethod, singledispatchmethod, ...) still counts
         if hasattr(type(static), "__set__") or isinstance(static, functools.cached_property):
             # ak.Array's own descriptors describe the array, they are not per-element data
-            return (
-                "introspection"
-                if static is inspect.getattr_static(ak.Array, name, None)
-                else "property"
-            )
+            return "introspection" if _ak_own(tt, name) else "property"
         return "method" if callable(static) or hasattr(static, "__get__") else "property"
 
     def attribute_names(self, form: AwkwardForm) -> set[str]:
@@ -488,7 +483,7 @@ class AwkwardBackend:
         tt = self._with_behavior(form.tt)
         if not isinstance(tt, ak.Array | ak.Record):  # a scalar has neither
             return set()
-        return {*tt.fields, *(set(dir(tt)) - _EAGER_ONLY)}
+        return _listed_names(tt)
 
     def introspect(self, form: AwkwardForm, name: str) -> object:
         """Answer an `introspection` attribute from the record-time typetracer.
@@ -515,9 +510,8 @@ class AwkwardBackend:
         """
         inputs = [self._with_behavior(f.tt) for f in forms]
         name = str(params["method"])
-        static = inspect.getattr_static(inputs[0], name)
         # ak.from_iter sniffs `hasattr(x, "to_list")`, so ak's own conversions refuse at the call
-        if any(static is inspect.getattr_static(c, name, None) for c in (ak.Array, ak.Record)):
+        if _ak_own(inputs[0], name):
             raise TypeError(NEEDS_VALUES)
         return self._output_shape(apply("method", inputs, params, behavior=self._behavior), params)
 

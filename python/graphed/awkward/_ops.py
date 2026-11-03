@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import difflib
+import inspect
 import json
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
@@ -260,6 +261,20 @@ _Handler = Callable[[str, Sequence[Any], Mapping[str, Any]], Any]
 _INTROSPECT_EAGER = frozenset({"fields", "type", "typestr", "ndim", "is_tuple", "positional_axis"})
 
 
+def _ak_own(x: Any, name: str) -> bool:
+    """Whether ``x.name`` resolves to awkward's own attribute rather than a behavior's."""
+    # identity, not name: a behavior's override of an awkward name is a different object
+    static = inspect.getattr_static(x, name, None)
+    return static is not None and any(
+        static is inspect.getattr_static(c, name, None) for c in (ak.Array, ak.Record)
+    )
+
+
+def _listed_names(x: ak.Array | ak.Record) -> set[str]:
+    """Return what ``x.<name>`` answers: its fields, its behaviors, and the introspection."""
+    return {*x.fields, *(n for n in dir(x) if n in _INTROSPECT_EAGER or not _ak_own(x, n))}
+
+
 def _no_field(x: Any, name: str) -> str:
     """Say what ``x`` lacks: where it looked, and a close name when there is one."""
     if not isinstance(x, ak.Array | ak.Record):  # a scalar has neither fields nor behaviors
@@ -268,9 +283,8 @@ def _no_field(x: Any, name: str) -> str:
     where = f" in {record}" if record else ""
     if name == "form":  # a record may have a field called form, so `.form` stays a field read
         return f"no field named 'form'{where} (`.typestr` shows an array's type)"
-    own = set(dir(x))
-    names = own - set(dir(ak.Array)) | own & _INTROSPECT_EAGER | set(x.fields)
-    close = difflib.get_close_matches(name, [n for n in names if not n.startswith("_")], n=1)
+    names = [n for n in _listed_names(x) if not n.startswith("_")]
+    close = difflib.get_close_matches(name, names, n=1)
     hint = f" (did you mean {close[0]!r}?)" if close else ""
     return f"no field named {name!r}{where}{hint}"
 

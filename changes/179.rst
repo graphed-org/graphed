@@ -8,3 +8,5 @@ Arrays say what they are
 * ``dir(array)`` lists its fields and its behavior's properties and methods, so they tab-complete.
   A backend joins by defining ``attribute_names(form)``.
 * ``repr(session)`` shows its node and source counts and its backend.
+* A record (``events[0]``) answers ``.fields``, ``.typestr`` and the rest of awkward's introspection
+  as an array does, instead of recording them as field reads.
