@@ -177,6 +177,9 @@ other reduction refuse, naming the output, as do ``writes=`` without a ``reduce`
 Fixes
 ~~~~~
 
+* ``map`` without ``output_type=`` names why it could not infer the type, so a field typo inside
+  the function, ``could not infer the type of <lambda> (AttributeError: no field named 'ptt')``,
+  shows at the recording line instead of when the plan runs (#199).
 * Reading an awkward array no longer changes the checkpoint key of a plan that holds it. Awkward
   fills an unset ``attrs`` with ``{}`` when something reads it, which ``repr`` and ``ak.zip`` do,
   and before awkward 2.14 so did slicing, so a resume could recompute everything. An empty or

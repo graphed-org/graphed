@@ -894,12 +894,14 @@ class Session:
         with self._lock:
             if traced in self._fn_traced:
                 return self._fn_traced[traced]
+        reason = ""
         try:
             form: Form | None = trace(fn, forms)
-        except Exception:
+        except Exception as exc:
             form = None
+            reason = f" ({type(exc).__name__}: {(str(exc).splitlines() or [''])[0]})"
         if form is None:
-            message = f"could not infer the type of {_fn_label(fn)}; pass output_type="
+            message = f"could not infer the type of {_fn_label(fn)}{reason}; pass output_type="
             warnings.warn_explicit(message, GraphedWarning, prov.filename, prov.lineno)
         with self._lock:
             return self._fn_traced.setdefault(traced, form)
