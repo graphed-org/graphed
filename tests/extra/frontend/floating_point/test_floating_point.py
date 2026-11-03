@@ -83,7 +83,7 @@ def _plan(
 
 
 def _planned(output: Any, finalize: Callable[[Any], Any] | None = None) -> Plan[list[float]]:
-    return aggregate_plan(
+    plan = aggregate_plan(
         output,
         reduce=as_list,
         combine=concat,
@@ -91,6 +91,8 @@ def _planned(output: Any, finalize: Callable[[Any], Any] | None = None) -> Plan[
         steps_per_file=3,
         finalize=finalize,
     )
+    assert isinstance(plan, Plan)
+    return plan
 
 
 def _task(process: Callable[..., Any], partition: Partition) -> Any:
@@ -221,6 +223,13 @@ def test_a_process_resolves_the_plain_value_and_the_warnings_stay() -> None:
     plan: Plan[Any] = Plan(process=Resolving(), combine=lambda a, b: a + b, empty=int)
     warned = Warned(1, {(RuntimeWarning, "m"): ("f", 1, "c")})
     assert resolve_services(plan, warned) == Warned(2, warned.caught)
+
+
+def test_a_durable_plan_is_refused_by_its_process_not_as_staged() -> None:
+    add = OpSpec("ref", "operator:add")
+    durable: Any = DurablePlan(ir=b"fp", process=add, combine=add, empty=add)
+    with pytest.raises(TypeError, match="got a OpSpec process"):
+        raise_on_floating_point(durable)
 
 
 def test_carrying_nothing_is_the_value() -> None:

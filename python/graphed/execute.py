@@ -434,14 +434,21 @@ def refuse_chunk_partials(
     plan output the driver's ``combine`` folds; consumed by another node it is silently the wrong
     number (``sum(x[2:8])`` over two chunks). ``as_outputs=True`` refuses partials as outputs as
     well: a writer has no combine, and every row it writes is a row of the dataset. A collection of
-    compiled output ids refuses partials at exactly those outputs (a plan's writes).
+    compiled output ids refuses partials at exactly those outputs (a plan's writes). A keyed join
+    of one source is refused the same way: a key's matches can sit in other chunks.
     """
     blob = compiled.ir if isinstance(compiled, CompiledGraph) else compiled
     store = graphed.core.GraphStore.deserialize(bytes(blob))
     nodes = store.nodes()
     consumed = {i for nd in nodes for i in nd["inputs"]}
     refused = set(store.outputs()) if as_outputs is True else set(as_outputs or ())
+    one_source = sum(nd["kind"] == "source" for nd in nodes) < 2
     for nid, nd in enumerate(nodes):
+        if one_source and nd["kind"] == "join" and dict(nd["params"]).get("how") != "positional":
+            raise GraphedError(
+                "a partitioned run cannot join one source by key: each chunk sees only its own "
+                "matches. Read the other side as its own source, or use graphed.materialize"
+            )
         if nd["kind"] != "reduction":
             continue
         if nid in consumed:

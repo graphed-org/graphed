@@ -376,9 +376,11 @@ def agg_plan(paths: Sequence[str]) -> Plan[Any]:
     ev = from_parquet(
         Session(AwkwardBackend()), "events", list(paths), open_files=False, steps_per_file=2
     )
-    return aggregate_plan(
+    plan = aggregate_plan(
         gak.sum((ev.x + ev.y) * 2), reduce=agg_reduce, combine=agg_combine, empty=agg_empty
     )
+    assert isinstance(plan, Plan)
+    return plan
 
 
 def _sf_load(payload: bytes, params: Any) -> str:

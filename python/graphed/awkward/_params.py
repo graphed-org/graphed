@@ -28,11 +28,23 @@ def crosses_rows(arr: Array, axis: int | None) -> bool:
 
 
 def _along_axis(
-    name: str, inputs: Sequence[Array], params: Mapping[str, ParamValue], axis: int | None
+    name: str,
+    inputs: Sequence[Array],
+    params: Mapping[str, ParamValue],
+    axis: int | None,
+    *,
+    unpaired: bool = False,
 ) -> Array:
-    """Record ``name`` along ``axis`` of ``inputs``, a reduction when that is the row axis."""
+    """Record ``name`` along ``axis`` of ``inputs``, a reduction when that is the row axis.
+
+    ``unpaired`` is for an op that appends or crosses rows there, and pairs them on an inner axis.
+    """
     head = inputs[0]
-    return head.session.record_op(name, list(inputs), params, reduction=crosses_rows(head, axis))
+    crosses = crosses_rows(head, axis)
+    rows_from = range(len(inputs)) if unpaired and crosses else None
+    return head.session.record_op(
+        name, list(inputs), params, reduction=crosses, rows_from=rows_from
+    )
 
 
 def _comb_params(

@@ -261,7 +261,7 @@ def test_aggregate_plan_over_one_output_of_two_sources_does_not_offer_collate() 
     x = s.source("x", form=_form(), data=Rows((1, 2)))
     y = s.source("y", form=_form(), data=Rows((3,)))
     with pytest.raises(TypeError, match=r"the outputs read 2 \(x, y\)$"):
-        _fold([s.record_op("add", [x, y])])
+        _fold([s.record_op("add", [x, y], rows_from=(0, 1))])
 
 
 def test_aggregate_plan_over_no_partitioned_source_does_not_offer_collate() -> None:

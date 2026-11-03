@@ -7,6 +7,40 @@ Newest release first. Numbers in parentheses are the pull requests on
 0.0.11 (unreleased)
 -------------------
 
+Two datasets in one Session no longer pair their rows by accident
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+An elementwise op over two reads of different data ran and paired unrelated events, and a one-event
+source broadcast over the other (#193). It now raises ``graphed.errors.SourceRowsError``, a located
+``GraphedTypeError`` that is also a ``TypeError``, at the line that wrote it, naming both sources.
+A fill, a mask, a weight and an External refuse the same way, as does appending two sources in
+different orders on either side of an op. Scalars such as ``gak.sum(tt.w)`` and ``np.histogram``
+counts still combine across sources, ``gak.concatenate`` along the rows still appends,
+``gak.cartesian`` along the rows still crosses, ``np.isin`` and ``np.searchsorted`` still read the
+other source as a set, and in-memory arrays still pair as numpy arrays do.
+
+To say how two sources match:
+
+* ``graphed.join(a, b, on=["run", "luminosityBlock", "event"])`` matches by key. A key field may
+  now exceed 2\ :sup:`20`; ``graphed.pack_key`` called directly still refuses it.
+* ``graphed.join(a, b, how="positional")`` is new: row i pairs with row i, for friend trees holding
+  the same events in the same order with no key column. ``join_plan`` runs it a block at a time, so
+  both sides need the same number of partitions; a differing row count is refused when it runs.
+  ``on=`` is now optional on ``graphed.join`` and ``gak.join``.
+
+A join reads each side whole unless you select fields first, as in ``graphed.join(a[["x"]],
+b[["y"]], how="positional")``.
+
+``graphed.aggregate_plan``, and so ``h.plan()`` and ``gh.plan()``, now run over a join, keyed or
+positional, with several outputs. The plan is the join's, stage by stage, so it runs on
+``SequentialRunner`` and ``SubmitRunner``, and takes no ``partitions=``, ``store=``, ``writes=``,
+``read_by=`` or ``opt_level=0``; it cannot be collated. ``graphed.join_plan`` takes several outputs
+with ``reduce``, ``combine`` and ``empty``. A keyed join of one source, which ran per chunk and lost
+its matches across chunks, is refused by every partitioned plan and write. ``aggregate_plan`` is
+annotated ``Plan[Any] | DurablePlanV2``: code that reads ``plan.tasks`` or ``plan.process`` narrows
+with ``isinstance(plan, graphed.core.Plan)``. ``graphed.debug.replay`` and
+``graphed.raise_on_floating_point`` refuse a join's plan.
+
 ``SequentialRunner`` stands in for the pooled runners
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -150,6 +184,8 @@ Fixes
   ``graphed.checkpoint`` when a run reuses no task from a store that holds results for its
   partitions. Those keys differ from this run's, which was silent; another analysis of the same
   partitions in one store warns too.
+* ``to_parquet(select=)`` with a record and masks over two sources raises an "exactly one source"
+  ``TypeError`` at the call, instead of a bare unpack ``ValueError``.
 * ``copy.deepcopy`` of a recorded ``Array``, a ``Varied``, or anything holding one works, which
   raised ``cannot pickle 'builtins.GraphStore' object``. The copy shares its Session, event
   context and recorded lines; ``copy.copy`` and ``copy.deepcopy`` of a Session or a context
