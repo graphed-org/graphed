@@ -638,9 +638,9 @@ graph, so that form works while that session is alive.
 
 ``steps()`` is lazy: each ``Step`` carries the lowered operation (its op, kind, your source frame
 and, given ``outputs``, its form), its value, and the seconds it took, and nothing runs until you
-ask for the next one. A step that fails raises the same ``StageError`` ``gd.run`` would, pointing
-at your line. ``value`` is the task's partial, the plan's ``reduce`` over the replayed outputs, one value per
-output of the plan's graph as the run's ``reduce`` received them. ``diff()`` compares it with what
+ask for the next one. A step that fails raises a ``StageError`` as the task did, pointing at your
+line. ``value`` is the task's partial, the plan's ``reduce`` over the replayed outputs, one value
+per output of the plan's graph as the run's ``reduce`` received them. ``diff()`` compares it with what
 the run recorded (``reference == "recorded"``), or, when the run kept no output for that task,
 with the plan's graph (fused, unless the plan was built with ``opt_level=0``) run again on the same
 input (``"re-evaluated"``), so a difference between the fused and the one-at-a-time evaluation

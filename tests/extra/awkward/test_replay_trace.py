@@ -5,6 +5,7 @@ from __future__ import annotations
 import pickle
 import re
 from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
 import awkward as ak
@@ -14,9 +15,11 @@ import pytest
 import graphed
 import graphed.debug as gd
 from graphed import Session
-from graphed.awkward import AwkwardBackend, AwkwardForm, gak
+from graphed.awkward import AwkwardBackend, AwkwardForm, from_awkward, gak
 from graphed.core import Partition
+from graphed.core.execution import SequentialRunner
 from graphed.errors import StageError
+from graphed.preserve import build_bundle, reproduce
 
 gh = pytest.importorskip("graphed_histogram")
 
@@ -116,6 +119,68 @@ def test_a_failing_step_raises_at_its_line() -> None:
         list(gd.replay(_plan(broken), 0).steps())
     assert raised.value.frames[0].filename == __file__
     assert (raised.value.op, raised.value.opt_level) == ("external", 0)
+
+
+def test_rows_that_do_not_line_up_fail_in_replay_as_in_the_run() -> None:
+    ev, _ = _events()
+    unaligned = ev.met + ev[ev.met > 3.5].met
+    plan = _plan(unaligned)
+    with pytest.raises(StageError, match="different row sets"):
+        SequentialRunner().run(plan)
+    for given in ((), (unaligned,)):
+        with pytest.raises(StageError, match="different row sets") as raised:
+            list(gd.replay(plan, 0, *given).steps())
+        assert raised.value.op == "add"
+        assert raised.value.frames[0].filename == __file__
+    chunk = plan.tasks[0].partition
+    with pytest.raises(StageError, match="different row sets") as raised:
+        gd.run(unaligned.session, unaligned, partition=chunk)
+    assert raised.value.op == "add"
+
+
+def test_a_reduction_needs_no_aligned_rows_in_replay() -> None:
+    ev, _ = _events()
+    joined = gak.concatenate([ev.met, ev[ev.met > 3.5].met])
+    want = [1.0, 2.0, 3.0, 4.0, 4.0]
+    plan = _plan(joined)
+    assert ak.to_list(gd.replay(plan, 0).value[0]) == want
+    assert ak.to_list(gd.run(joined.session, joined, partition=plan.tasks[0].partition)) == want
+
+
+def test_a_bundle_reproduces_an_exchange_and_a_join(tmp_path: Path) -> None:
+    data = {
+        "ev": ak.Array({"k": [1, 2, 3], "a": [1.0, 2.0, 3.0]}),
+        "ot": ak.Array({"k": [2, 3], "b": [5.0, 6.0]}),
+    }
+    session = Session(AwkwardBackend())
+    ev = from_awkward("ev", data["ev"], session=session)
+    ot = from_awkward("ot", data["ot"], session=session)
+    for name, out in (("x", ev.a.repartition(n=2)), ("j", gak.join(ev, ot, on=["k"]))):
+        bundle = build_bundle(tmp_path / name, session=session, value=out, datasets=data)
+        assert ak.to_list(reproduce(bundle)) == ak.to_list(graphed.materialize(out))
+
+
+def test_a_run_of_the_whole_source_takes_no_row_check() -> None:
+    ev, _ = _events()
+    assert ak.to_list(gd.run(ev.session, ev.met + ev[ev.met > 3.5].met)) == [5.0, 6.0, 7.0, 8.0]
+
+
+def test_an_exchange_and_a_join_replay_as_the_run_ran_them() -> None:
+    ev, _ = _events()
+    # a partitioned plan refuses a keyed join of one source, so the join here is positional
+    left, right = gak.zip({"a": ev.met}), gak.zip({"b": ev.met * 2})
+    for output in (ev.met.repartition(n=2), gak.join(left, right, how="positional")):
+        plan = _plan(output)
+        ran = ak.to_list(SequentialRunner().run(plan).value[0])
+        assert ran
+        for given in ((), (output,)):
+            assert ak.to_list(gd.replay(plan, 0, *given).value[0]) == ran
+    short = gak.join(left, gak.zip({"b": ev[ev.met > 3.5].met}), how="positional")
+    plan = _plan(short)
+    with pytest.raises(StageError, match="got 4 rows against 1"):
+        SequentialRunner().run(plan)
+    with pytest.raises(StageError, match="got 4 rows against 1"):
+        list(gd.replay(plan, 0).steps())
 
 
 def _explode(chunk: Any) -> Any:
