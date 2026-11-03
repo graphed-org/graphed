@@ -11,8 +11,10 @@ An undeclared external call records its first input's type
 
 Everything else on this backend is typed by running the real awkward operation on tracing types
 instead of on data (:doc:`design` shows how), so the recorded type is exact. An external call is
-the exception: graphed does not look inside a ``map`` callable, a plugin's ``evaluate``, a
-correctionlib correction or an ONNX model, so it cannot derive their output type.
+the exception: graphed does not look inside a plugin's ``evaluate``, a correctionlib correction or
+an ONNX model, so it cannot derive their output type. A ``map`` or ``graphed.apply`` callable runs
+on tracing types as you record it and records the type it returns; if it cannot, a
+``GraphedWarning`` says so and it is treated like them.
 
 Where the value type is known without looking, graphed records it. The shipped correctionlib,
 ONNX, TensorFlow, PyTorch, XGBoost, JAX and Triton plugins, and ``gak.apply_correction`` with

@@ -1,0 +1,6 @@
+.. under: Replay any plan, and find the cut that emptied your data
+
+* A task that failed because its rows did not line up now fails the same way in ``replay`` and
+  ``gd.run(partition=)``, which broadcast them and returned a value.
+* A plan with a ``repartition`` or a join now replays, where its exchange or join step raised, and
+  ``reproduce`` runs them in a bundle the same way.

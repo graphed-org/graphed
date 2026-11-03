@@ -254,6 +254,15 @@ def sources_read(outputs: Sequence[Any]) -> dict[int, object]:
     return {nid: data for nid, data in session.sources().items() if nid in reached}
 
 
+def sole_source(outputs: Sequence[Any]) -> tuple[int, object]:
+    """Return the node id and data of the one source a write's ``outputs`` read."""
+    sources = sources_read(outputs)
+    if len(sources) != 1:
+        raise TypeError(f"a write needs exactly one source; these arrays read {len(sources)}")
+    ((node_id, data),) = sources.items()
+    return node_id, data
+
+
 def declared_columns(source: object, outputs: Sequence[object]) -> tuple[str, ...] | None:
     """Return the read list a source DECLARES for ``outputs``, or ``None`` when it declares none.
 
