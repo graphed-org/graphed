@@ -105,6 +105,10 @@ properties, the ufunc overloads of named types, ``map`` callables and Externals 
 that marking, so each must be row-wise for its result to be right, whichever way it runs. Two
 things need more than a chunk.
 
+Two datasets are two row sets, so an operation pairing their rows is refused where you wrote it.
+``graphed.join(how="positional")`` says two sources hold the same events in the same order, as
+friend trees do, and pairs them a block at a time; a differing row count is refused when it runs.
+
 ``graphed.join`` and ``graphed.repartition`` (with ``join_plan`` and ``shuffle_plan`` for the
 plan-level form) match or redistribute rows across partitions by key. Because that means every
 task potentially sending data to every other, the exchange is a boundary — a stage cannot fuse

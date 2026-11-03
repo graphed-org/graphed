@@ -21,7 +21,7 @@ from graphed import Array, ParamValue
 from graphed.array import scalar_params
 from graphed.errors import GraphedError, GraphedTypeError
 from graphed.provenance import capture
-from graphed.shuffle import JOINKEY
+from graphed.shuffle import JOINKEY, route_key
 from graphed.varied import boundary_refusal, containers_in, expand, expand_tuple, narrow
 
 from ..preserve.externals.correctionlib_external import (
@@ -48,7 +48,7 @@ from .backend import AwkwardForm, astype_form, broadcast_form
 
 
 def join(
-    left: Array, right: Array, *, on: Sequence[str], how: str = "inner", grouped: bool = False
+    left: Array, right: Array, *, on: Sequence[str] = (), how: str = "inner", grouped: bool = False
 ) -> Array:
     """Return the awkward-only ``gak.join`` verb (plan §3.1, a4).
 
@@ -60,14 +60,16 @@ def join(
     """
     if not grouped:
         return graphed.join(left, right, on=on, how=how)
+    if how == "positional" or not on:
+        raise TypeError("gak.join(grouped=True) takes on=[...]; a positional row has one match")
     if left.session is not right.session:
         raise GraphedError(
             "gak.join: left and right must belong to the same Session; record both into one (read "
             "the right side inside `with left.session:`, or pass the reader session=)"
         )
     session = left.session
-    lk = graphed.pack_key(left, on=on)
-    rk = graphed.pack_key(right, on=on)
+    lk = route_key(left, on)
+    rk = route_key(right, on)
     le = session.record_exchange(lk, {"scheme": "hash", "key": JOINKEY})
     re = session.record_exchange(rk, {"scheme": "hash", "key": JOINKEY})
     # same co-partitioning + full-key coalescing as graphed.join; grouped flips the Join to the
@@ -103,7 +105,7 @@ def cartesian(
     """Record ``ak.cartesian`` over ``arrays``."""
     inputs = list(arrays.values() if isinstance(arrays, Mapping) else arrays)
     params = _cartesian_params(arrays, axis, nested, with_name, parameters)
-    return _along_axis("ak.cartesian", inputs, params, axis)
+    return _along_axis("ak.cartesian", inputs, params, axis, unpaired=True)
 
 
 def zip(
@@ -392,7 +394,7 @@ def local_index(arr: Array, axis: int = -1) -> Array:
 
 def concatenate(arrays: Sequence[Array], axis: int = 0) -> Array:
     """Record ``ak.concatenate`` of ``arrays`` along ``axis``."""
-    return _along_axis("ak.concatenate", list(arrays), {"axis": axis}, axis)
+    return _along_axis("ak.concatenate", list(arrays), {"axis": axis}, axis, unpaired=True)
 
 
 def flatten(arr: Array, axis: int | None = 1) -> Array:
@@ -790,7 +792,7 @@ def argcartesian(
     """Record ``ak.argcartesian`` over ``arrays``."""
     inputs = list(arrays.values() if isinstance(arrays, Mapping) else arrays)
     params = _cartesian_params(arrays, axis, nested, with_name, parameters)
-    return _along_axis("ak.argcartesian", inputs, params, axis)
+    return _along_axis("ak.argcartesian", inputs, params, axis, unpaired=True)
 
 
 def without_field(arr: Array, field: str) -> Array:

@@ -9,7 +9,7 @@ import pytest
 
 from graphed import aggregate_plan
 from graphed.aggregate import _PartitionReduce
-from graphed.core import LocalResources
+from graphed.core import LocalResources, Plan
 from graphed.debug.replaying import Replay
 
 
@@ -25,6 +25,7 @@ def test_direct_replay_reduces_what_the_run_reduces(opt_level: int) -> None:
         steps_per_file=2,
         opt_level=opt_level,
     )
+    assert isinstance(plan, Plan)
     assert isinstance(plan.process, _PartitionReduce)
     task = plan.tasks[0]
     run: Any = plan.process(task.partition, LocalResources())
