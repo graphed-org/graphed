@@ -664,7 +664,7 @@ notebook, attach ``graphed.debug.ProgressBar``, on any runner:
 
 It ticks once per finished task, uses ``tqdm`` when that is installed and a plain text line
 otherwise, and closes when the run ends, whether it finished, failed or was cancelled. A staged
-plan (a join or a repartition) emits no task events, so it shows no progress.
+plan (a join or a repartition) emits no task events, so its bar shows no tasks.
 
 For anything else, a log line per task or a metrics push, subclass ``graphed.core.MonitorBase`` and
 override what you need. Per task you get exactly one ``SUBMITTED``, then one ``STARTED``, then

@@ -47,7 +47,7 @@ class ProgressBar(MonitorBase):
     ends, however it ends, and one bar can watch several runs in turn. The total is the plan's task
     count and follows an adaptive plan as its tasks arrive.
 
-    A staged plan (a join or a repartition) emits no task events, so it shows no progress.
+    A staged plan (a join or a repartition) emits no task events, so its bar shows no tasks.
     """
 
     lean_events = True
