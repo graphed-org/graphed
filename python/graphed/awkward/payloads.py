@@ -120,32 +120,12 @@ def onnx_weights_hash(payload: bytes) -> str:
     return "sha256:" + h.hexdigest()
 
 
-_CorrectionInputs = dict[str, tuple[str, ...]]
-
-
-def _correctionlib_identity(
-    payload: bytes,
-) -> tuple[str, str, _CorrectionInputs, _CorrectionInputs]:
-    from graphed.preserve.externals._helpers import json_bytes
-    from graphed.preserve.externals.correctionlib_external import correctionlib_contents_digest
-
-    data = json.loads(json_bytes(payload))
-    regular, stacked = (
-        {entry["name"]: tuple(i["name"] for i in entry["inputs"]) for entry in data.get(key) or ()}
-        for key in ("corrections", "compound_corrections")
-    )
-    schema_version = str(data.get("schema_version", "unknown"))
-    return correctionlib_contents_digest(data), schema_version, regular, stacked
-
-
 def correctionlib_contents_descriptor(payload: bytes, correction_name: str) -> PayloadDescriptor:
     """Describe correction ``correction_name`` of a correctionlib payload's bytes."""
-    from graphed.preserve.externals._helpers import memoized_model_hash
+    from graphed.preserve.externals.correctionlib_external import memoized_identity
 
     # one set is recorded once per call (e.g. per systematic universe): parse it once
-    content_hash, schema_version, _, _ = memoized_model_hash(
-        "correctionlib-descriptor", payload, _correctionlib_identity
-    )
+    content_hash, schema_version, _, _ = memoized_identity(payload)
     return PayloadDescriptor(
         kind="correctionlib",
         content_hash=content_hash,
@@ -154,14 +134,6 @@ def correctionlib_contents_descriptor(payload: bytes, correction_name: str) -> P
         io_schema=correction_name,
         preprocessing_ref=None,
     )
-
-
-def correctionlib_inputs(payload: bytes) -> tuple[_CorrectionInputs, _CorrectionInputs]:
-    """Map each name in a set's ``corrections`` and ``compound_corrections`` to its input names."""
-    from graphed.preserve.externals._helpers import memoized_model_hash
-
-    identity = memoized_model_hash("correctionlib-descriptor", payload, _correctionlib_identity)
-    return identity[2:]
 
 
 def onnx_weights_descriptor(payload: bytes) -> PayloadDescriptor:

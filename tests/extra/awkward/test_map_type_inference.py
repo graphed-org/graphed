@@ -77,6 +77,38 @@ def test_a_function_that_cannot_be_traced_warns_and_records_the_input_type(fn: A
     assert w[0].filename == __file__
 
 
+def test_a_failed_trace_names_its_reason() -> None:
+    session = Session(AwkwardBackend())
+    ev = from_awkward("ev", ak.Array({"Muon": [[{"pt": 1.0}], []]}), session=session)
+    reason = r"<lambda> \(AttributeError: no field named 'ptt'\); pass output_type="
+    with pytest.warns(GraphedWarning, match=reason):
+        ev.Muon.map(lambda muons: muons.ptt)
+
+
+class _UnprintableError(Exception):
+    def __str__(self) -> str:
+        raise RuntimeError("unprintable")
+
+
+def _raise(exc: Exception) -> Any:
+    raise exc
+
+
+@pytest.mark.parametrize(
+    ("exc", "reason"),
+    [
+        (KeyError(), r"\(KeyError\);"),
+        (ValueError("\n\nreal reason\nmore"), r"\(ValueError: real reason\);"),
+        (_UnprintableError(), r"\(_UnprintableError\);"),
+    ],
+    ids=["empty", "leading-blank", "unprintable"],
+)
+def test_a_reason_without_a_usable_first_line_names_the_type(exc: Exception, reason: str) -> None:
+    _, ev = events()
+    with pytest.warns(GraphedWarning, match=reason):
+        ev.m.map(lambda values: _raise(exc))
+
+
 def test_a_declared_type_is_not_traced_and_stays_identity() -> None:
     _, ev = events()
     called: list[object] = []
