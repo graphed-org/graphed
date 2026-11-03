@@ -168,7 +168,8 @@ def test_shuffle_plan_reading_two_partitioned_sources_raises_type_error() -> Non
     s = Session(ToyBackend())
     x = s.source("x", form=_ToyForm("f"), data=ListSource(_rows(4)))
     y = s.source("y", form=_ToyForm("f"), data=ListSource(_rows(2)))
-    output = graphed.repartition(s.record_op("add", [x, y]), by="__joinkey__").reduce("sum")
+    appended = s.record_op("concatenate", [x, y], reduction=True, rows_from=(0, 1))
+    output = graphed.repartition(appended, by="__joinkey__").reduce("sum")
     with pytest.raises(TypeError, match=r"exactly one partitioned source; the output reads 2"):
         graphed.shuffle_plan(
             output,
