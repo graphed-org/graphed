@@ -209,6 +209,11 @@ def check_correctionlib_params(params: Mapping[str, Any], payload: bytes, n_inpu
         )
     if not has_array:
         raise _refused(f"correction {name!r} needs at least one Array input")
+    if template is None and n_inputs > 1:  # the legacy call evaluates inputs[0] alone
+        raise _refused(
+            f"correction {name!r} with systematic= takes one Array input, {wanted[1]!r}; "
+            f"got {n_inputs}"
+        )
 
 
 def eval_correctionlib(cset: Any, params: Mapping[str, Any], inputs: list[Any]) -> Any:

@@ -324,6 +324,14 @@ def test_the_legacy_shape_needs_an_input() -> None:
         _external(ev, params, payload=_LEGACY)
 
 
+def test_the_legacy_shape_refuses_a_second_input() -> None:
+    ev = _flat()
+    params = {"name": "sf", "systematic": "nominal"}
+    with pytest.raises(GraphedTypeError, match="takes one Array input, 'x'; got 2") as caught:
+        _external(ev, params, ev.pt, ev.pt * 2.0, payload=_LEGACY)
+    assert caught.value.provenance.filename == __file__
+
+
 def test_a_wrong_name_outranks_a_bad_template() -> None:
     _, ev = _events()
     exc = _refused(lambda: gak.apply_correction(CSET, "typo", [ev.pt], args=["$7"]))
