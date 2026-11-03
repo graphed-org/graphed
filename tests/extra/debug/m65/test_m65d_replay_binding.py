@@ -55,7 +55,9 @@ def _events(tmp_path: Path) -> tuple[Session, Array]:
 
 
 def _plan(y: Array, **kw: Any) -> Plan[Any]:
-    return aggregate_plan(y, reduce=_first, combine=_add, empty=_zero, steps_per_file=4, **kw)
+    plan = aggregate_plan(y, reduce=_first, combine=_add, empty=_zero, steps_per_file=4, **kw)
+    assert isinstance(plan, Plan)
+    return plan
 
 
 def _replay_error(r: Replay) -> BaseException:

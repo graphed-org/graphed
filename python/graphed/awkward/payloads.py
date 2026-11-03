@@ -8,7 +8,6 @@ Reuse the standards — invent no formats.
 
 from __future__ import annotations
 
-import contextlib
 import hashlib
 import json
 import platform
@@ -100,10 +99,9 @@ def opaque_callable_descriptor(fn_name: str) -> PayloadDescriptor:
 def correctionlib_contents_hash(payload: bytes) -> str:
     """sha256 of the correction set's CONTENTS (canonical JSON) — formatting is not identity."""
     from graphed.preserve.externals._helpers import json_bytes
+    from graphed.preserve.externals.correctionlib_external import correctionlib_contents_digest
 
-    data = json.loads(json_bytes(payload))
-    canonical = json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    return "sha256:" + hashlib.sha256(b"correctionlib-contents-v1" + canonical).hexdigest()
+    return correctionlib_contents_digest(json.loads(json_bytes(payload)))
 
 
 def onnx_weights_hash(payload: bytes) -> str:
@@ -122,13 +120,22 @@ def onnx_weights_hash(payload: bytes) -> str:
     return "sha256:" + h.hexdigest()
 
 
-def _correctionlib_identity(payload: bytes) -> tuple[str, str]:
-    from graphed.preserve.externals._helpers import json_bytes
+_CorrectionInputs = dict[str, tuple[str, ...]]
 
-    schema_version = "unknown"
-    with contextlib.suppress(Exception):  # malformed JSON still fails loudly at the hash step
-        schema_version = str(json.loads(json_bytes(payload)).get("schema_version", "unknown"))
-    return correctionlib_contents_hash(payload), schema_version
+
+def _correctionlib_identity(
+    payload: bytes,
+) -> tuple[str, str, _CorrectionInputs, _CorrectionInputs]:
+    from graphed.preserve.externals._helpers import json_bytes
+    from graphed.preserve.externals.correctionlib_external import correctionlib_contents_digest
+
+    data = json.loads(json_bytes(payload))
+    regular, stacked = (
+        {entry["name"]: tuple(i["name"] for i in entry["inputs"]) for entry in data.get(key) or ()}
+        for key in ("corrections", "compound_corrections")
+    )
+    schema_version = str(data.get("schema_version", "unknown"))
+    return correctionlib_contents_digest(data), schema_version, regular, stacked
 
 
 def correctionlib_contents_descriptor(payload: bytes, correction_name: str) -> PayloadDescriptor:
@@ -136,7 +143,7 @@ def correctionlib_contents_descriptor(payload: bytes, correction_name: str) -> P
     from graphed.preserve.externals._helpers import memoized_model_hash
 
     # one set is recorded once per call (e.g. per systematic universe): parse it once
-    content_hash, schema_version = memoized_model_hash(
+    content_hash, schema_version, _, _ = memoized_model_hash(
         "correctionlib-descriptor", payload, _correctionlib_identity
     )
     return PayloadDescriptor(
@@ -147,6 +154,14 @@ def correctionlib_contents_descriptor(payload: bytes, correction_name: str) -> P
         io_schema=correction_name,
         preprocessing_ref=None,
     )
+
+
+def correctionlib_inputs(payload: bytes) -> tuple[_CorrectionInputs, _CorrectionInputs]:
+    """Map each name in a set's ``corrections`` and ``compound_corrections`` to its input names."""
+    from graphed.preserve.externals._helpers import memoized_model_hash
+
+    identity = memoized_model_hash("correctionlib-descriptor", payload, _correctionlib_identity)
+    return identity[2:]
 
 
 def onnx_weights_descriptor(payload: bytes) -> PayloadDescriptor:

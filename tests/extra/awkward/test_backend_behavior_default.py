@@ -88,7 +88,9 @@ def _doubled(x: Array) -> Any:
 def _aggregate(session: Session, out: Any = _doubled, **kwargs: Any) -> Plan[Any]:
     ev = _source(session, "events", EVENTS)
     y = out(ev.x)
-    return graphed.aggregate_plan(y, steps_per_file=2, **FOLD, **kwargs)
+    plan = graphed.aggregate_plan(y, steps_per_file=2, **FOLD, **kwargs)
+    assert isinstance(plan, Plan)
+    return plan
 
 
 def _shuffle(session: Session, out: Any = _doubled, **kwargs: Any) -> Any:

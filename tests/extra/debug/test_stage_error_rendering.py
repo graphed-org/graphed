@@ -18,7 +18,7 @@ import graphed.awkward as ga
 import graphed.awkward.functions as gak
 import graphed.debug as gd
 from graphed.aggregate import _type_string, read_label
-from graphed.core import Partition, SequentialRunner, chunk_label
+from graphed.core import Partition, Plan, SequentialRunner, chunk_label
 from graphed.debug.report import RunReport
 from graphed.errors import SourceFrame
 
@@ -171,6 +171,7 @@ def test_blind_label_falls_back_to_the_chunk_size(tmp_path: Path, count: bool) -
     events = _source(tmp_path)
     output = gak.sum(events.x.map(_calib, name="calib"), axis=None)
     plan = graphed.aggregate_plan(output, reduce=_first, combine=_sum, empty=_zero)
+    assert isinstance(plan, Plan)
     shipped: Any = plan.process
     process = replace(shipped, reader=_Unknowing(shipped.reader, count=count))
     with pytest.raises(gd.StageError) as info:

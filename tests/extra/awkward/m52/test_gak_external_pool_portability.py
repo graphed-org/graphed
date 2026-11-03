@@ -36,6 +36,10 @@ from graphed.awkward.payloads import correctionlib_contents_hash, onnx_weights_h
 from graphed.core import Partition
 from graphed.core.execution import SequentialRunner, WorkerResources
 from graphed.preserve.errors import PreserveError
+from graphed.preserve.externals.correctionlib_external import (
+    eval_correctionlib,
+    load_correctionlib,
+)
 from graphed.session import CheckedExternal
 
 EVENTS = make_events(n_events=1_500, seed=52)
@@ -425,19 +429,18 @@ def test_a_compound_correction_resolves_out_of_cset_compound() -> None:
 
 
 def test_an_unknown_correction_name_names_both_key_sets() -> None:
-    """The miss is an `IndexError: map::at: key not found` out of pybind11 otherwise.
+    """A plan saved by an older graphed reaches this miss at run time, past record's refusal.
 
+    The miss is an `IndexError: map::at: key not found` out of pybind11 otherwise.
     It names neither the correction asked for nor what the payload does hold, plain or compound.
     """
     pytest.importorskip("correctionlib")
-    session = Session(AwkwardBackend())
-    ev = from_awkward(session, "events", _COMPOUND_EVENTS)
-    sf = gak.apply_correction(COMPOUND_CSET, "l3", [ev.Jet.pt], _unusable, args=["$0"])
+    cset = load_correctionlib(COMPOUND_CSET, {})
 
     with pytest.raises(
         PreserveError, match=r"no correction named 'l3'.*\['l1', 'l2'\].*\['jec'\]"
     ):
-        session.materialize(sf)
+        eval_correctionlib(cset, {"name": "l3", "args": '["$0"]'}, [np.zeros(1)])
 
 
 def test_a_missing_framework_is_attributed_to_the_plugin() -> None:

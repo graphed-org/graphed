@@ -30,6 +30,11 @@ class NumpyForm:
         """The number of dimensions."""
         return len(self.shape)
 
+    @property
+    def has_rows(self) -> bool:
+        """Return whether axis 0 is still the partitioned one, not consumed by an aggregate."""
+        return self.shape[:1] == (None,)
+
     def describe(self) -> str:
         """Return the form as a short type string."""
         if self.fields is not None:
