@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from graphed.core import DurablePlan, DurablePlanV2, Partition
+from graphed.core.worker_warnings import without_warnings
 from graphed.services import require_bound
 
 from .codec import Codec, PickleCodec
@@ -181,12 +182,15 @@ def _run_one(
     resources: Any,
     retry: RetryPolicy | None,
 ) -> Any:
+    def plain(partition: Partition, res: Any) -> Any:
+        return without_warnings(process(partition, res))
+
     try:
-        return process(part, resources)
+        return plain(part, resources)
     except Exception as exc:
         if retry is None:
             raise
-        return retry.recover(part, exc, process=process, combine=combine, resources=resources)
+        return retry.recover(part, exc, process=plain, combine=combine, resources=resources)
 
 
 # ---- M39: two-phase (map-write -> gather) shuffle resume ----------------------------------------

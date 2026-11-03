@@ -397,7 +397,9 @@ def _like_dtype(p: Mapping[str, Any]) -> Any:
 
 _OPS: dict[str, _Handler] = {
     # M40 §2.1: add the big-endian-packed u64 __joinkey__ column
-    "pack_key": lambda op, xs, p: join.pack_key(xs[0], join.on_from_params(p)),
+    "pack_key": lambda op, xs, p: join.pack_key(
+        xs[0], join.on_from_params(p), route=bool(p.get("route"))
+    ),
     # a pure data-movement boundary is identity on values in-process (§3.3a)
     "exchange": lambda op, xs, p: xs[0],
     "field": _field,

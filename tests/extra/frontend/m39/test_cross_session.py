@@ -16,6 +16,7 @@ from graphed import Session
 from graphed.backend import Form
 from graphed.core import Partition
 from graphed.core.execution import SequentialRunner
+from graphed.write import PartWrite
 
 
 @dataclass(frozen=True)
@@ -244,3 +245,60 @@ def test_aggregate_plan_over_several_sessions_names_collate() -> None:
         _fold([x, y])
     plan = graphed.collate({"x": _fold([x]), "y": _fold([y])})
     assert SequentialRunner().run(plan).value == {"x": [3], "y": [3]}
+
+
+def test_aggregate_plan_over_two_sources_of_one_session_names_collate() -> None:
+    s = Session(SumBackend())
+    x = s.source("x", form=_form(), data=Rows((1, 2)))
+    y = s.source("y", form=_form(), data=Rows((3,)))
+    with pytest.raises(TypeError, match=r"read 2 \(x, y\); collate one plan per source \(graphed"):
+        _fold([x, y])
+    plan = graphed.collate({"x": _fold([x]), "y": _fold([y])})
+    assert SequentialRunner().run(plan).value == {"x": [3], "y": [3]}
+
+
+def test_aggregate_plan_over_one_output_of_two_sources_does_not_offer_collate() -> None:
+    s = Session(SumBackend())
+    x = s.source("x", form=_form(), data=Rows((1, 2)))
+    y = s.source("y", form=_form(), data=Rows((3,)))
+    add = s.record_op("add", [x, y], rows_from=(0, 1))
+    for outputs in ([add], [x, add]):
+        with pytest.raises(TypeError, match=r"the outputs read 2 \(x, y\)$"):
+            _fold(outputs)
+
+
+def test_aggregate_plan_over_no_partitioned_source_does_not_offer_collate() -> None:
+    x = Session(SumBackend()).source("x", form=_form(), data=Loader((1,)))
+    with pytest.raises(TypeError, match=r"the outputs read 0$"):
+        _fold([x])
+
+
+def test_aggregate_plan_counts_only_partitioned_sources_toward_collate() -> None:
+    s = Session(SumBackend())
+    x = s.source("x", form=_form(), data=Rows((1, 2)))
+    y = s.source("y", form=_form(), data=Rows((3,)))
+    z = s.source("z", form=_form(), data=Loader((1, 2)))
+    with pytest.raises(TypeError, match=r"read 2 \(x, y\); collate one plan per source"):
+        _fold([s.record_op("add", [x, z], rows_from=(0, 1)), y])
+
+
+def test_aggregate_plan_over_one_name_read_twice_does_not_offer_collate() -> None:
+    s = Session(SumBackend())
+    rows = Rows((1, 2))
+    x = s.source("x", form=_form(), data=rows, flavor="a")
+    y = s.source("x", form=_form(), data=rows, flavor="b")
+    with pytest.raises(TypeError, match=r"the outputs read 2 \(x, x\)$"):
+        _fold([x, y])
+    with pytest.raises(ValueError, match="appears in plans"):
+        graphed.collate({"x": _fold([x]), "y": _fold([y])})
+
+
+def test_aggregate_plan_over_a_write_with_metadata_of_another_source_does_not_offer_collate() -> (
+    None
+):
+    s = Session(SumBackend())
+    x = s.source("x", form=_form(), data=Rows((1, 2)))
+    y = s.source("y", form=_form(), data=Rows((3,)))
+    write = PartWrite(x, "out", lambda p: "part", lambda v, p, kv: None, metadata={"y": y})
+    with pytest.raises(TypeError, match=r"the outputs read 2 \(x, y\)$"):
+        graphed.aggregate_plan(reduce=list, combine=lambda a, b: a, empty=list, writes=[write])

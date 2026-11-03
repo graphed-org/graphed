@@ -31,13 +31,14 @@ import graphed.awkward as ga  # noqa: E402
 import graphed.awkward.io  # noqa: E402
 from graphed import GraphedError  # noqa: E402
 from graphed.awkward import gak  # noqa: E402
-from graphed.core.execution import SequentialRunner  # noqa: E402
+from graphed.core.execution import Plan, SequentialRunner  # noqa: E402
 
 
 def _run(*writes: Any, steps: int = 2) -> list[str]:
     plan = graphed.aggregate_plan(
         reduce=paths_only, combine=add, empty=no_paths, steps_per_file=steps, writes=list(writes)
     )
+    assert isinstance(plan, Plan)
     tasks = sorted(plan.tasks, key=lambda t: t.key)
     paths: list[str] = SequentialRunner().run(plan).value
     assert len(paths) == len(writes) * len(tasks)
@@ -59,6 +60,7 @@ def test_parquet_write_reproduces_a_dump_to_parquet_part(tmp_path: Path) -> None
     plan = graphed.aggregate_plan(
         reduce=paths_only, combine=add, empty=no_paths, steps_per_file=2, writes=[write]
     )
+    assert isinstance(plan, Plan)
     paths = SequentialRunner().run(plan).value
     for task, path in zip(sorted(plan.tasks, key=lambda t: t.key), paths, strict=True):
         chunk = resolved_chunk(EVENTS, task.partition)
