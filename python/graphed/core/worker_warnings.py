@@ -25,7 +25,7 @@ _install_lock = threading.Lock()
 _shown: Callable[..., None] = warnings.showwarning
 # the pid tells a forked child from its parent; the uuid, another host's process with the same pid
 _interpreter = uuid.uuid4().hex
-_worker_id: str | None = None
+_worker_pid: int | None = None
 
 
 def process_id() -> str:
@@ -39,9 +39,9 @@ def enter_worker(driver: str) -> None:
     Only a marked worker keeps its tasks' warnings; a runner that never calls this leaves them
     where they are issued.
     """
-    global _worker_id
+    global _worker_pid
     if driver != process_id():
-        _worker_id = process_id()
+        _worker_pid = os.getpid()
 
 
 def _carried(category: type[Warning]) -> type[Warning]:
@@ -89,7 +89,7 @@ def keeping_warnings() -> Iterator[_Caught]:
     variable: ``catch_warnings`` is not thread-safe.
     """
     caught: _Caught = {}
-    if _worker_id != process_id():
+    if os.getpid() != _worker_pid:
         yield caught
         return
     _install()

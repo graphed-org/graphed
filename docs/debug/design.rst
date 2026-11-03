@@ -723,14 +723,14 @@ runner, and on a plan from ``aggregate_plan``, ``collate`` or a histogram's ``to
 over a join, which runs in stages and is refused; wrap it before ``resumable`` or histserv. A task's
 key does not change, so results a store already holds are served as they are, unchecked.
 
-Without it, the warning itself still reaches you. A task in a worker process keeps what it raises,
-and the run issues each message once on the driver, naming the first chunk that raised it, so
-``warnings.catch_warnings(record=True)`` around ``run`` catches it. A task in the driver's process
-warns as usual. A task that fails adds what it caught to the error as notes, and a result served
-from a store warns nothing, since the store holds only the result. A warning class that cannot be
-pickled, or built from a message, arrives as its builtin base. A join's or a repartition's tasks
-keep warning on the worker's stderr. A plan you build yourself around a shipped ``plan.process``
-needs ``plan.combine`` and ``plan.finalize`` with it, or a ``DurablePlan``.
+Without it, the warning itself still reaches you. A task in a marked worker process (below) keeps
+what it raises, and the run issues each message once on the driver, naming the first chunk that
+raised it, so ``warnings.catch_warnings(record=True)`` around ``run`` catches it. A task in the
+driver's process warns as usual. A task that fails adds what it caught to the error as notes, and a
+result served from a store warns nothing, since the store holds only the result. A warning class
+that cannot be pickled, or built from a message, arrives as its builtin base. A join's or a
+repartition's tasks keep warning on the worker's stderr. A plan you build yourself around a shipped
+``plan.process`` needs ``plan.combine`` and ``plan.finalize`` with it, or a ``DurablePlan``.
 
 A worker keeps its warnings only once its runner calls
 ``graphed.core.worker_warnings.enter_worker(driver)`` there, with the driver's ``process_id()``.
