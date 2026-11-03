@@ -671,7 +671,7 @@ def aggregate_plan(
         if opt_level != 1:
             raise TypeError("aggregate_plan over a join takes no opt_level=0")
     else:
-        nid, data = _one_source(partitioned)
+        nid, data = _one_source(session, outputs, writes, partitioned)
     slot = _slot_of(compiled)
     written = {compiled.correspondence.node_map[w.array.node_id][0] for w in writes}
     refuse_chunk_partials(compiled, as_outputs=written)
@@ -771,12 +771,29 @@ def _has_join(compiled: CompiledGraph) -> bool:
     return any(n["kind"] == "join" for n in GraphStore.deserialize(bytes(compiled.ir)).nodes())
 
 
-def _one_source(partitioned: Mapping[int, PartitionedSource]) -> tuple[int, PartitionedSource]:
+def _one_source(
+    session: Session,
+    outputs: Sequence[Array],
+    writes: Sequence[PartWrite],
+    partitioned: Mapping[int, PartitionedSource],
+) -> tuple[int, PartitionedSource]:
     """Return the one partitioned source in ``partitioned``, with its node id."""
     if len(partitioned) != 1:
+        names = sorted(session.source_name(nid) for nid in partitioned)
+        listed = f" ({', '.join(names)})" if names else ""
+        # collate splits whole outputs and writes; one name is one dataset, read twice it refuses.
+        units = [[o] for o in outputs] + [
+            _planned_arrays((), (w,), store=None, opt_level=1) for w in writes
+        ]
+        if (
+            names
+            and len(set(names)) == len(names)
+            and all(len(_partitioned(unit)) < 2 for unit in units)
+        ):
+            listed += "; collate one plan per source (graphed.collate)"
         raise TypeError(
             "aggregate_plan needs exactly one partitioned source; the outputs read "
-            f"{len(partitioned)}"
+            f"{len(partitioned)}{listed}"
         )
     ((nid, data),) = partitioned.items()
     return nid, data
