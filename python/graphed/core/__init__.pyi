@@ -85,8 +85,10 @@ from .execution import (
     lean_events as lean_events,
 )
 from .execution import (
-    observed_run as observed_run,
     n_failed as n_failed,
+)
+from .execution import (
+    observed_run as observed_run,
 )
 from .execution import (
     partition_label as partition_label,
