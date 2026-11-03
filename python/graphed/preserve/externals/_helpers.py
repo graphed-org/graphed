@@ -160,7 +160,10 @@ def parse_call_template(
 
 def refuse_unread_inputs(op: str, params: Mapping[str, Any], n_inputs: int) -> None:
     """Refuse a call template that leaves an input unread: it would be recorded, then ignored."""
-    template = parse_call_template(params, n_inputs, allow_constants=True)
+    try:
+        template = parse_call_template(params, n_inputs, allow_constants=True)
+    except PreserveError as err:
+        raise GraphedTypeError(op, capture(), str(err)) from err
     if template is None:
         return
     read: set[int] = set()

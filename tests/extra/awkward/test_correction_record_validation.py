@@ -368,6 +368,45 @@ def test_every_input_a_slot_reads_records(record: Any) -> None:
     assert record(ev).session is ev.session
 
 
+@pytest.mark.parametrize(
+    ("record", "match"),
+    [
+        (
+            lambda ev: record_external(ev.session, ONNX_PLUGIN, _onnx(), [ev.pt, ev.eta]),
+            "feeds its first input alone; got 2",
+        ),
+        (
+            lambda ev: record_external(
+                ev.session, ONNX_PLUGIN, _onnx(), [ev.pt], params={"args": [["$0", "$3"]]}
+            ),
+            r"slot \$3 out of range",
+        ),
+    ],
+    ids=["onnx-legacy-second-input", "onnx-group-out-of-range"],
+)
+def test_a_plugin_template_mistake_is_refused_at_the_user_line(record: Any, match: str) -> None:
+    _, ev = _events()
+    with pytest.raises(GraphedTypeError, match=match) as caught:
+        record(ev)
+    assert caught.value.provenance.filename == __file__
+
+
+@pytest.mark.parametrize(
+    "record",
+    [
+        lambda ev, other: gak.apply_correction(CSET, "l1", [ev.pt, other.eta], args=["$0", "$1"]),
+        lambda ev, other: gak.onnx_inference(_onnx(), [ev.pt, other.eta], print, args=["$9"]),
+        lambda ev, other: _external(ev, {"name": "l1", "args": '["$0", "$1"]'}, ev.pt, other.eta),
+    ],
+    ids=["apply_correction", "onnx_inference", "record_external"],
+)
+def test_a_foreign_input_outranks_a_bad_template(record: Any) -> None:
+    _, ev = _events()
+    _, other = _events()
+    with pytest.raises(GraphedTypeError, match="different Session"):
+        record(ev, other)
+
+
 def test_a_wrong_name_outranks_a_bad_template() -> None:
     _, ev = _events()
     exc = _refused(lambda: gak.apply_correction(CSET, "typo", [ev.pt], args=["$7"]))

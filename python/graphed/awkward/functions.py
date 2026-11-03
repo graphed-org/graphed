@@ -577,6 +577,8 @@ def apply_correction(
         arrays, args = _named_template(wanted, name, named)
     elif args is None:
         args = [f"${i}" for i in range(len(arrays))]
+    if arrays:  # a foreign input outranks a bad template, as in `record_external`
+        arrays[0].session._mine(arrays, ("correction", capture()))
     try:
         entries = _parse_template(args, len(arrays), constants=True, groups=False)
     except (TypeError, ValueError) as err:
@@ -588,7 +590,6 @@ def apply_correction(
     }
     check_correctionlib_params(params, blob, len(arrays))
     session = arrays[0].session
-    session._mine(arrays, ("correction", capture()))  # before `session.form` reads an input
     refuse_unread_inputs("correction", params, len(arrays))
     slots = [arrays[i] for kind, i in entries if kind == "slot"]
     descriptor = payloads.correctionlib_contents_descriptor(blob, name)
@@ -632,6 +633,8 @@ def onnx_inference(
         return inputs[0].session.record_external(
             "onnx", runner, list(inputs), {"path": str(payload)}
         )
+    session = inputs[0].session
+    session._mine(list(inputs), ("onnx", capture()))  # a foreign input outranks a bad template
     blob = _payload_bytes(payload)
     arg_entries = _parse_template(args or [], len(inputs), constants=False, groups=True)
     kw_entries = {
@@ -647,8 +650,6 @@ def onnx_inference(
         kw = {k: _ml_matrix(e, vals) for k, e in kw_entries.items()}
         return runner(*call, **kw)
 
-    session = inputs[0].session
-    session._mine(list(inputs), ("onnx", capture()))  # before `session.form` reads an input
     params: dict[str, str] = {}
     if args is not None:
         params["args"] = json.dumps(args, sort_keys=False)

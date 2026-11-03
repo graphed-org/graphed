@@ -20,9 +20,12 @@ correction set or ONNX model. The older ``evaluator``-only recording is unchange
 
 ``record_external`` with the correctionlib plugin refuses the same mistakes at its recording line.
 ``ExternalPlugin.check_params`` now receives ``(params, payload, n_inputs)``, so a custom plugin's
-hook must take all three. A legacy ``systematic=`` call with more than one input, which used only
-the first, now raises, as does a call template (``args=``, ``kwargs=``) that leaves an input unread,
-from ``record_external``, ``gak.apply_correction`` and ``gak.onnx_inference`` alike (#181).
+hook must take all three. A call that would record an input and never read it now raises: a call
+template (``args=``, ``kwargs=``) that leaves an input unread, from ``record_external``,
+``gak.apply_correction`` and ``gak.onnx_inference`` alike, and a legacy correctionlib
+``systematic=`` or ONNX call without a template given more than one input. A malformed template
+raises at the recording line too, and an input from another Session is reported before any of
+these (#181).
 
 Two datasets in one Session no longer pair their rows by accident
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
