@@ -41,5 +41,5 @@ from .accessors import (  # isort: skip
 from .ambient import Rider as Rider, ambient_entries as ambient_entries  # isort: skip
 from .explain import Explanation as Explanation, explain as explain  # isort: skip
 from .kinds import Kind as Kind  # isort: skip
-from .verb import vary as vary  # isort: skip
+from .verb import ScalarFactor as ScalarFactor, vary as vary  # isort: skip
 from .varied import Varied as Varied, member_of as member_of  # isort: skip

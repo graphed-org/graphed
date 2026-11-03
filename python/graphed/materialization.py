@@ -484,6 +484,14 @@ def _first_label(entries: int) -> str:
     return f"first {entries} entries"
 
 
+def _first_sample(entries: int, caller: str) -> _Sample:
+    if type(entries) is not int or entries < 1:
+        raise ValueError(f"{caller}(entries=) is a positive int, not {entries!r}")
+    return _Sample(
+        lambda s, a: _first_entries(s, a, entries, s.source_value)[0], _first_label(entries)
+    )
+
+
 def _sample_of(entries: int | None, partition: Partition | None) -> _Sample | None:
     """Return what ``entries=`` or ``partition=`` asks for, refusing a bad request."""
     if entries is not None and partition is not None:
@@ -497,13 +505,7 @@ def _sample_of(entries: int | None, partition: Partition | None) -> _Sample | No
             return {nid: chunk()}
 
         return _Sample(reads, lambda: labels[-1](), chunked=True)
-    if entries is None:
-        return None
-    if type(entries) is not int or entries < 1:
-        raise ValueError(f"materialize(entries=) is a positive int, not {entries!r}")
-    return _Sample(
-        lambda s, a: _first_entries(s, a, entries, s.source_value)[0], _first_label(entries)
-    )
+    return None if entries is None else _first_sample(entries, "materialize")
 
 
 def materialize(
