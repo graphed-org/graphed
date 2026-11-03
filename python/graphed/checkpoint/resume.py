@@ -17,7 +17,6 @@ a changed environment refuses on, rather than in them.
 from __future__ import annotations
 
 import collections
-import copy
 import copyreg
 import dataclasses
 import dis
@@ -163,6 +162,13 @@ def _resolves(module: str, qualname: str, obj: object) -> bool:
     return found is obj
 
 
+def _attrs_unset(array: Any) -> Any:
+    # reading an unset attrs fills it with {}; awkward's constructor would rerun validators
+    bare = object.__new__(type(array))
+    vars(bare).update(vars(array), _attrs=None)
+    return bare
+
+
 class _KeyPickler(pickle._Pickler):
     """Cloudpickle's by-value/by-name partition and reducers on the pure-Python pickler.
 
@@ -187,6 +193,7 @@ class _KeyPickler(pickle._Pickler):
         self._globals: dict[int, dict[str, Any]] = {}
         self._rebound = rebound
         self._keyed: dict[int, Any] = {}
+        self._unset: dict[int, tuple[Any, Any]] = {}
         own: dict[type, Callable[[Any], Any]] = {
             weakref.WeakSet: lambda ws: (weakref.WeakSet, (self._sorted(ws),)),
             types.ModuleType: self._module_reduce,
@@ -217,6 +224,12 @@ class _KeyPickler(pickle._Pickler):
         # a transport wrapper keys as what it carries, so wrapping moves no task key
         while (keyed_as := getattr(type(obj), "_keyed_as", None)) is not None:
             obj = self._keyed.setdefault(id(obj), keyed_as(obj))
+        if (
+            isinstance(obj, self._arrays)
+            and obj._attrs is not None
+            and all(k.startswith("@") for k in obj._attrs)
+        ):
+            obj = self._unset.setdefault(id(obj), (obj, _attrs_unset(obj)))[1]
         _PURE._Pickler.save(self, obj, save_persistent_id)
 
     def memoize(self, obj: Any) -> None:
@@ -241,11 +254,6 @@ class _KeyPickler(pickle._Pickler):
         kind = type(obj)
         if kind is set or kind is frozenset:
             return kind, (self._sorted(cast("Iterable[Any]", obj)),)
-        # reading an unset attrs fills it with {}, and pickling drops "@" keys
-        if isinstance(obj, self._arrays) and all(k.startswith("@") for k in obj._attrs or ()):
-            bare = copy.copy(obj)
-            bare._attrs = None
-            return bare.__reduce_ex__(5)
         if isinstance(obj, type) and id(obj) in self._seen:
             return _key_only, (obj.__module__, obj.__qualname__)
         if id(obj) in self._classdicts:  # a class's own dict, reached from its annotate function

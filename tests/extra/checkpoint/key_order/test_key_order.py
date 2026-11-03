@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copyreg
 import json
 import logging
 import numbers
@@ -222,12 +223,12 @@ def _array() -> ak.Array:
 
 
 @pytest.mark.parametrize("held", [_array, lambda: ak.Record({"x": 1.0})], ids=["array", "record"])
-@pytest.mark.parametrize("read", [repr, lambda a: a.attrs], ids=["repr", "attrs"])
-def test_reading_awkward_attrs_moves_no_key(held: Callable[[], Any], read: Any) -> None:
+def test_reading_awkward_attrs_moves_no_key(held: Callable[[], Any]) -> None:
     value = held()
     before = _key_digest(value)
-    read(value)
-    assert value._attrs == {}
+    assert value._attrs is None
+    assert value.attrs == {}
+    assert value._attrs is not None
     assert _key_digest(value) == before
 
 
@@ -235,14 +236,16 @@ def test_a_resume_after_reading_the_array_reuses_every_task(tmp_path: Path) -> N
     data = _array()
     plan = h.runtime(h.Holding(data), h.parts(0, 1))
     first = SequentialRunner().run(resumable(plan, str(tmp_path)))
-    repr(data)
+    assert data.attrs == {}
     h.CALLS.clear()
     assert SequentialRunner().run(resumable(plan, str(tmp_path))) == first
     assert h.CALLS == []
 
 
-def test_transient_awkward_attrs_key_as_unset() -> None:
-    assert _key_digest(ak.Array([1.0], attrs={"@live": object()})) == _key_digest(ak.Array([1.0]))
+def test_transient_awkward_attrs_key_as_unset_and_stay_on_the_array() -> None:
+    held = ak.Array([1.0], attrs={"@live": 1})
+    assert _key_digest(held) == _key_digest(ak.Array([1.0]))
+    assert held.attrs == {"@live": 1}
 
 
 def test_awkward_attrs_with_content_still_key() -> None:
@@ -251,3 +254,23 @@ def test_awkward_attrs_with_content_still_key() -> None:
     assert keys[0] not in keys[1:]
     assert keys[1] != keys[2]
     assert keys[1] == keys[3]
+
+
+class _Marked(ak.Array):
+    _mark = 0
+
+
+def _marked(mark: int) -> Any:
+    array = ak.with_name(ak.Array([{"x": 1.0}]), "Marked", behavior={("*", "Marked"): _Marked})
+    array._mark = mark
+    assert array.attrs == {}
+    return array
+
+
+def test_a_registered_reducer_of_a_behavior_class_still_keys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(copyreg.dispatch_table, _Marked, lambda a: (int, (a._mark,)))
+    assert type(_marked(1)) is _Marked
+    assert _key_digest(_marked(1)) == _key_digest(_marked(1))
+    assert _key_digest(_marked(1)) != _key_digest(_marked(2))
