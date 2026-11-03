@@ -173,6 +173,18 @@ def test_finalize_runs_on_the_plain_value(leave_driver: Callable[[], None]) -> N
     assert _finalized(plan, partial)[0] == 2
 
 
+def test_a_warning_and_an_error_name_a_chunk_alike(leave_driver: Callable[[], None]) -> None:
+    plan = _plan()
+    leave_driver()
+    partition = plan.tasks[0].partition
+    partial = plan.process(partition, LocalResources())
+    assert isinstance(partial, Warned)
+    with pytest.raises(StageError) as raised:
+        raise_on_floating_point(plan).process(partition, LocalResources())
+    assert {chunk for *_, chunk in partial.caught.values()} == {"chunk 1/3 of mem://events"}
+    assert raised.value.partition.startswith("chunk 1/3 of mem://events")
+
+
 def test_a_task_outside_a_driver_keeps_only_its_own(leave_driver: Callable[[], None]) -> None:
     leave_driver()
     with keeping_warnings() as outer:

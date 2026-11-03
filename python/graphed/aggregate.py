@@ -25,7 +25,7 @@ from dataclasses import dataclass, replace
 from typing import Any, ClassVar, Generic, TypeVar, cast
 
 from graphed.core import GraphStore, Partition
-from graphed.core.execution import Plan, Task, WorkerResources, chunk_label, partition_label
+from graphed.core.execution import Plan, Task, WorkerResources, chunk_label
 from graphed.core.plan import DurablePlanV2, _partition_bytes, _sha256_hex
 from graphed.core.worker_warnings import (
     WarnedCombine,
@@ -248,7 +248,7 @@ class _PartitionReduce(Generic[V]):
                 )
             else:
                 result = self._captured(chunk, partition, backend)
-        return cast("V", carrying(result, caught, partition_label(partition)))
+        return cast("V", carrying(result, caught, chunk_label(partition)))
 
     def floating_point(self) -> contextlib.AbstractContextManager[object]:
         """Return what a task evaluates under: numpy's own state, unless it raises."""
