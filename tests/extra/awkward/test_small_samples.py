@@ -303,7 +303,7 @@ def test_partition_reproduces_a_tasks_failure() -> None:
         SequentialRunner().run(plan)
     with pytest.raises(StageError) as again:
         graphed.materialize(bad, partition=plan.tasks[1].partition)
-    assert again.value.partition == ran.value.partition == str(plan.tasks[1].partition)
+    assert again.value.partition == ran.value.partition == "chunk 1/1 of f1:t (3 entries)"
     assert again.value.user_frame.lineno == ran.value.user_frame.lineno
     assert (again.value.cause_type, again.value.cause_message) == ("RuntimeError", "too large")
 
@@ -333,7 +333,7 @@ def test_gd_run_failure_names_the_partition_or_the_label() -> None:
     bad = ev.a.map(_explode_above(-1.0), name="bad", output_type="float64")
     with pytest.raises(StageError) as chunk:
         gd.run(ev.session, bad, partition=part)
-    assert chunk.value.partition == str(part)
+    assert chunk.value.partition == "chunk 1/1 of f0:t (3 entries)"
     with pytest.raises(StageError) as named:
         gd.run(ev.session, bad, partition=part, label="the skim")
     assert named.value.partition == "the skim"
@@ -383,7 +383,7 @@ def test_a_pack_key_overflow_in_a_plan_names_the_line_and_the_partition(tmp_path
     with pytest.raises(PackKeyError) as info:
         SequentialRunner().run(plan)
     assert info.value.user_frame.source.startswith("graphed.pack_key")
-    assert info.value.partition == str(plan.tasks[0].partition)
+    assert info.value.partition == f"chunk 1/1 of {path} (entries 0-1)"
 
 
 def test_a_foreign_array_is_refused_by_session_materialize() -> None:

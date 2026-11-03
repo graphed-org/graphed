@@ -10,12 +10,13 @@ picklable).
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 
 from graphed import Array, Session
+from graphed.aggregate import read_label
 from graphed.core import Partition
 from graphed.errors import raising_frame
-from graphed.materialization import _partition_chunk
+from graphed.materialization import _partition_chunk, _partition_source
 
 from .errors import SourceFrame, StageError
 from .lowering import LoweredGraph, lower
@@ -55,7 +56,9 @@ def _stage_error(
     )
 
 
-def _assert_consistent(lowered: LoweredGraph, node_id: int, value: object, partition: str) -> None:
+def _assert_consistent(
+    lowered: LoweredGraph, node_id: int, value: object, partition: Callable[[], str]
+) -> None:
     """Check inter-op consistency, only at opt_level=0.
 
     A debug scaffold; richer dtype/shape contracts are a tracked improvement.
@@ -64,7 +67,7 @@ def _assert_consistent(lowered: LoweredGraph, node_id: int, value: object, parti
         raise _stage_error(
             lowered,
             node_id,
-            partition,
+            partition(),
             AssertionError("op produced None (inter-op consistency check)"),
         )
 
@@ -80,7 +83,7 @@ def run(
     """Execute the analysis reaching ``array`` on the session's source data.
 
     ``partition`` runs that one chunk (``plan.tasks[3].partition``) instead of the whole source.
-    ``label`` names the data in a failure, by default ``partition``.
+    ``label`` names the data in a failure, by default the chunk as a plan's task names it.
 
     Raise a `StageError` (mapped to the user's analysis line) on the first failing op.
     """
@@ -92,15 +95,27 @@ def run(
     lowered = lower(session, array, opt_level=opt_level)
     backend = session.backend
     chunks = {} if partition is None else _partition_chunk([array], partition)
-    where = label if label is not None else "sample" if partition is None else str(partition)
+    read: list[object] = []
+
+    def where() -> str:
+        if label is not None:
+            return label
+        if partition is None:
+            return "sample"
+        # a plan's task names this chunk the same way
+        _, data = _partition_source([array], partition)
+        return read_label(data, partition, read[-1] if read else None)
 
     def on_source(nid: int) -> object:
         try:
-            return chunks[nid]() if nid in chunks else session.source_value(nid)
+            if nid not in chunks:
+                return session.source_value(nid)
+            read.append(chunks[nid]())
+            return read[-1]
         except StageError:
             raise
         except Exception as exc:
-            raise _stage_error(lowered, nid, where, exc) from exc
+            raise _stage_error(lowered, nid, where(), exc) from exc
 
     def on_op(nid: int, name: str, ins: list[object], params: Mapping[str, object]) -> object:
         try:
@@ -108,7 +123,7 @@ def run(
         except StageError:
             raise
         except Exception as exc:
-            raise _stage_error(lowered, nid, where, exc) from exc
+            raise _stage_error(lowered, nid, where(), exc) from exc
         if opt_level == 0:
             _assert_consistent(lowered, nid, value, where)
         return value
@@ -119,6 +134,6 @@ def run(
         except StageError:
             raise
         except Exception as exc:
-            raise _stage_error(lowered, nid, where, exc) from exc
+            raise _stage_error(lowered, nid, where(), exc) from exc
 
     return session.walk(array, source=on_source, op=on_op, external=on_external)
