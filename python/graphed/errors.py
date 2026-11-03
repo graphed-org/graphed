@@ -48,6 +48,10 @@ class GraphedTypeError(GraphedError):
             msg = f"{msg}: {detail}"
         super().__init__(msg)
 
+    def __reduce__(self) -> tuple[Any, ...]:
+        """Pickle by constructor arguments."""
+        return (type(self), (self.op, self.provenance, self.detail))
+
 
 class SourceRowsError(GraphedTypeError, TypeError):
     """An op pairing the rows of two partitioned sources, which need not be the same events."""
@@ -59,9 +63,14 @@ class OutputTypeError(GraphedTypeError):
     Located at the declaring line.
     """
 
-    def __reduce__(self) -> tuple[Any, ...]:
-        """Pickle by constructor arguments."""
-        return (type(self), (self.op, self.provenance, self.detail))
+
+class DeferredTypeError(GraphedTypeError, TypeError):
+    """A deferred value refused where Python's protocols expect ``TypeError``.
+
+    ``len()``, ``float()``, ``iter()`` and an operand's coercion: a library sniffing one of them
+    catches ``TypeError``. ``__array__`` stays a plain ``GraphedTypeError``, so no library falls
+    back to treating a deferred array as a scalar.
+    """
 
 
 class PackKeyOverflowError(ValueError):
@@ -73,10 +82,6 @@ class MissingFieldError(GraphedTypeError, AttributeError):
 
     An ill-typed ``field`` op that ``hasattr`` reads as absent.
     """
-
-    def __reduce__(self) -> tuple[Any, ...]:
-        """Pickle by constructor arguments."""
-        return (type(self), (self.op, self.provenance, self.detail))
 
 
 @dataclass(frozen=True)

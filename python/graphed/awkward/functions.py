@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import functools
 import json
+import warnings
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, cast
@@ -19,7 +20,7 @@ import numpy.typing as npt
 import graphed
 from graphed import Array, ParamValue
 from graphed.array import scalar_params
-from graphed.errors import GraphedError, GraphedTypeError
+from graphed.errors import DeferredTypeError, GraphedError, GraphedTypeError
 from graphed.provenance import capture
 from graphed.shuffle import JOINKEY, route_key
 from graphed.varied import boundary_refusal, containers_in, expand, expand_tuple, narrow
@@ -140,6 +141,8 @@ def with_field(arr: Array, value: object, where: str) -> Array:
     try:
         # a scalar, which ak broadcasts, travels as a param in its own dtype (M59)
         params = scalar_params(value)
+    except DeferredTypeError:
+        raise
     except (TypeError, ValueError) as err:
         raise GraphedTypeError(
             "with_field",
@@ -562,6 +565,8 @@ def apply_correction(
     """
     # recorded only when set, so a regular correction's node identity is what it always was
     which: dict[str, ParamValue] = {"compound": True} if compound else {}
+    if isinstance(inputs, Array):
+        raise _refused("inputs= takes a list of Arrays; wrap a lone one as [x]")
     arrays = [] if inputs is None else list(inputs)
     if named and (arrays or args is not None or evaluator is not None):
         raise _refused("pass a correction's inputs as keywords or as inputs/args=, not both")
@@ -829,7 +834,12 @@ def unzip(arr: Array) -> tuple[Array, ...]:
 
 
 def to_list(arr: Array) -> list[object]:
-    """EAGER sugar: materializes through the session, then ak.to_list (records nothing new)."""
+    """EAGER sugar, deprecated: ``ak.to_list(graphed.materialize(arr))`` says that it evaluates."""
+    warnings.warn(
+        "gak.to_list evaluates the array; call ak.to_list(graphed.materialize(x))",
+        DeprecationWarning,
+        stacklevel=3,  # past `_dispatched`'s wrapper, to the user's line
+    )
     out: list[object] = ak.to_list(arr.session.materialize(arr))
     return out
 

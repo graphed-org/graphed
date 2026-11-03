@@ -20,6 +20,7 @@ from awkward.types._awkward_datashape_parser import LarkError
 
 from graphed import Array, Session
 from graphed.aggregate import resolved_backend
+from graphed.array import NEEDS_VALUES
 from graphed.backend import PYTHON_TYPES, Form
 from graphed.core import PayloadDescriptor
 from graphed.session import reader
@@ -27,7 +28,7 @@ from graphed.shuffle import join_blocks
 
 from . import functions as gak
 from . import join, payloads, shuffle
-from ._ops import apply
+from ._ops import _INTROSPECT_EAGER, _no_field, apply
 from .array import AwkwardArray
 
 
@@ -191,9 +192,6 @@ class AwkwardForm:
 _BOUNDARY = frozenset(
     {"source", "external", "correction", "onnx", "map", "ak.sum", "ak.any", "ak.all", "ak.count"}
 )
-# ak.Array descriptors the record-time typetracer answers as the data would; it does not carry the
-# source's attrs/behavior/named axes, nor a known length, so those are refused
-_INTROSPECT_EAGER = frozenset({"fields", "type", "typestr", "ndim", "is_tuple", "positional_axis"})
 _EAGER_ONLY = frozenset(dir(ak.Array)) - _INTROSPECT_EAGER
 
 
@@ -462,12 +460,17 @@ class AwkwardBackend:
         function is a "method" the frontend hands back as a callable, ak.Array's own descriptors
         (`fields`, `ndim`, ...) are "introspection" answered by `introspect`, and anything else
         that resolves is a "property" recorded as a `field` op. An unresolved name raises
-        `AttributeError` and the frontend keeps today's path.
+        `AttributeError` saying so, and the frontend still records the `field` op.
         """
         tt = self._with_behavior(form.tt)
+        if not isinstance(tt, ak.Array | ak.Record):
+            raise AttributeError(_no_field(tt, name))
         if name in tt.fields:
             return "field"
-        static = inspect.getattr_static(tt, name)
+        try:
+            static = inspect.getattr_static(tt, name)
+        except AttributeError:
+            raise AttributeError(_no_field(tt, name)) from None
         # the PROPERTY side is the closed set (a data descriptor or a cached_property is read
         # like a field); anything else that is callable or a descriptor is a method, so a method
         # descriptor the stdlib adds later (partialmethod, singledispatchmethod, ...) still counts
@@ -510,10 +513,13 @@ class AwkwardBackend:
         leaf (M59 — the shape `metric_table(return_combinations=True)` answers in). Anything else
         raises.
         """
-        result = apply(
-            "method", [self._with_behavior(f.tt) for f in forms], params, behavior=self._behavior
-        )
-        return self._output_shape(result, params)
+        inputs = [self._with_behavior(f.tt) for f in forms]
+        name = str(params["method"])
+        static = inspect.getattr_static(inputs[0], name)
+        # ak.from_iter sniffs `hasattr(x, "to_list")`, so ak's own conversions refuse at the call
+        if any(static is inspect.getattr_static(c, name, None) for c in (ak.Array, ak.Record)):
+            raise TypeError(NEEDS_VALUES)
+        return self._output_shape(apply("method", inputs, params, behavior=self._behavior), params)
 
     def _output_shape(
         self, result: object, params: Mapping[str, object]

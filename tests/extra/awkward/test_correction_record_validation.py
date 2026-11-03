@@ -215,7 +215,7 @@ def test_a_keyword_that_is_no_input_value_is_refused_naming_it(syst: Any, shown:
 
 def test_a_lone_array_where_a_list_belongs_names_the_iteration() -> None:
     _, ev = _events()
-    with pytest.raises(TypeError, match="not iterable"):
+    with pytest.raises(GraphedTypeError, match=r"wrap a lone one as \[x\]"):
         gak.apply_correction(CSET, "l1", ev.pt)
 
 
