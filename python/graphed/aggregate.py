@@ -663,7 +663,7 @@ def aggregate_plan(
         if opt_level != 1:
             raise TypeError("aggregate_plan over a join takes no opt_level=0")
     else:
-        nid, data = _one_source(session, arrays, partitioned)
+        nid, data = _one_source(session, outputs, writes, partitioned)
     slot = _slot_of(compiled)
     written = {compiled.correspondence.node_map[w.array.node_id][0] for w in writes}
     refuse_chunk_partials(compiled, as_outputs=written)
@@ -764,20 +764,28 @@ def _has_join(compiled: CompiledGraph) -> bool:
 
 
 def _one_source(
-    session: Session, arrays: Sequence[Array], partitioned: Mapping[int, PartitionedSource]
+    session: Session,
+    outputs: Sequence[Array],
+    writes: Sequence[PartWrite],
+    partitioned: Mapping[int, PartitionedSource],
 ) -> tuple[int, PartitionedSource]:
     """Return the one partitioned source in ``partitioned``, with its node id."""
     if len(partitioned) != 1:
-        names = ", ".join(sorted(session.source_name(nid) for nid in partitioned))
-        fix = f" ({names})" if names else ""
-        # collate divides outputs between plans; one output reading two sources stays whole.
-        if names and all(
-            len(session.reachable_sources(a.node_id) & partitioned.keys()) < 2 for a in arrays
+        names = sorted(session.source_name(nid) for nid in partitioned)
+        listed = f" ({', '.join(names)})" if names else ""
+        # collate splits whole outputs and writes; one name is one dataset, read twice it refuses.
+        units = [[o] for o in outputs] + [
+            _planned_arrays((), (w,), store=None, opt_level=1) for w in writes
+        ]
+        if (
+            names
+            and len(set(names)) == len(names)
+            and all(len(_partitioned(unit)) < 2 for unit in units)
         ):
-            fix += "; collate one plan per source (graphed.collate)"
+            listed += "; collate one plan per source (graphed.collate)"
         raise TypeError(
             "aggregate_plan needs exactly one partitioned source; the outputs read "
-            f"{len(partitioned)}{fix}"
+            f"{len(partitioned)}{listed}"
         )
     ((nid, data),) = partitioned.items()
     return nid, data
