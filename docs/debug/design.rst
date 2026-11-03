@@ -72,7 +72,8 @@ rather than parse a message:
    *Which* chunk of data tripped it, as ``chunk 7/20 of data.root:Events (entries 15000-17500)``.
    Data-dependent bugs fail on some partitions and not others, and this is how you find the events
    to look at. A source without an entry count gives the chunk's size instead of its range; a
-   ``graphed.debug.run`` or :func:`~graphed.debug.replay` failure shows the label you gave it.
+   ``graphed.debug.run`` or :func:`~graphed.debug.replay` failure shows the label you gave it. A
+   failure after a join names the join's destination, ``dest N``, not a chunk.
 
 ``cause_type`` / ``cause_message``
    The underlying exception, as data — the type name and the message, not a live traceback

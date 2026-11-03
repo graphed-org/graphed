@@ -15,9 +15,10 @@ An uncaught StageError reads on its own
 * ``input_forms`` holds type strings (``50000 * float32``) on the plan path, not class names.
 * A failing ``.map(fn, name="calib")`` reports ``op`` as ``map 'calib'`` on the plan path.
 * ``StageError.raised_at`` and the view name the line that raised inside your function.
-* ``StageError.partition`` on the plan path is a readable label from the new
+* ``StageError.partition`` on the plan path, before any join, is a readable label from the new
   ``graphed.core.chunk_label``, with a blind partition's real entries where the source can count
   them (an optional ``num_entries(partition)`` on a ``PartitionedSource``) and its size otherwise.
+  After a join it names the join's destination, ``dest N``.
 * New ``graphed.WorkerLostError``, a ``StageError`` for a worker that died, with no source frame.
 
 ``gak.apply_correction`` takes keywords and checks the payload as you record
