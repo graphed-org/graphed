@@ -81,11 +81,15 @@ _MASK = GakSlot("mask")
 _OPTION = GakSlot("option")
 _INNER = {"axis": 1}
 
+_ONE_INPUT_CORRECTION = b"""{"schema_version": 2, "corrections": [{"name": "sf", "version": 1,
+    "inputs": [{"name": "x", "type": "real"}], "output": {"name": "sf", "type": "real"},
+    "data": 1.0}]}"""
+
 GAK_ARG_FIXTURES: dict[str, GakArgFixture] = {
     "all": GakArgFixture((_MASK,), _INNER),
     "any": GakArgFixture((_MASK,), _INNER),
     "apply_correction": GakArgFixture(
-        (b'{"schema_version":2,"corrections":[]}', "sf", [_FLAT], _echo), {"args": ["$0"]}
+        (_ONE_INPUT_CORRECTION, "sf", [_FLAT], _echo), {"args": ["$0"]}
     ),
     "argcartesian": GakArgFixture(([_JAGGED, _JAGGED],)),
     "argcombinations": GakArgFixture((_JAGGED, 2)),
