@@ -594,6 +594,27 @@ container of them.
 The tour builds every declaration shape in this section — and the ``explain`` block each one
 prints — one step at a time: :doc:`../notebooks/systematics-tour`.
 
+A flat factor, and why it is not a grid
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A flat normalisation is a number, so it is declared as one and multiplied in::
+
+    lumi = graphed.vary(1.0, "lumi", up=1.025, down=0.975)
+    weight = ev.genWeight * muon_id_sf * lumi
+
+``lumi`` is a ``ScalarFactor``: it holds numbers and belongs to no Session until it meets an array,
+and that product registers the family. Its members scale the array's nominal alone, so a factor
+adds its own universes and no joints: 1 + 2 + the universes ``muon_id_sf`` adds. The members are
+values of the factor, not of the weight; ``up=1.025`` is the factor at 1.025, and a factor whose
+nominal is 2.0 scales every universe by 2.0 before its members replace it.
+
+Chaining ``w = graphed.vary(w, "lumi", up=w * 1.025, down=w * 0.975)`` means something else: those
+members are computed from a ``w`` that varies, so the family fans out to the grid of joints. The
+guard names the families that caused it when that grid passes ``max_universes``.
+
+A number on an array target, ``graphed.vary(ev.genWeight, "lumi", up=1.025)``, stays refused: an
+absolute value and a scale would both be reasonable readings.
+
 Three ways two things can be correlated
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
