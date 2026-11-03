@@ -7,6 +7,16 @@ Newest release first. Numbers in parentheses are the pull requests on
 0.0.11 (unreleased)
 -------------------
 
+``gak.apply_correction`` takes keywords and checks the payload as you record
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``gak.apply_correction(cset, "jet_sf", syst="nominal", pt=jets.pt, eta=jets.eta)`` maps keywords
+onto the correction's named inputs and records the same node as ``args=["nominal", "$0", "$1"]``.
+A name the set does not hold, listing the names it does, and inputs the correction does not take
+raise ``GraphedTypeError`` at that line; they used to surface as a ``StageError`` after data was
+read. ``evaluator`` is optional, and ``payload`` and ``name`` are positional-only, so an input may
+carry either name. A path payload is read once, not on every call, so nodes share one copy of a
+correction set or ONNX model. The older ``evaluator``-only recording is unchanged (#170).
 Two datasets in one Session no longer pair their rows by accident
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -30,6 +40,17 @@ To say how two sources match:
 
 A join reads each side whole unless you select fields first, as in ``graphed.join(a[["x"]],
 b[["y"]], how="positional")``.
+
+``graphed.aggregate_plan``, and so ``h.plan()`` and ``gh.plan()``, now run over a join, keyed or
+positional, with several outputs. The plan is the join's, stage by stage, so it runs on
+``SequentialRunner`` and ``SubmitRunner``, and takes no ``partitions=``, ``store=``, ``writes=``,
+``read_by=`` or ``opt_level=0``; it cannot be collated. ``graphed.join_plan`` takes several outputs
+with ``reduce``, ``combine`` and ``empty``. A keyed join of one source, which ran per chunk and lost
+its matches across chunks, is refused by every partitioned plan and write. ``aggregate_plan`` is
+annotated ``Plan[Any] | DurablePlanV2``: code that reads ``plan.tasks`` or ``plan.process`` narrows
+with ``isinstance(plan, graphed.core.Plan)``. ``graphed.debug.replay`` and
+``graphed.raise_on_floating_point`` refuse a join's plan.
+
 ``SequentialRunner`` stands in for the pooled runners
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -161,6 +182,8 @@ Fixes
   and before awkward 2.14 so did slicing, so a resume could recompute everything. An empty or
   all-transient ``attrs`` now keys as unset, and keys of arrays nothing has read do not move. A
   checkpoint written under a filled ``attrs`` recomputes once.
+* ``aggregate_plan`` over two sources of one Session names them in its refusal and, when plans can
+  split them, points to ``graphed.collate`` (#165).
 * The checkpoint guide says ``run_resumable`` and ``run_shuffle_resumable`` keep results separate
   from ``resumable``'s, and the warning that no task was reused names that cause (#191).
 * A behavior-carrying plan resumes across processes. The Session backend's behavior ships, and keys,

@@ -40,6 +40,7 @@ from graphed.core.execution import WorkerResources
 
 from .aggregate import (
     _adopting,
+    _partitioned,
     attribute_failures,
     external_evaluators,
     plan_services,
@@ -50,6 +51,7 @@ from .array import Array
 from .backend import ParamValue
 from .errors import GraphedError
 from .execute import (
+    CompiledGraph,
     Frame,
     Key,
     compile_ir,
@@ -62,7 +64,7 @@ from .projection import read_columns
 from .services import Bindable, Resolvable, bind_externals
 from .session import Session
 from .varied import refuse_boundary
-from .write import PartitionedSource, declared_columns, sources_read, steps_for
+from .write import PartitionedSource, declared_columns, steps_for
 
 V = TypeVar("V")
 #: a plan's ``(reduce, combine, empty)``
@@ -221,7 +223,7 @@ class _MapWrite:
     """
 
     checkpointable: ClassVar[bool] = True
-    checkpoint_ignore: ClassVar[tuple[str, ...]] = ("frames",)
+    checkpoint_ignore: ClassVar[tuple[str, ...]] = ("frames", "variation_labels")
     checkpoint_resolve: ClassVar[Mapping[str, Callable[[Any], Any]]] = {
         "backend_factory": resolve_backend
     }
@@ -235,6 +237,7 @@ class _MapWrite:
     externals: tuple[tuple[str, Callable[..., object]], ...]
     frames: tuple[tuple[Key, Frame], ...]
     route: tuple[str, str, int]
+    variation_labels: tuple[Any, ...] | None
 
     def __call__(self, task: Task, inputs: Sequence[bytes], resources: WorkerResources) -> bytes:
         backend = resolve_backend(self.backend_factory)
@@ -244,7 +247,7 @@ class _MapWrite:
             backend,
             {self.source_name: chunk},
             externals=dict(self.externals),
-            on_failure=attribute_failures(self.frames, str(task.partition)),
+            on_failure=attribute_failures(self.frames, str(task.partition), self.variation_labels),
             outputs=(self.target,),
             chunked=True,
         )
@@ -273,7 +276,7 @@ class _Gather:
     """
 
     checkpointable: ClassVar[bool] = True
-    checkpoint_ignore: ClassVar[tuple[str, ...]] = ("frames",)
+    checkpoint_ignore: ClassVar[tuple[str, ...]] = ("frames", "variation_labels")
     checkpoint_resolve: ClassVar[Mapping[str, Callable[[Any], Any]]] = {
         "backend_factory": resolve_backend
     }
@@ -285,6 +288,7 @@ class _Gather:
     frames: tuple[tuple[Key, Frame], ...]
     n_left: int | None
     reduce: Callable[[list[Any]], Any] | None
+    variation_labels: tuple[Any, ...] | None
 
     def __call__(self, task: Task, inputs: Sequence[bytes], resources: WorkerResources) -> bytes:
         backend = resolve_backend(self.backend_factory)
@@ -296,7 +300,7 @@ class _Gather:
             backend,
             {},
             externals=dict(self.externals),
-            on_failure=attribute_failures(self.frames, f"dest {task.key}"),
+            on_failure=attribute_failures(self.frames, f"dest {task.key}", self.variation_labels),
             given={
                 nid: backend.concat(side)
                 for nid, side in zip(self.barrier_inputs, sides, strict=True)
@@ -362,7 +366,7 @@ def shuffle_plan(
     fold = (reduce, combine, empty)
     return _build(
         "shuffle_plan",
-        output,
+        (output,),
         fold,
         backend=backend,
         steps_per_file=steps_per_file,
@@ -385,8 +389,7 @@ def broadcast_join_choice(build_size: int, probe_size: int, n: int) -> bool:
 
 
 def join_plan(
-    output: Array,
-    *,
+    *outputs: Array,
     backend: Callable[[], Any] | str | None = None,
     steps_per_file: int | None = None,
     reduce: Callable[[list[Any]], V] | None = None,
@@ -405,27 +408,31 @@ def join_plan(
     hash-routes both sides. ``steps_per_file`` splits each source's files as in ``aggregate_plan``
     and, absent a repartition, is also the dest count (1 when ``None``). A positional join routes
     no key: dest i pairs block i of each side, so the dest count is their partition count.
+
+    Several ``outputs`` need the fold: ``reduce`` gets their values, as in ``aggregate_plan``.
     """
-    refuse_boundary("graphed.join_plan", output)
+    refuse_boundary("graphed.join_plan", *outputs)
     fold: _Monoid | None = None
     if reduce is not None and combine is not None and empty is not None:
         fold = (reduce, combine, empty)
     elif reduce is not None or combine is not None or empty is not None:
         raise TypeError("join_plan takes reduce, combine and empty together, or none of them")
+    if not outputs or (len(outputs) > 1 and fold is None):
+        raise TypeError("join_plan takes one output, or several with reduce, combine and empty")
     return _build(
-        "join_plan", output, fold, backend=backend, steps_per_file=steps_per_file, names=services
+        "join_plan", outputs, fold, backend=backend, steps_per_file=steps_per_file, names=services
     )
 
 
 def _barrier_sides(
-    builder: str, output: Array, store: GraphStore
+    builder: str, outputs: Sequence[Array], store: GraphStore
 ) -> tuple[int, tuple[int, ...], list[tuple[str, int, PartitionedSource]], set[int]]:
     """Return the barrier node, its inputs, the source each input reads, and the cone after it.
 
     Refuses a graph ``builder`` cannot run.
     """
     is_join = builder == "join_plan"
-    session = output.session
+    session = outputs[0].session
     nodes = store.nodes()
     barriers = [i for i, n in enumerate(nodes) if n["kind"] == ("join" if is_join else "exchange")]
     if not barriers:
@@ -434,9 +441,7 @@ def _barrier_sides(
             if is_join
             else "shuffle_plan needs a repartition Exchange in the graph (use graphed.repartition)"
         )
-    partitioned = {
-        nid: d for nid, d in sources_read([output]).items() if isinstance(d, PartitionedSource)
-    }
+    partitioned = _partitioned(outputs)
     if len(partitioned) != (2 if is_join else 1):
         raise TypeError(
             f"{builder} needs exactly {'two' if is_join else 'one'} partitioned source"
@@ -506,26 +511,30 @@ def _routing(
 
 def _build(
     builder: str,
-    output: Array,
+    outputs: Sequence[Array],
     fold: _Monoid | None,
     *,
     backend: Callable[[], Any] | str | None,
     steps_per_file: int | None,
     names: Sequence[str] | None,
+    compiled: CompiledGraph | None = None,
+    externals: Mapping[str, Callable[..., object]] | None = None,
+    on_compiled: Callable[[CompiledGraph], Any] | None = None,
+    finalize: Callable[[Any], Any] | None = None,
 ) -> DurablePlanV2:
     is_join = builder == "join_plan"
-    session = output.session
-    compiled = compile_ir(session, output)
+    session = outputs[0].session
+    compiled = compile_ir(session, *outputs) if compiled is None else compiled
     ir = bytes(compiled.ir)
     store = GraphStore.deserialize(ir)
     nodes = store.nodes()
-    barrier, targets, sides, post = _barrier_sides(builder, output, store)
+    barrier, targets, sides, post = _barrier_sides(builder, outputs, store)
     params = dict(nodes[barrier]["params"])
     refuse_chunk_partials(compiled, as_outputs=fold is None)
 
     backend_id = _backend_identity(session, backend)
     factory = worker_backend(session, backend)
-    wired = external_evaluators(session, compiled)
+    wired = external_evaluators(session, compiled) | dict(externals or {})
     frames = compiled.correspondence.frames
     side_parts = [data.partitions(steps_for(data, steps_per_file)) for _, _, data in sides]
     count = 1 if steps_per_file is None else steps_per_file
@@ -541,19 +550,22 @@ def _build(
     else:
         parts, route, routing = _routing(is_join, nodes, params, count, backend_id)
 
+    # past the refusals, since pieces take one call, and before `reduce`, which it fills, pickles
+    variation_labels = None if on_compiled is None else on_compiled(compiled)
     map_stages = []
     for target, (name, nid, data), partitions in zip(targets, sides, side_parts, strict=True):
-        declared = declared_columns(data, [output])
+        declared = declared_columns(data, outputs)
         process = _MapWrite(
             ir=ir,
             target=target,
             source_name=name,
             reader=data,
-            columns=read_columns([output], nid) if declared is None else declared,
+            columns=read_columns(outputs, nid) if declared is None else declared,
             backend_factory=factory,
             externals=_cone_externals(nodes, ir_cone(nodes, (target,)), wired),
             frames=frames,
             route=route,
+            variation_labels=variation_labels,
         )
         tasks = tuple(Task(i, p) for i, p in enumerate(partitions))
         map_stages.append(
@@ -573,6 +585,7 @@ def _build(
         # a `position` dest gets one block a side
         n_left=None if not is_join else 1 if route[0] == "position" else len(map_stages[0].tasks),
         reduce=None if fold is None else fold[0],
+        variation_labels=variation_labels,
     )
     stages = [
         *map_stages,
@@ -587,7 +600,10 @@ def _build(
     if fold is not None:
         stages.append(_reduce_stage(fold, factory, backend_id, after=len(map_stages)))
     return DurablePlanV2(
-        ir=ir, stages=tuple(stages), services=plan_services(session, compiled, names)
+        ir=ir,
+        stages=tuple(stages),
+        services=plan_services(session, compiled, names),
+        finalize=None if finalize is None else OpSpec.from_callable(finalize),
     )
 
 

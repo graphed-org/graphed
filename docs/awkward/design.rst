@@ -436,13 +436,7 @@ payload, not by a path on your filesystem:
     s = Session(AwkwardBackend())
     g = from_awkward("events", ak.Array({"Jet": [[{"pt": 50.0}, {"pt": 30.0}], [{"pt": 70.0}]]}), session=s)
 
-    # unread on this path (see below): `payload` is what gets evaluated, so if the `evaluator`
-    # positional were still consulted this example would raise instead of printing
-    def never_called(*_: object) -> object:
-        raise AssertionError("the template path does not consult the caller's callable")
-
-    sf = gak.apply_correction(payload, "jet_sf", [gak.flatten(g.Jet.pt)],
-                              never_called, args=["$0"])
+    sf = gak.apply_correction(payload, "jet_sf", pt=gak.flatten(g.Jet.pt))
     print(ak.to_list(s.materialize(sf)))
 
     # reformatting the JSON does not change what the correction IS
@@ -469,19 +463,28 @@ The payload itself never rides in the graph. The graph carries the hash; the mul
 correction set or model lives in a content-addressed store, and a run resolves it by hash — and
 says so loudly if it cannot.
 
-With ``args=``, the callable you pass is not what runs. The correction is evaluated from the
-payload bytes through graphed's ``correctionlib`` plugin — in your own process exactly as in a
-worker — so a wrapper around ``evaluate`` cannot make one backend disagree with another, and the
-in-process call gets the plugin's flat-buffer evaluation rather than correctionlib's per-call
-``ak.transform``. Without ``args=`` (the older recording) your callable is still the evaluation.
+Keywords name the correction's own inputs, in any order; a string input such as a systematic is
+an ordinary keyword: ``gak.apply_correction(cset, "jet_sf", syst="nominal", pt=jets.pt,
+eta=jets.eta)``. The payload is in hand when the line is recorded, so a name the set does not hold
+or inputs the correction does not take raise :class:`~graphed.errors.GraphedTypeError` at that line,
+before any data is read, and a value outside a correction's domain stays a run-time error. A list of
+inputs in the correction's order records the same node, and so does the older template spelling,
+``apply_correction(cset, "jet_sf", [pt, eta], args=["nominal", "$0", "$1"])``.
+
+The correction is evaluated from the payload bytes through graphed's ``correctionlib`` plugin — in
+your own process exactly as in a worker — so a wrapper around ``evaluate`` cannot make one backend
+disagree with another, and the in-process call gets the plugin's flat-buffer evaluation rather than
+correctionlib's per-call ``ak.transform``. A callable passed as ``evaluator`` without ``args=`` is
+the older recording: that callable is the evaluation, and nothing checks the payload. With
+``args=`` it is never called.
 
 A correction set keeps its ``corrections`` and its ``compound_corrections`` (a stack such as the JEC
 L1L2L3 chain) in separate lists, and a name may appear in both. ``apply_correction`` looks ``name``
 up in ``corrections``, then in ``compound_corrections``; ``compound=True`` searches only the
 compound list, which is how a compound correction sharing a regular one's name is reached. The flag
 is part of the node's identity, so the two are never merged as duplicates. The recorded type is what
-correctionlib returns: the broadcast of every array the template passes, so ``args=["$0", "$1"]``
-over a per-event ``rho`` and a per-jet ``pt`` records a per-jet result.
+correctionlib returns: the broadcast of every array input, so a per-event ``rho`` and a per-jet
+``pt`` record a per-jet result.
 
 Declaring what an external call returns
 ---------------------------------------

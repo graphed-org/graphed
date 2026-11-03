@@ -131,8 +131,12 @@ for its whole life.
 
 A source name is one binding per Session. Reading the same source again under its name — a
 re-run notebook cell, the same files, columns and partitioning — reuses that binding, and its node
-when the params match. Binding a taken name to other data is refused at the read, so a loop over
-datasets passes each its own name, or reads each inside its own ``with graphed.Session(...)``.
+when the params match. Binding a taken name to other data is refused at the read, so a reader
+taking an explicit name in a loop over datasets passes each its own name, or reads each inside its
+own ``with graphed.Session(...)``. ``uproot.graphed`` with no ``name=`` (uproot newer than 5.7.7)
+needs neither: the first read takes the tree's name and a later read of other data takes that name
+with a hash of what it reads. Which read comes first decides the names, so reordering reads moves
+their checkpoint keys.
 "The same source" is the same object, or two objects whose identities compare equal: the parquet
 readers' loaders define ``source_identity()``, and the numpy creators and ``default_rng`` draws
 pass their content name, which fixes their values, as ``Session.source``'s ``identity=``. An in-memory array is the same source only as the same object.
@@ -644,14 +648,7 @@ underneath; it takes plain ``Array`` inputs and knows nothing about labels.
     ctx  = vary(ctx, "jes", collections={"Jet": {
         "up": gak.with_field(jets, jets.pt * 1.10, "pt")}})
 
-    # with `args=`, `payload` IS the evaluation: the correction is rebuilt from those bytes through
-    # graphed's correctionlib plugin on every backend, so the `evaluator` positional goes unread --
-    # if it did not, this example would raise instead of printing
-    def never_called(*_: object) -> object:
-        raise AssertionError("the template path does not consult the caller's callable")
-
-    sf = gak.apply_correction(payload, "jet_sf", [gak.flatten(ctx.Jet.pt)],
-                              never_called, args=["$0"])
+    sf = gak.apply_correction(payload, "jet_sf", pt=gak.flatten(ctx.Jet.pt))
     print(labels(sf))
     print(s.materialize(universe(sf, "nominal")).to_list())
     print(s.materialize(universe(sf, "jes_up")).to_list())
@@ -1273,8 +1270,12 @@ Each side is read, evaluated up to the join and routed by its own map stage; one
 destination depends on both, joins that destination's rows and runs what you recorded after the
 join. Without ``reduce``/``combine``/``empty`` the value is one output per destination; with them,
 ``join_plan`` adds a one-task ``reduce`` stage that folds the destinations, as ``aggregate_plan``
-folds partitions. ``shuffle_plan`` is the single-source counterpart for a plain repartition: a
-map-write stage, a gather stage and a ``reduce`` stage, with the barrier edge after the map-write.
+folds partitions. ``aggregate_plan`` over a join builds this same plan, so its return type is
+``Plan[Any] | DurablePlanV2``; code that reads ``plan.tasks`` narrows with
+``isinstance(plan, graphed.core.Plan)``. Left without the three, it folds whole-dataset reductions
+by their own combine, where ``join_plan`` refuses them. ``shuffle_plan`` is the single-source
+counterpart for a plain repartition: a map-write stage, a gather stage and a ``reduce`` stage, with
+the barrier edge after the map-write.
 Both builders produce a durable, byte-deterministic plan that carries the services its operations
 call (``bind_services`` binds them as for any plan). Three runners run one: ``SequentialRunner``
 in-process, ``graphed.checkpoint.run_shuffle_resumable`` against a checkpoint store, and
