@@ -16,9 +16,11 @@ OTHER = (Partition.blind("mem://other", "t", 0, 1),)
 
 def _plan(**kw: Any) -> Plan[Any]:
     _s, events = fx.record()
-    return aggregate_plan(
+    plan = aggregate_plan(
         events.x, reduce=fx.sums, combine=fx.add, empty=fx.zero, steps_per_file=2, **kw
     )
+    assert isinstance(plan, Plan)
+    return plan
 
 
 def test_aggregate_plan_finalizes_the_combined_value() -> None:

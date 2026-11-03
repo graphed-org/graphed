@@ -16,7 +16,7 @@ from graphed import Session
 from graphed.aggregate import fold_of
 from graphed.awkward import AwkwardBackend, from_parquet, gak
 from graphed.checkpoint import resumable
-from graphed.core.execution import LocalResources, SequentialRunner
+from graphed.core.execution import LocalResources, Plan, SequentialRunner
 from graphed.numpy import NumpyBackend, from_array
 
 pytest.importorskip("pyarrow")
@@ -45,6 +45,7 @@ def _run(*outputs: Any) -> Any:
 def test_several_sums_equal_materialize_after_a_pickle(events: Any) -> None:
     outputs = (gak.sum(events.x > 3), gak.count(events.j), gak.count_nonzero(events.x))
     plan = graphed.aggregate_plan(*outputs)
+    assert isinstance(plan, Plan)
     assert len(plan.tasks) == 4
     value = SequentialRunner().run(pickle.loads(pickle.dumps(plan))).value
     assert value == graphed.materialize(outputs) == (8, 18, 11)

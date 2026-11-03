@@ -55,6 +55,7 @@ def _varied_run() -> tuple[Plan[list[float]], ExecResult[list[float]], _Collecti
         empty=lambda: [0.0, 0.0, 0.0],
         steps_per_file=3,
     )
+    assert isinstance(plan, Plan)
     monitor = _CollectingMonitor()
     return plan, SequentialRunner(monitor).run(plan), monitor
 
@@ -65,7 +66,7 @@ def _plain_plan() -> Plan[list[float]]:
     The three universes' arrays built plainly in a fresh session.
     """
     _s, x, _src = partitioned_vector_source()
-    return graphed.aggregate_plan(
+    plan = graphed.aggregate_plan(
         x,
         x * 1.5,
         x * 0.5,
@@ -74,6 +75,8 @@ def _plain_plan() -> Plan[list[float]]:
         empty=lambda: [0.0, 0.0, 0.0],
         steps_per_file=3,
     )
+    assert isinstance(plan, Plan)
+    return plan
 
 
 def test_plan_schema_is_unchanged_by_a_varied_program() -> None:

@@ -26,7 +26,7 @@ from typing import Any, ClassVar, Generic, TypeVar, cast
 
 from graphed.core import GraphStore, Partition
 from graphed.core.execution import Plan, Task, WorkerResources, partition_label
-from graphed.core.plan import _partition_bytes, _sha256_hex
+from graphed.core.plan import DurablePlanV2, _partition_bytes, _sha256_hex
 from graphed.core.worker_warnings import (
     WarnedCombine,
     WarnedFinalize,
@@ -583,7 +583,7 @@ def aggregate_plan(
     opt_level: int = 1,
     finalize: Callable[[Any], Any] | None = None,
     read_by: Sequence[Array] | None = None,
-) -> Plan[Any]:
+) -> Plan[Any] | DurablePlanV2:
     """Build a one-pass partition-wise reduction :class:`~graphed.core.execution.Plan`.
 
     It runs over the session's single partitioned source (see module docstring). ``outputs`` are
@@ -634,6 +634,11 @@ def aggregate_plan(
 
     ``read_by`` are the Arrays whose columns the read covers, in place of those the plan evaluates,
     for a caller using the chunks otherwise.
+
+    Outputs past a :func:`graphed.join` read two sources, so the plan is the join's
+    :class:`~graphed.core.DurablePlanV2`: a stage per side and one per destination, with ``reduce``
+    per destination. It runs on ``SequentialRunner`` and ``SubmitRunner``, and has no ``tasks`` or
+    ``process``; ``isinstance(plan, graphed.core.Plan)`` tells the two apart.
     """
     writes = tuple(writes)
     if reduce is None and combine is None and empty is None:
@@ -643,8 +648,22 @@ def aggregate_plan(
         raise TypeError("aggregate_plan takes reduce=, combine= and empty= together, or none")
     arrays = _planned_arrays(outputs, writes, store=store, opt_level=opt_level)
     session = arrays[0].session
-    nid, data = _partitioned_source(arrays)
     compiled = _compile_at(opt_level, session, arrays)
+    partitioned = _partitioned(arrays)
+    over_join = len(partitioned) == 2 and _has_join(compiled)
+    if over_join:
+        for name, given in (
+            ("partitions", partitions),
+            ("store", store),
+            ("writes", writes or None),
+            ("read_by", read_by),
+        ):
+            if given is not None:
+                raise TypeError(f"aggregate_plan over a join takes no {name}=")
+        if opt_level != 1:
+            raise TypeError("aggregate_plan over a join takes no opt_level=0")
+    else:
+        nid, data = _one_source(partitioned)
     slot = _slot_of(compiled)
     written = {compiled.correspondence.node_map[w.array.node_id][0] for w in writes}
     refuse_chunk_partials(compiled, as_outputs=written)
@@ -653,6 +672,21 @@ def aggregate_plan(
         reduce, combine, empty = folded.reduce, folded.combine, folded.empty
         # the workers' copy carries no finalize: only the head calls it
         finalize = replace(folded, then=finalize and by_value(finalize)).finalize
+    if over_join:
+        from .shuffle import _build  # shuffle imports this module
+
+        return _build(
+            "join_plan",
+            outputs,
+            (reduce, combine, empty),
+            backend=backend,
+            steps_per_file=steps_per_file,
+            names=services,
+            compiled=compiled,
+            externals=externals,
+            on_compiled=on_compiled,
+            finalize=finalize,
+        )
     # Wire EVERY External surviving in the compiled IR from the session (fills + upstream
     # corrections alike); an explicit `externals=` (keyed by `external_key`) overrides the
     # auto-wired evaluator.
@@ -721,11 +755,16 @@ def _planned_arrays(
     return arrays
 
 
-def _partitioned_source(arrays: Sequence[Array]) -> tuple[int, PartitionedSource]:
-    """Return the one partitioned source ``arrays`` read, with its node id."""
-    partitioned = {
-        nid: d for nid, d in sources_read(arrays).items() if isinstance(d, PartitionedSource)
-    }
+def _partitioned(arrays: Sequence[Array]) -> dict[int, PartitionedSource]:
+    return {nid: d for nid, d in sources_read(arrays).items() if isinstance(d, PartitionedSource)}
+
+
+def _has_join(compiled: CompiledGraph) -> bool:
+    return any(n["kind"] == "join" for n in GraphStore.deserialize(bytes(compiled.ir)).nodes())
+
+
+def _one_source(partitioned: Mapping[int, PartitionedSource]) -> tuple[int, PartitionedSource]:
+    """Return the one partitioned source in ``partitioned``, with its node id."""
     if len(partitioned) != 1:
         raise TypeError(
             "aggregate_plan needs exactly one partitioned source; the outputs read "
@@ -872,17 +911,22 @@ def _raising(process: Any) -> Any:
     )
 
 
-def raise_on_floating_point(plan: Plan[V]) -> Plan[V]:
+def raise_on_floating_point(plan: Plan[V] | DurablePlanV2) -> Plan[V]:
     """Return ``plan``, its tasks raising on a division by zero, an overflow or an invalid value.
 
     What numpy would warn about and turn into an inf or a NaN becomes a ``StageError`` at the line
     that recorded the operation, naming the chunk, on any runner. Underflow still rounds to zero.
-    A task's key does not change: results a store holds for ``plan`` are served, unchecked.
+    A task's key does not change: results a store holds for ``plan`` are served, unchecked. A
+    plan over a join runs in stages and is refused.
     """
+    if isinstance(plan, DurablePlanV2):
+        raise TypeError(
+            "raise_on_floating_point needs a plan with one task kind; this runs in stages"
+        )
     return replace(plan, process=_raising(plan.process))
 
 
-def collate(plans: Mapping[str, Plan[Any]]) -> Plan[dict[str, Any]]:
+def collate(plans: Mapping[str, Plan[Any] | DurablePlanV2]) -> Plan[dict[str, Any]]:
     """ONE executable plan over several plans' tasks.
 
     Plans over different sources or graphs (data and MC, say) — whose value is ``{name: that plan's
@@ -896,7 +940,8 @@ def collate(plans: Mapping[str, Plan[Any]]) -> Plan[dict[str, Any]]:
     A name is in the value exactly when its plan has at least one task. ``Plan.services`` is the
     union of the plans' services; one name declared as two different specs is refused. Each name's
     value passes through its plan's ``finalize``, if it has one. Running each plan on its own and
-    collecting ``{name: value}`` gives the same product when each ``combine`` is exact.
+    collecting ``{name: value}`` gives the same product when each ``combine`` is exact. A plan that
+    runs in stages, is adaptive or can stop early has no fixed tasks and is refused.
     """
     if not plans:
         raise ValueError("collate needs at least one plan")
@@ -909,11 +954,15 @@ def collate(plans: Mapping[str, Plan[Any]]) -> Plan[dict[str, Any]]:
                 )
     route: dict[tuple[str, str], str] = {}
     tasks: list[Task] = []
+    fixed: dict[str, Plan[Any]] = {}
     for name, plan in plans.items():
+        if not isinstance(plan, Plan):
+            raise TypeError(f"collate needs plans with fixed tasks; {name!r} runs in stages")
         if plan.next_tasks is not None or plan.stop is not None:
             raise TypeError(
                 f"collate needs plans with fixed tasks; {name!r} is adaptive or stoppable"
             )
+        fixed[name] = plan
         for task in sorted(plan.tasks, key=lambda t: t.key):
             key = (task.partition.uri, task.partition.tree)
             owner = route.setdefault(key, name)
@@ -923,15 +972,15 @@ def collate(plans: Mapping[str, Plan[Any]]) -> Plan[dict[str, Any]]:
                     "source so one read serves both graphs"
                 )
             tasks.append(Task(len(tasks), task.partition))
-    process = _Collated({n: p.process for n, p in plans.items()}, route)
+    process = _Collated({n: p.process for n, p in fixed.items()}, route)
     _refuse_shared_parts((process, t.partition) for t in tasks)
-    finalizers = {n: p.finalize for n, p in plans.items() if p.finalize is not None}
+    finalizers = {n: p.finalize for n, p in fixed.items() if p.finalize is not None}
     return Plan(
         process=process,
-        combine=WarnedCombine(_CollatedCombine({n: p.combine for n, p in plans.items()})),
+        combine=WarnedCombine(_CollatedCombine({n: p.combine for n, p in fixed.items()})),
         empty=dict,
         tasks=tuple(tasks),
-        open_once=any(p.open_once for p in plans.values()),
+        open_once=any(p.open_once for p in fixed.values()),
         services=tuple(services[n] for n in sorted(services)),
         finalize=WarnedFinalize(_CollatedFinalize(finalizers) if finalizers else None),
     )
