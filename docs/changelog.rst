@@ -90,14 +90,6 @@ sizing arguments do not carry over. ``submit`` runs the plan before it returns a
 ``concurrent.futures.Future``, which holds the result or the failure, so a paused ``control`` blocks
 the call and a cancel sent after it lands on the next run.
 
-Chunking by events
-~~~~~~~~~~~~~~~~~~
-
-* ``aggregate_plan(events_per_task=N)`` cuts each file into tasks of ``N`` entries, on any source
-  with ``num_entries(partition)`` and on any that reports concrete ranges. A source that cannot
-  count refuses it; passing ``steps_per_file=`` or ``partitions=`` too is a ``TypeError``. A
-  blind source opens each file on the driver to count it.
-
 Plans returned wrong values for row-axis operations, and now refuse them
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
