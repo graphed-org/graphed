@@ -7,12 +7,6 @@ Newest release first. Numbers in parentheses are the pull requests on
 0.0.11 (unreleased)
 -------------------
 
-``run_resumable`` takes what ``resumable`` takes
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-``run_resumable``, ``run_shuffle_resumable`` and ``resumable`` each accept a directory as a ``str``
-or an ``os.PathLike``, an fsspec URL with ``storage_options=``, or a ``Store`` or ``FsspecStore``.
-Anything else raises a ``TypeError`` naming ``Store`` (#182).
 Small samples, and one evaluation path
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
