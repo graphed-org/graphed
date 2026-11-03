@@ -25,7 +25,7 @@ from .aggregate import aggregate_plan, collate, raise_on_floating_point, resolve
 from .array import Array, BoundMethod, apply
 from .backend import Backend, Form, ParamValue
 from .by_label import impact_by_label, read_columns_by_label
-from .context import Explanation, explain
+from .context import Explanation, explain, explain_variations
 from .errors import GraphedError, GraphedTypeError, GraphedWarning, OutputTypeError, PointError
 from .execute import CompiledGraph, compile_ir, evaluate_ir, refuse_chunk_partials
 from .materialization import PlanPieces, head, materialize
@@ -112,6 +112,7 @@ __all__ = [
     "expand",
     "expanding",
     "explain",
+    "explain_variations",
     "handle_opaque",
     "head",
     "impact_by_label",

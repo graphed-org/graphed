@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import difflib
 import json
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
@@ -254,6 +255,26 @@ def apply(
 _Handler = Callable[[str, Sequence[Any], Mapping[str, Any]], Any]
 
 
+# ak.Array descriptors the record-time typetracer answers as the data would; it does not carry the
+# source's attrs/behavior/named axes, nor a known length, so those are refused
+_INTROSPECT_EAGER = frozenset({"fields", "type", "typestr", "ndim", "is_tuple", "positional_axis"})
+
+
+def _no_field(x: Any, name: str) -> str:
+    """Say what ``x`` lacks: where it looked, and a close name when there is one."""
+    if not isinstance(x, ak.Array | ak.Record):  # a scalar has neither fields nor behaviors
+        return f"no field named {name!r}"
+    record = x.layout.purelist_parameter("__record__")
+    where = f" in {record}" if record else ""
+    if name == "form":  # a record may have a field called form, so `.form` stays a field read
+        return f"no field named 'form'{where} (`.typestr` shows an array's type)"
+    own = set(dir(x))
+    names = own - set(dir(ak.Array)) | own & _INTROSPECT_EAGER | set(x.fields)
+    close = difflib.get_close_matches(name, [n for n in names if not n.startswith("_")], n=1)
+    hint = f" (did you mean {close[0]!r}?)" if close else ""
+    return f"no field named {name!r}{where}{hint}"
+
+
 def _field(op: str, xs: Sequence[Any], p: Mapping[str, Any]) -> Any:
     x = xs[0]
     name = str(p["field"])
@@ -263,8 +284,13 @@ def _field(op: str, xs: Sequence[Any], p: Mapping[str, Any]) -> Any:
     # works on the typetracer and real arrays alike when the array carries the behavior. An
     # unknown attribute raises here -> a record-time GraphedTypeError.
     if not isinstance(x, ak.Array | ak.Record):  # a typetracer scalar's attributes are no fields
-        raise AttributeError(f"no field named {name!r}")
-    return getattr(x, name)
+        raise AttributeError(_no_field(x, name))
+    try:
+        return getattr(x, name)
+    except AttributeError as err:
+        if str(err) != f"no field named {name!r}":
+            raise  # a behavior's own failure keeps its own reason
+        raise AttributeError(_no_field(x, name)) from None
 
 
 def _method(op: str, xs: Sequence[Any], p: Mapping[str, Any]) -> Any:
