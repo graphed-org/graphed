@@ -363,9 +363,10 @@ class Array(EagerRefusals):
             return self._session.record_op(op, inputs)
         try:
             scalar = scalar_params(other)
-        except TypeError as refused:
-            # an eager array's refusal names the fix; eq/ne's fallback would answer a plain bool
-            if isinstance(refused, GraphedTypeError) or op in ("eq", "ne"):
+        except DeferredTypeError:  # an eager array: its own reflected dunder cannot answer
+            raise
+        except TypeError:
+            if op in ("eq", "ne"):  # Python's fallback would answer a plain bool
                 raise
             return NotImplemented  # type: ignore[no-any-return]
         params: dict[str, ParamValue] = {**scalar, "side": "l" if reflected else "r"}

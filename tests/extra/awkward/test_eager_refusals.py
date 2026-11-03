@@ -62,6 +62,9 @@ MIXING: dict[str, Callable[[Any], object]] = {
     "reflected numpy": lambda x: np.ones(2) * x,
     "awkward": lambda x: x + ak.Array([1.0, 2.0]),
     "list": lambda x: x * [1.0, 2.0],
+    "reflected list": lambda x: [1.0, 2.0] * x,
+    "tuple": lambda x: x * (1.0, 2.0),
+    "comparison": lambda x: x < [1.0, 2.0],
     "gak argument": lambda x: gak.where(x > 0, np.ones(2), x),
     "with_field": lambda x: gak.with_field(x, np.ones(2), "w"),
 }
@@ -155,7 +158,7 @@ def test_numpy_scalars_stay_operands() -> None:
 
 @pytest.mark.parametrize("operand", [object(), b"ab", {"a": 1}, {1.0}], ids=repr)
 def test_what_is_no_array_gets_pythons_operand_refusal(operand: object) -> None:
-    with pytest.raises(TypeError, match="unsupported operand|can't multiply sequence") as refused:
+    with pytest.raises(TypeError, match="AwkwardArray") as refused:
         _events().MET_pt * operand
     assert not isinstance(refused.value, GraphedTypeError)
 
