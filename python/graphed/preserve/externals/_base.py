@@ -39,9 +39,11 @@ from typing import Any
 
 import cloudpickle
 
+from ...provenance import capture
 from ...services import UnboundServiceError
 from ...varied import containers_in, expand
 from ..errors import PreserveError
+from ._helpers import refuse_unread_inputs
 
 ContentHash = Callable[[bytes], str]
 Load = Callable[[bytes, Mapping[str, Any]], Any]
@@ -85,8 +87,9 @@ class ExternalPlugin:
     # M25: a plugin whose payload is DERIVABLE from the node's own params (e.g. a histogram
     # fill's canonical spec) may synthesize it at build time, so callers supply no bytes.
     synthesize: SynthesizePayload | None = None
-    #: refuses a node's params at record time (e.g. Triton's ``url``/``service`` exclusivity)
-    check_params: Callable[[Mapping[str, Any]], None] | None = None
+    #: refuses a node at record time from ``(params, payload, n_inputs)`` (e.g. Triton's
+    #: ``url``/``service`` exclusivity, a correction name the set lacks)
+    check_params: Callable[[Mapping[str, Any], bytes, int], None] | None = None
     #: the params ``load`` reads; they key the per-process resource cache with the endpoint
     load_params: tuple[str, ...] = ()
     # m71: the value's leaf dtype when it is static (its structure follows the input), recorded
@@ -286,8 +289,10 @@ def record_external(
             tuple(inputs),
             {},
         )
+    session._mine(inputs, ("external", capture()))  # a foreign input outranks a bad template
     if plugin.check_params is not None:
-        plugin.check_params(params or {})
+        plugin.check_params(params or {}, payload, len(inputs))
+    refuse_unread_inputs("external", params or {}, len(inputs))
     if params and "service" in params:
         session.service_for(str(params["service"]))  # refuses an undeclared name
     content_hash = plugin.content_hash(payload)

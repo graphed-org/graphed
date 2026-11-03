@@ -16,6 +16,9 @@ from graphed import Session
 from graphed.awkward import AwkwardBackend, from_awkward, gak
 from graphed.awkward._templates import _payload_bytes
 from graphed.errors import GraphedTypeError
+from graphed.preserve.externals import record_external
+from graphed.preserve.externals.correctionlib_external import CORRECTIONLIB_PLUGIN
+from graphed.preserve.externals.onnx_external import ONNX_PLUGIN
 from graphed.varied import member_of
 
 pytest.importorskip("correctionlib")
@@ -216,6 +219,21 @@ def test_a_lone_array_where_a_list_belongs_names_the_iteration() -> None:
         gak.apply_correction(CSET, "l1", ev.pt)
 
 
+@pytest.mark.parametrize(
+    ("args", "message"),
+    [
+        (["$7"], r"slot \$7 out of range"),
+        ([["$0"]], "not stacked groups"),
+        ("$0", "must be a list"),
+    ],
+)
+def test_a_malformed_template_is_refused_at_the_line(args: Any, message: str) -> None:
+    _, ev = _events()
+    with pytest.raises(GraphedTypeError, match=message) as caught:
+        gak.apply_correction(CSET, "l1", [ev.pt], args=args)
+    assert caught.value.provenance.filename == __file__
+
+
 def test_no_inputs_at_all_is_a_type_error() -> None:
     with pytest.raises(TypeError, match="needs inputs"):
         gak.apply_correction(CSET, "l1")
@@ -235,3 +253,161 @@ def test_a_path_is_read_once_and_reread_when_the_file_changes(tmp_path: Path) ->
     assert _payload_bytes(str(path)) is _payload_bytes(str(path))
     path.write_bytes(CSET + b" ")
     assert _payload_bytes(str(path)) == CSET + b" "
+
+
+def _external(ev: Any, params: dict[str, Any], *inputs: Any, payload: bytes = CSET) -> Any:
+    return record_external(
+        ev.session,
+        CORRECTIONLIB_PLUGIN,
+        payload,
+        list(inputs),
+        params=params,
+        output_type="float64",
+    )
+
+
+@pytest.mark.parametrize(
+    ("params", "n_inputs", "message"),
+    [
+        ({"name": "typo", "args": '["$0"]'}, 1, "no correction 'typo' in this set; it has: "),
+        ({"name": "l1", "compound": True, "args": '["$0"]'}, 1, "no compound correction 'l1'"),
+        ({"name": "jet_sf", "args": '["$0"]'}, 1, r"takes inputs \(syst, pt, eta\); got 1"),
+        ({"name": "l1", "args": '["$0", "$1"]'}, 2, r"takes inputs \(pt\); got 2"),
+        ({"name": "l1", "systematic": "nominal"}, 1, r"takes inputs \(pt\); got 2"),
+        ({"name": "l1", "args": "[1.0]"}, 1, "'l1' needs at least one Array input"),
+        ({"name": "l1", "args": '{"pt": "$0"}'}, 1, "'l1' takes args= as a list"),
+        ({"name": "jet_sf", "args": '{"syst": "n", "pt": "$0", "eta": "$0"}'}, 1, "as a list"),
+        ({"name": "l1", "args": '["$7"]'}, 1, r"slot \$7 out of range"),
+        ({"name": "l1", "args": '["$x"]'}, 1, r"slot '\$x' is not"),
+        ({"name": "l1", "args": '["$0"'}, 1, "not valid JSON"),
+        ({"name": "l1", "kwargs": '{"pt": "$0"}'}, 1, "does not take keyword arguments"),
+    ],
+)
+def test_record_external_refuses_at_the_recording_line(
+    params: dict[str, Any], n_inputs: int, message: str
+) -> None:
+    _, ev = _events()
+    with pytest.raises(GraphedTypeError, match=message) as caught:
+        _external(ev, params, *[ev.pt] * n_inputs)
+    assert caught.value.provenance.filename == __file__
+
+
+def test_record_external_checks_a_varied_input() -> None:
+    _, ev = _events()
+    varied = graphed.vary(ev.pt, "s", up=ev.pt * 2.0)
+    with pytest.raises(GraphedTypeError, match="no correction 'typo'"):
+        _external(ev, {"name": "typo", "args": '["$0"]'}, varied)
+
+
+def _flat() -> Any:
+    return from_awkward("flat", ak.Array({"pt": [1.0, 3.0]}), session=Session(AwkwardBackend()))
+
+
+def test_record_external_still_runs_what_is_right() -> None:
+    ev = _flat()
+    node = _external(ev, {"name": "l1", "args": '["$0"]'}, ev.pt)
+    assert _values(ev.session, node) == [1.0, 3.0]
+
+
+_LEGACY = CORRECTIONLIB_PLUGIN.samples()[0]
+
+
+def test_the_legacy_systematic_shape_stays_accepted() -> None:
+    ev = _flat()
+    node = _external(ev, {"name": "sf", "systematic": "nominal"}, ev.pt, payload=_LEGACY)
+    assert _values(ev.session, node) == [1.0, 1.0]
+
+
+def test_the_legacy_shape_needs_an_input() -> None:
+    ev = _flat()
+    params = {"name": "sf", "systematic": "nominal"}
+    with pytest.raises(GraphedTypeError, match="needs at least one Array input"):
+        _external(ev, params, payload=_LEGACY)
+
+
+def test_the_legacy_shape_refuses_a_second_input() -> None:
+    ev = _flat()
+    params = {"name": "sf", "systematic": "nominal"}
+    with pytest.raises(GraphedTypeError, match="takes one Array input, 'x'; got 2") as caught:
+        _external(ev, params, ev.pt, ev.pt * 2.0, payload=_LEGACY)
+    assert caught.value.provenance.filename == __file__
+
+
+def _onnx() -> bytes:
+    return ONNX_PLUGIN.samples()[0]
+
+
+@pytest.mark.parametrize(
+    "record",
+    [
+        lambda ev: _external(ev, {"name": "l1", "args": '["$0"]'}, ev.pt, ev.eta),
+        lambda ev: _external(ev, {"name": "jet_sf", "args": '["n", "$0", "$0"]'}, ev.pt, ev.eta),
+        lambda ev: gak.apply_correction(CSET, "l1", [ev.pt, ev.eta], args=["$0"]),
+        lambda ev: gak.onnx_inference(_onnx(), [ev.pt, ev.eta], lambda m: m, args=[["$0"]]),
+    ],
+    ids=["record_external", "repeated-slot", "apply_correction", "onnx_inference"],
+)
+def test_an_input_no_slot_reads_is_refused(record: Any) -> None:
+    _, ev = _events()
+    with pytest.raises(GraphedTypeError, match=r"reads no \$1;") as caught:
+        record(ev)
+    assert caught.value.provenance.filename == __file__
+
+
+@pytest.mark.parametrize(
+    "record",
+    [
+        lambda ev: _external(ev, {"name": "jet_sf", "args": '["n", "$1", "$0"]'}, ev.eta, ev.pt),
+        lambda ev: gak.apply_correction(CSET, "jet_sf", [ev.pt, ev.eta], args=["n", "$0", "$1"]),
+        lambda ev: gak.onnx_inference(_onnx(), [ev.pt, ev.eta], lambda m: m, args=[["$0", "$1"]]),
+    ],
+    ids=["record_external", "apply_correction", "onnx_inference"],
+)
+def test_every_input_a_slot_reads_records(record: Any) -> None:
+    _, ev = _events()
+    assert record(ev).session is ev.session
+
+
+@pytest.mark.parametrize(
+    ("record", "match"),
+    [
+        (
+            lambda ev: record_external(ev.session, ONNX_PLUGIN, _onnx(), [ev.pt, ev.eta]),
+            "feeds its first input alone; got 2",
+        ),
+        (
+            lambda ev: record_external(
+                ev.session, ONNX_PLUGIN, _onnx(), [ev.pt], params={"args": [["$0", "$3"]]}
+            ),
+            r"slot \$3 out of range",
+        ),
+    ],
+    ids=["onnx-legacy-second-input", "onnx-group-out-of-range"],
+)
+def test_a_plugin_template_mistake_is_refused_at_the_user_line(record: Any, match: str) -> None:
+    _, ev = _events()
+    with pytest.raises(GraphedTypeError, match=match) as caught:
+        record(ev)
+    assert caught.value.provenance.filename == __file__
+
+
+@pytest.mark.parametrize(
+    "record",
+    [
+        lambda ev, other: gak.apply_correction(CSET, "l1", [ev.pt, other.eta], args=["$0", "$1"]),
+        lambda ev, other: gak.onnx_inference(_onnx(), [ev.pt, other.eta], print, args=["$9"]),
+        lambda ev, other: _external(ev, {"name": "l1", "args": '["$0", "$1"]'}, ev.pt, other.eta),
+    ],
+    ids=["apply_correction", "onnx_inference", "record_external"],
+)
+def test_a_foreign_input_outranks_a_bad_template(record: Any) -> None:
+    _, ev = _events()
+    _, other = _events()
+    with pytest.raises(GraphedTypeError, match="different Session"):
+        record(ev, other)
+
+
+def test_a_wrong_name_outranks_a_bad_template() -> None:
+    _, ev = _events()
+    exc = _refused(lambda: gak.apply_correction(CSET, "typo", [ev.pt], args=["$7"]))
+    assert "no correction 'typo'" in str(exc)
