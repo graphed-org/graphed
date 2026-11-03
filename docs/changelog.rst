@@ -155,18 +155,6 @@ also written at analysis.py:6: ...)``. A line that runs again, as a re-run noteb
 counts once. ``Session.provenance`` answers for the array you pass it. Recording and checkpoint keys
 are unchanged, and a plan's bytes are unless a line it names repeats an expression.
 
-A progress bar
-~~~~~~~~~~~~~~
-
-* ``graphed.debug.ProgressBar`` is a monitor that ticks once per finished task and closes when the
-  run ends, however it ends: ``ProcessPoolExecutor(max_workers=4, monitor=ProgressBar()).run(plan)``.
-  It uses ``tqdm`` when that is installed and a plain text line otherwise. A staged plan, such as
-  a join's, emits no task events, so its bar shows no tasks (#185).
-* ``graphed.core.MonitorBase`` has no-op defaults: subclass it and override what you need. It adds
-  ``on_run_start(n_tasks)`` and ``on_run_end()``, which a runner calls on any monitor that has them.
-* A monitor without ``worker_profiler_factory``, or one whose factory raises, no longer ends a run.
-  The guard is the new ``graphed.core.worker_profiler_factory``; ``graphed-executors`` uses it too.
-
 Division by zero stops a run if you ask, and a worker's warnings reach the driver
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
