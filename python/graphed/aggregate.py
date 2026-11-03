@@ -36,7 +36,14 @@ from graphed.core.worker_warnings import (
 )
 
 from .array import Array
-from .errors import GraphedError, OutputTypeError, SourceFrame, StageError
+from .errors import (
+    GraphedError,
+    OutputTypeError,
+    PackKeyError,
+    PackKeyOverflowError,
+    SourceFrame,
+    StageError,
+)
 from .execute import (
     CompiledGraph,
     Frame,
@@ -381,7 +388,8 @@ def attribute_failures(
             if frame is None:
                 return None
             labels = ()
-        return StageError(
+        kind = PackKeyError if isinstance(exc, PackKeyOverflowError) else StageError
+        return kind(
             op=op,
             frames=(SourceFrame(*frame),),
             # a worker holds values, not forms: the runtime types are what it can honestly report

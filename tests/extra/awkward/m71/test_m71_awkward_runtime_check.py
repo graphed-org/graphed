@@ -16,7 +16,7 @@ import numpy as np
 import pytest
 
 import graphed
-from graphed import GraphedTypeError, Session
+from graphed import GraphedTypeError, OutputTypeError, Session
 from graphed.awkward import AwkwardBackend, AwkwardForm, from_awkward, gak
 from graphed.core.execution import Plan, SequentialRunner
 from graphed.debug import StageError
@@ -41,11 +41,11 @@ def _plan(selected: Any) -> Any:
     )
 
 
-def _refused(call: Any, line: int) -> GraphedTypeError:
-    with pytest.raises(GraphedTypeError) as info:
+def _refused(call: Any, line: int) -> StageError:
+    with pytest.raises(StageError) as info:
         call()
-    assert type(info.value).__name__ == "OutputTypeError"
-    assert info.value.provenance.lineno == line
+    assert info.value.cause_type == "OutputTypeError"
+    assert info.value.user_frame.lineno == line
     return info.value
 
 
@@ -55,7 +55,7 @@ def test_a_map_value_of_another_type_raises_at_the_declaring_line() -> None:
     err = _refused(lambda: s.materialize(ev.x[mask]), line)
     assert (
         f"node {mask.node_id} ('score') declares output_type 'bool'; its value is 'float64'"
-        in err.detail
+        in err.cause_message
     )
 
 
@@ -63,7 +63,7 @@ def test_an_apply_value_of_another_type_raises_at_the_declaring_line() -> None:
     s, ev = _events()
     both, line = graphed.apply(np.add, ev.x, ev.x, output_type="int64"), fx.here()
     err = _refused(lambda: s.materialize(both), line)
-    assert "declares output_type 'int64'; its value is 'float64'" in err.detail
+    assert "declares output_type 'int64'; its value is 'float64'" in err.cause_message
 
 
 def test_an_array_input_after_a_scalar_takes_the_leading_axis() -> None:
@@ -77,7 +77,9 @@ def test_an_array_input_after_a_scalar_takes_the_leading_axis() -> None:
 def test_a_scalar_value_for_an_array_declaration_is_refused() -> None:
     s, ev = _events()
     out, line = ev.x.map(lambda x: float(np.sum(x)), output_type="float64"), fx.here()
-    assert "its value is 'scalar float64'" in _refused(lambda: s.materialize(out), line).detail
+    assert (
+        "its value is 'scalar float64'" in _refused(lambda: s.materialize(out), line).cause_message
+    )
 
 
 def test_an_array_value_for_a_scalar_declaration_is_refused() -> None:
@@ -88,7 +90,7 @@ def test_an_array_value_for_a_scalar_declaration_is_refused() -> None:
         == 2 * fx.X.sum()
     )
     out, line = total.map(lambda t: np.array([t]), output_type="float64"), fx.here()
-    assert "its value is '1 * float64'" in _refused(lambda: s.materialize(out), line).detail
+    assert "its value is '1 * float64'" in _refused(lambda: s.materialize(out), line).cause_message
 
 
 def test_a_zero_d_value_and_a_record_input_are_scalars() -> None:
@@ -100,7 +102,7 @@ def test_a_zero_d_value_and_a_record_input_are_scalars() -> None:
     assert ak.typetracer.is_unknown_scalar(form.tt)
     assert s.materialize(first) == bool(fx.X[0] > 1)
     out, line = ev[0].map(lambda r: np.array([r["x"]]), output_type="float64"), fx.here()
-    assert "its value is '1 * float64'" in _refused(lambda: s.materialize(out), line).detail
+    assert "its value is '1 * float64'" in _refused(lambda: s.materialize(out), line).cause_message
 
 
 def test_a_matching_value_passes_unchanged() -> None:
@@ -156,7 +158,9 @@ def test_a_write_plan_raises_at_the_declaring_line(tmp_path: Any) -> None:
     mask, line = ev.x.map(fx.score, output_type="bool"), fx.here()
     plan = ga.to_parquet(ev.x[mask], str(tmp_path / "out"), compute=False)
     assert isinstance(plan, Plan)
-    _refused(lambda: SequentialRunner().run(plan), line)
+    with pytest.raises(OutputTypeError) as info:
+        SequentialRunner().run(plan)
+    assert info.value.provenance.lineno == line
 
 
 def _value(v: Any) -> Any:
@@ -216,13 +220,13 @@ def test_what_matches_at_the_edges(declared: str, value: Any, fits: bool) -> Non
 def test_unknown_fits_only_inside_an_array() -> None:
     s, ev = _events()
     out, line = gak.sum(ev.x).map(_value(None), name="none", output_type="float64"), fx.here()
-    assert "its value is 'unknown'" in _refused(lambda: s.materialize(out), line).detail
+    assert "its value is 'unknown'" in _refused(lambda: s.materialize(out), line).cause_message
 
 
 def test_a_value_awkward_cannot_type_is_refused() -> None:
     s, ev = _events()
     out, line = ev.x.map(_value(object()), name="opaque", output_type="float64"), fx.here()
-    assert "its value is 'object'" in _refused(lambda: s.materialize(out), line).detail
+    assert "its value is 'object'" in _refused(lambda: s.materialize(out), line).cause_message
 
 
 def test_the_correction_template_checks_its_float64_leaves(
@@ -245,7 +249,7 @@ def test_the_correction_template_checks_its_float64_leaves(
     line = fx.here() + 1
     sf = gak.apply_correction(cset, "sf", [ev.x], fx.score, args=["nominal", "$0"])
     err = _refused(lambda: s.materialize(sf), line)
-    assert "declares output_dtype 'float64'; its value is 'float32'" in err.detail
+    assert "declares output_dtype 'float64'; its value is 'float32'" in err.cause_message
 
 
 @pytest.mark.parametrize(
@@ -265,7 +269,8 @@ def test_an_output_dtype_is_checked_on_every_leaf(value: Any, fits: bool) -> Non
         assert s.materialize(out) is value
     else:
         assert (
-            "declares output_dtype 'float64'" in _refused(lambda: s.materialize(out), line).detail
+            "declares output_dtype 'float64'"
+            in _refused(lambda: s.materialize(out), line).cause_message
         )
 
 
@@ -294,4 +299,6 @@ def test_a_ragged_list_value_or_input_is_an_array() -> None:
     counts = j.map(lambda v: v.tolist()).map(lambda v: ak.num(ak.Array(v)), output_type="int64")
     assert ak.to_list(s.materialize(counts)) == [1, 0, 2]
     out, line = j.map(lambda v: v.tolist(), output_type="var * int64"), fx.here()
-    assert "its value is 'var * float64'" in _refused(lambda: s.materialize(out), line).detail
+    assert (
+        "its value is 'var * float64'" in _refused(lambda: s.materialize(out), line).cause_message
+    )

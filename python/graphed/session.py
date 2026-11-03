@@ -962,10 +962,8 @@ class Session:
     ) -> object:
         """Evaluate the graph from ``array`` with caller-supplied handlers for sources, ops.
 
-        And externals. `materialize` evaluates real data; projection evaluates reporting tracers.
+        And externals. Debug execution evaluates real data; projection evaluates reporting tracers.
         Walks of several outputs that share one ``memo`` evaluate each shared node once.
-
-        `materialize` reaches the m60 own-session guard through this one call.
         """
         self._mine([array])
         cache: dict[int, object] = {} if memo is None else memo
@@ -1003,15 +1001,12 @@ class Session:
                 cache[node_id] = op(node_id, op_name, [cache[i] for i in ids], params)
         return cache[root]
 
-    # ---- evaluation (reference, node-by-node; the real executor is M7) ----------
     def materialize(self, array: Array) -> object:
-        """``array``'s value."""
-        return self.walk(
-            array,
-            source=self.source_value,
-            op=lambda _nid, name, ins, params: self._backend.eval_stage(name, ins, params),
-            external=lambda _nid, fn, ins: fn(*ins),
-        )
+        """``array``'s value, as :func:`graphed.materialize` evaluates it."""
+        from .materialization import materialize
+
+        self._mine([array])
+        return materialize(array)
 
 
 #: the open ``with session:`` scopes of this context, innermost last; a tuple per context, so
