@@ -1,0 +1,413 @@
+"""#144: `gak.apply_correction` keyword form, and mistakes refused at the recording line."""
+
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+import awkward as ak
+import numpy as np
+import pytest
+
+import graphed
+from graphed import Session
+from graphed.awkward import AwkwardBackend, from_awkward, gak
+from graphed.awkward._templates import _payload_bytes
+from graphed.errors import GraphedTypeError
+from graphed.preserve.externals import record_external
+from graphed.preserve.externals.correctionlib_external import CORRECTIONLIB_PLUGIN
+from graphed.preserve.externals.onnx_external import ONNX_PLUGIN
+from graphed.varied import member_of
+
+pytest.importorskip("correctionlib")
+
+_INPUTS = [
+    {"name": "syst", "type": "string"},
+    {"name": "pt", "type": "real"},
+    {"name": "eta", "type": "real"},
+]
+_BY_SYST = {
+    "nodetype": "category",
+    "input": "syst",
+    "content": [
+        {"key": "nominal", "value": {"nodetype": "formula", "expression": "x+y",
+                                     "parser": "TFormula", "variables": ["pt", "eta"]}},
+        {"key": "up", "value": {"nodetype": "formula", "expression": "2*x+y",
+                                "parser": "TFormula", "variables": ["pt", "eta"]}},
+    ],
+}  # fmt: skip
+_SCALE = {"nodetype": "formula", "expression": "x", "parser": "TFormula", "variables": ["pt"]}
+_CORRECTION = {"version": 1, "output": {"name": "sf", "type": "real"}}
+CSET = json.dumps(
+    {
+        "schema_version": 2,
+        "corrections": [
+            {**_CORRECTION, "name": "jet_sf", "inputs": _INPUTS, "data": _BY_SYST},
+            {
+                **_CORRECTION,
+                "name": "l1",
+                "inputs": [{"name": "pt", "type": "real"}],
+                "data": _SCALE,
+            },
+        ],
+        "compound_corrections": [
+            {
+                "name": "stack",
+                "output": {"name": "sf", "type": "real"},
+                "inputs": [{"name": "pt", "type": "real"}],
+                "inputs_update": [],
+                "input_op": "*",
+                "output_op": "*",
+                "stack": ["l1"],
+            }
+        ],
+    }
+).encode()
+
+
+def _events() -> tuple[Session, Any]:
+    session = Session(AwkwardBackend())
+    events = from_awkward(
+        "events",
+        ak.Array({"pt": [[1.0, 2.0], [], [3.0]], "eta": [[0.5, 0.25], [], [0.125]]}),
+        session=session,
+    )
+    return session, events
+
+
+def _values(session: Session, array: Any) -> Any:
+    return ak.to_list(session.materialize(array))
+
+
+def _refused(call: Any) -> GraphedTypeError:
+    with pytest.raises(GraphedTypeError) as caught:
+        call()
+    return caught.value
+
+
+def test_a_wrong_name_is_refused_at_the_recording_line_listing_the_names() -> None:
+    session, ev = _events()
+    pt, eta = ev.pt, ev.eta
+    before = session.node_count()
+    line = sys._getframe().f_lineno + 1
+    exc = _refused(lambda: gak.apply_correction(CSET, "jet_SF", syst="up", pt=pt, eta=eta))
+    assert "no correction 'jet_SF' in this set; it has: jet_sf, l1, stack" in str(exc)
+    assert (exc.provenance.filename, exc.provenance.lineno) == (__file__, line)
+    assert session.node_count() == before
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda ev: gak.apply_correction(CSET, "nope", [ev.pt]),
+        lambda ev: gak.apply_correction(CSET, "nope", [ev.pt], None, args=["$0"]),
+    ],
+)
+def test_a_wrong_name_is_refused_on_the_positional_forms(call: Any) -> None:
+    _, ev = _events()
+    assert "no correction 'nope'" in str(_refused(lambda: call(ev)))
+
+
+def test_compound_true_searches_only_the_compound_list() -> None:
+    _, ev = _events()
+    exc = _refused(lambda: gak.apply_correction(CSET, "l1", compound=True, pt=ev.pt))
+    assert "no compound correction 'l1' in this set; it has: stack" in str(exc)
+
+
+def test_a_compound_only_name_resolves_with_and_without_the_flag() -> None:
+    session, ev = _events()
+    bare = gak.apply_correction(CSET, "stack", pt=ev.pt)
+    flagged = gak.apply_correction(CSET, "stack", compound=True, pt=ev.pt)
+    assert _values(session, bare) == _values(session, flagged)
+    assert _values(session, bare) == [[1.0, 2.0], [], [3.0]]
+
+
+@pytest.mark.parametrize(
+    ("given", "got"),
+    [
+        ({"pt": "pt"}, "(pt)"),
+        ({"syst": "up", "pt": "pt", "etaa": "eta"}, "(syst, pt, etaa)"),
+        ({"syst": "up", "pt": "pt", "eta": "eta", "extra": "eta"}, "(syst, pt, eta, extra)"),
+    ],
+)
+def test_wrong_keywords_are_refused_naming_both_lists(given: dict[str, str], got: str) -> None:
+    _, ev = _events()
+    named: dict[str, Any] = {k: (v if v == "up" else getattr(ev, v)) for k, v in given.items()}
+    exc = _refused(lambda: gak.apply_correction(CSET, "jet_sf", **named))
+    assert f"correction 'jet_sf' takes inputs (syst, pt, eta); got {got}" in str(exc)
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda ev: gak.apply_correction(CSET, "jet_sf", [ev.pt]),
+        lambda ev: gak.apply_correction(CSET, "jet_sf", [ev.pt], None, args=["$0"]),
+        lambda ev: gak.apply_correction(CSET, "jet_sf", [ev.pt], len, args=["$0"]),
+    ],
+)
+def test_a_wrong_count_is_refused_on_the_positional_forms(call: Any) -> None:
+    _, ev = _events()
+    exc = _refused(lambda: call(ev))
+    assert "correction 'jet_sf' takes inputs (syst, pt, eta); got 1 positional" in str(exc)
+
+
+def test_keywords_are_the_template_form_bit_for_bit_and_node_for_node() -> None:
+    session, ev = _events()
+    keyword = gak.apply_correction(CSET, "jet_sf", eta=ev.eta, syst="up", pt=ev.pt)
+    template = gak.apply_correction(CSET, "jet_sf", [ev.pt, ev.eta], args=["up", "$0", "$1"])
+    assert keyword.node_id == template.node_id
+    assert _values(session, keyword) == [[2.5, 4.25], [], [6.125]]
+
+
+def test_a_correction_of_arrays_only_needs_no_template() -> None:
+    session, ev = _events()
+    assert _values(session, gak.apply_correction(CSET, "l1", [ev.pt])) == [
+        [1.0, 2.0],
+        [],
+        [3.0],
+    ]
+
+
+def test_a_path_payload_takes_keywords(tmp_path: Path) -> None:
+    session, ev = _events()
+    path = tmp_path / "set.json"
+    path.write_bytes(CSET)
+    sf = gak.apply_correction(str(path), "l1", pt=ev.pt)
+    assert _values(session, sf) == [[1.0, 2.0], [], [3.0]]
+
+
+def test_keywords_refuse_the_positional_arguments() -> None:
+    _, ev = _events()
+    for extra in ({"args": ["$0"]}, {"evaluator": len}, {"inputs": [ev.pt]}):
+        exc = _refused(lambda e=extra: gak.apply_correction(CSET, "l1", pt=ev.pt, **e))
+        assert "as keywords or as inputs/args=, not both" in str(exc)
+
+
+def test_keywords_of_constants_alone_are_refused() -> None:
+    exc = _refused(lambda: gak.apply_correction(CSET, "l1", pt=1.0))
+    assert "correction 'l1' needs at least one Array input" in str(exc)
+
+
+def test_a_template_of_constants_alone_is_refused() -> None:
+    _, ev = _events()
+    exc = _refused(lambda: gak.apply_correction(CSET, "l1", [ev.pt], args=[1.0]))
+    assert "correction 'l1' needs at least one Array input" in str(exc)
+
+
+@pytest.mark.parametrize(
+    ("syst", "shown"),
+    [
+        ("$0", "'$0'"),
+        (None, "None"),
+        ([1.0], "[1.0]"),
+        (np.int64(1), "np.int64(1)"),
+        (np.ones(3), "array([1., 1., 1.])"),
+    ],
+)
+def test_a_keyword_that_is_no_input_value_is_refused_naming_it(syst: Any, shown: str) -> None:
+    _, ev = _events()
+    exc = _refused(lambda: gak.apply_correction(CSET, "jet_sf", syst=syst, pt=ev.pt, eta=ev.eta))
+    assert "correction 'jet_sf' input 'syst' takes an Array" in str(exc)
+    assert f"got {shown}" in str(exc)
+
+
+def test_a_lone_array_where_a_list_belongs_names_the_iteration() -> None:
+    _, ev = _events()
+    with pytest.raises(TypeError, match="not iterable"):
+        gak.apply_correction(CSET, "l1", ev.pt)
+
+
+@pytest.mark.parametrize(
+    ("args", "message"),
+    [
+        (["$7"], r"slot \$7 out of range"),
+        ([["$0"]], "not stacked groups"),
+        ("$0", "must be a list"),
+    ],
+)
+def test_a_malformed_template_is_refused_at_the_line(args: Any, message: str) -> None:
+    _, ev = _events()
+    with pytest.raises(GraphedTypeError, match=message) as caught:
+        gak.apply_correction(CSET, "l1", [ev.pt], args=args)
+    assert caught.value.provenance.filename == __file__
+
+
+def test_no_inputs_at_all_is_a_type_error() -> None:
+    with pytest.raises(TypeError, match="needs inputs"):
+        gak.apply_correction(CSET, "l1")
+
+
+def test_a_varied_keyword_expands_per_universe() -> None:
+    session, ev = _events()
+    pt = graphed.vary(ev.pt, "jes", up=ev.pt * 2.0, down=ev.pt * 0.5)
+    sf = gak.apply_correction(CSET, "l1", pt=pt)
+    assert graphed.labels(sf) == ("nominal", "jes_up", "jes_down")
+    assert _values(session, member_of(sf, "jes_up")) == [[2.0, 4.0], [], [6.0]]
+
+
+def test_a_path_is_read_once_and_reread_when_the_file_changes(tmp_path: Path) -> None:
+    path = tmp_path / "set.json"
+    path.write_bytes(CSET)
+    assert _payload_bytes(str(path)) is _payload_bytes(str(path))
+    path.write_bytes(CSET + b" ")
+    assert _payload_bytes(str(path)) == CSET + b" "
+
+
+def _external(ev: Any, params: dict[str, Any], *inputs: Any, payload: bytes = CSET) -> Any:
+    return record_external(
+        ev.session,
+        CORRECTIONLIB_PLUGIN,
+        payload,
+        list(inputs),
+        params=params,
+        output_type="float64",
+    )
+
+
+@pytest.mark.parametrize(
+    ("params", "n_inputs", "message"),
+    [
+        ({"name": "typo", "args": '["$0"]'}, 1, "no correction 'typo' in this set; it has: "),
+        ({"name": "l1", "compound": True, "args": '["$0"]'}, 1, "no compound correction 'l1'"),
+        ({"name": "jet_sf", "args": '["$0"]'}, 1, r"takes inputs \(syst, pt, eta\); got 1"),
+        ({"name": "l1", "args": '["$0", "$1"]'}, 2, r"takes inputs \(pt\); got 2"),
+        ({"name": "l1", "systematic": "nominal"}, 1, r"takes inputs \(pt\); got 2"),
+        ({"name": "l1", "args": "[1.0]"}, 1, "'l1' needs at least one Array input"),
+        ({"name": "l1", "args": '{"pt": "$0"}'}, 1, "'l1' takes args= as a list"),
+        ({"name": "jet_sf", "args": '{"syst": "n", "pt": "$0", "eta": "$0"}'}, 1, "as a list"),
+        ({"name": "l1", "args": '["$7"]'}, 1, r"slot \$7 out of range"),
+        ({"name": "l1", "args": '["$x"]'}, 1, r"slot '\$x' is not"),
+        ({"name": "l1", "args": '["$0"'}, 1, "not valid JSON"),
+        ({"name": "l1", "kwargs": '{"pt": "$0"}'}, 1, "does not take keyword arguments"),
+    ],
+)
+def test_record_external_refuses_at_the_recording_line(
+    params: dict[str, Any], n_inputs: int, message: str
+) -> None:
+    _, ev = _events()
+    with pytest.raises(GraphedTypeError, match=message) as caught:
+        _external(ev, params, *[ev.pt] * n_inputs)
+    assert caught.value.provenance.filename == __file__
+
+
+def test_record_external_checks_a_varied_input() -> None:
+    _, ev = _events()
+    varied = graphed.vary(ev.pt, "s", up=ev.pt * 2.0)
+    with pytest.raises(GraphedTypeError, match="no correction 'typo'"):
+        _external(ev, {"name": "typo", "args": '["$0"]'}, varied)
+
+
+def _flat() -> Any:
+    return from_awkward("flat", ak.Array({"pt": [1.0, 3.0]}), session=Session(AwkwardBackend()))
+
+
+def test_record_external_still_runs_what_is_right() -> None:
+    ev = _flat()
+    node = _external(ev, {"name": "l1", "args": '["$0"]'}, ev.pt)
+    assert _values(ev.session, node) == [1.0, 3.0]
+
+
+_LEGACY = CORRECTIONLIB_PLUGIN.samples()[0]
+
+
+def test_the_legacy_systematic_shape_stays_accepted() -> None:
+    ev = _flat()
+    node = _external(ev, {"name": "sf", "systematic": "nominal"}, ev.pt, payload=_LEGACY)
+    assert _values(ev.session, node) == [1.0, 1.0]
+
+
+def test_the_legacy_shape_needs_an_input() -> None:
+    ev = _flat()
+    params = {"name": "sf", "systematic": "nominal"}
+    with pytest.raises(GraphedTypeError, match="needs at least one Array input"):
+        _external(ev, params, payload=_LEGACY)
+
+
+def test_the_legacy_shape_refuses_a_second_input() -> None:
+    ev = _flat()
+    params = {"name": "sf", "systematic": "nominal"}
+    with pytest.raises(GraphedTypeError, match="takes one Array input, 'x'; got 2") as caught:
+        _external(ev, params, ev.pt, ev.pt * 2.0, payload=_LEGACY)
+    assert caught.value.provenance.filename == __file__
+
+
+def _onnx() -> bytes:
+    return ONNX_PLUGIN.samples()[0]
+
+
+@pytest.mark.parametrize(
+    "record",
+    [
+        lambda ev: _external(ev, {"name": "l1", "args": '["$0"]'}, ev.pt, ev.eta),
+        lambda ev: _external(ev, {"name": "jet_sf", "args": '["n", "$0", "$0"]'}, ev.pt, ev.eta),
+        lambda ev: gak.apply_correction(CSET, "l1", [ev.pt, ev.eta], args=["$0"]),
+        lambda ev: gak.onnx_inference(_onnx(), [ev.pt, ev.eta], lambda m: m, args=[["$0"]]),
+    ],
+    ids=["record_external", "repeated-slot", "apply_correction", "onnx_inference"],
+)
+def test_an_input_no_slot_reads_is_refused(record: Any) -> None:
+    _, ev = _events()
+    with pytest.raises(GraphedTypeError, match=r"reads no \$1;") as caught:
+        record(ev)
+    assert caught.value.provenance.filename == __file__
+
+
+@pytest.mark.parametrize(
+    "record",
+    [
+        lambda ev: _external(ev, {"name": "jet_sf", "args": '["n", "$1", "$0"]'}, ev.eta, ev.pt),
+        lambda ev: gak.apply_correction(CSET, "jet_sf", [ev.pt, ev.eta], args=["n", "$0", "$1"]),
+        lambda ev: gak.onnx_inference(_onnx(), [ev.pt, ev.eta], lambda m: m, args=[["$0", "$1"]]),
+    ],
+    ids=["record_external", "apply_correction", "onnx_inference"],
+)
+def test_every_input_a_slot_reads_records(record: Any) -> None:
+    _, ev = _events()
+    assert record(ev).session is ev.session
+
+
+@pytest.mark.parametrize(
+    ("record", "match"),
+    [
+        (
+            lambda ev: record_external(ev.session, ONNX_PLUGIN, _onnx(), [ev.pt, ev.eta]),
+            "feeds its first input alone; got 2",
+        ),
+        (
+            lambda ev: record_external(
+                ev.session, ONNX_PLUGIN, _onnx(), [ev.pt], params={"args": [["$0", "$3"]]}
+            ),
+            r"slot \$3 out of range",
+        ),
+    ],
+    ids=["onnx-legacy-second-input", "onnx-group-out-of-range"],
+)
+def test_a_plugin_template_mistake_is_refused_at_the_user_line(record: Any, match: str) -> None:
+    _, ev = _events()
+    with pytest.raises(GraphedTypeError, match=match) as caught:
+        record(ev)
+    assert caught.value.provenance.filename == __file__
+
+
+@pytest.mark.parametrize(
+    "record",
+    [
+        lambda ev, other: gak.apply_correction(CSET, "l1", [ev.pt, other.eta], args=["$0", "$1"]),
+        lambda ev, other: gak.onnx_inference(_onnx(), [ev.pt, other.eta], print, args=["$9"]),
+        lambda ev, other: _external(ev, {"name": "l1", "args": '["$0", "$1"]'}, ev.pt, other.eta),
+    ],
+    ids=["apply_correction", "onnx_inference", "record_external"],
+)
+def test_a_foreign_input_outranks_a_bad_template(record: Any) -> None:
+    _, ev = _events()
+    _, other = _events()
+    with pytest.raises(GraphedTypeError, match="different Session"):
+        record(ev, other)
+
+
+def test_a_wrong_name_outranks_a_bad_template() -> None:
+    _, ev = _events()
+    exc = _refused(lambda: gak.apply_correction(CSET, "typo", [ev.pt], args=["$7"]))
+    assert "no correction 'typo'" in str(exc)

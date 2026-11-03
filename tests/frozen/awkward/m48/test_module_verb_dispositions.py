@@ -29,6 +29,7 @@ import graphed.awkward as ga
 import graphed.numpy as gnp
 from graphed import BufferProjection, GraphedError, Projection, read_columns
 from graphed.awkward import gak
+from graphed.core.execution import Plan
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -187,7 +188,9 @@ def test_the_compile_and_aggregate_verbs_refuse_naming_graphed_universe() -> Non
     with pytest.raises(GraphedError, match=r"graphed\.universe"):
         graphed.aggregate_plan(varied, **reducer)
     assert graphed.compile_ir(session, x * 2.0).ir  # plain-Array positive controls
-    assert graphed.aggregate_plan(x * 2.0, **reducer).process is not None
+    plan = graphed.aggregate_plan(x * 2.0, **reducer)
+    assert isinstance(plan, Plan)
+    assert plan.process is not None
 
 
 def test_the_expanding_verbs_are_asserted_PER_VERB() -> None:

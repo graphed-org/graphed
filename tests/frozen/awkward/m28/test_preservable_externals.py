@@ -167,9 +167,11 @@ def test_apply_correction_accepts_payload_bytes_or_a_path(tmp_path) -> None:  # 
     s, ev = _session()
     p = tmp_path / "cset.json"
     p.write_bytes(CSET)
-    a = gak.apply_correction(CSET, "jetsf", [ev.Jet.pt], lambda *c: c[-1], args=["nominal", "$0"])
+    a = gak.apply_correction(
+        CSET, "jetsf", [ev.Jet.pt], lambda *c: c[-1], args=["nominal", "$0", "$0"]
+    )
     b = gak.apply_correction(
-        str(p), "jetsf", [ev.Jet.pt], lambda *c: c[-1], args=["nominal", "$0"]
+        str(p), "jetsf", [ev.Jet.pt], lambda *c: c[-1], args=["nominal", "$0", "$0"]
     )
     na, nb = _node(s, a), _node(s, b)
     # identity is content

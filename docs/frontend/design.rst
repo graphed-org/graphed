@@ -131,8 +131,12 @@ for its whole life.
 
 A source name is one binding per Session. Reading the same source again under its name — a
 re-run notebook cell, the same files, columns and partitioning — reuses that binding, and its node
-when the params match. Binding a taken name to other data is refused at the read, so a loop over
-datasets passes each its own name, or reads each inside its own ``with graphed.Session(...)``.
+when the params match. Binding a taken name to other data is refused at the read, so a reader
+taking an explicit name in a loop over datasets passes each its own name, or reads each inside its
+own ``with graphed.Session(...)``. ``uproot.graphed`` with no ``name=`` (uproot newer than 5.7.7)
+needs neither: the first read takes the tree's name and a later read of other data takes that name
+with a hash of what it reads. Which read comes first decides the names, so reordering reads moves
+their checkpoint keys.
 "The same source" is the same object, or two objects whose identities compare equal: the parquet
 readers' loaders define ``source_identity()``, and the numpy creators and ``default_rng`` draws
 pass their content name, which fixes their values, as ``Session.source``'s ``identity=``. An in-memory array is the same source only as the same object.
@@ -665,14 +669,7 @@ underneath; it takes plain ``Array`` inputs and knows nothing about labels.
     ctx  = vary(ctx, "jes", collections={"Jet": {
         "up": gak.with_field(jets, jets.pt * 1.10, "pt")}})
 
-    # with `args=`, `payload` IS the evaluation: the correction is rebuilt from those bytes through
-    # graphed's correctionlib plugin on every backend, so the `evaluator` positional goes unread --
-    # if it did not, this example would raise instead of printing
-    def never_called(*_: object) -> object:
-        raise AssertionError("the template path does not consult the caller's callable")
-
-    sf = gak.apply_correction(payload, "jet_sf", [gak.flatten(ctx.Jet.pt)],
-                              never_called, args=["$0"])
+    sf = gak.apply_correction(payload, "jet_sf", pt=gak.flatten(ctx.Jet.pt))
     print(labels(sf))
     print(s.materialize(universe(sf, "nominal")).to_list())
     print(s.materialize(universe(sf, "jes_up")).to_list())
@@ -1047,8 +1044,10 @@ One pass over the dataset, many outputs
 
 Most analyses want several results out of one read. ``aggregate_plan`` compiles the outputs you
 name into one graph, then builds a plan that reads each partition once, evaluates all of them, and
-folds partial results with the reduce/combine functions you supply. The example writes two small
-parquet files first so that it runs anywhere:
+folds partial results with the reduce/combine functions you supply. Whole-dataset ``sum``,
+``count``, ``count_nonzero``, ``any``, ``all``, ``min`` and ``max`` know their own combine, so with
+only those as outputs you can leave all three out. The example writes two small parquet files first
+so that it runs anywhere:
 
 .. code-block:: python
 
@@ -1292,8 +1291,12 @@ Each side is read, evaluated up to the join and routed by its own map stage; one
 destination depends on both, joins that destination's rows and runs what you recorded after the
 join. Without ``reduce``/``combine``/``empty`` the value is one output per destination; with them,
 ``join_plan`` adds a one-task ``reduce`` stage that folds the destinations, as ``aggregate_plan``
-folds partitions. ``shuffle_plan`` is the single-source counterpart for a plain repartition: a
-map-write stage, a gather stage and a ``reduce`` stage, with the barrier edge after the map-write.
+folds partitions. ``aggregate_plan`` over a join builds this same plan, so its return type is
+``Plan[Any] | DurablePlanV2``; code that reads ``plan.tasks`` narrows with
+``isinstance(plan, graphed.core.Plan)``. Left without the three, it folds whole-dataset reductions
+by their own combine, where ``join_plan`` refuses them. ``shuffle_plan`` is the single-source
+counterpart for a plain repartition: a map-write stage, a gather stage and a ``reduce`` stage, with
+the barrier edge after the map-write.
 Both builders produce a durable, byte-deterministic plan that carries the services its operations
 call (``bind_services`` binds them as for any plan). Three runners run one: ``SequentialRunner``
 in-process, ``graphed.checkpoint.run_shuffle_resumable`` against a checkpoint store, and
@@ -1371,6 +1374,12 @@ beside ``form=`` declares too, as ``gak.apply_correction`` does. An undeclared n
 evaluator. An aggregate plan re-raises any other ``GraphedError`` from a worker unchanged, and turns this
 one into the ``StageError`` at the declaring line.
 
+A backend may also provide ``traced_form(fn, inputs) -> Form | None``, the form an undeclared
+``map`` gives ``inputs`` on metadata, or ``None`` if ``fn`` returned anything else. The session
+calls it at the recording line and records that form, which stays out of the node's params. A
+failure there is a ``GraphedWarning`` and ``op_form``'s answer stands, since the callable is the
+user's. A backend without the method records ``op_form``'s answer silently.
+
 A package that records its *own* call-outs — histogram fills are the example — passes
 ``descriptor=`` and ``form=`` to ``Session.record_external`` and the backend is not consulted at
 all. That is how ``graphed-histogram`` exists without teaching either backend what a histogram is,
@@ -1416,9 +1425,11 @@ one comes back as a ``Varied`` over the union of labels.
 lambdas, two closures of one factory, two same-named functions of different modules — would
 otherwise hash to one node and hand the second one the first one's result. They are told apart
 automatically: the second object to derive ``q`` records as ``q#1``. Passing ``name=`` to ``map``,
-``apply`` or ``apply_gufunc`` overrides that and declares the identity yourself, so the name must
-encode *everything* that changes what the callable does — a captured cut value, a model version, a
-configuration dict. Two calls under one name are one node.
+``apply`` or ``apply_gufunc`` overrides that and declares the identity yourself. Calls that share
+a name and an evaluator's params, such as ``output_type=``, need one function: a rerun of the same
+definition gives the same node, as a notebook cell does, and a callable with a different checkpoint
+key raises ``GraphedError``. Two that cannot be
+compared are a ``GraphedWarning``, and the first answers for both.
 
 **One session per program.** A node id only means something in the store that minted it, so every
 ``Session`` method that takes an array refuses one recorded elsewhere: the ``record_*`` family with
