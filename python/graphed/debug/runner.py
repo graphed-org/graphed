@@ -127,7 +127,8 @@ def run(
     """Execute the analysis reaching ``array`` on the session's source data.
 
     ``partition`` runs that one chunk (``plan.tasks[3].partition``) instead of the whole source.
-    ``label`` names the data in a failure, by default the chunk as a plan's task names it.
+    ``label`` names the data in a failure, by default the chunk as a plan's task names it, else
+    ``"sample"``.
 
     Raise a `StageError` (mapped to the user's analysis line) on the first failing op.
     """
@@ -141,10 +142,7 @@ def run(
     if partition is not None:
         nid, read, sampled = _partition_chunk([array], partition)
         chunks[nid] = read
-
-    def where() -> str:
-        return label if label is not None else "sample" if sampled is None else sampled()
-
+    where = label if label is not None else sampled or "sample"
     return _walk(session, array, lower(session, array, opt_level=opt_level), chunks, where)
 
 
