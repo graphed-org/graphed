@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import cast
+from typing import Any, cast
 
 from graphed import Array, Session
 from graphed.execute import external_op
@@ -98,7 +98,7 @@ def _collect(session: Session, array: Array) -> list[LoweredOp]:
     boundary_ops = session.backend.boundary_ops()
     ops: list[LoweredOp] = []
     live = session._live([array])
-    nodes = session._nodes()
+    nodes: list[dict[str, Any]] = []  # the whole store's copy, taken only for an External
 
     def frame(nid: int) -> SourceFrame:
         return SourceFrame.of(session._lines(nid, live))
@@ -120,6 +120,8 @@ def _collect(session: Session, array: Array) -> list[LoweredOp]:
 
     def on_external(nid: int, _fn: object, ins: list[object]) -> int:
         ids = tuple(cast(int, i) for i in ins)
+        if not nodes:
+            nodes.extend(session._nodes())
         op = external_op(nodes[nid])
         ops.append(LoweredOp(nid, op, "external", frame(nid), ids, form(nid), True))
         return nid

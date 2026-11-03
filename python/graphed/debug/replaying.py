@@ -34,6 +34,7 @@ from graphed.execute import (
     _unbound_source,
     compile_ir,
     external_key,
+    external_op,
 )
 
 from .errors import SourceFrame
@@ -111,7 +112,7 @@ def _unfused(
         nodes.append({**node, "id": new, "inputs": inputs})
         frame = SourceFrame(*frames.get(key, ("<no recorded line>", 0)))
         kind = node["kind"]
-        name = node["name"] or kind  # an External has no name
+        name = external_op(node) if kind == "external" else node["name"] or kind
         lowered_kind = "op" if kind == "reduction" else kind
         boundary = lowered_kind != "op" or name in boundary_ops
         ops.append(LoweredOp(new, name, lowered_kind, frame, tuple(inputs), "", boundary))

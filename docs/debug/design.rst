@@ -646,7 +646,7 @@ graph, so that form works while that session is alive.
    input from: store
      events   line 21
      field    line 22
-     failed at external on line 22: no calibration for this block
+     failed at map 'calibrate' on line 22: no calibration for this block
    recorded True 94561.25
 
 ``steps()`` is lazy: each ``Step`` carries the lowered operation (its op, kind, your source frame

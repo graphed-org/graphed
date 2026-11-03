@@ -279,3 +279,16 @@ def test_every_path_names_a_failing_map_and_its_chunk_alike(tmp_path: Path) -> N
     with pytest.raises(gd.StageError) as traced:
         gd.trace(mapped, entries=2)
     assert traced.value.op == "map 'calib'"
+
+
+def test_a_quoted_map_name_keeps_the_graph_source_well_formed(tmp_path: Path) -> None:
+    events = _source(tmp_path)
+    mapped = events.x.map(_calib, name="it's").map(lambda a: a)
+    graph = gd.lower(events.session, mapped, opt_level=1)
+    assert [op.op for op in graph.ops][-2:] == ['map "it\'s"', "map '<lambda>'"]
+    mermaid = gd.visualize(graph, fmt="mermaid")
+    assert "map #quot;it's#quot;" in mermaid
+    assert "map '#lt;lambda#gt;'" in mermaid
+    assert all(line.count('"') == 2 for line in mermaid.splitlines() if "[" in line)
+    graphviz = gd.visualize(graph, fmt="graphviz")
+    assert 'map \\"it\'s\\"' in graphviz
