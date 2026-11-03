@@ -177,6 +177,8 @@ other reduction refuse, naming the output, as do ``writes=`` without a ``reduce`
 Fixes
 ~~~~~
 
+* ``aggregate_plan`` over two sources of one Session names them in its refusal and, when plans can
+  split them, points to ``graphed.collate`` (#165).
 * The checkpoint guide says ``run_resumable`` and ``run_shuffle_resumable`` keep results separate
   from ``resumable``'s, and the warning that no task was reused names that cause (#191).
 * A behavior-carrying plan resumes across processes. The Session backend's behavior ships, and keys,
