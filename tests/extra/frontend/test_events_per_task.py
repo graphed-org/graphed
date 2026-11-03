@@ -39,7 +39,9 @@ def _events(tmp_path: Path, *, open_files: bool = False) -> Any:
 
 def _plan(events: Any, **kw: Any) -> Plan[float]:
     total = gak.sum(events.x, axis=None)
-    return graphed.aggregate_plan(total, reduce=_first, combine=_add, empty=_zero, **kw)
+    plan = graphed.aggregate_plan(total, reduce=_first, combine=_add, empty=_zero, **kw)
+    assert isinstance(plan, Plan)
+    return plan
 
 
 @pytest.mark.parametrize("open_files", [False, True], ids=["blind", "opened"])

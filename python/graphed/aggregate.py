@@ -714,6 +714,7 @@ def aggregate_plan(
     if over_join:
         for name, given in (
             ("partitions", partitions),
+            ("events_per_task", events_per_task),
             ("store", store),
             ("writes", writes or None),
             ("read_by", read_by),
