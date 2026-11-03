@@ -258,7 +258,7 @@ def no_eager_value(op: str, missing: str) -> GraphedTypeError:
         capture(),
         f"a deferred graphed array has no {missing} until it runs; select elementwise with "
         "np.where on a numpy-backed array or ak.where/gak.where on an awkward-backed one (or "
-        "&/|/~), or evaluate it first with session.materialize(...)",
+        "&/|/~), or evaluate it with graphed.materialize(x), or peek with graphed.head(x)",
     )
 
 

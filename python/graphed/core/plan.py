@@ -463,14 +463,17 @@ def _partition_json(p: Partition) -> dict[str, str | int]:
     if p.blind_step is not None and p.blind_n_steps is not None:
         d["blind_step"] = p.blind_step
         d["blind_n_steps"] = p.blind_n_steps
+    if p.blind_limit is not None:
+        d["blind_limit"] = p.blind_limit
     return d
 
 
 def _partition_from_json(d: Mapping[str, Any]) -> Partition:
     if "blind_step" in d:
-        return Partition.blind(
+        blind = Partition.blind(
             d["uri"], d.get("tree", ""), int(d["blind_step"]), int(d["blind_n_steps"])
         )
+        return blind.first(int(d["blind_limit"])) if "blind_limit" in d else blind
     return Partition(
         uri=d["uri"],
         tree=d.get("tree", ""),
