@@ -28,7 +28,7 @@ from .by_label import impact_by_label, read_columns_by_label
 from .context import Explanation, explain, explain_variations
 from .errors import GraphedError, GraphedTypeError, GraphedWarning, OutputTypeError, PointError
 from .execute import CompiledGraph, compile_ir, evaluate_ir, refuse_chunk_partials
-from .materialization import PlanPieces, materialize
+from .materialization import PlanPieces, head, materialize
 from .projection import (
     CONSERVATIVE,
     BufferNeed,
@@ -60,6 +60,7 @@ VERB_DISPOSITIONS: dict[str, str] = {
     "broadcast_like": "broadcasting",
     "compile_ir": "refusing",
     "context_of": "eager-metadata",
+    "head": "refusing",
     "impact_by_label": "expanding",
     "join": "refusing",
     "join_plan": "refusing",
@@ -113,6 +114,7 @@ __all__ = [
     "explain",
     "explain_variations",
     "handle_opaque",
+    "head",
     "impact_by_label",
     "is_enabled",
     "join",

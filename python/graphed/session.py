@@ -894,12 +894,18 @@ class Session:
         with self._lock:
             if traced in self._fn_traced:
                 return self._fn_traced[traced]
+        reason = ""
         try:
             form: Form | None = trace(fn, forms)
-        except Exception:
+        except Exception as exc:
             form = None
+            try:  # the exception's own __str__ is user code too
+                line = next((s for s in str(exc).splitlines() if s.strip()), "")
+            except Exception:
+                line = ""
+            reason = f" ({type(exc).__name__}{': ' + line if line else ''})"
         if form is None:
-            message = f"could not infer the type of {_fn_label(fn)}; pass output_type="
+            message = f"could not infer the type of {_fn_label(fn)}{reason}; pass output_type="
             warnings.warn_explicit(message, GraphedWarning, prov.filename, prov.lineno)
         with self._lock:
             return self._fn_traced.setdefault(traced, form)
@@ -962,10 +968,8 @@ class Session:
     ) -> object:
         """Evaluate the graph from ``array`` with caller-supplied handlers for sources, ops.
 
-        And externals. `materialize` evaluates real data; projection evaluates reporting tracers.
+        And externals. Debug execution evaluates real data; projection evaluates reporting tracers.
         Walks of several outputs that share one ``memo`` evaluate each shared node once.
-
-        `materialize` reaches the m60 own-session guard through this one call.
         """
         self._mine([array])
         cache: dict[int, object] = {} if memo is None else memo
@@ -1003,15 +1007,12 @@ class Session:
                 cache[node_id] = op(node_id, op_name, [cache[i] for i in ids], params)
         return cache[root]
 
-    # ---- evaluation (reference, node-by-node; the real executor is M7) ----------
     def materialize(self, array: Array) -> object:
-        """``array``'s value."""
-        return self.walk(
-            array,
-            source=self.source_value,
-            op=lambda _nid, name, ins, params: self._backend.eval_stage(name, ins, params),
-            external=lambda _nid, fn, ins: fn(*ins),
-        )
+        """``array``'s value, as :func:`graphed.materialize` evaluates it."""
+        from .materialization import materialize
+
+        self._mine([array])
+        return materialize(array)
 
 
 #: the open ``with session:`` scopes of this context, innermost last; a tuple per context, so

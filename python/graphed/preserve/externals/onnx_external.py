@@ -6,6 +6,8 @@ import hashlib
 from collections.abc import Mapping
 from typing import Any
 
+from ...errors import GraphedTypeError
+from ...provenance import capture
 from ._base import ExternalPlugin
 from ._helpers import _as_event_array, memoized_model_hash, ml_matrix, parse_call_template
 
@@ -85,6 +87,15 @@ def _onnx_samples() -> list[bytes]:
     return [_model(0.5), _model(0.9)]
 
 
+def _check_onnx_params(params: Mapping[str, Any], _payload: bytes, n_inputs: int) -> None:
+    if params.get("args") is None and params.get("kwargs") is None and n_inputs > 1:
+        raise GraphedTypeError(
+            "external",
+            capture(),
+            f"an ONNX node without args= feeds its first input alone; got {n_inputs} inputs",
+        )
+
+
 ONNX_PLUGIN = ExternalPlugin(
     kind="onnx_model",
     content_hash=onnx_content_hash,
@@ -92,5 +103,6 @@ ONNX_PLUGIN = ExternalPlugin(
     samples=_onnx_samples,
     load=load_onnx,  # build the inference session once per worker
     framework="onnxruntime",
+    check_params=_check_onnx_params,
     output_dtype="float64",
 )

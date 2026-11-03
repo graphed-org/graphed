@@ -20,7 +20,7 @@ The rest of the package is for everything around that error:
    leading = pt.map(lambda a: a[100], name="leading")
 
    try:
-       gd.run(s, leading, opt_level=1, partition="skim@0:4")
+       gd.run(s, leading, opt_level=1, label="skim@0:4")
    except gd.StageError as err:
        print(err.user_frame.source)      # the line you wrote
        print(err.cause_type, "|", err.partition)

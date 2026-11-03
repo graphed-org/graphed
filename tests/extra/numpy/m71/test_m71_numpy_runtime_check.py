@@ -14,8 +14,9 @@ import numpy as np
 import pytest
 
 import graphed
-from graphed import GraphedTypeError, Session
+from graphed import OutputTypeError, Session
 from graphed.aggregate import external_evaluators
+from graphed.errors import StageError
 from graphed.execute import compile_ir, evaluate_ir
 from graphed.numpy import NumpyBackend, from_array, from_record
 
@@ -35,11 +36,11 @@ def _value(v: Any) -> Any:
     return lambda a: v
 
 
-def _refused(call: Any, line: int) -> GraphedTypeError:
-    with pytest.raises(GraphedTypeError) as info:
+def _refused(call: Any, line: int) -> StageError:
+    with pytest.raises(StageError) as info:
         call()
-    assert type(info.value).__name__ == "OutputTypeError"
-    assert info.value.provenance.lineno == line
+    assert info.value.cause_type == "OutputTypeError"
+    assert info.value.user_frame.lineno == line
     return info.value
 
 
@@ -47,13 +48,16 @@ def test_a_map_value_of_another_dtype_raises_at_the_declaring_line() -> None:
     s, x = _x()
     out, line = x.map(np.sqrt, output_type="float64"), here()
     err = _refused(lambda: s.materialize(out), line)
-    assert "declares output_type 'float64'; its value is 'vector[float32]'" in err.detail
+    assert "declares output_type 'float64'; its value is 'vector[float32]'" in err.cause_message
 
 
 def test_an_apply_value_of_another_dtype_raises_at_the_declaring_line() -> None:
     s, x = _x()
     out, line = graphed.apply(np.add, x, x, output_type=bool), here()
-    assert "its value is 'vector[float32]'" in _refused(lambda: s.materialize(out), line).detail
+    assert (
+        "its value is 'vector[float32]'"
+        in _refused(lambda: s.materialize(out), line).cause_message
+    )
 
 
 @pytest.mark.parametrize(
@@ -98,7 +102,9 @@ def test_a_scalar_input_takes_no_leading_axis() -> None:
         total.map(_value(np.bool_(True)), name="s", output_type=bool)
     ) == np.bool_(True)
     out, line = total.map(_value(np.array([True])), name="v", output_type=bool), here()
-    assert "its value is 'vector[bool]'" in _refused(lambda: s.materialize(out), line).detail
+    assert (
+        "its value is 'vector[bool]'" in _refused(lambda: s.materialize(out), line).cause_message
+    )
 
 
 def test_an_array_input_after_a_scalar_takes_the_leading_axis() -> None:
@@ -123,12 +129,10 @@ def test_evaluate_ir_raises_the_located_error_and_it_pickles() -> None:
     s, x = _x()
     out, line = x.map(np.sqrt, output_type="float64"), here()
     compiled = compile_ir(s, out)
-    err = _refused(
-        lambda: evaluate_ir(
-            compiled, NumpyBackend(), {"x": X}, externals=external_evaluators(s, compiled)
-        ),
-        line,
-    )
+    with pytest.raises(OutputTypeError) as info:
+        evaluate_ir(compiled, NumpyBackend(), {"x": X}, externals=external_evaluators(s, compiled))
+    err = info.value
+    assert err.provenance.lineno == line
     clone = pickle.loads(pickle.dumps(err))
     assert (type(clone), clone.op, clone.provenance, clone.detail) == (
         type(err),
