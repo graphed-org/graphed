@@ -225,7 +225,6 @@ def read_columns(
 
     # PER graph, so a conservative one dominates the union rather than being masked by a sibling
     # that happens to narrow: reading a subset for one output still reads the whole record.
-    # A member that never reaches the source reads nothing of it, not "every column".
     return _union(
         [
             one(member)
