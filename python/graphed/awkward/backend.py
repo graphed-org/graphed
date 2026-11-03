@@ -28,7 +28,7 @@ from graphed.shuffle import join_blocks
 
 from . import functions as gak
 from . import join, payloads, shuffle
-from ._ops import _INTROSPECT_EAGER, _no_field, apply
+from ._ops import _INTROSPECT_EAGER, _ak_own, _listed_names, _no_field, apply
 from .array import AwkwardArray
 
 
@@ -167,10 +167,16 @@ class AwkwardForm:
     tt: ak.Array
 
     def describe(self) -> str:
-        # a whole-array reduction's form is a scalar typetracer, which has a dtype but no `.type`
         """Return the awkward type string of this form."""
         tt_type = getattr(self.tt, "type", None)
-        return str(self.tt.dtype if tt_type is None else tt_type)
+        if tt_type is not None:
+            return str(tt_type)
+        # a whole-array reduction's form is a scalar typetracer, or an option scalar's MaybeNone
+        # around one; a behavior property may also hand back a plain Python value
+        content = getattr(self.tt, "content", None)
+        if content is not None:
+            return f"?{AwkwardForm(content).describe()}"
+        return str(getattr(self.tt, "dtype", type(self.tt).__name__))
 
     @property
     def has_rows(self) -> bool:
@@ -469,12 +475,15 @@ class AwkwardBackend:
         # descriptor the stdlib adds later (partialmethod, singledispatchmethod, ...) still counts
         if hasattr(type(static), "__set__") or isinstance(static, functools.cached_property):
             # ak.Array's own descriptors describe the array, they are not per-element data
-            return (
-                "introspection"
-                if static is inspect.getattr_static(ak.Array, name, None)
-                else "property"
-            )
+            return "introspection" if _ak_own(tt, name) else "property"
         return "method" if callable(static) or hasattr(static, "__get__") else "property"
+
+    def attribute_names(self, form: AwkwardForm) -> set[str]:
+        """Return what `arr.<name>` answers beyond the frontend's own: fields, then behaviors."""
+        tt = self._with_behavior(form.tt)
+        if not isinstance(tt, ak.Array | ak.Record):  # a scalar has neither
+            return set()
+        return _listed_names(tt)
 
     def introspect(self, form: AwkwardForm, name: str) -> object:
         """Answer an `introspection` attribute from the record-time typetracer.
@@ -501,9 +510,8 @@ class AwkwardBackend:
         """
         inputs = [self._with_behavior(f.tt) for f in forms]
         name = str(params["method"])
-        static = inspect.getattr_static(inputs[0], name)
         # ak.from_iter sniffs `hasattr(x, "to_list")`, so ak's own conversions refuse at the call
-        if any(static is inspect.getattr_static(c, name, None) for c in (ak.Array, ak.Record)):
+        if _ak_own(inputs[0], name):
             raise TypeError(NEEDS_VALUES)
         return self._output_shape(apply("method", inputs, params, behavior=self._behavior), params)
 

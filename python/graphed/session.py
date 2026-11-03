@@ -174,6 +174,11 @@ class Session:
 
     __copy__ = __deepcopy__
 
+    def __repr__(self) -> str:
+        """Show how much this Session has recorded, and on what."""
+        counts = f"{self.node_count()} nodes, {len(self.source_ids())} sources"
+        return f"<graphed.Session: {counts}, {type(self._backend).__name__}>"
+
     def __enter__(self) -> Session:
         """Open a scope: array-less reads in this context record here until it exits."""
         _scopes.set((*_scopes.get(), self))
