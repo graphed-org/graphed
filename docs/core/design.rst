@@ -329,6 +329,11 @@ the entry point for everything downstream: runners execute these bytes, checkpoi
 work by their content, preservation bundles embed them, and the debugger maps them back to your
 source lines.
 
+A live :class:`~graphed.core.Plan` is not that format. ``repr(plan)`` is a one-line summary that
+reads no data, and ``plan.save(path)`` with ``Plan.load(path)`` carries a plan to a later session
+on the same graphed version, to submit and come back. The file is a pickle, so load only plans you
+trust. It is a transport: what you preserve is the IR.
+
 On top of that, :class:`~graphed.core.DurablePlan` packages those bytes — its ``ir`` field, for
 the recorded and reduced form of your analysis — with what a runner needs: the partitions, the
 columns to read, the per-chunk ``process``, the ``combine`` that merges partials, and the

@@ -45,5 +45,5 @@ from .explain import (  # isort: skip
     explain_variations as explain_variations,
 )
 from .kinds import Kind as Kind  # isort: skip
-from .verb import vary as vary  # isort: skip
+from .verb import ScalarFactor as ScalarFactor, vary as vary  # isort: skip
 from .varied import Varied as Varied, member_of as member_of  # isort: skip
