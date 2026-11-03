@@ -22,8 +22,9 @@ recorded operation, instead of the optimized graph. ``materialize`` evaluates an
 Sessions in this process, with no executor, reading only the source columns they use; a class
 joins it by defining ``__graphed_pieces__`` to return ``PlanPieces``. ``materialize(entries=N)`` and
 ``materialize(partition=)`` evaluate a small sample, and ``head`` peeks at a result's first rows. One
-Session can record
-several sources (a reader's ``session=``); a plan reads only the ones its outputs reach.
+Session can record several sources (a reader's ``session=``); a plan reads only the ones its outputs
+reach. An op pairing rows of two partitioned sources raises ``graphed.errors.SourceRowsError``: say
+how they match with ``join``, keyed or ``how="positional"``.
 ``current_session`` is the Session a read with no array input records into: the innermost
 ``with session:`` scope, else a default made on first use; ``new_session``, ``set_session`` and
 ``set_default_backend`` replace the default or choose its backend.

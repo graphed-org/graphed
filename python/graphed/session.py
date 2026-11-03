@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import contextvars
 import functools
+import json
 import threading
 import types
 import warnings
@@ -21,15 +22,39 @@ import graphed.core
 
 from .array import Array, attach, handle_of, labels_carried
 from .backend import Backend, Form, ParamValue
-from .errors import GraphedTypeError, OutputTypeError
+from .errors import (
+    GraphedError,
+    GraphedTypeError,
+    GraphedWarning,
+    OutputTypeError,
+    SourceRowsError,
+)
 from .provenance import Provenance, Site, capture
 from .services import Bindable
 from .systematics.lineage import unify_contexts
 from .systematics.points import Point
 from .systematics.state import SystematicsState
+from .write import PartitionedSource
 
 if TYPE_CHECKING:
     from .services import ServiceSpec
+
+
+def evaluator_key(content_hash: str, params: Mapping[str, object]) -> str:
+    """Return what picks an External's evaluator: its payload hash plus its params."""
+    return content_hash + "|" + json.dumps(params, sort_keys=True, separators=(",", ":"))
+
+
+def _fn_label(fn: object) -> str:
+    return str(getattr(fn, "__name__", repr(fn)))
+
+
+def _call_identity(fn: object) -> object:
+    """Return what makes two callable objects one call: see `Session._fn_name`'s identity rule."""
+    # not isinstance: `__class__` is the callable's to claim
+    if type(fn) is types.MethodType:
+        return (id(fn.__self__), id(fn.__func__))
+    return id(fn)
 
 
 @dataclass(frozen=True)
@@ -123,6 +148,10 @@ class Session:
         self._array_cls: type[Array] = factory() if callable(factory) else Array
         # `reachable_sources`' memo (node_id -> reachable source node_ids)
         self._source_ids_cache: dict[int, frozenset[int]] = {}
+        # node -> the row sets it carries: partitioned sources, or the join that matched them, in
+        # row order, as appending two either way round holds different rows. A value past its row
+        # axis carries none, so it may combine across sources, unlike `reachable_sources`.
+        self._row_sources: dict[int, tuple[int, ...]] = {}
         # Session methods hold it around their state access and never across a callback (a backend
         # hook, a loader, an evaluator); code outside this module reads the tables only through
         # methods returning copies. Reentrant: a `vary` transaction holds it around `record_*`.
@@ -134,6 +163,16 @@ class Session:
         # callable) plus the ONE name space every name handed out lives in, declared or derived.
         self._fn_names: dict[object, tuple[object, str]] = {}
         self._fn_taken: set[str] = set()
+        # evaluator key -> the first callable recorded under it and where
+        self._fn_held: dict[str, tuple[Callable[..., object], Provenance]] = {}
+        # (evaluator key, *input types) -> what tracing that function gave
+        self._fn_traced: dict[tuple[str, ...], Form | None] = {}
+
+    def __deepcopy__(self, memo: dict[int, Any] | None = None) -> Session:
+        """Return this Session: one graph has one Session, so a copy shares what it records."""
+        return self
+
+    __copy__ = __deepcopy__
 
     def __enter__(self) -> Session:
         """Open a scope: array-less reads in this context record here until it exits."""
@@ -177,8 +216,8 @@ class Session:
         `name=` is the caller's own identity declaration: returned untouched (equal names intern,
         which is the point) and entered in that space, so a later derivation cannot land on it.
 
-        A declared `name=` IS the identity: declaring a name another callable already wears —
-        declared or derived — means the same node, the caller having said so.
+        A declared `name=` IS the identity, so the callables under it must agree:
+        `record_external` refuses one that behaves differently.
 
         THE IDENTITY RULE: two callable objects share a memo entry only where PYTHON ITSELF
         defines them as the same call — an object whose TYPE is `types.MethodType`, whose call IS
@@ -199,11 +238,7 @@ class Session:
             if name is not None:
                 self._fn_taken.add(name)
                 return name
-            # not isinstance: `__class__` is the callable's to claim
-            if type(fn) is types.MethodType:
-                key: object = (id(fn.__self__), id(fn.__func__))
-            else:
-                key = id(fn)
+            key = _call_identity(fn)
             held = self._fn_names.get(key)
             if held is not None:
                 return held[1]
@@ -596,7 +631,9 @@ class Session:
             node_id = self._store.add_source(name, dict(params))
             self._sources.setdefault(node_id, data)
             self._source_names.setdefault(node_id, name)
-            return self._enter(node_id, form, prov)
+            # a loader reads a dataset, as `source_value` reads it; in-memory data pairs as numpy's
+            read = callable(data) or isinstance(data, PartitionedSource)
+            return self._enter(node_id, form, prov, rows=(node_id,) if read else ())
 
     def record_op(
         self,
@@ -605,11 +642,18 @@ class Session:
         params: Mapping[str, ParamValue] | None = None,
         *,
         reduction: bool = False,
+        rows_from: Iterable[int] | None = None,
     ) -> Array:
-        """Record ``op`` over ``inputs`` and return its array."""
+        """Record ``op`` over ``inputs`` and return its array.
+
+        Its inputs' rows pair, so they must be one row set; ``rows_from`` is for an op that pairs
+        none, naming the inputs whose rows the result holds.
+        """
         params_d: dict[str, ParamValue] = dict(params or {})
         prov = capture()
         self._mine(inputs, (op, prov))
+        if rows_from is None:
+            self._same_rows(op, prov, inputs)
         ids = [a.node_id for a in inputs]
         form = self._located_form(op, prov, ids, params_d)
         with self._lock:
@@ -617,7 +661,37 @@ class Session:
                 node_id = self._store.add_reduction(op, ids, params_d)
             else:
                 node_id = self._store.add_op(op, ids, params_d)
-            return self._enter(node_id, form, prov, inputs, op=(op, params_d, ids))
+            rows = None if rows_from is None else self._carried([inputs[i] for i in rows_from])
+            return self._enter(node_id, form, prov, inputs, op=(op, params_d, ids), rows=rows)
+
+    def _same_rows(self, op: str, prov: Provenance, inputs: Sequence[Array]) -> None:
+        """Refuse an op pairing rows of different partitioned sources."""
+        if len(inputs) < 2:
+            return
+        with self._lock:
+            carried = {self._row_sources[a.node_id] for a in inputs} - {()}
+            if len(carried) < 2:
+                return
+            names = sorted(
+                {
+                    self._source_names[nid]
+                    for rows in carried
+                    for row_set in rows
+                    for nid in self._reachable_sources(row_set)
+                }
+            )
+        raise SourceRowsError(
+            op,
+            prov,
+            "an elementwise op needs one partitioned source for its rows, and "
+            f"{' and '.join(map(repr, names))} are {len(names)}; match them with "
+            "graphed.join(left, right, on=[...]), or how='positional' if they are the same events "
+            "in the same order, or run each alone and combine the results with graphed.collate",
+        )
+
+    def _carried(self, inputs: Sequence[Array]) -> tuple[int, ...]:
+        rows = dict.fromkeys(self._row_sources[a.node_id] for a in inputs)
+        return tuple(row_set for sets in rows for row_set in sets)
 
     def _forms_of(self, ids: Sequence[int]) -> list[Form]:
         with self._lock:
@@ -642,12 +716,16 @@ class Session:
         inputs: Sequence[Array] = (),
         *,
         op: tuple[str, dict[str, ParamValue], list[int]] | None = None,
+        rows: tuple[int, ...] | None = None,
     ) -> Array:
         # the caller holds `_lock` from the store add through here
         self._forms.setdefault(node_id, form)
         if op is not None:
             self._ops.setdefault(node_id, op)
         self._provenance.setdefault(node_id, prov)
+        if rows is None:
+            rows = self._carried(inputs) if getattr(form, "has_rows", True) else ()
+        self._row_sources.setdefault(node_id, rows)
         reads = tuple(site for array in inputs for site in self._reading(array))
         site = self._sites.setdefault(node_id, {}).setdefault(
             (prov.filename, prov.lineno, reads), Site(prov, reads)
@@ -684,7 +762,10 @@ class Session:
         form = self._located_form("join", prov, ids, params_d)
         with self._lock:
             node_id = self._store.add_join(ids, params_d)
-            return self._enter(node_id, form, prov, [left, right], op=("join", params_d, ids))
+            # a join's rows are its own, so two joins of one pair are two row sets
+            rows = (node_id,) if self._carried([left, right]) else ()
+            op_entry = ("join", params_d, ids)
+            return self._enter(node_id, form, prov, [left, right], op=op_entry, rows=rows)
 
     def record_external(
         self,
@@ -722,6 +803,7 @@ class Session:
         params_d: dict[str, ParamValue] = dict(params or {})
         prov = capture()
         self._mine(inputs, (op, prov))
+        self._same_rows(op, prov, inputs)
         if (descriptor is None) != (form is None):
             raise GraphedTypeError(op, prov, "descriptor= and form= must be given together")
         # user params may carry any key, so op_form sees `output_type` only as declared here
@@ -737,12 +819,19 @@ class Session:
                     op, prov, "backend returned no payload descriptor for external op"
                 )
         ids = [a.node_id for a in inputs]
+        undeclared = op == "map" and form is None
         if form is None:
             form = self._located_form(op, prov, ids, {**form_view, **(form_params or {})})
         # the declaration op_form honoured (or, beside form=, a leaf dtype) is checked on every
         # value
         check = getattr(self._backend, "check_output_type", None)
         declared = self._declaration(op, prov, declared_type, form_params)
+        # after every refusal of the call itself, so a refused function holds no name
+        if "fn" in params_d:
+            key = evaluator_key(descriptor.content_hash, params_d)
+            fn = self._hold_fn(fn, key, params_d["fn"], prov)
+            if undeclared and declared is None:
+                form = self._traced_form(fn, key, ids, prov) or form
         with self._lock:
             node_id = self._store.add_external(descriptor, ids, params_d)
             if declared is not None and check is not None:
@@ -761,6 +850,59 @@ class Session:
                 )
             self._externals.setdefault(node_id, (fn, ids))
             return self._enter(node_id, form, prov, inputs)
+
+    def _hold_fn(
+        self, fn: Callable[..., object], key: str, name: ParamValue, prov: Provenance
+    ) -> Callable[..., object]:
+        """Return the callable that answers for ``key``, refusing a different ``fn``."""
+        with self._lock:
+            held, first = self._fn_held.setdefault(key, (fn, prov))
+        if _call_identity(held) == _call_identity(fn):
+            return held
+        # a checkpoint key, so a rerun cell's new lambda still matches, however its lines moved
+        from .checkpoint.resume import _key_digest
+
+        try:
+            differs = _key_digest(held) != _key_digest(fn)
+        except Exception:
+            message = (
+                f"could not compare {_fn_label(fn)} with {_fn_label(held)} ({first}); "
+                "the first one answers for both"
+            )
+            warnings.warn_explicit(message, GraphedWarning, prov.filename, prov.lineno)
+        else:
+            if differs:
+                raise GraphedError(
+                    f"graphed: name={name!r} at {prov} is already used by {_fn_label(held)} "
+                    f"({first}); a different function needs a different name"
+                )
+        return held
+
+    def _traced_form(
+        self, fn: Callable[..., object], key: str, ids: Sequence[int], prov: Provenance
+    ) -> Form | None:
+        """Return the form an undeclared ``fn`` gives its inputs, where the backend can trace it.
+
+        This runs the user's function at record time, so any failure is a warning, never fatal.
+        One function is traced once per input type, however many universes record it.
+        """
+        trace = getattr(self._backend, "traced_form", None)
+        if trace is None:
+            return None
+        forms = self._forms_of(ids)
+        traced = (key, *(form.describe() for form in forms))
+        with self._lock:
+            if traced in self._fn_traced:
+                return self._fn_traced[traced]
+        try:
+            form: Form | None = trace(fn, forms)
+        except Exception:
+            form = None
+        if form is None:
+            message = f"could not infer the type of {_fn_label(fn)}; pass output_type="
+            warnings.warn_explicit(message, GraphedWarning, prov.filename, prov.lineno)
+        with self._lock:
+            return self._fn_traced.setdefault(traced, form)
 
     def _canonical_output_type(
         self,

@@ -158,12 +158,13 @@ def merge_records(left: ak.Array, right: ak.Array, *, on: Sequence[str]) -> ak.A
     return ak.zip(fields, depth_limit=1)
 
 
-def pack_key(rec: ak.Array, on: Sequence[str]) -> ak.Array:
+def pack_key(rec: ak.Array, on: Sequence[str], *, route: bool = False) -> ak.Array:
     """Add a flat u64 ``__joinkey__`` column to ``rec``, big-endian bit-packed over ``on``.
 
     The first field is the most significant. Integer bit-ops only — deterministic,
     process-independent, injective on in-range keys, and ``pack_key(0,…,0,e) == e``. NEVER Python
-    ``hash()`` (plan M40 trap #6; §A.3.1).
+    ``hash()`` (plan M40 trap #6; §A.3.1). ``route`` keeps a value too wide for its field, for a
+    key that only picks a destination.
     """
     n = len(on)
     if n == 0:
@@ -179,7 +180,7 @@ def pack_key(rec: ak.Array, on: Sequence[str]) -> ak.Array:
         col = ak.values_astype(rec[f], np.uint64)
         # F8: a field value >= 2**stride bleeds into the adjacent field and silently collides —
         # raise loudly instead (guard skipped on the typetracer, which carries no data to check).
-        if ak.backend(col) != "typetracer" and bool(ak.any(col >= limit)):
+        if not route and ak.backend(col) != "typetracer" and bool(ak.any(col >= limit)):
             raise PackKeyOverflowError(
                 f"pack_key: field {f!r} has a value >= 2**{_PACK_STRIDE} (overflow->bytes is "
                 "Phase-2)"
@@ -218,10 +219,13 @@ def join_form(inputs: Sequence[ak.Array], params: Mapping[str, Any]) -> ak.Array
     how = str(params.get("how", "inner"))
     on_set = {str(c) for c in on_from_params(params)}
     lf, rf = ak.fields(left), ak.fields(right)
+    if not lf or not rf:
+        raise TypeError("join needs two records; select the arrays with gak.zip")
     shared_nonkey = sorted(f for f in rf if f in lf and f not in on_set)
     if shared_nonkey:
         raise ValueError(
-            f"op_form(join): shared non-key column(s) {shared_nonkey} — rename or add to `on`"
+            f"op_form(join): shared non-key column(s) {shared_nonkey} — rename, select fields "
+            "on one side, or add to `on`"
         )
     left_opt = how in ("right", "outer")  # left's NON-key fields can be null on a right-only row
     right_opt = how in ("left", "outer")  # right's NON-key fields can be null on a left-only row

@@ -112,14 +112,21 @@ def pack_key(array: Array, *, on: Sequence[str]) -> Array:
 
     The column is derived from the ``on`` fields (plan §2.1/§3.3, spec Impl Target 8). A fusible
     ``Op`` (not a boundary), so it folds into the map stage; the backend computes it by big-endian
-    integer bit-ops (never Python ``hash()``). :func:`join` uses it internally; it is also public
-    so a caller can pre-key a source.
+    integer bit-ops (never Python ``hash()``). It is public so a caller can pre-key a source.
     """
     refuse_boundary("graphed.pack_key", array)
     return array.session.record_op("pack_key", [array], {"on": ",".join(on)})
 
 
-def join(left: Array, right: Array, *, on: Sequence[str], how: str = "inner") -> Array:
+def route_key(array: Array, on: Sequence[str]) -> Array:
+    """Record ``pack_key`` for a join's routing: the match compares the real fields too.
+
+    So a value too wide for its field only shares a route, and is not refused.
+    """
+    return array.session.record_op("pack_key", [array], {"on": ",".join(on), "route": True})
+
+
+def join(left: Array, right: Array, *, on: Sequence[str] = (), how: str = "inner") -> Array:
     """Return the neutral ``graphed.join`` MODULE verb (plan §3.1).
 
     A relational, SQL-*duplicating* join of two arrays on ``on`` (a probe row with k build matches
@@ -129,6 +136,10 @@ def join(left: Array, right: Array, *, on: Sequence[str], how: str = "inner") ->
     boundary; the flat output record is the union of both sides' fields, the shared key columns
     COALESCED (a left/right/outer miss keeps the present side's key, never null). ``how`` ∈ {inner,
     left, right, outer} (SQL/pandas relational semantics).
+
+    ``how="positional"`` takes no ``on``: row i pairs with row i, for two sources holding the same
+    events in the same order. It reads no key and moves no rows between partitions; a differing
+    row count is refused when it runs, so a one-row side never broadcasts.
     """
     refuse_boundary("graphed.join", left, right)
     if left.session is not right.session:
@@ -137,8 +148,12 @@ def join(left: Array, right: Array, *, on: Sequence[str], how: str = "inner") ->
             "right side inside `with left.session:`, or pass the reader session=)"
         )
     session = left.session
-    lk = pack_key(left, on=on)
-    rk = pack_key(right, on=on)
+    if (how == "positional") == bool(on):
+        raise TypeError("graphed.join takes on=[...], or how='positional' and no on=")
+    if how == "positional":
+        return session.record_join(left, right, {"on": "", "how": how})
+    lk = route_key(left, on)
+    rk = route_key(right, on)
     le = session.record_exchange(lk, {"scheme": "hash", "key": JOINKEY})
     re = session.record_exchange(rk, {"scheme": "hash", "key": JOINKEY})
     # Match + coalesce on the full key set — the user's ``on`` fields AND the packed
@@ -159,6 +174,10 @@ def join_blocks(
     kernel drives every backend and no awkward/numpy leaks into ``graphed``. Used by the reference
     ``eval_stage("join")`` and by the two-phase executor's gather-join.
     """
+    if how == "positional":
+        if len(left) != len(right):
+            raise ValueError(f"how='positional' got {len(left)} rows against {len(right)}")
+        return backend.merge_records(left, right, on=[])
     build_idx, probe_idx = backend.match_indices(left, right, on=list(on), how=how)
     return backend.merge_records(
         backend.take(left, build_idx), backend.take(right, probe_idx), on=list(on)
@@ -184,9 +203,10 @@ def split(payload: bytes) -> dict[int, bytes]:
 def pick(mapping: Mapping[int, bytes], dest: int) -> bytes:
     """Return the payload a gather of ``dest`` reads from one map task.
 
-    That dest's block alone, in the map-write payload format.
+    That dest's block alone, in the map-write payload format, and nothing from a ``position`` map
+    task of another dest.
     """
-    return pickle.dumps({dest: mapping[dest]}, protocol=5)
+    return pickle.dumps({dest: mapping[dest]} if dest in mapping else {}, protocol=5)
 
 
 @dataclass(frozen=True)
@@ -196,7 +216,8 @@ class _MapWrite:
     Read one partition of ``source_name``, evaluate the IR up to ``target`` (this side's barrier
     input), and route the value to every dest — a zero-row block of its type where none of its rows
     go. ``route`` is ``(scheme, key, parts)``: ``hash`` routes rows by ``key``, ``count`` sends the
-    whole block to dest ``task.key % parts``.
+    whole block to dest ``task.key % parts``. ``position`` sends it to dest ``task.key`` alone: the
+    plan has one dest per task, so a block for every other would be as many empties as tasks.
     """
 
     checkpointable: ClassVar[bool] = True
@@ -228,6 +249,8 @@ class _MapWrite:
             chunked=True,
         )
         scheme, key, parts = self.route
+        if scheme == "position":
+            return pickle.dumps({task.key: backend.to_wire(value)}, protocol=5)
         if scheme == "hash":
             blocks = tuple(backend.partition(value, key, parts))
         else:
@@ -265,7 +288,8 @@ class _Gather:
 
     def __call__(self, task: Task, inputs: Sequence[bytes], resources: WorkerResources) -> bytes:
         backend = resolve_backend(self.backend_factory)
-        blocks = [backend.from_wire(split(p)[task.key]) for p in inputs]
+        mappings = [split(p) for p in inputs]
+        blocks = [backend.from_wire(m[task.key]) for m in mappings if task.key in m]
         sides = [blocks] if self.n_left is None else [blocks[: self.n_left], blocks[self.n_left :]]
         values = evaluate_ir(
             self.ir,
@@ -379,7 +403,8 @@ def join_plan(
     ``reduce`` stage folds the dests; without them the plan's value is the tuple of per-dest
     outputs. The recorded ``broadcast`` routing field is the block engines' choice; a plan always
     hash-routes both sides. ``steps_per_file`` splits each source's files as in ``aggregate_plan``
-    and, absent a repartition, is also the dest count (1 when ``None``).
+    and, absent a repartition, is also the dest count (1 when ``None``). A positional join routes
+    no key: dest i pairs block i of each side, so the dest count is their partition count.
     """
     refuse_boundary("graphed.join_plan", output)
     fold: _Monoid | None = None
@@ -502,12 +527,22 @@ def _build(
     factory = worker_backend(session, backend)
     wired = external_evaluators(session, compiled)
     frames = compiled.correspondence.frames
-    parts, route, routing = _routing(
-        is_join, nodes, params, 1 if steps_per_file is None else steps_per_file, backend_id
-    )
+    side_parts = [data.partitions(steps_for(data, steps_per_file)) for _, _, data in sides]
+    count = 1 if steps_per_file is None else steps_per_file
+    if params.get("how") == "positional":
+        # block i pairs with block i, and a differing row count in one is refused when it runs
+        count, right_count = map(len, side_parts)
+        if count != right_count:
+            raise TypeError(
+                "join_plan: how='positional' needs one partition per partition, and "
+                f"{sides[0][0]!r} has {count} and {sides[1][0]!r} {right_count}"
+            )
+        parts, route, routing = _routing(False, nodes, {"scheme": "position"}, count, backend_id)
+    else:
+        parts, route, routing = _routing(is_join, nodes, params, count, backend_id)
 
     map_stages = []
-    for target, (name, nid, data) in zip(targets, sides, strict=True):
+    for target, (name, nid, data), partitions in zip(targets, sides, side_parts, strict=True):
         declared = declared_columns(data, [output])
         process = _MapWrite(
             ir=ir,
@@ -520,9 +555,7 @@ def _build(
             frames=frames,
             route=route,
         )
-        tasks = tuple(
-            Task(i, p) for i, p in enumerate(data.partitions(steps_for(data, steps_per_file)))
-        )
+        tasks = tuple(Task(i, p) for i, p in enumerate(partitions))
         map_stages.append(
             StageSpec(
                 kind="map_write",
@@ -537,7 +570,8 @@ def _build(
         backend_factory=factory,
         externals=_cone_externals(nodes, post, wired),
         frames=frames,
-        n_left=len(map_stages[0].tasks) if is_join else None,
+        # a `position` dest gets one block a side
+        n_left=None if not is_join else 1 if route[0] == "position" else len(map_stages[0].tasks),
         reduce=None if fold is None else fold[0],
     )
     stages = [

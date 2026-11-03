@@ -366,6 +366,27 @@ written by hand. It exists only here; a rectilinear backend has nowhere to put t
 The output carries an extra ``__joinkey__`` column: the packed integer the match ran on. Drop it
 with ``gak.without_field`` when you are done, as above.
 
+Two sources holding the same events in the same order, as a friend tree does, often share no key.
+``how="positional"`` pairs them row by row, with no key column and no rows moved between
+partitions. Two datasets read from files are two row sets until a join says how they match: an
+elementwise op over them is refused at its line.
+
+.. code-block:: python
+
+    scores = from_awkward("scores", ak.Array([{"bdt": 0.1}, {"bdt": 0.7}, {"bdt": 0.4}]), session=s)
+    friends = gak.join(events, scores, how="positional")
+    print(ak.to_list(s.materialize(friends.MET * friends.bdt)))
+
+Printed output:
+
+.. code-block:: text
+
+    [1.2000000000000002, 24.5, 3.2]
+
+A differing row count is refused when it runs, so a one-row side never broadcasts. In a plan the
+blocks pair one for one, so both sides need the same number of partitions. A join reads each side
+whole; select the fields you use first, as in ``events[["MET"]]``.
+
 Underneath, a join packs the key fields into one unsigned 64-bit column, exchanges both sides so
 that equal keys land on the same partition, and then matches locally. The exchange route is a
 hash of the key's big-endian bytes rather than Python's ``hash()``, so a key lands on the same
@@ -465,10 +486,11 @@ over a per-event ``rho`` and a per-jet ``pt`` records a per-jet result.
 Declaring what an external call returns
 ---------------------------------------
 
-graphed cannot look inside a callable, so an undeclared ``map``, ``graphed.apply`` or external
-call records its first input's type. When the value has another type, say so with
-``output_type=``, and the recorded type is that one: a boolean mask indexes as a mask, and a
-named record resolves its behavior at build time.
+An undeclared ``map`` or ``graphed.apply`` runs its callable on tracing types as you record it and
+records the type that gives. A callable that cannot be traced, with a ``GraphedWarning``, and any
+other undeclared external call record their first input's type. When the value has another type,
+say so with ``output_type=``, and the recorded type is that one: a boolean mask indexes as a mask,
+and a named record resolves its behavior at build time.
 
 .. code-block:: python
 

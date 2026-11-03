@@ -1026,8 +1026,10 @@ One pass over the dataset, many outputs
 
 Most analyses want several results out of one read. ``aggregate_plan`` compiles the outputs you
 name into one graph, then builds a plan that reads each partition once, evaluates all of them, and
-folds partial results with the reduce/combine functions you supply. The example writes two small
-parquet files first so that it runs anywhere:
+folds partial results with the reduce/combine functions you supply. Whole-dataset ``sum``,
+``count``, ``count_nonzero``, ``any``, ``all``, ``min`` and ``max`` know their own combine, so with
+only those as outputs you can leave all three out. The example writes two small parquet files first
+so that it runs anywhere:
 
 .. code-block:: python
 
@@ -1350,6 +1352,12 @@ beside ``form=`` declares too, as ``gak.apply_correction`` does. An undeclared n
 evaluator. An aggregate plan re-raises any other ``GraphedError`` from a worker unchanged, and turns this
 one into the ``StageError`` at the declaring line.
 
+A backend may also provide ``traced_form(fn, inputs) -> Form | None``, the form an undeclared
+``map`` gives ``inputs`` on metadata, or ``None`` if ``fn`` returned anything else. The session
+calls it at the recording line and records that form, which stays out of the node's params. A
+failure there is a ``GraphedWarning`` and ``op_form``'s answer stands, since the callable is the
+user's. A backend without the method records ``op_form``'s answer silently.
+
 A package that records its *own* call-outs — histogram fills are the example — passes
 ``descriptor=`` and ``form=`` to ``Session.record_external`` and the backend is not consulted at
 all. That is how ``graphed-histogram`` exists without teaching either backend what a histogram is,
@@ -1395,9 +1403,11 @@ one comes back as a ``Varied`` over the union of labels.
 lambdas, two closures of one factory, two same-named functions of different modules — would
 otherwise hash to one node and hand the second one the first one's result. They are told apart
 automatically: the second object to derive ``q`` records as ``q#1``. Passing ``name=`` to ``map``,
-``apply`` or ``apply_gufunc`` overrides that and declares the identity yourself, so the name must
-encode *everything* that changes what the callable does — a captured cut value, a model version, a
-configuration dict. Two calls under one name are one node.
+``apply`` or ``apply_gufunc`` overrides that and declares the identity yourself. Calls that share
+a name and an evaluator's params, such as ``output_type=``, need one function: a rerun of the same
+definition gives the same node, as a notebook cell does, and a callable with a different checkpoint
+key raises ``GraphedError``. Two that cannot be
+compared are a ``GraphedWarning``, and the first answers for both.
 
 **One session per program.** A node id only means something in the store that minted it, so every
 ``Session`` method that takes an array refuses one recorded elsewhere: the ``record_*`` family with
