@@ -576,7 +576,10 @@ def apply_correction(
         arrays, args = _named_template(wanted, name, named)
     elif args is None:
         args = [f"${i}" for i in range(len(arrays))]
-    entries = _parse_template(args, len(arrays), constants=True, groups=False)
+    try:
+        entries = _parse_template(args, len(arrays), constants=True, groups=False)
+    except (TypeError, ValueError) as err:
+        raise _refused(str(err)) from err
     params: dict[str, ParamValue] = {
         "name": name,
         "args": json.dumps(args, sort_keys=False),

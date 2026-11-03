@@ -189,9 +189,14 @@ def check_correctionlib_params(params: Mapping[str, Any], payload: bytes, n_inpu
     """Refuse at record time a name the set lacks, a wrong-length call, or one with no Array."""
     name = str(params.get("name", ""))
     wanted = correction_inputs(payload, name, bool(params.get("compound", False)))
-    template = _call_template(params, n_inputs)
+    try:
+        template = _call_template(params, n_inputs)
+    except (PreserveError, ValueError) as err:  # int() of a malformed "$" slot raises ValueError
+        raise _refused(str(err)) from err
     if template is None:  # the legacy (systematic, inputs[0]) call
         taken, has_array = 2, n_inputs > 0
+    elif template[0][:1] and template[0][0][0] == "named":
+        raise _refused(f"correction {name!r} takes args= as a list in input order, not a mapping")
     else:
         taken, has_array = len(template[0]), any(kind == "slot" for kind, _ in template[0])
     if taken != len(wanted):

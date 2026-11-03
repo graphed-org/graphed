@@ -218,6 +218,21 @@ def test_a_lone_array_where_a_list_belongs_names_the_iteration() -> None:
         gak.apply_correction(CSET, "l1", ev.pt)
 
 
+@pytest.mark.parametrize(
+    ("args", "message"),
+    [
+        (["$7"], r"slot \$7 out of range"),
+        ([["$0"]], "not stacked groups"),
+        ("$0", "must be a list"),
+    ],
+)
+def test_a_malformed_template_is_refused_at_the_line(args: Any, message: str) -> None:
+    _, ev = _events()
+    with pytest.raises(GraphedTypeError, match=message) as caught:
+        gak.apply_correction(CSET, "l1", [ev.pt], args=args)
+    assert caught.value.provenance.filename == __file__
+
+
 def test_no_inputs_at_all_is_a_type_error() -> None:
     with pytest.raises(TypeError, match="needs inputs"):
         gak.apply_correction(CSET, "l1")
@@ -259,7 +274,12 @@ def _external(ev: Any, params: dict[str, Any], *inputs: Any, payload: bytes = CS
         ({"name": "l1", "args": '["$0", "$1"]'}, 2, r"takes inputs \(pt\); got 2"),
         ({"name": "l1", "systematic": "nominal"}, 1, r"takes inputs \(pt\); got 2"),
         ({"name": "l1", "args": "[1.0]"}, 1, "'l1' needs at least one Array input"),
-        ({"name": "l1", "args": '{"pt": "$0"}'}, 1, "'l1' needs at least one Array input"),
+        ({"name": "l1", "args": '{"pt": "$0"}'}, 1, "'l1' takes args= as a list"),
+        ({"name": "jet_sf", "args": '{"syst": "n", "pt": "$0", "eta": "$0"}'}, 1, "as a list"),
+        ({"name": "l1", "args": '["$7"]'}, 1, r"slot \$7 out of range"),
+        ({"name": "l1", "args": '["$x"]'}, 1, "invalid literal"),
+        ({"name": "l1", "args": '["$0"'}, 1, "not valid JSON"),
+        ({"name": "l1", "kwargs": '{"pt": "$0"}'}, 1, "does not take keyword arguments"),
     ],
 )
 def test_record_external_refuses_at_the_recording_line(
