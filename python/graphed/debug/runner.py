@@ -15,6 +15,7 @@ from pathlib import Path
 
 from graphed import Array, Session
 from graphed.core import Partition
+from graphed.execute import _rows_aligned
 from graphed.materialization import _first_sample, _partition_chunk
 from graphed.varied import refuse_container
 
@@ -78,6 +79,9 @@ def _walk(
     memo: dict[int, object] | None = None,
 ) -> object:
     backend = session.backend
+    aligned = _rows_aligned(backend)
+    # one chunk runs as `evaluate_ir(chunked=True)` runs a task, so the task's failures reproduce
+    ops = {node["id"] for node in session._nodes() if node["kind"] == "op"} if chunks else ()
 
     def on_source(nid: int) -> object:
         try:
@@ -89,7 +93,7 @@ def _walk(
 
     def on_op(nid: int, name: str, ins: list[object], params: Mapping[str, object]) -> object:
         try:
-            value = backend.eval_stage(name, ins, params)
+            value = (aligned if nid in ops else backend.eval_stage)(name, ins, params)
         except StageError:
             raise
         except Exception as exc:

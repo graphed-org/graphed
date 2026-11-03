@@ -1,7 +1,7 @@
 """The IR interpreter — ``reproduce`` runs the preserved graph node-by-node (plan M9).
 
 This is what makes ``inspect`` faithful to ``reproduce``: both consume the SAME canonical IR
-(``GraphStore.nodes()``). Op/reduction nodes evaluate through the backend (graphed-awkward's real
+(``GraphStore.nodes()``). Ops and boundaries evaluate through the backend (graphed-awkward's real
 awkward dispatch); ``External`` nodes evaluate through the payload-backed evaluators
 (``externals.evaluate_external``); sources are resolved from the bundle's content-addressed
 archive.
@@ -26,7 +26,9 @@ def run_ir(
     eval_op: Callable[[str, list[Any], dict[str, Any]], Any],
 ) -> dict[int, Any]:
     """Evaluate every node in id order; return ``node_id -> value``."""
-    return dict(iter_ir(nodes, source=source, external=external, eval_op=eval_op))
+    return dict(
+        iter_ir(nodes, source=source, external=external, eval_op=eval_op, eval_boundary=eval_op)
+    )
 
 
 def iter_ir(
@@ -35,21 +37,26 @@ def iter_ir(
     source: Callable[[dict[str, Any]], Any],
     external: Callable[[dict[str, Any], list[Any]], Any],
     eval_op: Callable[[str, list[Any], dict[str, Any]], Any],
+    eval_boundary: Callable[[str, list[Any], dict[str, Any]], Any],
 ) -> Iterator[tuple[int, Any]]:
     """Evaluate the nodes in id order, yielding ``(node_id, value)`` after each one.
 
     ``source(node)`` resolves a source node's data; ``eval_op(name, inputs, params)`` runs an
-    op/reduction (the backend); ``external(node, inputs)`` runs a payload-backed External node.
+    op (the backend), ``eval_boundary`` likewise a reduction, exchange or join; ``external(node,
+    inputs)`` runs a payload-backed External node.
     """
     values: dict[int, Any] = {}
+    # this dispatch mirrors `evaluate_ir`'s: a new node kind or evaluation rule goes in both
     for node in nodes:
         nid = node["id"]
         kind = node["kind"]
         if kind == "source":
             values[nid] = source(node)
-        elif kind in ("op", "reduction"):
+        elif kind in ("op", "reduction", "exchange", "join"):
             ins = [values[i] for i in node["inputs"]]
-            values[nid] = eval_op(node["name"], ins, node["params"])
+            name = node["name"] or kind  # an exchange or join has no name
+            run = eval_op if kind == "op" else eval_boundary
+            values[nid] = run(name, ins, node["params"])
         elif kind == "external":
             ins = [values[i] for i in node["inputs"]]
             values[nid] = external(node, ins)
