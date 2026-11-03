@@ -158,6 +158,8 @@ class Partition:
     entry_stop: int = 0
     blind_step: int | None = None
     blind_n_steps: int | None = None
+    #: a blind partition's cap on its entries; only its reader knows how many the file has
+    blind_limit: int | None = None
 
     @classmethod
     def blind(cls, uri: str, tree: str, step: int, n_steps: int) -> Partition:
@@ -168,20 +170,29 @@ class Partition:
 
     @property
     def is_blind(self) -> bool:
-        """Whether this partition's entry range is not resolved yet."""
-        return self.blind_step is not None
+        """Whether its reader may move its range; a capped one is exact, but unresolved too."""
+        return self.blind_step is not None and self.blind_limit is None
 
     def resolve(self, num_entries: int) -> Partition:
         """Resolve a blind partition against the file's actual entry count.
 
-        Every entry is read exactly once across the file's n_steps partitions. A non-blind
-        partition returns itself.
+        Every entry is read exactly once across the file's n_steps partitions. A partition with no
+        blind step returns itself.
         """
         if self.blind_step is None or self.blind_n_steps is None:
             return self
         start = (self.blind_step * num_entries) // self.blind_n_steps
         stop = ((self.blind_step + 1) * num_entries) // self.blind_n_steps
+        if self.blind_limit is not None:
+            stop = min(stop, start + self.blind_limit)
         return Partition(self.uri, self.tree, start, stop)
+
+    def first(self, n: int) -> Partition:
+        """Return the first ``n`` entries of its unmoved range, or all of them if fewer."""
+        if self.blind_step is not None:
+            limit = n if self.blind_limit is None else min(n, self.blind_limit)
+            return replace(self, blind_limit=limit)
+        return replace(self, entry_stop=min(self.entry_stop, self.entry_start + n))
 
     @property
     def n_entries(self) -> int:

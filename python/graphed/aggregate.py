@@ -37,7 +37,15 @@ from graphed.core.worker_warnings import (
 )
 
 from .array import Array
-from .errors import GraphedError, OutputTypeError, SourceFrame, StageError, raising_frame
+from .errors import (
+    GraphedError,
+    OutputTypeError,
+    PackKeyError,
+    PackKeyOverflowError,
+    SourceFrame,
+    StageError,
+    raising_frame,
+)
 from .execute import (
     CompiledGraph,
     Frame,
@@ -411,7 +419,8 @@ def attribute_failures(
             if frame is None:
                 return None
             labels = ()
-        return StageError(
+        kind = PackKeyError if isinstance(exc, PackKeyOverflowError) else StageError
+        return kind(
             op=op,
             frames=(SourceFrame(*frame),),
             input_forms=tuple(_type_string(value) for value in ins),

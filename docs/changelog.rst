@@ -7,19 +7,25 @@ Newest release first. Numbers in parentheses are the pull requests on
 0.0.11 (unreleased)
 -------------------
 
-An uncaught StageError reads on its own
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Small samples, and one evaluation path
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-* The ``format_traceback`` view is now an exception note on every ``StageError``, so an uncaught
-  error ends with your source line and ``-->``, on every runner, after a process boundary too.
-* ``input_forms`` holds type strings (``50000 * float32``) on the plan path, not class names.
-* A failing ``.map(fn, name="calib")`` reports ``op`` as ``map 'calib'`` on the plan path.
-* ``StageError.raised_at`` and the view name the line that raised inside your function.
-* ``StageError.partition`` on the plan path, before any join or repartition, is a readable label
-  from the new ``graphed.core.chunk_label``, with a blind partition's real entries where the source
-  can count them (an optional ``num_entries(partition)`` on a ``PartitionedSource``) and its size
-  otherwise. After one it names the destination, ``dest N``.
-* New ``graphed.WorkerLostError``, a ``StageError`` for a worker that died, with no source frame.
+* ``graphed.head(x, n)`` returns the first ``n`` rows of ``x``, reading the used columns of the
+  first entries and widening until ``n`` rows survive its cuts, on any partitioned or in-memory
+  source. Rows downstream of a reduction still read the whole dataset, as they depend on it.
+* ``graphed.materialize(x, entries=N)`` evaluates over each source's first ``N`` input events, and
+  ``graphed.materialize(x, partition=plan.tasks[3].partition)`` over one chunk, as a task runs it.
+* ``Session.materialize`` now is ``graphed.materialize``: it reads only the used columns, as
+  ``gak.head``, ``gak.sample`` and ``gak.to_list`` then do, and **a failing operation raises a
+  ``StageError``** at the recording line in place of the bare backend error. Code catching the
+  original type around it needs ``StageError`` and its ``cause_type``; an External's
+  ``OutputTypeError`` arrives this way too. ``pack_key``'s overflow is also a ``ValueError``:
+  ``graphed.errors.PackKeyError`` is both.
+* ``graphed.debug.run(partition=)`` selects a ``Partition``. It was only a label and always read the
+  whole source, so a string now raises ``TypeError``; pass ``label=`` to name the data in a failure.
+* ``Partition.first(n)`` caps a partition at its first ``n`` entries, resolved when it is read. A
+  capped range is exact, so ``is_blind`` is false and a reader that moves blind ranges leaves it.
+* A parquet partition reads only the row groups its entries lie in, not the whole file.
 
 ``gak.apply_correction`` takes keywords and checks the payload as you record
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -31,6 +37,15 @@ raise ``GraphedTypeError`` at that line; they used to surface as a ``StageError`
 read. ``evaluator`` is optional, and ``payload`` and ``name`` are positional-only, so an input may
 carry either name. A path payload is read once, not on every call, so nodes share one copy of a
 correction set or ONNX model. The older ``evaluator``-only recording is unchanged (#170).
+
+``record_external`` with the correctionlib plugin refuses the same mistakes at its recording line.
+``ExternalPlugin.check_params`` now receives ``(params, payload, n_inputs)``, so a custom plugin's
+hook must take all three. A call that would record an input and never read it now raises: a call
+template (``args=``, ``kwargs=``) that leaves an input unread, from ``record_external``,
+``gak.apply_correction`` and ``gak.onnx_inference`` alike, and a legacy correctionlib
+``systematic=`` or ONNX call without a template given more than one input. A malformed template
+raises at the recording line too, and an input from another Session is reported before any of
+these (#181).
 
 Two datasets in one Session no longer pair their rows by accident
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -192,6 +207,15 @@ other reduction refuse, naming the output, as do ``writes=`` without a ``reduce`
 Fixes
 ~~~~~
 
+* When a function given to ``map`` without ``output_type=`` raises while its type is inferred, the
+  warning names the error, so a field typo inside the function, ``could not infer the type of
+  <lambda> (AttributeError: no field named 'ptt')``, shows at the recording line instead of when
+  the plan runs (#199).
+* Reading an awkward array no longer changes the checkpoint key of a plan that holds it. Awkward
+  fills an unset ``attrs`` with ``{}`` when something reads it, which ``repr`` and ``ak.zip`` do,
+  and before awkward 2.14 so did slicing, so a resume could recompute everything. An empty or
+  all-transient ``attrs`` now keys as unset, and keys of arrays nothing has read do not move. A
+  checkpoint written under a filled ``attrs`` recomputes once.
 * ``aggregate_plan`` over two sources of one Session names them in its refusal and, when plans can
   split them, points to ``graphed.collate`` (#165).
 * The checkpoint guide says ``run_resumable`` and ``run_shuffle_resumable`` keep results separate

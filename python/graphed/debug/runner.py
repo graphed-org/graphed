@@ -13,7 +13,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from graphed import Array, Session
+from graphed.core import Partition
 from graphed.errors import raising_frame
+from graphed.materialization import _partition_chunk
 
 from .errors import SourceFrame, StageError
 from .lowering import LoweredGraph, lower
@@ -68,22 +70,37 @@ def _assert_consistent(lowered: LoweredGraph, node_id: int, value: object, parti
 
 
 def run(
-    session: Session, array: Array, *, opt_level: int = 1, partition: str = "sample"
+    session: Session,
+    array: Array,
+    *,
+    opt_level: int = 1,
+    partition: Partition | None = None,
+    label: str | None = None,
 ) -> object:
     """Execute the analysis reaching ``array`` on the session's source data.
 
+    ``partition`` runs that one chunk (``plan.tasks[3].partition``) instead of the whole source.
+    ``label`` names the data in a failure, by default ``partition``.
+
     Raise a `StageError` (mapped to the user's analysis line) on the first failing op.
     """
+    if isinstance(partition, str):
+        raise TypeError(
+            f"run(partition=) selects a graphed.core.Partition, not {partition!r}; name the data "
+            "in a failure with label=, or evaluate a sample with graphed.materialize(x, entries=N)"
+        )
     lowered = lower(session, array, opt_level=opt_level)
     backend = session.backend
+    chunks = {} if partition is None else _partition_chunk([array], partition)
+    where = label if label is not None else "sample" if partition is None else str(partition)
 
     def on_source(nid: int) -> object:
         try:
-            return session.source_value(nid)
+            return chunks[nid]() if nid in chunks else session.source_value(nid)
         except StageError:
             raise
         except Exception as exc:
-            raise _stage_error(lowered, nid, partition, exc) from exc
+            raise _stage_error(lowered, nid, where, exc) from exc
 
     def on_op(nid: int, name: str, ins: list[object], params: Mapping[str, object]) -> object:
         try:
@@ -91,9 +108,9 @@ def run(
         except StageError:
             raise
         except Exception as exc:
-            raise _stage_error(lowered, nid, partition, exc) from exc
+            raise _stage_error(lowered, nid, where, exc) from exc
         if opt_level == 0:
-            _assert_consistent(lowered, nid, value, partition)
+            _assert_consistent(lowered, nid, value, where)
         return value
 
     def on_external(nid: int, fn: object, ins: list[object]) -> object:
@@ -102,6 +119,6 @@ def run(
         except StageError:
             raise
         except Exception as exc:
-            raise _stage_error(lowered, nid, partition, exc) from exc
+            raise _stage_error(lowered, nid, where, exc) from exc
 
     return session.walk(array, source=on_source, op=on_op, external=on_external)
