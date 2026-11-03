@@ -20,7 +20,8 @@ The runner itself is single-machine; the store it takes may be local (``Store``)
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+import os
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -30,7 +31,7 @@ from graphed.services import require_bound
 
 from .codec import Codec, PickleCodec
 from .errors import dead_letter_descriptor
-from .resume import _partition_tag, check_environment, require_environment_store, warn_unreused
+from .resume import _partition_tag, as_store, check_environment, warn_unreused
 from .retry import RetryPolicy
 from .store import CheckpointStore
 
@@ -73,8 +74,9 @@ class _SimulatedInterrupt(BaseException):
 
 def run_resumable(
     plan: DurablePlan,
-    store: CheckpointStore,
+    store: str | os.PathLike[str] | CheckpointStore,
     *,
+    storage_options: Mapping[str, Any] | None = None,
     resources: Any = None,
     retry: RetryPolicy | None = None,
     codec: Codec | None = None,
@@ -84,6 +86,7 @@ def run_resumable(
 ) -> ResumeResult:
     """Run ``plan`` against ``store``, skipping already-completed tasks. See module docstring.
 
+    ``store`` is a directory, an fsspec URL with ``storage_options``, or a store.
     ``error_budget`` stops the run once the number of dead-lettered partitions exceeds it.
     ``_kill_after`` (test-only) raises an uncatchable interrupt after that many tasks commit, to
     simulate a crash mid-run; the committed journal/objects are what a resumed run recovers from.
@@ -94,7 +97,6 @@ def run_resumable(
     The store's environment record is checked as :func:`graphed.checkpoint.resumable` checks it
     (salt ``""``), with ``accept_environment``.
     """
-    require_environment_store(store)
     codec = codec or PickleCodec()
     process = plan.process.resolve()
     combine = plan.combine.resolve()
@@ -103,6 +105,7 @@ def run_resumable(
         eb = plan.stopping.get("error_budget")
         error_budget = int(eb) if eb is not None else None
 
+    store = as_store(store, storage_options)
     completed = store.completed()
     check_environment(store, completed, "", accept_environment)
     warn_unreused(store, completed, plan, map(plan.task_id, plan.partitions))
@@ -208,8 +211,9 @@ class ShuffleResumeResult:
 
 def run_shuffle_resumable(
     plan: DurablePlanV2,
-    store: CheckpointStore,
+    store: str | os.PathLike[str] | CheckpointStore,
     *,
+    storage_options: Mapping[str, Any] | None = None,
     resources: Any = None,
     accept_environment: bool = False,
     _kill_after: int | None = None,
@@ -229,8 +233,8 @@ def run_shuffle_resumable(
     refused before its first task (``graphed.services.require_bound``). The store's environment
     record is checked as :func:`run_resumable` checks it.
     """
-    require_environment_store(store)
     require_bound(plan)
+    store = as_store(store, storage_options)
     completed = store.completed()
     check_environment(store, completed, "", accept_environment)
     ids = (plan.task_id(si, task) for si, stage in enumerate(plan.stages) for task in stage.tasks)
