@@ -11,7 +11,7 @@ import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import awkward as ak
 import key_order_helpers as h
@@ -234,12 +234,10 @@ def test_reading_awkward_attrs_moves_no_key(held: Callable[[], Any]) -> None:
 
 def test_a_resume_after_reading_the_array_reuses_every_task(tmp_path: Path) -> None:
     data = _array()
-    plan = h.runtime(h.Holding(data), h.parts(0, 1))
-    first = SequentialRunner().run(resumable(plan, str(tmp_path)))
+    plan = h.runtime(lambda partition, resources: float(len(data)), h.parts(0, 1))
+    assert run(plan, tmp_path) == 0
     assert data.attrs == {}
-    h.CALLS.clear()
-    assert SequentialRunner().run(resumable(plan, str(tmp_path))) == first
-    assert h.CALLS == []
+    assert run(plan, tmp_path) == 2
 
 
 def test_transient_awkward_attrs_key_as_unset_and_stay_on_the_array() -> None:
@@ -256,8 +254,11 @@ def test_awkward_attrs_with_content_still_key() -> None:
     assert keys[1] == keys[3]
 
 
-class _Marked(ak.Array):
-    _mark = 0
+class _Marked(ak.Array):  # type: ignore[misc]
+    validated: ClassVar[list[int]] = []
+
+    def __awkward_validation__(self) -> None:
+        self.validated.append(1)
 
 
 def _marked(mark: int) -> Any:
@@ -274,3 +275,11 @@ def test_a_registered_reducer_of_a_behavior_class_still_keys(
     assert type(_marked(1)) is _Marked
     assert _key_digest(_marked(1)) == _key_digest(_marked(1))
     assert _key_digest(_marked(1)) != _key_digest(_marked(2))
+
+
+def test_keying_a_read_array_reruns_no_validator() -> None:
+    held = _marked(1)
+    assert _Marked.validated
+    _Marked.validated.clear()
+    _key_digest(held)
+    assert _Marked.validated == []

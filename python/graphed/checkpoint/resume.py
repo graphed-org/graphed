@@ -185,15 +185,15 @@ class _KeyPickler(pickle._Pickler):
         super().__init__(file, protocol=5)
         self._cp = _cloudpickle()
         ak = sys.modules.get("awkward")
-        self._arrays: tuple[type, ...] = (ak.Array, ak.Record) if ak else ()
+        self._arrays: tuple[Any, ...] = (ak.Array, ak.Record) if ak else ()
         self.globals_ref: dict[int, dict[str, Any]] = {}
         self.proto = 5
         self._seen = dict(seen)
         self._classdicts: dict[int, type] = {}
         self._globals: dict[int, dict[str, Any]] = {}
         self._rebound = rebound
-        self._keyed: dict[int, Any] = {}
-        self._unset: dict[int, tuple[Any, Any]] = {}
+        # holds each original, so its id is not reused mid-pickle
+        self._keyed: dict[int, tuple[Any, Any]] = {}
         own: dict[type, Callable[[Any], Any]] = {
             weakref.WeakSet: lambda ws: (weakref.WeakSet, (self._sorted(ws),)),
             types.ModuleType: self._module_reduce,
@@ -223,13 +223,15 @@ class _KeyPickler(pickle._Pickler):
     def save(self, obj: Any, save_persistent_id: bool = True) -> None:
         # a transport wrapper keys as what it carries, so wrapping moves no task key
         while (keyed_as := getattr(type(obj), "_keyed_as", None)) is not None:
-            obj = self._keyed.setdefault(id(obj), keyed_as(obj))
+            obj = self._keyed.setdefault(id(obj), (obj, keyed_as(obj)))[1]
+        # pickling drops "@" attrs; dispatch holds no awkward type and skips ABCMeta's isinstance
         if (
-            isinstance(obj, self._arrays)
+            type(obj) not in self.dispatch
+            and isinstance(obj, self._arrays)
             and obj._attrs is not None
             and all(k.startswith("@") for k in obj._attrs)
         ):
-            obj = self._unset.setdefault(id(obj), (obj, _attrs_unset(obj)))[1]
+            obj = self._keyed.setdefault(id(obj), (obj, _attrs_unset(obj)))[1]
         _PURE._Pickler.save(self, obj, save_persistent_id)
 
     def memoize(self, obj: Any) -> None:

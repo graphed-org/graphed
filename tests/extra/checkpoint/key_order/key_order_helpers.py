@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import numbers
 from collections.abc import Sequence
-from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -29,20 +28,6 @@ NAMES = {f"M{i}" for i in range(16)}
 BEHAVIOR: dict[Any, Any] = {(np.add, n, n): overload for n in NAMES}
 BEHAVIOR |= {(np.multiply, n, numbers.Real): overload for n in NAMES}
 NOTHING = None
-
-
-@dataclass
-class Holding:
-    """A process that holds its array, as a reader of in-memory data does."""
-
-    data: Any
-
-    def __call__(self, partition: Partition, resources: Any) -> float:
-        CALLS.append(partition.entry_start)
-        return float(len(self.data))
-
-
-CALLS: list[int] = []
 
 
 def backend() -> AwkwardBackend:
