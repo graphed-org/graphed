@@ -22,7 +22,7 @@ import pickle
 import threading
 import time
 from collections import OrderedDict
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from concurrent.futures import Future
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
@@ -583,7 +583,8 @@ class TaskEvent:
     worker back to the driver. ``error`` is a pre-rendered summary string, never an exception
     object; ``partition`` is a human label. Per task the contract is exactly one ``SUBMITTED``,
     then one ``STARTED``, then exactly one of ``FINISHED`` | ``ERRORED`` — except that a task a
-    :class:`RunControl` cancel kept from starting ends at its ``SUBMITTED``. For a monitor that
+    :class:`RunControl` cancel kept from starting ends at its ``SUBMITTED``, and that a backend
+    retrying a task repeats ``STARTED`` and the terminal event for each attempt. For a monitor that
     opts into lean events (:func:`lean_events`) the sequence is ``SUBMITTED``, then ``FINISHED`` |
     ``ERRORED`` with an empty ``partition``: only the driver's ``SUBMITTED`` carries the label.
     """
@@ -646,6 +647,33 @@ class Monitor(Protocol):
     def worker_profiler_factory(self) -> Callable[[], WorkerProfiler] | None:
         """Return the factory workers build their profiler with, or ``None``."""
         ...
+
+
+class MonitorBase:
+    """A :class:`Monitor` that ignores everything: subclass it and override what you need.
+
+    It adds the two optional run hooks, ``on_run_start`` and ``on_run_end``, which a runner calls
+    on any monitor that has them (:func:`observed_run`).
+    """
+
+    def on_task(self, event: TaskEvent) -> None:
+        """Observe a task event."""
+
+    def on_profile(self, worker: str, payload: bytes) -> None:
+        """Observe a worker's profile payload."""
+
+    def on_combine(self, leaves_done: int) -> None:
+        """Observe the reduction's progress."""
+
+    def worker_profiler_factory(self) -> Callable[[], WorkerProfiler] | None:
+        """Return no factory: workers do not sample."""
+        return None
+
+    def on_run_start(self, n_tasks: int) -> None:
+        """Observe a run starting with ``n_tasks`` known tasks."""
+
+    def on_run_end(self) -> None:
+        """Observe the run ending, however it ended."""
 
 
 class RunState(StrEnum):
@@ -742,14 +770,44 @@ def complete_events(monitor: Monitor | None) -> bool:
     return getattr(monitor, "complete_events", False) is True
 
 
+def call_monitor(monitor: object, hook: str, *args: object) -> Any:
+    """Return ``monitor.hook(*args)``, or ``None`` when it has no such hook or it raises.
+
+    A monitor is passive: neither a missing hook nor a raising one may end a run.
+    """
+    with contextlib.suppress(Exception):
+        return getattr(monitor, hook)(*args)
+    return None
+
+
+def worker_profiler_factory(monitor: Monitor | None) -> Callable[[], WorkerProfiler] | None:
+    """Return the factory ``monitor`` gives its workers, or ``None``."""
+    return cast(
+        "Callable[[], WorkerProfiler] | None", call_monitor(monitor, "worker_profiler_factory")
+    )
+
+
+@contextlib.contextmanager
+def observed_run(monitor: Monitor | None, plan: Plan[Any] | DurablePlanV2) -> Iterator[None]:
+    """Bracket a run in ``monitor``'s optional ``on_run_start`` and ``on_run_end``.
+
+    A runner enters this once per run; the end is reported when the run raises or is cancelled too.
+    A staged plan reports 0 tasks: it emits no task events.
+    """
+    call_monitor(monitor, "on_run_start", len(plan.tasks) if isinstance(plan, Plan) else 0)
+    try:
+        yield
+    finally:
+        call_monitor(monitor, "on_run_end")
+
+
 def worker_monitor_factory(monitor: Monitor | None) -> Callable[[], Monitor] | None:
     """Return the picklable zero-arg factory a monitor offers for per-worker push.
 
     ``None`` when the monitor defines no ``worker_monitor_factory`` (the ``Monitor`` protocol stays
-    four methods).
+    four methods) or it raises.
     """
-    method = getattr(monitor, "worker_monitor_factory", None)
-    return cast("Callable[[], Monitor] | None", method()) if method is not None else None
+    return cast("Callable[[], Monitor] | None", call_monitor(monitor, "worker_monitor_factory"))
 
 
 def partition_label(partition: Partition) -> str:
@@ -878,7 +936,8 @@ class SequentialRunner:
     def run(self, plan: Plan[R] | DurablePlanV2) -> ExecResult[R] | ExecResult[Any]:
         """Run ``plan`` one task at a time in this process."""
         require_bound(plan)
-        result = self._run_tasks(plan) if isinstance(plan, Plan) else self._run_stages(plan)
+        with observed_run(self.monitor, plan):
+            result = self._run_tasks(plan) if isinstance(plan, Plan) else self._run_stages(plan)
         return finalize_result(plan, result)
 
     def _run_tasks(self, plan: Plan[R]) -> ExecResult[R]:

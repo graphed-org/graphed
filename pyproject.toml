@@ -45,7 +45,7 @@ all = [
 ]
 dev = [
   "pytest", "pytest-cov", "pytest-xdist", "coverage[toml]", "diff_cover", "hypothesis", "mypy", "ruff",
-  "numpy>=1.24", "awkward>=2.6", "cloudpickle", "pandas", "vector",
+  "numpy>=1.24", "awkward>=2.6", "cloudpickle", "pandas", "vector", "tqdm",
   "correctionlib>=2.6", "onnx>=1.15", "onnxruntime>=1.17",
   "boost-histogram>=1.4", "hist>=2.7", "graphed-histogram>=0.0.3",
   "tornado>=6.2", "websocket-client>=1.6",
@@ -131,6 +131,7 @@ convention = "pep257"
 "python/graphed/checkpoint/codec.py" = ["PLC0415"]
 "python/graphed/debug/dashboard/_client.py" = ["PLC0415"]
 "python/graphed/debug/dashboard/_server.py" = ["PLC0415"]
+"python/graphed/debug/progress.py" = ["PLC0415"]  # tqdm, so importing graphed.debug stays cheap
 "python/graphed/numpy/forms.py" = ["PLC0415"]  # awkward, for an awkward type spec
 "python/graphed/numpy/io.py" = ["PLC0415"]
 "python/graphed/numpy/shuffle.py" = ["PLC0415"]
@@ -186,7 +187,7 @@ module = [
   "pyarrow.*", "perspective.*", "tornado.*", "websocket.*", "boost_histogram.*", "hist.*",
   "vector.*", "pandas.*", "keras.*", "tensorflow.*", "torch.*", "xgboost.*", "jax.*",
   "tritonclient.*", "graphed_histogram.*", "triton_python_backend_utils", "fsspec.*",
-  "playwright.*",
+  "playwright.*", "tqdm.*",
 ]
 ignore_missing_imports = true
 follow_imports = "skip"

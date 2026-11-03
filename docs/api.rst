@@ -75,10 +75,10 @@ Debugging a run
 ``StageError`` is what you catch: it carries the operation, the input shapes, the partition and
 your source frame, and it survives the trip back from a worker process. ``format_traceback``
 renders it with an arrow at your line. ``lower`` gives you the unfused, one-operation-at-a-time
-view of a recording. ``Dashboard`` streams a live run; ``RunRecorder`` keeps a report of one.
-``replay`` re-runs one task of a finished or failed run on your machine, step by step, and diffs it
-against what the run recorded. ``trace`` prints how many rows each line keeps of a sample and marks
-the one that empties it.
+view of a recording. ``Dashboard`` streams a live run; ``ProgressBar`` shows one in a terminal or
+notebook; ``RunRecorder`` keeps a report of one. ``replay`` re-runs one task of a finished or failed
+run on your machine, step by step, and diffs it against what the run recorded. ``trace`` prints how
+many rows each line keeps of a sample and marks the one that empties it.
 
 .. autosummary::
    :toctree: generated
@@ -110,6 +110,7 @@ Plans, partitions and contracts
 
 The types you touch when you drive a runner yourself or save a compiled analysis: ``Plan``,
 ``Task``, ``Partition``, ``SequentialRunner``, the ``Executor`` and ``Monitor`` protocols,
+``MonitorBase`` for a monitor that overrides only what it needs,
 ``RunControl`` for pausing and cancelling a run, and
 ``DurablePlan`` with ``with_partitions`` / ``for_dataset`` / ``for_datasets`` for re-aiming one
 compiled analysis at many datasets. The rest of this module is the compiled optimizer.

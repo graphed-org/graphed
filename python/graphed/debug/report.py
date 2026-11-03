@@ -15,6 +15,7 @@ from types import MappingProxyType
 from typing import Any
 
 from graphed.core import ExecResult, Monitor, StopReason, TaskEvent, TaskPhase, WorkerProfiler
+from graphed.core.execution import call_monitor
 from graphed.provenance import Provenance
 
 from .errors import SourceFrame, StageError
@@ -196,6 +197,14 @@ class RunRecorder:
     def worker_profiler_factory(self) -> Callable[[], WorkerProfiler] | None:
         """Return the inner monitor's profiler factory, if any."""
         return self._inner.worker_profiler_factory() if self._inner is not None else None
+
+    def on_run_start(self, n_tasks: int) -> None:
+        """Forward the run's start."""
+        call_monitor(self._inner, "on_run_start", n_tasks)
+
+    def on_run_end(self) -> None:
+        """Forward the run's end."""
+        call_monitor(self._inner, "on_run_end")
 
     def report(
         self,
