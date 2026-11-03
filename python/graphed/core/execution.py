@@ -17,6 +17,8 @@ contract stays a stable, minimal seam. A `Plan` is reduced to a single result by
 from __future__ import annotations
 
 import contextlib
+import os
+import pickle
 import threading
 import time
 from collections import OrderedDict
@@ -24,6 +26,7 @@ from collections.abc import Callable, Iterable, Iterator, Sequence
 from concurrent.futures import Future
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
+from pathlib import PureWindowsPath
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -35,6 +38,7 @@ from typing import (
     runtime_checkable,
 )
 
+from .graphed_core import version
 from .services import Bindable, UnboundServiceError
 
 if TYPE_CHECKING:
@@ -266,9 +270,30 @@ class StopCondition:
         return None
 
 
-@dataclass
+#: first bytes of a file :meth:`Plan.save` wrote; the graphed version and a newline follow
+_SAVED_PLAN = b"graphed-plan "
+
+
+def counted(n: int, noun: str) -> str:
+    """Return ``n`` and ``noun``, plural unless ``n`` is 1."""
+    return f"{n} {noun}{'' if n == 1 else 's'}"
+
+
+def capped(items: Sequence[str]) -> str:
+    """Return ``items`` joined for a summary line, those past the sixth counted."""
+    rest = f", +{len(items) - 6} more" if len(items) > 6 else ""
+    return ", ".join(items[:6]) + rest
+
+
+@dataclass(repr=False)
 class Plan(Generic[R]):
-    """A minimal, PROVISIONAL execution plan (the real serializable Plan is M8)."""
+    """A partition-wise execution plan: what a runner runs.
+
+    Its repr is a one-line summary that reads no data. :meth:`save` and :meth:`load` carry a plan
+    from the session that built it to a later one, on the same install. That file is a transport,
+    a pickle: the durable, preservable form of an analysis is its IR
+    (:class:`~graphed.core.plan.DurablePlan`, :mod:`graphed.preserve`).
+    """
 
     process: Callable[[Partition, WorkerResources], R]  # picklable; runs analysis on a chunk
     combine: Callable[[R, R], R]  # associative (and commutative) reducer
@@ -283,6 +308,57 @@ class Plan(Generic[R]):
     services: tuple[ServiceSpec, ...] = ()  # the services the plan's nodes name (graphed.services)
     # the run's value in its final form, called once on the head after the last combine
     finalize: Callable[[R], R] | None = None
+
+    def __repr__(self) -> str:
+        """Summarize the tasks, files, and whatever ``process.summary()`` adds."""
+        head = f"Plan: {counted(len(self.tasks), 'task')}"
+        sources = {(t.partition.uri, t.partition.tree) for t in self.tasks}
+        if len(sources) == 1:
+            uri, tree = next(iter(sources))
+            # PureWindowsPath splits on both separators
+            head += f" over 1 file ({PureWindowsPath(uri).name}{f':{tree}' if tree else ''})"
+        elif sources:
+            head += f" over {counted(len({uri for uri, _ in sources}), 'file')}"
+        parts = [head, "adaptive"] if self.next_tasks is not None else [head]
+        hook = getattr(self.process, "summary", None)
+        name = getattr(self.process, "__qualname__", type(self.process).__name__)
+        parts.append(f"runs {name}" if hook is None else hook())
+        return ", ".join(parts)
+
+    def save(self, path: str | os.PathLike[str]) -> None:
+        """Write this plan to ``path``, for :meth:`load` on this install.
+
+        It is a pickle, not the preservation format: see the class docstring. What a script
+        defines goes by value, so it loads in a later session.
+        """
+        import cloudpickle
+
+        # pickled first: one that cannot pickle leaves a plan already at ``path`` alone
+        data = cloudpickle.dumps(self)
+        with open(path, "wb") as file:
+            file.write(_SAVED_PLAN + version().encode() + b"\n" + data)
+
+    @classmethod
+    def load(cls, path: str | os.PathLike[str]) -> Plan[Any]:
+        """Return the plan :meth:`save` wrote to ``path``.
+
+        Loading runs pickle, which can run any code, so load only plans you trust. A plan saved by
+        another graphed version is refused, as what it pickles is private to its version. The
+        versions of the other packages a plan pickles are not recorded, so they are not checked.
+        """
+        with open(path, "rb") as file:
+            header = file.readline()
+            if not header.startswith(_SAVED_PLAN):
+                raise ValueError(f"{os.fspath(path)!r} is not a file Plan.save wrote")
+            saved = header.removeprefix(_SAVED_PLAN).strip().decode(errors="replace")
+            if saved != version():
+                raise ValueError(
+                    f"{os.fspath(path)!r} was saved by graphed {saved} and this is graphed "
+                    f"{version()}: a saved plan loads only on the version that wrote it, so "
+                    "rebuild it from the analysis"
+                )
+            plan: Plan[Any] = pickle.load(file)
+        return plan
 
 
 @dataclass(frozen=True)

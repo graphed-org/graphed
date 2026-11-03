@@ -8,9 +8,10 @@ worker. ``replay`` steps through one task afterwards on your machine, from the i
 captured (``aggregate_plan(store=)``) or by re-reading its partition, and only for
 ``aggregate_plan`` plans.
 
-**Replay needs the recording session.** The unfused graph and your source lines come from the
-``Session`` the analysis was recorded in, so a replay in a fresh interpreter, or from a
-preservation bundle, is not possible; ``reproduce`` re-runs a bundle whole.
+**Replay steps what the plan runs.** ``replay(plan, task)`` needs only the plan, so it works in a
+fresh interpreter, and its steps are the optimized operations. Replaying your ops as you wrote them
+takes the plan's outputs, which need the ``Session`` they were recorded in. A preservation bundle
+has no replay; ``reproduce`` re-runs it whole.
 
 **No intermediate values from the run itself.** A capture keeps each task's input and partial,
 not the values in between; ``replay`` recomputes those. The extra checks at ``opt_level=0`` are

@@ -13,7 +13,7 @@ from .lowering import LoweredGraph, LoweredOp, LoweredStage, lower
 from .progress import ProgressBar
 from .replaying import Replay, ReplayDiff, Step, replay
 from .report import RunRecorder, RunReport, TaskRecord
-from .runner import run
+from .runner import run, trace
 from .tracebacks import format_traceback
 from .viz import visualize
 
@@ -37,6 +37,7 @@ __all__ = [
     "lower",
     "replay",
     "run",
+    "trace",
     "visualize",
 ]
 __version__ = "0.0.10"

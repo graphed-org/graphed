@@ -153,6 +153,7 @@ convention = "pep257"
 # graphed.preserve's plugins for a template External's first call.
 "python/graphed/aggregate.py" = ["PLC0415"]
 "python/graphed/awkward/functions.py" = ["PLC0415"]
+"python/graphed/core/execution.py" = ["PLC0415"]
 "python/graphed/core/plan.py" = ["PLC0415"]
 # Workers import graphed.debug; a replay or report alone loads the checkpoint codec, numpy or
 # graphed.preserve.

@@ -568,13 +568,15 @@ Replaying a task
 
 One task failed, or returned a partial you do not believe, and you want to watch it happen on
 your own machine rather than read about it in a log. After a run, finished or failed,
-``replay(plan, key, *outputs)`` re-executes one task of an
+``replay(plan, task)`` re-executes one task of an
 ``aggregate_plan`` plan on your machine, one operation at a time at ``opt_level=0``, with the
 exact input that task read. Build the plan with ``store=`` (a directory every worker shares, or
 an fsspec URL) and each task keeps its input chunk and its partial there as it runs; without it,
-replay re-reads the task's partition. ``outputs`` are the Arrays you gave ``aggregate_plan``, in
-the same order: the session they were recorded in supplies the unfused graph and your source
-lines, so replay works while that session is alive.
+replay re-reads the task's partition. Its steps are the operations the plan runs, each at your
+line, and it needs only the plan, so it works in a fresh interpreter. ``replay(plan, task,
+*outputs)`` steps through your ops as written instead: ``outputs`` are the Arrays you gave
+``aggregate_plan``, in the same order, and the session they were recorded in supplies the unfused
+graph, so that form works while that session is alive.
 
 .. code-block:: python
 
@@ -634,11 +636,11 @@ lines, so replay works while that session is alive.
      failed at external on line 22: no calibration for this block
    recorded True 94561.25
 
-``steps()`` is lazy: each ``Step`` carries the lowered operation (its op, kind, form and your
-source frame), its value, and the seconds it took, and nothing runs until you ask for the next
-one. A step that fails raises the same ``StageError`` ``gd.run`` would, pointing at your line.
-``value`` is the task's partial, the plan's ``reduce`` over the replayed outputs, one value per
-output of the plan's graph as the run's ``reduce`` received them. ``diff()`` compares it with what
+``steps()`` is lazy: each ``Step`` carries the lowered operation (its op, kind, your source frame
+and, given ``outputs``, its form), its value, and the seconds it took, and nothing runs until you
+ask for the next one. A step that fails raises a ``StageError`` as the task did, pointing at your
+line. ``value`` is the task's partial, the plan's ``reduce`` over the replayed outputs, one value
+per output of the plan's graph as the run's ``reduce`` received them. ``diff()`` compares it with what
 the run recorded (``reference == "recorded"``), or, when the run kept no output for that task,
 with the plan's graph (fused, unless the plan was built with ``opt_level=0``) run again on the same
 input (``"re-evaluated"``), so a difference between the fused and the one-at-a-time evaluation
@@ -728,14 +730,20 @@ runner, and on a plan from ``aggregate_plan``, ``collate`` or a histogram's ``to
 over a join, which runs in stages and is refused; wrap it before ``resumable`` or histserv. A task's
 key does not change, so results a store already holds are served as they are, unchecked.
 
-Without it, the warning itself still reaches you. A task in a worker process keeps what it raises,
-and the run issues each message once on the driver, naming the first chunk that raised it, so
-``warnings.catch_warnings(record=True)`` around ``run`` catches it. A task in the driver's process
-warns as usual. A task that fails adds what it caught to the error as notes, and a result served
-from a store warns nothing, since the store holds only the result. A warning class that cannot be
-pickled, or built from a message, arrives as its builtin base. A join's or a repartition's tasks
-keep warning on the worker's stderr. A plan you build yourself around a shipped ``plan.process``
-needs ``plan.combine`` and ``plan.finalize`` with it, or a ``DurablePlan``.
+Without it, the warning itself still reaches you. A task in a marked worker process (below) keeps
+what it raises, and the run issues each message once on the driver, naming the first chunk that
+raised it, so ``warnings.catch_warnings(record=True)`` around ``run`` catches it. A task in the
+driver's process warns as usual. A task that fails adds what it caught to the error as notes, and a
+result served from a store warns nothing, since the store holds only the result. A warning class
+that cannot be pickled, or built from a message, arrives as its builtin base. A join's or a
+repartition's tasks keep warning on the worker's stderr. A plan you build yourself around a shipped
+``plan.process`` needs ``plan.combine`` and ``plan.finalize`` with it, or a ``DurablePlan``.
+
+A worker keeps its warnings only once its runner calls
+``graphed.core.worker_warnings.enter_worker(driver)`` there, with the driver's ``process_id()``.
+graphed-executors' runners do, and so does any backend under its ``SubmitRunner``. A runner that
+never calls it, such as a TaskVine adapter that runs tasks in workers of its own, leaves their
+warnings on the workers' stderr: safe, but for it this is off.
 
 
 Not supported yet
