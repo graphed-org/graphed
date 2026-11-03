@@ -565,6 +565,8 @@ def apply_correction(
     """
     # recorded only when set, so a regular correction's node identity is what it always was
     which: dict[str, ParamValue] = {"compound": True} if compound else {}
+    if isinstance(inputs, Array):
+        raise _refused("inputs= takes a list of Arrays; wrap a lone one as [x]")
     arrays = [] if inputs is None else list(inputs)
     if named and (arrays or args is not None or evaluator is not None):
         raise _refused("pass a correction's inputs as keywords or as inputs/args=, not both")
