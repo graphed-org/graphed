@@ -187,6 +187,11 @@ other reduction refuse, naming the output, as do ``writes=`` without a ``reduce`
 Fixes
 ~~~~~
 
+* Reading an awkward array no longer changes the checkpoint key of a plan that holds it. Awkward
+  fills an unset ``attrs`` with ``{}`` when something reads it, which ``repr`` and ``ak.zip`` do,
+  and before awkward 2.14 so did slicing, so a resume could recompute everything. An empty or
+  all-transient ``attrs`` now keys as unset, and keys of arrays nothing has read do not move. A
+  checkpoint written under a filled ``attrs`` recomputes once.
 * ``aggregate_plan`` over two sources of one Session names them in its refusal and, when plans can
   split them, points to ``graphed.collate`` (#165).
 * The checkpoint guide says ``run_resumable`` and ``run_shuffle_resumable`` keep results separate
