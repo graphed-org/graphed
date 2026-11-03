@@ -11,6 +11,7 @@ import contextlib
 import os
 import pickle
 import threading
+import uuid
 import warnings
 from collections.abc import Callable, Iterator, Mapping
 from contextvars import ContextVar
@@ -22,13 +23,25 @@ _Caught = dict[tuple[type[Warning], str], tuple[str, int]]
 _sink: ContextVar[_Caught | None] = ContextVar("graphed_task_warnings", default=None)
 _install_lock = threading.Lock()
 _shown: Callable[..., None] = warnings.showwarning
-_driver_pid: int | None = None
+# the pid tells a forked child from its parent; the uuid, another host's process with the same pid
+_interpreter = uuid.uuid4().hex
+_worker_id: str | None = None
 
 
-def mark_driver() -> None:
-    """Record this process as a driver: one that builds plans, where a warning is already home."""
-    global _driver_pid
-    _driver_pid = os.getpid()
+def process_id() -> str:
+    """Return this process's identity, which a runner hands its workers as the driver's."""
+    return f"{_interpreter}:{os.getpid()}"
+
+
+def enter_worker(driver: str) -> None:
+    """Mark this process a worker for the driver ``driver``, unless it is that driver.
+
+    Only a marked worker keeps its tasks' warnings; a runner that never calls this leaves them
+    where they are issued.
+    """
+    global _worker_id
+    if driver != process_id():
+        _worker_id = process_id()
 
 
 def _carried(category: type[Warning]) -> type[Warning]:
@@ -70,13 +83,13 @@ def _install() -> None:
 
 @contextlib.contextmanager
 def keeping_warnings() -> Iterator[_Caught]:
-    """Collect this task's warnings, unless it runs in a driver.
+    """Collect this task's warnings, when it runs in a worker of another process.
 
     ``warnings.showwarning`` is process-wide, so the task is told from the others by a context
     variable: ``catch_warnings`` is not thread-safe.
     """
     caught: _Caught = {}
-    if os.getpid() == _driver_pid:
+    if _worker_id != process_id():
         yield caught
         return
     _install()

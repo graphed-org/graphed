@@ -732,6 +732,12 @@ pickled, or built from a message, arrives as its builtin base. A join's or a rep
 keep warning on the worker's stderr. A plan you build yourself around a shipped ``plan.process``
 needs ``plan.combine`` and ``plan.finalize`` with it, or a ``DurablePlan``.
 
+A worker keeps its warnings only once its runner calls
+``graphed.core.worker_warnings.enter_worker(driver)`` there, with the driver's ``process_id()``.
+graphed-executors' runners do, and so does any backend under its ``SubmitRunner``. A runner that
+never calls it, such as a TaskVine adapter that runs tasks in workers of its own, leaves their
+warnings on the workers' stderr: safe, but for it this is off.
+
 
 Not supported yet
 -----------------
