@@ -27,10 +27,15 @@ def _first(values: list[Any]) -> Any:
     return values[0]
 
 
-def _events(tmp_path: Path, *, open_files: bool = False) -> Any:
+def _events(
+    tmp_path: Path,
+    *,
+    open_files: bool = False,
+    sizes: tuple[tuple[str, int], ...] = (("a", 25), ("b", 10)),
+) -> Any:
     pytest.importorskip("pyarrow")
     paths = []
-    for name, n in (("a", 25), ("b", 10)):
+    for name, n in sizes:
         paths.append(str(tmp_path / f"{name}.parquet"))
         ak.to_parquet(ak.Array({"x": [1.0] * n}), paths[-1])
     session = graphed.Session(ga.AwkwardBackend())
@@ -71,10 +76,7 @@ def test_a_non_positive_count_is_refused(tmp_path: Path) -> None:
 
 
 def test_an_empty_file_keeps_one_task(tmp_path: Path) -> None:
-    pytest.importorskip("pyarrow")
-    path = str(tmp_path / "empty.parquet")
-    ak.to_parquet(ak.Array({"x": []}), path)
-    events = ga.from_parquet("events", [path], session=graphed.Session(ga.AwkwardBackend()))
+    events = _events(tmp_path, sizes=(("empty", 0),))
     parts = [t.partition for t in _plan(events, events_per_task=10).tasks]
     assert [(p.entry_start, p.entry_stop) for p in parts] == [(0, 0)]
 

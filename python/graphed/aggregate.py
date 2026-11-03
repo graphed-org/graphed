@@ -799,10 +799,10 @@ def _event_partitions(source: PartitionedSource, events_per_task: int) -> list[P
     """Cut each of ``source``'s files into ranges of ``events_per_task`` entries."""
     if events_per_task < 1:
         raise ValueError(f"events_per_task must be >= 1, got {events_per_task}")
+    count = getattr(source, "num_entries", None)
     out: list[Partition] = []
     for file in source.partitions(1):
         if file.blind_step is not None:
-            count = getattr(source, "num_entries", None)
             if count is None:
                 raise TypeError(
                     f"{type(source).__name__} cannot count its entries, so events_per_task= "
