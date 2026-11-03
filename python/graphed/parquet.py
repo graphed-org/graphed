@@ -79,6 +79,20 @@ def num_rows(path: str) -> int:
     return int(_pq().ParquetFile(path).metadata.num_rows)
 
 
+def row_groups_for(path: str, start: int, stop: int) -> tuple[list[int], int]:
+    """Return the row groups holding rows ``[start, stop)`` and the row the first starts at."""
+    meta = _pq().ParquetFile(path).metadata
+    groups: list[int] = []
+    first = row = 0
+    for group in range(meta.num_row_groups):
+        end = row + meta.row_group(group).num_rows
+        if row < stop and start < end:
+            first = first if groups else row
+            groups.append(group)
+        row = end
+    return groups, first
+
+
 def schema_of(paths: Sequence[str]) -> Any:
     """Return the dataset's arrow schema — the FIRST file is authoritative (MVP convention)."""
     return _pq().ParquetFile(paths[0]).schema_arrow
@@ -107,8 +121,8 @@ def make_partitions(
 
 
 def resolve_partition(partition: Partition) -> Partition:
-    """Resolve a blind partition against its file's metadata row count (non-blind: unchanged)."""
-    if not partition.is_blind:
+    """Resolve a blind partition against its file's metadata row count (no step: unchanged)."""
+    if partition.blind_step is None:
         return partition
     return partition.resolve(num_rows(partition.uri))
 
@@ -122,7 +136,7 @@ def derive_part_index(
     Blind partitions carry their step (no I/O); an eager partition's step is reconstructed
     exactly against the file's metadata row count (``graphed.write.step_of``).
     """
-    if partition.is_blind:
+    if partition.blind_step is not None:
         return blind_part_index(partition, bases)
     n = num_rows(partition.uri)
     return bases[partition.uri] + step_of(
@@ -191,6 +205,7 @@ __all__ = [
     "num_rows",
     "part_path",
     "resolve_partition",
+    "row_groups_for",
     "schema_of",
     "step_of",
     "write_plan",

@@ -57,7 +57,8 @@ def _awkward_function(
         )
         raise GraphedError(
             f"graphed records no deferred {spelled}: graphed.awkward.gak has no "
-            "equivalent; materialize the array first (Session.materialize) to use it eagerly"
+            "equivalent; evaluate it with graphed.materialize(x), or peek with graphed.head(x), "
+            "and use the values eagerly"
         )
     fn = getattr(gak, name)
     signature = inspect.signature(dispatch)
