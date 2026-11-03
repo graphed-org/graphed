@@ -25,6 +25,12 @@ from graphed.provenance import capture
 from graphed.shuffle import JOINKEY, route_key
 from graphed.varied import boundary_refusal, containers_in, expand, expand_tuple, narrow
 
+from ..preserve.externals._helpers import refuse_unread_inputs
+from ..preserve.externals.correctionlib_external import (
+    _refused,
+    check_correctionlib_params,
+    correction_inputs,
+)
 from . import payloads
 from ._dispositions import GAK_ARG_FIXTURES as GAK_ARG_FIXTURES
 from ._dispositions import GAK_DISPOSITIONS as GAK_DISPOSITIONS
@@ -489,22 +495,6 @@ class _TemplateExternal:
         return self.call(*values)
 
 
-def _refused(detail: str) -> GraphedTypeError:
-    return GraphedTypeError("correction", capture(), detail)
-
-
-def _correction_inputs(blob: bytes, name: str, compound: bool) -> tuple[str, ...]:
-    """Return the input names of ``name``, resolved as the correctionlib plugin resolves it."""
-    regular, stacked = payloads.correctionlib_inputs(blob)
-    held = stacked if compound else {**stacked, **regular}
-    if name not in held:
-        raise _refused(
-            f"no {'compound ' if compound else ''}correction {name!r} in this set; "
-            f"it has: {', '.join(sorted(held))}"
-        )
-    return held[name]
-
-
 def _named_template(
     wanted: tuple[str, ...], name: str, named: Mapping[str, object]
 ) -> tuple[list[Array], list[object]]:
@@ -585,28 +575,27 @@ def apply_correction(
             "correction", evaluator, arrays, {"path": str(payload), "name": name, **which}
         )
     blob = _payload_bytes(payload)
-    wanted = _correction_inputs(blob, name, compound)
+    wanted = correction_inputs(blob, name, compound)  # a wrong name outranks a bad template
     if named:
         arrays, args = _named_template(wanted, name, named)
     elif args is None:
         args = [f"${i}" for i in range(len(arrays))]
-    entries = _parse_template(args, len(arrays), constants=True, groups=False)
-    if len(entries) != len(wanted):
-        raise _refused(
-            f"correction {name!r} takes inputs ({', '.join(wanted)}); got {len(entries)} "
-            "positional inputs"
-        )
-    slots = [arrays[i] for kind, i in entries if kind == "slot"]
-    if not slots:
-        raise _refused(f"correction {name!r} needs at least one Array input")
-    session = arrays[0].session
-    session._mine(arrays, ("correction", capture()))  # before `session.form` reads an input
-    descriptor = payloads.correctionlib_contents_descriptor(blob, name)
+    if arrays:  # a foreign input outranks a bad template, as in `record_external`
+        arrays[0].session._mine(arrays, ("correction", capture()))
+    try:
+        entries = _parse_template(args, len(arrays), constants=True, groups=False)
+    except (TypeError, ValueError) as err:
+        raise _refused(str(err)) from err
     params: dict[str, ParamValue] = {
         "name": name,
         "args": json.dumps(args, sort_keys=False),
         **which,
     }
+    check_correctionlib_params(params, blob, len(arrays))
+    session = arrays[0].session
+    refuse_unread_inputs("correction", params, len(arrays))
+    slots = [arrays[i] for kind, i in entries if kind == "slot"]
+    descriptor = payloads.correctionlib_contents_descriptor(blob, name)
     return session.record_external(
         "correction",
         # call=None: the plugin owns evaluation on every backend (see _TemplateExternal)
@@ -647,6 +636,8 @@ def onnx_inference(
         return inputs[0].session.record_external(
             "onnx", runner, list(inputs), {"path": str(payload)}
         )
+    session = inputs[0].session
+    session._mine(list(inputs), ("onnx", capture()))  # a foreign input outranks a bad template
     blob = _payload_bytes(payload)
     arg_entries = _parse_template(args or [], len(inputs), constants=False, groups=True)
     kw_entries = {
@@ -662,13 +653,12 @@ def onnx_inference(
         kw = {k: _ml_matrix(e, vals) for k, e in kw_entries.items()}
         return runner(*call, **kw)
 
-    session = inputs[0].session
-    session._mine(list(inputs), ("onnx", capture()))  # before `session.form` reads an input
     params: dict[str, str] = {}
     if args is not None:
         params["args"] = json.dumps(args, sort_keys=False)
     if kwargs is not None:
         params["kwargs"] = json.dumps(kwargs, sort_keys=True)
+    refuse_unread_inputs("onnx", params, len(inputs))
     descriptor = payloads.onnx_weights_descriptor(blob)
     return session.record_external(
         "onnx",

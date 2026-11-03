@@ -12,10 +12,10 @@ import numpy as np
 import pytest
 
 from graphed import Session
-from graphed.awkward import AwkwardBackend, AwkwardForm, from_awkward, gak, payloads
+from graphed.awkward import AwkwardBackend, AwkwardForm, from_awkward, gak
 from graphed.awkward.payloads import correctionlib_contents_hash, onnx_weights_hash
 from graphed.preserve import CORRECTIONLIB_PLUGIN, XGBOOST_PLUGIN
-from graphed.preserve.externals import ExternalPlugin, record_external
+from graphed.preserve.externals import ExternalPlugin, correctionlib_external, record_external
 from graphed.preserve.externals._helpers import _HASH_MEMO
 
 N = 5
@@ -164,7 +164,9 @@ def test_apply_correction_digests_one_payload_object_once(monkeypatch: pytest.Mo
     ).encode()
     s, x = _x()
     digests = _count_parses(monkeypatch, hashlib, "sha256", payload)
-    identities = _count_parses(monkeypatch, payloads, "_correctionlib_identity", payload)
+    identities = _count_parses(
+        monkeypatch, correctionlib_external, "correctionlib_identity", payload
+    )
     arrs = [
         gak.apply_correction(payload, "sf", [x], lambda *a: a[0], args=["$0"]) for _ in range(N)
     ]
