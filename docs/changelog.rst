@@ -172,7 +172,8 @@ outputs with ``output_summaries()``. ``plan.save(path)`` and ``Plan.load(path)``
 later session on the same install. The file is a pickle, so load only plans you trust. A graphed
 version other than the one that wrote it refuses it with a clear error; the versions of other
 packages are not checked. It is a transport for submitting and coming back: the durable form of an
-analysis stays its IR and ``graphed.preserve``.
+analysis stays its IR and ``graphed.preserve``. A join's plan, a ``DurablePlanV2``, has
+neither the summary nor ``save``.
 
 Whole-dataset sums need no ``reduce``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

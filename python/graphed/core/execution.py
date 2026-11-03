@@ -40,6 +40,7 @@ from typing import (
 
 from .graphed_core import version
 from .services import Bindable, UnboundServiceError
+from .worker_warnings import mark_driver
 
 if TYPE_CHECKING:
     from .plan import DurablePlanV2
@@ -347,6 +348,8 @@ class Plan(Generic[R]):
                     "rebuild it from the analysis"
                 )
             plan: Plan[Any] = pickle.load(file)
+        # the loading process runs the plan as its builder would, not as a worker
+        mark_driver()
         return plan
 
 

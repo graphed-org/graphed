@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import pickle
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
 import awkward as ak
+import numpy as np
 import pytest
 
 import graphed
 from graphed import Session
-from graphed.awkward import AwkwardBackend, from_parquet, parquet_write
-from graphed.core.execution import SequentialRunner
+from graphed.awkward import AwkwardBackend, from_parquet, gak, parquet_write
+from graphed.core.execution import Plan, SequentialRunner
 
 pytest.importorskip("pyarrow")
 
@@ -91,3 +94,24 @@ def test_a_saved_graphed_plan_runs_alike(events: Any, tmp_path: Path) -> None:
     plan = _plan(events.x, reduce=_reduce)
     plan.save(path)
     assert SequentialRunner().run(type(plan).load(path)).value == 2
+
+
+def test_a_plan_loaded_in_a_fresh_interpreter_warns_as_its_builder(
+    events: Any, tmp_path: Path
+) -> None:
+    path = tmp_path / "p.plan"
+    plan = graphed.aggregate_plan(gak.sum(np.log(events.x - 1.0)))
+    assert isinstance(plan, Plan)
+    plan.save(path)
+    code = f"""
+import warnings
+from graphed.core.execution import Plan, SequentialRunner
+with warnings.catch_warnings(record=True) as caught:
+    warnings.simplefilter("always")
+    SequentialRunner().run(Plan.load({str(path)!r}))
+print([str(w.message) for w in caught])
+"""
+    done = subprocess.run(
+        [sys.executable, "-I", "-c", code], capture_output=True, text=True, check=True
+    )
+    assert done.stdout.strip() == "['divide by zero encountered in log']"
