@@ -26,6 +26,7 @@ Small samples, and one evaluation path
 * ``Partition.first(n)`` caps a partition at its first ``n`` entries, resolved when it is read. A
   capped range is exact, so ``is_blind`` is false and a reader that moves blind ranges leaves it.
 * A parquet partition reads only the row groups its entries lie in, not the whole file.
+
 ``gak.apply_correction`` takes keywords and checks the payload as you record
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

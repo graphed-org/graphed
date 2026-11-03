@@ -35,7 +35,6 @@ from graphed.awkward import AwkwardBackend, AwkwardForm, from_awkward, gak
 from graphed.awkward.payloads import correctionlib_contents_hash, onnx_weights_hash
 from graphed.core import Partition
 from graphed.core.execution import SequentialRunner, WorkerResources
-from graphed.errors import StageError
 from graphed.preserve.errors import PreserveError
 from graphed.preserve.externals.correctionlib_external import (
     eval_correctionlib,
@@ -439,7 +438,7 @@ def test_an_unknown_correction_name_names_both_key_sets() -> None:
     cset = load_correctionlib(COMPOUND_CSET, {})
 
     with pytest.raises(
-        StageError, match=r"PreserveError: .*no correction named 'l3'.*\['l1', 'l2'\].*\['jec'\]"
+        PreserveError, match=r"no correction named 'l3'.*\['l1', 'l2'\].*\['jec'\]"
     ):
         eval_correctionlib(cset, {"name": "l3", "args": '["$0"]'}, [np.zeros(1)])
 
