@@ -34,7 +34,7 @@ Transcripts on this page show your analysis file by name; you will see its full 
 
 ::
 
-   external | IndexError | skim@0:4
+   map 'oob' | IndexError | skim@0:4
    analysis.py:9
    Traceback (most recent call last) — user analysis frames:
          File "analysis.py", line 7, in <module>
@@ -43,7 +43,8 @@ Transcripts on this page show your analysis file by name; you will see its full 
              x * 2.0
      --> File "analysis.py", line 9, in <module>
              pt.map(lambda a: a[100], name='oob')
-   IndexError: index 100 is out of bounds for axis 0 with size 4  [stage op 'external', partition skim@0:4, opt_level=1]
+         raised in <lambda>(), analysis.py line 9:  bad = pt.map(lambda a: a[100], name="oob")     # only fails once real data arrives
+   IndexError: index 100 is out of bounds for axis 0 with size 4  [stage op "map 'oob'", partition skim@0:4, opt_level=1]
      input forms: vector[float64]
 
 The arrow is on the line you wrote. Above it is the trail of how that value was built, oldest
@@ -195,7 +196,7 @@ worker can raise it, a pool can ship it, and your driver re-raises *the same* di
 ::
 
    re-raised in the driver: StageError
-   partition: skim@16384 | op: external | opt_level: 1
+   partition: skim@16384 | op: map 'unflatten' | opt_level: 1
    your line: 14 | counts.map(lambda a: np.repeat(a, a), name='unflatten')
    cause: ValueError - repeats may not contain negative values.
 

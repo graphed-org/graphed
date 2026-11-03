@@ -221,6 +221,15 @@ def _dispatch(
         raise replacement from exc
 
 
+def external_op(node: Mapping[str, Any]) -> str:
+    """Return the op an External ``node``'s failure names.
+
+    That is the function a ``map`` declared, else the payload kind: an External has no ``name``.
+    """
+    fn_name = (node.get("params") or {}).get("fn")
+    return f"external:{node['descriptor']['kind']}" if fn_name is None else f"map {fn_name!r}"
+
+
 def external_key(node: Mapping[str, Any]) -> str:
     """Return the execution-resolution key for an External node.
 
@@ -370,11 +379,7 @@ def _evaluate_external(
     fn = None if externals is None else (externals.get(external_key(nd)) or externals.get(chash))
     if fn is None:
         raise _unbound_external(chash)
-    # An External node carries no `name` — its identity is the descriptor — so an attributed
-    # failure names the payload kind, and the function a `map` declared.
-    fn_name = (nd.get("params") or {}).get("fn")
-    op = f"external:{nd['descriptor']['kind']}" if fn_name is None else f"map {fn_name!r}"
-    return _dispatch(partial(fn, *ins), op, ins, (nid, None), on_failure)
+    return _dispatch(partial(fn, *ins), external_op(nd), ins, (nid, None), on_failure)
 
 
 def _last_consumers(inputs: Sequence[Sequence[int]], *, keep: set[int]) -> dict[int, list[int]]:

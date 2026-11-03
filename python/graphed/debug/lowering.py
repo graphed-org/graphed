@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from typing import cast
 
 from graphed import Array, Session
+from graphed.execute import external_op
 
 from .errors import SourceFrame
 
@@ -97,6 +98,7 @@ def _collect(session: Session, array: Array) -> list[LoweredOp]:
     boundary_ops = session.backend.boundary_ops()
     ops: list[LoweredOp] = []
     live = session._live([array])
+    nodes = session._nodes()
 
     def frame(nid: int) -> SourceFrame:
         return SourceFrame.of(session._lines(nid, live))
@@ -118,7 +120,8 @@ def _collect(session: Session, array: Array) -> list[LoweredOp]:
 
     def on_external(nid: int, _fn: object, ins: list[object]) -> int:
         ids = tuple(cast(int, i) for i in ins)
-        ops.append(LoweredOp(nid, "external", "external", frame(nid), ids, form(nid), True))
+        op = external_op(nodes[nid])
+        ops.append(LoweredOp(nid, op, "external", frame(nid), ids, form(nid), True))
         return nid
 
     session.walk(array, source=on_source, op=on_op, external=on_external)

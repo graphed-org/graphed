@@ -18,7 +18,13 @@ from functools import cached_property
 from typing import Any
 
 from graphed import Array
-from graphed.aggregate import _compile_at, _PartitionReduce, _slot_of, resolve_backend
+from graphed.aggregate import (
+    _compile_at,
+    _PartitionReduce,
+    _slot_of,
+    read_label,
+    resolve_backend,
+)
 from graphed.core import DurablePlanV2, GraphStore, LocalResources
 from graphed.core.execution import Plan, Task
 from graphed.execute import (
@@ -225,7 +231,8 @@ class Replay:
                 if failing is None:
                     proxy = self._session._proxies([op.node_id], self._outputs)[0]
                     failing = lower(self._session, proxy, opt_level=0)
-                raise _stage_error(failing, op.node_id, str(self.task.partition), exc) from exc
+                where = read_label(self._process.reader, self.task.partition, chunk)
+                raise _stage_error(failing, op.node_id, where, exc) from exc
             yield Step(op, value, time.perf_counter() - start)
 
     @cached_property
