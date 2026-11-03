@@ -154,8 +154,8 @@ def test_numpy_scalars_stay_operands() -> None:
 
 
 @pytest.mark.parametrize("operand", [object(), b"ab", {"a": 1}, {1.0}], ids=repr)
-def test_what_is_no_array_keeps_the_scalar_refusal(operand: object) -> None:
-    with pytest.raises(TypeError, match="unsupported scalar operand") as refused:
+def test_what_is_no_array_gets_pythons_operand_refusal(operand: object) -> None:
+    with pytest.raises(TypeError, match="unsupported operand|can't multiply sequence") as refused:
         _events().MET_pt * operand
     assert not isinstance(refused.value, GraphedTypeError)
 
