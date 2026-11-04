@@ -334,6 +334,10 @@ class _Partial(Generic[R]):
     failed: tuple[FailedChunk, ...] = ()
 
 
+def _by_label(failed: Iterable[FailedChunk]) -> tuple[FailedChunk, ...]:
+    return tuple(sorted(failed, key=lambda f: f.partition))
+
+
 @dataclass(frozen=True)
 class _SkipProcess(Generic[R]):
     """``process`` turning a failed chunk into an empty partial, so no reduction tree changes."""
@@ -344,13 +348,13 @@ class _SkipProcess(Generic[R]):
 
     def __call__(self, partition: Partition, resources: WorkerResources) -> _Partial[R]:
         """Return the chunk's partial, or an empty one naming why there is none."""
-        label = chunk_label(partition)
-        error = self.lost.get(label)
+        error = self.lost.get(chunk_label(partition)) if self.lost else None
         if error is None:
             try:
                 return _Partial(self.process(partition, resources))
             except Exception as exc:  # an interrupt or exit stops the run; it is not a dead letter
                 error = exc
+        label = chunk_label(partition)
         failed = FailedChunk(
             label,
             f"{type(error).__name__}: {error}",
@@ -382,7 +386,7 @@ class _SkipCombine(Generic[R]):
         """Merge values and failures."""
         failed = a.failed + b.failed
         if len(failed) > self.budget:
-            raise TooManyFailedChunksError(tuple(sorted(failed, key=lambda f: f.partition)))
+            raise TooManyFailedChunksError(_by_label(failed))
         return _Partial(self.combine(a.value, b.value), failed)
 
 
@@ -393,6 +397,11 @@ def _empty_partial(empty: Callable[[], R]) -> _Partial[R]:
 def n_failed(partial: object) -> int:
     """Return how many failed chunks ``partial`` holds, for ``ExecContext.errors``."""
     return len(partial.failed) if isinstance(partial, _Partial) else 0
+
+
+def skipped_error(partial: object) -> str | None:
+    """Return why ``partial`` holds no data, for a monitor's ERRORED event; ``None`` if it does."""
+    return partial.failed[0].error if isinstance(partial, _Partial) and partial.failed else None
 
 
 #: first bytes of a file :meth:`Plan.save` wrote; the graphed version and a newline follow
@@ -506,7 +515,7 @@ def finalize_result(plan: Plan[R] | DurablePlanV2, result: ExecResult[R]) -> Exe
     value to ``failed``.
     """
     if isinstance(result.value, _Partial):
-        failed = tuple(sorted(result.value.failed, key=lambda f: f.partition))
+        failed = _by_label(result.value.failed)
         if failed:
             warnings.warn(
                 f"{len(failed)} failed chunk(s) are missing from this value; see .failed",
@@ -557,7 +566,7 @@ def without_lost(plan: Plan[Any] | DurablePlanV2, err: BaseException) -> Plan[An
         or not isinstance(plan.process, _SkipProcess)
         or plan.next_tasks is not None
         or label in plan.process.lost
-        or label not in {chunk_label(t.partition) for t in plan.tasks}
+        or all(chunk_label(t.partition) != label for t in plan.tasks)
     ):
         raise err
     process = plan.process
@@ -1174,9 +1183,8 @@ class SequentialRunner:
                     raise
                 value = plan.combine(value, partial)
                 if monitor is not None:
-                    skipped = partial.failed if isinstance(partial, _Partial) else ()
-                    phase = TaskPhase.ERRORED if skipped else TaskPhase.FINISHED
-                    why = skipped[0].error if skipped else None
+                    why = skipped_error(partial)
+                    phase = TaskPhase.ERRORED if why else TaskPhase.FINISHED
                     emit_task(monitor, self._event(phase, task, error=why, lean=lean))
                 n += 1
             return ExecResult(
