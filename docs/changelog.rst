@@ -90,15 +90,6 @@ sizing arguments do not carry over. ``submit`` runs the plan before it returns a
 ``concurrent.futures.Future``, which holds the result or the failure, so a paused ``control`` blocks
 the call and a cancel sent after it lands on the next run.
 
-A run can go on past bad chunks
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-* ``runner.run(plan, skip_failed=10)`` gives up only after 10 failed chunks: ``res.value`` merges
-  the chunks that succeeded, ``res.failed`` lists the rest as JSON-ready ``FailedChunk`` records
-  holding the checkpoint dead-letter descriptor, and the run warns with the count. One failure past
-  the budget raises ``TooManyFailedChunksError``, which lists them.
-* ``StopCondition(max_errors=N)`` is that same budget, on every runner; it used to do nothing.
-
 Plans returned wrong values for row-axis operations, and now refuse them
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
