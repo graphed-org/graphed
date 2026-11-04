@@ -17,12 +17,14 @@ contract stays a stable, minimal seam. A `Plan` is reduced to a single result by
 from __future__ import annotations
 
 import contextlib
+import functools
 import os
 import pickle
 import threading
 import time
+import warnings
 from collections import OrderedDict
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import Future
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
@@ -39,7 +41,8 @@ from typing import (
 )
 
 from .graphed_core import version
-from .services import Bindable, UnboundServiceError
+from .services import Bindable, Resolvable, UnboundServiceError
+from .worker_warnings import on_value
 
 if TYPE_CHECKING:
     from .plan import DurablePlanV2
@@ -270,6 +273,137 @@ class StopCondition:
         return None
 
 
+@dataclass(frozen=True)
+class FailedChunk:
+    """A chunk a run went on without; ``record`` is a checkpoint dead-letter descriptor."""
+
+    partition: str
+    error: str
+    record: dict[str, Any]
+
+
+class TooManyFailedChunksError(RuntimeError):
+    """More chunks failed than the run allows; ``failed`` holds those seen so far."""
+
+    def __init__(self, failed: tuple[FailedChunk, ...]) -> None:
+        """Hold ``failed``; ``args`` is what unpickling rebuilds from."""
+        super().__init__(failed)
+        self.failed = failed
+
+    def __str__(self) -> str:
+        """List the failures."""
+        lines = "".join(f"\n  {f.partition}: {f.error}" for f in self.failed)
+        return f"{len(self.failed)} chunks failed:{lines}"
+
+
+def dead_letter_descriptor(
+    task_id: str, partition: Partition, exc: BaseException
+) -> dict[str, Any]:
+    """Build a reproducible, JSON-serializable dead-letter record from a failure."""
+    desc: dict[str, Any] = {
+        "task_id": task_id,
+        "uri": partition.uri,
+        "tree": partition.tree,
+        "entry_start": partition.entry_start,
+        "entry_stop": partition.entry_stop,
+        "error_type": type(exc).__name__,
+        "error_message": str(exc),
+    }
+    # StageError carries structured user-source provenance (duck-typed so graphed-debug stays a
+    # soft dependency: any error exposing these fields is harvested with full provenance).
+    frames = getattr(exc, "frames", None)
+    op = getattr(exc, "op", None)
+    if frames is not None and op is not None:
+        top = frames[0] if frames else None
+        desc["stage_error"] = {
+            "op": op,
+            "cause_type": getattr(exc, "cause_type", ""),
+            "cause_message": getattr(exc, "cause_message", ""),
+            "user_file": getattr(top, "filename", "") if top else "",
+            "user_line": getattr(top, "lineno", 0) if top else 0,
+            "user_source": getattr(top, "source", "") if top else "",
+        }
+    return desc
+
+
+@dataclass(frozen=True)
+class _Partial(Generic[R]):
+    """A partial under ``skip_failed``: reductions carry the failures alongside the value."""
+
+    value: R
+    failed: tuple[FailedChunk, ...] = ()
+
+
+def _by_label(failed: Iterable[FailedChunk]) -> tuple[FailedChunk, ...]:
+    return tuple(sorted(failed, key=lambda f: f.partition))
+
+
+@dataclass(frozen=True)
+class _SkipProcess(Generic[R]):
+    """``process`` turning a failed chunk into an empty partial, so no reduction tree changes."""
+
+    process: Callable[[Partition, WorkerResources], R]
+    empty: Callable[[], R]
+    lost: Mapping[str, BaseException] = field(default_factory=dict)
+
+    def __call__(self, partition: Partition, resources: WorkerResources) -> _Partial[R]:
+        """Return the chunk's partial, or an empty one naming why there is none."""
+        error = self.lost.get(chunk_label(partition)) if self.lost else None
+        if error is None:
+            try:
+                return _Partial(self.process(partition, resources))
+            except Exception as exc:  # an interrupt or exit stops the run; it is not a dead letter
+                error = exc
+        label = chunk_label(partition)
+        failed = FailedChunk(
+            label,
+            f"{type(error).__name__}: {error}",
+            dead_letter_descriptor(label, partition, error),
+        )
+        return _Partial(self.empty(), (failed,))
+
+    def bind_services(self, endpoints: Mapping[str, str]) -> _SkipProcess[R]:
+        """Bind ``endpoints`` into the wrapped process."""
+        if not isinstance(self.process, Bindable):
+            return self
+        return replace(self, process=self.process.bind_services(endpoints))
+
+    def resolve_services(self, value: _Partial[R]) -> _Partial[R]:
+        """Resolve the merged value through the wrapped process; the failures stay."""
+        if not isinstance(self.process, Resolvable):
+            return value
+        return replace(value, value=on_value(self.process.resolve_services, value.value))
+
+
+@dataclass(frozen=True)
+class _SkipCombine(Generic[R]):
+    """``combine`` on partials, which ends the run once a merge holds too many failures."""
+
+    combine: Callable[[R, R], R]
+    budget: int
+
+    def __call__(self, a: _Partial[R], b: _Partial[R]) -> _Partial[R]:
+        """Merge values and failures."""
+        failed = a.failed + b.failed
+        if len(failed) > self.budget:
+            raise TooManyFailedChunksError(_by_label(failed))
+        return _Partial(self.combine(a.value, b.value), failed)
+
+
+def _empty_partial(empty: Callable[[], R]) -> _Partial[R]:
+    return _Partial(empty())
+
+
+def n_failed(partial: object) -> int:
+    """Return how many failed chunks ``partial`` holds, for ``ExecContext.errors``."""
+    return len(partial.failed) if isinstance(partial, _Partial) else 0
+
+
+def skipped_error(partial: object) -> str | None:
+    """Return why ``partial`` holds no data, for a monitor's ERRORED event; ``None`` if it does."""
+    return partial.failed[0].error if isinstance(partial, _Partial) and partial.failed else None
+
+
 #: first bytes of a file :meth:`Plan.save` wrote; the graphed version and a newline follow
 _SAVED_PLAN = b"graphed-plan "
 
@@ -369,6 +503,7 @@ class ExecResult(Generic[R]):
     n_partitions: int
     n_combines: int
     stopped: StopReason | None = None
+    failed: tuple[FailedChunk, ...] = ()  # the chunks ``skip_failed`` left out of ``value``
 
 
 def finalize_result(plan: Plan[R] | DurablePlanV2, result: ExecResult[R]) -> ExecResult[R]:
@@ -376,8 +511,17 @@ def finalize_result(plan: Plan[R] | DurablePlanV2, result: ExecResult[R]) -> Exe
 
     Every runner calls it once, on the head, on each result it returns — an empty, stopped or
     resumed run's too. A plan without ``finalize`` and a cancelled ``DurablePlanV2`` run (which has
-    no value) come back as they are.
+    no value) come back as they are. Under ``skip_failed`` it also moves the failed chunks from the
+    value to ``failed``.
     """
+    if isinstance(result.value, _Partial):
+        failed = _by_label(result.value.failed)
+        if failed:
+            warnings.warn(
+                f"{len(failed)} failed chunk(s) are missing from this value; see .failed",
+                stacklevel=3,
+            )
+        result = replace(result, value=result.value.value, failed=failed)
     if isinstance(plan, Plan):
         fn = plan.finalize
     elif plan.finalize is None or result.stopped is StopReason.CANCELLED:
@@ -385,6 +529,48 @@ def finalize_result(plan: Plan[R] | DurablePlanV2, result: ExecResult[R]) -> Exe
     else:
         fn = plan.finalize.resolve()
     return result if fn is None else replace(result, value=fn(result.value))
+
+
+def skipping(plan: Plan[Any] | DurablePlanV2, skip_failed: int = 0) -> Plan[Any] | DurablePlanV2:
+    """Return ``plan`` going on past ``skip_failed`` failed chunks, or ``plan.stop.max_errors``.
+
+    Every runner calls it on entry. With no budget it returns ``plan``.
+    """
+    if not isinstance(plan, Plan):
+        if skip_failed:
+            raise TypeError("skip_failed needs a Plan; a DurablePlanV2 has no chunk to leave out")
+        return plan
+    budget = skip_failed or (plan.stop.max_errors if plan.stop else None)
+    if budget is not None and budget < 0:
+        raise ValueError(f"a failed-chunk budget must be >= 0, got {budget}")
+    if not budget or isinstance(plan.process, _SkipProcess):
+        return plan
+    return replace(
+        plan,
+        process=_SkipProcess(plan.process, plan.empty),
+        combine=_SkipCombine(plan.combine, budget),
+        empty=functools.partial(_empty_partial, plan.empty),
+        stop=replace(plan.stop or StopCondition(), max_errors=budget),
+    )
+
+
+def without_lost(plan: Plan[Any] | DurablePlanV2, err: BaseException) -> Plan[Any]:
+    """Return a skipping ``plan`` for a rerun with lost-worker ``err``'s chunk failed.
+
+    Raises ``err`` when there is no such rerun: the plan is not skipping, the worker held no chunk
+    of the plan, or a pull stream cannot be replayed.
+    """
+    label = getattr(err, "partition", "")
+    if (
+        not isinstance(plan, Plan)
+        or not isinstance(plan.process, _SkipProcess)
+        or plan.next_tasks is not None
+        or label in plan.process.lost
+        or all(chunk_label(t.partition) != label for t in plan.tasks)
+    ):
+        raise err
+    process = plan.process
+    return replace(plan, process=replace(process, lost={**process.lost, label: err}))
 
 
 def _stage_processes(plan: DurablePlanV2) -> tuple[Any, ...]:
@@ -950,12 +1136,15 @@ class SequentialRunner:
             del fut  # a failure's traceback holds this frame, so ``fut`` here would be a cycle
 
     @overload
-    def run(self, plan: Plan[R]) -> ExecResult[R]: ...
+    def run(self, plan: Plan[R], *, skip_failed: int = 0) -> ExecResult[R]: ...
     @overload
-    def run(self, plan: DurablePlanV2) -> ExecResult[Any]: ...
-    def run(self, plan: Plan[R] | DurablePlanV2) -> ExecResult[R] | ExecResult[Any]:
-        """Run ``plan`` one task at a time in this process."""
+    def run(self, plan: DurablePlanV2, *, skip_failed: int = 0) -> ExecResult[Any]: ...
+    def run(
+        self, plan: Plan[R] | DurablePlanV2, *, skip_failed: int = 0
+    ) -> ExecResult[R] | ExecResult[Any]:
+        """Run ``plan`` one task at a time in this process, past ``skip_failed`` failed chunks."""
         require_bound(plan)
+        plan = skipping(plan, skip_failed)
         with observed_run(self.monitor, plan):
             result = self._run_tasks(plan) if isinstance(plan, Plan) else self._run_stages(plan)
         return finalize_result(plan, result)
@@ -994,7 +1183,9 @@ class SequentialRunner:
                     raise
                 value = plan.combine(value, partial)
                 if monitor is not None:
-                    emit_task(monitor, self._event(TaskPhase.FINISHED, task, lean=lean))
+                    why = skipped_error(partial)
+                    phase = TaskPhase.ERRORED if why else TaskPhase.FINISHED
+                    emit_task(monitor, self._event(phase, task, error=why, lean=lean))
                 n += 1
             return ExecResult(
                 value=value, n_partitions=n, n_combines=max(0, n - 1), stopped=stopped
