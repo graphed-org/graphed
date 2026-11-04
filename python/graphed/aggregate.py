@@ -631,6 +631,7 @@ def aggregate_plan(
     externals: Mapping[str, Callable[..., object]] | None = None,
     backend: Callable[[], Any] | str | None = None,
     steps_per_file: int | None = None,
+    events_per_task: int | None = None,
     partitions: Sequence[Partition] | None = None,
     on_compiled: Callable[[CompiledGraph], Any] | None = None,
     store: str | os.PathLike[str] | None = None,
@@ -661,6 +662,9 @@ def aggregate_plan(
 
     The tasks are ``partitions`` when given, else the source's partitions at ``steps_per_file``
     steps per file; ``None`` takes the source's own default (``from_parquet(steps_per_file=)``).
+    ``events_per_task`` instead cuts each file into tasks of that many entries, which needs a
+    source that can count them (``num_entries(partition)``); a blind source then opens each file on
+    the driver, one after another, to count it.
 
     ``on_compiled`` is §7.2's seam onto the internally compiled :class:`CompiledGraph` — the
     artifact is otherwise unreachable from the caller. It fires ONCE, and whatever it returns is
@@ -711,6 +715,7 @@ def aggregate_plan(
     if over_join:
         for name, given in (
             ("partitions", partitions),
+            ("events_per_task", events_per_task),
             ("store", store),
             ("writes", writes or None),
             ("read_by", read_by),
@@ -744,6 +749,14 @@ def aggregate_plan(
             on_compiled=on_compiled,
             finalize=finalize,
         )
+    if events_per_task is not None:
+        if steps_per_file is not None or partitions is not None:
+            raise TypeError(
+                "events_per_task= chunks the plan; omit steps_per_file= and partitions="
+            )
+        partitions = _event_partitions(data, events_per_task)
+    elif partitions is None:
+        partitions = data.partitions(steps_for(data, steps_per_file))
     # Wire EVERY External surviving in the compiled IR from the session (fills + upstream
     # corrections alike); an explicit `externals=` (keyed by `external_key`) overrides the
     # auto-wired evaluator.
@@ -770,8 +783,6 @@ def aggregate_plan(
         n_values=len({slot(o) for o in outputs}) if writes else None,
         opt_level=opt_level,
     )
-    if partitions is None:
-        partitions = data.partitions(steps_for(data, steps_per_file))
     tasks = tuple(Task(i, p) for i, p in enumerate(partitions))
     _refuse_shared_parts((process, t.partition) for t in tasks)
     return Plan(
@@ -782,6 +793,29 @@ def aggregate_plan(
         services=plan_services(session, compiled, services),
         finalize=WarnedFinalize(None if finalize is None else by_value(finalize)),
     )
+
+
+def _event_partitions(source: PartitionedSource, events_per_task: int) -> list[Partition]:
+    """Cut each of ``source``'s files into ranges of ``events_per_task`` entries."""
+    if events_per_task < 1:
+        raise ValueError(f"events_per_task must be >= 1, got {events_per_task}")
+    count = getattr(source, "num_entries", None)
+    out: list[Partition] = []
+    for file in source.partitions(1):
+        if file.blind_step is not None:
+            if count is None:
+                raise TypeError(
+                    f"{type(source).__name__} cannot count its entries, so events_per_task= "
+                    "cannot chunk it; pass steps_per_file= instead"
+                )
+            file = file.resolve(count(file))
+        start, stop = file.entry_start, file.entry_stop
+        # an empty file keeps one task, as eager_ranges keeps one step for it
+        out.extend(
+            Partition(file.uri, file.tree, a, min(a + events_per_task, stop))
+            for a in range(start, max(stop, start + 1), events_per_task)
+        )
+    return out
 
 
 def _planned_arrays(
