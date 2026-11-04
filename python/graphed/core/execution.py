@@ -41,7 +41,8 @@ from typing import (
 )
 
 from .graphed_core import version
-from .services import Bindable, UnboundServiceError
+from .services import Bindable, Resolvable, UnboundServiceError
+from .worker_warnings import on_value
 
 if TYPE_CHECKING:
     from .plan import DurablePlanV2
@@ -363,6 +364,12 @@ class _SkipProcess(Generic[R]):
             return self
         return replace(self, process=self.process.bind_services(endpoints))
 
+    def resolve_services(self, value: _Partial[R]) -> _Partial[R]:
+        """Resolve the merged value through the wrapped process; the failures stay."""
+        if not isinstance(self.process, Resolvable):
+            return value
+        return replace(value, value=on_value(self.process.resolve_services, value.value))
+
 
 @dataclass(frozen=True)
 class _SkipCombine(Generic[R]):
@@ -375,7 +382,7 @@ class _SkipCombine(Generic[R]):
         """Merge values and failures."""
         failed = a.failed + b.failed
         if len(failed) > self.budget:
-            raise TooManyFailedChunksError(failed)
+            raise TooManyFailedChunksError(tuple(sorted(failed, key=lambda f: f.partition)))
         return _Partial(self.combine(a.value, b.value), failed)
 
 
@@ -525,6 +532,8 @@ def skipping(plan: Plan[Any] | DurablePlanV2, skip_failed: int = 0) -> Plan[Any]
             raise TypeError("skip_failed needs a Plan; a DurablePlanV2 has no chunk to leave out")
         return plan
     budget = skip_failed or (plan.stop.max_errors if plan.stop else None)
+    if budget is not None and budget < 0:
+        raise ValueError(f"a failed-chunk budget must be >= 0, got {budget}")
     if not budget or isinstance(plan.process, _SkipProcess):
         return plan
     return replace(
@@ -1165,7 +1174,10 @@ class SequentialRunner:
                     raise
                 value = plan.combine(value, partial)
                 if monitor is not None:
-                    emit_task(monitor, self._event(TaskPhase.FINISHED, task, lean=lean))
+                    skipped = partial.failed if isinstance(partial, _Partial) else ()
+                    phase = TaskPhase.ERRORED if skipped else TaskPhase.FINISHED
+                    why = skipped[0].error if skipped else None
+                    emit_task(monitor, self._event(phase, task, error=why, lean=lean))
                 n += 1
             return ExecResult(
                 value=value, n_partitions=n, n_combines=max(0, n - 1), stopped=stopped

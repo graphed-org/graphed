@@ -15,18 +15,23 @@ from graphed.core import (
     DurablePlanV2,
     ExecContext,
     FailedChunk,
+    MonitorBase,
     Partition,
     Plan,
     SequentialRunner,
     StopCondition,
     StopReason,
     Task,
+    TaskEvent,
+    TaskPhase,
     TooManyFailedChunksError,
     chunk_label,
     n_failed,
     skipping,
     without_lost,
 )
+from graphed.core.execution import _Partial, _SkipCombine
+from graphed.services import resolve_services
 
 N = 20
 
@@ -69,7 +74,7 @@ def test_a_clean_run_reports_nothing(recwarn: pytest.WarningsRecorder) -> None:
 def test_one_failure_past_the_budget_raises_and_lists_them() -> None:
     with pytest.raises(TooManyFailedChunksError) as info:
         SequentialRunner().run(plan_of(Chunks(*range(11))), skip_failed=10)
-    assert [f.partition for f in info.value.failed] == [label(i) for i in range(11)]
+    assert [f.partition for f in info.value.failed] == sorted(label(i) for i in range(11))
     assert str(info.value).startswith("11 chunks failed:\n  f.root:Events (entries 0-1): OSError")
 
 
@@ -218,3 +223,48 @@ def test_no_budget_leaves_the_plan_alone() -> None:
 def test_a_plan_is_wrapped_once() -> None:
     wrapped = skipping(plan_of(Chunks()), 2)
     assert skipping(wrapped) is wrapped
+
+
+class Resolving(Chunks):
+    def resolve_services(self, value: int) -> int:
+        return -value
+
+
+def test_services_resolve_through_the_wrapper() -> None:
+    wrapped: Any = skipping(plan_of(Resolving()), 1)
+    failed = (FailedChunk("a", "OSError: x", {}),)
+    resolved = resolve_services(wrapped, dataclasses.replace(wrapped.empty(), value=5))
+    assert resolved.value == -5
+    assert resolve_services(wrapped, type(resolved)(5, failed)).failed == failed
+
+
+def test_a_skipped_chunk_is_an_errored_task() -> None:
+    class Seen(MonitorBase):
+        def __init__(self) -> None:
+            self.ended: dict[int, tuple[TaskPhase, str | None]] = {}
+
+        def on_task(self, event: TaskEvent) -> None:
+            if event.phase in (TaskPhase.FINISHED, TaskPhase.ERRORED):
+                self.ended[event.key] = (event.phase, event.error)
+
+    seen = Seen()
+    with pytest.warns(UserWarning, match="1 failed"):
+        SequentialRunner(monitor=seen).run(plan_of(Chunks(3)), skip_failed=1)
+    assert seen.ended[3] == (TaskPhase.ERRORED, "OSError: bad chunk 3")
+    assert seen.ended[2] == (TaskPhase.FINISHED, None)
+
+
+@pytest.mark.parametrize("kw", [{"skip_failed": -1}, {}])
+def test_a_negative_budget_is_refused(kw: dict[str, int]) -> None:
+    plan = plan_of(Chunks(), stop=StopCondition(max_errors=-2))
+    with pytest.raises(ValueError, match="budget must be >= 0"):
+        skipping(plan, **kw)
+
+
+def test_the_budget_error_lists_failures_in_label_order() -> None:
+    def one(i: int) -> Any:
+        return _Partial(0, (FailedChunk(label(i), "e", {}),))
+
+    with pytest.raises(TooManyFailedChunksError) as info:
+        _SkipCombine(operator.add, 1)(one(9), one(2))
+    assert [f.partition for f in info.value.failed] == [label(2), label(9)]
