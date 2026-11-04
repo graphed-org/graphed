@@ -96,6 +96,7 @@ def test_exec_result_schema_is_unchanged_by_a_varied_program() -> None:
         "n_partitions",
         "n_combines",
         "stopped",
+        "failed",
     }
     assert len(result.value) == 3  # the varied program really did reach a result
 
