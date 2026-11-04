@@ -197,6 +197,15 @@ def test_a_loss_past_the_budget_raises_without_another_run(blames: tuple[int, ..
         without_lost(plan, LostError(label(blames[-1])))
     assert [f.partition for f in info.value.failed] == sorted({label(i) for i in blames})
     assert info.value.failed[0].error == f"LostError: {label(1)}"
+    assert str(info.value).startswith(f"{len(set(blames))} chunk{'s' * (len(set(blames)) > 1)} ")
+
+
+def test_a_repeat_blame_leaves_the_rerun_less_budget() -> None:
+    plan = skipping(plan_of(Chunks(2)), 2)
+    for _ in range(2):
+        plan = without_lost(plan, LostError(label(1)))
+    with pytest.raises(TooManyFailedChunksError):
+        SequentialRunner().run(plan)
 
 
 class Bound:

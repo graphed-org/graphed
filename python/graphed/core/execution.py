@@ -283,7 +283,7 @@ class FailedChunk:
 
 
 class TooManyFailedChunksError(RuntimeError):
-    """More chunks failed than the run allows; ``failed`` holds those seen so far."""
+    """The run went past its failure budget, lost-worker reruns included; ``failed`` so far."""
 
     def __init__(self, failed: tuple[FailedChunk, ...]) -> None:
         """Hold ``failed``; ``args`` is what unpickling rebuilds from."""
@@ -293,7 +293,7 @@ class TooManyFailedChunksError(RuntimeError):
     def __str__(self) -> str:
         """List the failures."""
         lines = "".join(f"\n  {f.partition}: {f.error}" for f in self.failed)
-        return f"{len(self.failed)} chunks failed:{lines}"
+        return f"{counted(len(self.failed), 'chunk')} failed:{lines}"
 
 
 def dead_letter_descriptor(
@@ -345,7 +345,6 @@ class _SkipProcess(Generic[R]):
     process: Callable[[Partition, WorkerResources], R]
     empty: Callable[[], R]
     lost: Mapping[str, BaseException] = field(default_factory=dict)
-    reruns: int = 0  # lost-worker reruns so far, each one against the budget
 
     def __call__(self, partition: Partition, resources: WorkerResources) -> _Partial[R]:
         """Return the chunk's partial, or an empty one naming why there is none."""
@@ -558,29 +557,37 @@ def skipping(plan: Plan[Any] | DurablePlanV2, skip_failed: int = 0) -> Plan[Any]
 def without_lost(plan: Plan[Any] | DurablePlanV2, err: BaseException) -> Plan[Any]:
     """Return a skipping ``plan`` for a rerun with lost-worker ``err``'s chunk failed.
 
-    Each rerun counts one against the budget, a repeat blame (dask's can be unfair) included;
-    past it this raises :class:`TooManyFailedChunksError` instead of running again. Raises ``err``
-    when there is no such rerun: the plan is not skipping, the worker held no chunk of the plan,
-    or a pull stream cannot be replayed.
+    Each rerun costs one from the budget: a new blame leaves its chunk out, a repeat blame (dask's
+    can be unfair) lowers the budget. Past it this raises :class:`TooManyFailedChunksError` instead
+    of running again. Raises ``err`` when there is no such rerun: the plan is not skipping, the
+    worker held no chunk of the plan, or a pull stream cannot be replayed.
     """
-    label = getattr(err, "partition", "")
-    parts = {chunk_label(t.partition): t.partition for t in getattr(plan, "tasks", ())}
     if (
         not isinstance(plan, Plan)
         or not isinstance(plan.process, _SkipProcess)
         or plan.next_tasks is not None
-        or label not in parts
     ):
         raise err
+    label = getattr(err, "partition", "")
+    parts = {chunk_label(t.partition): t.partition for t in plan.tasks}
+    if label not in parts:
+        raise err
     process = plan.process
+    combine = cast("_SkipCombine[Any]", plan.combine)  # skipping wraps both
+    budget = combine.budget - (label in process.lost)
     lost = {**process.lost, label: err}
-    if process.reruns >= ((plan.stop.max_errors or 0) if plan.stop else 0):  # skipping set it
+    if len(lost) > budget:
         failed = (
             FailedChunk(k, f"{type(e).__name__}: {e}", dead_letter_descriptor(k, parts[k], e))
             for k, e in lost.items()
         )
         raise TooManyFailedChunksError(_by_label(failed)) from err
-    return replace(plan, process=replace(process, lost=lost, reruns=process.reruns + 1))
+    return replace(
+        plan,
+        process=replace(process, lost=lost),
+        combine=replace(combine, budget=budget),
+        stop=replace(plan.stop or StopCondition(), max_errors=budget),
+    )
 
 
 def _stage_processes(plan: DurablePlanV2) -> tuple[Any, ...]:
