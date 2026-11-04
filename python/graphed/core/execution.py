@@ -334,6 +334,12 @@ class _Partial(Generic[R]):
     failed: tuple[FailedChunk, ...] = ()
 
 
+def _failed_chunk(label: str, partition: Partition, error: BaseException) -> FailedChunk:
+    return FailedChunk(
+        label, f"{type(error).__name__}: {error}", dead_letter_descriptor(label, partition, error)
+    )
+
+
 def _by_label(failed: Iterable[FailedChunk]) -> tuple[FailedChunk, ...]:
     return tuple(sorted(failed, key=lambda f: f.partition))
 
@@ -354,13 +360,7 @@ class _SkipProcess(Generic[R]):
                 return _Partial(self.process(partition, resources))
             except Exception as exc:  # an interrupt or exit stops the run; it is not a dead letter
                 error = exc
-        label = chunk_label(partition)
-        failed = FailedChunk(
-            label,
-            f"{type(error).__name__}: {error}",
-            dead_letter_descriptor(label, partition, error),
-        )
-        return _Partial(self.empty(), (failed,))
+        return _Partial(self.empty(), (_failed_chunk(chunk_label(partition), partition, error),))
 
     def bind_services(self, endpoints: Mapping[str, str]) -> _SkipProcess[R]:
         """Bind ``endpoints`` into the wrapped process."""
@@ -577,16 +577,13 @@ def without_lost(plan: Plan[Any] | DurablePlanV2, err: BaseException) -> Plan[An
     budget = combine.budget - (label in process.lost)
     lost = {**process.lost, label: err}
     if len(lost) > budget:
-        failed = (
-            FailedChunk(k, f"{type(e).__name__}: {e}", dead_letter_descriptor(k, parts[k], e))
-            for k, e in lost.items()
-        )
+        failed = (_failed_chunk(k, parts[k], e) for k, e in lost.items())
         raise TooManyFailedChunksError(_by_label(failed)) from err
     return replace(
         plan,
         process=replace(process, lost=lost),
         combine=replace(combine, budget=budget),
-        stop=replace(plan.stop or StopCondition(), max_errors=budget),
+        stop=replace(cast("StopCondition", plan.stop), max_errors=budget),
     )
 
 

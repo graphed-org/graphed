@@ -188,8 +188,14 @@ def test_a_repeat_blame_reruns_within_the_budget() -> None:
     assert res.value == (1 << N) - 1 - (1 << 1)
 
 
-@pytest.mark.parametrize("blames", [(1, 2, 3, 4), (1, 1, 1, 1)], ids=["new", "repeat"])
-def test_a_loss_past_the_budget_raises_without_another_run(blames: tuple[int, ...]) -> None:
+@pytest.mark.parametrize(
+    ("blames", "message"),
+    [((1, 2, 3, 4), "4 chunks failed:"), ((1, 1, 1, 1), "1 chunk failed:")],
+    ids=["new", "repeat"],
+)
+def test_a_loss_past_the_budget_raises_without_another_run(
+    blames: tuple[int, ...], message: str
+) -> None:
     plan = _skipping()  # budget 3
     for i in blames[:-1]:
         plan = without_lost(plan, LostError(label(i)))
@@ -197,7 +203,7 @@ def test_a_loss_past_the_budget_raises_without_another_run(blames: tuple[int, ..
         without_lost(plan, LostError(label(blames[-1])))
     assert [f.partition for f in info.value.failed] == sorted({label(i) for i in blames})
     assert info.value.failed[0].error == f"LostError: {label(1)}"
-    assert str(info.value).startswith(f"{len(set(blames))} chunk{'s' * (len(set(blames)) > 1)} ")
+    assert str(info.value).startswith(message)
 
 
 def test_a_repeat_blame_leaves_the_rerun_less_budget() -> None:
