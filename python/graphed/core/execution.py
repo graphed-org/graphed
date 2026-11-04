@@ -345,6 +345,7 @@ class _SkipProcess(Generic[R]):
     process: Callable[[Partition, WorkerResources], R]
     empty: Callable[[], R]
     lost: Mapping[str, BaseException] = field(default_factory=dict)
+    reruns: int = 0  # lost-worker reruns so far, each one against the budget
 
     def __call__(self, partition: Partition, resources: WorkerResources) -> _Partial[R]:
         """Return the chunk's partial, or an empty one naming why there is none."""
@@ -557,20 +558,29 @@ def skipping(plan: Plan[Any] | DurablePlanV2, skip_failed: int = 0) -> Plan[Any]
 def without_lost(plan: Plan[Any] | DurablePlanV2, err: BaseException) -> Plan[Any]:
     """Return a skipping ``plan`` for a rerun with lost-worker ``err``'s chunk failed.
 
-    Raises ``err`` when there is no such rerun: the plan is not skipping, the worker held no chunk
-    of the plan, or a pull stream cannot be replayed.
+    Each rerun counts one against the budget, a repeat blame (dask's can be unfair) included;
+    past it this raises :class:`TooManyFailedChunksError` instead of running again. Raises ``err``
+    when there is no such rerun: the plan is not skipping, the worker held no chunk of the plan,
+    or a pull stream cannot be replayed.
     """
     label = getattr(err, "partition", "")
+    parts = {chunk_label(t.partition): t.partition for t in getattr(plan, "tasks", ())}
     if (
         not isinstance(plan, Plan)
         or not isinstance(plan.process, _SkipProcess)
         or plan.next_tasks is not None
-        or label in plan.process.lost
-        or all(chunk_label(t.partition) != label for t in plan.tasks)
+        or label not in parts
     ):
         raise err
     process = plan.process
-    return replace(plan, process=replace(process, lost={**process.lost, label: err}))
+    lost = {**process.lost, label: err}
+    if process.reruns >= ((plan.stop.max_errors or 0) if plan.stop else 0):  # skipping set it
+        failed = (
+            FailedChunk(k, f"{type(e).__name__}: {e}", dead_letter_descriptor(k, parts[k], e))
+            for k, e in lost.items()
+        )
+        raise TooManyFailedChunksError(_by_label(failed)) from err
+    return replace(plan, process=replace(process, lost=lost, reruns=process.reruns + 1))
 
 
 def _stage_processes(plan: DurablePlanV2) -> tuple[Any, ...]:

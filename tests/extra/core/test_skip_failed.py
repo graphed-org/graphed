@@ -180,10 +180,23 @@ def test_a_loss_outside_any_chunk_raises() -> None:
         without_lost(_skipping(), LostError("no chunk (a combine, or idle)"))
 
 
-def test_the_same_chunk_lost_twice_raises() -> None:
+def test_a_repeat_blame_reruns_within_the_budget() -> None:
     once = without_lost(_skipping(), LostError(label(1)))
-    with pytest.raises(LostError):
-        without_lost(once, LostError(label(1)))
+    with pytest.warns(UserWarning, match="1 failed"):
+        res = SequentialRunner().run(without_lost(once, LostError(label(1))))
+    assert [f.partition for f in res.failed] == [label(1)]
+    assert res.value == (1 << N) - 1 - (1 << 1)
+
+
+@pytest.mark.parametrize("blames", [(1, 2, 3, 4), (1, 1, 1, 1)], ids=["new", "repeat"])
+def test_a_loss_past_the_budget_raises_without_another_run(blames: tuple[int, ...]) -> None:
+    plan = _skipping()  # budget 3
+    for i in blames[:-1]:
+        plan = without_lost(plan, LostError(label(i)))
+    with pytest.raises(TooManyFailedChunksError) as info:
+        without_lost(plan, LostError(label(blames[-1])))
+    assert [f.partition for f in info.value.failed] == sorted({label(i) for i in blames})
+    assert info.value.failed[0].error == f"LostError: {label(1)}"
 
 
 class Bound:
