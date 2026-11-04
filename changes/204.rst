@@ -1,0 +1,6 @@
+.. under: ``SequentialRunner`` stands in for the pooled runners
+
+* Under ``skip_failed``, each lost-worker rerun costs one from the budget, a repeat blame
+  included, so dask blaming a dead worker again on a chunk already left out no longer ends the run
+  with budget left. A loss past the budget raises ``TooManyFailedChunksError`` without one more
+  full rerun.
