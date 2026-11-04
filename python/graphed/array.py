@@ -258,6 +258,15 @@ def scalar_params(
     return {key: _as_param(item), dtype_key: str(dtype)}
 
 
+#: the widest type or source text a repr shows
+_REPR_WIDTH = 120
+
+
+def _clip(text: str) -> str:
+    """Cut `text` to the repr's width: a whole event record's type runs to thousands of fields."""
+    return text if len(text) <= _REPR_WIDTH else f"{text[: _REPR_WIDTH - 3]}..."
+
+
 #: the one rule: nothing evaluates implicitly, and every conversion names the two explicit choices
 NEEDS_VALUES = (
     "needs values, and a deferred array has none until it runs: evaluate it with "
@@ -714,8 +723,19 @@ class Array(EagerRefusals):
         return _repartition(self, n=n, target_bytes=target_bytes)
 
     def __repr__(self) -> str:
-        """Show the node id this proxy stands for."""
-        return f"Array(node_id={self._node_id})"
+        """Show this array's type and the sources it reads; nothing is read or recorded."""
+        session = self._session
+        sources = sorted(map(session.source_name, session.reachable_sources(self._node_id)))
+        shown = ", ".join(map(repr, sources))
+        return f"graphed.Array<{_clip(session.form(self).describe())}, from {_clip(shown)}>"
+
+    def __dir__(self) -> list[str]:
+        """List the attributes, with the fields and behaviors the backend names for this form."""
+        names = getattr(self._session.backend, "attribute_names", None)
+        extra = () if names is None else names(self._session.form(self))
+        # `__getattr__` refuses a leading underscore, and `arr.<name>` needs an identifier
+        reachable = (name for name in extra if name.isidentifier() and name[0] != "_")
+        return sorted({*super().__dir__(), *reachable})
 
 
 # ---- the two §2.3e slots, for the systematics layers ---------------------------------------
@@ -793,8 +813,11 @@ class BoundMethod:
         self._name = name
 
     def __repr__(self) -> str:
-        """Show the method name and its receiver."""
-        return f"BoundMethod({self._name!r} of {self._receiver!r})"
+        """Show the method name and its receiver: the node for an array, else the container."""
+        receiver = self._receiver
+        array = isinstance(receiver, Array)
+        shown = f"Array(node_id={receiver.node_id})" if array else repr(receiver)
+        return f"BoundMethod({self._name!r} of {shown})"
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """Record the method call, mapped over the label union when an operand is varied."""

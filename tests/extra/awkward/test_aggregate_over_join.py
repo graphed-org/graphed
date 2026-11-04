@@ -172,11 +172,12 @@ def test_a_refused_plan_leaves_on_compiled_unfired(tmp_path: Path) -> None:
     ("kwargs", "name"),
     [
         ({"partitions": ()}, "partitions="),
+        ({"events_per_task": 10}, "events_per_task="),
         ({"store": "somewhere"}, "store="),
         ({"read_by": ()}, "read_by="),
         ({"opt_level": 0}, "opt_level=0"),
     ],
-    ids=["partitions", "store", "read_by", "opt_level"],
+    ids=["partitions", "events_per_task", "store", "read_by", "opt_level"],
 )
 def test_what_a_join_stage_cannot_do_is_refused(
     tmp_path: Path, kwargs: dict[str, Any], name: str
