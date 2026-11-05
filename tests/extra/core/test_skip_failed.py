@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import dataclasses
+import gc
 import json
 import operator
 import pickle
+import weakref
 from collections.abc import Mapping
 from typing import Any
 
@@ -30,7 +32,7 @@ from graphed.core import (
     skipping,
     without_lost,
 )
-from graphed.core.execution import _Partial, _SkipCombine
+from graphed.core.execution import _Partial, _SkipCombine, _SkipProcess
 from graphed.services import resolve_services
 
 N = 20
@@ -155,6 +157,17 @@ def test_a_lost_chunk_fails_on_the_rerun_and_keeps_the_tree() -> None:
     assert res.value == (1 << N) - 1 - (1 << 4)
     assert res.n_partitions == N
     assert [f.error for f in res.failed] == [f"LostError: {label(4)}"]
+
+
+def test_a_rerun_plan_keeps_no_reference_to_the_loss() -> None:
+    err = LostError(label(4))
+    lost = weakref.ref(err)
+    rerun = without_lost(_skipping(), err)
+    del err
+    gc.collect()
+    assert lost() is None
+    assert isinstance(rerun.process, _SkipProcess)
+    assert [f.error for f in rerun.process.lost.values()] == [f"LostError: {label(4)}"]
 
 
 def test_a_second_lost_chunk_adds_to_the_first() -> None:
