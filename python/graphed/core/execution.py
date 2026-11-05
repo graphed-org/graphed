@@ -350,17 +350,18 @@ class _SkipProcess(Generic[R]):
 
     process: Callable[[Partition, WorkerResources], R]
     empty: Callable[[], R]
-    lost: Mapping[str, BaseException] = field(default_factory=dict)
+    # records, not errors: a lost worker's error holds its run's frames, and with them its futures
+    lost: Mapping[str, FailedChunk] = field(default_factory=dict)
 
     def __call__(self, partition: Partition, resources: WorkerResources) -> _Partial[R]:
         """Return the chunk's partial, or an empty one naming why there is none."""
-        error = self.lost.get(chunk_label(partition)) if self.lost else None
-        if error is None:
+        failed = self.lost.get(chunk_label(partition)) if self.lost else None
+        if failed is None:
             try:
                 return _Partial(self.process(partition, resources))
             except Exception as exc:  # an interrupt or exit stops the run; it is not a dead letter
-                error = exc
-        return _Partial(self.empty(), (_failed_chunk(chunk_label(partition), partition, error),))
+                failed = _failed_chunk(chunk_label(partition), partition, exc)
+        return _Partial(self.empty(), (failed,))
 
     def bind_services(self, endpoints: Mapping[str, str]) -> _SkipProcess[R]:
         """Bind ``endpoints`` into the wrapped process."""
@@ -575,10 +576,9 @@ def without_lost(plan: Plan[Any] | DurablePlanV2, err: BaseException) -> Plan[An
     process = plan.process
     combine = cast("_SkipCombine[Any]", plan.combine)  # skipping wraps both
     budget = combine.budget - (label in process.lost)
-    lost = {**process.lost, label: err}
+    lost = {**process.lost, label: _failed_chunk(label, parts[label], err)}
     if len(lost) > budget:
-        failed = (_failed_chunk(k, parts[k], e) for k, e in lost.items())
-        raise TooManyFailedChunksError(_by_label(failed)) from err
+        raise TooManyFailedChunksError(_by_label(lost.values())) from err
     return replace(
         plan,
         process=replace(process, lost=lost),
