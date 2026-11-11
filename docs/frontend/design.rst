@@ -278,7 +278,7 @@ Prints::
     ('nominal', 'jes_up', 'jes_down')
     [10. 20. 30.]
     [10.5 21.  31.5]
-    GraphedError graphed.compile_ir does not accept a Varied output; pass one universe with graphed.universe(v, label), or build the varied plan through the histogram group API
+    GraphedError graphed.compile_ir does not accept a Varied output; pass one universe with graphed.systematics.universe(v, label), or build the varied plan through the histogram group API
 
 ``vary`` returns a :class:`~graphed.Varied`: a handle that behaves like the value you varied but
 carries a labelled family — ``"nominal"`` plus one universe per tag. It never mutates anything, so

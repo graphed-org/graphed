@@ -87,6 +87,19 @@ def test_explain_variations_refuses_what_is_not_a_context() -> None:
 
 
 @pytest.mark.parametrize(
+    ("read", "reads"),
+    [
+        (graphed.systematics.selection, "derivation mask"),
+        (graphed.systematics.weight, "ambient weight registry"),
+        (graphed.systematics.variations, "registered variations"),
+    ],
+)
+def test_context_readers_refuse_what_is_not_a_context(read: Any, reads: str) -> None:
+    with pytest.raises(GraphedError, match=f"{read.__name__} reads an event context's {reads}"):
+        read(_events())
+
+
+@pytest.mark.parametrize(
     ("read", "message"),
     [
         (lambda ev: ev.MET_ptt, "no field named 'MET_ptt' (did you mean 'MET_pt'?)"),

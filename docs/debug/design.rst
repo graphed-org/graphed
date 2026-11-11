@@ -684,7 +684,8 @@ plan (a join or a repartition) emits no task events, so its bar shows no tasks.
 For anything else, a log line per task or a metrics push, subclass ``graphed.core.MonitorBase`` and
 override what you need. Per task you get exactly one ``SUBMITTED``, then one ``STARTED``, then
 exactly one of ``FINISHED`` or ``ERRORED`` — except that a task a cancel kept from starting stops
-at ``SUBMITTED``, and that a backend retrying a task repeats the last two for each attempt.
+at ``SUBMITTED``, that a backend retrying a task repeats the last two for each attempt, and that a
+rerun after a lost worker repeats tasks' events from ``SUBMITTED`` on, so count by ``event.key``.
 ``on_run_start(n_tasks)`` and ``on_run_end()`` bracket the run.
 
 .. code-block:: python

@@ -783,9 +783,11 @@ class TaskEvent:
     object; ``partition`` is a human label. Per task the contract is exactly one ``SUBMITTED``,
     then one ``STARTED``, then exactly one of ``FINISHED`` | ``ERRORED`` — except that a task a
     :class:`RunControl` cancel kept from starting ends at its ``SUBMITTED``, and that a backend
-    retrying a task repeats ``STARTED`` and the terminal event for each attempt. For a monitor that
-    opts into lean events (:func:`lean_events`) the sequence is ``SUBMITTED``, then ``FINISHED`` |
-    ``ERRORED`` with an empty ``partition``: only the driver's ``SUBMITTED`` carries the label.
+    retrying a task repeats ``STARTED`` and the terminal event for each attempt, and that a rerun
+    after a lost worker repeats tasks' events from ``SUBMITTED`` on inside the same run. For a
+    monitor that opts into lean events (:func:`lean_events`) the sequence is ``SUBMITTED``, then
+    ``FINISHED`` | ``ERRORED`` with an empty ``partition``: only the driver's ``SUBMITTED`` carries
+    the label.
     """
 
     phase: TaskPhase

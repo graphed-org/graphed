@@ -183,9 +183,9 @@ def test_the_compile_and_aggregate_verbs_refuse_naming_graphed_universe() -> Non
         "combine": lambda a, b: a,
         "empty": list,
     }
-    with pytest.raises(GraphedError, match=r"graphed\.universe"):
+    with pytest.raises(GraphedError, match=r"graphed\.(systematics\.)?universe"):
         graphed.compile_ir(session, varied)
-    with pytest.raises(GraphedError, match=r"graphed\.universe"):
+    with pytest.raises(GraphedError, match=r"graphed\.(systematics\.)?universe"):
         graphed.aggregate_plan(varied, **reducer)
     assert graphed.compile_ir(session, x * 2.0).ir  # plain-Array positive controls
     plan = graphed.aggregate_plan(x * 2.0, **reducer)
