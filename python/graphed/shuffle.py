@@ -411,8 +411,9 @@ def join_plan(
     ``reduce`` stage folds the dests; without them the plan's value is the tuple of per-dest
     outputs. The recorded ``broadcast`` routing field is the block engines' choice; a plan always
     hash-routes both sides. ``steps_per_file`` splits each source's files as in ``aggregate_plan``
-    and, absent a repartition, is also the dest count (1 when ``None``). A positional join routes
-    no key: dest i pairs block i of each side, so the dest count is their partition count.
+    and, absent a repartition, the larger side's steps per file is the dest count. A positional
+    join routes no key: dest i pairs block i of each side, so the dest count is their partition
+    count.
 
     Several ``outputs`` need the fold: ``reduce`` gets their values, as in ``aggregate_plan``.
     """
@@ -541,8 +542,9 @@ def _build(
     factory = worker_backend(session, backend)
     wired = external_evaluators(session, compiled) | dict(externals or {})
     frames = compiled.correspondence.frames
-    side_parts = [data.partitions(steps_for(data, steps_per_file)) for _, _, data in sides]
-    count = 1 if steps_per_file is None else steps_per_file
+    steps = [steps_for(data, steps_per_file) for _, _, data in sides]
+    side_parts = [data.partitions(n) for n, (_, _, data) in zip(steps, sides, strict=True)]
+    count = max(steps)
     if params.get("how") == "positional":
         # block i pairs with block i, and a differing row count in one is refused when it runs
         count, right_count = map(len, side_parts)

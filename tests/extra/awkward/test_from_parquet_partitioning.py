@@ -86,6 +86,33 @@ def test_open_files_plans_exact_entry_ranges(files: list[str]) -> None:
     assert SequentialRunner().run(plan).value == _total(files)
 
 
+def _dests(plan: graphed.core.DurablePlanV2) -> list[int]:
+    return [len(stage.tasks) for stage in plan.stages]
+
+
+def test_the_readers_steps_count_a_shuffles_dests_as_a_plans_own_do(files: list[str]) -> None:
+    def plan(reader_steps: int, **kwargs: Any) -> graphed.core.DurablePlanV2:
+        events = from_parquet(Session(AwkwardBackend()), "ev", files, steps_per_file=reader_steps)
+        return graphed.shuffle_plan(
+            graphed.repartition(events, by="x").x,
+            reduce=lambda values: float(sum(ak.sum(v) for v in values)),
+            combine=lambda a, b: a + b,
+            empty=lambda: 0.0,
+            **kwargs,
+        )
+
+    assert _dests(plan(3)) == _dests(plan(1, steps_per_file=3)) == [6, 3, 1]
+    assert SequentialRunner().run(plan(3)).value == _total(files)
+
+
+def test_a_join_has_as_many_dests_as_its_larger_sides_steps(files: list[str]) -> None:
+    session = Session(AwkwardBackend())
+    left = from_parquet(session, "left", files[:1])
+    right = from_parquet(session, "right", files, steps_per_file=3)
+    plan = graphed.join_plan(graphed.join(left, right, on=["x"]).x)
+    assert _dests(plan) == [1, 6, 3]
+
+
 def test_a_plans_own_steps_per_file_wins(files: list[str]) -> None:
     events = from_parquet(Session(AwkwardBackend()), "ev", files, steps_per_file=3)
     plan = _sum_plan(events, steps_per_file=2)
