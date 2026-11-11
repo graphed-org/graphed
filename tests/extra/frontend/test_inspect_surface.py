@@ -75,7 +75,9 @@ def test_the_source_id_form_still_answers_for_one_source() -> None:
 def test_explain_is_a_deprecated_alias_of_explain_variations() -> None:
     session = Session(AwkwardBackend())
     ctx = graphed.awkward.gnano.events(from_awkward("Events", EVENTS, session=session))
-    assert str(graphed.explain_variations(ctx)).startswith("graphed.explain_variations: 0")
+    assert str(graphed.explain_variations(ctx)).startswith(
+        "graphed.systematics.explain_variations: 0"
+    )
     with pytest.warns(DeprecationWarning, match="use graphed.systematics.explain_variations"):
         assert graphed.explain(ctx) == graphed.explain_variations(ctx)
 

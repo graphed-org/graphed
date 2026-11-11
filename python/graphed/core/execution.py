@@ -778,7 +778,7 @@ class TaskPhase(StrEnum):
 class TaskEvent:
     """A passive, display-only record of one task's lifecycle transition.
 
-    Carries no un-picklable objects — it crosses a process boundary from a ``ProcessExecutor``
+    Carries no un-picklable objects — it crosses a process boundary from a ``ProcessPoolExecutor``
     worker back to the driver. ``error`` is a pre-rendered summary string, never an exception
     object; ``partition`` is a human label. Per task the contract is exactly one ``SUBMITTED``,
     then one ``STARTED``, then exactly one of ``FINISHED`` | ``ERRORED`` — except that a task a

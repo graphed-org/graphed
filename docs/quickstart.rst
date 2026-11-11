@@ -151,7 +151,7 @@ Here is the same analysis on a process pool — the only differences are the run
             ak.to_parquet(chunk, os.path.join(data_dir, f"part-{i}.parquet"))
 
         plan = build_plan(data_dir)
-        result = gh.unpack(ProcessPoolExecutor(max_workers=2).run(plan).value)
+        result = gh.unpack(ProcessPoolExecutor(workers=2).run(plan).value)
         for label, hist in result["lead_pt"].items():
             print(label, hist.view(), hist.sum())
 
