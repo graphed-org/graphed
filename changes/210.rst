@@ -1,0 +1,15 @@
+.. under: 0.0.11 (unreleased)
+
+A smaller top level
+~~~~~~~~~~~~~~~~~~~
+
+* ``graphed.__all__`` now lists the user verbs only. The verbs that read a variation back
+  (``labels``, ``universe``, ``nominal``, ``weight``, ``points``, ``variations``,
+  ``explain_variations``, ``Kind``, …) live in ``graphed.systematics``; the provenance toggles
+  (``set_enabled``, ``is_enabled``, ``capture``, ``Provenance``) in ``graphed.provenance``; the
+  projection types in ``graphed.projection``; ``Backend``, ``Form`` and ``ParamValue`` in
+  ``graphed.backend``. The old top-level names still work and raise a ``DeprecationWarning``
+  naming the new path.
+* ``dir()`` of ``graphed``, ``graphed.numpy``, ``graphed.core``, ``graphed.awkward``,
+  ``graphed.debug`` and ``graphed.checkpoint`` lists their public names only.
+* ``graphed.new_session()`` returns the Session it installs (``None`` when it clears the default).
