@@ -115,6 +115,8 @@ def test_an_entry_point_carries_an_example_that_runs(name: str) -> None:
     obj = inspect.unwrap(ENTRY_POINTS[name])
     tests = doctest.DocTestFinder(recurse=False).find(obj, name, globs={})
     assert sum(len(test.examples) for test in tests) > 0
+    if "parquet" in (obj.__doc__ or ""):
+        pytest.importorskip("pyarrow")  # no win_arm64 wheel
     runner = doctest.DocTestRunner(optionflags=doctest.ELLIPSIS | doctest.NORMALIZE_WHITESPACE)
     for test in tests:
         runner.run(test)
