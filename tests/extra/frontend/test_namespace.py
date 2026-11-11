@@ -71,14 +71,8 @@ def test_the_top_level_lists_the_user_surface() -> None:
     assert all(hasattr(graphed, name) for name in PUBLIC)
 
 
-def test_dir_is_the_public_names_and_the_homes_of_the_moved_ones() -> None:
-    homes = ["core", "errors", "provenance", "systematics"]
-    assert dir(graphed) == sorted([*PUBLIC, *homes])
-    assert all(hasattr(graphed, name) for name in homes)
-
-
-@pytest.mark.parametrize("package", PACKAGES[1:])
-def test_a_subpackage_dir_is_its_public_names(package: str) -> None:
+@pytest.mark.parametrize("package", PACKAGES)
+def test_dir_is_the_public_names(package: str) -> None:
     module = importlib.import_module(package)
     assert dir(module) == sorted(module.__all__)
     assert module.__dir__() is not module.__all__

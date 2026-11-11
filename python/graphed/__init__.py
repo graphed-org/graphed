@@ -38,51 +38,21 @@ from .vary import vary
 
 #: Names that left the top level in 0.0.11, mapped to their home; each still resolves here, with a
 #: DeprecationWarning.
-_MOVED: dict[str, str] = {
-    **dict.fromkeys(
-        (
-            "Explanation",
-            "Kind",
-            "broadcast_like",
-            "context_of",
-            "explain",
-            "explain_variations",
-            "impact_by_label",
-            "labels",
-            "member_of",
-            "nominal",
-            "points",
-            "read_columns_by_label",
-            "reindex_to",
-            "selection",
-            "unify_contexts",
-            "universe",
-            "variations",
-            "weight",
-        ),
-        "graphed.systematics",
-    ),
-    "broadcasting": "graphed.systematics.varied",
-    "expanding": "graphed.systematics.varied",
-    **dict.fromkeys(("Provenance", "capture", "is_enabled", "set_enabled"), "graphed.provenance"),
-    **dict.fromkeys(
-        (
-            "CONSERVATIVE",
-            "BufferNeed",
-            "BufferProjection",
-            "OnFail",
-            "Projection",
-            "ProjectionError",
-            "handle_opaque",
-        ),
-        "graphed.projection",
-    ),
-    **dict.fromkeys(("Backend", "Form", "ParamValue"), "graphed.backend"),
-    **dict.fromkeys(("CompiledGraph", "refuse_chunk_partials"), "graphed.execute"),
-    "resolve_backend": "graphed.aggregate",
-    "BoundMethod": "graphed.array",
-    "pack_key": "graphed.shuffle",
+_HOMES = {
+    "graphed.systematics": "Explanation Kind broadcast_like context_of explain explain_variations "
+    "impact_by_label labels member_of nominal points read_columns_by_label reindex_to selection "
+    "unify_contexts universe variations weight",
+    "graphed.systematics.varied": "broadcasting expanding",
+    "graphed.provenance": "Provenance capture is_enabled set_enabled",
+    "graphed.projection": "CONSERVATIVE BufferNeed BufferProjection OnFail Projection "
+    "ProjectionError handle_opaque",
+    "graphed.backend": "Backend Form ParamValue",
+    "graphed.execute": "CompiledGraph refuse_chunk_partials",
+    "graphed.aggregate": "resolve_backend",
+    "graphed.array": "BoundMethod",
+    "graphed.shuffle": "pack_key",
 }
+_MOVED = {name: home for home, names in _HOMES.items() for name in names.split()}
 
 if TYPE_CHECKING:
     from .aggregate import resolve_backend as resolve_backend
@@ -147,8 +117,7 @@ def __getattr__(name: str) -> object:
 
 
 def __dir__() -> list[str]:
-    # the subpackages the moved names live in, loaded by `import graphed`
-    return [*__all__, "core", "errors", "provenance", "systematics"]
+    return list(__all__)
 
 
 #: How each public `Array`-consuming module verb treats a `Varied` container: expand it per label,
