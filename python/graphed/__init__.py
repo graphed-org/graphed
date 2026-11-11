@@ -37,7 +37,7 @@ from .varied import Varied, expand
 from .vary import vary
 
 #: Names that left the top level in 0.0.11, mapped to their home; each still resolves here, with a
-#: DeprecationWarning, until 0.0.12.
+#: DeprecationWarning.
 _MOVED: dict[str, str] = {
     **dict.fromkeys(
         (
@@ -87,101 +87,51 @@ _MOVED: dict[str, str] = {
 if TYPE_CHECKING:
     from .aggregate import resolve_backend as resolve_backend
     from .array import BoundMethod as BoundMethod
-    from .backend import Backend as Backend
-    from .backend import Form as Form
-    from .backend import ParamValue as ParamValue
-    from .execute import CompiledGraph as CompiledGraph
-    from .execute import refuse_chunk_partials as refuse_chunk_partials
-    from .projection import (
+    from .backend import Backend as Backend, Form as Form, ParamValue as ParamValue  # isort: skip
+    from .execute import (  # isort: skip
+        CompiledGraph as CompiledGraph,
+        refuse_chunk_partials as refuse_chunk_partials,
+    )
+    from .projection import (  # isort: skip
         CONSERVATIVE as CONSERVATIVE,
-    )
-    from .projection import (
         BufferNeed as BufferNeed,
-    )
-    from .projection import (
         BufferProjection as BufferProjection,
-    )
-    from .projection import (
         OnFail as OnFail,
-    )
-    from .projection import (
         Projection as Projection,
-    )
-    from .projection import (
         ProjectionError as ProjectionError,
-    )
-    from .projection import (
         handle_opaque as handle_opaque,
     )
-    from .provenance import (
+    from .provenance import (  # isort: skip
         Provenance as Provenance,
-    )
-    from .provenance import (
         capture as capture,
-    )
-    from .provenance import (
         is_enabled as is_enabled,
-    )
-    from .provenance import (
         set_enabled as set_enabled,
     )
     from .shuffle import pack_key as pack_key
-    from .systematics import (
+    from .systematics import (  # isort: skip
         Explanation as Explanation,
-    )
-    from .systematics import (
         Kind as Kind,
-    )
-    from .systematics import (
         broadcast_like as broadcast_like,
-    )
-    from .systematics import (
         context_of as context_of,
-    )
-    from .systematics import (
         explain as explain,
-    )
-    from .systematics import (
         explain_variations as explain_variations,
-    )
-    from .systematics import (
         impact_by_label as impact_by_label,
-    )
-    from .systematics import (
         labels as labels,
-    )
-    from .systematics import (
         member_of as member_of,
-    )
-    from .systematics import (
         nominal as nominal,
-    )
-    from .systematics import (
         points as points,
-    )
-    from .systematics import (
         read_columns_by_label as read_columns_by_label,
-    )
-    from .systematics import (
         reindex_to as reindex_to,
-    )
-    from .systematics import (
         selection as selection,
-    )
-    from .systematics import (
         unify_contexts as unify_contexts,
-    )
-    from .systematics import (
         universe as universe,
-    )
-    from .systematics import (
         variations as variations,
-    )
-    from .systematics import (
         weight as weight,
     )
-    from .systematics.varied import broadcasting as broadcasting
-    from .systematics.varied import expanding as expanding
+    from .systematics.varied import (  # isort: skip
+        broadcasting as broadcasting,
+        expanding as expanding,
+    )
 
 
 def __getattr__(name: str) -> object:
@@ -189,7 +139,7 @@ def __getattr__(name: str) -> object:
     if home is None:
         raise AttributeError(f"module 'graphed' has no attribute {name!r}")
     warnings.warn(
-        f"graphed.{name} moved to {home}.{name}; the top-level name is removed in 0.0.12",
+        f"graphed.{name} moved to {home}.{name}; the top-level name will be removed",
         DeprecationWarning,
         stacklevel=2,
     )
@@ -197,7 +147,8 @@ def __getattr__(name: str) -> object:
 
 
 def __dir__() -> list[str]:
-    return __all__
+    # the subpackages the moved names live in, loaded by `import graphed`
+    return [*__all__, "core", "errors", "provenance", "systematics"]
 
 
 #: How each public `Array`-consuming module verb treats a `Varied` container: expand it per label,

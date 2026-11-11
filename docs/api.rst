@@ -40,7 +40,7 @@ A backend package implements ``graphed.backend.Backend``, builds its readers on
 ``graphed.session.reader``, which resolves ``session=``, and records a scalar operand's value and
 dtype with ``graphed.array.scalar_params``.
 The names that left the top level in 0.0.11 still resolve there, with a ``DeprecationWarning``
-naming their new home, until 0.0.12.
+naming their new home.
 
 .. autosummary::
    :toctree: generated

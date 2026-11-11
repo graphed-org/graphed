@@ -45,4 +45,4 @@ __version__ = "0.0.10"
 
 
 def __dir__() -> list[str]:
-    return __all__
+    return list(__all__)

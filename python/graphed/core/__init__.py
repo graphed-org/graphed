@@ -111,4 +111,4 @@ __all__ = [
 
 
 def __dir__() -> list[str]:
-    return __all__
+    return list(__all__)
