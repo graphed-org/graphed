@@ -16,6 +16,36 @@ What you get for it:
 - **The recorded plan is a durable artifact**: checkpoint it, resume it after a crash, or
   bundle it so a colleague reproduces your histograms exactly.
 
+## A quick look
+
+Your eager script, with the reader line changed and one `graphed.materialize` call:
+
+```python
+import awkward as ak
+import uproot
+import vector
+
+import graphed
+from hist.graphed import Hist  # the deferred twin of hist.Hist
+
+vector.register_awkward()
+
+events = uproot.graphed("data.root:Events")  # nothing is read yet
+mu = ak.zip(
+    {"pt": events.Muon_pt, "eta": events.Muon_eta, "phi": events.Muon_phi, "mass": events.Muon_mass},
+    with_name="Momentum4D",
+)
+mu = mu[ak.num(mu, axis=1) == 2]
+h = Hist.new.Reg(80, 70, 110, name="mass").Double().fill(mass=(mu[:, 0] + mu[:, 1]).mass)
+
+h = graphed.materialize(h)  # reads only the branches used, returns a hist.Hist
+print(type(h).__name__, h.sum())  # from here on: unchanged hist / scipy / mplhep code
+# Hist 2.0
+```
+
+`uproot.graphed` needs uproot 5.7.7 or later, and `hist.graphed` needs hist 2.12 and
+`graphed-histogram`. Fitting and plotting stay your hist, scipy and matplotlib code.
+
 ## Install
 
 ```bash
