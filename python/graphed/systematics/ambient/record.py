@@ -129,7 +129,7 @@ class AmbientRecord:
     #: §2.1's ORDERED operations: a slot named here holds an OVERLAY, which REPLACES the running
     #: value at its labels instead of multiplying
     overlays: frozenset[int]
-    #: §2.1's record of what a `graphed.weight()` READ handed out: `(the container's member nodes,
+    #: §2.1's record of what a `weight()` READ handed out: `(the container's member nodes,
     #: the live FACTOR slots it composed, their generations)`. Keyed by the whole member map, since
     #: a join leaves the nominal node untouched. SHARED down a `vary` link (one row space),
     #: replaced by a row-space change.

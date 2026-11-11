@@ -18,8 +18,9 @@ import numpy as np
 import numpy.typing as npt
 
 import graphed
-from graphed import Array, ParamValue
+from graphed import Array
 from graphed.array import scalar_params
+from graphed.backend import ParamValue
 from graphed.errors import DeferredTypeError, GraphedError, GraphedTypeError
 from graphed.provenance import capture
 from graphed.shuffle import JOINKEY, route_key

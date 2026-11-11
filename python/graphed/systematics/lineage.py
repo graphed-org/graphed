@@ -107,7 +107,7 @@ def selection(ctx: ContextNode) -> Any:
 
     It skips `vary` identity links, answering as of the first non-identity link: `None` at a root
     or across a projection, which is one label's unvaried member and contributes no labels. Not
-    §9.1's `graphed.selection`, whose projection case answers with the parent's selection.
+    §9.1's `selection`, whose projection case answers with the parent's selection.
     """
     node: ContextNode | None = ctx
     while node is not None and node._link is not None:

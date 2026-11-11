@@ -29,12 +29,18 @@ runs its stages.
 ``current_session`` is the Session a read with no array input records into: the innermost
 ``with session:`` scope, else a default made on first use; ``new_session``, ``set_session`` and
 ``set_default_backend`` replace the default or choose its backend.
-``vary`` declares a systematic variation, and ``labels`` / ``nominal`` / ``universe`` /
-``variations`` read the results back (each tag's ``Kind``, a flag, beside its ordering). ``join``, ``repartition``, ``join_plan`` and
-``shuffle_plan`` move rows between partitions; ``read_columns`` and ``impact_by_label`` tell you
-what a recording will actually read off disk.
-A backend package builds its readers on ``graphed.session.reader``, which resolves ``session=``,
-and records a scalar operand's value and dtype with ``graphed.array.scalar_params``.
+``vary`` declares a systematic variation; ``graphed.systematics`` reads the results back:
+``labels`` / ``nominal`` / ``universe`` / ``variations`` (each tag's ``Kind``, a flag, beside its
+ordering), ``weight``, ``points`` and ``explain_variations``. ``join``, ``repartition``,
+``join_plan`` and ``shuffle_plan`` move rows between partitions; ``read_columns`` and
+``graphed.systematics.impact_by_label`` tell you what a recording will actually read off disk, and
+``graphed.projection`` holds the types they answer with.
+``graphed.provenance.set_enabled`` turns source-line capture off and on.
+A backend package implements ``graphed.backend.Backend``, builds its readers on
+``graphed.session.reader``, which resolves ``session=``, and records a scalar operand's value and
+dtype with ``graphed.array.scalar_params``.
+The names that left the top level in 0.0.11 still resolve there, with a ``DeprecationWarning``
+naming their new home, until 0.0.12.
 
 .. autosummary::
    :toctree: generated

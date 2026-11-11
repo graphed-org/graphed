@@ -255,7 +255,8 @@ most analyses need. A universe displaced on two or more axes at once is register
 .. code-block:: python
 
     import numpy as np
-    from graphed import Session, compile_ir, labels, nominal, universe, vary
+    from graphed import Session, compile_ir, vary
+    from graphed.systematics import labels, nominal, universe
     from graphed.numpy import NumpyBackend, from_array
 
     s = Session(NumpyBackend())
@@ -317,7 +318,8 @@ supplies the NanoEvents-flavoured constructor, ``gnano.events``.
 
     import awkward as ak
     import graphed.awkward as ga
-    from graphed import Session, explain_variations, labels, universe, variations, vary, weight
+    from graphed import Session, vary
+    from graphed.systematics import explain_variations, labels, universe, variations, weight
     from graphed.awkward import AwkwardBackend, from_awkward, gak
 
     events = ak.Array({
@@ -372,7 +374,7 @@ a message naming both spellings, and the hand map stays the spelling for those p
 
 .. code-block:: python
 
-    from graphed import nominal
+    from graphed.systematics import nominal
     from graphed.context import EventContext
 
     def type1_met(met, jets, central):
@@ -403,9 +405,9 @@ that very node and the ``jes_up`` universe's MET is the MET of the ``jes_up`` je
 Two kinds of knob, and the distinction is the one that matters for cost. ``Kind.SHIFT`` changes
 the *values* — a shifted jet collection — so every universe needs its own pass over the data.
 ``Kind.WEIGHT`` changes only the multiplicative factor, so all its universes can share one pass.
-``graphed.Kind`` is a flag, so a tag registered both ways — the weight form by name identity on a
+``graphed.systematics.Kind`` is a flag, so a tag registered both ways — the weight form by name identity on a
 family the shift form already carries — reports the union ``Kind.WEIGHT | Kind.SHIFT``, and a
-consumer asks ``Kind.SHIFT in kind`` rather than matching a word. ``graphed.variations`` reports a
+consumer asks ``Kind.SHIFT in kind`` rather than matching a word. ``graphed.systematics.variations`` reports a
 context's registry as ``{name: {tag: (kind, ordering)}}``; the weight side comes from the
 lineage's registration record, so a cut (``ctx[mask]``) reports exactly what its parent does.
 Numeric tags parse to an ordering value — the σ handle you want for envelope plots — under both
@@ -424,7 +426,7 @@ ambient weight this family varies. graphed compares it by node against what is a
 — never by value, so a re-computed expression with equal values is a different factor — and decides
 one of three things before anything is minted.
 
-The compositions ``graphed.weight(ctx)`` handed out are compared first. A node that is one of them
+The compositions ``graphed.systematics.weight(ctx)`` handed out are compared first. A node that is one of them
 makes the family a **relative delta**: its members already are the whole ambient rescaled, so they
 replace the running product at their own labels instead of multiplying into it — everywhere except
 a universe another family *placed* at a point naming this family's coordinate, where the member
@@ -460,7 +462,7 @@ repeat. A weight central built before the cut names its factor at the child, and
 any number of registrations there: joining one entry re-indexes the whole inherited composition,
 and each entry keeps the identity it had in every row space it came through.
 
-Inside ``graphed.universe(ctx, L)`` the join keeps the universe you projected into, because
+Inside ``graphed.systematics.universe(ctx, L)`` the join keeps the universe you projected into, because
 expanding the inherited composition re-indexes each operation to what the ambient at ``L`` reads of
 it: a factor to its member there, read through its own universes, so a weight computed on
 jes-shifted jets keeps that dependence when ``L`` is the shift's label; a relative-delta family to
@@ -472,10 +474,10 @@ relative-delta family's own universe, an operation that would land among the fac
 was read over is refused — a join of one of them, or a handle read over part of them — because that
 family's member is your node over the old product and nothing re-derives it over a new one. Each
 message names the spellings that work: register the family, or read the handle, at the parent
-before projecting; or read a fresh ``graphed.weight()`` handle at the projection, whose record is
+before projecting; or read a fresh ``graphed.systematics.weight()`` handle at the projection, whose record is
 the projected composition's.
 
-``graphed.explain_variations(ctx)`` is the view of all this. It answers, in one line per item: which families
+``graphed.systematics.explain_variations(ctx)`` is the view of all this. It answers, in one line per item: which families
 you registered, in order, where each was registered and how it entered the ambient — a new factor,
 a join naming the factor's other families, an overlay over the families its handle was read over,
 a shift over its collections, and any universe it placed at a point; what the ambient is made of
@@ -486,7 +488,7 @@ family, the families it *composes* with, which is why no joint universe of those
 the families it *shares* an operation with, whose joint is absent for the opposite reason: they are
 two values of one weight, not a product. All of
 it is read from what the registrations and the operations' riders already say; nothing is decided
-again, and the ambient is read exactly as ``graphed.weight`` reads it. The per-operation view alone
+again, and the ambient is read exactly as ``graphed.systematics.weight`` reads it. The per-operation view alone
 is ``graphed.systematics.ambient_entries(ctx)``.
 
 Two orderings are refused rather than quietly composed, and each message names the order that
@@ -651,7 +653,8 @@ underneath; it takes plain ``Array`` inputs and knows nothing about labels.
     import awkward as ak
     import correctionlib.schemav2 as cs
     import graphed.awkward as ga
-    from graphed import Session, labels, universe, vary
+    from graphed import Session, vary
+    from graphed.systematics import labels, universe
     from graphed.awkward import AwkwardBackend, from_awkward, gak
 
     payload = cs.CorrectionSet(schema_version=2, corrections=[cs.Correction(
@@ -702,7 +705,8 @@ projects each point onto whatever axes each container downstream happens to know
 
     import awkward as ak
     import graphed.awkward as ga
-    from graphed import Session, points, universe, vary, weight
+    from graphed import Session, vary
+    from graphed.systematics import points, universe, weight
     from graphed.awkward import AwkwardBackend, from_awkward, gak
 
     events = ak.Array({
@@ -766,7 +770,7 @@ jets still fans out over ``jes``, whichever of the two registrations comes first
 
 .. code-block:: python
 
-    from graphed import labels, member_of, variations
+    from graphed.systematics import labels, member_of, variations
 
     s   = Session(AwkwardBackend())
     ctx = ga.gnano.events(from_awkward("events", events, session=s))
@@ -805,10 +809,10 @@ Prints::
 The joint's weight is the two-level product — the ``jes`` factor's ``jes_up`` member times ``hf``'s
 cross member, both on the ``jes_up`` jets — which the last line rebuilds by hand.
 
-A joint label is spelled ``<family>_<tag>__<nuisance>_<coordinate>``; ``graphed.points(obj)`` is
+A joint label is spelled ``<family>_<tag>__<nuisance>_<coordinate>``; ``graphed.systematics.points(obj)`` is
 the authoritative coordinate view — label-sorted, each map nuisance-sorted, ``"nominal"`` mapping
 to ``{}`` — and it answers only on record-time shapes (a ``Varied``, an event context), because
-points are not carried on disk. ``graphed.variations`` keeps reporting a point family as a family.
+points are not carried on disk. ``graphed.systematics.variations`` keeps reporting a point family as a family.
 
 Numbers reach numeric tags, and zero is asymmetric
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -825,7 +829,8 @@ silently resolved to nominal:
 .. code-block:: python
 
     import numpy as np
-    from graphed import Session, labels, points, vary
+    from graphed import Session, vary
+    from graphed.systematics import labels, points
     from graphed.numpy import NumpyBackend, from_array
 
     s  = Session(NumpyBackend())
@@ -900,7 +905,8 @@ lists the labels without executing anything.
     import tempfile
 
     import awkward as ak
-    from graphed import Session, labels, vary
+    from graphed import Session, vary
+    from graphed.systematics import labels
     from graphed.awkward import AwkwardBackend, from_awkward, gak
     from graphed.preserve import build_bundle, inspect, reproduce
 
@@ -996,10 +1002,10 @@ Prints::
     ['Jet']
     ['Jet.pt']
 
-:class:`~graphed.Projection` is the column view: which named columns of each source are touched.
+:class:`~graphed.projection.Projection` is the column view: which named columns of each source are touched.
 It is the right answer for "what should I read to get this value", and for a jet-count analysis
 it says *no columns* — true, and useless to a reader, which would either read nothing or give up
-and read everything. :class:`~graphed.BufferProjection` is finer: per column, whether its leaf
+and read everything. :class:`~graphed.projection.BufferProjection` is finer: per column, whether its leaf
 *data* is needed or only its list structure. Counting jets needs the ``Jet`` offsets and none of
 the payload, and a writer can serve that from a counter branch or an index column. Ask for
 columns and you get the coarse view back (``to_projection``); ask for buffers and you get the
@@ -1022,7 +1028,7 @@ Compile once, evaluate anywhere
 -------------------------------
 
 ``compile_ir(session, *outputs)`` reduces the graph *for exactly those outputs* and returns a
-:class:`~graphed.CompiledGraph` — the serialized reduced bytes plus the source names it needs.
+:class:`~graphed.execute.CompiledGraph` — the serialized reduced bytes plus the source names it needs.
 Outputs are a property of the request, not of the session: compiling ``a`` and then ``b`` from one
 session gives two independent single-output artifacts, each byte-identical to what a fresh session
 would have produced, while ``compile_ir(s, a, b)`` carries both and evaluates them in one pass.

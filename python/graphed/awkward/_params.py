@@ -8,8 +8,9 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping, Sequence
 
-from graphed import Array, ParamValue
+from graphed import Array
 from graphed.array import scalar_params
+from graphed.backend import ParamValue
 
 
 def crosses_rows(arr: Array, axis: int | None) -> bool:

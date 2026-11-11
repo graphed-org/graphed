@@ -7,25 +7,12 @@ the user's source line with them; a backend (``graphed.awkward`` for ragged data
 
 from __future__ import annotations
 
-from ._kinds import Kind
-from .accessors import (
-    broadcast_like,
-    context_of,
-    labels,
-    nominal,
-    points,
-    reindex_to,
-    selection,
-    unify_contexts,
-    universe,
-    variations,
-    weight,
-)
-from .aggregate import aggregate_plan, collate, raise_on_floating_point, resolve_backend
-from .array import Array, BoundMethod, apply
-from .backend import Backend, Form, ParamValue
-from .by_label import impact_by_label, read_columns_by_label
-from .context import Explanation, explain, explain_variations
+import importlib
+import warnings
+from typing import TYPE_CHECKING
+
+from .aggregate import aggregate_plan, collate, raise_on_floating_point
+from .array import Array, apply
 from .errors import (
     GraphedError,
     GraphedTypeError,
@@ -34,19 +21,9 @@ from .errors import (
     PointError,
     WorkerLostError,
 )
-from .execute import CompiledGraph, compile_ir, evaluate_ir, refuse_chunk_partials
+from .execute import compile_ir, evaluate_ir
 from .materialization import PlanPieces, head, materialize
-from .projection import (
-    CONSERVATIVE,
-    BufferNeed,
-    BufferProjection,
-    OnFail,
-    Projection,
-    ProjectionError,
-    handle_opaque,
-    read_columns,
-)
-from .provenance import Provenance, capture, is_enabled, set_enabled
+from .projection import read_columns
 from .session import (
     Session,
     current_session,
@@ -54,9 +31,174 @@ from .session import (
     set_default_backend,
     set_session,
 )
-from .shuffle import join, join_plan, pack_key, repartition, shuffle_plan
-from .varied import SURFACE_DISPOSITIONS, Varied, broadcasting, expand, expanding, member_of
+from .shuffle import join, join_plan, repartition, shuffle_plan
+from .varied import SURFACE_DISPOSITIONS as SURFACE_DISPOSITIONS
+from .varied import Varied, expand
 from .vary import vary
+
+#: Names that left the top level in 0.0.11, mapped to their home; each still resolves here, with a
+#: DeprecationWarning, until 0.0.12.
+_MOVED: dict[str, str] = {
+    **dict.fromkeys(
+        (
+            "Explanation",
+            "Kind",
+            "broadcast_like",
+            "context_of",
+            "explain",
+            "explain_variations",
+            "impact_by_label",
+            "labels",
+            "member_of",
+            "nominal",
+            "points",
+            "read_columns_by_label",
+            "reindex_to",
+            "selection",
+            "unify_contexts",
+            "universe",
+            "variations",
+            "weight",
+        ),
+        "graphed.systematics",
+    ),
+    "broadcasting": "graphed.systematics.varied",
+    "expanding": "graphed.systematics.varied",
+    **dict.fromkeys(("Provenance", "capture", "is_enabled", "set_enabled"), "graphed.provenance"),
+    **dict.fromkeys(
+        (
+            "CONSERVATIVE",
+            "BufferNeed",
+            "BufferProjection",
+            "OnFail",
+            "Projection",
+            "ProjectionError",
+            "handle_opaque",
+        ),
+        "graphed.projection",
+    ),
+    **dict.fromkeys(("Backend", "Form", "ParamValue"), "graphed.backend"),
+    **dict.fromkeys(("CompiledGraph", "refuse_chunk_partials"), "graphed.execute"),
+    "resolve_backend": "graphed.aggregate",
+    "BoundMethod": "graphed.array",
+    "pack_key": "graphed.shuffle",
+}
+
+if TYPE_CHECKING:
+    from .aggregate import resolve_backend as resolve_backend
+    from .array import BoundMethod as BoundMethod
+    from .backend import Backend as Backend
+    from .backend import Form as Form
+    from .backend import ParamValue as ParamValue
+    from .execute import CompiledGraph as CompiledGraph
+    from .execute import refuse_chunk_partials as refuse_chunk_partials
+    from .projection import (
+        CONSERVATIVE as CONSERVATIVE,
+    )
+    from .projection import (
+        BufferNeed as BufferNeed,
+    )
+    from .projection import (
+        BufferProjection as BufferProjection,
+    )
+    from .projection import (
+        OnFail as OnFail,
+    )
+    from .projection import (
+        Projection as Projection,
+    )
+    from .projection import (
+        ProjectionError as ProjectionError,
+    )
+    from .projection import (
+        handle_opaque as handle_opaque,
+    )
+    from .provenance import (
+        Provenance as Provenance,
+    )
+    from .provenance import (
+        capture as capture,
+    )
+    from .provenance import (
+        is_enabled as is_enabled,
+    )
+    from .provenance import (
+        set_enabled as set_enabled,
+    )
+    from .shuffle import pack_key as pack_key
+    from .systematics import (
+        Explanation as Explanation,
+    )
+    from .systematics import (
+        Kind as Kind,
+    )
+    from .systematics import (
+        broadcast_like as broadcast_like,
+    )
+    from .systematics import (
+        context_of as context_of,
+    )
+    from .systematics import (
+        explain as explain,
+    )
+    from .systematics import (
+        explain_variations as explain_variations,
+    )
+    from .systematics import (
+        impact_by_label as impact_by_label,
+    )
+    from .systematics import (
+        labels as labels,
+    )
+    from .systematics import (
+        member_of as member_of,
+    )
+    from .systematics import (
+        nominal as nominal,
+    )
+    from .systematics import (
+        points as points,
+    )
+    from .systematics import (
+        read_columns_by_label as read_columns_by_label,
+    )
+    from .systematics import (
+        reindex_to as reindex_to,
+    )
+    from .systematics import (
+        selection as selection,
+    )
+    from .systematics import (
+        unify_contexts as unify_contexts,
+    )
+    from .systematics import (
+        universe as universe,
+    )
+    from .systematics import (
+        variations as variations,
+    )
+    from .systematics import (
+        weight as weight,
+    )
+    from .systematics.varied import broadcasting as broadcasting
+    from .systematics.varied import expanding as expanding
+
+
+def __getattr__(name: str) -> object:
+    home = _MOVED.get(name)
+    if home is None:
+        raise AttributeError(f"module 'graphed' has no attribute {name!r}")
+    warnings.warn(
+        f"graphed.{name} moved to {home}.{name}; the top-level name is removed in 0.0.12",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return getattr(importlib.import_module(home), name)
+
+
+def __dir__() -> list[str]:
+    return __all__
+
 
 #: How each public `Array`-consuming module verb treats a `Varied` container: expand it per label,
 #: broadcast against it, read its metadata eagerly, or refuse it. `vary` is absent by construction
@@ -81,76 +223,35 @@ VERB_DISPOSITIONS: dict[str, str] = {
 }
 
 __all__ = [
-    "CONSERVATIVE",
-    "SURFACE_DISPOSITIONS",
-    "VERB_DISPOSITIONS",
     "Array",
-    "Backend",
-    "BoundMethod",
-    "BufferNeed",
-    "BufferProjection",
-    "CompiledGraph",
-    "Explanation",
-    "Form",
     "GraphedError",
     "GraphedTypeError",
     "GraphedWarning",
-    "Kind",
-    "OnFail",
     "OutputTypeError",
-    "ParamValue",
     "PlanPieces",
     "PointError",
-    "Projection",
-    "ProjectionError",
-    "Provenance",
     "Session",
     "Varied",
     "WorkerLostError",
     "aggregate_plan",
     "apply",
-    "broadcast_like",
-    "broadcasting",
-    "capture",
     "collate",
     "compile_ir",
-    "context_of",
     "current_session",
     "evaluate_ir",
     "expand",
-    "expanding",
-    "explain",
-    "explain_variations",
-    "handle_opaque",
     "head",
-    "impact_by_label",
-    "is_enabled",
     "join",
     "join_plan",
-    "labels",
     "materialize",
-    "member_of",
     "new_session",
-    "nominal",
-    "pack_key",
-    "points",
     "raise_on_floating_point",
     "read_columns",
-    "read_columns_by_label",
-    "refuse_chunk_partials",
-    "reindex_to",
     "repartition",
-    "resolve_backend",
-    "selection",
     "set_default_backend",
-    "set_enabled",
     "set_session",
     "shuffle_plan",
-    "unify_contexts",
-    "universe",
-    "variations",
     "vary",
-    "weight",
 ]
 
 __version__ = "0.0.10"

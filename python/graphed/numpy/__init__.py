@@ -404,7 +404,7 @@ def _join_form(left: NumpyForm, right: NumpyForm, params: Mapping[str, object]) 
 
 
 class NumpyBackend:
-    """A `graphed.Backend` over numpy arrays: M2 seam + M5 records + the M11 elementwise tier.
+    """A `Backend` over numpy arrays: M2 seam + M5 records + the M11 elementwise tier.
 
     Also a `graphed.core.ShuffleBackend` (M39 exchange half): the rectilinear
     ``partition``/``concat``/``slice_rows``/``estimated_bytes``/``to_wire``/``from_wire`` over
@@ -731,3 +731,7 @@ __all__ = [
     "zeros_like",
 ]
 __version__ = "0.0.10"
+
+
+def __dir__() -> list[str]:
+    return __all__

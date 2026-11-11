@@ -91,9 +91,9 @@ every universe:
     }})
 
     njet = gak.num(scaled.Jet[scaled.Jet.pt > 30.0], axis=1)
-    print(graphed.labels(njet))
-    for label in graphed.labels(njet):
-        print(label, ak.to_list(s.materialize(graphed.universe(njet, label))))
+    print(graphed.systematics.labels(njet))
+    for label in graphed.systematics.labels(njet):
+        print(label, ak.to_list(s.materialize(graphed.systematics.universe(njet, label))))
 
 Printed output:
 

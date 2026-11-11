@@ -1,15 +1,15 @@
 """`graphed.systematics`: the variation machinery — what `graphed.vary` registers and what rides.
 
-The verbs stay where analyses already read them: `graphed.vary`, `graphed.weight`,
-`graphed.variations`, `graphed.explain_variations` and the rest of §9.1 are exported from
-`graphed` itself, and `graphed.varied`/`graphed.accessors`/`graphed.vary` keep working as module
+`graphed.vary` and `graphed.Varied` are exported from `graphed` itself; the verbs that read a
+variation back (`labels`, `universe`, `nominal`, `weight`, `variations`, `explain_variations`, …)
+are exported from here. `graphed.varied`/`graphed.accessors`/`graphed.vary` keep working as module
 paths. This package is where the machinery LIVES, one concern per module:
 
 - `verb` — `graphed.vary` itself: the target dispatch and the transactional mint.
 - `registration` — what its three overloads share: the checks, the minting, the fan-out.
 - `ambient` — the ambient event weight: a context's `AmbientRecord` (the operation list, each
   entry's rider), the three outcomes a weight registration decides between, and the composition.
-- `explain` — `graphed.explain_variations`' record of what varies here and how the families relate.
+- `explain` — `explain_variations`' record of what varies here and how the families relate.
 - `varied` — the `Varied` container, its surface dispositions and its re-wrapping rules.
 - `accessors` — §9.1's reader verbs (`labels`, `universe`, `nominal`, `weight`, `variations`, …).
 - `handles` — a value's handle: stamping it, re-indexing to a context, broadcasting.
@@ -39,6 +39,10 @@ from .accessors import (  # isort: skip
     weight as weight,
 )
 from .ambient import Rider as Rider, ambient_entries as ambient_entries  # isort: skip
+from .by_label import (  # isort: skip
+    impact_by_label as impact_by_label,
+    read_columns_by_label as read_columns_by_label,
+)
 from .explain import (  # isort: skip
     Explanation as Explanation,
     explain as explain,

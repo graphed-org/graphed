@@ -2,7 +2,7 @@
 
 The neutral `graphed.Varied` carries `Array`'s surface; this subclass completes the numpy idiom
 the way `NumpyArray` completes `Array` — the metadata properties and the method set, so §2.3a's
-parity gate (enumerated from `type(graphed.nominal(v))`) resolves every discovered name on the
+parity gate (enumerated from `type(nominal(v))`) resolves every discovered name on the
 container's own class. It re-exposes only what `Varied` must answer per label; the recording logic
 behind those names stays on the members.
 """

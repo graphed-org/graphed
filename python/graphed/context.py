@@ -15,7 +15,7 @@ in `graphed.awkward.gnano` (the §2.1 factorization rule).
 
 A context's lineage is `graphed.systematics.lineage`'s `ContextNode`, and its ambient weight is an
 `AmbientRecord` that `graphed.systematics.ambient` builds and decides over; this module builds the
-contexts. `graphed.explain_variations` is in `graphed.systematics.explain`; it and
+contexts. `graphed.systematics.explain_variations` is in `graphed.systematics.explain`; it and
 `ambient_entries` are re-exported here, which is where the probes and the extra suites read them
 from.
 """
@@ -206,7 +206,7 @@ class EventContext(EagerRefusals, ContextNode):
         return child
 
     def _project(self, label: str) -> EventContext:
-        """`graphed.universe(ctx, L)` / `graphed.nominal(ctx)`.
+        """`graphed.systematics.universe(ctx, L)` / `graphed.systematics.nominal(ctx)`.
 
         A CHILD context carrying that label's collections and ambient weight (§2.2).
         """
@@ -242,7 +242,7 @@ class EventContext(EagerRefusals, ContextNode):
 
 
 def project(ctx: EventContext, label: str) -> EventContext:
-    """Return `ctx`'s child context for universe ``label`` (`graphed.universe`/`nominal`)."""
+    """Return `ctx`'s child context for universe ``label`` (`universe`/`nominal`)."""
     return ctx._project(label)
 
 

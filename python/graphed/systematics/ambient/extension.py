@@ -50,7 +50,7 @@ def _carried_up(
     §2.3.
 
     A handle read at an ancestor names that read's composition in either spelling: kept as it was
-    read, where its members ARE the record's nodes, or carried down with `graphed.reindex_to`,
+    read, where its members ARE the record's nodes, or carried down with `reindex_to`,
     which re-indexes every member across the intervening cuts. The second is undone here, one
     mask-follow per link off the Session's op record, per label, which is what lets a CROSSED
     handle be matched — and found stale — against the record the composition it names actually
@@ -407,7 +407,7 @@ def _reindexed_onto(recorded: Any, node: Any) -> bool:
 
     One mask-follow per link between the two contexts, peeled off the Session's op record.
 
-    A central built at an ancestor and carried down with `graphed.reindex_to` is the very node the
+    A central built at an ancestor and carried down with `reindex_to` is the very node the
     expansion re-indexes the entry to (interning makes the two one node), so it names that entry as
     a central built at the ancestor does. DECIDING still mints nothing: the re-index the user
     already performed is what recorded the ops this reads, and an expression merely re-derived

@@ -2,7 +2,7 @@
 
 Both answer over the SAME operand — `Sequence[Varied] | Mapping[str, Sequence[Array]]`, the
 labelled analogue of `read_columns`' first argument — and both range over the §2.4 label UNION
-resolved by `graphed.member_of`, never the strict `graphed.universe`, which raises `KeyError` on a
+resolved by `member_of`, never the strict `universe`, which raises `KeyError` on a
 heterogeneous operand (a jes-varied kinematic beside a btag-varied weight is the corpus mainline).
 """
 
@@ -109,7 +109,7 @@ def impact_by_label(
     watermark bracketing order-dependent, and a node two non-nominal labels share appears in BOTH
     impact sets. No `source_nid` — `session.walk` is source-agnostic.
     """
-    per_label = _per_label("graphed.impact_by_label", outputs)
+    per_label = _per_label("graphed.systematics.impact_by_label", outputs)
     central = _reach(per_label.get("nominal", []))
     # `nominal` is `central - central`: answer it from the walk already done rather than repeating
     # it
@@ -139,5 +139,5 @@ def read_columns_by_label(
     This makes the read-width cost of a shift visible. `None` is `read_columns`' own conservative
     answer — "read every column" — and must never merge with `()`, which says the opposite.
     """
-    per_label = _per_label("graphed.read_columns_by_label", outputs)
+    per_label = _per_label("graphed.systematics.read_columns_by_label", outputs)
     return {label: read_columns(arrays, source_nid) for label, arrays in per_label.items()}
