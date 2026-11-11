@@ -119,6 +119,14 @@ class Session:
 
     ``with session:`` makes it the Session array-less reads in this context record into, until the
     block exits; see :func:`current_session`.
+
+    >>> import awkward as ak
+    >>> import graphed
+    >>> from graphed.awkward import AwkwardBackend, from_awkward
+    >>> session = graphed.Session(AwkwardBackend())
+    >>> x = from_awkward("x", ak.Array([1.0, 2.0, 3.0]), session=session)
+    >>> (x * 2).session is session
+    True
     """
 
     def __init__(self, backend: Backend, *, incremental: bool = False) -> None:
@@ -1054,6 +1062,13 @@ def current_session(backend: Backend | None = None) -> Session:
     With no default yet, one is created on ``backend``, else on the factory set with
     :func:`set_default_backend`, else on ``graphed.awkward.AwkwardBackend()``. ``backend`` is
     used only then: the Session returned may record on another backend.
+
+    >>> import awkward as ak
+    >>> import graphed
+    >>> from graphed.awkward import from_awkward
+    >>> x = from_awkward("x", ak.Array([1.0]))
+    >>> x.session is graphed.current_session()
+    True
     """
     stack = _scopes.get()
     if stack:
@@ -1084,6 +1099,12 @@ def new_session(backend: Backend | None = None) -> Session | None:
     With no ``backend``, on the factory set with :func:`set_default_backend`; with neither, the
     default is cleared, ``None`` is returned, and the next array-less read creates one on its own
     backend. An open ``with`` scope still wins until it exits.
+
+    >>> import graphed
+    >>> from graphed.awkward import AwkwardBackend
+    >>> s = graphed.new_session(AwkwardBackend())
+    >>> s is graphed.current_session()
+    True
     """
     made = backend if backend is not None else _factory_backend()
     session = None if made is None else Session(made)

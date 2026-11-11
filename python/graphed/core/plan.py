@@ -63,7 +63,7 @@ class OpSpec:
       files on disk are needed — the package is on ``sys.path``). The durable, preferred form.
     - ``kind="opaque"``: the callable is embedded **by value** via cloudpickle (base64). Used only
       when the callable is not importable (a closure/lambda/``__main__`` function). ``opaque`` is
-      then ``True`` — a preservation risk M9 surfaces.
+      then ``True`` — a preservation risk the preservation bundle flags.
     """
 
     kind: Literal["ref", "opaque"]
@@ -136,7 +136,7 @@ class OpSpec:
 
 @dataclass(frozen=True)
 class DurablePlan:
-    """A versioned, deterministic, content-addressed serializable plan (plan M8).
+    """A versioned, deterministic, content-addressed serializable plan.
 
     Holds the canonical serialized IR plus the execution metadata an executor needs: the partition
     set, the columns to read, the reduction spec (``process``/``combine``/``empty``), stopping
@@ -271,7 +271,7 @@ class DurablePlan:
 
 @dataclass(frozen=True)
 class StageSpec:
-    """One stage of a multi-stage :class:`DurablePlanV2` (plan M39 §4.4).
+    """One stage of a multi-stage :class:`DurablePlanV2`.
 
     A shuffle is a stage-1 map-write (``kind="map_write"``) that a stage-2 gather
     (``kind="gather"|"gather_join"``) depends on via ``inputs`` (the indices of the stages it
@@ -280,7 +280,7 @@ class StageSpec:
     ``process`` is the per-task callable (an :class:`OpSpec`, source-free like V1). ``routing`` is
     the free-form exchange scheme the stage carries (``scheme``/``key``/``parts`` + the backend's
     ``backend_id`` — recorded here, in the EXISTING routing map, so folding it into the task id is
-    NOT a schema change, §7.2). ``tasks`` are the stage's producer-/gather-tasks.
+    NOT a schema change). ``tasks`` are the stage's producer-/gather-tasks.
     """
 
     kind: str
@@ -315,7 +315,7 @@ class StageSpec:
 
 @dataclass(frozen=True)
 class DurablePlanV2:
-    """The additive multi-stage durable plan (plan M39 §4.4).
+    """The additive multi-stage durable plan.
 
     A shuffle needs genuine intra-run staging (a gather stage depending on a map-write stage),
     which the single map->reduce :class:`DurablePlan` cannot express. This is a SEPARATE,

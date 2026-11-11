@@ -122,7 +122,7 @@ def compile_ir(
 
     Reduction runs once, here — workers receive the already-reduced bytes. An incremental session
     finishes from its maintained canonical view (per-step work already paid at record time).
-    The artifact carries EXACTLY the requested outputs (M22), so compiling different
+    The artifact carries EXACTLY the requested outputs, so compiling different
     expressions sequentially from one session never cross-talks. With ``optimize=True`` the IR is
     byte-identical to compiling the same outputs in a fresh session; ``optimize=False`` carries
     the whole record arena with its record ids, so its bytes change with every node the session
@@ -264,7 +264,7 @@ def evaluate_ir(
     evaluator, keyed by :func:`external_key` (preferred, so N systematic universes off one payload
     stay distinct) or by its bare ``content_hash``. Returns the outputs in mark order.
 
-    ``on_failure`` is §8.2(iii)'s attribution hook: it sees the reduced address of the failing
+    ``on_failure`` is the attribution hook: it sees the reduced address of the failing
     dispatch — ``(node_id, member_index)``, the member index being ``None`` outside a fused stage —
     and returns the exception to raise instead, or ``None`` to let the original propagate.
 

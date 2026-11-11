@@ -183,9 +183,9 @@ def _select(
 
 
 def read_varied(path: str) -> dict[str, ak.Array]:
-    """Reconstruct every universe of a §6.4 variation-aware skim.
+    """Reconstruct every universe of a variation-aware skim.
 
-    `{label: ak.Array}` in §2.4 order (nominal first). Each value is universe `label`'s
+    `{label: ak.Array}` in label-union order (nominal first). Each value is universe `label`'s
     post-selection record — its rows passing the stored level-0 mask and, at every supplied level,
     its objects passing the stored mask — bit-exact vs the in-memory varied run. The symmetric
     partner of `to_parquet(..., select=…)`.

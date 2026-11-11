@@ -681,6 +681,13 @@ def from_awkward(
 
     It records into ``session``, else the current Session. The form comes from the typetracer;
     the real array is retained only for evaluation.
+
+    >>> import awkward as ak
+    >>> import graphed
+    >>> from graphed.awkward import from_awkward
+    >>> events = from_awkward("events", ak.Array({"MET_pt": [10.0, 55.0, 30.0]}))
+    >>> graphed.materialize(events.MET_pt[events.MET_pt > 20.0]).tolist()
+    [55.0, 30.0]
     """
     real = array if isinstance(array, ak.Array) else ak.Array(array)
     return cast("Session", session).source(name, form=AwkwardForm(_typetracer(real)), data=real)

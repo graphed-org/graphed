@@ -1,4 +1,4 @@
-"""graphed-core: Rust+PyO3 thread-safe interned graph IR + the M7 execution contract.
+"""graphed-core: Rust+PyO3 thread-safe interned graph IR + the execution contract.
 
 Re-exports the compiled extension and the (pure-Python, data-only) execution-layer protocol. The
 graph lives in Rust; this package MUST NOT import awkward.

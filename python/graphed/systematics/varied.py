@@ -28,7 +28,7 @@ Member = Any  # an `Array`, or a `Varied` when the container is a registered wei
 
 
 class Varied(EagerRefusals):
-    """A mapping of universes, `"nominal"` first (§2.2)."""
+    """A mapping of universes, `"nominal"` first."""
 
     __slots__ = ("__weakref__", "_context", "_members", "_tags")
 
@@ -171,10 +171,10 @@ def member_nodes(value: Any) -> tuple[int, ...]:
 
 
 def context_of(value: object) -> Any:
-    """Return the §2.3e context handle this value was read through, `None` when it is context-free.
+    """Return the context handle this value was read through, `None` when it is context-free.
 
-    On a `Varied` it answers with the CONTAINER's handle — the most-derived member handle §2.1
-    binds — which may belong to a non-nominal member.
+    On a `Varied` it answers with the CONTAINER's handle — the most-derived member handle the
+    container binds — which may belong to a non-nominal member.
     """
     if isinstance(value, Varied):
         return value._context
@@ -217,7 +217,7 @@ def labels_of(value: object) -> tuple[str, ...]:
 
 
 def member_of(value: object, label: str) -> Any:
-    """Return the universe `value` contributes for `label` (§2.4).
+    """Return the universe `value` contributes for `label`.
 
     Its own member, else its nominal one.
     """
@@ -309,7 +309,7 @@ def rebuild(
 
 
 def expand(fn: Callable[..., Any], args: Sequence[object], kwargs: Mapping[str, object]) -> Any:
-    """Call `fn` once per label of the §2.4 union with every operand narrowed to that label.
+    """Call `fn` once per label of the operands' label union, every operand narrowed to it.
 
     With no container among the operands the call passes straight through — an unvaried expression
     must record exactly as it does today, never as a one-member container.
@@ -357,7 +357,7 @@ def expand_tuple(
 
 # ---- §2.3d's two mapping dispositions --------------------------------------------------------
 def broadcasting(fn: Callable[..., Any]) -> Callable[..., Any]:
-    """Record the verb per universe, answering with a `Varied` over the §2.4 union."""
+    """Record the verb per universe, answering with a `Varied` over the operands' label union."""
 
     @functools.wraps(fn)
     def verb(*args: Any, **kwargs: Any) -> Any:

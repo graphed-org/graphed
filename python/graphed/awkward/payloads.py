@@ -1,8 +1,8 @@
-"""PayloadDescriptors for HEP-standard external inputs (plan M3 / A.3.1).
+"""PayloadDescriptors for HEP-standard external inputs.
 
 Corrections via correctionlib (JSON), models via ONNX, datasets via id + file content hashes. We
 content-hash the actual file so any change to the correction set / model / dataset changes the
-descriptor (and therefore the External node's identity, and later the M9 bundle fingerprint).
+descriptor (and therefore the External node's identity, and the preservation bundle's fingerprint).
 Reuse the standards — invent no formats.
 """
 
@@ -82,7 +82,7 @@ def dataset_descriptor(dataset_id: str, file_paths: list[str]) -> PayloadDescrip
 
 
 def opaque_callable_descriptor(fn_name: str) -> PayloadDescriptor:
-    """Descriptor for an opaque Python callable (preservation risk; M9 does real hashing)."""
+    """Descriptor for an opaque Python callable (a preservation risk; nothing is hashed)."""
     return PayloadDescriptor(
         kind="opaque_callable",
         content_hash=f"unhashed-opaque:{fn_name}",

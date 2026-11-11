@@ -15,7 +15,7 @@ from .varied import Varied, context_of, expand, member_of, members_of, rebuild, 
 
 
 def reindex_to(value: Array | Varied, ctx: Any) -> Any:
-    """§6.1d(B): `value` re-expressed in `ctx`'s row space, label-aligned per §2.4.
+    """Return `value` re-expressed in `ctx`'s row space, label-aligned.
 
     Identity when `value` already carries `ctx`'s handle or carries none; a `GraphedError` when
     `value`'s handle is a DESCENDANT of `ctx` (a mask has no inverse) or divergent from it.
@@ -76,7 +76,7 @@ def with_context(value: Any, ctx: Any) -> Any:
 
 
 def broadcast_like(value: Array | Varied, factor: Any) -> Any:
-    """§6.1d's neutral broadcast seam: `factor` broadcast to `value`'s structure.
+    """Broadcast `factor` to `value`'s structure: the neutral broadcast seam.
 
     Dispatched to the backend idiom — the awkward backend records `ak.broadcast_arrays`, while a
     rectilinear idiom (numpy) needs nothing, so a backend that supplies no implementation gets the

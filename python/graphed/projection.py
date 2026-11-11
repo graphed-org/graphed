@@ -53,7 +53,7 @@ class Projection:
 
 
 class BufferNeed(StrEnum):
-    """How much of a column a graph actually needs (M10, buffer-level projection).
+    """How much of a column a graph actually needs (buffer-level projection).
 
     ``DATA``: the leaf values (implies the structure needed to interpret them).
     ``OFFSETS``: only the list structure — e.g. a multiplicity/count; the leaf values are never
@@ -67,7 +67,7 @@ class BufferNeed(StrEnum):
 
 @dataclass(frozen=True)
 class BufferProjection:
-    """Buffer-granular projection (M10): per source, each needed column with its `BufferNeed`.
+    """Buffer-granular projection: per source, each needed column with its `BufferNeed`.
 
     Strictly finer than :class:`Projection`: `columns_for` (data-bearing columns) reproduces the
     column-level view, while `offsets_only_for` names the columns whose *structure alone* is needed
@@ -162,8 +162,8 @@ def read_columns(
     selection). The dask-awkward ``necessary_columns`` analogue for graphed plans;
     backend-agnostic, using only the generic ``session.walk`` graph traversal.
 
-    A ``Varied`` entry contributes EVERY universe (§2.3d *expanding*): the answer is one union
-    read set, and the ``None`` a conservative member reports dominates it (§5.3).
+    A ``Varied`` entry contributes EVERY universe: the answer is one union read set, and the
+    ``None`` a conservative member reports dominates it.
     """
     single = isinstance(arrays, Array | Varied | ContextNode)
     outputs: list[Any] = [arrays] if single else list(arrays)

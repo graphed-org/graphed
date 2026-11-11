@@ -63,7 +63,10 @@ def vary_loose(
             "universe"
         )
     if collections is not None:
-        raise GraphedError("collections= needs an event-context target (the shift form)")
+        raise GraphedError(
+            "collections= needs event-level input: wrap the read, e.g. "
+            "events = gnano.events(from_parquet(...))"
+        )
     inherited = tags_of(target).get(name, ())
     # the loose form's own carrier for §4.11-4 is the target it registers on
     one_at_a_time, joints = gather_members(

@@ -161,7 +161,7 @@ class Variation:
 
 @dataclass(frozen=True, slots=True)
 class Explanation:
-    """§2.7: how a user's sources of uncertainty became this context's variations.
+    """How a user's sources of uncertainty became this context's variations.
 
     ``str()`` renders one line per item under three headings: the families by name in registration
     order, the ambient's operations in the order the composition applies them, and the universes
@@ -229,7 +229,7 @@ def explain(ctx: EventContext) -> Explanation:
 
 
 def explain_variations(ctx: EventContext) -> Explanation:
-    """§2.7: how this context's variations came to be.
+    """Explain how this context's variations came to be.
 
     The families, the ambient's operations and the universes carried here, as a frozen record whose
     `str()` is one line per item.

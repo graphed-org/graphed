@@ -1,12 +1,12 @@
-"""The awkward ``ShuffleBackend`` exchange primitives (plan M39 §3.0, §3.3, §5.1).
+"""The awkward ``ShuffleBackend`` exchange primitives.
 
 ``AwkwardBackend`` supplies the vectorized exchange half the generic engine calls:
 ``partition``/``concat``/``slice_rows``/``estimated_bytes``/``to_wire``/``from_wire`` over awkward
 arrays (records with a packed-u64 ``__joinkey__`` column; row payloads may be jagged). Routing is
-the pinned §4 rule — ``int.from_bytes(sha256(key.to_bytes(8, "big") [+ salt]).digest()[:8], "big")
-% P`` on the join key — process-independent (no Python ``hash()``), so a key lands in the same dest
-in every producer process (B2), and the golden vectors pin it against any other pure hash
-(ADV-r5.3).
+the pinned rule —
+``int.from_bytes(sha256(key.to_bytes(8, "big") [+ salt]).digest()[:8], "big") % P`` on the join
+key — process-independent (no Python ``hash()``), so a key lands in the same dest in every
+producer process, and the golden vectors pin it against any other pure hash.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ PINNED_ROUTING_HASH = "sha256"
 
 
 def route(key: int, parts: int, *, salt: int = 0) -> int:
-    """Return the pinned §4/§3.0 route.
+    """Return the pinned exchange route.
 
     The route is the sha256 of the 8-byte big-endian key (salt=0 == no bytes appended).
     """
@@ -49,7 +49,7 @@ def partition(
 ) -> tuple[ak.Array, ...]:
     """Route each row to one of ``parts`` sub-blocks by the pinned hash of ``block[key_field]``.
 
-    Row-conserving; order- and jaggedness-preserving within each dest; deterministic (§4/B2).
+    Row-conserving; order- and jaggedness-preserving within each dest; deterministic.
     """
     keys = np.asarray(ak.to_numpy(block[key_field])).astype(np.uint64)
     dest = _dests(keys, parts, salt)
@@ -159,7 +159,7 @@ def _joined(parts: list[Any]) -> Any:
 
 
 def concat(blocks: Sequence[ak.Array]) -> ak.Array:
-    """Vertically concatenate blocks in order (the deterministic ascending-src_pid merge, §4.0).
+    """Vertically concatenate blocks in order (the deterministic ascending-src_pid merge).
 
     Fields a projected read left as placeholders stay placeholders, of the concatenated length.
     """
@@ -173,13 +173,13 @@ def concat(blocks: Sequence[ak.Array]) -> ak.Array:
 def slice_rows(block: ak.Array, start: int, stop: int) -> ak.Array:
     """Return a half-open row slice at EVENT boundaries.
 
-    Each kept row's list stays intact (§5.1).
+    Each kept row's list stays intact.
     """
     return block[start:stop]
 
 
 def estimated_bytes(block_or_form: object) -> int:
-    """Measured buffer bytes (NOT entry count — jagged bytes are not a function of #rows, §5.1)."""
+    """Measured buffer bytes (NOT entry count — jagged bytes are not a function of #rows)."""
     return int(getattr(block_or_form, "nbytes", 0))
 
 

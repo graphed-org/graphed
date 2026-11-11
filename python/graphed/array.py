@@ -766,17 +766,24 @@ def apply(
 ) -> Array:
     """Record ``fn`` over several deferred arrays as ONE multi-input External node.
 
-    M14, parity P3.8 — the blockwise/map_blocks analogue. A function over arrays, so it is
-    idiom-neutral (awkward style); the numpy-specific signature-aware form is
-    ``graphed.numpy.apply_gufunc``.
+    The blockwise/map_blocks analogue. A function over arrays, so it is idiom-neutral (awkward
+    style); the numpy-specific signature-aware form is ``graphed.numpy.apply_gufunc``.
 
     The node carries the backend's ``PayloadDescriptor``: the opaque callable stays a flagged
-    preservation risk (plan A.3.1). With one array this IS ``Array.map`` (interns with it).
+    preservation risk. With one array this IS ``Array.map`` (interns with it).
 
     ``name=`` works as for ``Array.map``: a callable that differs under one name raises.
 
     ``output_type=`` declares the result's element type, and without it the type is inferred,
     as for ``Array.map``.
+
+    >>> import awkward as ak
+    >>> import graphed
+    >>> from graphed.awkward import from_awkward
+    >>> x = from_awkward("x", ak.Array([1.0, 4.0, 9.0]))
+    >>> root = graphed.apply(lambda a: a**0.5, x, name="sqrt")
+    >>> graphed.materialize(root).tolist()
+    [1.0, 2.0, 3.0]
     """
     from .varied import containers_in, expand
 

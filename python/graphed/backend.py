@@ -38,7 +38,7 @@ class Form(Protocol):
 
 @runtime_checkable
 class Backend(Protocol):
-    """The seam between the backend-agnostic IR and a concrete array library (plan M2/A.4)."""
+    """The seam between the backend-agnostic IR and a concrete array library."""
 
     def op_form(self, op: str, inputs: Sequence[Form], params: Mapping[str, object]) -> Form:
         """Infer the result form of `op`. Raise a TypeError-like error if the op is ill-typed."""

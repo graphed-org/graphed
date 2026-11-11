@@ -136,10 +136,10 @@ def row_space_above(handle: ContextNode, ctx: ContextNode) -> ContextNode | None
 
 
 def unify_contexts(*handles: Any) -> Any:
-    """§6.1d(A): the most-derived handle when the non-`None` arguments lie on ONE ancestry chain.
+    """Return the most-derived handle when the non-`None` arguments lie on ONE ancestry chain.
 
     `None` when every argument is context-free; context-free arguments beside contexted ones are
-    ignored (the adopt rule); divergent branches raise the §2.3e error naming both contexts.
+    ignored (the adopt rule); divergent branches raise an error naming both contexts.
     """
     present = [handle for handle in handles if handle is not None]
     if not present:

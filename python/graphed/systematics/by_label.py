@@ -103,7 +103,7 @@ def _is_sequence(value: object) -> bool:
 def impact_by_label(
     outputs: Sequence[Varied] | Mapping[str, Sequence[Array]],
 ) -> dict[str, tuple[int, ...]]:
-    """§3.4: per label, the record node ids that label reaches and `"nominal"` does not, sorted.
+    """Per label, the record node ids that label reaches and `"nominal"` does not, sorted.
 
     The reachability DIFFERENCE, not an id watermark: interleaved broadcast recording makes
     watermark bracketing order-dependent, and a node two non-nominal labels share appears in BOTH
@@ -134,7 +134,7 @@ def _ignore(*_args: object) -> None:
 def read_columns_by_label(
     outputs: Sequence[Varied] | Mapping[str, Sequence[Array]], source_nid: int
 ) -> dict[str, tuple[str, ...] | None]:
-    """§5.3: per label, that label's sorted read set on source `source_nid`.
+    """Per label, that label's sorted read set on source `source_nid`.
 
     This makes the read-width cost of a shift visible. `None` is `read_columns`' own conservative
     answer — "read every column" — and must never merge with `()`, which says the opposite.
