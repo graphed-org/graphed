@@ -71,7 +71,8 @@ def test_a_rerun_inside_one_run_counts_each_task_once(
 ) -> None:
     server = DashboardServer()
     assert _bar(_feed(server, events)) == bar
-    assert server.snapshot()["stats"]["submitted"] == 2 * bar[0]
+    stats = server.snapshot()["stats"]
+    assert (stats["submitted"], stats["inflight"]) == (2 * bar[0], bar[4])
 
 
 def _bracket(server: DashboardServer, *, start: bool) -> None:
@@ -149,3 +150,19 @@ def test_a_lean_run_bounds_inflight_by_the_workers_seen() -> None:
     server._ingest_one(_wire.hello_message(lean=True), conn=None, cid=0)
     events = [*((S, k, "") for k in range(4)), (F, 0, "w0"), (S, 0, ""), (S, 9, "")]
     assert _bar(_feed(server, events)) == (5, 5, 0, 0, 1)
+
+
+def test_an_unbracketed_run_after_a_bracketed_one_shows_its_tasks_in_flight() -> None:
+    server = DashboardServer()
+    _bracket(server, start=True)
+    _feed(server, _run(range(1)))
+    _bracket(server, start=False)
+    events = [*((S, k, "") for k in range(3)), *((ST, k, "w0") for k in range(3))]
+    assert _bar(_feed(server, events)) == (3, 3, 0, 0, 3)
+
+
+def test_a_run_message_without_a_boolean_start_is_ignored() -> None:
+    server = DashboardServer()
+    _feed(server, [(S, 0, ""), (ST, 0, "w0")])
+    server._ingest_one({"type": "run"}, conn=None, cid=0)
+    assert _bar(server.progress()) == (1, 1, 0, 0, 1)

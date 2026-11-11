@@ -291,8 +291,8 @@ class DashboardServer:
         elif kind == "combine":
             with self._lock:
                 self._stats["combines"] += 1
-        elif kind == "run":
-            self._ingest_run(start=msg.get("start") is True)
+        elif kind == "run" and isinstance(msg.get("start"), bool):
+            self._ingest_run(start=msg["start"])
         elif kind == "profile":
             self._ingest_profile(msg)
 
@@ -318,6 +318,8 @@ class DashboardServer:
 
         with self._lock:
             self._stats[phase] += 1
+            if cls == _SUBMITTED:  # driver-side, so ordered after any run end: a run is under way
+                self._running = True
             if not late:
                 if ks.state:
                     self._at[ks.state] -= 1
@@ -327,12 +329,7 @@ class DashboardServer:
                 self._stats["started"] += 1
             if cls != _SUBMITTED and worker:
                 self._workers_seen.add(worker)
-            if self._lean:
-                self._stats["inflight"] = self._inflight()
-            elif cls == _STARTED:
-                self._stats["inflight"] += 1
-            elif cls == _TERMINAL:
-                self._stats["inflight"] = max(0, self._stats["inflight"] - 1)
+            self._stats["inflight"] = self._inflight()
             if phase == "errored":
                 self._last_error = {
                     "key": key,
@@ -358,8 +355,7 @@ class DashboardServer:
             if start:  # keys are task indices, so another plan reuses them
                 self._keys.clear()
                 self._at = dict.fromkeys(_PHASE_CLASS, 0)
-            else:
-                self._stats["inflight"] = 0
+            self._stats["inflight"] = self._inflight()
 
     def _inflight(self) -> int:
         """In-flight keys: a lean stream bounds them by the workers seen; none once a run ends."""
@@ -493,11 +489,12 @@ class DashboardServer:
         ``total`` is the number of distinct task keys in the current run; the ``overall`` segments
         (finished/errored/inflight) count keys by the phase their current lifecycle is at, and with
         the implicit pending remainder tile it, so a retry or a rerun of the same plan re-shows its
-        keys rather than adding to them. :meth:`snapshot`'s ``stats`` count events. ``workers`` is
-        one row per worker that has run a task, sorted by id (deterministic order); each carries
-        its aggregate counts plus ``tasks`` — one record per task (sorted by start time, then key)
-        so the UI can render a hoverable cell per task. Records are deep-copied under the lock so
-        JSON encoding (outside the lock) never races a concurrent task update.
+        keys rather than adding to them. :meth:`snapshot`'s ``stats`` count events, save
+        ``inflight``. ``workers`` is one row per worker that has run a task, sorted by id
+        (deterministic order); each carries its aggregate counts plus ``tasks`` — one record per
+        task (sorted by start time, then key) so the UI can render a hoverable cell per task.
+        Records are deep-copied under the lock so JSON encoding (outside the lock) never races a
+        concurrent task update.
         """
         with self._lock:
             at = self._at
