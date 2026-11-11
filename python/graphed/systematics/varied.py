@@ -118,7 +118,7 @@ class Varied(EagerRefusals):
         if name in RESERVED:
             raise AttributeError(
                 f"{name!r} is not defined on a Varied; read one universe first, with "
-                "graphed.universe(v, label) or graphed.nominal(v)"
+                "graphed.systematics.universe(v, label) or graphed.systematics.nominal(v)"
             )
         if name.startswith("_"):
             raise AttributeError(name)
@@ -132,7 +132,7 @@ class Varied(EagerRefusals):
             if any(getattr(member, name) != probe for member in self._members.values()):
                 raise GraphedError(
                     f"the universes disagree on {name!r}; read one universe first, with "
-                    "graphed.universe(v, label)"
+                    "graphed.systematics.universe(v, label)"
                 )
             return probe
         return expand(lambda member: getattr(member, name), (self,), {})
@@ -477,7 +477,7 @@ def boundary_refusal(verb: str, *values: object) -> GraphedError:
     return GraphedError(
         f"{verb} is a boundary operation and does not accept a Varied carrying labels "
         f"[{', '.join(union_labels(*values))}]; apply it to one universe at a time with "
-        "graphed.universe(v, label)"
+        "graphed.systematics.universe(v, label)"
     )
 
 
@@ -501,5 +501,6 @@ def refuse_container(verb: str, *values: object) -> None:
     if containers_in(*values):
         raise GraphedError(
             f"{verb} does not accept a Varied output; pass one universe with "
-            "graphed.universe(v, label), or build the varied plan through the histogram group API"
+            "graphed.systematics.universe(v, label), or build the varied plan through the "
+            "histogram group API"
         )
