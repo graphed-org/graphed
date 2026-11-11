@@ -165,23 +165,20 @@ def test_the_awkward_proxy_adds_no_member_functions(cls: type) -> None:
     assert [name for name in vars(cls) if not name.startswith("_")] == []
 
 
-@pytest.mark.parametrize(
-    ("name", "call", "head"),
-    [
-        ("mean", lambda x: gak.mean(x["a"], x["w"], axis=1), "x"),
-        ("std", lambda x: gak.std(x["a"], x["w"]), "x"),
-        ("var", lambda x: gak.var(x["a"], x["w"], axis=1), "x"),
-        ("moment", lambda x: gak.moment(x["a"], 2, x["w"], axis=1), "x, 2"),
-    ],
-)
+@pytest.mark.parametrize(("name", "n"), [("mean", ()), ("std", ()), ("var", ()), ("moment", (2,))])
+@pytest.mark.parametrize("weight", ["graphed", "awkward"])
 def test_a_positional_weight_names_the_keyword(
-    arrays: dict[str, Any], name: str, call: Call, head: str
+    arrays: dict[str, Any], name: str, n: tuple[int, ...], weight: str
 ) -> None:
+    head = ", ".join(["x", *map(str, n)])
     message = (
         f"gak.{name} takes weight by keyword: gak.{name}({head}, axis=1, weight=w) "
         f"(ak.{name}({head}, w, axis=1) also works on graphed arrays)"
     )
+    a, w = arrays["a"], arrays["w"]
+    positional = w if weight == "graphed" else graphed.materialize(w)
     with pytest.raises(TypeError, match=re.escape(message)):
-        call(arrays)
-    weighted = graphed.materialize(gak.mean(arrays["a"], 1, weight=arrays["w"]))
-    assert weighted[[0, 2]].tolist() == [1.8, 3.0]
+        getattr(gak, name)(a, *n, positional, axis=1)
+    keyword = graphed.materialize(getattr(gak, name)(a, *n, axis=1, weight=w))
+    eager = getattr(ak, name)(graphed.materialize(a), *n, graphed.materialize(w), axis=1)
+    assert keyword[[0, 2]].tolist() == eager[[0, 2]].tolist()

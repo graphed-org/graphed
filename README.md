@@ -62,9 +62,9 @@ print(graphed.materialize(leading_pt).tolist())  # now it runs
 # [40.0, 55.0, None]
 ```
 
-Your `ak.*` code records as-is. `gak.*` (`from graphed.awkward import gak`) is the same set
-with keyword-only options: `gak.mean(x, axis=1, weight=w)` where awkward also accepts
-`ak.mean(x, w, axis=1)`.
+Your `ak.*` code records as-is, minus `highlevel=`, `behavior=` and `attrs=`. `gak.*`
+(`from graphed.awkward import gak`) is the same set with keyword-only options:
+`gak.mean(x, axis=1, weight=w)` where awkward also accepts `ak.mean(x, w, axis=1)`.
 
 ## The one thing that's different
 

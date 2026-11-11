@@ -17,7 +17,7 @@ def test_the_readme_has_python_blocks() -> None:
     assert len(BLOCKS) >= 2
 
 
-@pytest.mark.parametrize("block", BLOCKS)
+@pytest.mark.parametrize("block", BLOCKS, ids=lambda block: block.splitlines()[-1])
 def test_a_readme_block_prints_what_it_shows(block: str) -> None:
     shown = [line[2:] for line in block.splitlines() if re.match(r"# [\[(\w]", line)]
     printed = io.StringIO()
