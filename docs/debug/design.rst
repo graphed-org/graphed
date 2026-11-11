@@ -344,11 +344,13 @@ dashboard is never a reason a job fails. The one exception is a dashboard you bu
 What the browser shows you
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-- **Progress**, in the shape a scheduler dashboard uses rather than a scrolling event log a
-  human cannot read mid-run: one overall bar tiling finished / in-flight / errored / pending,
-  then per worker a chronological strip with one cell per task, coloured by state. The number
-  of cells per row is your load balance at a glance; hover any cell — finished or still
-  running — for that task's key, partition, entry count, state, and duration.
+- **Progress**, in the shape a scheduler dashboard uses rather than a scrolling event log a human
+  cannot read mid-run: one overall bar tiling finished / in-flight / errored / pending over the
+  distinct tasks of the current run, so a retry shows each task once, a new run starts the bar
+  afresh, and a finished or cancelled run shows nothing in flight; then per worker a chronological
+  strip with one cell per task, coloured by state. The number of cells per row is your load balance
+  at a glance; hover any cell — finished or still running — for that task's key, partition, entry
+  count, state, and duration.
 - **A merged CPU profile**, as a flamegraph, when you pass ``profile=True``.
 - **A live table** of run counters you can pivot and filter in place.
 

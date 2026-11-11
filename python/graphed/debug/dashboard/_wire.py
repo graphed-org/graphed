@@ -60,6 +60,11 @@ def combine_message(leaves_done: int) -> dict[str, Any]:
     return {"type": "combine", "leaves_done": leaves_done}
 
 
+def run_message(*, start: bool) -> dict[str, Any]:
+    """Return the message for a run starting (``start``) or ending on the monitor's runner."""
+    return {"type": "run", "start": start}
+
+
 def profile_message(worker: str, tree_b64: str) -> dict[str, Any]:
     return {"type": "profile", "worker": worker, "tree_b64": tree_b64}
 
