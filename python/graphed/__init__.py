@@ -11,6 +11,8 @@ import importlib
 import warnings
 from typing import TYPE_CHECKING
 
+# the pre-0.0.11 module paths stay loaded with the package
+from . import _kinds as _kinds, accessors as accessors, by_label as by_label  # isort: skip
 from .aggregate import aggregate_plan, collate, raise_on_floating_point
 from .array import Array, apply
 from .errors import (
