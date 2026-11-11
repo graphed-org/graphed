@@ -71,7 +71,7 @@ def _variation_axis_index(hist: Any) -> int | None:
 
 
 def labels(x: Introspectable) -> tuple[str, ...]:
-    """Return the variation labels `x` carries, `"nominal"` first then insertion order (§2.2)."""
+    """Return the variation labels `x` carries, `"nominal"` first then insertion order."""
     if isinstance(x, Varied):
         return tuple(members_of(x))
     if _is_context(x):
@@ -95,7 +95,7 @@ def labels(x: Introspectable) -> tuple[str, ...]:
 
 
 def universe(x: Introspectable, label: str) -> Any:
-    """`x`'s universe for `label` — a KeyError listing the valid labels when it has none (§2.5)."""
+    """`x`'s universe for `label` — a KeyError listing the valid labels when it has none."""
     if isinstance(x, Varied):
         return member_exact(x, label)
     if _is_context(x):
@@ -124,19 +124,19 @@ def universe(x: Introspectable, label: str) -> Any:
 
 
 def nominal(x: Introspectable) -> Any:
-    """Return the central universe — `universe(x, "nominal")` for every shape (§2.2)."""
+    """Return the central universe — `universe(x, "nominal")` for every shape."""
     return universe(x, "nominal")
 
 
 def points(x: Introspectable) -> dict[str, dict[str, str]]:
-    """`{label: {nuisance: coordinate}}` — the authoritative coordinate view (§4.10).
+    """`{label: {nuisance: coordinate}}` — the authoritative coordinate view.
 
     Label-sorted, each coordinate map nuisance-sorted, `"nominal"` mapping to `{}`. Coordinates
     render BY VALUE, so the view predicts resolution and deliberately does not round-trip the tag
     spelling the label keeps.
 
     Defined on the RECORD-TIME shapes alone — a `Varied` and an event context. Points are not
-    carried on disk (§5.3) and a label cannot be parsed back into a point (§4.3), so answering
+    carried on disk and a label cannot be parsed back into a point, so answering
     `{label: {}}` for an executed result would assert that every executed universe is the origin.
     """
     if isinstance(x, Varied):
@@ -154,13 +154,13 @@ def points(x: Introspectable) -> dict[str, dict[str, str]]:
 
 
 def selection(ctx: Any) -> Any:
-    """§9.1's bridge: the `Varied`/Array mask that derived a context from its parent (§6.4a).
+    """Return the `Varied`/Array mask that derived a context from its parent.
 
     `None` for a root context. On a universe/nominal-derived context it returns that label's member
     of the argument's own selection — an unvaried `Array` in the grandparent's row space; on a
     `vary`-derived one it skips the identity links and answers with the mask below. The verb that
-    makes the m51 skim sink reachable from the §2.6 context idiom. Not `lineage.selection`, which
-    answers `None` across a projection.
+    makes the variation-aware skim sink (``to_parquet(select=)``) reachable from a context. Not
+    `lineage.selection`, which answers `None` across a projection.
     """
     if not _is_context(ctx):
         raise GraphedError(
@@ -182,7 +182,7 @@ def selection(ctx: Any) -> Any:
 def weight(ctx: Any) -> Varied | Array | None:
     """Return a context's ambient event weight as a `Varied`.
 
-    `None` when nothing is registered (§9.1); a projected context's
+    `None` when nothing is registered; a projected context's
     (`graphed.systematics.universe(ctx, label)`) is that one universe's member.
 
     Read-only: it returns the registry's current container, it never mutates.
@@ -195,14 +195,14 @@ def weight(ctx: Any) -> Varied | Array | None:
 
 
 def variations(ctx: Any) -> dict[str, dict[str, tuple[Kind, Fraction | None]]]:
-    """Return a context's registered variations as `{name: {tag: (kind, value | None)}}` (§9.1).
+    """Return a context's registered variations as `{name: {tag: (kind, value | None)}}`.
 
-    The kind is a `graphed.systematics.Kind` PER (name, tag): `Kind.WEIGHT` for a §2.1 overload-(b)
-    registration, `Kind.SHIFT` for an overload-(c) one, and their union when the tag was registered
-    both ways — §4.8's mechanism for "these two registrations are the same fit parameter". The
+    The kind is a `graphed.systematics.Kind` PER (name, tag): `Kind.WEIGHT` for an `is_weight=True`
+    registration, `Kind.SHIFT` for a `collections=` one, and their union when the tag was
+    registered both ways — how two registrations declare themselves the same fit parameter. The
     weight side is read from the lineage's registration record, never from the ambient container's
     tag map, which a row-space change widens with the shifts the mask carries. The value is the
-    tag's parsed numeric magnitude — the ordering handle §6.2's lexicographic axis cannot give —
+    tag's parsed numeric magnitude — the ordering handle a lexicographic tag order cannot give —
     and `None` for a non-numeric tag.
     """
     if not _is_context(ctx):

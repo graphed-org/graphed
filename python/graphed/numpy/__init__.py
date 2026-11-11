@@ -1,15 +1,15 @@
-"""graphed-numpy: a numpy backend proving the graphed backend seam (plans M2 + M5 + M11).
+"""graphed-numpy: a numpy backend proving the graphed backend seam.
 
 Operates on numpy arrays whose axis 0 is the partitioned (unknown-length) axis: the full
 elementwise/ufunc tier, boolean filtering, sum reduction, and arbitrary opaque Python callables via
-`map`. M5 adds **record sources** (named columns) + field access and a real **necessary-buffer
-(column) projection** that tracks which fields each computation touches. M11 (dask.array parity P0)
-adds a real ``(shape, dtype)`` form inferred at record time by evaluating each op on zero-length
-**meta arrays** — dtype promotion, broadcasting, and type errors are numpy's own (plan §A.2: reuse
-the host library's inference) — and the ``NumpyArray`` proxy (``array.py``): the shared
-``graphed.Array`` is backend-idiom-neutral, so the numpy calling idiom (metadata properties,
-``__array_function__``) is completed HERE and handed to the Session via ``array_type``.
-`external_payload` flags wrapped opaque callables as a preservation risk (plan A.3.1).
+`map`. **Record sources** (named columns) add field access and a real **necessary-buffer
+(column) projection** that tracks which fields each computation touches. Each op's
+``(shape, dtype)`` form is inferred at record time by evaluating it on zero-length
+**meta arrays** — dtype promotion, broadcasting, and type errors are numpy's own, never
+reimplemented. The shared ``graphed.Array`` is backend-idiom-neutral, so the numpy calling
+idiom (metadata properties, ``__array_function__``) is completed HERE, by the ``NumpyArray``
+proxy (``array.py``) handed to the Session via ``array_type``.
+`external_payload` flags wrapped opaque callables as a preservation risk.
 """
 
 from __future__ import annotations
@@ -404,11 +404,11 @@ def _join_form(left: NumpyForm, right: NumpyForm, params: Mapping[str, object]) 
 
 
 class NumpyBackend:
-    """A `Backend` over numpy arrays: M2 seam + M5 records + the M11 elementwise tier.
+    """A `Backend` over numpy arrays: plain and record sources and the elementwise tier.
 
-    Also a `graphed.core.ShuffleBackend` (M39 exchange half): the rectilinear
+    Also a `graphed.core.ShuffleBackend`: the rectilinear
     ``partition``/``concat``/``slice_rows``/``estimated_bytes``/``to_wire``/``from_wire`` over
-    structured (record) arrays, routing by the pinned §4 sha256 rule (``shuffle`` module).
+    structured (record) arrays, routing by the pinned sha256 rule (``shuffle`` module).
     """
 
     #: the backend's versioned shuffle-format token (folded into the V2 task ids, §7.2)
@@ -422,7 +422,7 @@ class NumpyBackend:
         return bool(form.dtype != np.bool_)
 
     def array_type(self) -> type[Array]:
-        """Return the numpy-idiomatic proxy (M11 factorization): Sessions return ``NumpyArray``."""
+        """Return the numpy-idiomatic proxy: Sessions on this backend return ``NumpyArray``."""
         return NumpyArray
 
     canonical_output_type = staticmethod(canonical_output_type)
@@ -563,7 +563,7 @@ class NumpyBackend:
 
     def project(self, op: str, used: object, params: Mapping[str, object]) -> object:
         # Vestigial M2 per-op stub; the real projection is the module-level `project` (M5).
-        """Return ``used`` unchanged; the module-level ``project`` projects (M5)."""
+        """Return ``used`` unchanged; the module-level ``project`` does the column projection."""
         return used
 
     def external_payload(self, op: str, params: Mapping[str, object]) -> PayloadDescriptor | None:

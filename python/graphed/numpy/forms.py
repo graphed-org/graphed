@@ -97,7 +97,7 @@ def canonical_output_type(spec: object) -> str:
     """Reduce an ``output_type`` spelling to ``str`` of its numpy dtype.
 
     The spelling is a numpy dtype-like, Python type, or an awkward type object that is a dtype; the
-    result is a fixpoint under `_dtype`.
+    result is a fixpoint: reducing it again returns it unchanged.
     """
     s: Any = spec
     if isinstance(s, type) and s in PYTHON_TYPES:

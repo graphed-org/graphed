@@ -666,7 +666,7 @@ def aggregate_plan(
     source that can count them (``num_entries(partition)``); a blind source then opens each file on
     the driver, one after another, to count it.
 
-    ``on_compiled`` is §7.2's seam onto the internally compiled :class:`CompiledGraph` — the
+    ``on_compiled`` is the seam onto the internally compiled :class:`CompiledGraph` — the
     artifact is otherwise unreachable from the caller. It fires ONCE, and whatever it returns is
     carried onto the shipped closure's ``variation_labels``.
 
@@ -700,6 +700,18 @@ def aggregate_plan(
     :class:`~graphed.core.DurablePlanV2`: a stage per side and one per destination, with ``reduce``
     per destination. It runs on ``SequentialRunner`` and ``SubmitRunner``, and has no ``tasks`` or
     ``process``; ``isinstance(plan, graphed.core.Plan)`` tells the two apart.
+
+    >>> import tempfile, awkward as ak
+    >>> import graphed
+    >>> from graphed.awkward import from_parquet, gak
+    >>> from graphed.core import SequentialRunner
+    >>> root = tempfile.mkdtemp()
+    >>> for i, met in enumerate([[10.0, 55.0], [30.0]]):
+    ...     _ = ak.to_parquet(ak.Array({"MET_pt": met}), f"{root}/part{i}.parquet")
+    >>> events = from_parquet("events", root)
+    >>> plan = graphed.aggregate_plan(gak.sum(events.MET_pt))
+    >>> len(plan.tasks), float(SequentialRunner().run(plan).value)
+    (2, 95.0)
     """
     writes = tuple(writes)
     if reduce is None and combine is None and empty is None:
@@ -1058,6 +1070,20 @@ def collate(plans: Mapping[str, Plan[Any] | DurablePlanV2]) -> Plan[dict[str, An
     value passes through its plan's ``finalize``, if it has one. Running each plan on its own and
     collecting ``{name: value}`` gives the same product when each ``combine`` is exact. A plan that
     runs in stages, is adaptive or can stop early has no fixed tasks and is refused.
+
+    >>> import tempfile, awkward as ak
+    >>> import graphed
+    >>> from graphed.awkward import from_parquet, gak
+    >>> from graphed.core import SequentialRunner
+    >>> root = tempfile.mkdtemp()
+    >>> _ = ak.to_parquet(ak.Array({"MET_pt": [10.0, 55.0]}), f"{root}/mc.parquet")
+    >>> _ = ak.to_parquet(ak.Array({"MET_pt": [30.0]}), f"{root}/data.parquet")
+    >>> def met_sum(name):
+    ...     events = from_parquet(name, f"{root}/{name}.parquet")
+    ...     return graphed.aggregate_plan(gak.sum(events.MET_pt))
+    >>> plans = {name: met_sum(name) for name in ("mc", "data")}
+    >>> {k: float(v) for k, v in SequentialRunner().run(graphed.collate(plans)).value.items()}
+    {'mc': 65.0, 'data': 30.0}
     """
     if not plans:
         raise ValueError("collate needs at least one plan")

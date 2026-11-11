@@ -1,4 +1,4 @@
-"""graphed-awkward: the reference backend (awkward typetracer forms + real evaluation), plan M3.
+"""graphed-awkward: the reference backend (awkward typetracer forms + real evaluation).
 
 ``op_form`` uses the awkward **typetracer** (metadata only -- no event data is read);
 ``eval_stage`` uses real awkward. The ``gak`` namespace mirrors the awkward API so corpus analyses

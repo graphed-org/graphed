@@ -505,8 +505,7 @@ class AwkwardBackend:
         """Run the call on the typetracers BEFORE anything is recorded.
 
         `None` for one awkward array, and for a tuple of them the same NESTING with `None` at every
-        leaf (M59 — the shape `metric_table(return_combinations=True)` answers in). Anything else
-        raises.
+        leaf (the shape `metric_table(return_combinations=True)` answers in). Anything else raises.
         """
         inputs = [self._with_behavior(f.tt) for f in forms]
         name = str(params["method"])
@@ -582,11 +581,11 @@ class AwkwardBackend:
         return _BOUNDARY
 
     def project(self, op: str, used: object, params: Mapping[str, object]) -> object:
-        """Return ``used`` unchanged (M5)."""
+        """Return ``used`` unchanged; the module-level ``project`` does the column projection."""
         return used  # M5
 
     def broadcast_like(self, value: object, factor: object) -> object:
-        """§6.1d's broadcast seam for this idiom: `factor` given `value`'s jagged structure.
+        """Broadcast `factor` to `value`'s jagged structure (the optional systematics seam).
 
         A rectilinear idiom needs nothing here, which is why the seam is optional and
         `graphed.systematics.broadcast_like` falls back to the identity when a backend omits it.
@@ -681,6 +680,13 @@ def from_awkward(
 
     It records into ``session``, else the current Session. The form comes from the typetracer;
     the real array is retained only for evaluation.
+
+    >>> import awkward as ak
+    >>> import graphed
+    >>> from graphed.awkward import from_awkward
+    >>> events = from_awkward("events", ak.Array({"MET_pt": [10.0, 55.0, 30.0]}))
+    >>> graphed.materialize(events.MET_pt[events.MET_pt > 20.0]).tolist()
+    [55.0, 30.0]
     """
     real = array if isinstance(array, ak.Array) else ak.Array(array)
     return cast("Session", session).source(name, form=AwkwardForm(_typetracer(real)), data=real)

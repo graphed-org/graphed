@@ -687,7 +687,7 @@ class Array(EagerRefusals):
     ) -> Array:
         """Record ``fn`` over this array as one opaque External node.
 
-        The callable is a flagged preservation risk, plan A.3.1.
+        The callable is opaque to the IR, so the node is flagged as a preservation risk.
 
         Without ``name=`` two distinct callables that derive one ``__name__`` are told apart by a
         per-Session ordinal. Pass ``name=`` to declare the identity yourself: a rerun of the same
@@ -711,7 +711,7 @@ class Array(EagerRefusals):
         return self._session.record_op(kind, [self], reduction=True)
 
     def repartition(self, *, n: int | None = None, target_bytes: int | None = None) -> Array:
-        """Physically rebalance this array's partitions (M39).
+        """Physically rebalance this array's partitions.
 
         By count (``n``) or by measured size (``target_bytes``). Rebalancing MOVES rows without
         reinterpreting them — a physical, backend-neutral operation (no array idiom) — so it stays
@@ -766,17 +766,24 @@ def apply(
 ) -> Array:
     """Record ``fn`` over several deferred arrays as ONE multi-input External node.
 
-    M14, parity P3.8 — the blockwise/map_blocks analogue. A function over arrays, so it is
-    idiom-neutral (awkward style); the numpy-specific signature-aware form is
-    ``graphed.numpy.apply_gufunc``.
+    The blockwise/map_blocks analogue. A function over arrays, so it is idiom-neutral (awkward
+    style); the numpy-specific signature-aware form is ``graphed.numpy.apply_gufunc``.
 
     The node carries the backend's ``PayloadDescriptor``: the opaque callable stays a flagged
-    preservation risk (plan A.3.1). With one array this IS ``Array.map`` (interns with it).
+    preservation risk. With one array this IS ``Array.map`` (interns with it).
 
     ``name=`` works as for ``Array.map``: a callable that differs under one name raises.
 
     ``output_type=`` declares the result's element type, and without it the type is inferred,
     as for ``Array.map``.
+
+    >>> import awkward as ak
+    >>> import graphed
+    >>> from graphed.awkward import from_awkward
+    >>> x = from_awkward("x", ak.Array([1.0, 4.0, 9.0]))
+    >>> root = graphed.apply(lambda a: a**0.5, x, name="sqrt")
+    >>> graphed.materialize(root).tolist()
+    [1.0, 2.0, 3.0]
     """
     from .varied import containers_in, expand
 

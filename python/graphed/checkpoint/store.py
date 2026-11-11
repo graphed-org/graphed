@@ -35,11 +35,11 @@ from typing import Any, Protocol, runtime_checkable
 class JournalEntry:
     """One completed task recorded in the manifest.
 
-    M39 adds ``stage`` (which pipeline stage the block belongs to —
-    ``map_write``/``gather_join``/``manifest``/…) and ``deps`` (hashes naming a gather block's
-    upstream inputs: the blocks themselves, or one blob that lists them), so a multi-stage shuffle
-    resumes with the right dependency structure. Both default empty, so a V1 single-stage entry is
-    unchanged.
+    ``stage`` names the pipeline stage the block belongs to
+    (``map_write``/``gather_join``/``manifest``/…) and ``deps`` holds the hashes naming a gather
+    block's upstream inputs (the blocks themselves, or one blob that lists them), so a multi-stage
+    shuffle resumes with the right dependency structure. Both default empty, so a V1 single-stage
+    entry is unchanged.
     """
 
     task_id: str
@@ -162,10 +162,10 @@ class CheckpointStore(Protocol):
 class Store:
     """A content-addressed, append-only, crash-safe checkpoint store on the local filesystem.
 
-    M39 (§6.3/§7.3): with ``node=None`` this is the V1 single-writer store — one ``journal.log``,
-    byte-for-byte the M8 behaviour. With ``node="A"`` it writes its OWN ``journal.A.log`` (so N
-    nodes checkpointing shuffle intermediates to one root never contend on a shared append), and
-    :meth:`completed` replays the UNION of every writer's journal.
+    With ``node=None`` this is the V1 single-writer store — one ``journal.log``. With ``node="A"``
+    it writes its OWN ``journal.A.log`` (so N nodes checkpointing shuffle intermediates to one root
+    never contend on a shared append), and :meth:`completed` replays the UNION of every writer's
+    journal.
     """
 
     def __init__(self, root: str | os.PathLike[str], node: str | None = None) -> None:

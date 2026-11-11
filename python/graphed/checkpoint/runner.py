@@ -82,17 +82,13 @@ def run_resumable(
     codec: Codec | None = None,
     error_budget: int | None = None,
     accept_environment: bool = False,
+    # test-only: simulate a crash after this many commits; ValueError if it can never fire
     _kill_after: int | None = None,
 ) -> ResumeResult:
     """Run ``plan`` against ``store``, skipping already-completed tasks. See module docstring.
 
     ``store`` is a directory, an fsspec URL with ``storage_options``, or a store.
     ``error_budget`` stops the run once the number of dead-lettered partitions exceeds it.
-    ``_kill_after`` (test-only) raises an uncatchable interrupt after that many tasks commit, to
-    simulate a crash mid-run; the committed journal/objects are what a resumed run recovers from.
-    If the run would finish before committing that many tasks (the plan has too few partitions), it
-    raises ``ValueError`` instead of completing silently — a simulated crash that can never fire is
-    a misconfiguration, not an uninterrupted run.
 
     The store's environment record is checked as :func:`graphed.checkpoint.resumable` checks it
     (salt ``""``), with ``accept_environment``.
@@ -201,8 +197,8 @@ def _run_one(
 class ShuffleResumeResult:
     """The result of a resumable multi-stage shuffle.
 
-    The content-addressed gather-block hashes (in dest-task order) plus an M8-style report
-    (``executed``/``skipped``/``did_less_work``).
+    The content-addressed gather-block hashes (in dest-task order) plus a
+    :func:`run_resumable`-style report (``executed``/``skipped``/``did_less_work``).
     """
 
     value: tuple[str, ...]
@@ -220,13 +216,13 @@ def run_shuffle_resumable(
 ) -> ShuffleResumeResult:
     """Run a two-phase :class:`~graphed.core.DurablePlanV2` against ``store``, resumably.
 
-    The phases are map-write -> gather; already-journaled blocks are skipped (plan §5.3/§7.3, the
-    M8 kill/resume pattern extended to two stages). Each block is content-addressed by its V2
-    ``task_id`` and journaled with its ``stage`` and ``deps``, the hash of one blob listing its
-    upstream input block hashes (shared by the stage's records, so a record stays constant-size); a
-    stage's tasks receive the payloads of the stages it depends on as ``inputs``. A crash at any
-    point resumes from the last durable block, and the result (the tuple of gather-block hashes) is
-    byte-identical to an uninterrupted run.
+    The phases are map-write -> gather; already-journaled blocks are skipped (the kill/resume
+    pattern of :func:`run_resumable`, extended to two stages). Each block is content-addressed by
+    its V2 ``task_id`` and journaled with its ``stage`` and ``deps``, the hash of one blob listing
+    its upstream input block hashes (shared by the stage's records, so a record stays
+    constant-size); a stage's tasks receive the payloads of the stages it depends on as ``inputs``.
+    A crash at any point resumes from the last durable block, and the result (the tuple of
+    gather-block hashes) is byte-identical to an uninterrupted run.
 
     Stage-process convention: ``process(task, inputs, resources) -> bytes`` where ``inputs`` is the
     tuple of upstream dep block payloads (empty for stage 0). A plan with unbound ``services`` is

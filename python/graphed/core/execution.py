@@ -63,16 +63,16 @@ Index = TypeVar("Index")
 class ShuffleBackend(Protocol[Block, Index_co]):
     """The vectorized data-movement primitives the generic exchange/repartition engine calls.
 
-    Plan M39 §3.0, exchange half. Like every contract in this module it is **pure and §A.4-clean**
-    — graphed-core must never depend on a backend array library, so the engine deals only in opaque
-    ``Block``/``Index`` handles; the real primitives live in the array-backend packages.
+    Like every contract in this module it is **pure** — graphed-core must never depend on a backend
+    array library, so the engine deals only in opaque ``Block``/``Index`` handles; the real
+    primitives live in the array-backend packages.
 
     ``identity`` is the backend's versioned shuffle-format token (folded into the V2 task ids so
-    two conforming backends never journal the same id for different content, §7.2). Per ADV-r5.3
-    the ``@runtime_checkable`` check is **import hygiene only** — it witnesses method NAMES, never
-    the routing rule; the pinned §4 SHA-256 route ``partition`` implements is witnessed by the
-    backends' golden-vector suites. The join half (``match_indices``/``take``/``merge_records``) is
-    M40.
+    two conforming backends never journal the same id for different content). The
+    ``@runtime_checkable`` check is **import hygiene only** — it witnesses method NAMES, never the
+    routing rule; the pinned SHA-256 route ``partition`` implements is witnessed by the backends'
+    golden-vector suites. The join half (``match_indices``/``take``/``merge_records``) is
+    :class:`JoinBackend`'s, not this protocol's.
     """
 
     identity: str
@@ -82,8 +82,8 @@ class ShuffleBackend(Protocol[Block, Index_co]):
     ) -> tuple[Block, ...]:
         """Route each row of ``block`` to one of ``parts`` sub-blocks.
 
-        Routing is by the pinned §4 hash of its ``key_field`` (``range`` uses ``boundaries``).
-        Row-conserving; deterministic; §4/B2 contract.
+        Routing is by the pinned SHA-256 hash of its ``key_field`` (``range`` uses
+        ``boundaries``). Row-conserving, and deterministic across processes.
         """
         ...
 
@@ -152,7 +152,7 @@ class JoinBackend(ShuffleBackend[Block, Index], Protocol[Block, Index]):
 class Partition:
     """A unit of input work (plan glossary): a uri + tree + half-open entry range.
 
-    A **blind** partition (M10) defers entry-range resolution to read time: it records
+    A **blind** partition defers entry-range resolution to read time: it records
     ``(step, n_steps)`` instead of an entry range, and the reader calls :meth:`resolve` against the
     file's actual entry count when the partition is read. Construct with :meth:`Partition.blind` —
     this replaces the old host-reader convention of smuggling the step through a negative
@@ -696,13 +696,13 @@ class WorkerTransport(Protocol):
 class AddressTable:
     """A data-only ``node_id -> routable (host, port)`` table a *launcher* populates.
 
-    Plan §6.1.3; each entry is tagged with ``registered_by`` provenance — the CHILD that announced
-    it, not the driver.
+    Each entry is tagged with ``registered_by`` provenance — the CHILD that announced it, not the
+    driver.
 
     This is **ephemeral runtime state**: announced host/port/pid live here and MUST NOT be folded
     into the durable plan (:class:`~graphed.core.plan.DurablePlanV2`) or the content-addressed task
     ids — addresses vary run-to-run, so baking them into the canonical IR would make task ids
-    non-deterministic (§A.3.1). Multi-host launch stays deferred (Phase-2); only the seam ships
+    non-deterministic. Multi-host launch stays deferred (Phase-2); only the seam ships
     now.
     """
 
@@ -731,16 +731,15 @@ class AddressTable:
 
 @runtime_checkable
 class NodeStore(Protocol):
-    """The per-node Store handle the cluster runtime pulls blobs through (plan §6.1.3, §4.3).
+    """The per-node Store handle the cluster runtime pulls blobs through.
 
-    The concrete node-local Store in graphed-exec-local satisfies this *behind* the core type
-    (§A.4).
+    The concrete node-local Store in graphed-exec-local satisfies this *behind* the core type.
 
     ``fetch(digest)`` is the bulk data-plane endpoint: **idempotent** (re-fetching a digest already
     present returns the same bytes and moves none) and **byte-backpressured / spillable** (a large
-    blob streams to the node-local Store instead of sitting whole in RAM — the *body* is
-    exec/M41-T1; the seam pins only the *signature*, left open for an Arrow-Flight/RDMA transport
-    of the same shape).
+    blob streams to the node-local Store instead of sitting whole in RAM — the *body* is the
+    executor's; the seam pins only the *signature*, left open for an Arrow-Flight/RDMA transport of
+    the same shape).
     """
 
     def fetch(self, digest: str) -> object:
@@ -750,7 +749,7 @@ class NodeStore(Protocol):
 
 @runtime_checkable
 class ClusterExecutor(Protocol):
-    """An :class:`Executor`-shaped launch seam over a cluster (plan §6.1.3).
+    """An :class:`Executor`-shaped launch seam over a cluster.
 
     A launcher populates an :class:`AddressTable`, each node exposes a :class:`NodeStore` ``fetch``
     endpoint, and ``run`` drives a ``Plan`` to a reduced result across them. Multi-host launch is
@@ -777,7 +776,7 @@ class TaskPhase(StrEnum):
 
 @dataclass(frozen=True)
 class TaskEvent:
-    """A passive, display-only record of one task's lifecycle transition (M37 dashboard seam).
+    """A passive, display-only record of one task's lifecycle transition.
 
     Carries no un-picklable objects — it crosses a process boundary from a ``ProcessExecutor``
     worker back to the driver. ``error`` is a pre-rendered summary string, never an exception
@@ -803,7 +802,7 @@ class TaskEvent:
 
 @runtime_checkable
 class WorkerProfiler(Protocol):
-    """A per-worker statistical sampler (M37).
+    """A per-worker statistical sampler.
 
     graphed-debug supplies the implementation (pyinstrument-backed); graphed-exec-local *drives* it
     without importing any profiler. ``flush``/``stop`` return a serialized sample tree (bytes) the
@@ -825,7 +824,7 @@ class WorkerProfiler(Protocol):
 
 @runtime_checkable
 class Monitor(Protocol):
-    """A passive observer of a run (M37).
+    """A passive observer of a run.
 
     An executor *emits* through it; it MUST NOT influence task order, the reduction tree, or
     results — the determinism gate is green attached-or-not. A monitor that raises is swallowed by
@@ -946,8 +945,7 @@ class RunControl:
 def emit_task(monitor: Monitor | None, event: TaskEvent) -> None:
     """Best-effort task emission.
 
-    A ``None`` monitor is a no-op, and a monitor that raises must never break a run (M37
-    passivity).
+    A ``None`` monitor is a no-op, and a monitor that raises must never break a run.
     """
     if monitor is None:
         return
@@ -1095,7 +1093,7 @@ class SequentialRunner:
     (which the frontend may not import). It is the canonical baseline any real executor
     (graphed-exec-local's thread/process pools) must match bit-for-bit.
 
-    An optional :class:`Monitor` observes the run (M37). It is purely passive: emission is
+    An optional :class:`Monitor` observes the run. It is purely passive: emission is
     best-effort and a misbehaving monitor cannot change the result. An optional :class:`RunControl`
     steers it: checked on entry and before each task, a pause holds the next task and a cancel
     returns the fold of the tasks that completed with ``stopped=StopReason.CANCELLED``.
@@ -1110,6 +1108,16 @@ class SequentialRunner:
 
     It has the shape of a pooled runner, so one ``with`` block serves both: ``submit`` runs the
     plan before returning a finished future, and ``close`` has nothing to release.
+
+    >>> import tempfile, awkward as ak
+    >>> import graphed
+    >>> from graphed.awkward import from_parquet, gak
+    >>> from graphed.core import SequentialRunner
+    >>> path = tempfile.mkdtemp() + "/events.parquet"
+    >>> _ = ak.to_parquet(ak.Array({"MET_pt": [10.0, 55.0, 30.0]}), path)
+    >>> plan = graphed.aggregate_plan(gak.sum(from_parquet("events", path).MET_pt))
+    >>> float(SequentialRunner().run(plan).value)
+    95.0
     """
 
     #: ``submit`` returns once its plan has finished, so none is ever waiting on another.

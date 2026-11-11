@@ -101,8 +101,8 @@ class ResourceCache:
     """Per-run cache of loaded External resources.
 
     A payload is ``load``-ed once and reused across every call (and across nodes sharing the same
-    payload+params), then ``close``-d on ``close()``. This is ``open_once`` (M7) for Externals — no
-    re-loading a model per partition.
+    payload+params), then ``close``-d on ``close()``. It does for Externals what the executor's
+    ``open_once`` does for files — no re-loading a model per partition.
     """
 
     def __init__(self) -> None:
@@ -153,10 +153,7 @@ def registered_kinds() -> list[str]:
 
 # ---- hash validation ----------------------------------------------------------------------------
 def validate_plugin(plugin: ExternalPlugin) -> None:
-    """Reject a plugin whose ``content_hash`` is non-deterministic or vacuous.
-
-    A plan M9 requirement.
-    """
+    """Reject a plugin whose ``content_hash`` is non-deterministic or vacuous."""
     samples = list(plugin.samples())
     if len(samples) < 2:
         raise PreserveError(
@@ -273,9 +270,9 @@ def record_external(
     """Record a preservable External in a graphed ``session`` using ``plugin``.
 
     The node's descriptor carries the plugin's **deterministic content hash** of ``payload`` (so it
-    is preserved, not opaque). The build-time eval and the M9 reproduce-time eval both go through
-    ``plugin.evaluate`` on the same payload bytes, so a bundle reproduces bit-for-bit. This is the
-    entry point users follow to add their own External kinds.
+    is preserved, not opaque). The build-time eval and the bundle's reproduce-time eval both go
+    through ``plugin.evaluate`` on the same payload bytes, so a bundle reproduces bit-for-bit. This
+    is the entry point users follow to add their own External kinds.
 
     ``output_type=`` declares the type of each element of the plugin's value (any spelling the
     session's backend accepts, see ``Session.record_external``); it is recorded as the node's form

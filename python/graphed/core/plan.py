@@ -63,7 +63,7 @@ class OpSpec:
       files on disk are needed — the package is on ``sys.path``). The durable, preferred form.
     - ``kind="opaque"``: the callable is embedded **by value** via cloudpickle (base64). Used only
       when the callable is not importable (a closure/lambda/``__main__`` function). ``opaque`` is
-      then ``True`` — a preservation risk M9 surfaces.
+      then ``True`` — a preservation risk :attr:`DurablePlan.opaque` reports.
     """
 
     kind: Literal["ref", "opaque"]
@@ -136,7 +136,7 @@ class OpSpec:
 
 @dataclass(frozen=True)
 class DurablePlan:
-    """A versioned, deterministic, content-addressed serializable plan (plan M8).
+    """A versioned, deterministic, content-addressed serializable plan.
 
     Holds the canonical serialized IR plus the execution metadata an executor needs: the partition
     set, the columns to read, the reduction spec (``process``/``combine``/``empty``), stopping
@@ -165,7 +165,7 @@ class DurablePlan:
 
     @property
     def opaque(self) -> bool:
-        """True if any callable is embedded by value (a preservation risk; plan A.3.1)."""
+        """True if any callable is embedded by value (a preservation risk)."""
         ops = (self.process, self.combine, self.empty, self.finalize)
         return any(op is not None and op.opaque for op in ops)
 
@@ -271,7 +271,7 @@ class DurablePlan:
 
 @dataclass(frozen=True)
 class StageSpec:
-    """One stage of a multi-stage :class:`DurablePlanV2` (plan M39 §4.4).
+    """One stage of a multi-stage :class:`DurablePlanV2`.
 
     A shuffle is a stage-1 map-write (``kind="map_write"``) that a stage-2 gather
     (``kind="gather"|"gather_join"``) depends on via ``inputs`` (the indices of the stages it
@@ -280,7 +280,7 @@ class StageSpec:
     ``process`` is the per-task callable (an :class:`OpSpec`, source-free like V1). ``routing`` is
     the free-form exchange scheme the stage carries (``scheme``/``key``/``parts`` + the backend's
     ``backend_id`` — recorded here, in the EXISTING routing map, so folding it into the task id is
-    NOT a schema change, §7.2). ``tasks`` are the stage's producer-/gather-tasks.
+    NOT a schema change). ``tasks`` are the stage's producer-/gather-tasks.
     """
 
     kind: str
@@ -315,7 +315,7 @@ class StageSpec:
 
 @dataclass(frozen=True)
 class DurablePlanV2:
-    """The additive multi-stage durable plan (plan M39 §4.4).
+    """The additive multi-stage durable plan.
 
     A shuffle needs genuine intra-run staging (a gather stage depending on a map-write stage),
     which the single map->reduce :class:`DurablePlan` cannot express. This is a SEPARATE,
@@ -343,9 +343,9 @@ class DurablePlanV2:
     def task_id(self, stage_index: int, task: Task) -> str:
         """Content-addressed id for one task of one stage.
 
-        Folds the stage's ``routing`` (hence its ``backend_id``, §7.2) so two conforming backends
-        that route a key to different dests never journal the same id for different content
-        (B-r5.2); cache-poisoning-safe like V1's.
+        Folds the stage's ``routing`` (hence its ``backend_id``) so two conforming backends that
+        route a key to different dests never journal the same id for different content;
+        cache-poisoning-safe like V1's.
         """
         stage = self.stages[stage_index]
         routing_bytes = json.dumps(

@@ -20,7 +20,7 @@ class GraphedWarning(UserWarning):
 
 
 class PointError(GraphedError):
-    """A ``points=`` entry that does not fit the situation it names (design §4).
+    """A ``points=`` entry that does not fit the situation it names.
 
     ``situation`` discriminates the misuse — one of ``"unresolved" | "unreachable" | "duplicate" |
     "empty" | "conflict"`` — so a caller can ``except PointError`` and branch on ``.situation``
@@ -38,7 +38,7 @@ class PointError(GraphedError):
 
 
 class GraphedTypeError(GraphedError):
-    """An ill-typed op, raised at the user's source line (plan M2)."""
+    """An ill-typed op, raised at the user's source line."""
 
     def __init__(self, op: str, provenance: Provenance, detail: str = "") -> None:
         """Name the ill-typed ``op`` and the user line that recorded it."""
