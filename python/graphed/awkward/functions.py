@@ -242,6 +242,27 @@ def prod(
     return _reduce("ak.prod", arr, axis, keepdims=keepdims, mask_identity=mask_identity or None)
 
 
+def _weight_by_keyword(head: str) -> Callable[[Callable[..., Array]], Callable[..., Array]]:
+    """Refuse an array in ``ak``'s positional weight slot, after the ``head`` arguments."""
+    arrays = head.count(",") + 1
+
+    def wrap(fn: Callable[..., Array]) -> Callable[..., Array]:
+        @functools.wraps(fn)
+        def call(*args: Any, **kwargs: Any) -> Array:
+            if [arg for arg in args[arrays:] if isinstance(arg, Array | graphed.Varied)]:
+                name = fn.__name__
+                raise TypeError(
+                    f"gak.{name} takes weight by keyword: gak.{name}({head}, axis=1, weight=w) "
+                    f"(ak.{name}({head}, w, axis=1) also works on graphed arrays)"
+                )
+            return fn(*args, **kwargs)
+
+        return call
+
+    return wrap
+
+
+@_weight_by_keyword("x")
 def mean(
     arr: Array,
     axis: int | None = None,
@@ -270,6 +291,7 @@ def ptp(
     )
 
 
+@_weight_by_keyword("x")
 def std(
     arr: Array,
     axis: int | None = None,
@@ -291,6 +313,7 @@ def std(
     )
 
 
+@_weight_by_keyword("x")
 def var(
     arr: Array,
     axis: int | None = None,
@@ -312,6 +335,7 @@ def var(
     )
 
 
+@_weight_by_keyword("x, 2")
 def moment(
     arr: Array,
     n: int,

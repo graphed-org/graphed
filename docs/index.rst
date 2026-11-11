@@ -10,24 +10,24 @@ pool on your laptop, a dask cluster, a parsl pool.
 .. code-block:: python
 
     import awkward as ak
-    from graphed import Session
-    from graphed.awkward import AwkwardBackend, from_awkward, gak
+    import graphed
+    from graphed.awkward import from_awkward
 
-    session = Session(AwkwardBackend())
-    jets = from_awkward("jets", ak.Array([[40.0, 12.0], [55.0], [8.0]]), session=session)
-    leading = gak.max(jets[jets > 25.0], axis=1)     # nothing has run yet
+    jets = from_awkward("jets", ak.Array([[40.0, 12.0], [55.0], [8.0]]))
+    leading = ak.max(jets[jets > 25.0], axis=1)    # nothing has run yet
 
-    print(session.form(leading).describe())          # the result type, without reading any data
-    print(ak.to_list(session.materialize(leading)))  # now it runs
+    print(leading)                                  # the result type, without reading any data
+    print(graphed.materialize(leading).tolist())   # now it runs
 
 .. code-block:: text
 
-    ## * ?float64
+    graphed.Array<## * ?float64, from 'jets'>
     [40.0, 55.0, None]
 
-``gak`` carries ``awkward``'s names, and for the parameters it takes, ``awkward``'s own defaults:
+Your ``ak.*`` code records as-is. ``gak.*`` (``from graphed.awkward import gak``) is the same set
+with keyword-only options, and for the parameters it takes, ``awkward``'s own defaults:
 ``gak.concatenate`` defaults to ``axis=0`` because ``ak.concatenate`` does. What changes is that
-``gak.max`` hands you a recording instead of an array — and a short list of argument-passing
+``ak.max`` hands you a recording instead of an array — and a short list of argument-passing
 rules, which :doc:`awkward/index` walks through under *What changes when you port*.
 
 What you get past the deferred array
