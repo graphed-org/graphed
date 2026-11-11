@@ -104,3 +104,9 @@ def test_a_moved_array_verb_keeps_its_varied_disposition() -> None:
             moved_verbs.add(name)
     assert moved_verbs
     assert moved_verbs <= set(graphed.VERB_DISPOSITIONS)
+
+
+def test_the_pre_move_module_paths_load_with_the_package() -> None:
+    assert graphed.by_label.impact_by_label is graphed.systematics.impact_by_label
+    assert graphed.accessors.labels is graphed.systematics.labels
+    assert graphed._kinds.Kind is graphed.systematics.Kind
