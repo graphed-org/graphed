@@ -128,4 +128,4 @@ def test_public_pack_key_still_refuses_a_wide_value() -> None:
     session = graphed.Session(NumpyBackend())
     a = gn.from_record("a", event=np.array([2**20], dtype=np.uint64), session=session)
     with pytest.raises(StageError, match=r"2\*\*20"):
-        graphed.materialize(graphed.pack_key(a, on=["event"]))
+        graphed.materialize(graphed.shuffle.pack_key(a, on=["event"]))

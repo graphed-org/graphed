@@ -1257,8 +1257,8 @@ rather than array methods. ``repartition(array, by=)`` records a hash exchange o
 ``n=`` targets a partition count and ``target_bytes=`` coalesces by measured size. ``join`` gives
 you relational, row-duplicating semantics — a probe row with *k* matches on the build side yields
 *k* output rows — with ``how`` in ``{"inner", "left", "right", "outer"}``, matching
-``pandas.merge`` rather than an awkward broadcast. ``pack_key`` is the same key-packing step the
-join uses internally, public so you can pre-key a source.
+``pandas.merge`` rather than an awkward broadcast. ``graphed.shuffle.pack_key`` is the same
+key-packing step the join uses internally, public so you can pre-key a source.
 
 Because a join or a repartition is a barrier, the plan for it has stages:
 

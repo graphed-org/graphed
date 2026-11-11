@@ -128,7 +128,7 @@ def pack_key(array: Array, *, on: Sequence[str]) -> Array:
     ``Op`` (not a boundary), so it folds into the map stage; the backend computes it by big-endian
     integer bit-ops (never Python ``hash()``). It is public so a caller can pre-key a source.
     """
-    refuse_boundary("graphed.pack_key", array)
+    refuse_boundary("graphed.shuffle.pack_key", array)
     return array.session.record_op("pack_key", [array], {"on": ",".join(on)})
 
 

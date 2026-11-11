@@ -52,7 +52,7 @@ def test_join_refuses_a_varied_operand_naming_the_verb_and_the_labels(side: str)
     ("verb", "call"),
     [
         ("graphed.repartition", lambda varied: graphed.repartition(varied, n=2)),
-        ("graphed.pack_key", lambda varied: graphed.pack_key(varied, on=["key"])),
+        ("graphed.shuffle.pack_key", lambda varied: graphed.shuffle.pack_key(varied, on=["key"])),
     ],
 )
 def test_every_boundary_verb_names_the_verb_and_the_labels(

@@ -62,7 +62,7 @@ other source as a set, and in-memory arrays still pair as numpy arrays do.
 To say how two sources match:
 
 * ``graphed.join(a, b, on=["run", "luminosityBlock", "event"])`` matches by key. A key field may
-  now exceed 2\ :sup:`20`; ``graphed.pack_key`` called directly still refuses it.
+  now exceed 2\ :sup:`20`; ``graphed.shuffle.pack_key`` called directly still refuses it.
 * ``graphed.join(a, b, how="positional")`` is new: row i pairs with row i, for friend trees holding
   the same events in the same order with no key column. ``join_plan`` runs it a block at a time, so
   both sides need the same number of partitions; a differing row count is refused when it runs.

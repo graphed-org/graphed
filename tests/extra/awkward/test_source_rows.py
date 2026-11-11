@@ -311,4 +311,4 @@ def test_a_grouped_join_matches_event_numbers_too_wide_to_pack(tmp_path: Path) -
 def test_public_pack_key_still_refuses_a_wide_value(tmp_path: Path) -> None:
     left, _ = _keyed(tmp_path)
     with pytest.raises(StageError, match=r"2\*\*20"):
-        graphed.materialize(graphed.pack_key(left, on=["run", "event"]))
+        graphed.materialize(graphed.shuffle.pack_key(left, on=["run", "event"]))
