@@ -109,8 +109,8 @@ def test_a_join_has_as_many_dests_as_its_larger_sides_steps(files: list[str]) ->
     session = Session(AwkwardBackend())
     left = from_parquet(session, "left", files[:1])
     right = from_parquet(session, "right", files, steps_per_file=3)
-    plan = graphed.join_plan(graphed.join(left, right, on=["x"]).x)
-    assert _dests(plan) == [1, 6, 3]
+    assert _dests(graphed.join_plan(graphed.join(left, right, on=["x"]).x)) == [1, 6, 3]
+    assert _dests(graphed.join_plan(graphed.join(right, left, on=["x"]).x)) == [6, 1, 3]
 
 
 def test_a_plans_own_steps_per_file_wins(files: list[str]) -> None:

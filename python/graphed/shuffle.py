@@ -492,16 +492,16 @@ def _routing(
     is_join: bool,
     nodes: Sequence[Mapping[str, Any]],
     params: Mapping[str, Any],
-    steps_per_file: int,
+    default_parts: int,
     backend_id: str,
 ) -> tuple[int, tuple[str, str, int], dict[str, Any]]:
     """Return the destination count, the map-write route, and the map stages' routing record."""
     if is_join:
         exchanges = [n for n in nodes if n["kind"] == "exchange"]
         parts = (
-            int(dict(exchanges[0]["params"]).get("parts", steps_per_file))
+            int(dict(exchanges[0]["params"]).get("parts", default_parts))
             if exchanges
-            else steps_per_file
+            else default_parts
         )
         routing: dict[str, Any] = {
             "scheme": "hash",
@@ -510,7 +510,7 @@ def _routing(
             "backend_id": backend_id,
         }
         return parts, ("hash", JOINKEY, parts), routing
-    parts = int(params.get("parts", steps_per_file))
+    parts = int(params.get("parts", default_parts))
     route = (str(params["scheme"]), str(params.get("key", "")), parts)
     return parts, route, {**params, "parts": parts, "backend_id": backend_id}
 
@@ -544,7 +544,6 @@ def _build(
     frames = compiled.correspondence.frames
     steps = [steps_for(data, steps_per_file) for _, _, data in sides]
     side_parts = [data.partitions(n) for n, (_, _, data) in zip(steps, sides, strict=True)]
-    count = max(steps)
     if params.get("how") == "positional":
         # block i pairs with block i, and a differing row count in one is refused when it runs
         count, right_count = map(len, side_parts)
@@ -555,7 +554,7 @@ def _build(
             )
         parts, route, routing = _routing(False, nodes, {"scheme": "position"}, count, backend_id)
     else:
-        parts, route, routing = _routing(is_join, nodes, params, count, backend_id)
+        parts, route, routing = _routing(is_join, nodes, params, max(steps), backend_id)
 
     # past the refusals, since pieces take one call, and before `reduce`, which it fills, pickles
     variation_labels = None if on_compiled is None else on_compiled(compiled)
