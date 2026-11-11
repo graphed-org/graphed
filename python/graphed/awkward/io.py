@@ -26,21 +26,15 @@ from typing import Any, ClassVar, Literal, cast, overload
 import awkward as ak
 import numpy as np
 
-from graphed import (
-    Array,
-    Backend,
-    CompiledGraph,
-    Session,
-    compile_ir,
-    evaluate_ir,
-    refuse_chunk_partials,
-)
+from graphed import Array, Session, compile_ir, evaluate_ir
 from graphed import parquet as gpq
 from graphed import write as gw
 from graphed.aggregate import plan_services, shipped_evaluators
+from graphed.backend import Backend
 from graphed.core import Partition
 from graphed.core.execution import Plan, SequentialRunner, WorkerResources
 from graphed.errors import GraphedError
+from graphed.execute import CompiledGraph, refuse_chunk_partials
 from graphed.services import bind_externals
 from graphed.session import reader
 from graphed.varied import member_of, refuse_container, union_labels

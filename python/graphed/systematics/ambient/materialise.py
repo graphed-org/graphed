@@ -55,7 +55,7 @@ def adopt(
         held.recorded = _union(("nominal",), labels_of(composed))
         held.origin = None
         # §2.1/§2.3: the adoption HANDS OUT the composed member, as a read does, so
-        # `graphed.weight` and `graphed.explain_variations` stay observations, not inputs
+        # `weight` and `explain_variations` stay observations, not inputs
         _record_read(child, composed)
         if projected is not None and projected != "nominal":
             held.riders = project_riders(parent, projected)

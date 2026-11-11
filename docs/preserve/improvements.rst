@@ -25,7 +25,7 @@ convention, where the analysis ends *at* a histogram fill and you pass only ``va
 single array; handing it a varied one raises rather than silently picking a universe.
 
 **Workaround:** either use the ``value``/``weight``/``histogram`` form, or pick the universe
-you want first with ``graphed.universe(v, label)`` or ``graphed.nominal(v)``.
+you want first with ``graphed.systematics.universe(v, label)`` or ``graphed.systematics.nominal(v)``.
 
 Datasets are embedded, never referenced
 ---------------------------------------

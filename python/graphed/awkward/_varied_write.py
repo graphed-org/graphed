@@ -16,10 +16,12 @@ import awkward as ak
 import numpy as np
 
 import graphed.core
-from graphed import Array, CompiledGraph, Session, context_of
+from graphed import Array, Session
 from graphed import parquet as gpq
 from graphed import write as gw
 from graphed.errors import GraphedError
+from graphed.execute import CompiledGraph
+from graphed.systematics import context_of
 from graphed.systematics.lineage import is_ancestor, links_below
 from graphed.varied import Varied, member_of, members_of, most_derived_context
 

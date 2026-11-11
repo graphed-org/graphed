@@ -80,10 +80,10 @@ def test_set_session_inside_a_scope_replaces_only_the_default() -> None:
 
 def test_new_session_installs_a_backend_or_clears_the_default() -> None:
     backend = NumpyBackend()
-    new_session(backend)
-    made = current_session()
+    made = new_session(backend)
+    assert made is current_session()
     assert made.backend is backend
-    new_session()
+    assert new_session() is None
     numpy_default = current_session(NumpyBackend())
     assert numpy_default is not made
     assert isinstance(numpy_default.backend, NumpyBackend)

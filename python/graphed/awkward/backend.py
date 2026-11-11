@@ -162,7 +162,7 @@ def _adopt(value: Any, behavior: Mapping[Any, Any] | None) -> Any:
 
 @dataclass(eq=False)
 class AwkwardForm:
-    """Opaque form backed by a metadata-only typetracer array (implements graphed.Form)."""
+    """Opaque form backed by a metadata-only typetracer array (implements graphed.backend.Form)."""
 
     tt: ak.Array
 
@@ -407,7 +407,7 @@ class AwkwardBackend:
         self, op: str, inputs: Sequence[Form], params: Mapping[str, object]
     ) -> AwkwardForm:
         # `inputs` is the protocol-wide `Sequence[Form]`, not `Sequence[AwkwardForm]`: narrowing a
-        # parameter would make AwkwardBackend structurally incompatible with `graphed.Backend`
+        # parameter would make AwkwardBackend structurally incompatible with `Backend`
         # (contravariance), so `Session(AwkwardBackend())` would not type-check. A session only
         # ever feeds a backend the forms that same backend produced.
         """Infer the form ``op`` gives ``inputs`` from their typetracers."""
@@ -589,7 +589,7 @@ class AwkwardBackend:
         """§6.1d's broadcast seam for this idiom: `factor` given `value`'s jagged structure.
 
         A rectilinear idiom needs nothing here, which is why the seam is optional and
-        `graphed.broadcast_like` falls back to the identity when a backend omits it.
+        `graphed.systematics.broadcast_like` falls back to the identity when a backend omits it.
         """
         return gak.broadcast_arrays(value, factor)[1]  # type: ignore[arg-type]
 

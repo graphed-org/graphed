@@ -1078,15 +1078,17 @@ def current_session(backend: Backend | None = None) -> Session:
         return _defaults.session
 
 
-def new_session(backend: Backend | None = None) -> None:
-    """Replace the default Session with a new one on ``backend``.
+def new_session(backend: Backend | None = None) -> Session | None:
+    """Replace the default Session with a new one on ``backend`` and return it.
 
     With no ``backend``, on the factory set with :func:`set_default_backend`; with neither, the
-    default is cleared and the next array-less read creates one on its own backend. An open
-    ``with`` scope still wins until it exits.
+    default is cleared, ``None`` is returned, and the next array-less read creates one on its own
+    backend. An open ``with`` scope still wins until it exits.
     """
     made = backend if backend is not None else _factory_backend()
-    set_session(None if made is None else Session(made))
+    session = None if made is None else Session(made)
+    set_session(session)
+    return session
 
 
 def set_session(default: Session | None, /) -> Session | None:

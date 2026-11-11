@@ -409,7 +409,7 @@ def _member_form(session: Any, member: Any, label: str) -> Any:
 
     `two_level` resolves §2.2's one legal level of nesting, so an ordinary factor arrives here as
     an array. One that varies past that level would compose into an ambient universe that is
-    itself a container — which no consumer can read, `graphed.universe(...).node_id` included — so
+    itself a container — which no consumer can read, `universe(...).node_id` included — so
     it is refused here, inside `vary`, rather than at the read that trips over it.
     """
     if isinstance(member, Varied):

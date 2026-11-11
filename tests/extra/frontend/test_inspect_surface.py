@@ -76,7 +76,7 @@ def test_explain_is_a_deprecated_alias_of_explain_variations() -> None:
     session = Session(AwkwardBackend())
     ctx = graphed.awkward.gnano.events(from_awkward("Events", EVENTS, session=session))
     assert str(graphed.explain_variations(ctx)).startswith("graphed.explain_variations: 0")
-    with pytest.warns(DeprecationWarning, match="use graphed.explain_variations"):
+    with pytest.warns(DeprecationWarning, match="use graphed.systematics.explain_variations"):
         assert graphed.explain(ctx) == graphed.explain_variations(ctx)
 
 
@@ -84,6 +84,19 @@ def test_explain_variations_refuses_what_is_not_a_context() -> None:
     ev = _events()
     with pytest.raises(GraphedError, match="explain_variations reads an event context"):
         graphed.explain_variations(ev)
+
+
+@pytest.mark.parametrize(
+    ("read", "reads"),
+    [
+        (graphed.systematics.selection, "derivation mask"),
+        (graphed.systematics.weight, "ambient weight registry"),
+        (graphed.systematics.variations, "registered variations"),
+    ],
+)
+def test_context_readers_refuse_what_is_not_a_context(read: Any, reads: str) -> None:
+    with pytest.raises(GraphedError, match=f"{read.__name__} reads an event context's {reads}"):
+        read(_events())
 
 
 @pytest.mark.parametrize(

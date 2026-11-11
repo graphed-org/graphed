@@ -13,9 +13,10 @@ from typing import Any, cast, overload
 
 import numpy as np
 
-from graphed import Array, Session, broadcasting
+from graphed import Array, Session
 from graphed.array import scalar_params
 from graphed.session import reader
+from graphed.systematics.varied import broadcasting
 
 from . import NumpyBackend
 from .forms import NumpyForm

@@ -108,3 +108,7 @@ __all__ = [
     "worker_monitor_factory",
     "worker_profiler_factory",
 ]
+
+
+def __dir__() -> list[str]:
+    return list(__all__)

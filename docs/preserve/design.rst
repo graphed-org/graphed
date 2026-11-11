@@ -529,7 +529,8 @@ not one bundle per universe. ``reproduce`` then returns ``{label: counts}``:
 
    import awkward as ak
 
-   from graphed import Session, labels, vary
+   from graphed import Session, vary
+   from graphed.systematics import labels
    from graphed.awkward import AwkwardBackend, from_awkward, gak
    from graphed.preserve import build_bundle, inspect, reproduce
 

@@ -18,7 +18,8 @@ from typing import Any
 
 import numpy as np
 
-from graphed import Array, broadcasting
+from graphed import Array
+from graphed.systematics.varied import broadcasting
 
 from .array import NumpyArray
 from .forms import NumpyForm
