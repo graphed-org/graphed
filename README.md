@@ -22,29 +22,33 @@ Your eager script, with the reader line changed and one `graphed.materialize` ca
 
 ```python
 import awkward as ak
-import uproot
-import vector
-
 import graphed
-from hist.graphed import Hist  # the deferred twin of hist.Hist
+import numpy as np
+import uproot
+from hist.graphed import Hist
 
-vector.register_awkward()
+with uproot.recreate("events.root") as f:  # stand in for your dataset
+    f.mktree("Events", {"Jet_pt": "var * float64", "MET_pt": "float64",
+                        "genWeight": "float64", "pu_sf": "float64"})
+    f["Events"].extend({
+        "Jet_pt": ak.Array([[40.0, 25.0], [55.0], [30.0, 60.0, 20.0],
+                            [80.0], [15.0, 45.0], [70.0, 10.0]]),
+        "MET_pt": np.array([10.0, 40.0, 70.0, 120.0, 30.0, 90.0]),
+        "genWeight": np.array([1.0, 1.0, -1.0, 1.0, 1.0, 1.0]),
+        "pu_sf": np.array([0.9, 1.1, 1.0, 0.95, 1.05, 1.0]),
+    })
 
-events = uproot.graphed("data.root:Events")  # nothing is read yet
-mu = ak.zip(
-    {"pt": events.Muon_pt, "eta": events.Muon_eta, "phi": events.Muon_phi, "mass": events.Muon_mass},
-    with_name="Momentum4D",
-)
-mu = mu[ak.num(mu, axis=1) == 2]
-h = Hist.new.Reg(80, 70, 110, name="mass").Double().fill(mass=(mu[:, 0] + mu[:, 1]).mass)
+events = uproot.graphed("events.root:Events")  # reads the file's form, no events
+h = Hist.new.Reg(4, 0, 100, name="pt", label="jet $p_T$ [GeV]").Int64().fill(pt=events.Jet_pt)
 
-h = graphed.materialize(h)  # reads only the branches used, returns a hist.Hist
-print(type(h).__name__, h.sum())  # from here on: unchanged hist / scipy / mplhep code
-# Hist 2.0
+filled = graphed.materialize(h)  # a new, filled hist.Hist; h itself stays un-run
+print(type(filled).__name__, filled.values())
+# Hist [3 4 3 1]
 ```
 
+From `filled` on it is ordinary hist: `filled.plot()`, a scipy or iminuit fit, mplhep.
 `uproot.graphed` needs uproot 5.7.7 or later, and `hist.graphed` needs hist 2.12 and
-`graphed-histogram`. Fitting and plotting stay your hist, scipy and matplotlib code.
+`graphed-histogram`.
 
 ## Install
 
@@ -92,9 +96,9 @@ print(graphed.materialize(leading_pt).tolist())  # now it runs
 # [40.0, 55.0, None]
 ```
 
-Your `ak.*` code records as-is. `gak.*` (`from graphed.awkward import gak`) is the same set
-with keyword-only options: `gak.mean(x, axis=1, weight=w)` where awkward also accepts
-`ak.mean(x, w, axis=1)`.
+Your `ak.*` code records as-is, minus `highlevel=`, `behavior=` and `attrs=`. `gak.*`
+(`from graphed.awkward import gak`) is the same set with keyword-only options:
+`gak.mean(x, axis=1, weight=w)` where awkward also accepts `ak.mean(x, w, axis=1)`.
 
 ## The one thing that's different
 

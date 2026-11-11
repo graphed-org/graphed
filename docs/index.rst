@@ -24,8 +24,9 @@ pool on your laptop, a dask cluster, a parsl pool.
     graphed.Array<## * ?float64, from 'jets'>
     [40.0, 55.0, None]
 
-Your ``ak.*`` code records as-is. ``gak.*`` (``from graphed.awkward import gak``) is the same set
-with keyword-only options, and for the parameters it takes, ``awkward``'s own defaults:
+Your ``ak.*`` code records as-is, minus ``highlevel=``, ``behavior=`` and ``attrs=``.
+``gak.*`` (``from graphed.awkward import gak``) is the same set with keyword-only options, and
+for the parameters it takes, ``awkward``'s own defaults (``gak.softmax`` aside):
 ``gak.concatenate`` defaults to ``axis=0`` because ``ak.concatenate`` does. What changes is that
 ``ak.max`` hands you a recording instead of an array — and a short list of argument-passing
 rules, which :doc:`awkward/index` walks through under *What changes when you port*.

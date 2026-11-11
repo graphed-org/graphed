@@ -187,7 +187,7 @@ module = [
   "pyarrow.*", "perspective.*", "tornado.*", "websocket.*", "boost_histogram.*", "hist.*",
   "vector.*", "pandas.*", "keras.*", "tensorflow.*", "torch.*", "xgboost.*", "jax.*",
   "tritonclient.*", "graphed_histogram.*", "triton_python_backend_utils", "fsspec.*",
-  "playwright.*", "tqdm.*", "uproot.*",
+  "playwright.*", "tqdm.*",
 ]
 ignore_missing_imports = true
 follow_imports = "skip"
