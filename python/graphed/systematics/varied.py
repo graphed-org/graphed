@@ -28,7 +28,7 @@ Member = Any  # an `Array`, or a `Varied` when the container is a registered wei
 
 
 class Varied(EagerRefusals):
-    """A mapping of universes, `"nominal"` first (§2.2)."""
+    """A mapping of universes, `"nominal"` first."""
 
     __slots__ = ("__weakref__", "_context", "_members", "_tags")
 
@@ -96,7 +96,7 @@ class Varied(EagerRefusals):
         return member if member is not None else self._members[self._key_for(label)]
 
     def apply(self, fn: Callable[[Any], Any]) -> Varied:
-        """Apply a record-time ``Array -> Array`` function per universe (§2.2).
+        """Apply a record-time ``Array -> Array`` function per universe.
 
         Named `apply`, not `map`: `Array.map` is an EXECUTION-time data callable, and the two
         contracts must not share a name.
@@ -118,7 +118,7 @@ class Varied(EagerRefusals):
         if name in RESERVED:
             raise AttributeError(
                 f"{name!r} is not defined on a Varied; read one universe first, with "
-                "graphed.universe(v, label) or graphed.nominal(v)"
+                "graphed.systematics.universe(v, label) or graphed.systematics.nominal(v)"
             )
         if name.startswith("_"):
             raise AttributeError(name)
@@ -132,7 +132,7 @@ class Varied(EagerRefusals):
             if any(getattr(member, name) != probe for member in self._members.values()):
                 raise GraphedError(
                     f"the universes disagree on {name!r}; read one universe first, with "
-                    "graphed.universe(v, label)"
+                    "graphed.systematics.universe(v, label)"
                 )
             return probe
         return expand(lambda member: getattr(member, name), (self,), {})
@@ -171,10 +171,10 @@ def member_nodes(value: Any) -> tuple[int, ...]:
 
 
 def context_of(value: object) -> Any:
-    """Return the §2.3e context handle this value was read through, `None` when it is context-free.
+    """Return the context handle this value was read through, `None` when it is context-free.
 
-    On a `Varied` it answers with the CONTAINER's handle — the most-derived member handle §2.1
-    binds — which may belong to a non-nominal member.
+    On a `Varied` it answers with the CONTAINER's handle — the most-derived member handle the
+    container binds — which may belong to a non-nominal member.
     """
     if isinstance(value, Varied):
         return value._context
@@ -217,7 +217,7 @@ def labels_of(value: object) -> tuple[str, ...]:
 
 
 def member_of(value: object, label: str) -> Any:
-    """Return the universe `value` contributes for `label` (§2.4).
+    """Return the universe `value` contributes for `label`.
 
     Its own member, else its nominal one.
     """
@@ -309,7 +309,7 @@ def rebuild(
 
 
 def expand(fn: Callable[..., Any], args: Sequence[object], kwargs: Mapping[str, object]) -> Any:
-    """Call `fn` once per label of the §2.4 union with every operand narrowed to that label.
+    """Call `fn` once per label of the operands' label union, every operand narrowed to it.
 
     With no container among the operands the call passes straight through — an unvaried expression
     must record exactly as it does today, never as a one-member container.
@@ -357,7 +357,7 @@ def expand_tuple(
 
 # ---- §2.3d's two mapping dispositions --------------------------------------------------------
 def broadcasting(fn: Callable[..., Any]) -> Callable[..., Any]:
-    """Record the verb per universe, answering with a `Varied` over the §2.4 union."""
+    """Record the verb per universe, answering with a `Varied` over the operands' label union."""
 
     @functools.wraps(fn)
     def verb(*args: Any, **kwargs: Any) -> Any:
@@ -477,7 +477,7 @@ def boundary_refusal(verb: str, *values: object) -> GraphedError:
     return GraphedError(
         f"{verb} is a boundary operation and does not accept a Varied carrying labels "
         f"[{', '.join(union_labels(*values))}]; apply it to one universe at a time with "
-        "graphed.universe(v, label)"
+        "graphed.systematics.universe(v, label)"
     )
 
 
@@ -501,5 +501,6 @@ def refuse_container(verb: str, *values: object) -> None:
     if containers_in(*values):
         raise GraphedError(
             f"{verb} does not accept a Varied output; pass one universe with "
-            "graphed.universe(v, label), or build the varied plan through the histogram group API"
+            "graphed.systematics.universe(v, label), or build the varied plan through the "
+            "histogram group API"
         )

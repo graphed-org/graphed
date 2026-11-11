@@ -491,7 +491,7 @@ fn report_to_map(r: &ReductionReport) -> std::collections::HashMap<String, usize
     .collect()
 }
 
-/// Genuinely incremental reduction (plan §A.1): feed it a store as the graph is being built; each
+/// Genuinely incremental reduction: feed it a store as the graph is being built; each
 /// `step` canonicalizes ONLY the nodes recorded since the last step (identity elimination,
 /// commutativity dedup, hash-consing — the same sound rules the `EggEngine` runs), so a concise
 /// canonical form is maintained while building and `finalize` does one linear pass instead of a

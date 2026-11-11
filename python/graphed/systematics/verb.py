@@ -96,22 +96,35 @@ def vary(
     max_universes: int = DEFAULT_MAX_UNIVERSES,
     **tags: Any,
 ) -> Any:
-    """Register a variation family `name` on `target`, returning a NEW object (§2.1).
+    """Register a variation family `name` on `target`, returning a NEW object.
 
-    `**tags` and `points=` carry tag/member pairs under the §1.1 grammar; the signature's own
-    keyword names (`nominal`, `is_weight`, `points`, `collections`) are legal tags AND legal
+    `**tags` and `points=` carry tag/member pairs under the variation-tag grammar; the signature's
+    own keyword names (`nominal`, `is_weight`, `points`, `collections`) are legal tags AND legal
     collection names, so one so named arrives through a mapping channel instead.
 
     `points=` is either a `Mapping[tag, member]` (declares only, the common case) or an iterable
     mixing 2-`tuple` `(tag, member)` declares with `{nuisance: coordinate}` placement mappings that
-    SELECT a derived joint (dependent member) or RE-POINT a label off-grid (independent member)
-    (§2/§3). When a member is computed over another registered nuisance's varied nodes the family
-    fans out to the full grid of joint universes automatically (§2). `composes_as_union=True`
-    collapses it back to the one-at-a-time datacard union; `max_universes=` raises the §4 guard's
-    budget.
+    SELECT a derived joint (dependent member) or RE-POINT a label off-grid (independent member).
+    When a member is computed over another registered nuisance's varied nodes the family fans out
+    to the full grid of joint universes automatically. `composes_as_union=True` collapses it back
+    to the one-at-a-time datacard union; `max_universes=` raises the universe-count guard's budget.
 
     A number target, `graphed.vary(1.0, "lumi", up=1.025, down=0.975)`, is a flat factor to
     multiply into an array, returned as a `ScalarFactor`; its members are numbers.
+
+    >>> import awkward as ak
+    >>> import graphed
+    >>> from graphed.awkward import from_awkward, gak, gnano
+    >>> data = ak.Array({"Jet": [[{"pt": 40.0}, {"pt": 12.0}], [{"pt": 55.0}]]})
+    >>> events = gnano.events(from_awkward("events", data))
+    >>> events = graphed.vary(events, "jes", collections={"Jet": {
+    ...     "up": gak.with_field(events.Jet, events.Jet.pt * 1.05, "pt"),
+    ...     "down": gak.with_field(events.Jet, events.Jet.pt * 0.95, "pt")}})
+    >>> lead = gak.max(events.Jet.pt, axis=1)
+    >>> graphed.systematics.labels(lead)
+    ('nominal', 'jes_up', 'jes_down')
+    >>> graphed.materialize(graphed.systematics.universe(lead, "jes_up")).tolist()
+    [42.0, 57.75]
     """
     if not isinstance(name, str) or not name.isidentifier():
         raise GraphedError(f"a variation name must be a Python identifier, got {name!r}")

@@ -242,9 +242,9 @@ def _check_widening(ctx: EventContext, slot: int, central: Any, name: str) -> No
     raise GraphedError(
         f"graphed.vary({name!r}): its central names the weight factor registered here, but "
         f"joining would add the universes {sorted(added)} to it, and the "
-        f"relative-delta family {covering!r} was registered on a graphed.weight() handle read "
-        "over that factor; register the absolute family first and the relative-delta family "
-        "on a handle read after it"
+        f"relative-delta family {covering!r} was registered on a graphed.systematics.weight() "
+        "handle read over that factor; register the absolute family first and the relative-delta "
+        "family on a handle read after it"
     )
 
 

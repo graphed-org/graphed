@@ -135,6 +135,13 @@ def run(
     ``"sample"``.
 
     Raise a `StageError` (mapped to the user's analysis line) on the first failing op.
+
+    >>> import awkward as ak
+    >>> import graphed.debug as gd
+    >>> from graphed.awkward import from_awkward
+    >>> x = from_awkward("x", ak.Array([1.0, 2.0, 3.0]))
+    >>> gd.run(x.session, x * 10, opt_level=0).tolist()
+    [10.0, 20.0, 30.0]
     """
     if isinstance(partition, str):
         raise TypeError(

@@ -1,4 +1,4 @@
-"""`graphed.explain_variations` (§2.7): what varies, how each family entered, how they relate.
+"""`explain_variations` (§2.7): what varies, how each family entered, how they relate.
 
 A pure READER of what the context already keeps — the lineage's registrations, the ambient's riders
 through `ambient_entries`, the link chain from the root and the Session's point registry. It
@@ -57,7 +57,7 @@ class Entry:
 
 @dataclass(frozen=True, slots=True)
 class Family:
-    """§2.7: one ``graphed.vary`` registration, as ``graphed.explain_variations`` reports it."""
+    """§2.7: one ``graphed.vary`` registration, as ``explain_variations`` reports it."""
 
     #: the family name and its coordinates
     name: str
@@ -161,7 +161,7 @@ class Variation:
 
 @dataclass(frozen=True, slots=True)
 class Explanation:
-    """§2.7: how a user's sources of uncertainty became this context's variations.
+    """How a user's sources of uncertainty became this context's variations.
 
     ``str()`` renders one line per item under three headings: the families by name in registration
     order, the ambient's operations in the order the composition applies them, and the universes
@@ -221,7 +221,7 @@ def _lineage_registrations(ctx: EventContext) -> tuple[Registration, ...]:
 def explain(ctx: EventContext) -> Explanation:
     """Warn, then answer as :func:`explain_variations`, the name that replaces this one."""
     warnings.warn(
-        "graphed.explain is deprecated; use graphed.explain_variations",
+        "graphed.systematics.explain is deprecated; use graphed.systematics.explain_variations",
         DeprecationWarning,
         stacklevel=2,
     )
@@ -229,18 +229,18 @@ def explain(ctx: EventContext) -> Explanation:
 
 
 def explain_variations(ctx: EventContext) -> Explanation:
-    """§2.7: how this context's variations came to be.
+    """Explain how this context's variations came to be.
 
     The families, the ambient's operations and the universes carried here, as a frozen record whose
     `str()` is one line per item.
 
     Everything is DERIVED, never re-decided: the families from the registrations the lineage
     recorded, the operations from the riders (`ambient_entries`), and each universe's origin from
-    its registered point against those families. The ambient is read exactly as `graphed.weight`
+    its registered point against those families. The ambient is read exactly as `weight`
     reads it and nothing else is composed, so a call mints no node a `weight` read would not.
     """
     if not isinstance(ctx, ContextNode):
-        raise GraphedError("graphed.explain_variations reads an event context")
+        raise GraphedError("graphed.systematics.explain_variations reads an event context")
     registrations = _lineage_registrations(ctx)
     ambient = weight_of(ctx)
     # a row-space change hands its child ONE composed member, which carries no labels of its own:

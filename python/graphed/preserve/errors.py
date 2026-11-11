@@ -10,8 +10,7 @@ class PreserveError(Exception):
 class UnresolvedPayloadError(PreserveError):
     """A referenced payload (IR / dataset / correction / model / sourcemap) is not in the archive.
 
-    Reproduction fails loudly with the missing content hash — never a silent wrong result (plan
-    M9).
+    Reproduction fails loudly with the missing content hash — never a silent wrong result.
     """
 
     def __init__(self, content_hash: str, *, what: str = "payload") -> None:

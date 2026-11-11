@@ -360,7 +360,7 @@ def ambient_entries(ctx: EventContext) -> tuple[tuple[int, Rider, Any], ...]:
     were, the joining family entering its slot's families.
 
     Deliberately not re-exported from `graphed`: it reads the mechanism, and the analysis idiom is
-    `graphed.weight` / `graphed.variations`.
+    `graphed.systematics.weight` / `graphed.systematics.variations`.
     """
     if not isinstance(ctx, ContextNode):
         raise GraphedError(

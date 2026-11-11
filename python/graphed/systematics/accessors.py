@@ -2,7 +2,7 @@
 
 Extraction is functional, never a method or a subscript (§2.2/§2.6a): branch names are
 analysis-controlled and open-ended, so any reserved attribute on a `Varied` or an event context
-would be a latent collision with real tree content. `graphed.labels`/`universe`/`nominal` take the
+would be a latent collision with real tree content. `labels`/`universe`/`nominal` take the
 same four input shapes — a `Varied`, an event context, a `{label: hist}` result mapping, and a
 duck-typed histogram — so introspection reads uniformly wherever a variation can end up.
 """
@@ -71,15 +71,15 @@ def _variation_axis_index(hist: Any) -> int | None:
 
 
 def labels(x: Introspectable) -> tuple[str, ...]:
-    """Return the variation labels `x` carries, `"nominal"` first then insertion order (§2.2)."""
+    """Return the variation labels `x` carries, `"nominal"` first then insertion order."""
     if isinstance(x, Varied):
         return tuple(members_of(x))
     if _is_context(x):
         return context_labels(x)
     if isinstance(x, Array):
         raise GraphedError(
-            "a plain Array carries no variations; graphed.labels takes a Varied, an event "
-            "context, a result mapping or a histogram"
+            "a plain Array carries no variations; graphed.systematics.labels takes a Varied, an "
+            "event context, a result mapping or a histogram"
         )
     if isinstance(x, Mapping):
         seat = ("nominal",) if "nominal" in x else ()
@@ -91,11 +91,11 @@ def labels(x: Introspectable) -> tuple[str, ...]:
             seat = ("nominal",) if "nominal" in stored else ()
             return (*seat, *(bin_ for bin_ in stored if bin_ != "nominal"))
         return ("nominal",)
-    raise GraphedError(f"graphed.labels does not know how to read {type(x).__name__}")
+    raise GraphedError(f"graphed.systematics.labels does not know how to read {type(x).__name__}")
 
 
 def universe(x: Introspectable, label: str) -> Any:
-    """`x`'s universe for `label` — a KeyError listing the valid labels when it has none (§2.5)."""
+    """`x`'s universe for `label` — a KeyError listing the valid labels when it has none."""
     if isinstance(x, Varied):
         return member_exact(x, label)
     if _is_context(x):
@@ -118,23 +118,25 @@ def universe(x: Introspectable, label: str) -> Any:
                 f"unknown variation label {label!r}; this histogram carries ['nominal']"
             )
         return x
-    raise GraphedError(f"graphed.universe does not know how to read {type(x).__name__}")
+    raise GraphedError(
+        f"graphed.systematics.universe does not know how to read {type(x).__name__}"
+    )
 
 
 def nominal(x: Introspectable) -> Any:
-    """Return the central universe — `graphed.universe(x, "nominal")` for every shape (§2.2)."""
+    """Return the central universe — `universe(x, "nominal")` for every shape."""
     return universe(x, "nominal")
 
 
 def points(x: Introspectable) -> dict[str, dict[str, str]]:
-    """`{label: {nuisance: coordinate}}` — the authoritative coordinate view (§4.10).
+    """`{label: {nuisance: coordinate}}` — the authoritative coordinate view.
 
     Label-sorted, each coordinate map nuisance-sorted, `"nominal"` mapping to `{}`. Coordinates
     render BY VALUE, so the view predicts resolution and deliberately does not round-trip the tag
     spelling the label keeps.
 
     Defined on the RECORD-TIME shapes alone — a `Varied` and an event context. Points are not
-    carried on disk (§5.3) and a label cannot be parsed back into a point (§4.3), so answering
+    carried on disk and a label cannot be parsed back into a point, so answering
     `{label: {}}` for an executed result would assert that every executed universe is the origin.
     """
     if isinstance(x, Varied):
@@ -144,24 +146,26 @@ def points(x: Introspectable) -> dict[str, dict[str, str]]:
         registry, carried = context_session(x).systematics.points, context_labels(x)
     else:
         raise GraphedError(
-            "graphed.points reads a record-time shape — a Varied or an event context — not "
-            f"{type(x).__name__}: points are not carried on an executed result, and a label "
+            "graphed.systematics.points reads a record-time shape — a Varied or an event context "
+            f"— not {type(x).__name__}: points are not carried on an executed result, and a label "
             "cannot be parsed back into a point"
         )
     return {label: render(registry.get(label, Point({}))) for label in sorted(carried)}
 
 
 def selection(ctx: Any) -> Any:
-    """§9.1's bridge: the `Varied`/Array mask that derived a context from its parent (§6.4a).
+    """Return the `Varied`/Array mask that derived a context from its parent.
 
     `None` for a root context. On a universe/nominal-derived context it returns that label's member
     of the argument's own selection — an unvaried `Array` in the grandparent's row space; on a
     `vary`-derived one it skips the identity links and answers with the mask below. The verb that
-    makes the m51 skim sink reachable from the §2.6 context idiom. Not `lineage.selection`, which
-    answers `None` across a projection.
+    makes the variation-aware skim sink (``to_parquet(select=)``) reachable from a context. Not
+    `lineage.selection`, which answers `None` across a projection.
     """
     if not _is_context(ctx):
-        raise GraphedError("graphed.selection reads an event context's derivation mask")
+        raise GraphedError(
+            "graphed.systematics.selection reads an event context's derivation mask"
+        )
     node: ContextNode | None = ctx
     while node is not None and (link := link_of(node)) is not None:
         kind, payload = link
@@ -178,29 +182,33 @@ def selection(ctx: Any) -> Any:
 def weight(ctx: Any) -> Varied | Array | None:
     """Return a context's ambient event weight as a `Varied`.
 
-    `None` when nothing is registered (§9.1); a projected context's
-    (`graphed.universe(ctx, label)`) is that one universe's member.
+    `None` when nothing is registered; a projected context's
+    (`graphed.systematics.universe(ctx, label)`) is that one universe's member.
 
     Read-only: it returns the registry's current container, it never mutates.
     """
     if not _is_context(ctx):
-        raise GraphedError("graphed.weight reads an event context's ambient weight registry")
+        raise GraphedError(
+            "graphed.systematics.weight reads an event context's ambient weight registry"
+        )
     return weight_of(ctx)
 
 
 def variations(ctx: Any) -> dict[str, dict[str, tuple[Kind, Fraction | None]]]:
-    """Return a context's registered variations as `{name: {tag: (kind, value | None)}}` (§9.1).
+    """Return a context's registered variations as `{name: {tag: (kind, value | None)}}`.
 
-    The kind is a `graphed.Kind` PER (name, tag): `Kind.WEIGHT` for a §2.1 overload-(b)
-    registration, `Kind.SHIFT` for an overload-(c) one, and their union when the tag was registered
-    both ways — §4.8's mechanism for "these two registrations are the same fit parameter". The
+    The kind is a `graphed.systematics.Kind` PER (name, tag): `Kind.WEIGHT` for an `is_weight=True`
+    registration, `Kind.SHIFT` for a `collections=` one, and their union when the tag was
+    registered both ways — how two registrations declare themselves the same fit parameter. The
     weight side is read from the lineage's registration record, never from the ambient container's
     tag map, which a row-space change widens with the shifts the mask carries. The value is the
-    tag's parsed numeric magnitude — the ordering handle §6.2's lexicographic axis cannot give —
+    tag's parsed numeric magnitude — the ordering handle a lexicographic tag order cannot give —
     and `None` for a non-numeric tag.
     """
     if not _is_context(ctx):
-        raise GraphedError("graphed.variations reads an event context's registered variations")
+        raise GraphedError(
+            "graphed.systematics.variations reads an event context's registered variations"
+        )
     kinds: dict[str, dict[str, Kind]] = {}
     for name, tags in ambient_of(ctx).weight_tags.items():
         for tag in tags:

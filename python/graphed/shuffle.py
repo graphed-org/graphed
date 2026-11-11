@@ -95,11 +95,22 @@ def repartition(
     n: int | None = None,
     target_bytes: int | None = None,
 ) -> Array:
-    """Repartition ``array`` (plan §3.1).
+    """Repartition ``array``.
 
     ``by=<field>`` records a hash ``Exchange`` keyed on that field (the join/keyed-shuffle case — a
     neutral module verb, NOT an ``Array`` method); ``target_bytes=`` coalesces by measured size;
     ``n=`` sets a target partition count.
+
+    >>> import tempfile, awkward as ak
+    >>> import graphed
+    >>> from graphed.awkward import from_parquet, gak
+    >>> from graphed.core import SequentialRunner
+    >>> path = tempfile.mkdtemp() + "/events.parquet"
+    >>> _ = ak.to_parquet(ak.Array({"MET_pt": [10.0, 20.0, 30.0, 40.0]}), path)
+    >>> moved = graphed.repartition(from_parquet("events", path), n=2)
+    >>> plan = graphed.aggregate_plan(gak.sum(moved.MET_pt))
+    >>> float(SequentialRunner().run(plan).value)
+    100.0
     """
     refuse_boundary("graphed.repartition", array)
     return array.session.record_exchange(
@@ -113,7 +124,7 @@ JOINKEY = "__joinkey__"
 def pack_key(array: Array, *, on: Sequence[str]) -> Array:
     """Record a neutral ``pack_key`` op that adds a flat unsigned-64 ``__joinkey__`` column.
 
-    The column is derived from the ``on`` fields (plan §2.1/§3.3, spec Impl Target 8). A fusible
+    The column is derived from the ``on`` fields. A fusible
     ``Op`` (not a boundary), so it folds into the map stage; the backend computes it by big-endian
     integer bit-ops (never Python ``hash()``). It is public so a caller can pre-key a source.
     """
@@ -130,7 +141,7 @@ def route_key(array: Array, on: Sequence[str]) -> Array:
 
 
 def join(left: Array, right: Array, *, on: Sequence[str] = (), how: str = "inner") -> Array:
-    """Return the neutral ``graphed.join`` MODULE verb (plan §3.1).
+    """Return the neutral ``graphed.join`` MODULE verb.
 
     A relational, SQL-*duplicating* join of two arrays on ``on`` (a probe row with k build matches
     ⇒ k output rows). A join is neither an awkward nor a numpy idiom, so — like :func:`repartition`
@@ -143,6 +154,21 @@ def join(left: Array, right: Array, *, on: Sequence[str] = (), how: str = "inner
     ``how="positional"`` takes no ``on``: row i pairs with row i, for two sources holding the same
     events in the same order. It reads no key and moves no rows between partitions; a differing
     row count is refused when it runs, so a one-row side never broadcasts.
+
+    >>> import tempfile, awkward as ak
+    >>> import graphed
+    >>> from graphed.awkward import from_parquet, gak
+    >>> from graphed.core import SequentialRunner
+    >>> root = tempfile.mkdtemp()
+    >>> events = ak.Array({"run": [1, 1, 2], "MET_pt": [10.0, 20.0, 30.0]})
+    >>> _ = ak.to_parquet(events, f"{root}/events.parquet")
+    >>> _ = ak.to_parquet(ak.Array({"run": [1, 2], "lumi_w": [0.5, 2.0]}), f"{root}/lumi.parquet")
+    >>> events = from_parquet("events", f"{root}/events.parquet")
+    >>> lumi = from_parquet("lumi", f"{root}/lumi.parquet")
+    >>> joined = graphed.join(events, lumi, on=["run"])
+    >>> plan = graphed.aggregate_plan(gak.sum(joined.MET_pt * joined.lumi_w))
+    >>> float(SequentialRunner().run(plan).value)
+    75.0
     """
     refuse_boundary("graphed.join", left, right)
     if left.session is not right.session:
@@ -358,7 +384,7 @@ def shuffle_plan(
     steps_per_file: int | None = None,
     services: Sequence[str] | None = None,
 ) -> DurablePlanV2:
-    """Build the :class:`~graphed.core.DurablePlanV2` of a repartition (plan §3.2, §4.4).
+    """Build the :class:`~graphed.core.DurablePlanV2` of a repartition.
 
     ``map_write`` over the session's partitioned source, ``gather`` per dest (``reduce`` over its
     output values), and a one-task ``reduce`` stage that folds the dests with
@@ -404,15 +430,15 @@ def join_plan(
 ) -> DurablePlanV2:
     """Build the :class:`~graphed.core.DurablePlanV2` of a two-source ``graphed.join``.
 
-    Plan §3.2, contract E1/target 13: one ``map_write`` stage per join input (stage ``i`` reads
-    input ``i``'s source), co-partitioned on ``__joinkey__``, then a ``gather_join`` over both
-    (``inputs=(0, 1)``) that joins each dest and runs what was recorded after the join. Given
-    ``reduce``/``combine``/``empty`` (all or none), the gather reduces its values and a one-task
-    ``reduce`` stage folds the dests; without them the plan's value is the tuple of per-dest
-    outputs. The recorded ``broadcast`` routing field is the block engines' choice; a plan always
-    hash-routes both sides. ``steps_per_file`` splits each source's files as in ``aggregate_plan``
-    and, absent a repartition, is also the dest count (1 when ``None``). A positional join routes
-    no key: dest i pairs block i of each side, so the dest count is their partition count.
+    One ``map_write`` stage per join input (stage ``i`` reads input ``i``'s source), co-partitioned
+    on ``__joinkey__``, then a ``gather_join`` over both (``inputs=(0, 1)``) that joins each dest
+    and runs what was recorded after the join. Given ``reduce``/``combine``/``empty`` (all or
+    none), the gather reduces its values and a one-task ``reduce`` stage folds the dests; without
+    them the plan's value is the tuple of per-dest outputs. The recorded ``broadcast`` routing
+    field is the block engines' choice; a plan always hash-routes both sides. ``steps_per_file``
+    splits each source's files as in ``aggregate_plan`` and, absent a repartition, the larger
+    side's steps per file is the dest count. A positional join routes no key: dest i pairs block i
+    of each side, so the dest count is their partition count.
 
     Several ``outputs`` need the fold: ``reduce`` gets their values, as in ``aggregate_plan``.
     """
@@ -491,16 +517,16 @@ def _routing(
     is_join: bool,
     nodes: Sequence[Mapping[str, Any]],
     params: Mapping[str, Any],
-    steps_per_file: int,
+    default_parts: int,
     backend_id: str,
 ) -> tuple[int, tuple[str, str, int], dict[str, Any]]:
     """Return the destination count, the map-write route, and the map stages' routing record."""
     if is_join:
         exchanges = [n for n in nodes if n["kind"] == "exchange"]
         parts = (
-            int(dict(exchanges[0]["params"]).get("parts", steps_per_file))
+            int(dict(exchanges[0]["params"]).get("parts", default_parts))
             if exchanges
-            else steps_per_file
+            else default_parts
         )
         routing: dict[str, Any] = {
             "scheme": "hash",
@@ -509,7 +535,7 @@ def _routing(
             "backend_id": backend_id,
         }
         return parts, ("hash", JOINKEY, parts), routing
-    parts = int(params.get("parts", steps_per_file))
+    parts = int(params.get("parts", default_parts))
     route = (str(params["scheme"]), str(params.get("key", "")), parts)
     return parts, route, {**params, "parts": parts, "backend_id": backend_id}
 
@@ -541,8 +567,8 @@ def _build(
     factory = worker_backend(session, backend)
     wired = external_evaluators(session, compiled) | dict(externals or {})
     frames = compiled.correspondence.frames
-    side_parts = [data.partitions(steps_for(data, steps_per_file)) for _, _, data in sides]
-    count = 1 if steps_per_file is None else steps_per_file
+    steps = [steps_for(data, steps_per_file) for _, _, data in sides]
+    side_parts = [data.partitions(n) for n, (_, _, data) in zip(steps, sides, strict=True)]
     if params.get("how") == "positional":
         # block i pairs with block i, and a differing row count in one is refused when it runs
         count, right_count = map(len, side_parts)
@@ -553,7 +579,7 @@ def _build(
             )
         parts, route, routing = _routing(False, nodes, {"scheme": "position"}, count, backend_id)
     else:
-        parts, route, routing = _routing(is_join, nodes, params, count, backend_id)
+        parts, route, routing = _routing(is_join, nodes, params, max(steps), backend_id)
 
     # past the refusals, since pieces take one call, and before `reduce`, which it fills, pickles
     variation_labels = None if on_compiled is None else on_compiled(compiled)

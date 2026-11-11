@@ -2,7 +2,7 @@
 
 Both answer over the SAME operand — `Sequence[Varied] | Mapping[str, Sequence[Array]]`, the
 labelled analogue of `read_columns`' first argument — and both range over the §2.4 label UNION
-resolved by `graphed.member_of`, never the strict `graphed.universe`, which raises `KeyError` on a
+resolved by `member_of`, never the strict `universe`, which raises `KeyError` on a
 heterogeneous operand (a jes-varied kinematic beside a btag-varied weight is the corpus mainline).
 """
 
@@ -103,13 +103,13 @@ def _is_sequence(value: object) -> bool:
 def impact_by_label(
     outputs: Sequence[Varied] | Mapping[str, Sequence[Array]],
 ) -> dict[str, tuple[int, ...]]:
-    """§3.4: per label, the record node ids that label reaches and `"nominal"` does not, sorted.
+    """Per label, the record node ids that label reaches and `"nominal"` does not, sorted.
 
     The reachability DIFFERENCE, not an id watermark: interleaved broadcast recording makes
     watermark bracketing order-dependent, and a node two non-nominal labels share appears in BOTH
     impact sets. No `source_nid` — `session.walk` is source-agnostic.
     """
-    per_label = _per_label("graphed.impact_by_label", outputs)
+    per_label = _per_label("graphed.systematics.impact_by_label", outputs)
     central = _reach(per_label.get("nominal", []))
     # `nominal` is `central - central`: answer it from the walk already done rather than repeating
     # it
@@ -134,10 +134,10 @@ def _ignore(*_args: object) -> None:
 def read_columns_by_label(
     outputs: Sequence[Varied] | Mapping[str, Sequence[Array]], source_nid: int
 ) -> dict[str, tuple[str, ...] | None]:
-    """§5.3: per label, that label's sorted read set on source `source_nid`.
+    """Per label, that label's sorted read set on source `source_nid`.
 
     This makes the read-width cost of a shift visible. `None` is `read_columns`' own conservative
     answer — "read every column" — and must never merge with `()`, which says the opposite.
     """
-    per_label = _per_label("graphed.read_columns_by_label", outputs)
+    per_label = _per_label("graphed.systematics.read_columns_by_label", outputs)
     return {label: read_columns(arrays, source_nid) for label, arrays in per_label.items()}

@@ -12,7 +12,9 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
-from graphed import CONSERVATIVE, Array, Projection, expanding, handle_opaque
+from graphed import Array
+from graphed.projection import CONSERVATIVE, Projection, handle_opaque
+from graphed.systematics.varied import expanding
 
 
 @dataclass(frozen=True)

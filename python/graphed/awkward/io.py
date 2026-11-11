@@ -1,15 +1,15 @@
-"""Partitioned parquet I/O for the awkward backend (M15.2, dask-awkward parity plan).
+"""Partitioned parquet I/O for the awkward backend.
 
 Specializes the backend-agnostic `graphed.parquet` base: the awkward pieces are exactly two —
 the FORM comes from the arrow schema alone (awkward's own reader on a zero-row file of that
 schema; no event data is read at construction) and the per-partition codec is
 `ak.from_parquet`/`ak.to_parquet`.
 
-`to_parquet` follows the R15.4/R15.5 contract proven by the uproot integration: compute-disabled
-returns a task graph of write tasks; each task evaluates the array's graph through the COMPILED
-IR (R7.8 — compiled once at the driver, never re-recorded per partition), reads only the
-PROJECTED columns (R15.3 — the read list is wired from the projection), derives its own output
-part index from its partition (R15.9), and writes one parquet part.
+`to_parquet` follows the contract proven by the uproot integration: compute-disabled returns a
+task graph of write tasks; each task evaluates the array's graph through the COMPILED IR (compiled
+once at the driver, never re-recorded per partition), reads only the PROJECTED columns (the read
+list is wired from the projection), derives its own output part index from its partition, and
+writes one parquet part.
 """
 
 from __future__ import annotations
@@ -26,21 +26,15 @@ from typing import Any, ClassVar, Literal, cast, overload
 import awkward as ak
 import numpy as np
 
-from graphed import (
-    Array,
-    Backend,
-    CompiledGraph,
-    Session,
-    compile_ir,
-    evaluate_ir,
-    refuse_chunk_partials,
-)
+from graphed import Array, Session, compile_ir, evaluate_ir
 from graphed import parquet as gpq
 from graphed import write as gw
 from graphed.aggregate import plan_services, shipped_evaluators
+from graphed.backend import Backend
 from graphed.core import Partition
 from graphed.core.execution import Plan, SequentialRunner, WorkerResources
 from graphed.errors import GraphedError
+from graphed.execute import CompiledGraph, refuse_chunk_partials
 from graphed.services import bind_externals
 from graphed.session import reader
 from graphed.varied import member_of, refuse_container, union_labels
@@ -174,9 +168,18 @@ def from_parquet(
     The form is built from METADATA alone; no event data is read here. ``steps_per_file`` and
     ``open_files`` shape the dataset's default partitioning, which a plan takes unless its own
     ``steps_per_file=`` is given: each file splits into ``steps_per_file`` partitions, blind by
-    default (no file is opened to plan, R7.9) or, with ``open_files=True``, with exact entry
+    default (no file is opened to plan) or, with ``open_files=True``, with exact entry
     ranges from each file's metadata row count, read when the plan is built. Both are source
     params, so they are part of the source's identity.
+
+    >>> import tempfile, awkward as ak
+    >>> import graphed
+    >>> from graphed.awkward import from_parquet
+    >>> path = tempfile.mkdtemp() + "/events.parquet"
+    >>> _ = ak.to_parquet(ak.Array({"MET_pt": [10.0, 55.0, 30.0]}), path)
+    >>> events = from_parquet("events", path)
+    >>> graphed.materialize(events.MET_pt * 2).tolist()
+    [20.0, 110.0, 60.0]
     """
     paths = gpq.discover(path)
     form = _schema_form(paths, columns)
@@ -842,20 +845,29 @@ def to_parquet(
     column: str = "data",
     behavior: Any = None,
 ) -> list[str] | Plan[list[str]]:
-    """Write the deferred array to parquet parts, one per partition (R15.4 semantics).
+    """Write the deferred array to parquet parts, one per partition.
 
     With ``compute=False`` returns the task graph of write tasks; with ``compute=True`` runs that
-    SAME plan (``SequentialRunner`` by default; pass any R7 executor). The array must be recorded
+    SAME plan (``SequentialRunner`` by default; pass any executor). The array must be recorded
     over exactly one source; the per-task read list comes from the recorded graph's projection. A
     ``destination`` containing ``://`` is an fsspec URL: the parts are written on its filesystem.
     ``steps_per_file`` parts are written per input file; ``None`` takes the source's own default.
 
-    ``select=`` turns this into a §6.4 variation-aware write: ``array`` is the PRE-selection record
-    and ``select`` carries the per-level ``Varied`` mask(s) (a single row mask ⇔ ``{0: mask}``, or
-    a ``{0: event_mask, ("Jet", 1): jet_mask}`` mapping). The writer materializes the SUPERSET of
+    ``select=`` turns this into a variation-aware write: ``array`` is the PRE-selection record and
+    ``select`` carries the per-level ``Varied`` mask(s) (a single row mask ⇔ ``{0: mask}``, or a
+    ``{0: event_mask, ("Jet", 1): jet_mask}`` mapping). The writer materializes the SUPERSET of
     rows passing any universe's selection, augments the nominal record with reconstruction data,
-    and returns the ordinary part-path list — a §2.3d *accepting* verb. Without ``select=`` the
-    path is unchanged (byte-identical, §6.4g).
+    and returns the ordinary part-path list: the verb accepts the ``Varied`` masks directly.
+    Without ``select=`` the path is unchanged (byte-identical).
+
+    >>> import os, tempfile, awkward as ak
+    >>> from graphed.awkward import from_awkward, to_parquet
+    >>> events = from_awkward("events", ak.Array({"MET_pt": [10.0, 55.0, 30.0]}))
+    >>> out = tempfile.mkdtemp()
+    >>> [os.path.basename(p) for p in to_parquet(events[events.MET_pt > 20.0], out)]
+    ['part-00000.parquet']
+    >>> ak.from_parquet(out).MET_pt.tolist()
+    [55.0, 30.0]
     """
     if select is not None:
         return _write_varied(

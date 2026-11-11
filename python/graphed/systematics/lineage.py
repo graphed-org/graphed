@@ -107,7 +107,7 @@ def selection(ctx: ContextNode) -> Any:
 
     It skips `vary` identity links, answering as of the first non-identity link: `None` at a root
     or across a projection, which is one label's unvaried member and contributes no labels. Not
-    §9.1's `graphed.selection`, whose projection case answers with the parent's selection.
+    §9.1's `selection`, whose projection case answers with the parent's selection.
     """
     node: ContextNode | None = ctx
     while node is not None and node._link is not None:
@@ -136,10 +136,10 @@ def row_space_above(handle: ContextNode, ctx: ContextNode) -> ContextNode | None
 
 
 def unify_contexts(*handles: Any) -> Any:
-    """§6.1d(A): the most-derived handle when the non-`None` arguments lie on ONE ancestry chain.
+    """Return the most-derived handle when the non-`None` arguments lie on ONE ancestry chain.
 
     `None` when every argument is context-free; context-free arguments beside contexted ones are
-    ignored (the adopt rule); divergent branches raise the §2.3e error naming both contexts.
+    ignored (the adopt rule); divergent branches raise an error naming both contexts.
     """
     present = [handle for handle in handles if handle is not None]
     if not present:

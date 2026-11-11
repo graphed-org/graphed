@@ -38,7 +38,7 @@ class Form(Protocol):
 
 @runtime_checkable
 class Backend(Protocol):
-    """The seam between the backend-agnostic IR and a concrete array library (plan M2/A.4)."""
+    """The seam between the backend-agnostic IR and a concrete array library."""
 
     def op_form(self, op: str, inputs: Sequence[Form], params: Mapping[str, object]) -> Form:
         """Infer the result form of `op`. Raise a TypeError-like error if the op is ill-typed."""
@@ -47,7 +47,7 @@ class Backend(Protocol):
     def eval_stage(
         self, op: str, inputs: Sequence[object], params: Mapping[str, object]
     ) -> object:
-        """Evaluate one stage. M2 has no fusion, so a stage is a single op."""
+        """Evaluate one op over concrete ``inputs``."""
         ...
 
     def boundary_ops(self) -> frozenset[str]:
@@ -58,12 +58,12 @@ class Backend(Protocol):
         ...
 
     def project(self, op: str, used: object, params: Mapping[str, object]) -> object:
-        """Column projection hook (M5). A no-op stub at M2."""
+        """Per-op column projection hook; the shipped backends return ``used`` unchanged."""
         ...
 
     def external_payload(self, op: str, params: Mapping[str, object]) -> PayloadDescriptor | None:
         """Reproducibility metadata for an external/opaque op, or None.
 
-        Flag opaque callables as a preservation risk (plan A.3.1).
+        Flag opaque callables as a preservation risk.
         """
         ...

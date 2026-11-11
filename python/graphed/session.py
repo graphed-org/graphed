@@ -119,6 +119,14 @@ class Session:
 
     ``with session:`` makes it the Session array-less reads in this context record into, until the
     block exits; see :func:`current_session`.
+
+    >>> import awkward as ak
+    >>> import graphed
+    >>> from graphed.awkward import AwkwardBackend, from_awkward
+    >>> session = graphed.Session(AwkwardBackend())
+    >>> x = from_awkward("x", ak.Array([1.0, 2.0, 3.0]), session=session)
+    >>> (x * 2).session is session
+    True
     """
 
     def __init__(self, backend: Backend, *, incremental: bool = False) -> None:
@@ -303,13 +311,13 @@ class Session:
         return self._store.to_dot()
 
     def serialized_ir(self, *outputs: Array, optimize: bool = True) -> bytes:
-        """Return the recorded analysis as a canonical, versioned durable IR (plan M8).
+        """Return the recorded analysis as a canonical, versioned durable IR.
 
         The IR is byte-identical.
 
         Pass the result ``Array``(s) of the analysis as ``outputs``: the artifact carries EXACTLY
-        that output set — outputs are a property of THIS request, not session state (M22). With
-        ``optimize=True`` (the default) the graph is reduced by the M4 optimizer (DCE + CSE +
+        that output set — outputs are a property of THIS request, not session state. With
+        ``optimize=True`` (the default) the graph is reduced by the optimizer (DCE + CSE +
         equality-saturation stage fusion), so the bytes carry the **optimized interned graph** —
         the same content-addressed artifact an executor runs — and are byte-identical to a
         fresh-session serialization of the same outputs, whatever else this Session recorded.
@@ -485,7 +493,7 @@ class Session:
         return spec
 
     def reduction_state(self) -> dict[str, int] | None:
-        """Incremental-reduction introspection (M10).
+        """Incremental-reduction introspection.
 
         How many nodes the maintained reduced view has consumed (`watermark`), cumulative reducer
         work (`total_work` — equals `watermark`, the incrementality witness), and the canonical
@@ -571,8 +579,8 @@ class Session:
     def sourcemap(self) -> dict[int, dict[str, object]]:
         """Per-node user-source provenance (file / line / function / sub-expression text).
 
-        The M6 sourcemap. M9's ``inspect`` renders it so every preserved node maps back to the
-        analysis line that created it, without executing anything.
+        ``graphed.preserve.inspect`` renders it so every preserved node maps back to the analysis
+        line that created it, without executing anything.
         """
         with self._lock:
             provenance = dict(self._provenance)
@@ -739,10 +747,10 @@ class Session:
         return self._wrap(node_id, site, inputs)
 
     def record_exchange(self, input_array: Array, params: Mapping[str, ParamValue]) -> Array:
-        """Record an ``Exchange`` boundary (M39): a pure data-movement repartition of one input.
+        """Record an ``Exchange`` boundary: a pure data-movement repartition of one input.
 
         Its ``params`` (the scheme map — ``scheme``/``key``/``parts``/``target_bytes``) are its
-        structural identity; its output form is the input form (identity on the payload, §3.3a).
+        structural identity; its output form is the input form (identity on the payload).
         """
         params_d: dict[str, ParamValue] = dict(params)
         prov = capture()
@@ -754,11 +762,10 @@ class Session:
             return self._enter(node_id, form, prov, [input_array], op=("exchange", params_d, ids))
 
     def record_join(self, left: Array, right: Array, params: Mapping[str, ParamValue]) -> Array:
-        """Record a ``Join`` boundary (M40): a two-input co-partitioned relational combine.
+        """Record a ``Join`` boundary: a two-input co-partitioned relational combine.
 
         Its ``params`` (``on``/``how``) + its ordered inputs ``[left, right]`` are its structural
-        identity; its output form is the backend's ``op_form("join", …)`` (flat record-merge;
-        §3.3).
+        identity; its output form is the backend's ``op_form("join", …)`` (flat record-merge).
         """
         params_d: dict[str, ParamValue] = dict(params)
         prov = capture()
@@ -786,12 +793,12 @@ class Session:
     ) -> Array:
         """Record an External node.
 
-        By default the BACKEND supplies the payload descriptor and output form (the M3
-        correctionlib/ONNX family); a package recording its OWN External family (M23 — e.g.
-        histogram fills) passes ``descriptor=`` and ``form=`` explicitly and the backend is not
-        consulted at all, so backends stay free of domain content (§A.4).
+        By default the BACKEND supplies the payload descriptor and output form (the
+        correctionlib/ONNX family); a package recording its OWN External family (e.g. histogram
+        fills) passes ``descriptor=`` and ``form=`` explicitly and the backend is not consulted
+        at all, so backends stay free of domain content.
 
-        ``output_type=`` declares the per-element type of the External's value (m71). The
+        ``output_type=`` declares the per-element type of the External's value. The
         backend's optional ``canonical_output_type`` reduces it to one string, stored as the
         ``output_type`` param (so it is node identity) and honoured by the backend's ``op_form``;
         it is exclusive with ``form=``. The frontend never interprets it.
@@ -1054,6 +1061,13 @@ def current_session(backend: Backend | None = None) -> Session:
     With no default yet, one is created on ``backend``, else on the factory set with
     :func:`set_default_backend`, else on ``graphed.awkward.AwkwardBackend()``. ``backend`` is
     used only then: the Session returned may record on another backend.
+
+    >>> import awkward as ak
+    >>> import graphed
+    >>> from graphed.awkward import from_awkward
+    >>> x = from_awkward("x", ak.Array([1.0]))
+    >>> x.session is graphed.current_session()
+    True
     """
     stack = _scopes.get()
     if stack:
@@ -1078,15 +1092,23 @@ def current_session(backend: Backend | None = None) -> Session:
         return _defaults.session
 
 
-def new_session(backend: Backend | None = None) -> None:
-    """Replace the default Session with a new one on ``backend``.
+def new_session(backend: Backend | None = None) -> Session | None:
+    """Replace the default Session with a new one on ``backend`` and return it.
 
     With no ``backend``, on the factory set with :func:`set_default_backend`; with neither, the
-    default is cleared and the next array-less read creates one on its own backend. An open
-    ``with`` scope still wins until it exits.
+    default is cleared, ``None`` is returned, and the next array-less read creates one on its own
+    backend. An open ``with`` scope still wins until it exits.
+
+    >>> import graphed
+    >>> from graphed.awkward import AwkwardBackend
+    >>> s = graphed.new_session(AwkwardBackend())
+    >>> s is graphed.current_session()
+    True
     """
     made = backend if backend is not None else _factory_backend()
-    set_session(None if made is None else Session(made))
+    session = None if made is None else Session(made)
+    set_session(session)
+    return session
 
 
 def set_session(default: Session | None, /) -> Session | None:

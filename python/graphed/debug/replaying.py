@@ -273,6 +273,16 @@ def replay(plan: Plan[Any] | DurablePlanV2, task: int, *outputs: Array) -> Repla
     Each step is one operation the plan runs. ``outputs``, the Arrays the plan was built from in
     order, replay the recorded graph instead, op for op as written; they must recompile to the
     plan's IR. A plan over a join runs in stages and is refused.
+
+    >>> import tempfile, awkward as ak
+    >>> import graphed, graphed.debug as gd
+    >>> from graphed.awkward import from_parquet, gak
+    >>> path = tempfile.mkdtemp() + "/events.parquet"
+    >>> _ = ak.to_parquet(ak.Array({"MET_pt": [10.0, 55.0, 30.0]}), path)
+    >>> total = gak.sum(from_parquet("events", path).MET_pt * 2)
+    >>> plan = graphed.aggregate_plan(total)
+    >>> [step.node.op for step in gd.replay(plan, 0, total).steps()]
+    ['events', 'field', 'mul', 'ak.sum']
     """
     if not isinstance(plan, Plan):
         raise TypeError("replay needs a plan with fixed tasks; this one runs in stages")

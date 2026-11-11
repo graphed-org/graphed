@@ -1,0 +1,10 @@
+.. under: 0.0.11 (unreleased)
+
+Docstrings for users
+~~~~~~~~~~~~~~~~~~~~
+
+* Public docstrings no longer cite internal plan, milestone or requirement ids, and the main entry
+  points (``Session``, ``materialize``, ``aggregate_plan``, ``vary``, ``join``, ``from_parquet``,
+  ``graphed.debug.run``, …) carry a runnable example.
+* ``graphed.vary(array, ..., collections=...)`` on an Array now says to wrap the read in
+  ``gnano.events``.

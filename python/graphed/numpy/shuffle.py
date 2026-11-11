@@ -1,15 +1,14 @@
-"""The numpy ``ShuffleBackend`` exchange primitives (plan M39 §3.0, §3.3, B-r5.3).
+"""The numpy ``ShuffleBackend`` exchange and ``JoinBackend`` join primitives.
 
-A SECOND exchange backend ships in M39 (not M40) so the generic engine's backend-agnosticism is
-witnessed by EXECUTION, not merely the §A.4 import lint. numpy's rectilinear primitives are trivial
-— ``partition``/``concat``/``slice_rows``/``estimated_bytes``/``to_wire``/``from_wire`` over
-structured (record) arrays — but they obey the SAME pinned §4 routing rule the awkward backend
-does, proven by the shared golden vectors (a numpy impl using any other hash fails them
-identically).
+A second exchange backend, so the generic shuffle engine is shown backend-agnostic by running it.
+numpy's rectilinear primitives are trivial — ``partition``/``concat``/``slice_rows``/
+``estimated_bytes``/``to_wire``/``from_wire`` over structured (record) arrays — but they obey the
+SAME pinned routing rule the awkward backend does, proven by the shared golden vectors (a numpy
+impl using any other hash fails them identically).
 
 The route is ``int.from_bytes(sha256(key.to_bytes(8, "big") [+ salt]).digest()[:8], "big") % P`` on
 the packed-u64 ``__joinkey__`` column — process-independent (no Python ``hash()``, which is
-PYTHONHASHSEED-salted) so the same key lands in the same dest in every producer process (B2).
+PYTHONHASHSEED-salted) so the same key lands in the same dest in every producer process.
 """
 
 from __future__ import annotations
@@ -29,7 +28,7 @@ PINNED_ROUTING_HASH = "sha256"
 
 
 def route(key: int, parts: int, *, salt: int = 0) -> int:
-    """Return the pinned §4/§3.0 route.
+    """Return the pinned destination of ``key`` among ``parts``.
 
     The route is the sha256 of the 8-byte big-endian key (salt=0 == no bytes appended).
     """
@@ -54,7 +53,7 @@ def partition(
 ) -> tuple[np.ndarray, ...]:
     """Route each record to one of ``parts`` sub-blocks by the pinned hash of ``block[key_field]``.
 
-    Row-conserving and order-preserving within each dest; deterministic (§4/B2).
+    Row-conserving and order-preserving within each dest; the same in every process.
     """
     dest = _dests(np.asarray(block[key_field]).astype(np.uint64), parts, salt)
     return tuple(block[dest == d] for d in range(parts))
@@ -66,8 +65,8 @@ def concat(blocks: Sequence[np.ndarray]) -> np.ndarray:
     The engine only ever merges a dest's >=1 contributing blocks, so an empty list is a caller
     error (np raises).
 
-    M40/E4: if any block is an option (masked) block, the per-field validity mask is preserved via
-    ``np.ma.concatenate``; a pure-exchange (all-plain) merge stays the byte-identical M39 path.
+    If any block is an option (masked) block, the per-field validity mask is preserved via
+    ``np.ma.concatenate``; an all-plain merge is a plain ``np.concatenate``.
     """
     if any(isinstance(b, np.ma.MaskedArray) for b in blocks):
         # numpy<2.5's np.ma stubs leave concatenate untyped; call through a typed alias so the
@@ -80,7 +79,7 @@ def concat(blocks: Sequence[np.ndarray]) -> np.ndarray:
 def slice_rows(block: np.ndarray, start: int, stop: int) -> np.ndarray:
     """Return a contiguous half-open record slice.
 
-    Mask-preserving for M40 option blocks; M39-identical for plain blocks.
+    Mask-preserving for option (masked) blocks; a plain array slice for plain blocks.
     """
     if isinstance(block, np.ma.MaskedArray):
         return block[start:stop]
@@ -95,9 +94,9 @@ def estimated_bytes(block_or_form: object) -> int:
 def to_wire(block: np.ndarray) -> bytes:
     r"""Deterministic serialization — content-addressing hashes these bytes.
 
-    Plain (exchange) blocks use the M39 ``.npy`` path BYTE-IDENTICALLY. Option (masked) join blocks
-    carry per-field validity, which ``.npy`` cannot represent, so they go over Arrow native
-    validity (E4); :func:`from_wire` dispatches on the leading magic bytes (``\x93NUMPY`` vs Arrow
+    Plain (exchange) blocks are ``.npy`` bytes. Option (masked) join blocks carry per-field
+    validity, which ``.npy`` cannot represent, so they go over Arrow native validity;
+    :func:`from_wire` dispatches on the leading magic bytes (``\x93NUMPY`` vs Arrow
     IPC).
     """
     if isinstance(block, np.ma.MaskedArray):
@@ -212,7 +211,7 @@ def _masked_gather(block: np.ndarray, index: np.ndarray) -> np.ndarray:
 def take(block: np.ndarray, index: np.ndarray) -> np.ndarray:
     """Positional record gather; a ``-1`` entry is a null/option row.
 
-    M40 trap #1; NOT ``np.take``.
+    Unlike ``np.take``, ``-1`` is a miss, never the last row.
     """
     return _masked_gather(block, index)
 
@@ -221,7 +220,7 @@ def merge_records(left: np.ndarray, right: np.ndarray, *, on: Sequence[str]) -> 
     """Flat relational record-merge of two row-aligned (taken) blocks.
 
     The union of both sides' fields with the shared ``on`` key kept ONCE (coalesced from whichever
-    side is present, so an outer row's key survives). Per-field validity masks are preserved (E4).
+    side is present, so an outer row's key survives). Per-field validity masks are preserved.
     """
     on_set = {str(c) for c in on}
     lm: np.ma.MaskedArray = np.ma.asanyarray(left)

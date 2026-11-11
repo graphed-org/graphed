@@ -42,46 +42,44 @@ Wheels ship for Linux, macOS, and Windows; installing from source needs a Rust t
 import awkward as ak
 
 import graphed
-from graphed import Session
-from graphed.awkward import AwkwardBackend, from_awkward, gak
+from graphed.awkward import from_awkward
 
-events = ak.Array(
-    [
-        {"Jet": [{"pt": 40.0, "eta": 0.1}, {"pt": 12.0, "eta": 2.3}]},
-        {"Jet": [{"pt": 55.0, "eta": -1.2}]},
-        {"Jet": [{"pt": 8.0, "eta": 0.5}]},
-    ]
+events = from_awkward(
+    "events",
+    ak.Array(
+        [
+            {"Jet": [{"pt": 40.0, "eta": 0.1}, {"pt": 12.0, "eta": 2.3}]},
+            {"Jet": [{"pt": 55.0, "eta": -1.2}]},
+            {"Jet": [{"pt": 8.0, "eta": 0.5}]},
+        ]
+    ),
 )
 
-session = Session(AwkwardBackend())
-evts = from_awkward("events", events, session=session)
+good = events.Jet[events.Jet.pt > 30.0]  # records, doesn't run
+leading_pt = ak.max(good.pt, axis=1)
 
-good = evts.Jet[evts.Jet.pt > 30.0]  # records, doesn't run
-leading_pt = gak.max(good.pt, axis=1)  # gak mirrors ak.* signatures
-
-compiled = graphed.compile_ir(session, leading_pt)
-(result,) = graphed.evaluate_ir(compiled, AwkwardBackend(), {"events": events})
-print(ak.to_list(result))
+print(graphed.materialize(leading_pt).tolist())  # now it runs
 # [40.0, 55.0, None]
 ```
 
-`gak` is the function surface: it carries the `ak.*` signatures you already know
-(`gak.num`, `gak.zip`, `gak.with_field`, …), but each call records a step instead of
-computing one.
+Your `ak.*` code records as-is, minus `highlevel=`, `behavior=` and `attrs=`. `gak.*`
+(`from graphed.awkward import gak`) is the same set with keyword-only options:
+`gak.mean(x, axis=1, weight=w)` where awkward also accepts `ak.mean(x, w, axis=1)`.
 
 ## The one thing that's different
 
-There is no `.compute()`. There are two ways to make the recording happen, and which one you
-want depends on where the work should run.
+There is no `.compute()`; calling it raises an error that names `graphed.materialize`. There
+are two ways to make the recording happen, and which one you want depends on where the work
+should run.
 
-**In this process**, as above: `graphed.compile_ir(session, output)` reduces the recording,
-and `graphed.evaluate_ir(...)` evaluates it right here, on arrays you hand it. Good for a
-notebook and for small data.
+**In this process**, as above: `graphed.materialize(output)` reduces the recording and
+evaluates it right here. Good for a notebook and for small data.
 
 **Across partitions of a dataset**, which is what you want for a real run: build a *plan* and
 hand it to a runner. `graphed.aggregate_plan(out1, out2, reduce=..., combine=..., empty=...)`
 compiles every output into one recording and produces one task per partition of the dataset
-you read from — so it needs a partitioned source such as `from_parquet`. For histograms,
+you read from — so it needs a partitioned source such as `from_parquet` or, for ROOT files,
+`uproot.graphed` (uproot 5.7.7 or later). For histograms,
 `graphed_histogram.plan({"name": h})` builds the same thing for you. Then:
 `SequentialRunner` from `graphed.core` runs it in-process, and a
 [`graphed-executors`](https://github.com/graphed-org/graphed-executors) runner runs it on a
@@ -90,6 +88,28 @@ process pool, a dask cluster, or a parsl HTEX pool.
 
 The plan — not a pickle of your Python objects — is what travels, which is why it can be
 saved, resumed, and reproduced.
+
+### Advanced: an explicit Session
+
+`materialize` uses the default Session and backend. To hold a Session yourself, or evaluate a
+compiled recording on arrays you hand it, use `compile_ir` and `evaluate_ir`:
+
+```python
+import awkward as ak
+
+import graphed
+from graphed import Session
+from graphed.awkward import AwkwardBackend, from_awkward, gak
+
+jets = ak.Array([[40.0, 12.0], [55.0], [8.0]])
+session = Session(AwkwardBackend())
+leading = gak.max(from_awkward("jets", jets, session=session), axis=1)
+
+compiled = graphed.compile_ir(session, leading)
+(result,) = graphed.evaluate_ir(compiled, AwkwardBackend(), {"jets": jets})
+print(ak.to_list(result))
+# [40.0, 55.0, 8.0]
+```
 
 ## Which pieces do I need?
 
@@ -108,7 +128,7 @@ Everything under one import path, and what each part does for you:
 
 | Import path | What it does for you | Extra |
 |---|---|---|
-| `graphed` | `Session`, `Array`, `vary` (systematic variations), compile/evaluate | (base) |
+| `graphed` | `materialize`, `Session`, `Array`, `vary` (systematic variations), plans | (base) |
 | `graphed.core` | the compiled optimizer, the plan types runners consume, and `SequentialRunner` | (base) |
 | `graphed.awkward` | ragged backend: `gak` functions, corrections/ONNX calls | `[awkward]` (+ `[parquet]` for I/O) |
 | `graphed.numpy` | deferred numpy for rectilinear data | `[numpy]` |

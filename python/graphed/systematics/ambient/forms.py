@@ -109,11 +109,11 @@ def _refuse(name: str, match: tuple[str, Any] | None) -> None:
         # §2.1: the handle names a composition a later join WIDENED, so its universes are not that
         # composition's any more. Refused here, before this registration mints anything at all.
         raise GraphedError(
-            f"graphed.vary({name!r}): its central is a graphed.weight() handle read BEFORE a "
-            f"later registration added universes to the weight factor it composed ({match[1]}), "
-            "so the handle's universes are no longer that composition; read the handle again "
-            "after that registration (`w = graphed.weight(ctx)`) and register this family on the "
-            "new handle"
+            f"graphed.vary({name!r}): its central is a graphed.systematics.weight() handle read "
+            "BEFORE a later registration added universes to the weight factor it composed "
+            f"({match[1]}), so the handle's universes are no longer that composition; read the "
+            "handle again after that registration (`w = graphed.systematics.weight(ctx)`) and "
+            "register this family on the new handle"
         )
     if match is not None and match[0] == "owned":
         # §2.3: this context IS that universe, and the named factor's member there is what makes it
@@ -122,8 +122,8 @@ def _refuse(name: str, match: tuple[str, Any] | None) -> None:
             f"graphed.vary({name!r}): its central names the weight factor that the universe "
             f"{match[1]!r} this context is projected into is OF, whose member there is that "
             "universe rather than the central; register this family on the factor at the parent, "
-            "before the projection, or read a graphed.weight() handle AT this context "
-            "(`w = graphed.weight(ctx)`) and register this family on that"
+            "before the projection, or read a graphed.systematics.weight() handle AT this "
+            "context (`w = graphed.systematics.weight(ctx)`) and register this family on that"
         )
     if match is not None and match[0] == "covered":
         # §2.3: inside the overlay's own universe its member is the whole ambient rescaled — the
@@ -135,16 +135,18 @@ def _refuse(name: str, match: tuple[str, Any] | None) -> None:
             f"{universe_label!r}, that family's own universe, where its member IS the whole "
             "ambient and joining underneath it would change the composition its members already "
             "are; register this family on the factor at the parent, before the projection, or "
-            "read a graphed.weight() handle AT this context and register the family on that"
+            "read a graphed.systematics.weight() handle AT this context and register the family "
+            "on that"
         )
     if match is not None and match[0] == "covered-read":
         covered_family, universe_label = match[1]
         raise GraphedError(
-            f"graphed.vary({name!r}): its central is a graphed.weight() handle read over a strict "
-            f"prefix of the weight factors the relative-delta family {covered_family!r} was "
-            f"registered over, and this context is projected into {universe_label!r}, that "
-            "family's own universe, where nothing re-derives that composition; read the handle "
-            "again AT this context (`w = graphed.weight(ctx)`) and register this family on it"
+            f"graphed.vary({name!r}): its central is a graphed.systematics.weight() handle read "
+            "over a strict prefix of the weight factors the relative-delta family "
+            f"{covered_family!r} was registered over, and this context is projected into "
+            f"{universe_label!r}, that family's own universe, where nothing re-derives that "
+            "composition; read the handle again AT this context "
+            "(`w = graphed.systematics.weight(ctx)`) and register this family on it"
         )
 
 
@@ -502,8 +504,9 @@ def _unpack_varied(
         raise GraphedError(
             f"collection {collection_name!r}: a Varied member must carry exactly the family "
             f"{name!r} being registered, got families {sorted(tags)} with extra labels {extra}; "
-            f"build it as graphed.vary(graphed.nominal(ctx[{collection_name!r}]), {name!r}, ...) "
-            f"on the context's central collection with only the tags being added, or pass {hand}"
+            "build it as graphed.vary("
+            f"graphed.systematics.nominal(ctx[{collection_name!r}]), {name!r}, ...) on the "
+            f"context's central collection with only the tags being added, or pass {hand}"
         )
     current = ctx[collection_name]
     central = member_of(current, "nominal") if isinstance(current, Varied) else current

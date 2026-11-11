@@ -76,7 +76,13 @@ What just happened
 **Nothing ran until the last four lines.** ``from_parquet`` opened the dataset's metadata to
 learn its schema, not its contents. Every ``gak`` call after it recorded an operation and handed
 back a proxy. ``h.fill(lead_pt)`` recorded a fill; it did not fill anything. There is no
-``.compute()`` here on purpose — you build a plan and give it to a runner.
+``.compute()`` here on purpose — you build a plan and give it to a runner. For a quick look in
+this process, ``graphed.materialize(lead_pt)`` evaluates one output right here and, for a varied
+one, returns ``{label: array}``.
+
+**ROOT files read the same way.** ``uproot.graphed("skim.root:Events")`` (uproot 5.7.7 or later)
+records a deferred source over a ``TTree`` in place of ``from_parquet``; see
+:doc:`awkward/design`.
 
 **The selection was written once, not three times.** ``graphed.vary`` registers a variation
 family on the event context, so ``events.Jet`` downstream of it means *the varied jets*, in

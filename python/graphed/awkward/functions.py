@@ -1,4 +1,4 @@
-"""The ``gak`` namespace: awkward-style functions that record graphed nodes (plan M3).
+"""The ``gak`` namespace: awkward-style functions that record graphed nodes.
 
 Mirrors the subset of the awkward API the corpus analyses use, so an analysis written against
 ``gak`` records a backend-agnostic graph (the AwkwardBackend infers forms via the typetracer).
@@ -11,15 +11,16 @@ import json
 import warnings
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, ParamSpec, cast
 
 import awkward as ak
 import numpy as np
 import numpy.typing as npt
 
 import graphed
-from graphed import Array, ParamValue
+from graphed import Array
 from graphed.array import scalar_params
+from graphed.backend import ParamValue
 from graphed.errors import DeferredTypeError, GraphedError, GraphedTypeError
 from graphed.provenance import capture
 from graphed.shuffle import JOINKEY, route_key
@@ -52,7 +53,7 @@ from .backend import AwkwardForm, astype_form, broadcast_form
 def join(
     left: Array, right: Array, *, on: Sequence[str] = (), how: str = "inner", grouped: bool = False
 ) -> Array:
-    """Return the awkward-only ``gak.join`` verb (plan §3.1, a4).
+    """Return the awkward-only ``gak.join`` verb.
 
     ``grouped=False`` is a thin alias to the neutral :func:`graphed.join` (relational,
     SQL-*duplicating*). ``grouped=True`` adds the awkward-only convenience: the relational result
@@ -241,6 +242,31 @@ def prod(
     return _reduce("ak.prod", arr, axis, keepdims=keepdims, mask_identity=mask_identity or None)
 
 
+_P = ParamSpec("_P")
+
+
+def _weight_by_keyword(*head: str) -> Callable[[Callable[_P, Array]], Callable[_P, Array]]:
+    """Refuse an array in ``ak``'s positional weight slot, after the ``head`` arguments."""
+    shown = ", ".join(head)
+    weights = (Array, graphed.Varied, ak.Array, np.ndarray)
+
+    def wrap(fn: Callable[_P, Array]) -> Callable[_P, Array]:
+        @functools.wraps(fn)
+        def call(*args: _P.args, **kwargs: _P.kwargs) -> Array:
+            if [arg for arg in args[len(head) :] if isinstance(arg, weights)]:  # gak shadows any()
+                name = fn.__name__
+                raise TypeError(
+                    f"gak.{name} takes weight by keyword: gak.{name}({shown}, axis=1, weight=w) "
+                    f"(ak.{name}({shown}, w, axis=1) also works on graphed arrays)"
+                )
+            return fn(*args, **kwargs)
+
+        return call
+
+    return wrap
+
+
+@_weight_by_keyword("x")
 def mean(
     arr: Array,
     axis: int | None = None,
@@ -269,6 +295,7 @@ def ptp(
     )
 
 
+@_weight_by_keyword("x")
 def std(
     arr: Array,
     axis: int | None = None,
@@ -290,6 +317,7 @@ def std(
     )
 
 
+@_weight_by_keyword("x")
 def var(
     arr: Array,
     axis: int | None = None,
@@ -311,6 +339,7 @@ def var(
     )
 
 
+@_weight_by_keyword("x", "2")
 def moment(
     arr: Array,
     n: int,
@@ -559,9 +588,8 @@ def apply_correction(
     per-call ``ak.transform`` wrapper. The recorded type is the broadcast of every slotted input,
     as that wrapper broadcasts them.
 
-    ``evaluator`` without ``args=`` is the original M3 recording, unchanged: ``payload`` must be a
-    path and the callable is the evaluation, so nothing here checks it. With ``args=`` it is
-    never called.
+    ``evaluator`` without ``args=`` is the path-based recording: ``payload`` must be a path and the
+    callable is the evaluation, so nothing here checks it. With ``args=`` it is never called.
     """
     # recorded only when set, so a regular correction's node identity is what it always was
     which: dict[str, ParamValue] = {"compound": True} if compound else {}
@@ -625,10 +653,10 @@ def onnx_inference(
 ) -> Array:
     """Record an ONNX model evaluation as an External node.
 
-    With ``args=``/``kwargs=`` (e.g. ``args=[["$0", "$1"]]``): the M28 preservation-aligned
-    path — weights-identity descriptor, no path in the IR, template entries materialized as
-    float32 feature matrices (groups stack) and passed to ``runner`` positionally/by keyword.
-    Without them: the original M3 recording, unchanged (``payload`` must then be a path).
+    With ``args=``/``kwargs=`` (e.g. ``args=[["$0", "$1"]]``): the preservation-aligned path —
+    weights-identity descriptor, no path in the IR, template entries materialized as float32
+    feature matrices (groups stack) and passed to ``runner`` positionally/by keyword. Without them:
+    the path-based recording (``payload`` must then be a path).
 
     Out-of-process backends re-run the model canonically from the payload; ``runner`` is only the
     in-process eager path, so it must be the plugin's own inference (a wrapper diverges by

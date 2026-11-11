@@ -1,10 +1,10 @@
-"""graphed-checkpoint (plan M8).
+"""graphed-checkpoint.
 
 It provides a content-addressed checkpoint Store, deterministic resume, and error harvesting on
-top of the M8 ``DurablePlan`` from ``graphed-core``.
+top of the ``DurablePlan`` from ``graphed-core``.
 
-``Store`` is a local directory; ``FsspecStore`` puts the same store at an fsspec URL, pulled
-forward from Phase 2 past the M8 local-only guardrail. Analysis *preservation* is M9.
+``Store`` is a local directory; ``FsspecStore`` puts the same store at an fsspec URL. Analysis
+*preservation* is ``graphed.preserve``.
 """
 
 from __future__ import annotations
@@ -49,3 +49,7 @@ __all__ = [
     "run_shuffle_resumable",
 ]
 __version__ = "0.0.10"
+
+
+def __dir__() -> list[str]:
+    return list(__all__)

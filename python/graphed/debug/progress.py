@@ -45,14 +45,16 @@ class ProgressBar(MonitorBase):
 
     Uses ``tqdm`` when it is installed and a plain text line otherwise. It closes when the run
     ends, however it ends, and one bar can watch several runs in turn. The total is the plan's task
-    count and follows an adaptive plan as its tasks arrive.
+    count and follows an adaptive plan as its tasks arrive. A task counts once by its key, however
+    often a retry or a rerun submits or finishes it.
 
     A staged plan (a join or a repartition) emits no task events, so its bar shows no tasks.
     """
 
     lean_events = True
     complete_events = True
-    _submitted: int
+    _submitted: set[int]
+    _finished: set[int]
 
     def __init__(self) -> None:
         """Make a bar; it appears when a run starts."""
@@ -62,7 +64,7 @@ class ProgressBar(MonitorBase):
     def on_run_start(self, n_tasks: int) -> None:
         """Open the bar."""
         with self._lock:
-            self._submitted = 0
+            self._submitted, self._finished = set(), set()
             self._bar = _open_bar(n_tasks)
 
     def on_task(self, event: TaskEvent) -> None:
@@ -71,14 +73,16 @@ class ProgressBar(MonitorBase):
             if self._bar is None:
                 return
             if event.phase is TaskPhase.SUBMITTED:
-                self._submitted += 1
-                self._bar.total = max(self._bar.total, self._submitted)  # the next tick draws it
-            elif event.phase is TaskPhase.FINISHED:
+                self._submitted.add(event.key)
+                self._bar.total = max(self._bar.total, len(self._submitted))  # next tick draws it
+            elif event.phase is TaskPhase.FINISHED and event.key not in self._finished:
+                self._finished.add(event.key)
                 self._bar.update()
 
     def on_run_end(self) -> None:
         """Close the bar."""
         with self._lock:
             bar, self._bar = self._bar, None
+            self._submitted, self._finished = set(), set()
         if bar is not None:
             bar.close()

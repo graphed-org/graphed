@@ -541,6 +541,13 @@ def materialize(
 
     Evaluation only: running on an executor is a plan's job
     (:func:`graphed.aggregate_plan`, :func:`graphed.collate`).
+
+    >>> import awkward as ak
+    >>> import graphed
+    >>> from graphed.awkward import from_awkward
+    >>> x = from_awkward("x", ak.Array([[1.0, 2.0], [], [3.0]]))
+    >>> graphed.materialize(x[x > 1.5]).tolist()
+    [[2.0], [], [3.0]]
     """
     # values are found by id, and a Mapping may build its values anew on each read
     items: dict[int, Any] = {}

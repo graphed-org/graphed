@@ -21,15 +21,15 @@ from collections.abc import Sequence
 
 import awkward as ak
 
-from graphed import (
+from graphed import Array
+from graphed.projection import (
     CONSERVATIVE,
-    Array,
     BufferNeed,
     BufferProjection,
     Projection,
-    expanding,
     handle_opaque,
 )
+from graphed.systematics.varied import expanding
 
 from .backend import AwkwardForm
 
@@ -143,7 +143,7 @@ def project(array: Array, *, on_fail: str = "raise") -> Projection:
 
 @expanding
 def project_buffers(array: Array, *, on_fail: str = "raise") -> BufferProjection:
-    """Compute each source's needed columns with their :class:`graphed.BufferNeed`.
+    """Compute each source's needed columns with their :class:`graphed.projection.BufferNeed`.
 
     Metadata-only.
 
