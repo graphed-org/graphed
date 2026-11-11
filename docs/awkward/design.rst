@@ -689,8 +689,8 @@ Reading ROOT files
 
 ROOT files come in through uproot. ``uproot.graphed("skim.root:Events")`` records a deferred
 source over a ``TTree`` the way ``from_parquet`` does over parquet: recording reads metadata
-only, and at run time each task reads just the branches your analysis touches. It is on uproot's
-``main`` branch and not yet in an uproot release, so install uproot from GitHub to use it.
+only, and at run time each task reads just the branches your analysis touches. It needs
+uproot 5.7.7 or later.
 How finely each file is split is decided where the plan is built — ``steps_per_file=`` on
 ``aggregate_plan`` or ``gh.plan`` — not when you open the file.
 
@@ -829,8 +829,6 @@ produces the same file on every run and on every machine.
 Not supported yet
 -----------------
 
-- **Calling** ``ak.*`` **on a deferred array** (``ak.num(g.Jet)`` instead of
-  ``gak.num(g.Jet)``). Use the ``gak`` module; it is the supported surface.
 - **A handful of parameter tails**: ``zip``'s ``right_broadcast`` and
   ``optiontype_outside_record``, ``broadcast_arrays``' rule controls, ``mergebool`` on
   ``concatenate``/``where``, ``including_unknown`` on the ``*_like`` constructors and

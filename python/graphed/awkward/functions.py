@@ -11,7 +11,7 @@ import json
 import warnings
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, ParamSpec, cast
 
 import awkward as ak
 import numpy as np
@@ -242,6 +242,31 @@ def prod(
     return _reduce("ak.prod", arr, axis, keepdims=keepdims, mask_identity=mask_identity or None)
 
 
+_P = ParamSpec("_P")
+
+
+def _weight_by_keyword(*head: str) -> Callable[[Callable[_P, Array]], Callable[_P, Array]]:
+    """Refuse an array in ``ak``'s positional weight slot, after the ``head`` arguments."""
+    shown = ", ".join(head)
+    weights = (Array, graphed.Varied, ak.Array, np.ndarray)
+
+    def wrap(fn: Callable[_P, Array]) -> Callable[_P, Array]:
+        @functools.wraps(fn)
+        def call(*args: _P.args, **kwargs: _P.kwargs) -> Array:
+            if [arg for arg in args[len(head) :] if isinstance(arg, weights)]:  # gak shadows any()
+                name = fn.__name__
+                raise TypeError(
+                    f"gak.{name} takes weight by keyword: gak.{name}({shown}, axis=1, weight=w) "
+                    f"(ak.{name}({shown}, w, axis=1) also works on graphed arrays)"
+                )
+            return fn(*args, **kwargs)
+
+        return call
+
+    return wrap
+
+
+@_weight_by_keyword("x")
 def mean(
     arr: Array,
     axis: int | None = None,
@@ -270,6 +295,7 @@ def ptp(
     )
 
 
+@_weight_by_keyword("x")
 def std(
     arr: Array,
     axis: int | None = None,
@@ -291,6 +317,7 @@ def std(
     )
 
 
+@_weight_by_keyword("x")
 def var(
     arr: Array,
     axis: int | None = None,
@@ -312,6 +339,7 @@ def var(
     )
 
 
+@_weight_by_keyword("x", "2")
 def moment(
     arr: Array,
     n: int,
