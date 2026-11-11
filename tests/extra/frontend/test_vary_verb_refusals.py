@@ -28,7 +28,7 @@ def test_a_target_that_is_no_array_varied_or_context_is_refused() -> None:
 
 
 def test_collections_on_an_array_says_to_wrap_the_read() -> None:
-    x = from_record(Session(NumpyBackend()), "a", x=np.arange(3.0))["x"]
+    x = from_record("a", session=Session(NumpyBackend()), x=np.arange(3.0))["x"]
     with pytest.raises(GraphedError, match=r"wrap the read, e\.g\. events = gnano\.events\("):
         graphed.vary(x, "jes", collections={"Jet": {"up": x}})
 

@@ -149,9 +149,9 @@ def capture() -> Provenance:
 
     Walks the frame chain directly (`f_back`) rather than `inspect.stack()`, which builds a
     `FrameInfo` — reading and `stat`ing the source file — for EVERY frame before we discard all but
-    the first user frame. `record_op` calls this on every op, so a systematics fanout pays it per
+    the first user frame. It runs on every recorded op, so a systematics fanout pays it per
     universe; the direct walk stats no source and reads it only for the one frame it keeps (via
-    `executing` in `_source_text`), the fields being lifted straight off the frame object.
+    `executing`), the fields being lifted straight off the frame object.
     """
     if not _settings.enabled:
         return _DISABLED

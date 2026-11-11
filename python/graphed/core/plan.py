@@ -63,7 +63,7 @@ class OpSpec:
       files on disk are needed — the package is on ``sys.path``). The durable, preferred form.
     - ``kind="opaque"``: the callable is embedded **by value** via cloudpickle (base64). Used only
       when the callable is not importable (a closure/lambda/``__main__`` function). ``opaque`` is
-      then ``True`` — a preservation risk the preservation bundle flags.
+      then ``True`` — a preservation risk :attr:`DurablePlan.opaque` reports.
     """
 
     kind: Literal["ref", "opaque"]
@@ -165,7 +165,7 @@ class DurablePlan:
 
     @property
     def opaque(self) -> bool:
-        """True if any callable is embedded by value (a preservation risk; plan A.3.1)."""
+        """True if any callable is embedded by value (a preservation risk)."""
         ops = (self.process, self.combine, self.empty, self.finalize)
         return any(op is not None and op.opaque for op in ops)
 
@@ -343,9 +343,9 @@ class DurablePlanV2:
     def task_id(self, stage_index: int, task: Task) -> str:
         """Content-addressed id for one task of one stage.
 
-        Folds the stage's ``routing`` (hence its ``backend_id``, §7.2) so two conforming backends
-        that route a key to different dests never journal the same id for different content
-        (B-r5.2); cache-poisoning-safe like V1's.
+        Folds the stage's ``routing`` (hence its ``backend_id``) so two conforming backends that
+        route a key to different dests never journal the same id for different content;
+        cache-poisoning-safe like V1's.
         """
         stage = self.stages[stage_index]
         routing_bytes = json.dumps(

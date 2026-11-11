@@ -20,7 +20,7 @@ def format_traceback(err: StageError) -> str:
     >>> def calibrate(x):
     ...     raise ValueError("no calibration table")
     >>> x = from_awkward("x", ak.Array([1.0, 2.0]))
-    >>> try:
+    >>> try:  # doctest: +ELLIPSIS
     ...     graphed.materialize(x.map(calibrate, name="calibrate", output_type="float64"))
     ... except gd.StageError as err:
     ...     print(gd.format_traceback(err))

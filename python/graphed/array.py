@@ -687,7 +687,7 @@ class Array(EagerRefusals):
     ) -> Array:
         """Record ``fn`` over this array as one opaque External node.
 
-        The callable is a flagged preservation risk, plan A.3.1.
+        The callable is opaque to the IR, so the node is flagged as a preservation risk.
 
         Without ``name=`` two distinct callables that derive one ``__name__`` are told apart by a
         per-Session ordinal. Pass ``name=`` to declare the identity yourself: a rerun of the same
@@ -711,7 +711,7 @@ class Array(EagerRefusals):
         return self._session.record_op(kind, [self], reduction=True)
 
     def repartition(self, *, n: int | None = None, target_bytes: int | None = None) -> Array:
-        """Physically rebalance this array's partitions (M39).
+        """Physically rebalance this array's partitions.
 
         By count (``n``) or by measured size (``target_bytes``). Rebalancing MOVES rows without
         reinterpreting them — a physical, backend-neutral operation (no array idiom) — so it stays

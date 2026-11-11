@@ -96,7 +96,7 @@ class Varied(EagerRefusals):
         return member if member is not None else self._members[self._key_for(label)]
 
     def apply(self, fn: Callable[[Any], Any]) -> Varied:
-        """Apply a record-time ``Array -> Array`` function per universe (§2.2).
+        """Apply a record-time ``Array -> Array`` function per universe.
 
         Named `apply`, not `map`: `Array.map` is an EXECUTION-time data callable, and the two
         contracts must not share a name.

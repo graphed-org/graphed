@@ -71,7 +71,8 @@ class ShuffleBackend(Protocol[Block, Index_co]):
     two conforming backends never journal the same id for different content). The
     ``@runtime_checkable`` check is **import hygiene only** — it witnesses method NAMES, never the
     routing rule; the pinned SHA-256 route ``partition`` implements is witnessed by the backends'
-    golden-vector suites. The join half is ``match_indices``/``take``/``merge_records``.
+    golden-vector suites. The join half (``match_indices``/``take``/``merge_records``) is
+    :class:`JoinBackend`'s, not this protocol's.
     """
 
     identity: str
@@ -81,8 +82,8 @@ class ShuffleBackend(Protocol[Block, Index_co]):
     ) -> tuple[Block, ...]:
         """Route each row of ``block`` to one of ``parts`` sub-blocks.
 
-        Routing is by the pinned §4 hash of its ``key_field`` (``range`` uses ``boundaries``).
-        Row-conserving; deterministic; §4/B2 contract.
+        Routing is by the pinned SHA-256 hash of its ``key_field`` (``range`` uses
+        ``boundaries``). Row-conserving, and deterministic across processes.
         """
         ...
 

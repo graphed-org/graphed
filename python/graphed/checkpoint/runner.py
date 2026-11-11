@@ -82,17 +82,13 @@ def run_resumable(
     codec: Codec | None = None,
     error_budget: int | None = None,
     accept_environment: bool = False,
+    # test-only: simulate a crash after this many commits; ValueError if it can never fire
     _kill_after: int | None = None,
 ) -> ResumeResult:
     """Run ``plan`` against ``store``, skipping already-completed tasks. See module docstring.
 
     ``store`` is a directory, an fsspec URL with ``storage_options``, or a store.
     ``error_budget`` stops the run once the number of dead-lettered partitions exceeds it.
-    ``_kill_after`` (test-only) raises an uncatchable interrupt after that many tasks commit, to
-    simulate a crash mid-run; the committed journal/objects are what a resumed run recovers from.
-    If the run would finish before committing that many tasks (the plan has too few partitions), it
-    raises ``ValueError`` instead of completing silently — a simulated crash that can never fire is
-    a misconfiguration, not an uninterrupted run.
 
     The store's environment record is checked as :func:`graphed.checkpoint.resumable` checks it
     (salt ``""``), with ``accept_environment``.

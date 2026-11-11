@@ -462,8 +462,8 @@ def _histogram(value: Any, weight: Any, spec: dict[str, Any]) -> Any:
 def inspect(bundle: Bundle) -> str:
     """Render the preserved analysis.
 
-    The IR + M6 provenance + payload inventory + risk flags — WITHOUT executing anything or
-    resolving the (possibly absent) data/payloads.
+    The IR + per-node source provenance + payload inventory + risk flags — WITHOUT executing
+    anything or resolving the (possibly absent) data/payloads.
     """
     store = bundle.store
     m = bundle.manifest
