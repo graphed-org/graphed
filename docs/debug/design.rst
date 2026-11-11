@@ -312,7 +312,7 @@ run, the executors package (``pip install graphed-executors``):
 
        with Dashboard(profile=True) as dash:
            print("dashboard at", dash.url)
-           result = ProcessPoolExecutor(max_workers=2, monitor=dash.monitor).run(plan)
+           result = ProcessPoolExecutor(workers=2, monitor=dash.monitor).run(plan)
            snap = dash.wait_for(finished=len(tasks))
 
        print("result:", result.value)
@@ -677,7 +677,7 @@ notebook, attach ``graphed.debug.ProgressBar``, on any runner:
 
    from graphed.debug import ProgressBar
 
-   ProcessPoolExecutor(max_workers=4, monitor=ProgressBar()).run(plan)
+   ProcessPoolExecutor(workers=4, monitor=ProgressBar()).run(plan)
 
 It ticks once per finished task, uses ``tqdm`` when that is installed and a plain text line
 otherwise, and closes when the run ends, whether it finished, failed or was cancelled. A staged

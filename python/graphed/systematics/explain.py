@@ -175,7 +175,7 @@ class Explanation:
     def __str__(self) -> str:
         """Render the whole explanation, one fact per line."""
         lines = [
-            f"graphed.explain_variations: {len(self.families)} registrations, "
+            f"graphed.systematics.explain_variations: {len(self.families)} registrations, "
             f"{len(self.operations)} ambient operations, {len(self.variations)} universes",
             "families (registration order)",
             *(f"  {family}" for family in self.families.values()),

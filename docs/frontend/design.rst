@@ -552,7 +552,7 @@ Prints::
     ('nominal', 'jes_up', 'hf_up', 'lf_up', 'lf_up__jes_up')
     jes_up  [0.6825, 0.5775, 1.155]
     oracle  [0.6825, 0.5775, 1.155]
-    graphed.explain_variations: 4 registrations, 2 ambient operations, 5 universes
+    graphed.systematics.explain_variations: 4 registrations, 2 ambient operations, 5 universes
     families (registration order)
       pu (WEIGHT) ['up'] at the root: a new factor; composes with hf, lf, mu
       hf (WEIGHT) ['up'] at the root: a new factor; shares the factor with lf; composes with mu, pu
@@ -567,7 +567,7 @@ Prints::
       hf_up: hf, one at a time
       mu_up: mu's own universe, a relative-delta family
       lf_up: lf, one at a time
-    graphed.explain_variations: 4 registrations, 1 ambient operations, 1 universes
+    graphed.systematics.explain_variations: 4 registrations, 1 ambient operations, 1 universes
     families (registration order)
       pu (WEIGHT) ['up'] at the root: a new factor; composes with hf, lf, mu
       hf (WEIGHT) ['up'] at the root: a new factor; shares the factor with lf; composes with mu, pu
