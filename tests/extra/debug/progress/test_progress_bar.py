@@ -205,8 +205,8 @@ def test_total_follows_tasks_beyond_the_plans_own(
 ) -> None:
     bar = ProgressBar()
     bar.on_run_start(1)
-    for _ in range(3):
-        bar.on_task(_event(TaskPhase.SUBMITTED))
+    for key in range(3):
+        bar.on_task(_event(TaskPhase.SUBMITTED, key))
     for key in range(3):
         bar.on_task(_event(TaskPhase.STARTED, key))
         bar.on_task(_event(TaskPhase.FINISHED, key))
@@ -220,8 +220,8 @@ def test_growing_the_total_does_not_redraw(
     bar = ProgressBar()
     bar.on_run_start(0)
     capsys.readouterr()
-    for _ in range(100):
-        bar.on_task(_event(TaskPhase.SUBMITTED))
+    for key in range(100):
+        bar.on_task(_event(TaskPhase.SUBMITTED, key))
     assert capsys.readouterr().err == ""
     bar.on_run_end()
 
@@ -234,6 +234,54 @@ def test_a_retried_task_ticks_once(backend: None, capsys: pytest.CaptureFixture[
     bar.on_task(_event(TaskPhase.FINISHED, 1))
     bar.on_run_end()
     assert "2/2" in capsys.readouterr().err
+
+
+S, F, E = TaskPhase.SUBMITTED, TaskPhase.FINISHED, TaskPhase.ERRORED
+# event streams a process pool emits inside one run bracket (graphed#203)
+RETRY_AFTER_A_LOST_WORKER = [
+    *((S, k) for k in range(8)),
+    *((S, k) for k in range(8)),
+    *((F, k) for k in (1, 3, 6, 7, 0, 2, 4, 5)),
+]
+RETRY_WITH_FINISHES_BEFORE_IT = [
+    *((S, k) for k in range(8)),
+    *((F, k) for k in (0, 1, 3, 4, 6)),
+    *((S, k) for k in range(8)),
+    *((F, k) for k in range(8)),
+]
+SKIP_FAILED_RERUN = [
+    *((S, k) for k in range(6)),
+    *((S, k) for k in range(6)),
+    *((F, k) for k in (0, 3, 5, 1)),
+    (E, 2),
+    (F, 4),
+]
+
+
+@pytest.mark.parametrize(
+    ("n_tasks", "events", "shown"),
+    [
+        (8, RETRY_AFTER_A_LOST_WORKER, "8/8"),
+        (8, RETRY_WITH_FINISHES_BEFORE_IT, "8/8"),
+        (6, SKIP_FAILED_RERUN, "5/6"),
+    ],
+    ids=["lost-worker-retry", "lost-worker-retry-ipc", "skip-failed-rerun"],
+)
+def test_a_rerun_counts_each_task_once(
+    n_tasks: int,
+    events: list[tuple[TaskPhase, int]],
+    shown: str,
+    backend: None,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    bar = ProgressBar()
+    bar.on_run_start(n_tasks)
+    for phase, key in events:
+        bar.on_task(_event(phase, key))
+    bar.on_run_end()
+    err = capsys.readouterr().err
+    assert shown in err
+    assert f"/{2 * n_tasks}" not in err
 
 
 def test_an_event_after_the_run_is_ignored(

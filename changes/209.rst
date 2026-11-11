@@ -1,0 +1,9 @@
+.. under: ``SequentialRunner`` stands in for the pooled runners
+
+Shuffle destinations follow the reader's steps
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* A shuffle or join planned without ``steps_per_file=`` now routes to as many destinations as its
+  sources' own ``steps_per_file`` (the larger side's, for a join), as an explicit
+  ``steps_per_file=`` did; it routed to one. Results are unchanged, but a checkpoint store from
+  such a plan recomputes (#209).

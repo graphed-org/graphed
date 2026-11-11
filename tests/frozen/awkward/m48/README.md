@@ -39,6 +39,7 @@ Every anchor here imports `graphed.awkward` — the gak enumerations and represe
 | `vary-m48-A3` | §2.3d idiom-package classifications | `test_module_verb_dispositions.py::test_the_idiom_packages_classifications_are_bound_per_verb` |
 | `vary-m48-A3` | §2.3d refusal contract one (boundary/plan verbs) | `test_module_verb_dispositions.py::test_the_boundary_and_plan_verbs_refuse_without_silently_compiling` |
 | `vary-m48-A3` | §2.3d refusal contract two (compile/aggregate verbs) | `test_module_verb_dispositions.py::test_the_compile_and_aggregate_verbs_refuse_naming_graphed_universe` |
+| `vary-m48-A3` | #155 (`freeze-m48-fixup5`, owner ruling): the refusal names `graphed.systematics.universe`; `match=` accepts either spelling | `test_module_verb_dispositions.py::test_the_compile_and_aggregate_verbs_refuse_naming_graphed_universe` |
 | `vary-m48-A3` | §2.3d expanding verbs, per verb | `test_module_verb_dispositions.py::test_the_expanding_verbs_are_asserted_PER_VERB` |
 | `vary-m48-A3` | §2.3d idiom expanding verbs' own return types | `test_module_verb_dispositions.py::test_the_idiom_expanding_verbs_return_their_own_type_per_label` |
 | `vary-m48-A3` | §2.3d `reindex_to` / `unify_contexts` dispositions | `test_module_verb_dispositions.py::test_reindex_to_broadcasts_and_unify_contexts_carries_no_disposition` |

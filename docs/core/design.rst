@@ -576,7 +576,9 @@ immutable, picklable, display-only record of one task transition, carrying the t
 a timestamp, a partition label, and a pre-rendered error summary rather than an exception object
 — plus the ``Monitor`` and ``WorkerProfiler`` protocols an observer implements. Per task the
 contract is exactly one ``SUBMITTED``, then one ``STARTED``, then exactly one ``FINISHED`` or
-``ERRORED`` — except that a task a cancel kept from starting ends at its ``SUBMITTED``.
+``ERRORED`` — except that a task a cancel kept from starting ends at its ``SUBMITTED``, that a
+retried task repeats the last two for each attempt, and that a rerun after a lost worker repeats
+tasks' events from ``SUBMITTED`` on inside the same run.
 
 Two properties make it safe to attach one to a production run:
 
