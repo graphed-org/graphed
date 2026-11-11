@@ -1,6 +1,0 @@
-.. under: 0.0.11 (unreleased)
-
-* ``graphed.debug.ProgressBar`` counts each task once when a run reruns it: a lost-worker retry or
-  a ``skip_failed`` rerun no longer leaves the bar short of its total (#203). A rerun repeats a
-  task's events from ``SUBMITTED`` on inside the same run, so a monitor that counts tasks counts
-  ``event.key``.
