@@ -552,7 +552,7 @@ Prints::
     ('nominal', 'jes_up', 'hf_up', 'lf_up', 'lf_up__jes_up')
     jes_up  [0.6825, 0.5775, 1.155]
     oracle  [0.6825, 0.5775, 1.155]
-    graphed.explain_variations: 4 registrations, 2 ambient operations, 5 universes
+    graphed.systematics.explain_variations: 4 registrations, 2 ambient operations, 5 universes
     families (registration order)
       pu (WEIGHT) ['up'] at the root: a new factor; composes with hf, lf, mu
       hf (WEIGHT) ['up'] at the root: a new factor; shares the factor with lf; composes with mu, pu
@@ -567,7 +567,7 @@ Prints::
       hf_up: hf, one at a time
       mu_up: mu's own universe, a relative-delta family
       lf_up: lf, one at a time
-    graphed.explain_variations: 4 registrations, 1 ambient operations, 1 universes
+    graphed.systematics.explain_variations: 4 registrations, 1 ambient operations, 1 universes
     families (registration order)
       pu (WEIGHT) ['up'] at the root: a new factor; composes with hf, lf, mu
       hf (WEIGHT) ['up'] at the root: a new factor; shares the factor with lf; composes with mu, pu
@@ -1257,8 +1257,8 @@ rather than array methods. ``repartition(array, by=)`` records a hash exchange o
 ``n=`` targets a partition count and ``target_bytes=`` coalesces by measured size. ``join`` gives
 you relational, row-duplicating semantics — a probe row with *k* matches on the build side yields
 *k* output rows — with ``how`` in ``{"inner", "left", "right", "outer"}``, matching
-``pandas.merge`` rather than an awkward broadcast. ``pack_key`` is the same key-packing step the
-join uses internally, public so you can pre-key a source.
+``pandas.merge`` rather than an awkward broadcast. ``graphed.shuffle.pack_key`` is the same
+key-packing step the join uses internally, public so you can pre-key a source.
 
 Because a join or a repartition is a barrier, the plan for it has stages:
 

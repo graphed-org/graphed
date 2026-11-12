@@ -48,7 +48,7 @@ __all__ = [
     "run_resumable",
     "run_shuffle_resumable",
 ]
-__version__ = "0.0.10"
+__version__ = "0.0.11"
 
 
 def __dir__() -> list[str]:

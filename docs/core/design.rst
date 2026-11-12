@@ -534,7 +534,7 @@ spawns.
     )
 
     if __name__ == "__main__":
-        for runner in (SequentialRunner(), ThreadExecutor(max_workers=4), ProcessPoolExecutor(max_workers=4)):
+        for runner in (SequentialRunner(), ThreadExecutor(workers=4), ProcessPoolExecutor(workers=4)):
             result = runner.run(plan)
             print(f"{type(runner).__name__:19} {result.value} over {result.n_partitions} partitions")
 
@@ -548,8 +548,11 @@ Two other pieces of the contract are worth knowing about before you write a runn
 ``open_once(uri, opener)`` hands a worker a cached file handle so a file is opened once per
 worker rather than once per chunk, with the number of simultaneously open handles bounded so a
 long-lived worker grinding through thousands of files does not accumulate them all. And a
-``StopCondition`` ends submission early on a target event count, a wall-clock limit or an error
-budget, reporting which one fired.
+``StopCondition`` ends submission early on a target event count or a wall-clock limit, reporting
+which one fired. Its ``max_errors=N`` is the budget of ``runner.run(plan, skip_failed=N)``: for
+``N >= 1`` the run goes on past ``N`` failed chunks, lists them in ``result.failed``, and raises
+``TooManyFailedChunksError`` on one more; with no budget the first failure raises as it is. A
+runner of your own honors both by calling ``skipping(plan, skip_failed)`` on entry.
 
 A plan may also carry a ``finalize``: a function the runner calls exactly once, on the driver,
 on the value the run hands back, after the last ``combine`` — dask's ``__dask_postcompute__``,

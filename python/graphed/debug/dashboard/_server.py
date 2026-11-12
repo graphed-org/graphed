@@ -46,14 +46,16 @@ _PHASE_CLASS = {
 class _KeyState:
     """One task key's ingest state.
 
-    ``life`` is the set of phase classes its current lifecycle has seen; ``label`` is the
-    ``(partition, n_entries)`` of its latest SUBMITTED, whatever lifecycle.
+    ``life`` is the set of phase classes its current lifecycle has seen and ``state`` the phase
+    it is at; ``label`` is the ``(partition, n_entries)`` of its latest SUBMITTED, whatever
+    lifecycle.
     """
 
-    __slots__ = ("label", "life")
+    __slots__ = ("label", "life", "state")
 
     def __init__(self) -> None:
         self.life: set[int] = set()
+        self.state = ""
         self.label: tuple[str, int] | None = None
 
 
@@ -83,12 +85,14 @@ class DashboardServer:
         self._stats_table: Any = None
         self._lock = threading.RLock()
         self._stats: dict[str, int] = dict.fromkeys(_wire.STATS_KEYS, 0)
+        # how many keys each phase holds: the overall bar's population, reset when a run starts
+        self._at: dict[str, int] = dict.fromkeys(_PHASE_CLASS, 0)
+        self._running = True  # a monitor that never brackets its runs stays running
         # worker -> per-worker progress (for the bars)
         self._workers: dict[str, dict[str, Any]] = {}
         # ingest-only state (IOLoop thread): lean derivation and per-key lifecycles
         self._lean = False  # set once any ingest connection says hello with lean: true
         self._keys: dict[Any, _KeyState] = {}
-        self._open: set[Any] = set()  # keys from SUBMITTED to their lifecycle's first terminal
         self._workers_seen: set[str] = set()  # names on STARTED and terminal events
         self._last_end: dict[tuple[int, str], float] = {}  # (connection, worker) -> previous t_end
         self._unlabelled: dict[Any, list[dict[str, Any]]] = {}  # key -> records awaiting a label
@@ -287,6 +291,8 @@ class DashboardServer:
         elif kind == "combine":
             with self._lock:
                 self._stats["combines"] += 1
+        elif kind == "run" and isinstance(msg.get("start"), bool):
+            self._ingest_run(start=msg["start"])
         elif kind == "profile":
             self._ingest_profile(msg)
 
@@ -305,7 +311,6 @@ class DashboardServer:
             ks.life = set()
         late = bool(ks.life) and max(ks.life) > cls  # arrived after a later phase of its lifecycle
         derived = self._lean and cls == _TERMINAL and _STARTED not in ks.life
-        opens = cls == _SUBMITTED and _TERMINAL not in ks.life
         ks.life.add(cls)
         if cls == _SUBMITTED:
             ks.label = (msg.get("partition", ""), msg.get("n_entries", 0))
@@ -313,20 +318,18 @@ class DashboardServer:
 
         with self._lock:
             self._stats[phase] += 1
+            if cls == _SUBMITTED:  # driver-side, so ordered after any run end: a run is under way
+                self._running = True
+            if not late:
+                if ks.state:
+                    self._at[ks.state] -= 1
+                ks.state = phase
+                self._at[phase] += 1
             if derived:
                 self._stats["started"] += 1
-            if opens:
-                self._open.add(key)
-            elif cls == _TERMINAL:
-                self._open.discard(key)
             if cls != _SUBMITTED and worker:
                 self._workers_seen.add(worker)
-            if self._lean:
-                self._stats["inflight"] = min(len(self._workers_seen), len(self._open))
-            elif cls == _STARTED:
-                self._stats["inflight"] += 1
-            elif cls == _TERMINAL:
-                self._stats["inflight"] = max(0, self._stats["inflight"] - 1)
+            self._stats["inflight"] = self._inflight()
             if phase == "errored":
                 self._last_error = {
                     "key": key,
@@ -345,6 +348,23 @@ class DashboardServer:
             # record is completed in place when it finishes/errors.
             elif worker:
                 self._ingest_worker(msg, ks, cls, worker, t, cid, derived)
+
+    def _ingest_run(self, *, start: bool) -> None:
+        with self._lock:
+            self._running = start
+            if start:  # keys are task indices, so another plan reuses them
+                self._keys.clear()
+                self._at = dict.fromkeys(_PHASE_CLASS, 0)
+            self._stats["inflight"] = self._inflight()
+
+    def _inflight(self) -> int:
+        """In-flight keys: a lean stream bounds them by the workers seen; none once a run ends."""
+        at = self._at
+        if not self._running:
+            return 0
+        if self._lean:
+            return min(len(self._workers_seen), at["submitted"] + at["started"])
+        return at["started"]
 
     def _update_row(self, msg: dict[str, Any], key: Any, *, late: bool) -> None:
         # an indexed update keeps the columns it omits: a late event writes only the label, and an
@@ -466,17 +486,25 @@ class DashboardServer:
     def progress(self) -> dict[str, Any]:
         """Overall + per-worker progress for the bar chart.
 
-        ``total`` is the submitted count; the ``overall`` segments (finished/errored/inflight) plus
-        the implicit pending remainder tile it. ``workers`` is one row per worker that has run a
-        task, sorted by id (deterministic order); each carries its aggregate counts plus ``tasks``
-        — one record per task (sorted by start time, then key) so the UI can render a hoverable
-        cell per task. Records are deep-copied under the lock so JSON encoding (outside the lock)
-        never races a concurrent task update.
+        ``total`` is the number of distinct task keys in the current run; the ``overall`` segments
+        (finished/errored/inflight) count keys by the phase their current lifecycle is at, and with
+        the implicit pending remainder tile it, so a retry or a rerun of the same plan re-shows its
+        keys rather than adding to them. :meth:`snapshot`'s ``stats`` count events, save
+        ``inflight``. ``workers`` is one row per worker that has run a task, sorted by id
+        (deterministic order); each carries its aggregate counts plus ``tasks`` — one record per
+        task (sorted by start time, then key) so the UI can render a hoverable cell per task.
+        Records are deep-copied under the lock so JSON encoding (outside the lock) never races a
+        concurrent task update.
         """
         with self._lock:
+            at = self._at
+            total = sum(at.values())
             overall = {
-                k: self._stats[k]
-                for k in ("submitted", "started", "finished", "errored", "inflight")
+                "submitted": total,
+                "started": total - at["submitted"],
+                "finished": at["finished"],
+                "errored": at["errored"],
+                "inflight": self._inflight(),
             }
             workers = []
             for name in sorted(self._workers):
@@ -490,7 +518,7 @@ class DashboardServer:
                 )
             control = self._control_state
         return {
-            "total": overall["submitted"],
+            "total": total,
             "overall": overall,
             "workers": workers,
             "control": control,

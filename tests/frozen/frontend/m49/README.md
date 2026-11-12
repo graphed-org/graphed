@@ -48,6 +48,7 @@ type; for a mapping operand it also names the offending key.
 | `…::test_the_mapping_form_answers_the_same_stats` | §5.3 — the labelled-mapping operand form |
 | `test_boundary_refusal.py::test_join_refuses_a_varied_operand_naming_the_verb_and_the_labels` | §5.4 — both operand positions |
 | `…::test_every_boundary_verb_names_the_verb_and_the_labels` | §5.4 — the refusal is the disposition table's class, not one verb |
+| `…::test_every_boundary_verb_names_the_verb_and_the_labels` | `freeze-m49-fixup4` (owner ruling): the `pack_key` refusal names its home, `graphed.shuffle.pack_key` |
 | `…::test_a_variation_downstream_of_the_join_still_compiles_per_universe` | §5.4 positive control, against a numpy relational reference |
 | `test_record_correspondence.py::test_every_surviving_record_id_keys_a_node_of_the_reduced_store` | §8.2(i) — accessor half; the unmarked branch maps to `None` |
 | `…::test_the_map_partitions_the_topology_onto_the_reduced_store` | §8.2(i) — the partitioning clause, on the BASE fixture only |

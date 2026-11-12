@@ -197,6 +197,6 @@ def flamegraph(tree: dict[str, Any]) -> dict[str, Any]:
 def make_worker_profiler() -> StackSampler:
     """Return a module-level, **picklable** factory.
 
-    It is shipped to ``ProcessExecutor`` workers (M37).
+    It is shipped to ``ProcessPoolExecutor`` workers (M37).
     """
     return StackSampler()

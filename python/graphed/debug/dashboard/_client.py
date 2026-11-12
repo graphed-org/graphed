@@ -35,7 +35,7 @@ from . import _wire
 
 _SEND_INTERVAL_S = 0.05  # the sender's drain cadence
 _WORKER_EXIT_S = 0.5  # total budget of a worker monitor's exit flush (buffer wait + sender join)
-_TASK, _COMBINE, _PROFILE = 0, 1, 2
+_TASK, _COMBINE, _PROFILE, _RUN = 0, 1, 2, 3
 
 
 class NetworkMonitor:
@@ -107,6 +107,12 @@ class NetworkMonitor:
 
     def on_profile(self, worker: str, payload: bytes) -> None:
         self._emit((_PROFILE, (worker, payload)))
+
+    def on_run_start(self, n_tasks: int) -> None:
+        self._emit((_RUN, True))
+
+    def on_run_end(self) -> None:
+        self._emit((_RUN, False))
 
     def worker_profiler_factory(self) -> Callable[[], WorkerProfiler] | None:
         return _sampler.make_worker_profiler if self._profile else None
@@ -180,6 +186,8 @@ class NetworkMonitor:
                 messages.append(_wire.task_message(data))
             elif kind == _COMBINE:
                 messages.append(_wire.combine_message(data))
+            elif kind == _RUN:
+                messages.append(_wire.run_message(start=data))
             else:
                 worker, payload = data
                 messages.append(

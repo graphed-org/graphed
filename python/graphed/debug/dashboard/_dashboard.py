@@ -30,7 +30,7 @@ class Dashboard:
     Example::
 
         with Dashboard(port=8888, profile=True) as dash:
-            ProcessExecutor(monitor=dash.monitor).run(plan)   # or dash.attach(executor)
+            ProcessPoolExecutor(monitor=dash.monitor).run(plan)   # or dash.attach(executor)
         # browse dash.url; server + client torn down on exit
 
     For a **remote** run, start a :class:`DashboardServer` on one host and give the executor a
