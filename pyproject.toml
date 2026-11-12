@@ -47,7 +47,7 @@ dev = [
   "pytest", "pytest-cov", "pytest-xdist", "coverage[toml]", "diff_cover", "hypothesis", "mypy", "ruff",
   "numpy>=1.24", "awkward>=2.6", "cloudpickle", "pandas", "vector", "tqdm",
   "correctionlib>=2.6", "onnx>=1.15", "onnxruntime>=1.17",
-  "boost-histogram>=1.4", "hist>=2.7", "graphed-histogram>=0.0.3",
+  "boost-histogram>=1.4", "hist>=2.12", "graphed-histogram>=0.0.8", "uproot>=5.7.7",
   "tornado>=6.2", "websocket-client>=1.6",
   # neither ships a win_arm64 wheel, so the Windows ARM64 CI job installs the dev extra without them
   "pyarrow>=15; sys_platform != 'win32' or platform_machine != 'ARM64'",

@@ -16,6 +16,34 @@ What you get for it:
 - **The recorded plan is a durable artifact**: checkpoint it, resume it after a crash, or
   bundle it so a colleague reproduces your histograms exactly.
 
+## A quick look
+
+Your eager script, with the reader and the `Hist` import changed and one
+`graphed.materialize` call:
+
+```python
+import awkward as ak
+import graphed
+import uproot
+from hist.graphed import Hist
+
+with uproot.recreate("quick_look.root") as f:  # stands in for your dataset
+    f.mktree("Events", {"Jet_pt": "var * float64"})  # a TTree, as most datasets are
+    f["Events"].extend({"Jet_pt": ak.Array([[40.0, 25.0], [55.0], [30.0, 60.0, 20.0],
+                                            [80.0], [15.0, 45.0], [70.0, 10.0]])})
+
+events = uproot.graphed("quick_look.root:Events")  # reads the file's form, no events
+h = Hist.new.Reg(4, 0, 100, name="pt", label="jet $p_T$ [GeV]").Int64().fill(pt=events.Jet_pt)
+
+filled = graphed.materialize(h)  # a new, filled hist.Hist; h itself stays un-run
+print(type(filled).__name__, filled.values())
+# Hist [3 4 3 1]
+```
+
+From `filled` on it is ordinary hist: `filled.plot()`, a scipy or iminuit fit, mplhep.
+It needs uproot 5.7.7, hist 2.12 and graphed-histogram 0.0.8 or later:
+`pip install "graphed[awkward]" "uproot>=5.7.7" "hist>=2.12" "graphed-histogram>=0.0.8"`.
+
 ## Install
 
 ```bash

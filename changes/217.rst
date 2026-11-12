@@ -1,0 +1,5 @@
+.. under: 0.0.12 (unreleased)
+
+* The README opens with a quick look: a ROOT file in through ``uproot.graphed``, a filled
+  ``hist.Hist`` out of ``graphed.materialize(h)``. It needs uproot 5.7.7, hist 2.12 and
+  graphed-histogram 0.0.8 or later (#217).
