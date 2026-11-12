@@ -18,27 +18,21 @@ What you get for it:
 
 ## A quick look
 
-Your eager script, with the reader line changed and one `graphed.materialize` call:
+Your eager script, with the reader and the `Hist` import changed and one
+`graphed.materialize` call:
 
 ```python
 import awkward as ak
 import graphed
-import numpy as np
 import uproot
 from hist.graphed import Hist
 
-with uproot.recreate("events.root") as f:  # stand in for your dataset
-    f.mktree("Events", {"Jet_pt": "var * float64", "MET_pt": "float64",
-                        "genWeight": "float64", "pu_sf": "float64"})
-    f["Events"].extend({
-        "Jet_pt": ak.Array([[40.0, 25.0], [55.0], [30.0, 60.0, 20.0],
-                            [80.0], [15.0, 45.0], [70.0, 10.0]]),
-        "MET_pt": np.array([10.0, 40.0, 70.0, 120.0, 30.0, 90.0]),
-        "genWeight": np.array([1.0, 1.0, -1.0, 1.0, 1.0, 1.0]),
-        "pu_sf": np.array([0.9, 1.1, 1.0, 0.95, 1.05, 1.0]),
-    })
+with uproot.recreate("quick_look.root") as f:  # stands in for your dataset
+    f.mktree("Events", {"Jet_pt": "var * float64"})  # a TTree, as most datasets are
+    f["Events"].extend({"Jet_pt": ak.Array([[40.0, 25.0], [55.0], [30.0, 60.0, 20.0],
+                                            [80.0], [15.0, 45.0], [70.0, 10.0]])})
 
-events = uproot.graphed("events.root:Events")  # reads the file's form, no events
+events = uproot.graphed("quick_look.root:Events")  # reads the file's form, no events
 h = Hist.new.Reg(4, 0, 100, name="pt", label="jet $p_T$ [GeV]").Int64().fill(pt=events.Jet_pt)
 
 filled = graphed.materialize(h)  # a new, filled hist.Hist; h itself stays un-run
@@ -47,8 +41,8 @@ print(type(filled).__name__, filled.values())
 ```
 
 From `filled` on it is ordinary hist: `filled.plot()`, a scipy or iminuit fit, mplhep.
-`uproot.graphed` needs uproot 5.7.7 or later, and `hist.graphed` needs hist 2.12 and
-`graphed-histogram`.
+It needs uproot 5.7.7, hist 2.12 and graphed-histogram 0.0.8 or later:
+`pip install "graphed[awkward]" "uproot>=5.7.7" "hist>=2.12" "graphed-histogram>=0.0.8"`.
 
 ## Install
 
