@@ -4,8 +4,100 @@ What changed
 Newest release first. Numbers in parentheses are the pull requests on
 `graphed-org/graphed <https://github.com/graphed-org/graphed>`_.
 
-0.0.11 (unreleased)
--------------------
+0.0.11
+------
+
+An uncaught StageError reads on its own
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* The ``format_traceback`` view is now an exception note on every ``StageError``, so an uncaught
+  error ends with your source line and ``-->``, on every runner, after a process boundary too.
+* ``input_forms`` holds type strings (``50000 * float32``) on the plan path, not class names.
+* A failing ``.map(fn, name="calib")`` reports ``op`` as ``map 'calib'`` on the plan path and in
+  ``graphed.debug.run``, ``trace`` and ``replay``, which said ``external``.
+* ``StageError.raised_at`` and the view name the line that raised inside your function.
+* ``StageError.partition`` on the plan path, before any join or repartition, is a readable label
+  from the new ``graphed.core.chunk_label``, with a blind partition's real entries where the source
+  can count them (an optional ``num_entries(partition)`` on a ``PartitionedSource``) and its size
+  otherwise. After one it names the destination, ``dest N``.
+* A failure in ``graphed.materialize(x, partition=)``, ``graphed.debug.run(..., partition=)`` or
+  ``graphed.debug.replay(plan, key).steps()`` names the chunk as the plan's task does.
+* New ``graphed.WorkerLostError``, a ``StageError`` for a worker that died, with no source frame.
+
+Inspecting a recording
+~~~~~~~~~~~~~~~~~~~~~~
+
+* ``graphed.read_columns(x)`` takes one array or a list and returns ``{source_name: columns}``,
+  across several sources; ``columns`` is ``None`` where every column is read. The two-argument
+  ``read_columns(arrays, source_nid)`` now ignores an array that never reaches that source, which
+  used to widen the answer to ``None``.
+* ``graphed.explain`` covers systematics only, so it is now ``graphed.explain_variations``.
+  ``graphed.explain`` still works and raises a ``DeprecationWarning``.
+* A misspelled attribute says what is missing and offers a close name:
+  ``no field named 'ptt' in Muon (did you mean 'pt'?)``, from ``ev.Muon.ptt`` and ``ev["ptt"]``
+  alike (#177). Reading ``.form`` points at ``.typestr``.
+  A coffea collection now gives this message rather than a bare ``AttributeError: ptt``.
+
+Arrays say what they are
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+* A deferred array's repr shows its type and the sources it reads,
+  ``graphed.Array<## * var * float64, from 'Events'>``, cut at 120 characters of type text.
+* ``dir(array)`` lists its fields and its behavior's properties and methods, so they tab-complete.
+  A backend joins by defining ``attribute_names(form)``.
+* ``repr(session)`` shows its node and source counts and its backend.
+* A record (``events[0]``) answers ``.fields``, ``.typestr`` and the rest of awkward's introspection
+  as an array does, instead of recording them as field reads.
+
+A flat systematic is a number
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``graphed.vary(1.0, "lumi", up=1.025, down=0.975)`` returns a factor to multiply into a weight,
+  in place of a ``gak.ones_like`` dummy. It holds no Session, and adds its own universes with no
+  joints: ``nominal, lumi_up, lumi_down`` (#180).
+* The ``would fan out`` guard names the families that multiplied, the factor idiom and
+  ``composes_as_union=True``. A number member on an array target points at the factor.
+
+``run_resumable`` takes what ``resumable`` takes
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``run_resumable``, ``run_shuffle_resumable`` and ``resumable`` each accept a directory as a ``str``
+or an ``os.PathLike``, an fsspec URL with ``storage_options=``, or a ``Store`` or ``FsspecStore``.
+Anything else raises a ``TypeError`` naming ``Store`` (#182).
+
+A smaller top level
+~~~~~~~~~~~~~~~~~~~
+
+* ``graphed.__all__`` now lists the user verbs only. The verbs that read a variation back
+  (``labels``, ``universe``, ``nominal``, ``weight``, ``points``, ``variations``,
+  ``explain_variations``, ``Kind``, …) live in ``graphed.systematics``; the provenance toggles
+  (``set_enabled``, ``is_enabled``, ``capture``, ``Provenance``) in ``graphed.provenance``; the
+  projection types in ``graphed.projection``; ``Backend``, ``Form`` and ``ParamValue`` in
+  ``graphed.backend``. The old top-level names still work and raise a ``DeprecationWarning``
+  naming the new path.
+* ``dir()`` of ``graphed``, ``graphed.numpy``, ``graphed.core``, ``graphed.awkward``,
+  ``graphed.debug`` and ``graphed.checkpoint`` lists their public names only.
+* ``graphed.new_session()`` returns the Session it installs (``None`` when it clears the default).
+
+Docstrings for users
+~~~~~~~~~~~~~~~~~~~~
+
+* Public docstrings no longer cite internal plan, milestone or requirement ids, and the main entry
+  points (``Session``, ``materialize``, ``aggregate_plan``, ``vary``, ``join``, ``from_parquet``,
+  ``graphed.debug.run``, …) carry a runnable example.
+* ``graphed.vary(array, ..., collections=...)`` on an Array now says to wrap the read in
+  ``gnano.events``.
+
+A shorter first analysis
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+* The README, the docs landing page and the quickstart lead with the default Session and
+  ``graphed.materialize``; ``compile_ir``/``evaluate_ir`` move to an advanced section. The
+  awkward design page no longer says ``uproot.graphed`` is unreleased (it needs uproot 5.7.7) or
+  that ``ak.*`` calls on a deferred array are unsupported.
+* ``gak.mean``, ``gak.std``, ``gak.var`` and ``gak.moment`` refuse an array in awkward's
+  positional weight slot with the keyword spelling:
+  ``gak.mean takes weight by keyword: gak.mean(x, axis=1, weight=w)``.
 
 Small samples, and one evaluation path
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -26,6 +118,40 @@ Small samples, and one evaluation path
 * ``Partition.first(n)`` caps a partition at its first ``n`` entries, resolved when it is read. A
   capped range is exact, so ``is_blind`` is false and a reader that moves blind ranges leaves it.
 * A parquet partition reads only the row groups its entries lie in, not the whole file.
+
+One rule at the deferred/eager boundary
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* **ak.to_list(x) on a deferred array now refuses.** It evaluated the whole dataset silently;
+  call ``ak.to_list(graphed.materialize(x))``. Nothing evaluates implicitly now.
+  ``gak.to_list`` still evaluates and is deprecated, with the same pointer.
+* Every conversion to eager values refuses at your line and names ``graphed.materialize`` and
+  ``graphed.head``: ``ak.to_numpy``, ``ak.Array``, ``np.asarray``, ``np.histogram``, ``.tolist()``,
+  ``.to_list()``, ``.to_numpy()``, ``.show()``, ``float()``, ``int()``, ``len()``, ``list()``,
+  and so ``plt.hist`` and an eager ``hist.Hist.fill``. ``bool(x)`` keeps its ``where`` advice.
+* ``len()``, ``float()``, ``int()``, ``iter()`` and an eager operand raise
+  ``graphed.errors.DeferredTypeError``, which is a ``GraphedTypeError`` and a ``TypeError``.
+* ``ak.<fn>`` with no deferred form now raises ``GraphedTypeError`` at your line in place of a bare
+  ``GraphedError``.
+* Combining a deferred array with an eager array or list (``x * np.ones(n)``) names
+  ``from_awkward`` and ``graphed.materialize``. Numpy scalars stay operands.
+* ``x.compute()`` says to use ``graphed.materialize``. A real field named ``compute`` still reads.
+* An attribute of a whole-array scalar (``gak.sum(x, axis=None).shape``) raises at your line. It
+  recorded a field of the tracer, and ``.nplike`` then failed at run time.
+
+Replay any plan, and find the cut that emptied your data
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``graphed.debug.replay(plan, task)`` needs no outputs: it steps through the operations the plan
+  runs, each at your line, for an ``aggregate_plan``, ``gh.plan`` or ``Histogram.plan`` plan, in any
+  interpreter. Passing the plan's outputs still replays your ops as written. Its second parameter is
+  now named ``task``, not ``key``.
+* ``graphed.debug.trace(x, entries=N)`` prints one row per recorded line, with the rows going in
+  and out of it, and marks the first line that empties the data.
+* A task that failed because its rows did not line up now fails the same way in ``replay`` and
+  ``gd.run(partition=)``, which broadcast them and returned a value.
+* A plan with a ``repartition`` or a positional join now replays, where its exchange or join step
+  raised, and ``reproduce`` runs them in a bundle the same way.
 
 ``gak.apply_correction`` takes keywords and checks the payload as you record
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -89,6 +215,37 @@ with ``isinstance(plan, graphed.core.Plan)``. ``graphed.debug.replay`` and
 sizing arguments do not carry over. ``submit`` runs the plan before it returns a finished
 ``concurrent.futures.Future``, which holds the result or the failure, so a paused ``control`` blocks
 the call and a cancel sent after it lands on the next run.
+
+Chunking by events
+~~~~~~~~~~~~~~~~~~
+
+* ``aggregate_plan(events_per_task=N)`` cuts each file into tasks of ``N`` entries, on any source
+  with ``num_entries(partition)`` and on any that reports concrete ranges. A source that cannot
+  count refuses it; passing ``steps_per_file=`` or ``partitions=`` too is a ``TypeError``. A
+  blind source opens each file on the driver to count it.
+
+A run can go on past bad chunks
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``runner.run(plan, skip_failed=10)`` gives up only after 10 failed chunks: ``res.value`` merges
+  the chunks that succeeded, ``res.failed`` lists the rest as JSON-ready ``FailedChunk`` records
+  holding the checkpoint dead-letter descriptor, and the run warns with the count. One failure past
+  the budget raises ``TooManyFailedChunksError``, which lists them.
+* ``StopCondition(max_errors=N)`` is that same budget, on every runner; it used to do nothing.
+* Under ``skip_failed``, each lost-worker rerun costs one from the budget, a repeat blame
+  included, so dask blaming a dead worker again on a chunk already left out no longer ends the run
+  with budget left. Worker losses alone past the budget raise ``TooManyFailedChunksError`` without
+  one more full rerun.
+* A ``skip_failed`` rerun no longer holds on to the lost worker's error, so it no longer keeps
+  the failed attempt's futures alive or ships that error to the workers.
+
+Shuffle destinations follow the reader's steps
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* A shuffle or join planned without ``steps_per_file=`` now routes to as many destinations as its
+  sources' own ``steps_per_file`` (the larger side's, for a join), as an explicit
+  ``steps_per_file=`` did; it routed to one. Results are unchanged, but a checkpoint store from
+  such a plan recomputes (#209).
 
 Plans returned wrong values for row-axis operations, and now refuse them
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -155,6 +312,18 @@ also written at analysis.py:6: ...)``. A line that runs again, as a re-run noteb
 counts once. ``Session.provenance`` answers for the array you pass it. Recording and checkpoint keys
 are unchanged, and a plan's bytes are unless a line it names repeats an expression.
 
+A progress bar
+~~~~~~~~~~~~~~
+
+* ``graphed.debug.ProgressBar`` is a monitor that ticks once per finished task and closes when the
+  run ends, however it ends: ``ProcessPoolExecutor(workers=4, monitor=ProgressBar()).run(plan)``.
+  It uses ``tqdm`` when that is installed and a plain text line otherwise. A staged plan, such as
+  a join's, emits no task events, so its bar shows no tasks (#185).
+* ``graphed.core.MonitorBase`` has no-op defaults: subclass it and override what you need. It adds
+  ``on_run_start(n_tasks)`` and ``on_run_end()``, which a runner calls on any monitor that has them.
+* A monitor without ``worker_profiler_factory``, or one whose factory raises, no longer ends a run.
+  The guard is the new ``graphed.core.worker_profiler_factory``; ``graphed-executors`` uses it too.
+
 Division by zero stops a run if you ask, and a worker's warnings reach the driver
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -166,6 +335,9 @@ Division by zero stops a run if you ask, and a worker's warnings reach the drive
   it. In a worker process, ``RuntimeWarning`` is now shown every time rather than once per location,
   so that a worker that outlives a run warns again on the next.
 * Every plan from ``aggregate_plan`` now has a ``finalize``, and its ``combine`` is a wrapper.
+* A worker keeps its warnings once its runner calls ``graphed.core.worker_warnings.enter_worker``
+  with the driver's ``process_id()``. A plan unpickled in a fresh interpreter now warns there as
+  usual and leaves ``warnings.showwarning`` and the filters alone (#197).
 
 ``graphed.materialize`` evaluates anything deferred
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -188,6 +360,21 @@ Division by zero stops a run if you ask, and a worker's warnings reach the drive
 * ``graphed.materialize`` over several files of a source that leaves unread columns as placeholders
   (``uproot.graphed``, coffea) no longer raises ``should never have been encountered``: the
   awkward backend's ``concat`` joins what was read and keeps the unread fields, unread.
+
+A plan says what it does, and saves
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``repr(plan)`` is one line, in place of the raw IR bytes::
+
+    Plan: 20 tasks over 1 file (dimuon.root:Events), reads 5 columns
+
+It reads no data. A ``process`` adds to it with a ``summary()`` method, and a ``reduce`` names its
+outputs with ``output_summaries()``. ``plan.save(path)`` and ``Plan.load(path)`` carry a plan to a
+later session on the same install. The file is a pickle, so load only plans you trust. A graphed
+version other than the one that wrote it refuses it with a clear error; the versions of other
+packages are not checked. It is a transport for submitting and coming back: the durable form of an
+analysis stays its IR and ``graphed.preserve``. A join's plan, a ``DurablePlanV2``, has
+neither the summary nor ``save``.
 
 Whole-dataset sums need no ``reduce``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -239,6 +426,15 @@ Fixes
   raised ``cannot pickle 'builtins.GraphStore' object``. The copy shares its Session, event
   context and recorded lines; ``copy.copy`` and ``copy.deepcopy`` of a Session or a context
   return it.
+* ``graphed.debug.ProgressBar`` counts each task once when a run reruns it: a lost-worker retry or
+  a ``skip_failed`` rerun no longer leaves the bar short of its total (#203). A rerun repeats a
+  task's events from ``SUBMITTED`` on inside the same run, so a monitor that counts tasks counts
+  ``event.key``.
+* The dashboard's overall progress bar counts each task once in the current run: a lost-worker
+  retry or a ``skip_failed`` rerun no longer grows its total (#207). ``NetworkMonitor`` forwards
+  the run's start and end, so a new run starts the bar afresh and a finished or cancelled run shows
+  nothing in flight. ``DashboardServer.snapshot()["stats"]`` still counts events; its ``inflight``
+  matches the bar.
 
 0.0.10
 ------

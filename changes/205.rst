@@ -1,4 +1,0 @@
-.. under: ``SequentialRunner`` stands in for the pooled runners
-
-* A ``skip_failed`` rerun no longer holds on to the lost worker's error, so it no longer keeps
-  the failed attempt's futures alive or ships that error to the workers.
