@@ -17,6 +17,7 @@ from ._helpers import (
     memoized_model_hash,
     ml_matrix,
     parse_call_template,
+    predict_rows,
 )
 
 _MLIR_LOC = re.compile(r"loc\(.*?\)|#loc\d*\s*=?.*")
@@ -50,11 +51,11 @@ def eval_jax(exported: Any, params: Mapping[str, Any], inputs: list[Any]) -> Any
     """Call the exported function on ``inputs``, one value per event."""
     template = parse_call_template(params, len(inputs))
     if template is None:  # legacy: one stacked feature matrix
-        return _as_event_array(exported.call(_stack_feature_columns(inputs)))
+        return _as_event_array(predict_rows(exported.call, _stack_feature_columns(inputs)))
     args, kwargs = template
     arrays = [ml_matrix(e, inputs) for e in args]
     kwarrays = {k: ml_matrix(e, inputs) for k, e in kwargs.items()}
-    return _as_event_array(exported.call(*arrays, **kwarrays))
+    return _as_event_array(predict_rows(exported.call, *arrays, **kwarrays))
 
 
 def _jax_samples() -> list[bytes]:

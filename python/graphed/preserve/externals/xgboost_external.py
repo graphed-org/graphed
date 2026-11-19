@@ -14,6 +14,7 @@ from ._helpers import (
     json_bytes,
     ml_matrix,
     parse_call_template,
+    predict_rows,
 )
 
 
@@ -52,9 +53,10 @@ def eval_xgboost(booster: Any, params: Mapping[str, Any], inputs: list[Any]) -> 
         raise PreserveError(
             f"the xgboost model takes {expected} features; the call gives {matrix.shape[1]}"
         )
-    # the booster's own names, so a model trained on named columns runs as shipped
-    data = xgb.DMatrix(matrix, feature_names=booster.feature_names)
-    return _as_event_array(booster.predict(data))
+    names = booster.feature_names  # its own, so a model trained on named columns runs as shipped
+    return _as_event_array(
+        predict_rows(lambda m: booster.predict(xgb.DMatrix(m, feature_names=names)), matrix)
+    )
 
 
 def _xgboost_samples() -> list[bytes]:
