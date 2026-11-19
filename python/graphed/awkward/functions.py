@@ -25,7 +25,14 @@ from graphed.backend import ParamValue
 from graphed.errors import DeferredTypeError, GraphedError, GraphedTypeError
 from graphed.provenance import capture
 from graphed.shuffle import JOINKEY, route_key
-from graphed.varied import boundary_refusal, containers_in, expand, expand_tuple, narrow
+from graphed.varied import (
+    boundary_refusal,
+    containers_in,
+    expand,
+    expand_tuple,
+    narrow,
+    session_of,
+)
 
 from ..preserve.externals._helpers import refuse_unread_inputs
 from ..preserve.externals.correctionlib_external import (
@@ -948,27 +955,22 @@ def _ak_only_keywords(name: str, signature: inspect.Signature) -> dict[str, obje
 
 
 def _is_default(value: object, default: object) -> bool:
-    if value is default:
-        return True
-    try:
-        return type(value) is type(default) and bool(value == default)
-    except Exception:  # an array compares elementwise
-        return False
+    # every ak default here is None, a bool, a str or a type, so == never broadcasts
+    return value is default or (type(value) is type(default) and bool(value == default))
 
 
 def _in_effect(behavior: object, operands: Sequence[object]) -> bool:
     """Return whether every entry of ``behavior`` is already what the operands' session applies."""
-    if not isinstance(behavior, Mapping):
-        return False
-    arrays = [
-        a
+    sessions = [
+        session
         for value in operands
         for a in (value.values() if isinstance(value, Mapping) else _items(value))
-        if isinstance(a, Array)
+        if (session := session_of(a)) is not None
     ]
-    if not arrays:
+    if not isinstance(behavior, Mapping) or not sessions:
         return False
-    effective = getattr(arrays[0].session.backend, "_behavior", None) or ak.behavior
+    # awkward overlays an array's behavior on its global registry, as the backend's arrays get
+    effective = {**ak.behavior, **(getattr(sessions[0].backend, "_behavior", None) or {})}
     # `all` is gak's here
     return not [key for key, entry in behavior.items() if effective.get(key) is not entry]
 

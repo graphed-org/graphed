@@ -9,6 +9,7 @@ from typing import Any
 import awkward as ak
 import pytest
 
+import graphed
 from graphed import Session
 from graphed.awkward import AwkwardBackend, from_awkward, gak
 from graphed.awkward import functions as gak_module
@@ -110,10 +111,13 @@ def test_a_non_default_keyword_graphed_cannot_honour_is_refused_by_name(
 
 
 @pytest.fixture
-def unregistered_vector() -> Any:
+def unregistered_vector(monkeypatch: pytest.MonkeyPatch) -> Any:
+    # a sibling module registers vector at import, so unregister it here rather than skip
     vector = pytest.importorskip("vector")
-    if vector._awkward_registered:
-        pytest.skip("vector is registered with awkward in this process")
+    own = vector.backends.awkward.behavior
+    kept = {key: entry for key, entry in ak.behavior.items() if own.get(key) is not entry}
+    monkeypatch.setattr(ak, "behavior", kept)
+    monkeypatch.setattr(vector, "_awkward_registered", False)
     return vector
 
 
@@ -140,6 +144,32 @@ def test_vector_zip_without_its_behavior_anywhere_is_refused_by_name(
     session = Session(AwkwardBackend())
     with pytest.raises(GraphedTypeError, match=r"behavior=.*register"):
         _vector_case(unregistered_vector, session)
+
+
+def test_a_behavior_counts_the_registry_beneath_the_backend_behavior(
+    unregistered_vector: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    behavior = unregistered_vector.backends.awkward.behavior
+    monkeypatch.setattr(ak, "behavior", {**ak.behavior, **behavior})
+    session = Session(AwkwardBackend({"Other": type("Other", (ak.Record,), {})}))
+    src = from_awkward("e", ak.zip({"x": [3.0], "y": [4.0]}), session=session)
+    out = ak.zip({"x": src.x, "y": src.y}, with_name="Vector2D", behavior=behavior)
+    value: Any = session.materialize(out)
+    assert ak.to_list(value.rho) == [5.0]
+
+
+def test_a_behavior_in_effect_is_found_through_varied_and_sequence_operands(
+    unregistered_vector: Any,
+) -> None:
+    behavior = unregistered_vector.backends.awkward.behavior
+    session = Session(AwkwardBackend(behavior))
+    src = from_awkward("e", ak.zip({"x": [3.0], "y": [4.0]}), session=session)
+    x = graphed.vary(src.x, "sx", points={"up": src.x * 2.0})
+    y = graphed.vary(src.y, "sy", points={"up": src.y * 2.0})
+    assert isinstance(ak.zip({"x": x, "y": y}, behavior=behavior), graphed.Varied)
+    assert isinstance(ak.concatenate([src.x, src.x], behavior=behavior), graphed.Array)
+    with pytest.raises(GraphedTypeError, match="behavior="):
+        ak.concatenate([src.x, src.x], behavior=["Vector2D"])
 
 
 def test_vector_zip_runs_deferred_once_vector_is_registered(
