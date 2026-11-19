@@ -21,7 +21,7 @@ from .aggregate import (
     read_label,
 )
 from .array import Array
-from .execute import CompiledGraph, Key, _compile_cone, evaluate_ir
+from .execute import CompiledGraph, Key, _compile_cone, evaluate_ir, ir_cone
 from .projection import read_columns
 from .session import Session
 from .varied import Varied, members_of, refuse_container
@@ -139,6 +139,18 @@ def _keep(session: Session, nid: int, chunks: Sequence[object], reads: dict[int,
         reads[nid] = concat(chunks)
 
 
+def _pairs_by_chunk(session: Session, arrays: Sequence[Array]) -> bool:
+    """Return whether ``arrays`` take an op the backend pairs by chunk, not by row."""
+    unaligned = getattr(session.backend, "rows_unaligned", None)
+    if unaligned is None:
+        return False
+    nodes = session._nodes()
+    return any(
+        nodes[nid]["kind"] == "op" and unaligned(nodes[nid]["name"], nodes[nid]["params"])
+        for nid in ir_cone(nodes, [a.node_id for a in arrays])
+    )
+
+
 def _chunks_join(session: Session, data: PartitionedSource) -> bool:
     """Return whether ``data``'s partitions make one chunk under this session's backend."""
     return hasattr(session.backend, "concat") or len(data.partitions(1)) == 1
@@ -216,6 +228,13 @@ def _first_entries(
             if isinstance(data, PartitionedSource) and _chunks_join(session, data):
                 columns = _columns(data, arrays, nid)
                 chunks, rows = _read_first(data, columns, entries, resources)
+                if len(chunks) > 1 and _pairs_by_chunk(session, arrays):
+                    raise ValueError(
+                        f"the first {entries} entries span {len(chunks)} partitions, and these "
+                        "results take an op that pairs its operands chunk by chunk, so one "
+                        "evaluation over them is wrong; materialize them whole, or one chunk "
+                        "with partition="
+                    )
                 _keep(session, nid, chunks, reads)
             else:
                 reads[nid], rows = _first(load(nid), entries)
@@ -334,7 +353,10 @@ def _run_pass(
     whole value of each node they take.
     """
     sharing = [a for a in arrays if nid in session.reachable_sources(a.node_id)]
-    read_by = _planned_arrays(joint.outputs(), tuple(joint.writes), store=None, opt_level=1)
+    outputs, writes = joint.outputs(), tuple(joint.writes)
+    read_by = (
+        _planned_arrays(outputs, writes, store=None, opt_level=1) if outputs or writes else []
+    )
     frontier = _frontier(session, sharing, nid, past)
     carried = _carrying(frontier)
     joint.pieces[id(carried)] = carried
@@ -465,6 +487,9 @@ def _evaluated(items: Iterable[Any], sample: _Sample | None = None) -> dict[int,
             )
             values.update(ran)
             continue
+        for array in work.arrays:
+            if _pairs_by_chunk(session, [array]):
+                work.joint([array])  # its pass evaluates it chunk by chunk
         past = _past_boundary(session) if work.pieces or work.passes else frozenset[int]()
         for key, pieces in work.pieces.items():
             # past a boundary is whole, where a reduction has its one value
@@ -526,7 +551,9 @@ def materialize(
     downstream of a reduction; the rest evaluates once over the concatenated chunks, so an Array
     is always its whole-dataset value. As in any chunked run, that takes behavior methods, named
     types' overloads and Externals to be row-wise, and an operation pairing two row sets raises
-    in that pass, though it broadcasts alone. A piece downstream of a reduction, or reading
+    in that pass, though it broadcasts alone. An Array taking an op its backend's
+    ``rows_unaligned`` names evaluates in a per-partition pass instead, and a sample of
+    ``entries=`` spanning partitions refuses it. A piece downstream of a reduction, or reading
     anything but one partitioned source, evaluates with the Arrays over the whole dataset, where
     that reduction has its one correct value. A write consuming one is refused, as it is in a
     plan. A plan passed in is its own pass. A failing operation raises a

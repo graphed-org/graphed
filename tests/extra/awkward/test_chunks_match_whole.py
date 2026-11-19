@@ -224,6 +224,26 @@ def test_a_backend_declares_which_ops_pair_no_rows(backend: Any, expected: Any) 
         assert ak.to_list(ak.concatenate(SequentialRunner().run(plan).value)) == expected
 
 
+def _chunk_paired() -> Any:
+    events = Session(_SubPairsNoRows()).source(
+        "chunks", form=AwkwardForm(ak.Array(_ONE.layout.to_typetracer(True))), data=_Chunks()
+    )
+    return events.s - events.s[events.t > 4.0]
+
+
+def test_materialize_evaluates_an_op_paired_by_chunk_chunk_by_chunk() -> None:
+    assert ak.to_list(graphed.materialize(_chunk_paired())) == [2.0, 0.0, 0.0, 0.5, 0.0]
+
+
+def test_a_sample_spanning_chunks_refuses_an_op_paired_by_chunk() -> None:
+    outlier = _chunk_paired()
+    assert ak.to_list(graphed.materialize(outlier, entries=3)) == [2.0, 0.0, 0.0]
+    with pytest.raises(ValueError, match="span 2 partitions"):
+        graphed.materialize(outlier, entries=4)
+    with pytest.raises(ValueError, match="span 2 partitions"):
+        graphed.head(outlier, 4)
+
+
 def test_a_whole_evaluation_still_broadcasts_a_length_one_row_set() -> None:
     events = _events()
     outlier = events.s - events.s[events.s == 3.0]
