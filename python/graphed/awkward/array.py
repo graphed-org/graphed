@@ -9,6 +9,7 @@ Both also take ak's field assignment, ``events["Photon"] = photons``, as a recor
 
 from __future__ import annotations
 
+import contextlib
 import inspect
 from collections.abc import Callable
 from typing import Any
@@ -18,7 +19,7 @@ import numpy as np
 from awkward._connect.numpy import implemented as _ak_numpy
 
 from graphed import Array
-from graphed.array import no_eager_value
+from graphed.array import Deferred, no_eager_value
 from graphed.errors import GraphedTypeError
 from graphed.provenance import capture, register_internal
 from graphed.varied import Varied, register_varied
@@ -93,7 +94,7 @@ def _setitem(self: Any, where: object, what: object) -> None:
     """Ak's ``Array.__setitem__``, by recording ``with_field`` and rebinding this proxy.
 
     The key is a field name, or a tuple path into nested records; other proxies of the old node are
-    untouched.
+    untouched. A varied value makes this proxy the container of universes, as rebinding does.
     """
     path = (where,) if isinstance(where, str) else where
     if not (isinstance(path, tuple) and path and all(isinstance(part, str) for part in path)):
@@ -101,17 +102,15 @@ def _setitem(self: Any, where: object, what: object) -> None:
             "__setitem__", capture(), "only fields may be assigned in-place (by field name)"
         )
     new = _with_path(self, path, what)
-    if not isinstance(new, type(self)):
-        raise GraphedTypeError(
-            "__setitem__",
-            capture(),
-            "assigning a varied value turns this array into a container of universes, which an "
-            "in-place assignment cannot do; rebind instead: x = gak.with_field(x, value, field)",
-        )
-    for cls in type(new).__mro__:
-        for slot in getattr(cls, "__slots__", ()):
-            if slot != "__weakref__":
-                setattr(self, slot, getattr(new, slot))
+    # a varied value turns an array proxy into its container; the shared layout allows the swap
+    self.__class__ = type(new)
+    for name in Deferred.__slots__[1:]:
+        slot = getattr(Deferred, name)
+        try:
+            slot.__set__(self, slot.__get__(new))
+        except AttributeError:  # a slot only the other class uses
+            with contextlib.suppress(AttributeError):
+                slot.__delete__(self)
 
 
 def _clip(a: object, a_min: object = None, a_max: object = None) -> object:

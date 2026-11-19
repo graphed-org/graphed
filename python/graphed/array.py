@@ -330,14 +330,33 @@ def _positional(key: Array) -> bool:
     return positional is not None and positional(key.session.form(key))
 
 
-class Array(EagerRefusals):
+class Deferred(EagerRefusals):
+    """The one slot layout of `Array` and `Varied`.
+
+    Shared so `x[field] = varied` can turn an array proxy into a container in place, by
+    `__class__` assignment; a slot the class does not use stays unset.
+    """
+
+    __slots__ = (
+        "__weakref__",
+        "_context",
+        "_labels",
+        "_members",
+        "_node_id",
+        "_session",
+        "_site",
+        "_tags",
+    )
+
+
+class Array(Deferred):
     # M48 adds two frontend-only slots (§2.3e): `_context` is the event-context handle a read was
     # performed through, `_labels` the variation labels flowing into this expression. Both are
     # underscore-prefixed so `__getattr__`'s guard keeps them out of field access, and NEITHER
     # reaches NodeKey params/tokens/hashes — interning and §1.2 stay intact.
     """A deferred array: a proxy for one node of a Session's recorded graph."""
 
-    __slots__ = ("_context", "_labels", "_node_id", "_session", "_site")
+    __slots__ = ()
 
     # let numpy defer to us for ufuncs (np.cos(array), np.hypot(a, b), ...)
     __array_priority__ = 1000.0

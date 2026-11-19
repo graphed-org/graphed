@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from typing import Any
 
 import awkward as ak
@@ -11,9 +12,12 @@ import pytest
 import graphed
 from graphed import Session
 from graphed.awkward import AwkwardBackend, from_awkward, gak
+from graphed.context import members_of
 from graphed.errors import GraphedTypeError
+from graphed.systematics import labels
 
 DATA = {"m": [1.0, 2.0], "r": [{"y": 1, "z": 5}, {"y": 2, "z": 6}]}
+DATA_ROWS = ak.to_list(ak.Array(DATA))
 
 
 def _source() -> tuple[Session, Any]:
@@ -55,7 +59,7 @@ def _slots(x: Any) -> dict[str, Any]:
         return {k: plain(m) for k, m in v.items()} if isinstance(v, dict) else v
 
     slots = [n for c in type(x).__mro__ for n in getattr(c, "__slots__", ())]
-    names = [n for n in slots if n not in ("__weakref__", "_site")]
+    names = [n for n in slots if n not in ("__weakref__", "_site") and hasattr(x, n)]
     return {n: plain(getattr(x, n)) for n in names}
 
 
@@ -93,10 +97,50 @@ def test_an_eager_array_value_is_refused_naming_the_input_fix(value: Any) -> Non
         ev["w"] = value
 
 
-def test_a_varied_value_into_a_plain_array_is_refused() -> None:
-    _, ev = _source()
-    with pytest.raises(GraphedTypeError, match="rebind instead"):
-        ev["w"] = graphed.vary(ev.m, "s", points={"up": ev.m * 3})
+def _universes(session: Session, x: Any) -> dict[str, Any]:
+    return {label: ak.to_list(session.materialize(m)) for label, m in members_of(x).items()}
+
+
+@pytest.mark.parametrize("key", ["w", ("r", "q")], ids=["field", "path"])
+def test_a_varied_value_promotes_a_plain_array_as_rebinding_does(key: Any) -> None:
+    session, ev = _source()
+    value = graphed.vary(ev.m, "s", up=ev.m * 3, down=ev.m)
+    rebound = (
+        gak.with_field(ev, value, key)
+        if isinstance(key, str)
+        else gak.with_field(ev, gak.with_field(ev.r, value, "q"), "r")
+    )
+    ev[key] = value
+    assert isinstance(ev, graphed.Varied)
+    assert labels(ev) == ("nominal", "s_up", "s_down")
+    assert _universes(session, ev) == _universes(session, rebound)
+
+
+def test_a_promoted_array_takes_a_later_plain_assignment() -> None:
+    session, ev = _source()
+    ev["w"] = graphed.vary(ev.m, "s", up=ev.m * 3, down=ev.m)
+    ev["v"] = ev.m + 1
+    assert _universes(session, ev)["s_up"] == [
+        {**row, "w": row["m"] * 3, "v": row["m"] + 1} for row in DATA_ROWS
+    ]
+
+
+def test_promotion_rebinds_this_object_only() -> None:
+    session, ev = _source()
+    alias, twin = ev, type(ev)(session, ev.node_id)
+    ev["w"] = graphed.vary(ev.m, "s", up=ev.m * 3, down=ev.m)
+    assert alias is ev
+    assert isinstance(twin, graphed.Array)
+    assert ak.to_list(session.materialize(twin)) == DATA_ROWS
+
+
+def test_a_promoted_array_carries_no_array_state_and_copies_as_a_container() -> None:
+    session, ev = _source()
+    ev["w"] = graphed.vary(ev.m, "s", up=ev.m * 3, down=ev.m)
+    assert [n for n in ("_node_id", "_session", "_site", "_labels") if hasattr(ev, n)] == []
+    for copied in (copy.copy(ev), copy.deepcopy(ev)):
+        assert type(copied) is type(ev)
+        assert _universes(session, copied) == _universes(session, ev)
 
 
 @pytest.mark.parametrize("value", [0.5, np.float32(0.5), 3, True, "tag"], ids=repr)

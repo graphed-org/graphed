@@ -1,0 +1,5 @@
+.. under: 0.0.12 (unreleased)
+
+* ``x[field] = varied`` on an unvaried deferred array makes ``x`` the container of universes, as
+  ``x = gak.with_field(x, varied, field)`` does, instead of refusing; a field path works the same.
+  Only that object changes: another proxy of the old node stays unvaried (#227).
