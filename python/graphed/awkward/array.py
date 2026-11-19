@@ -153,15 +153,15 @@ class AwkwardVaried(Varied):
 
     def __getattr__(self, name: str) -> Any:
         """Map an attribute read over every member; ``layout`` is the one every universe shares."""
-        layouts = [member.layout for member in self._members.values()] if name == "layout" else []
-        if not layouts or isinstance(layouts[0], Array | Varied):  # a field named `layout` wins
+        probe = self._members["nominal"].layout if name == "layout" else None
+        if probe is None or isinstance(probe, Array | Varied):  # a field named `layout` wins
             return super().__getattr__(name)
-        if any(layout.form != layouts[0].form for layout in layouts):
+        if any(member.layout.form != probe.form for member in self._members.values()):
             raise GraphedError(
                 "the universes' layouts differ in form; read one universe first, with "
                 "graphed.systematics.universe(v, label)"
             )
-        return layouts[0]
+        return probe
 
 
 register_varied(AwkwardArray, AwkwardVaried)
