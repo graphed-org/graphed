@@ -1,0 +1,10 @@
+.. under: 0.0.12 (unreleased)
+
+PyTorch input layout
+~~~~~~~~~~~~~~~~~~~~
+
+The PyTorch plugin takes ``params={"order": "F"}`` to feed the model a column-major input matrix,
+the strides a pandas-fed ``torch.FloatTensor(df.to_numpy())`` has. torch keeps numpy's strides and
+its matrix multiply rounds by layout, so this reproduces such an evaluation bit for bit. The order
+is a recorded param, so the two layouts are two nodes; the default (``"C"``, not recorded) is
+unchanged.
