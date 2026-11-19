@@ -342,6 +342,17 @@ def _leaves(t: ak.types.Type) -> list[str]:
     return []
 
 
+def _holds_unknown(t: ak.types.Type) -> bool:
+    """Return whether ``t`` has an ``unknown`` node, by structure: a field may be named so."""
+    if isinstance(t, ak.types.UnknownType):
+        return True
+    if isinstance(t, (ak.types.RecordType, ak.types.UnionType)):
+        return any(map(_holds_unknown, t.contents))
+    if isinstance(t, (ak.types.ListType, ak.types.RegularType, ak.types.OptionType)):
+        return _holds_unknown(t.content)
+    return False
+
+
 def _is_array(x: object) -> bool:
     """Array-ness at run time: a 0-d ndarray and an `ak.Record` are scalars."""
     # never np.ndim: it converts the value, and a ragged list raises
@@ -478,7 +489,7 @@ class AwkwardBackend:
             raise TypeError(
                 f"on length-zero arrays it returns {type(value).__name__}, not an array"
             ) from failure
-        if "unknown" in str(value.type):  # as check_output_type reads it: holds no values
+        if _holds_unknown(value.type.content):
             raise ValueError(f"on length-zero arrays its type is {str(value.type)!r}") from failure
         layout = value.layout.to_typetracer(forget_length=True)
         return AwkwardForm(ak.Array(layout, behavior=value.behavior, attrs=value.attrs))

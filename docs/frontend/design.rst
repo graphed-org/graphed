@@ -1382,12 +1382,13 @@ bare evaluator. An aggregate plan re-raises any other ``GraphedError`` from a wo
 one into the ``StageError`` at the declaring line.
 
 A backend may also provide ``traced_form(fn, inputs) -> Form | None``, the form an undeclared
-``map`` gives ``inputs``, beside ``canonical_output_type``, which must accept that form. The awkward
-backend tries the typetracers first, then one call on length-zero arrays of the inputs' forms. A
-failure there is raised from the typetracer's failure, so the warning names both. The session calls
-it at the recording line and records that form, which stays out of the node's params, and checks
-every value against the form's canonical type. A failure there is a ``GraphedWarning`` and
-``op_form``'s answer stands, unchecked, since the callable is the user's. A backend without the
+``map`` gives ``inputs``. The awkward backend tries the typetracers first, then one call on
+length-zero arrays of the inputs' forms. A failure there is raised from the typetracer's failure,
+so the warning names both. The session calls it at the recording line and records that form, which
+stays out of the node's params, and checks every value against the form's
+``canonical_output_type`` where a declaration could give that form; a scalar from array inputs, or
+a backend without ``canonical_output_type``, records it unchecked. A failure there is a
+``GraphedWarning`` and ``op_form``'s answer stands, unchecked, since the callable is the user's. A backend without the
 method records ``op_form``'s answer silently.
 
 A package that records its *own* call-outs — histogram fills are the example — passes

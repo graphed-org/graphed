@@ -183,7 +183,7 @@ class Session:
         # evaluator key -> the first callable recorded under it and where
         self._fn_held: dict[str, tuple[Callable[..., object], Provenance]] = {}
         # (evaluator key, *input types) -> the form and canonical type inferring that function gave
-        self._fn_traced: dict[tuple[str, ...], tuple[Form, str] | None] = {}
+        self._fn_traced: dict[tuple[str, ...], tuple[Form, str | None] | None] = {}
 
     def __deepcopy__(self, memo: dict[int, Any] | None = None) -> Session:
         """Return this Session: one graph has one Session, so a copy shares what it records."""
@@ -854,7 +854,9 @@ class Session:
             if undeclared and declared is None:
                 inferred = self._traced_form(fn, key, ids, prov)
                 if inferred is not None:
-                    form, declared = inferred[0], ("output_type", inferred[1])
+                    form = inferred[0]
+                    if inferred[1] is not None:
+                        declared = ("output_type", inferred[1])
         with self._lock:
             node_id = self._store.add_external(descriptor, ids, params_d)
             if declared is not None and check is not None:
@@ -903,16 +905,18 @@ class Session:
 
     def _traced_form(
         self, fn: Callable[..., object], key: str, ids: Sequence[int], prov: Provenance
-    ) -> tuple[Form, str] | None:
+    ) -> tuple[Form, str | None] | None:
         """Return the form and type an undeclared ``fn`` gives its inputs, where the backend can.
 
         The type is the backend's canonical ``output_type``, checked on every value as a declared
-        one is. This runs the user's function at record time, so any failure is a warning, never
-        fatal. One function is inferred once per input type, however many universes record it.
+        one is; ``None`` where no declaration gives that form (rows from row-less inputs, or the
+        reverse) or the backend cannot declare. This runs the user's function at record time, so
+        any failure is a warning, never fatal. One function is inferred once per input type,
+        however many universes record it.
         """
         trace = getattr(self._backend, "traced_form", None)
         canonical = getattr(self._backend, "canonical_output_type", None)
-        if trace is None or canonical is None:
+        if trace is None:
             return None
         forms = self._forms_of(ids)
         traced = (key, *(form.describe() for form in forms))
@@ -920,11 +924,14 @@ class Session:
             if traced in self._fn_traced:
                 return self._fn_traced[traced]
         reason = ""
-        inferred: tuple[Form, str] | None = None
+        inferred: tuple[Form, str | None] | None = None
         try:
             form: Form | None = trace(fn, forms)
             if form is not None:
-                inferred = (form, str(canonical(form)))
+                rows = getattr(form, "has_rows", True)
+                declarable = rows == any(getattr(f, "has_rows", True) for f in forms)
+                typed = str(canonical(form)) if canonical is not None and declarable else None
+                inferred = (form, typed)
         except Exception as exc:
             # a failure the backend raised from an earlier one names both
             reasons = dict.fromkeys(_reason(e) for e in (exc.__cause__, exc) if e is not None)

@@ -90,3 +90,33 @@ def test_an_inferred_type_the_value_disagrees_with_raises_at_the_line(
         f"declares output_type {inferred!r}; its value is {executed!r}" in info.value.cause_message
     )
     assert info.value.user_frame.lineno == line
+
+
+def test_a_traced_reduction_to_a_scalar_keeps_its_form_unchecked() -> None:
+    from graphed.session import CheckedExternal  # noqa: PLC0415
+
+    ev = events()
+    out = ev.x.map(lambda x: ak.sum(x))
+    assert typestr(out) == "float64"
+    assert not isinstance(ev.session._externals[out.node_id][0], CheckedExternal)
+    assert graphed.materialize(out) == 14.0
+
+
+def test_a_field_named_unknown_is_a_known_type() -> None:
+    ev = events()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", GraphedWarning)
+        out = ev.x.map(lambda x: ak.zip({"unknown": ak.Array(np.sqrt(ak.to_numpy(x)))}))
+    assert typestr(out) == "## * {unknown: float64}"
+
+
+def test_a_backend_that_cannot_declare_still_records_the_traced_form(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from graphed.session import CheckedExternal  # noqa: PLC0415
+
+    monkeypatch.delattr(AwkwardBackend, "canonical_output_type")
+    ev = events()
+    out = ev.x.map(lambda x: x > 2)
+    assert typestr(out) == "## * bool"
+    assert not isinstance(ev.session._externals[out.node_id][0], CheckedExternal)
