@@ -186,6 +186,11 @@ class AwkwardForm:
         return _is_array(self.tt)
 
     @property
+    def ndim(self) -> int:
+        """Return the number of dimensions; a scalar has none."""
+        return int(getattr(self.tt, "ndim", 0))
+
+    @property
     def is_typetracer(self) -> bool:
         """Return whether this form is backed by a typetracer."""
         return ak.backend(self.tt) == "typetracer"

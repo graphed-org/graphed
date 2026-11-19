@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..array import Array, attach, labels_carried
+from ..array import Array, attach, labels_carried, select
 from ..errors import GraphedError
 from .lineage import is_ancestor, links_below, row_space_above
 from .varied import Varied, context_of, expand, member_of, members_of, rebuild, tags_of
@@ -51,10 +51,30 @@ def reindex_to(value: Array | Varied, ctx: Any) -> Any:
     return with_context(value, ctx)
 
 
+def cut(value: Any, mask: Any, select: Any) -> Any:
+    """Return ``value[mask]`` by ``select``, in the rows of the context ``mask`` derives (#280).
+
+    A row mask read through ``value``'s own context leaves the value in that context's
+    ``ctx[mask]``, so assigning it there re-indexes nothing.
+    """
+    out = expand(select, (value, mask), {})
+    handle = context_of(value)
+    derive = getattr(handle, "_derive", None)
+    if derive is None or context_of(mask) is not handle or not _selects_rows(mask):
+        return out
+    return with_context(out, derive(mask))
+
+
+def _selects_rows(mask: Any) -> bool:
+    """Whether ``mask`` picks rows: a list-level mask leaves every row in place."""
+    member = next(iter(members_of(mask).values())) if isinstance(mask, Varied) else mask
+    return getattr(member.session.form(member), "ndim", None) == 1
+
+
 def follow(value: Any, kind: str, payload: Any) -> Any:
     """Return `value` carried across one lineage link (§6.1d), parent-to-child."""
     if kind == "mask":  # link kind (1): each label's member by THAT label's mask
-        return expand(lambda item, mask: item[mask], (value, payload), {})
+        return expand(select, (value, payload), {})
     if kind == "project":  # link kind (3): project, and RESET the accumulated label set
         return member_of(value, payload)
     if kind == "option":  # ak.mask's link: the rows stay, the value is masked as the context is

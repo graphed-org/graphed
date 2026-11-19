@@ -1,0 +1,15 @@
+.. under: 0.0.12 (unreleased)
+
+A value cut by a context's mask is in that context's rows
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``x[cut]``, where ``x`` and the row mask ``cut`` are read through one event context, now
+  carries the context ``events[cut]`` derives. ``events[cut]["name"] = f(x[cut])`` assigns the
+  value as it is, instead of cutting it a second time, in either order of the two cuts, for a
+  ``Varied`` value or mask, and under a second cut on top (#280).
+* A value cut by a *different* mask is refused when assigned, naming both contexts; before, it
+  was cut again by the context's mask and failed when the plan ran.
+* A list-level mask (``jets[jets.pt > 30]``) keeps every row, so the value stays in its context.
+* ``events[cut]`` derived again after an assignment on ``events`` holds the same rows as the
+  first ``events[cut]``, so values read through either combine.
+* A derived context records a collection's cut only when that collection is read.

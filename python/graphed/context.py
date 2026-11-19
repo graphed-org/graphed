@@ -49,9 +49,11 @@ from .systematics.ambient import (  # isort: skip
 from .systematics.by_label import cone as cone  # isort: skip
 from .systematics.lineage import (  # isort: skip
     ContextNode,
+    Followed,
     Link as Link,
     collections_of,
     context_session,
+    mask_key,
 )
 from .systematics.handles import follow  # isort: skip
 from .systematics.explain import (  # isort: skip
@@ -279,7 +281,7 @@ class EventContext(EagerRefusals, ContextNode):
         PURE DERIVATIONS ARE CANONICAL — the same mask answers with the same object, memoised here,
         or two reads of one universe would falsely trip §2.3e's divergence rule.
         """
-        key = _mask_key(mask)
+        key = mask_key(mask)
         memo = self._derived.get(key)
         if memo is not None:
             return memo
@@ -301,7 +303,7 @@ class EventContext(EagerRefusals, ContextNode):
             raise GraphedError(
                 f"an event context is masked by an Array/Varied condition, not {condition!r}"
             )
-        key = (("option", int(valid_when)), *_mask_key(condition))
+        key = (("option", int(valid_when)), *mask_key(condition))
         memo = self._derived.get(key)
         if memo is not None:
             return memo
@@ -327,10 +329,9 @@ class EventContext(EagerRefusals, ContextNode):
             parent=self,
             link=link,
         )
-        child._collections = {
-            name: child._stamp(follow(collection, *link))
-            for name, collection in collections_of(self).items()
-        }
+        child._collections = Followed(
+            collections_of(self), lambda collection: child._stamp(follow(collection, *link))
+        )
         return child
 
     def _vary_child(self, record: AmbientRecord, replaced: Mapping[str, Any]) -> EventContext:
@@ -404,17 +405,6 @@ def with_collection(ctx: EventContext, value: object, name: object) -> EventCont
     """
     name = ctx._name(name, "with_field")
     return ctx._vary_child(for_vary_link(ctx), {name: ctx._admit(name, value, "with_field")})
-
-
-def _mask_key(mask: Array | Varied) -> tuple[tuple[str, int], ...]:
-    """Return a derivation's identity: its per-label node ids.
-
-    A REBUILT mask interns to the same ids, which is the binding condition for
-    `ctx[rebuilt] is ctx[mask]`.
-    """
-    if isinstance(mask, Varied):
-        return tuple((label, member.node_id) for label, member in members_of(mask).items())
-    return (("nominal", mask.node_id),)
 
 
 # ---- the two context overloads of `graphed.vary` -------------------------------------------
