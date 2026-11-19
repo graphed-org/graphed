@@ -7,6 +7,7 @@ Mirrors the subset of the awkward API the corpus analyses use, so an analysis wr
 from __future__ import annotations
 
 import functools
+import inspect
 import json
 import warnings
 from collections.abc import Callable, Mapping, Sequence
@@ -21,6 +22,7 @@ import graphed
 from graphed import Array
 from graphed.array import scalar_params
 from graphed.backend import ParamValue
+from graphed.context import EventContext, with_collection
 from graphed.errors import DeferredTypeError, GraphedError, GraphedTypeError
 from graphed.provenance import capture
 from graphed.shuffle import JOINKEY, route_key
@@ -919,6 +921,22 @@ def sample(arr: Array, *, factor: int) -> object:
 
 
 # ---- §2.3c: the gak dispatch layer; `_dispositions` classifies each function ----------
+def _on_context(
+    fn: Callable[..., Any], context: EventContext, args: Any, kwargs: Any
+) -> EventContext:
+    """Answer an event context where gak takes an array: only ``with_field`` on it has a meaning."""
+    if fn.__name__ == "with_field":
+        bound = inspect.signature(fn).bind(*args, **kwargs).arguments
+        if bound["arr"] is context:
+            return with_collection(context, bound["value"], bound["where"])
+    raise GraphedTypeError(
+        fn.__name__,
+        capture(),
+        f"{context!r} is an event context, not an array; pass one of its collections "
+        "(events.<name>)",
+    )
+
+
 def _dispatched(fn: Callable[..., Any], kind: str) -> Callable[..., Any]:
     """Wrap one gak function with the dispatch its classification names (§2.3c).
 
@@ -928,6 +946,9 @@ def _dispatched(fn: Callable[..., Any], kind: str) -> Callable[..., Any]:
 
     @functools.wraps(fn)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
+        context = next((v for v in (*args, *kwargs.values()) if isinstance(v, EventContext)), None)
+        if context is not None:
+            return _on_context(fn, context, args, kwargs)
         if not containers_in(*args, *kwargs.values()):
             return fn(*args, **kwargs)
         if kind == "refusing":

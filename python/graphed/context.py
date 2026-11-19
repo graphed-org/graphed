@@ -3,8 +3,9 @@
 A frontend wrapper over the root event record carrying (a) the collections and (b) an ambient
 event-weight registry. Pure sugar over §§2.1-2.5 — no IR change, §3.1 intact.
 
-Three properties do the work. Contexts are IMMUTABLE, so `graphed.vary` returns a new one and a
-fill from a pre-`vary` context is unaffected by later calls by construction. They RESERVE NO
+Three properties do the work. Contexts are IMMUTABLE but for item assignment of a collection, so
+`graphed.vary` returns a new one and a fill from a pre-`vary` context is unaffected by later calls
+by construction. They RESERVE NO
 NAMES, so a tree branch called `weights` or `vary` stays reachable and every graphed operation on
 a context is a module function. And a read performed THROUGH a context yields THAT context's row
 space, which is what makes `sel.Jet` mean `events.Jet` re-indexed by `sel`'s derivation mask,
@@ -27,7 +28,7 @@ from collections.abc import Iterable, Mapping
 from typing import Any
 
 from .array import Array, EagerRefusals
-from .errors import GraphedError
+from .errors import GraphedError, GraphedTypeError
 from .provenance import capture
 
 # `Rider` and `ambient_entries` are re-exported, and `_two_level` aliased, because
@@ -39,6 +40,7 @@ from .systematics.ambient import (  # isort: skip
     ambient_entries as ambient_entries,
     context_labels,
     fold,
+    for_vary_link,
     seed,
     shift_form,
     two_level,
@@ -57,7 +59,7 @@ from .systematics.explain import (  # isort: skip
     explain as explain,
     explain_variations as explain_variations,
 )
-from .systematics.handles import with_context  # isort: skip
+from .systematics.handles import reindex_to, with_context  # isort: skip
 from .systematics.registration import stamp_labels as stamp_labels  # isort: skip
 from .systematics.varied import (  # isort: skip
     Varied as Varied,
@@ -68,6 +70,7 @@ from .systematics.varied import (  # isort: skip
     members_of as members_of,
     point_registry as point_registry,
     rebuild as rebuild,
+    session_of,
     tags_of as tags_of,
 )
 
@@ -81,9 +84,10 @@ _SERIAL = itertools.count()
 class EventContext(EagerRefusals, ContextNode):
     """An event context (§2.6). Built by an idiom constructor, never directly.
 
-    Its RECORDED state — collections, selection, the registered weight factors and the label union
-    over them — never changes after construction, which is what makes `graphed.vary` return a new
-    context and a fill from a pre-`vary` one unaffected. The ambient weight is composed from that
+    Its RECORDED state — selection, the registered weight factors and the label union over them —
+    never changes after construction, which is what makes `graphed.vary` return a new context and a
+    fill from a pre-`vary` one unaffected. Its collections change only by item assignment, which no
+    context derived from it earlier sees. The ambient weight is composed from that
     recorded state on demand (`graphed.systematics.ambient`), and its memo is a pure CACHE stamped
     with the Session's mint epoch: a mint landing after a composition makes the next read remake
     it, so what a factor contributes at a label is what the registry says AS OF THE READ.
@@ -150,6 +154,59 @@ class EventContext(EagerRefusals, ContextNode):
         alone would answer with the parent's handle).
         """
         return with_context(value, self)
+
+    # ---- assignment (graphed#221) -----------------------------------------------
+    def __setitem__(self, name: object, value: object) -> None:
+        """`events[name] = value`: rebind collection ``name`` on this context, in place (#80).
+
+        Row space, registrations and identity are unchanged, so values read before and after it
+        combine; a context already derived from this one keeps what it was derived with.
+        """
+        self._collections[self._name(name)] = self._admit(name, value)
+        self._derived.clear()
+        self._projected.clear()
+
+    def _name(self, name: object) -> str:
+        if not isinstance(name, str):
+            raise GraphedTypeError(
+                "__setitem__",
+                capture(),
+                f"an event context assigns a whole collection by name, not {name!r}; to change "
+                "a nested field, assign the collection with that field replaced",
+            )
+        return name
+
+    def _admit(self, name: object, value: object) -> Array | Varied:
+        """Return ``value`` re-indexed to this context, refusing what it cannot carry."""
+        if not isinstance(value, Array | Varied):
+            raise GraphedTypeError(
+                "__setitem__",
+                capture(),
+                f"events[{name!r}] takes a deferred array or Varied computed from {self!r}, not "
+                f"{type(value).__name__}",
+            )
+        if session_of(value) is not context_session(self):
+            raise GraphedError(
+                f"events[{name!r}]: the value was recorded in a different Session than {self!r}; "
+                "compute it from this context's collections"
+            )
+        try:
+            value = reindex_to(value, self)
+        except GraphedError as err:
+            raise GraphedError(
+                f"events[{name!r}] cannot carry a value read through another context: {err}; "
+                f"compute it from {self!r} or a context it was derived from"
+            ) from err
+        carried = context_labels(self)
+        extra = [label for label in labels_of(value) if label not in carried]
+        if extra:
+            raise GraphedError(
+                f"events[{name!r}]: the value carries universes {extra} that {self!r} has not "
+                "registered; assignment registers nothing, so register the family on the context: "
+                f"graphed.vary(events, <name>, collections={{{name!r}: value}}), or is_weight=True "
+                "for a weight"
+            )
+        return value
 
     # ---- derivation (§2.6c: scoping is lineage) ---------------------------------
     def _derive(self, mask: Array | Varied) -> EventContext:
@@ -244,6 +301,14 @@ class EventContext(EagerRefusals, ContextNode):
 def project(ctx: EventContext, label: str) -> EventContext:
     """Return `ctx`'s child context for universe ``label`` (`universe`/`nominal`)."""
     return ctx._project(label)
+
+
+def with_collection(ctx: EventContext, value: object, name: object) -> EventContext:
+    """Return a `vary`-linked child of ``ctx`` carrying ``value`` as ``name``; ``ctx`` unchanged.
+
+    A child, not a sibling, so values read through ``ctx`` still combine with the child's.
+    """
+    return ctx._vary_child(for_vary_link(ctx), {ctx._name(name): ctx._admit(name, value)})
 
 
 def _mask_key(mask: Array | Varied) -> tuple[tuple[str, int], ...]:
