@@ -143,7 +143,8 @@ class EventContext(EagerRefusals, ContextNode):
     def _fields(self, key: list[str]) -> Any:
         """Return the record with every collection ``key`` names held by this context in it."""
         record: Any = self._record
-        held = [name for name in key if name in collections_of(self)]
+        cols = collections_of(self)
+        held = [name for name in dict.fromkeys(key) if name in cols]
         if not held:
             return record
         seam = getattr(context_session(self).backend, "with_field", None)
@@ -153,11 +154,7 @@ class EventContext(EagerRefusals, ContextNode):
                 "backend without a with_field seam; read each by name (events.<name>)"
             )
         for name in held:
-            record = expand(
-                lambda rec, value, field=name: seam(rec, value, field),
-                (record, collections_of(self)[name]),
-                {},
-            )
+            record = expand(seam, (record, cols[name]), {"name": name})
         return record
 
     def _read(self, name: str) -> Any:
