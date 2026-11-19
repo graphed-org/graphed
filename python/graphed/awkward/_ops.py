@@ -361,6 +361,7 @@ def _combinations(op: str, xs: Sequence[Any], p: Mapping[str, Any]) -> Any:
 
 def _cartesian(op: str, xs: Sequence[Any], p: Mapping[str, Any]) -> Any:
     fn = ak.cartesian if op == "ak.cartesian" else ak.argcartesian
+    xs = _with_consts(xs, p)
     keys = _fields(p)
     nested = _nested(p)
     return fn(
@@ -372,6 +373,7 @@ def _cartesian(op: str, xs: Sequence[Any], p: Mapping[str, Any]) -> Any:
 
 
 def _zip(op: str, xs: Sequence[Any], p: Mapping[str, Any]) -> Any:
+    xs = _with_consts(xs, p)
     zipped = tuple(xs) if p.get("tuple") else dict(zip(_fields(p), xs, strict=True))
     kw: dict[str, Any] = dict(_naming_kwargs(p))
     if "depth_limit" in p:
@@ -426,7 +428,7 @@ def _isclose(op: str, xs: Sequence[Any], p: Mapping[str, Any]) -> Any:
 def _broadcast_arrays(op: str, xs: Sequence[Any], p: Mapping[str, Any]) -> Any:
     dl = int(p["depth_limit"]) if "depth_limit" in p else None
     try:
-        return ak.broadcast_arrays(*xs, depth_limit=dl)[int(p["index"])]
+        return ak.broadcast_arrays(*_with_consts(xs, p), depth_limit=dl)[int(p["index"])]
     except ValueError as exc:  # §6.1d: awkward names two anonymous layouts; blame the factor
         raise _broadcast_blame(xs, exc) from exc
 
@@ -477,13 +479,15 @@ _OPS: dict[str, _Handler] = {
     "ak.argsort": _sorting,
     "ak.sort": _sorting,
     "ak.local_index": lambda op, xs, p: ak.local_index(xs[0], axis=int(p.get("axis", -1))),
-    "ak.concatenate": lambda op, xs, p: ak.concatenate(list(xs), axis=int(p.get("axis", 0))),
+    "ak.concatenate": lambda op, xs, p: ak.concatenate(
+        _with_consts(xs, p), axis=int(p.get("axis", 0))
+    ),
     "ak.flatten": lambda op, xs, p: ak.flatten(xs[0], axis=_axis(p, default=1)),
     "ak.fill_none": lambda op, xs, p: ak.fill_none(
         xs[0], scalar_param(p, "value", "value_dtype"), axis=int(p.get("axis", -1))
     ),
     "ak.drop_none": _drop_none,
-    "ak.where": lambda op, xs, p: ak.where(*_three_operands(xs, p)),
+    "ak.where": lambda op, xs, p: ak.where(*_with_consts(xs, p)),
     "ak.zeros_like": lambda op, xs, p: ak.zeros_like(xs[0], dtype=_like_dtype(p)),
     "ak.ones_like": lambda op, xs, p: ak.ones_like(xs[0], dtype=_like_dtype(p)),
     "ak.values_astype": lambda op, xs, p: ak.values_astype(xs[0], _dtype(p)),
@@ -600,11 +604,11 @@ def _dtype(params: Mapping[str, Any]) -> Any:
     return np.dtype(str(params.get("dtype", "float64")))
 
 
-def _three_operands(operands: Sequence[Any], params: Mapping[str, Any]) -> tuple[Any, Any, Any]:
-    """Reconstruct ak.where's (cond, a, b) where some args may be scalars (encoded by index)."""
-    out: list[Any] = []
+def _with_consts(operands: Sequence[Any], params: Mapping[str, Any]) -> list[Any]:
+    """Put back, in position, the scalar operands recorded as ``const{i}`` params."""
+    n = len(operands) + sum(1 for k in params if k.startswith("const") and k[5:].isdigit())
     it = iter(operands)
-    for i in range(3):
-        key = f"const{i}"
-        out.append(scalar_param(params, key, f"{key}_dtype") if key in params else next(it))
-    return out[0], out[1], out[2]
+    return [
+        scalar_param(params, f"const{i}", f"const{i}_dtype") if f"const{i}" in params else next(it)
+        for i in range(n)
+    ]
