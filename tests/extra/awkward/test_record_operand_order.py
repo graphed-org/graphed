@@ -87,3 +87,9 @@ def test_every_symmetric_op_over_records_keeps_its_order(tmp_path: Path, op: str
     ab = session.record_op(op, [a, b])
     ba = session.record_op(op, [b, a])
     assert compile_ir(session, ab, ba).ir != compile_ir(session, ab, ab).ir
+
+
+def test_a_record_scalar_add_keeps_its_order(tmp_path: Path) -> None:
+    session, d = _deferred(tmp_path, False)
+    a, b = (v[0] for v in _pair(d))
+    assert compile_ir(session, a + b, b + a).ir != compile_ir(session, a + b, a + b).ir

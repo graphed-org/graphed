@@ -515,7 +515,8 @@ class AwkwardBackend:
             op in _BINARY
             and len(inputs) == 2
             and any(
-                _is_array(f.tt) and f.tt.layout.purelist_parameters("__record__", "__list__")
+                isinstance(f.tt, ak.Array | ak.Record)
+                and f.tt.layout.purelist_parameters("__record__", "__list__")
                 for f in cast("Sequence[AwkwardForm]", inputs)
             )
         )
