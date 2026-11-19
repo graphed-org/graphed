@@ -375,7 +375,8 @@ keep the collections they were derived with, and the same derivation taken after
 different context, so combine values from derivations taken on the same side of the assignment.
 ``gak.with_field(ctx, value, name)`` does the same
 but returns a new context and leaves ``ctx`` as it was. A field list, ``ctx[["Jet", "MET"]]``,
-reads each listed collection the way ``ctx.Jet`` does, universes included.
+reads each listed collection the way ``ctx.Jet`` does, universes included. ``ctx["Jet", "pt3"] = value``,
+or a longer field path, assigns ``Jet`` with that field replaced, as on an awkward array.
 
 .. code-block:: python
 

@@ -178,8 +178,13 @@ class EventContext(EagerRefusals, ContextNode):
 
         Row space, registrations and identity are unchanged, so values read before and after it
         combine; a context already derived from this one keeps what it was derived with, and is
-        not the one the same derivation answers with afterwards.
+        not the one the same derivation answers with afterwards. ``events[name, *path] = value``
+        assigns ``name`` with the nested field replaced, as awkward does (#229).
         """
+        if isinstance(name, tuple) and len(name) > 1 and isinstance(name[0], str):
+            collection = detached(self._read(name[0]))
+            collection[name[1:]] = value
+            name, value = name[0], collection
         name = self._name(name)
         self._collections[name] = self._admit(name, value)
         self._derived.clear()
@@ -190,8 +195,8 @@ class EventContext(EagerRefusals, ContextNode):
             raise GraphedTypeError(
                 op,
                 capture(),
-                f"an event context assigns a whole collection by name, not {name!r}; to change "
-                "a nested field, assign the collection with that field replaced",
+                f"an event context assigns a collection by name, or a nested field by "
+                f"(name, field, ...), not {name!r}",
             )
         return name
 
