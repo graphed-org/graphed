@@ -66,9 +66,9 @@ def eval_jax(exported: Any, params: Mapping[str, Any], inputs: list[Any]) -> Any
         arrays = [ml_matrix(e, inputs) for e in args]
         kwarrays = {k: ml_matrix(e, inputs) for k, e in kwargs.items()}
     if not any(len(a) for a in (*arrays, *kwarrays.values())):
-        tail = exported.out_avals[0].shape[1:]
+        tail = row_shape(exported.out_avals[0].shape)
         # the export states the width; a symbolic batch dimension refuses zero rows
-        if all(isinstance(d, int) for d in tail):
+        if tail is not None:
             return _as_event_array(np.zeros((0, *tail)))
     return _as_event_array(exported.call(*arrays, **kwarrays))
 

@@ -26,7 +26,7 @@ from graphed.provenance import capture
 from graphed.shuffle import JOINKEY, route_key
 from graphed.varied import boundary_refusal, containers_in, expand, expand_tuple, narrow
 
-from ..preserve.externals._helpers import event_type, refuse_unread_inputs
+from ..preserve.externals._helpers import model_form_params, refuse_unread_inputs
 from ..preserve.externals.correctionlib_external import (
     _refused,
     check_correctionlib_params,
@@ -688,10 +688,7 @@ def onnx_inference(
     refuse_unread_inputs("onnx", params, len(inputs))
     descriptor = payloads.onnx_weights_descriptor(blob)
     forms = [cast("AwkwardForm", session.form(a)) for a in inputs]
-    shape = payloads.onnx_row_shape(blob)
-    # the plugin's value, a claim where the model states its width; a leaf claim where not
-    form = declared_form(forms, event_type(shape or (1,)))
-    form_params = {"output_dtype": "float64", "claim": shape is not None}
+    form_params = model_form_params(payloads.onnx_row_shape(blob))
     return session.record_external(
         "onnx",
         _TemplateExternal(
@@ -700,7 +697,7 @@ def onnx_inference(
         list(inputs),
         params,
         descriptor=descriptor,
-        form=form,
+        form=declared_form(forms, str(form_params["output_type"])),
         form_params=form_params,
     )
 

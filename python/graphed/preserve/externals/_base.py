@@ -43,7 +43,7 @@ from ...provenance import capture
 from ...services import UnboundServiceError
 from ...varied import containers_in, expand
 from ..errors import PreserveError
-from ._helpers import event_type, refuse_unread_inputs
+from ._helpers import model_form_params, refuse_unread_inputs
 
 ContentHash = Callable[[bytes], str]
 Load = Callable[[bytes, Mapping[str, Any]], Any]
@@ -306,9 +306,7 @@ def record_external(
         "claim": plugin.broadcasts,
     }
     if plugin.output_shape is not None:
-        shape = plugin.output_shape(payload)
-        form_params["output_type"] = event_type(shape or (1,))
-        form_params["claim"] = shape is not None
+        form_params = model_form_params(plugin.output_shape(payload))
     node_params: dict[str, Any] = {
         "kind": plugin.kind,
         "content_hash": content_hash,

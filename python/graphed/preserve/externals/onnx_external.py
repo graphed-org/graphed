@@ -34,9 +34,14 @@ def onnx_output_shape(payload: bytes) -> RowShape:
 
 def _onnx_identity(payload: bytes) -> tuple[str, RowShape]:
     import onnx
+
+    return model_identity(onnx.load_from_string(payload))
+
+
+def model_identity(model: Any) -> tuple[str, RowShape]:
+    """Return a loaded ONNX ``model``'s weights hash and its first output's static row shape."""
     from onnx import numpy_helper
 
-    model = onnx.load_from_string(payload)
     h = hashlib.sha256()
     h.update(b"onnx-weights-v1")
     for init in sorted(model.graph.initializer, key=lambda t: t.name):
@@ -44,16 +49,12 @@ def _onnx_identity(payload: bytes) -> tuple[str, RowShape]:
         h.update(numpy_helper.to_array(init).tobytes())
     for node in model.graph.node:  # structure too: same weights, different graph -> different hash
         h.update(node.op_type.encode("utf-8"))
-    return "sha256:" + h.hexdigest(), onnx_row_shape(model)
-
-
-def onnx_row_shape(model: Any) -> RowShape:
-    """Return the row shape of a loaded ONNX ``model``'s first output, from its static dims."""
     if not model.graph.output:
-        return None
+        return "sha256:" + h.hexdigest(), None
     out = model.graph.output[0].type
     dims = out.tensor_type.shape.dim if out.tensor_type.HasField("shape") else []
-    return row_shape([d.dim_value if d.HasField("dim_value") else None for d in dims])
+    shape = row_shape([d.dim_value if d.HasField("dim_value") else None for d in dims])
+    return "sha256:" + h.hexdigest(), shape
 
 
 def load_onnx(payload: bytes, params: Mapping[str, Any]) -> Any:

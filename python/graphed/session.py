@@ -8,7 +8,6 @@ backend.
 
 from __future__ import annotations
 
-import contextlib
 import contextvars
 import functools
 import json
@@ -1004,9 +1003,10 @@ class Session:
             # a spelling it cannot build is refused even beside a claim
             leaf = ("output_dtype", self._canonical(op, prov, dtype))
         if claimed is not None:
-            # a form the backend cannot type claims nothing it can check
-            with contextlib.suppress(TypeError):
+            try:
                 return self._claim(claimed) or leaf
+            except TypeError as exc:  # a claim it cannot type, refused at the user's line
+                raise GraphedTypeError(op, prov, str(exc)) from exc
         return leaf
 
     # ---- generic graph walk (shared by materialize + projection) ----------------

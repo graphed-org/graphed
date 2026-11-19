@@ -79,9 +79,21 @@ def unstated_shape(payload: bytes) -> RowShape:
     return None
 
 
-def event_type(shape: tuple[int, ...]) -> str:
-    """Return the type `_as_event_array` gives each event of an output whose rows are ``shape``."""
-    return " * ".join([*map(str, () if shape == (1,) else shape), "float64"])
+def event_type(shape: RowShape) -> str:
+    """Return the type `_as_event_array` gives each event of an output whose rows are ``shape``.
+
+    One value per event where ``shape`` is ``None``.
+    """
+    return " * ".join([*map(str, () if shape in (None, (1,)) else shape), "float64"])
+
+
+def model_form_params(shape: RowShape) -> dict[str, object]:
+    """Return a model External's ``form_params``: a claim where its shape is stated."""
+    return {
+        "output_type": event_type(shape),
+        "output_dtype": "float64",
+        "claim": shape is not None,
+    }
 
 
 def _as_event_array(out: Any) -> Any:
