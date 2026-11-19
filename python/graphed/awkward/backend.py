@@ -313,16 +313,19 @@ def declared_form(forms: Sequence[AwkwardForm], canonical: str) -> AwkwardForm:
     t = _type(canonical)
     if not any(isinstance(f.tt, ak.Array) for f in forms):
         if isinstance(t, ak.types.NumpyType) and not t.parameters:
-            return _scalar_form(canonical)
+            return AwkwardForm(ak.typetracer.create_unknown_scalar(np.dtype(t.primitive)))
         raise TypeError(f"output_type {canonical!r} over a scalar input must be a primitive dtype")
     layout = ak.forms.from_type(t).length_one_array(highlevel=False)
     return AwkwardForm(ak.Array(layout.to_typetracer(forget_length=True)))
 
 
+_EMPTY: dict[str, str | bytes] = {"string": "", "bytes": b""}
+
+
 def _scalar_form(canonical: str) -> AwkwardForm:
     """Return the form of one value of type ``canonical``: a primitive, a string or bytes."""
-    if canonical in ("string", "bytes"):  # no typetracer scalar holds one: the empty value does
-        return AwkwardForm("" if canonical == "string" else b"")
+    if canonical in _EMPTY:  # no typetracer scalar holds one: the empty value does
+        return AwkwardForm(_EMPTY[canonical])
     t = _type(canonical)
     if isinstance(t, ak.types.NumpyType) and not t.parameters:
         return AwkwardForm(ak.typetracer.create_unknown_scalar(np.dtype(t.primitive)))
@@ -556,7 +559,7 @@ class AwkwardBackend:
         except Exception as exc:
             raise exc from failure
         if isinstance(value, str | bytes):  # one value per call: a string or bytes scalar
-            return _scalar_form(canonical_output_type(AwkwardForm(value)))
+            return AwkwardForm(value[:0])
         if not isinstance(value, ak.Array):
             raise TypeError(
                 f"on length-zero arrays it returns {type(value).__name__}, not an array"
