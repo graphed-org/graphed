@@ -20,7 +20,7 @@ from awkward._connect.numpy import implemented as _ak_numpy
 
 from graphed import Array
 from graphed.array import Masker, no_eager_value, split_field, take_state
-from graphed.errors import GraphedTypeError
+from graphed.errors import GraphedError, GraphedTypeError
 from graphed.provenance import capture, register_internal
 from graphed.varied import Varied, register_varied
 
@@ -160,6 +160,18 @@ class AwkwardVaried(Varied):
     __setitem__ = _setitem
     __array_function__ = _array_function
     mask = property(_masker)
+
+    def __getattr__(self, name: str) -> Any:
+        """Map an attribute read over every member; ``layout`` is the one every universe shares."""
+        if name != "layout":
+            return super().__getattr__(name)
+        layouts = [member.layout for member in self._members.values()]
+        if any(layout.form != layouts[0].form for layout in layouts):
+            raise GraphedError(
+                "the universes' layouts differ in form; read one universe first, with "
+                "graphed.systematics.universe(v, label)"
+            )
+        return layouts[0]
 
 
 register_varied(AwkwardArray, AwkwardVaried)

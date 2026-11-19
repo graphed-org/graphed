@@ -258,7 +258,9 @@ _Handler = Callable[[str, Sequence[Any], Mapping[str, Any]], Any]
 
 # ak.Array descriptors the record-time typetracer answers as the data would; it does not carry the
 # source's attrs/behavior/named axes, nor a known length, so those are refused
-_INTROSPECT_EAGER = frozenset({"fields", "type", "typestr", "ndim", "is_tuple", "positional_axis"})
+_INTROSPECT_EAGER = frozenset(
+    {"fields", "type", "typestr", "ndim", "is_tuple", "positional_axis", "layout"}
+)
 
 
 def _ak_own(x: Any, name: str) -> bool:

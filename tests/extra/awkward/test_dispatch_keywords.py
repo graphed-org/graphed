@@ -185,3 +185,37 @@ def test_vector_zip_runs_deferred_once_vector_is_registered(
         str(ak.type(eager)),
         ak.to_list(eager.rho),
     )
+
+
+VECTOR_READS: dict[str, Callable[[Any, Any], Any]] = {
+    "unit()": lambda v, _w: v.unit(),
+    "mag": lambda v, _w: v.mag,
+    "eta": lambda v, _w: v.eta,
+    "deltaphi()": lambda v, w: v.deltaphi(w),
+}
+
+
+@pytest.mark.parametrize("read", VECTOR_READS.values(), ids=VECTOR_READS.keys())
+def test_a_registered_vector_zip_reads_as_eager(
+    unregistered_vector: Any, monkeypatch: pytest.MonkeyPatch, read: Callable[[Any, Any], Any]
+) -> None:
+    monkeypatch.setattr(ak, "behavior", dict(ak.behavior))
+    unregistered_vector.register_awkward()
+    data = ak.zip(
+        {
+            "pt": [[30.0, 20.0], [], [10.0]],
+            "eta": [[0.1, -1.0], [], [2.0]],
+            "phi": [[0.5, -2.0], [], [3.0]],
+            "mass": [[5.0, 1.0], [], [0.1]],
+        }
+    )
+    session = Session(AwkwardBackend())
+    src = from_awkward("e", data, session=session)
+
+    def momenta(arrays: Any, phi_shift: float) -> Any:
+        fields = {f: arrays[f] for f in ("pt", "eta", "mass")}
+        return unregistered_vector.zip({**fields, "phi": arrays["phi"] + phi_shift})
+
+    got = ak.Array(session.materialize(read(momenta(src, 0.0), momenta(src, 1.0))))
+    want = read(momenta(data, 0.0), momenta(data, 1.0))
+    assert (str(got.type), got.tolist()) == (str(want.type), want.tolist())
