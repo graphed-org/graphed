@@ -138,3 +138,35 @@ def test_a_field_named_mask_stays_a_field_on_an_array() -> None:
     session = Session(AwkwardBackend())
     ev = from_awkward("ev", ak.Array({"mask": [1, 2]}), session=session)
     assert ak.to_list(session.materialize(ev.mask)) == [1, 2]
+
+
+def test_a_context_masked_by_a_varied_condition_carries_its_universes() -> None:
+    session, ctx = _context(is_data=False)
+    jets = ctx.Jet
+    varied = graphed.vary(
+        ctx,
+        "jes",
+        collections={"Jet": {"up": gak.with_field(jets, jets.pt * 2, "pt"), "down": jets}},
+    )
+    masked = ctx.mask[gak.max(varied.Jet.pt, axis=1) > 35]
+    masked["met"] = masked.MET.pt
+    jets_up = ak.with_field(EAGER.Jet, EAGER.Jet.pt * 2, "pt")
+    _same(
+        session, universe(masked, "jes_up").met, EAGER.mask[ak.max(jets_up.pt, axis=1) > 35].MET.pt
+    )
+
+
+def test_a_context_refuses_a_condition_that_is_not_deferred() -> None:
+    _session, ctx = _context()
+    with pytest.raises(graphed.GraphedError, match="Array/Varied condition"):
+        ctx.mask[[True, False, True]]
+
+
+def test_a_value_read_through_the_parent_is_masked_when_assigned() -> None:
+    session, ctx = _context()
+    masked = ctx.mask[ctx.MET.pt > 10]
+    masked["x"] = ctx.MET.pt
+    want = EAGER.mask[EAGER.MET.pt > 10]
+    want["x"] = EAGER.MET.pt
+    got = ak.Array(session.materialize(masked.x))
+    assert (str(got.type), got.tolist()) == (str(want.x.type), want.x.tolist())

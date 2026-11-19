@@ -304,6 +304,10 @@ class EventContext(EagerRefusals, ContextNode):
 
         Canonical per condition and ``valid_when``, as `_derive` is.
         """
+        if not isinstance(condition, Array | Varied):
+            raise GraphedError(
+                f"an event context is masked by an Array/Varied condition, not {condition!r}"
+            )
         key = (("option", int(valid_when)), *_mask_key(condition))
         memo = self._derived.get(key)
         if memo is not None:
@@ -320,7 +324,7 @@ class EventContext(EagerRefusals, ContextNode):
             masked(self._record),
             is_data=self._is_data,
             parent=self,
-            link=("option", condition),
+            link=("option", masked),
         )
         child._ambient = for_vary_link(self)
         child._collections = {
