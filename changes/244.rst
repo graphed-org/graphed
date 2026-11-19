@@ -1,0 +1,6 @@
+.. under: 0.0.12 (unreleased)
+
+* A model External whose model returns several outputs gives its first output, one value per
+  event, in every plugin, as ONNX already did. Before, JAX and TensorFlow stacked the outputs
+  into a leading axis (one row per output instead of per event) and PyTorch raised
+  ``AttributeError`` (#244).
