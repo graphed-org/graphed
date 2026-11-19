@@ -214,3 +214,15 @@ def test_a_held_collection_promotes_and_keeps_its_context() -> None:
     assert context_of(muons) is events
     up = ak.to_list(session.materialize(universe(muons, "musf_up").scaled))
     assert up == [[2.0, 14.0], [], [18.0]]
+
+
+def test_assigning_on_a_proxy_the_context_holds_leaves_the_context() -> None:
+    session = Session(AwkwardBackend())
+    raw = from_awkward("events", ak.Array(DATA), session=session)
+    events = gnano.events(raw)
+    muons = events.Muon
+    events["Mu"] = muons
+    raw["extra"] = raw.Muon.pt
+    muons["scaled"] = muons.pt * 2
+    assert "extra" not in gak.fields(events[["Muon"]])
+    assert gak.fields(events.Mu) == ["pt"]

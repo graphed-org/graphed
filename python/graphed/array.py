@@ -8,6 +8,7 @@ dispatch keys); they are backend-agnostic strings, so graphed stays free of nump
 
 from __future__ import annotations
 
+import contextlib
 import json
 from collections.abc import Callable
 from itertools import count
@@ -351,6 +352,20 @@ class Deferred(EagerRefusals):
         "_site",
         "_tags",
     )
+
+
+_STATE = tuple(getattr(Deferred, n) for n in Deferred.__slots__ if n != "__weakref__")
+
+
+def take_state(proxy: Deferred, source: Deferred) -> None:
+    """Make ``proxy`` the same value as ``source``: its class and every slot, unset ones unset."""
+    proxy.__class__ = type(source)
+    for slot in _STATE:
+        try:
+            slot.__set__(proxy, slot.__get__(source))
+        except AttributeError:  # unset on ``source``
+            with contextlib.suppress(AttributeError):
+                slot.__delete__(proxy)
 
 
 class Array(Deferred):
@@ -962,3 +977,24 @@ def _record_method(
         return session.record_op("method", inputs, {**params, "index": next(leaf)})
 
     return build(shape)
+
+
+#: the slots each kind of proxy sets; the rest of `Deferred`'s stay unset
+_USED = {
+    True: ("_context", "_labels", "_node_id", "_session", "_site"),
+    False: ("_context", "_members", "_tags"),
+}
+
+
+def detached(value: Any) -> Any:
+    """Return a fresh proxy of ``value`` for graphed to keep, ``value`` itself if not a proxy.
+
+    An in-place assignment (``x[field] = ...``) rebinds the object it is made on, so a holder
+    keeping the caller's own object would change with it.
+    """
+    if not isinstance(value, Deferred):
+        return value
+    fresh = object.__new__(type(value))
+    for name in _USED[isinstance(value, Array)]:
+        setattr(fresh, name, getattr(value, name))
+    return fresh

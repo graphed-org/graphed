@@ -26,7 +26,7 @@ import itertools
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from .array import Array, EagerRefusals
+from .array import Array, EagerRefusals, detached
 from .errors import GraphedError, GraphedTypeError
 from .provenance import capture
 
@@ -108,7 +108,7 @@ class EventContext(EagerRefusals, ContextNode):
     ) -> None:
         """Wrap ``record`` as an event context, derived from ``parent`` by ``link``."""
         super().__init__(session, parent, link, collections)
-        self._record = record
+        self._record = detached(record)
         self._is_data = is_data
         self._ambient = seed(self, weight, parent)
         self._serial = next(_SERIAL)
@@ -244,7 +244,7 @@ class EventContext(EagerRefusals, ContextNode):
                 "carries; assignment keeps the registrations, so assign a value carrying them, or "
                 "read one universe with graphed.systematics.universe"
             )
-        return admitted
+        return detached(admitted)
 
     # ---- derivation (§2.6c: scoping is lineage) ---------------------------------
     def _derive(self, mask: Array | Varied) -> EventContext:

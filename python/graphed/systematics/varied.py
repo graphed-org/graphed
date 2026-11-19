@@ -15,7 +15,7 @@ import functools
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
-from ..array import Array, BoundMethod, Deferred, handle_of
+from ..array import Array, BoundMethod, Deferred, detached, handle_of
 from ..errors import GraphedError
 from .lineage import unify_contexts
 from .points import Point, restrict
@@ -47,7 +47,7 @@ class Varied(Deferred):
         """Hold ``members`` by label; a ``nominal`` member is required."""
         if "nominal" not in members:
             raise GraphedError("a Varied must carry a 'nominal' universe")
-        self._members: dict[str, Member] = dict(members)
+        self._members: dict[str, Member] = {k: detached(m) for k, m in members.items()}
         self._tags: dict[str, tuple[str, ...]] = dict(tags or {})
         self._context = context
 

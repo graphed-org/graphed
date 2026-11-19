@@ -9,7 +9,6 @@ Both also take ak's field assignment, ``events["Photon"] = photons``, as a recor
 
 from __future__ import annotations
 
-import contextlib
 import inspect
 from collections.abc import Callable
 from typing import Any
@@ -19,7 +18,7 @@ import numpy as np
 from awkward._connect.numpy import implemented as _ak_numpy
 
 from graphed import Array
-from graphed.array import Deferred, no_eager_value
+from graphed.array import no_eager_value, take_state
 from graphed.errors import GraphedTypeError
 from graphed.provenance import capture, register_internal
 from graphed.varied import Varied, register_varied
@@ -103,14 +102,7 @@ def _setitem(self: Any, where: object, what: object) -> None:
         )
     new = _with_path(self, path, what)
     # a varied value turns an array proxy into its container; the shared layout allows the swap
-    self.__class__ = type(new)
-    for name in (n for n in Deferred.__slots__ if n != "__weakref__"):
-        slot = getattr(Deferred, name)
-        try:
-            slot.__set__(self, slot.__get__(new))
-        except AttributeError:  # a slot only the other class uses
-            with contextlib.suppress(AttributeError):
-                slot.__delete__(self)
+    take_state(self, new)
 
 
 def _clip(a: object, a_min: object = None, a_max: object = None) -> object:

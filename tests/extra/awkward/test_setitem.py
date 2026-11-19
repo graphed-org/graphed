@@ -154,3 +154,12 @@ def test_a_scalar_field_is_broadcast_in_its_own_dtype(value: Any, assign: str) -
     got: Any = session.materialize(ev)
     eager = ak.with_field(ak.Array(DATA), value, "kl")
     assert (str(got.type), ak.to_list(got)) == (str(eager.type), ak.to_list(eager))
+
+
+@pytest.mark.parametrize("varied_value", [False, True], ids=["plain", "varied"])
+def test_a_container_holding_the_proxy_keeps_its_member(varied_value: bool) -> None:
+    session, ev = _source()
+    held = graphed.vary(ev, "s", up=gak.with_field(ev, ev.m * 3, "m"))
+    before = _universes(session, held)
+    ev["w"] = graphed.vary(ev.m, "t", up=ev.m * 5) if varied_value else ev.m
+    assert _universes(session, held) == before
