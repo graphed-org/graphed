@@ -121,21 +121,19 @@ class EventContext(EagerRefusals, ContextNode):
         return f"EventContext(#{self._serial} from {self._provenance})"
 
     # ---- tree content (§2.6a: the context reserves NO names) --------------------
-    @property
-    def fields(self) -> list[str]:
-        """The record's fields, then each name assigned on this context, as awkward lists them."""
-        names = list(self._record.fields)
-        return [*names, *(name for name in collections_of(self) if name not in names)]
-
     def __dir__(self) -> list[str]:
         """List the attributes with the fields, as an awkward array does."""
-        reachable = (name for name in self.fields if name.isidentifier() and name[0] != "_")
+        reachable = (name for name in fields_of(self) if name.isidentifier() and name[0] != "_")
         return sorted({*super().__dir__(), *reachable})
 
     def __getattr__(self, name: str) -> Any:
-        """Read field ``name`` of the event record."""
+        """Read field ``name`` of the event record; ``fields`` lists them where no field is one."""
         if name.startswith("_"):
             raise AttributeError(name)
+        if name == "fields":
+            names = fields_of(self)
+            if name not in names:
+                return names
         return self._read(name)
 
     def __getitem__(self, key: object) -> Any:
@@ -422,3 +420,12 @@ def vary_context(
         ctx, name, nominal, variations, collections, points, composes_as_union, max_universes, tags
     )
     return ctx._vary_child(record, replaced)
+
+
+def fields_of(context: EventContext) -> list[str]:
+    """Return the record's fields, then the names assigned on ``context``, as awkward does."""
+    session = context_session(context)
+    # the form answers, so a branch called `fields` cannot shadow the record's field list
+    form = session.form(member_of(context._record, "nominal"))
+    names = list(session.backend.introspect(form, "fields"))
+    return [*names, *(name for name in collections_of(context) if name not in names)]

@@ -60,3 +60,12 @@ def test_every_context_kind_lists_the_assigned_names() -> None:
         "projected": ["Jet", "MET", "n_jets"],
         "with_field": ["Jet", "MET", "n_jets", "met_pt"],
     }
+
+
+def test_a_branch_called_fields_is_tree_content_and_still_listed() -> None:
+    session = Session(AwkwardBackend())
+    data = {**DATA, "fields": [1, 2]}
+    events: Any = gnano.events(from_awkward("events", ak.Array(data), session=session))
+    assert ak.to_list(session.materialize(events.fields)) == [1, 2]
+    assert gak.fields(events) == ak.Array(data).fields == ["Jet", "MET", "fields"]
+    assert "fields" in dir(events)

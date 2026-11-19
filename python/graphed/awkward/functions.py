@@ -22,7 +22,7 @@ import graphed
 from graphed import Array
 from graphed.array import scalar_params
 from graphed.backend import ParamValue
-from graphed.context import EventContext, with_collection
+from graphed.context import EventContext, fields_of, with_collection
 from graphed.errors import DeferredTypeError, GraphedError, GraphedTypeError
 from graphed.provenance import capture
 from graphed.shuffle import JOINKEY, route_key
@@ -927,7 +927,7 @@ def _on_context(
 ) -> EventContext | list[str]:
     """Answer an event context where gak takes an array: ``with_field`` and ``fields`` only."""
     if fn.__name__ == "fields":
-        return context.fields
+        return fields_of(context)
     if fn.__name__ == "with_field":
         bound = inspect.signature(fn).bind(*args, **kwargs).arguments
         if bound["arr"] is context:
