@@ -182,6 +182,8 @@ class EventContext(EagerRefusals, ContextNode):
         assigns ``name`` with the nested field replaced, as awkward does (#229).
         """
         if isinstance(name, tuple) and len(name) > 1 and isinstance(name[0], str):
+            if isinstance(value, Array | Varied):
+                self._refuse_foreign(name[0], value)
             collection = detached(self._read(name[0]))
             collection[name[1:]] = value
             name, value = name[0], collection
@@ -209,19 +211,7 @@ class EventContext(EagerRefusals, ContextNode):
                 f"events[{name!r}] takes a deferred array or Varied computed from {self!r}, not "
                 f"{type(value).__name__}",
             )
-        if session_of(value) is not context_session(self):
-            raise GraphedTypeError(
-                op,
-                capture(),
-                f"events[{name!r}]: the value was recorded in a different Session than {self!r}; "
-                "compute it from this context's collections",
-            )
-        if context_of(value) is None:
-            # a value read through no context has no row space to check against this one's
-            raise GraphedError(
-                f"events[{name!r}]: the value was not read through an event context, so its rows "
-                f"are not {self!r}'s; compute it from this context's collections"
-            )
+        self._refuse_foreign(name, value, op)
         try:
             admitted: Array | Varied = reindex_to(value, self)
         except GraphedError as err:
@@ -250,6 +240,22 @@ class EventContext(EagerRefusals, ContextNode):
                 "read one universe with graphed.systematics.universe"
             )
         return detached(admitted)
+
+    def _refuse_foreign(self, name: str, value: Array | Varied, op: str = "__setitem__") -> None:
+        """Refuse a value whose rows cannot be this context's."""
+        if session_of(value) is not context_session(self):
+            raise GraphedTypeError(
+                op,
+                capture(),
+                f"events[{name!r}]: the value was recorded in a different Session than {self!r}; "
+                "compute it from this context's collections",
+            )
+        if context_of(value) is None:
+            # a value read through no context has no row space to check against this one's
+            raise GraphedError(
+                f"events[{name!r}]: the value was not read through an event context, so its rows "
+                f"are not {self!r}'s; compute it from this context's collections"
+            )
 
     # ---- derivation (§2.6c: scoping is lineage) ---------------------------------
     def _derive(self, mask: Array | Varied) -> EventContext:

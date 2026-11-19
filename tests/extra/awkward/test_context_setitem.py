@@ -169,6 +169,9 @@ def test_assignments_without_a_meaning_are_refused(value: Any, error: Any, match
         events["x"] = value(events)
     with pytest.raises(error, match=match):
         gak.with_field(events, value(events), "x")
+    if not isinstance(value(events), float):  # a scalar field broadcasts, as on an awkward array
+        with pytest.raises(error, match=match):
+            events["Muon", "x"] = value(events)
 
 
 def test_an_assignment_dropping_a_registered_universe_is_refused() -> None:
