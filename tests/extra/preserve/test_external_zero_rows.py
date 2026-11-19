@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from functools import partial
 from typing import Any
 
 import awkward as ak
@@ -16,6 +17,12 @@ from graphed.preserve.externals import record_external
 
 X = np.random.default_rng(0).normal(size=(64, 2)).astype("float32")
 DECLARED = {1: "float64", 3: "3 * float64"}
+
+
+def _empty_events() -> tuple[Session, Any]:
+    session = Session(AwkwardBackend())
+    events = from_awkward("ev", ak.Array({"a": X[:, 0], "b": X[:, 1]}), session=session)
+    return session, events[events.a > 99]
 
 
 def _xgboost(k: int) -> bytes:
@@ -41,14 +48,12 @@ def _jax(k: int, batch: str = "b") -> bytes:
     [
         (XGBOOST_PLUGIN, _xgboost),
         (JAX_PLUGIN, _jax),
-        (JAX_PLUGIN, lambda k: _jax(k, batch="2*b")),
+        (JAX_PLUGIN, partial(_jax, batch="2*b")),
     ],
 )
 def test_zero_rows_give_zero_rows_of_the_declared_type(plugin: Any, build: Any, k: int) -> None:
     payload = build(k)
-    session = Session(AwkwardBackend())
-    events = from_awkward("ev", ak.Array({"a": X[:, 0], "b": X[:, 1]}), session=session)
-    events = events[events.a > 99]
+    session, events = _empty_events()
     out = record_external(session, plugin, payload, [events.a, events.b], output_type=DECLARED[k])
     value: Any = session.materialize(out)
     assert len(value) == 0
@@ -61,9 +66,7 @@ def test_a_width_that_depends_on_the_batch_is_not_guessed() -> None:
 
     spec = jax.ShapeDtypeStruct(export.symbolic_shape("b, 2"), jax.numpy.float32)
     payload = bytes(export.export(jax.jit(lambda x: x @ x.T))(spec).serialize())
-    session = Session(AwkwardBackend())
-    events = from_awkward("ev", ak.Array({"a": X[:, 0], "b": X[:, 1]}), session=session)
-    events = events[events.a > 99]
+    session, events = _empty_events()
     out = record_external(session, JAX_PLUGIN, payload, [events.a, events.b])
     with pytest.raises(StageError, match="dimension variable 'b'"):
         session.materialize(out)
