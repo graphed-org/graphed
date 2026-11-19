@@ -373,8 +373,11 @@ class AwkwardBackend:
 
     #: M59: this backend evaluates the shared inner-axis tuple key (`subscript`)
     subscript_keys = True
-    #: array counts are as long as the lists they cut, not as the array they cut
-    unaligned_ops = frozenset({"ak.unflatten"})
+
+    def rows_unaligned(self, op: str, params: Mapping[str, object]) -> bool:
+        """Return whether ``op`` may take inputs holding different rows of one chunk."""
+        # array counts are as long as the lists they cut, not as the array they cut
+        return op == "ak.unflatten"
 
     def positional_key(self, form: AwkwardForm) -> bool:
         """Return whether a key of ``form`` picks rows by position: a flat key that is no mask."""

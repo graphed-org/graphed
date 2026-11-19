@@ -194,6 +194,36 @@ def test_two_row_sets_in_one_chunk_refuse_rather_than_broadcast(opt_level: int) 
         SequentialRunner().run(plan)
 
 
+class _SubPairsNoRows(AwkwardBackend):
+    def rows_unaligned(self, op: str, params: Any) -> bool:
+        return op == "sub" or super().rows_unaligned(op, params)
+
+
+@pytest.mark.parametrize(
+    ("backend", "expected"),
+    [(AwkwardBackend, None), (_SubPairsNoRows, [2.0, 0.0, 0.0, 0.5, 0.0])],
+    ids=["default", "declared"],
+)
+def test_a_backend_declares_which_ops_pair_no_rows(backend: Any, expected: Any) -> None:
+    events = Session(backend()).source(
+        "chunks", form=AwkwardForm(ak.Array(_ONE.layout.to_typetracer(True))), data=_Chunks()
+    )
+    # each chunk keeps one row, so the declared op broadcasts it over the chunk
+    outlier = events.s - events.s[events.t > 4.0]
+    plan = graphed.aggregate_plan(
+        outlier,
+        reduce=lambda values: [values[0]],
+        combine=operator.add,
+        empty=list,
+        backend=lambda: outlier.session.backend,
+    )
+    if expected is None:
+        with pytest.raises(StageError, match=r"\[1, 3\] rows in one chunk"):
+            SequentialRunner().run(plan)
+    else:
+        assert ak.to_list(ak.concatenate(SequentialRunner().run(plan).value)) == expected
+
+
 def test_a_whole_evaluation_still_broadcasts_a_length_one_row_set() -> None:
     events = _events()
     outlier = events.s - events.s[events.s == 3.0]
