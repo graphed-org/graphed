@@ -5,5 +5,6 @@
   behavior method (a coffea cross-reference's ``_apply_global_index``) rather than every ``method``
   op. ``graphed.materialize`` evaluates an op whose operands pair by chunk (``pairs_by_chunk``)
   partition by partition instead of once over the joined chunks, where it silently took the wrong
-  rows past the first partition; an ``entries=`` or ``head()`` sample spanning partitions, or such
-  an op past a reduction, refuses it (#233).
+  rows past the first partition. An ``entries=`` or ``head()`` sample spanning partitions refuses
+  such an op, and so does ``materialize`` when it sits downstream of a reduction, exchange or join,
+  where it returned a wrong whole-dataset value (#233).
