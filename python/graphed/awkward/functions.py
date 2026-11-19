@@ -7,6 +7,7 @@ Mirrors the subset of the awkward API the corpus analyses use, so an analysis wr
 from __future__ import annotations
 
 import functools
+import inspect
 import json
 import warnings
 from collections.abc import Callable, Mapping, Sequence
@@ -918,16 +919,104 @@ def sample(arr: Array, *, factor: int) -> object:
     return arr.session.materialize(arr[::factor])
 
 
+#: ak keyword names whose gak parameter is spelled differently (a gak name of its own wins)
+_RENAMED = {
+    "b": "y",
+    "fill_value": "value",
+    "mask": "condition",
+    "parameter": "key",
+    "to": "dtype",
+    "what": "value",
+    "where": "field",
+}
+
+
+def _ak_only_keywords(name: str, signature: inspect.Signature) -> dict[str, object]:
+    """Return the defaulted keywords of ``ak.<name>`` the gak function lacks, with defaults."""
+    ak_fn = getattr(ak, name, None)
+    if not callable(ak_fn):
+        return {}
+    own = signature.parameters
+    return {
+        p.name: p.default
+        for p in inspect.signature(ak_fn).parameters.values()
+        if p.default is not p.empty
+        and p.kind in (p.POSITIONAL_OR_KEYWORD, p.KEYWORD_ONLY)
+        and p.name not in own
+        and _RENAMED.get(p.name) not in own
+    }
+
+
+def _is_default(value: object, default: object) -> bool:
+    if value is default:
+        return True
+    try:
+        return type(value) is type(default) and bool(value == default)
+    except Exception:  # an array compares elementwise
+        return False
+
+
+def _in_effect(behavior: object, operands: Sequence[object]) -> bool:
+    """Return whether every entry of ``behavior`` is already what the operands' session applies."""
+    if not isinstance(behavior, Mapping):
+        return False
+    arrays = [
+        a
+        for value in operands
+        for a in (value.values() if isinstance(value, Mapping) else _items(value))
+        if isinstance(a, Array)
+    ]
+    if not arrays:
+        return False
+    effective = getattr(arrays[0].session.backend, "_behavior", None) or ak.behavior
+    # `all` is gak's here
+    return not [key for key, entry in behavior.items() if effective.get(key) is not entry]
+
+
+def _items(value: object) -> Sequence[object]:
+    if isinstance(value, Sequence) and not isinstance(value, str | bytes):
+        return value
+    return [value]
+
+
+def _take_ak_keywords(
+    name: str, keywords: Mapping[str, object], args: Sequence[object], kwargs: dict[str, Any]
+) -> None:
+    """Drop each ak-only keyword of ``kwargs`` at ak's default, refusing any other by name.
+
+    A ``behavior`` mapping whose every entry the session already applies is a default too: the
+    session's backend, not the call, owns behavior.
+    """
+    for key in keywords.keys() & kwargs.keys():
+        value = kwargs.pop(key)
+        if _is_default(value, keywords[key]):
+            continue
+        if key == "behavior" and _in_effect(value, [*args, *kwargs.values()]):
+            continue
+        hint = (
+            "register it with awkward (vector: vector.register_awkward()) or pass it to "
+            "AwkwardBackend(behavior=...)"
+            if key == "behavior"
+            else f"a deferred call takes only ak's default, {keywords[key]!r}"
+        )
+        raise GraphedTypeError(
+            f"gak.{name}", capture(), f"{key}={value!r} is not honoured; {hint}"
+        )
+
+
 # ---- §2.3c: the gak dispatch layer; `_dispositions` classifies each function ----------
 def _dispatched(fn: Callable[..., Any], kind: str) -> Callable[..., Any]:
     """Wrap one gak function with the dispatch its classification names (§2.3c).
 
-    Signatures do not change (R17.0's anti-drift pin): `functools.wraps` keeps `__wrapped__`, so
-    `inspect.signature` still reports the underlying one.
+    Its signature is the underlying one plus the defaulted ak keywords it lacks, each taken at
+    ak's default only (R17.0's anti-drift pin reads ak's defaults).
     """
+    signature = inspect.signature(fn)
+    keywords = _ak_only_keywords(fn.__name__, signature)
 
     @functools.wraps(fn)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
+        _take_ak_keywords(fn.__name__, keywords, args, kwargs)
         if not containers_in(*args, *kwargs.values()):
             return fn(*args, **kwargs)
         if kind == "refusing":
@@ -941,6 +1030,13 @@ def _dispatched(fn: Callable[..., Any], kind: str) -> Callable[..., Any]:
             return expand_tuple(fn, args, kwargs)
         return expand(fn, args, kwargs)
 
+    extra = [
+        inspect.Parameter(k, inspect.Parameter.KEYWORD_ONLY, default=d)
+        for k, d in keywords.items()
+    ]
+    wrapper.__signature__ = signature.replace(  # type: ignore[attr-defined]
+        parameters=[*signature.parameters.values(), *extra]
+    )
     return wrapper
 
 
