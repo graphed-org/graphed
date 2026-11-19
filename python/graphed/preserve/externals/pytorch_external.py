@@ -84,7 +84,7 @@ def eval_pytorch(model: Any, params: Mapping[str, Any], inputs: list[Any]) -> An
 
 
 def _check_pytorch_params(params: Mapping[str, Any], _payload: bytes, _n_inputs: int) -> None:
-    if "order" in params and params["order"] != "F":  # one spelling of the default: omit it
+    if params.get("order", "F") != "F":  # one spelling of the default: omit it
         raise GraphedTypeError(
             "external",
             capture(),
