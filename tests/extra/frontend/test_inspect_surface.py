@@ -203,7 +203,7 @@ def test_a_scalar_says_what_is_missing_not_what_the_backend_lacks() -> None:
     assert "TypeTracerArray" not in str(caught.value)
 
 
-@pytest.mark.parametrize(("typo", "refused"), [("layoutt", "layout"), ("maskk", "mask")])
+@pytest.mark.parametrize(("typo", "refused"), [("layoutt", "layout")])
 def test_a_suggestion_never_names_what_a_deferred_array_refuses(typo: str, refused: str) -> None:
     ev = _events()
     with pytest.raises(MissingFieldError) as caught:

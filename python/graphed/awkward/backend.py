@@ -562,12 +562,10 @@ class AwkwardBackend:
         Raise `AttributeError` when the typetracer cannot answer it as the data would.
         """
         if name not in _INTROSPECT_EAGER:
-            hint = (
-                "use gak.mask(array, condition)"
-                if name == "mask"
-                else "materialize the array and read it there"
+            raise AttributeError(
+                f"a deferred graphed array cannot answer {name!r}; materialize the array and read "
+                "it there"
             )
-            raise AttributeError(f"a deferred graphed array cannot answer {name!r}; {hint}")
         return getattr(form.tt, name)
 
     def method_outputs(
@@ -666,6 +664,10 @@ class AwkwardBackend:
     def with_field(self, record: object, value: object, name: str) -> object:
         """Set field ``name`` of ``record`` to ``value`` (the optional event-context seam)."""
         return gak.with_field(record, value, name)  # type: ignore[arg-type]
+
+    def mask(self, value: object, condition: object, valid_when: bool) -> object:
+        """Mask ``value`` by ``condition`` as ``ak.mask`` does (an optional event-context seam)."""
+        return gak.mask(value, condition, valid_when=valid_when)  # type: ignore[arg-type]
 
     def external_payload(self, op: str, params: Mapping[str, object]) -> PayloadDescriptor | None:
         """Return the payload descriptor an External ``op`` carries, if any."""

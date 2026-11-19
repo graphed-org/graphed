@@ -12,7 +12,15 @@ from typing import TYPE_CHECKING, Any
 
 from ...errors import GraphedError
 from ..handles import follow, with_context
-from ..lineage import ContextNode, ambient_of, context_session, link_of, links_below, parent_of
+from ..lineage import (
+    ROW_PRESERVING,
+    ContextNode,
+    ambient_of,
+    context_session,
+    link_of,
+    links_below,
+    parent_of,
+)
 from ..varied import context_of
 from .compose import two_level
 from .record import Rider
@@ -80,7 +88,7 @@ def _adopted_from(ctx: EventContext) -> EventContext | None:
     through it.
     """
     node: EventContext | None = ctx
-    while node is not None and ((link := link_of(node)) is None or link[0] == "vary"):
+    while node is not None and ((link := link_of(node)) is None or link[0] in ROW_PRESERVING):
         node = parent_of(node)
     return None if node is None else parent_of(node)
 
@@ -176,7 +184,7 @@ def row_links(
     return tuple(
         (kind, None if kind == "mask" else payload)
         for kind, payload in links_below(ctx, root)
-        if kind != "vary"
+        if kind not in ROW_PRESERVING
     )
 
 

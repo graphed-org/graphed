@@ -285,6 +285,20 @@ def no_eager_value(
     return kind(op, capture(), f"{NEEDS_VALUES}{advice}")
 
 
+class Masker:
+    """``x.mask[condition]``: awkward's mask accessor, answered by ``masked(condition)``."""
+
+    __slots__ = ("_masked",)
+
+    def __init__(self, masked: Callable[[Any], Any]) -> None:
+        """Answer each subscript with ``masked``."""
+        self._masked = masked
+
+    def __getitem__(self, condition: object) -> Any:
+        """Return the value masked by ``condition``."""
+        return self._masked(condition)
+
+
 class EagerRefusals:
     """The conversions a deferred value refuses, common to an array and a container of them."""
 
