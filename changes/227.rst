@@ -1,0 +1,6 @@
+.. under: 0.0.12 (unreleased)
+
+* ``x[field] = varied`` on an unvaried deferred array makes ``x`` the container of universes, as
+  ``x = gak.with_field(x, varied, field)`` does, instead of refusing; a field path works the same.
+  Only ``x`` changes: a ``Varied`` or event context built from it keeps its own proxy, for a plain
+  value too, which used to move them (#227).

@@ -592,6 +592,10 @@ class AwkwardBackend:
         """
         return gak.broadcast_arrays(value, factor)[1]  # type: ignore[arg-type]
 
+    def with_field(self, record: object, value: object, name: str) -> object:
+        """Set field ``name`` of ``record`` to ``value`` (the optional event-context seam)."""
+        return gak.with_field(record, value, name)  # type: ignore[arg-type]
+
     def external_payload(self, op: str, params: Mapping[str, object]) -> PayloadDescriptor | None:
         """Return the payload descriptor an External ``op`` carries, if any."""
         if op == "correction":

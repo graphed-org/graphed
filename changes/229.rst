@@ -1,0 +1,5 @@
+.. under: 0.0.12 (unreleased)
+
+* ``events[name, field] = value`` (or a longer field path) on an event context assigns collection
+  ``name`` with that field replaced, as ``events[name] = gak.with_field(events[name], value,
+  field)`` does, instead of refusing; plain and varied values work alike (#229).
