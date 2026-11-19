@@ -398,6 +398,7 @@ class Deferred(EagerRefusals):
         "_labels",
         "_members",
         "_node_id",
+        "_rows",
         "_session",
         "_site",
         "_tags",
@@ -426,6 +427,8 @@ class Array(Deferred):
         self._node_id = node_id
         self._context: object = None
         self._labels: frozenset[str] | None = None
+        # a context a row cut put this value in, read only to re-index it there (#280)
+        self._rows: object = None
         # the recording this proxy came from: interning shares the node, not the line
         self._site: Site | None = None
 
@@ -711,7 +714,7 @@ class Array(Deferred):
         if isinstance(key, Array) or getattr(key, "_varied_container", False):
             from .systematics.handles import cut
 
-            return cut(self, key, select)  # type: ignore[no-any-return]  # a Varied mask selects PER UNIVERSE
+            return cut(self, key)  # type: ignore[no-any-return]  # a Varied mask selects PER UNIVERSE
         if isinstance(key, str):
             return self._session.record_op("field", [self], {"field": key})
         # M17: a list of field names selects a RECORD SUBSET — common to both array models
@@ -1027,7 +1030,7 @@ def _record_method(
 
 #: the slots each kind of proxy sets; the rest of `Deferred`'s stay unset
 _USED = {
-    True: ("_context", "_labels", "_node_id", "_session", "_site"),
+    True: ("_context", "_labels", "_node_id", "_rows", "_session", "_site"),
     False: ("_context", "_members", "_tags"),
 }
 

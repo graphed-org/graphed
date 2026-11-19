@@ -58,6 +58,11 @@ class Followed(MutableMapping[str, Any]):
         self._items[name] = (value, ())
         return value
 
+    def get(self, name: str, default: Any = None) -> Any:
+        """Return collection ``name``, or ``default`` when none is held by that name."""
+        # Mapping.get would read a KeyError raised while carrying the value as a missing name
+        return self[name] if name in self._items else default
+
     def __setitem__(self, name: str, value: Any) -> None:
         """Hold ``value`` as collection ``name``, already carried."""
         self._items[name] = (value, ())
@@ -164,7 +169,7 @@ def mask_key(mask: Any) -> tuple[tuple[str, int], ...]:
 
 
 def is_ancestor(ancestor: ContextNode, ctx: ContextNode) -> bool:
-    """Whether `ancestor` is `ctx` or lies on its parent chain."""
+    """Whether `ancestor` holds the rows of `ctx` or of a context on its parent chain."""
     node: ContextNode | None = ctx
     while node is not None:
         if same_rows(node, ancestor):
@@ -215,6 +220,26 @@ def row_space_above(handle: ContextNode, ctx: ContextNode) -> ContextNode | None
         if node is ctx or is_ancestor(node, ctx):
             return node
     return None
+
+
+def rows_of(value: Any) -> Any:
+    """Return the context whose rows `value` holds: where a row cut put it, else its handle."""
+    members = getattr(value, "_members", None)
+    if members is not None:
+        rows = {id(r): r for r in map(rows_of, members.values())}
+        return next(iter(rows.values())) if len(rows) == 1 else None
+    return value._context if value._rows is None else value._rows
+
+
+def merged_rows(*rows: Any) -> Any:
+    """Return the most-derived of `rows` on one chain, `None` where they diverge.
+
+    A row cut's context is a guess from the mask's rank, so where it diverges it is dropped.
+    """
+    try:
+        return unify_contexts(*rows)
+    except GraphedError:
+        return None
 
 
 def unify_contexts(*handles: Any) -> Any:

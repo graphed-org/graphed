@@ -15,7 +15,7 @@ import functools
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
-from ..array import Array, BoundMethod, Deferred, handle_of, select
+from ..array import Array, BoundMethod, Deferred, handle_of
 from ..errors import GraphedError
 from .lineage import unify_contexts
 from .points import Point, restrict
@@ -118,7 +118,7 @@ class Varied(Deferred):
         if isinstance(key, Array | Varied):
             from .handles import cut
 
-            return cut(self, key, select)
+            return cut(self, key)
         return expand(lambda member, k: member[k], (self, key), {})
 
     def __getattr__(self, name: str) -> Any:

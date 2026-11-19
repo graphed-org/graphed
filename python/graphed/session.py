@@ -31,7 +31,7 @@ from .errors import (
 )
 from .provenance import Provenance, Site, capture
 from .services import Bindable
-from .systematics.lineage import unify_contexts
+from .systematics.lineage import merged_rows, rows_of, unify_contexts
 from .systematics.points import Point
 from .systematics.state import SystematicsState
 from .write import PartitionedSource
@@ -294,6 +294,8 @@ class Session:
                 if carried:
                     labels = carried if labels is None else labels | carried
             attach(array, unify_contexts(*(handle_of(item) for item in inputs)), labels)
+            if any(item._rows is not None for item in inputs):
+                array._rows = merged_rows(*(rows_of(item) for item in inputs))
         return array
 
     # ---- introspection ---------------------------------------------------------
