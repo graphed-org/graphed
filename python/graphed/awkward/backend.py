@@ -264,25 +264,29 @@ def astype_form(form: AwkwardForm, dtype: object) -> AwkwardForm:
 
     ``dtype`` is any `canonical_output_type` spelling of one; a scalar stays a scalar. A leaf's
     parameters (NanoAOD's ``typename``) describe the input's values, so the new leaf has none, as
-    a computed value has none; list-level parameters stay, as the value keeps them.
+    a computed value has none; list-level parameters (a multidimensional leaf's included) stay, as
+    the value keeps them.
     """
     t = _type(canonical_output_type(dtype))
     if not isinstance(t, ak.types.NumpyType) or t.parameters:
         raise TypeError(f"output_dtype {dtype!r} is not a primitive dtype")
     if ak.typetracer.is_unknown_scalar(form.tt):
         return AwkwardForm(ak.typetracer.create_unknown_scalar(np.dtype(t.primitive)))
-    return AwkwardForm(ak.transform(_bare_leaf, ak.values_astype(form.tt, t.primitive)))
+    cast = ak.values_astype(form.tt, t.primitive)
+    return AwkwardForm(ak.transform(_bare_leaf, cast, numpy_to_regular=True))
 
 
 def broadcast_form(forms: Sequence[AwkwardForm]) -> AwkwardForm:
     """Return the form ``ak.broadcast_arrays`` gives the array ``forms``.
 
-    Scalars broadcast away; the first form when none is an array.
+    Scalars broadcast away; the first form when none is an array. Only the parameters every input
+    shares survive, as in correctionlib's broadcast.
     """
     arrays = [f for f in forms if isinstance(f.tt, ak.Array)]
     if len(arrays) < 2:
         return (arrays or list(forms))[0]
-    return AwkwardForm(ak.broadcast_arrays(*(f.tt for f in arrays))[0])
+    broadcast = ak.broadcast_arrays(*(f.tt for f in arrays))
+    return AwkwardForm(ak.transform(lambda *_, **__: None, *broadcast)[0])
 
 
 def declared_form(forms: Sequence[AwkwardForm], canonical: str) -> AwkwardForm:

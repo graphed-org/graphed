@@ -3,4 +3,5 @@
 * ``gak.apply_correction`` and every model External with an output dtype record a type whose
   leaves carry none of an input's leaf parameters (NanoAOD's ``typename``), matching the value
   they compute. Before, the recorded type kept them and a type declared downstream from it
-  refused the executed value. List-level parameters are kept, as the value keeps them (#248).
+  refused the executed value. List-level parameters every input shares are kept, as the value
+  keeps them (#248).

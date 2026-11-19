@@ -68,8 +68,43 @@ def test_a_correction_drops_leaf_parameters_and_keeps_list_ones(
     assert _types(session, out) == (expected, expected)
 
 
+_product = json.loads(DOUBLE)
+_product["corrections"][0]["inputs"].append({"name": "y", "type": "real"})
+_product["corrections"][0]["data"].update(expression="x*y", variables=["x", "y"])
+PRODUCT = json.dumps(_product).encode()
+
+
+def _lists(doc: str) -> ak.Array:
+    return ak.Array(
+        ak.contents.ListOffsetArray(JAGGED.offsets, JAGGED.content, parameters={"__doc__": doc})
+    )
+
+
+@pytest.mark.parametrize(
+    ("arrays", "expected"),
+    [
+        ([_lists("a"), _lists("b")], "var * float64"),
+        ([_lists("a"), ak.Array([1.0, 2.0, 3.0])], "var * float64"),
+        ([_lists("a"), _lists("a")], '[var * float64, parameters={"__doc__": "a"}]'),
+        (
+            [ak.Array(ak.contents.NumpyArray(np.ones((3, 2)), parameters={"typename": "f"}))],
+            '[2 * float64, parameters={"typename": "f"}]',
+        ),
+    ],
+    ids=["differing-lists", "list-and-flat", "shared-list", "multidimensional-leaf"],
+)
+def test_a_correction_keeps_the_parameters_its_broadcast_keeps(
+    arrays: list[ak.Array], expected: str
+) -> None:
+    session = Session(AwkwardBackend())
+    xs = [from_awkward(f"x{i}", a, session=session) for i, a in enumerate(arrays)]
+    out = gak.apply_correction(PRODUCT if len(xs) == 2 else DOUBLE, "c", xs)
+    assert _types(session, out) == (expected, expected)
+
+
 def _onnx() -> bytes:
     pytest.importorskip("onnxruntime")
+    pytest.importorskip("onnx")
     from onnx import TensorProto, helper, numpy_helper  # noqa: PLC0415
 
     graph = helper.make_graph(
