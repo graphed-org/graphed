@@ -104,6 +104,10 @@ def _ubjson(buf: bytes) -> Any:
         if buf[pos : pos + 1] == b"#":
             pos += 1
             count = size()
+        if not is_object and count is not None and typed in _NUMBERS:  # a typed array, in bulk
+            numbers = np.frombuffer(buf, _NUMBERS[typed], count, pos)
+            pos += numbers.nbytes
+            return (numbers.astype(str).astype(float) if typed == "d" else numbers).tolist()
         items: list[Any] = []
         while count is None or len(items) < count:
             if count is None and buf[pos : pos + 1] == (b"}" if is_object else b"]"):
