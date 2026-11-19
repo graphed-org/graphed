@@ -704,7 +704,7 @@ class AwkwardBackend:
         A rectilinear idiom needs nothing here, which is why the seam is optional and
         `graphed.systematics.broadcast_like` falls back to the identity when a backend omits it.
         """
-        return gak.broadcast_arrays(value, factor)[1]  # type: ignore[arg-type]
+        return gak.broadcast_arrays(value, factor)[1]
 
     def external_payload(self, op: str, params: Mapping[str, object]) -> PayloadDescriptor | None:
         """Return the payload descriptor an External ``op`` carries, if any."""
