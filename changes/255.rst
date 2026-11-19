@@ -1,0 +1,12 @@
+.. under: 0.0.12 (unreleased)
+
+XGBoost UBJSON models and model paths
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The XGBoost plugin takes a UBJSON model (``Booster.save_model("m.ubj")``, the default of
+``Booster.save_raw``) as well as JSON and gzipped JSON. A booster saved as ``.ubj`` and as
+``.json`` has the same content hash: a UBJSON float32 reads as the shortest decimal that
+round-trips it, which is what XGBoost's JSON writer prints. A payload in none of the three
+formats is refused by name. ``record_external`` takes a model file path as the payload as well as
+its bytes. A path is read once per (path, mtime, size) and records the same node as its bytes,
+as the gak ONNX and correction builders already do.

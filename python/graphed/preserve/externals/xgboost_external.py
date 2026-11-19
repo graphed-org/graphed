@@ -1,7 +1,8 @@
-"""The ``xgboost_model`` plugin (M26): XGBoost's open JSON model format; canonical-JSON hash."""
+"""The ``xgboost_model`` plugin (M26): XGBoost's JSON or UBJSON model; canonical-JSON hash."""
 
 from __future__ import annotations
 
+import struct
 from collections.abc import Mapping
 from typing import Any
 
@@ -9,25 +10,112 @@ from ..errors import PreserveError
 from ._base import ExternalPlugin
 from ._helpers import (
     _as_event_array,
-    _canonical_json_hash,
+    _canonical_json_hash_impl,
     _stack_feature_columns,
+    canonical_document_hash,
     json_bytes,
+    memoized_model_hash,
     ml_matrix,
     parse_call_template,
 )
 
+_DOMAIN = b"xgboost-json-v1"
+
 
 def xgboost_content_hash(payload: bytes) -> str:
-    """Canonical JSON of the model document (XGBoost's open format) — dependency-free."""
-    return _canonical_json_hash(b"xgboost-json-v1", payload)
+    """Canonical JSON of the model document, from its JSON or UBJSON bytes — dependency-free.
+
+    One booster saved as ``.json`` and as ``.ubj`` hashes the same: a UBJSON float32 reads as the
+    shortest decimal that round-trips it, which is what XGBoost's JSON writer prints.
+    """
+    return memoized_model_hash(_DOMAIN.decode(), payload, _xgboost_hash_impl)
+
+
+def _xgboost_hash_impl(payload: bytes) -> str:
+    if not _is_ubjson(payload):
+        try:
+            return _canonical_json_hash_impl(_DOMAIN, payload)
+        except PreserveError as err:
+            raise PreserveError(
+                f"an xgboost payload is JSON, gzipped JSON or UBJSON; this is none ({err})"
+            ) from err
+    try:
+        return canonical_document_hash(_DOMAIN, _ubjson(payload))
+    except (ValueError, IndexError, UnicodeDecodeError, struct.error) as err:
+        raise PreserveError(f"an xgboost payload is not valid UBJSON ({err})") from err
+
+
+def _is_ubjson(payload: bytes) -> bool:
+    # a UBJSON object opens with a typed key length or a container marker, JSON with a quote
+    return payload[:1] == b"{" and payload[1:2] in (b"i", b"U", b"I", b"l", b"L", b"$", b"#")
+
+
+#: UBJSON's fixed-size numeric markers (big-endian)
+_NUMBERS = {"i": ">b", "U": ">B", "I": ">h", "l": ">i", "L": ">q", "d": ">f", "D": ">d"}
+
+
+def _ubjson(buf: bytes) -> Any:
+    """Decode UBJSON (as XGBoost writes it) to the document ``json.loads`` gives for its JSON."""
+    import numpy as np
+
+    pos = 0
+
+    def marker() -> str:
+        nonlocal pos
+        pos += 1
+        return chr(buf[pos - 1])
+
+    def text() -> str:
+        nonlocal pos
+        n = value(marker())
+        pos += n
+        return buf[pos - n : pos].decode("utf-8")
+
+    def value(kind: str) -> Any:
+        nonlocal pos
+        if kind in _NUMBERS:
+            (number,) = struct.unpack_from(_NUMBERS[kind], buf, pos)
+            pos += struct.calcsize(_NUMBERS[kind])
+            return float(str(np.float32(number))) if kind == "d" else number
+        if kind in "SH":
+            return text()
+        if kind in "[{":
+            return container(kind == "{")
+        constants = {"Z": None, "T": True, "F": False}
+        if kind in constants:
+            return constants[kind]
+        raise ValueError(f"UBJSON marker {kind!r} at byte {pos - 1}")
+
+    def container(is_object: bool) -> Any:
+        nonlocal pos
+        typed = count = None
+        if buf[pos : pos + 1] == b"$":
+            pos += 1
+            typed = marker()
+        if buf[pos : pos + 1] == b"#":
+            pos += 1
+            count = value(marker())
+        items: list[Any] = []
+        while count is None or len(items) < count:
+            if count is None and buf[pos : pos + 1] in (b"]", b"}"):
+                pos += 1
+                break
+            key = text() if is_object else None
+            items.append((key, value(typed or marker())))
+        return dict(items) if is_object else [item for _, item in items]
+
+    document = value(marker())
+    if pos != len(buf):
+        raise ValueError(f"{len(buf) - pos} trailing bytes")
+    return document
 
 
 def load_xgboost(payload: bytes, params: Mapping[str, Any]) -> Any:
-    """Load an XGBoost booster from its JSON payload."""
+    """Load an XGBoost booster from its JSON or UBJSON payload."""
     import xgboost as xgb
 
     booster = xgb.Booster()
-    booster.load_model(bytearray(json_bytes(payload)))
+    booster.load_model(bytearray(payload if _is_ubjson(payload) else json_bytes(payload)))
     return booster
 
 

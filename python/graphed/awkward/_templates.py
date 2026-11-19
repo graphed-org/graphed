@@ -5,28 +5,13 @@
 
 from __future__ import annotations
 
-import functools
-import os
 from collections.abc import Sequence
-from pathlib import Path
 from typing import Any
 
 import awkward as ak
 import numpy as np
 
-
-@functools.lru_cache(maxsize=8)
-def _read_payload(path: str, mtime_ns: int, size: int) -> bytes:
-    return Path(path).read_bytes()
-
-
-def _payload_bytes(payload: str | bytes) -> bytes:
-    """Return a payload's bytes; one file is one object, however many nodes record it."""
-    if isinstance(payload, bytes):
-        return payload
-    stat = os.stat(payload)
-    return _read_payload(os.fspath(payload), stat.st_mtime_ns, stat.st_size)
-
+from ..preserve.externals._helpers import _payload_bytes as _payload_bytes
 
 _TemplateEntry = tuple[str, Any]  # ("slot", i) | ("group", [i, ...]) | ("const", value)
 
