@@ -181,7 +181,7 @@ class EventContext(EagerRefusals, ContextNode):
         not the one the same derivation answers with afterwards. ``events[name, *path] = value``
         assigns ``name`` with the nested field replaced, as awkward does (#229).
         """
-        if isinstance(name, tuple) and len(name) > 1 and isinstance(name[0], str):
+        if isinstance(name, tuple) and len(name) > 1 and all(isinstance(n, str) for n in name):
             if isinstance(value, Array | Varied):
                 self._refuse_foreign(name[0], value)
             collection = detached(self._read(name[0]))
