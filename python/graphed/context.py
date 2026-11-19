@@ -26,7 +26,7 @@ import itertools
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from .array import Array, EagerRefusals, detached
+from .array import Array, EagerRefusals, detached, dir_with
 from .errors import GraphedError, GraphedTypeError
 from .provenance import capture
 
@@ -123,8 +123,7 @@ class EventContext(EagerRefusals, ContextNode):
     # ---- tree content (§2.6a: the context reserves NO names) --------------------
     def __dir__(self) -> list[str]:
         """List the attributes with the fields, as an awkward array does."""
-        reachable = (name for name in fields_of(self) if name.isidentifier() and name[0] != "_")
-        return sorted({*super().__dir__(), *reachable})
+        return dir_with(super().__dir__(), fields_of(self))
 
     def __getattr__(self, name: str) -> Any:
         """Read field ``name`` of the event record; ``fields`` lists them where no field is one."""
