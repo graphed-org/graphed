@@ -255,8 +255,11 @@ def _two_sources(first: Any, second: Any) -> tuple[Any, Any]:
     return session.source("a", form=form, data=first), session.source("b", form=form, data=second)
 
 
-def test_an_op_paired_by_chunk_beside_a_second_source_evaluates_chunk_by_chunk() -> None:
-    a, b = _two_sources(_Chunks(), _OtherChunks())
+@pytest.mark.parametrize("second", [_OtherChunks(), _Chunks()()], ids=["partitioned", "whole"])
+def test_an_op_paired_by_chunk_beside_a_second_source_evaluates_chunk_by_chunk(
+    second: Any,
+) -> None:
+    a, b = _two_sources(_Chunks(), second)
     shifted = (a.s - a.s[a.t > 4.0]) + gak.sum(b.s, axis=0)
     assert ak.to_list(graphed.materialize(shifted)) == [8.5, 6.5, 6.5, 7.0, 6.5]
 
