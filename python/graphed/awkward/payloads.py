@@ -12,6 +12,7 @@ import hashlib
 import json
 import platform
 from pathlib import Path
+from typing import Any
 
 from graphed.core import PayloadDescriptor
 
@@ -107,9 +108,13 @@ def correctionlib_contents_hash(payload: bytes) -> str:
 def onnx_weights_hash(payload: bytes) -> str:
     """sha256 of the model's WEIGHTS + graph op structure — file bytes are not identity."""
     import onnx
+
+    return _weights_hash(onnx.load_from_string(payload))
+
+
+def _weights_hash(model: Any) -> str:
     from onnx import numpy_helper
 
-    model = onnx.load_from_string(payload)
     h = hashlib.sha256()
     h.update(b"onnx-weights-v1")
     for init in sorted(model.graph.initializer, key=lambda t: t.name):
@@ -161,12 +166,12 @@ def onnx_row_shape(payload: bytes) -> tuple[int, ...] | None:
 
 
 def _onnx_identity(payload: bytes) -> tuple[str, str, str, tuple[int, ...] | None]:
-    content_hash = onnx_weights_hash(payload)  # a model onnx cannot load raises here
     import onnx
 
     from graphed.preserve.externals.onnx_external import onnx_row_shape
 
-    model = onnx.load_from_string(payload)
+    model = onnx.load_from_string(payload)  # a model onnx cannot load raises here
+    content_hash = _weights_hash(model)
     opset = ",".join(str(o.version) for o in model.opset_import)
     ins = ",".join(i.name for i in model.graph.input)
     outs = ",".join(o.name for o in model.graph.output)

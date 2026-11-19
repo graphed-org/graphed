@@ -827,11 +827,10 @@ class Session:
         A recorded type is checked, never cast, when it is a claim or a leaf claim; with a backend
         ``check_output_type`` the evaluator becomes a :class:`CheckedExternal`, and a value of
         another type raises :class:`~graphed.OutputTypeError` at this call's line. A claim is
-        ``output_type=``, an inferred ``map`` form, or ``form=`` or the form ``form_params``
-        built, as ``form_params`` ``claim`` says (``form=`` by default): its whole type is
-        checked. A leaf claim is a ``form_params``
-        ``output_dtype`` otherwise: only its leaves' dtype is. Anything else is the backend's
-        guess, unchecked.
+        ``output_type=``, an inferred ``map`` form, or, with ``form_params`` ``claim=True``,
+        ``form=`` or the form ``form_params`` built: its whole type is checked. A leaf claim is
+        a ``form_params`` ``output_dtype`` otherwise: only its leaves' dtype is. Anything else
+        is a guess, unchecked.
         """
         params_d: dict[str, ParamValue] = dict(params or {})
         prov = capture()
@@ -842,7 +841,7 @@ class Session:
         # user params may carry any key, so op_form sees `output_type` only as declared here
         form_view: dict[str, object] = {k: v for k, v in params_d.items() if k != "output_type"}
         form_view.update(form_params or {})
-        claimed = bool((form_params or {}).get("claim", form is not None))
+        claimed = bool((form_params or {}).get("claim"))
         declared_type = None
         if output_type is not None:
             declared_type = self._canonical_output_type(op, prov, output_type, params_d, form)
@@ -1005,7 +1004,7 @@ class Session:
             # a spelling it cannot build is refused even beside a claim
             leaf = ("output_dtype", self._canonical(op, prov, dtype))
         if claimed is not None:
-            # a form the backend cannot type (a histogram fill's) claims nothing it can check
+            # a form the backend cannot type claims nothing it can check
             with contextlib.suppress(TypeError):
                 return self._claim(claimed) or leaf
         return leaf

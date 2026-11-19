@@ -639,7 +639,7 @@ def apply_correction(
         form=astype_form(
             broadcast_form([cast("AwkwardForm", session.form(a)) for a in slots]), "float64"
         ),
-        form_params={"output_dtype": "float64"},
+        form_params={"output_dtype": "float64", "claim": True},
     )
 
 
@@ -674,9 +674,6 @@ def onnx_inference(
         k: _parse_template([v], len(inputs), constants=False, groups=True)[0]
         for k, v in (kwargs or {}).items()
     }
-    slot_indices = [i for kind, i in arg_entries if kind == "slot"]
-    group_first = [v[0] for kind, v in arg_entries if kind == "group"]
-    first = (slot_indices + group_first + [0])[0]
 
     def _fn(*vals: object) -> object:
         call = [_ml_matrix(e, vals) for e in arg_entries]
@@ -693,11 +690,8 @@ def onnx_inference(
     forms = [cast("AwkwardForm", session.form(a)) for a in inputs]
     shape = payloads.onnx_row_shape(blob)
     # the plugin's value, a claim where the model states its width; a leaf claim where not
-    form, form_params = (
-        (declared_form(forms, event_type(shape)), None)
-        if shape is not None
-        else (astype_form(forms[first], "float64"), {"output_dtype": "float64", "claim": False})
-    )
+    form = declared_form(forms, event_type(shape or (1,)))
+    form_params = {"output_dtype": "float64", "claim": shape is not None}
     return session.record_external(
         "onnx",
         _TemplateExternal(

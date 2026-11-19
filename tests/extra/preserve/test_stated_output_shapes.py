@@ -203,15 +203,26 @@ def test_a_model_stating_a_width_it_does_not_give_is_refused() -> None:
     )
 
 
-def test_gak_onnx_inference_records_the_width_its_model_states() -> None:
-    payload = _onnx(3)
+@pytest.mark.parametrize(
+    ("dims", "expected", "key"),
+    [
+        ([None, 3], "3 * float64", "array output_type"),
+        (["n", "k"], "float64", "output_dtype"),
+    ],
+    ids=["stated", "symbolic"],
+)
+def test_gak_onnx_inference_records_what_the_plugin_records(
+    dims: list[Any], expected: str, key: str
+) -> None:
+    payload = _onnx(dims[1] if isinstance(dims[1], int) else 1, dims)
     session = Session(AwkwardBackend())
     from graphed.preserve.externals.onnx_external import eval_onnx, load_onnx  # noqa: PLC0415
 
     model = load_onnx(payload, {})
     runner = lambda x: eval_onnx(model, TEMPLATE, [x[:, 0], x[:, 1]])  # noqa: E731
     out = gak.onnx_inference(payload, _inputs(session), runner, args=[["$0", "$1"]])
-    assert _types(session, out) == ("3 * float64", "3 * float64")
+    assert _types(session, out) == (expected, expected)
+    assert _key(session, out) == key
 
 
 def _count(monkeypatch: pytest.MonkeyPatch, module: Any, name: str, payload: bytes) -> list[None]:
@@ -260,3 +271,35 @@ def test_the_row_shape_is_read_in_the_hash_parse(
     calls = _count(monkeypatch, *parser(), payload)
     record_external(session, plugin, payload, inputs, params=params)
     assert len(calls) == 1
+
+
+def test_gak_onnx_inference_reads_the_row_shape_in_one_parse(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = _onnx(3)
+    session = Session(AwkwardBackend())
+    inputs = _inputs(session)
+    calls = _count(monkeypatch, *_onnx_parser(), payload)
+    gak.onnx_inference(payload, inputs, lambda x: x, args=[["$0", "$1"]])
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("claim", [True, False])
+def test_a_callers_form_is_checked_only_when_claimed(claim: bool) -> None:
+    session = Session(AwkwardBackend())
+    x = _inputs(session)[0]
+    out = session.record_external(
+        "map",
+        lambda v: ak.unflatten(v, 1),
+        [x],
+        {"fn": "lists"},
+        descriptor=AwkwardBackend().external_payload("map", {"fn": "lists"}),
+        form=session.form(x),
+        form_params={"claim": claim},
+    )
+    if not claim:
+        assert ak.to_list(session.materialize(out)) == [[1.0], [2.0], [3.0]]
+        return
+    with pytest.raises(StageError) as info:
+        session.materialize(out)
+    assert "declares array output_type '?float64'" in info.value.cause_message

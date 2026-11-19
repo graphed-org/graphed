@@ -98,7 +98,7 @@ class ExternalPlugin:
     #: the value is the inputs' broadcast with ``output_dtype`` leaves, so that recorded form is
     #: the value's whole type and is checked in full
     broadcasts: bool = False
-    #: a model's (its value is one ``output_dtype`` row per event): the row shape its payload
+    #: a model's (its value is `_as_event_array`'s float64 rows): the row shape its payload
     #: states, read in the content hash's pass, recorded and checked in full; ``None`` where it
     #: states none records one value per event, its leaves checked
     output_shape: Callable[[bytes], tuple[int, ...] | None] | None = None
