@@ -253,17 +253,25 @@ def _canonical_output_type(spec: object) -> str:
 _canonical_string = functools.cache(_canonical_output_type)
 
 
-def astype_form(form: AwkwardForm, dtype: object) -> AwkwardForm:
-    """Return ``form`` with its leaves cast to the primitive ``dtype``.
+def _bare_leaf(layout: Any, **kwargs: Any) -> Any:
+    if layout.is_numpy:
+        return ak.contents.NumpyArray(layout.data, backend=layout.backend)
+    return None
 
-    ``dtype`` is any `canonical_output_type` spelling of one; a scalar stays a scalar.
+
+def astype_form(form: AwkwardForm, dtype: object) -> AwkwardForm:
+    """Return ``form`` with its leaves replaced by bare leaves of the primitive ``dtype``.
+
+    ``dtype`` is any `canonical_output_type` spelling of one; a scalar stays a scalar. A leaf's
+    parameters (NanoAOD's ``typename``) describe the input's values, so the new leaf has none, as
+    a computed value has none; list-level parameters stay, as the value keeps them.
     """
     t = _type(canonical_output_type(dtype))
     if not isinstance(t, ak.types.NumpyType) or t.parameters:
         raise TypeError(f"output_dtype {dtype!r} is not a primitive dtype")
     if ak.typetracer.is_unknown_scalar(form.tt):
         return AwkwardForm(ak.typetracer.create_unknown_scalar(np.dtype(t.primitive)))
-    return AwkwardForm(ak.values_astype(form.tt, t.primitive))
+    return AwkwardForm(ak.transform(_bare_leaf, ak.values_astype(form.tt, t.primitive)))
 
 
 def broadcast_form(forms: Sequence[AwkwardForm]) -> AwkwardForm:
