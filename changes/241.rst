@@ -1,5 +1,6 @@
 .. under: 0.0.12 (unreleased)
 
 * An XGBoost or JAX External on a partition with zero rows gives zero rows of the model's output
-  type instead of failing: XGBoost predicted shape ``(0, 0)`` and a ``jax.export`` batch dimension
-  refuses zero. ONNX, PyTorch, TensorFlow and correctionlib already did (#241).
+  type instead of failing: XGBoost predicted shape ``(0, 0)`` for an empty matrix, and a
+  ``jax.export`` batch dimension refuses zero rows, so JAX answers from the export's output shape
+  (#241).

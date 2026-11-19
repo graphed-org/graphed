@@ -50,23 +50,6 @@ def _stack_feature_columns(inputs: list[Any]) -> Any:
     return np.stack([np.asarray(ak.to_numpy(ak.Array(i))) for i in inputs], axis=1)
 
 
-def predict_rows(predict: Callable[..., Any], *arrays: Any, **kwarrays: Any) -> Any:
-    """Return ``predict(*arrays, **kwarrays)``; on zero rows, its output for one zero row, cut.
-
-    A framework may refuse an empty batch or lose the output width on one, and the model's own
-    width is what keeps the declared type.
-    """
-    import numpy as np
-
-    if any(len(a) for a in (*arrays, *kwarrays.values())):
-        return predict(*arrays, **kwarrays)
-
-    def one(a: Any) -> Any:
-        return np.zeros((1, *np.shape(a)[1:]), dtype=np.asarray(a).dtype)
-
-    return np.asarray(predict(*map(one, arrays), **{k: one(v) for k, v in kwarrays.items()}))[:0]
-
-
 def _as_event_array(out: Any) -> Any:
     """Return a model's (n,) or (n, 1) output as one value per event.
 
