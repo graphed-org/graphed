@@ -101,7 +101,6 @@ def _setitem(self: Any, where: object, what: object) -> None:
             "__setitem__", capture(), "only fields may be assigned in-place (by field name)"
         )
     new = _with_path(self, path, what)
-    # a varied value turns an array proxy into its container; the shared layout allows the swap
     take_state(self, new)
 
 

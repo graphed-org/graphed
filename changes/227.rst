@@ -2,6 +2,5 @@
 
 * ``x[field] = varied`` on an unvaried deferred array makes ``x`` the container of universes, as
   ``x = gak.with_field(x, varied, field)`` does, instead of refusing; a field path works the same.
-  Only that object changes: another proxy of the old node stays unvaried, and a ``Varied`` or
-  event context built from ``x`` keeps its own proxy, so neither changes with it, for a plain
+  Only ``x`` changes: a ``Varied`` or event context built from it keeps its own proxy, for a plain
   value too, which used to move them (#227).

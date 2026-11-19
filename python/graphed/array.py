@@ -8,11 +8,10 @@ dispatch keys); they are backend-agnostic strings, so graphed stays free of nump
 
 from __future__ import annotations
 
-import contextlib
 import json
 from collections.abc import Callable
 from itertools import count
-from typing import TYPE_CHECKING, Any, SupportsFloat
+from typing import TYPE_CHECKING, Any, SupportsFloat, TypeVar
 
 from .backend import ParamValue
 from .errors import DeferredTypeError, GraphedTypeError, MissingFieldError
@@ -20,6 +19,8 @@ from .provenance import Provenance, Site, capture
 
 if TYPE_CHECKING:
     from .session import Session
+
+_T = TypeVar("_T")
 
 # numpy ufunc name -> canonical op name (so np.subtract(a, b) and a - b record the same op).
 # M11 (dask.array parity P0.2): the FULL single-output ufunc tier. Ufunc application is COMMON to
@@ -354,18 +355,12 @@ class Deferred(EagerRefusals):
     )
 
 
-_STATE = tuple(getattr(Deferred, n) for n in Deferred.__slots__ if n != "__weakref__")
-
-
 def take_state(proxy: Deferred, source: Deferred) -> None:
-    """Make ``proxy`` the same value as ``source``: its class and every slot, unset ones unset."""
+    """Make ``proxy`` the same value as ``source``: its class and its slots, the rest unset."""
+    for name in _USED[isinstance(proxy, Array)]:
+        delattr(proxy, name)
     proxy.__class__ = type(source)
-    for slot in _STATE:
-        try:
-            slot.__set__(proxy, slot.__get__(source))
-        except AttributeError:  # unset on ``source``
-            with contextlib.suppress(AttributeError):
-                slot.__delete__(proxy)
+    _copy_state(source, proxy)
 
 
 class Array(Deferred):
@@ -986,7 +981,12 @@ _USED = {
 }
 
 
-def detached(value: Any) -> Any:
+def _copy_state(source: Deferred, target: Deferred) -> None:
+    for name in _USED[isinstance(source, Array)]:
+        setattr(target, name, getattr(source, name))
+
+
+def detached(value: _T) -> _T:
     """Return a fresh proxy of ``value`` for graphed to keep, ``value`` itself if not a proxy.
 
     An in-place assignment (``x[field] = ...``) rebinds the object it is made on, so a holder
@@ -995,6 +995,5 @@ def detached(value: Any) -> Any:
     if not isinstance(value, Deferred):
         return value
     fresh = object.__new__(type(value))
-    for name in _USED[isinstance(value, Array)]:
-        setattr(fresh, name, getattr(value, name))
+    _copy_state(value, fresh)
     return fresh

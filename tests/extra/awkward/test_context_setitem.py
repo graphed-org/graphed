@@ -10,9 +10,9 @@ import pytest
 import graphed
 from graphed import Session
 from graphed.awkward import AwkwardBackend, from_awkward, gak, gnano
-from graphed.context import EventContext, context_of
+from graphed.context import EventContext
 from graphed.errors import GraphedError, GraphedTypeError
-from graphed.systematics import labels, nominal, universe
+from graphed.systematics import context_of, labels, nominal, universe
 
 DATA = {
     "Jet": [[{"pt": 40.0}, {"pt": 20.0}], [{"pt": 55.0}], []],
