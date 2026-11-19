@@ -131,7 +131,7 @@ def by_value(fn: T) -> T:
     if isinstance(fn, types.FunctionType | functools.partial):
         return _ByValue(fn)  # type: ignore[return-value]  # calls as fn does
     if isinstance(fn, CheckedExternal):
-        return replace(fn, fn=by_value(fn.fn))  # type: ignore[return-value]  # same type as fn
+        return replace(fn, fn=by_value(fn.fn))
     return fn
 
 
