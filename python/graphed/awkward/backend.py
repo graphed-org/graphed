@@ -366,27 +366,28 @@ def check_output_type(
 
     ``output_type`` is the whole element type: the value's type must equal it as awkward compares
     types (option-ness, regular vs var, record names and every parameter included, keys in any
-    order), except that ``unknown`` inside an array fits anything. ``output_dtype`` is a static
-    leaf dtype: every leaf must have it.
+    order), except that ``unknown`` inside an array fits anything. It is an array exactly when an
+    input is one; an inferred ``array output_type`` or ``scalar output_type`` states its own.
+    ``output_dtype`` is a static leaf dtype: every leaf must have it.
     """
     try:
         t = ak.type(value)
     except (TypeError, ValueError):  # not array-like at all
         return type(value).__name__
     content = t.content if isinstance(t, (ak.types.ArrayType, ak.types.ScalarType)) else t
-    actual = str(content)
     if key == "output_dtype":
-        return None if all(p == declared for p in _leaves(content)) else actual
+        return None if all(p == declared for p in _leaves(content)) else str(content)
     # as `declared_form`: an array when any input is one; value and inputs share the predicate
     scalar = not _is_array(value)
-    if scalar == any(map(_is_array, inputs)):
-        return f"scalar {actual}" if scalar else str(t)
+    array = any(map(_is_array, inputs)) if key == "output_type" else key == "array output_type"
+    if scalar == array:
+        return f"scalar {content}" if scalar else str(t)
     want = _type(declared)
     if content.is_equal_to(want, all_parameters=True):
         return None
-    if not scalar and "unknown" in actual and _fits(content, want):
+    if not scalar and _holds_unknown(content) and _fits(content, want):
         return None
-    return actual
+    return str(content)
 
 
 class AwkwardBackend:

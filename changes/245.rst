@@ -13,6 +13,6 @@ An inferred type is checked like a declared one
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 * A value whose type differs from the inferred one raises ``StageError`` (cause
-  ``OutputTypeError``) at the recording line. Before, a wrongly inferred type passed silently and
+  ``OutputTypeError``) at the recording line, a function that reduces to a scalar included. Before, a wrongly inferred type passed silently and
   mislabelled everything downstream. A type that depends on the data, such as a dtype that widens
   with content, is one such case: declare it with ``output_type=`` (#245).

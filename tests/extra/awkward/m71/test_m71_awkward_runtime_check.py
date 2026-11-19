@@ -114,10 +114,11 @@ def test_a_declared_or_inferred_node_carries_a_check_and_an_uninferred_one_does_
     from graphed.session import CheckedExternal  # noqa: PLC0415  (absent on the base)
 
     s, ev = _events()
-    for out in (ev.x.map(fx.cut), ev.x.map(fx.cut, output_type=bool)):
+    inferred, declared = ev.x.map(fx.cut), ev.x.map(fx.cut, output_type=bool)
+    for out, key in ((inferred, "array output_type"), (declared, "output_type")):
         checked = s._externals[out.node_id][0]
         assert isinstance(checked, CheckedExternal) and checked.fn is fx.cut
-        assert (checked.key, checked.declared) == ("output_type", "bool")
+        assert (checked.key, checked.declared) == (key, "bool")
     with pytest.warns(graphed.GraphedWarning, match="could not infer"):
         bare = ev.x.map(fx.total)
     assert s._externals[bare.node_id][0] is fx.total
