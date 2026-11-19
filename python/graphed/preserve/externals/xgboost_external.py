@@ -52,10 +52,8 @@ def eval_xgboost(booster: Any, params: Mapping[str, Any], inputs: list[Any]) -> 
         raise PreserveError(
             f"the xgboost model takes {expected} features; the call gives {matrix.shape[1]}"
         )
-    # the booster's own names and types, so a model trained on named columns runs as shipped
-    data = xgb.DMatrix(
-        matrix, feature_names=booster.feature_names, feature_types=booster.feature_types
-    )
+    # the booster's own names, so a model trained on named columns runs as shipped
+    data = xgb.DMatrix(matrix, feature_names=booster.feature_names)
     return _as_event_array(booster.predict(data))
 
 

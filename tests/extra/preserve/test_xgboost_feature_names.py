@@ -1,4 +1,4 @@
-"""A booster that stores feature names and types evaluates as shipped (graphed#232)."""
+"""A booster that stores feature names, categorical ones included, evaluates as shipped (#232)."""
 
 from __future__ import annotations
 
