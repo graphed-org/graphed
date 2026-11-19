@@ -255,7 +255,7 @@ _canonical_string = functools.cache(_canonical_output_type)
 
 def _bare_leaf(layout: Any, **kwargs: Any) -> Any:
     if layout.is_numpy:
-        return ak.contents.NumpyArray(layout.data, backend=layout.backend)
+        return layout.copy(parameters=None)
     return None
 
 
@@ -277,10 +277,10 @@ def astype_form(form: AwkwardForm, dtype: object) -> AwkwardForm:
 
 
 def broadcast_form(forms: Sequence[AwkwardForm]) -> AwkwardForm:
-    """Return the form ``ak.broadcast_arrays`` gives the array ``forms``.
+    """Return the form the array ``forms`` broadcast to, as correctionlib broadcasts them.
 
     Scalars broadcast away; the first form when none is an array. Only the parameters every input
-    shares survive, as in correctionlib's broadcast.
+    shares survive (``ak.broadcast_arrays``, then ``ak.transform``).
     """
     arrays = [f for f in forms if isinstance(f.tt, ak.Array)]
     if len(arrays) < 2:

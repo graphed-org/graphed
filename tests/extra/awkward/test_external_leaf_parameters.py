@@ -50,50 +50,43 @@ def _types(session: Session, out: Any) -> tuple[str, str]:
     return recorded, str(ak.type(session.materialize(out)).content)
 
 
-@pytest.mark.parametrize(
-    ("content", "lists", "expected"),
-    [
-        ({"typename": "float[]"}, None, "var * float64"),
-        (None, {"__doc__": "jets"}, '[var * float64, parameters={"__doc__": "jets"}]'),
-    ],
-    ids=["leaf", "list"],
-)
-def test_a_correction_drops_leaf_parameters_and_keeps_list_ones(
-    content: Any, lists: Any, expected: str
-) -> None:
-    leaf = ak.contents.NumpyArray(JAGGED.content.data, parameters=content)
-    array = ak.Array(ak.contents.ListOffsetArray(JAGGED.offsets, leaf, parameters=lists))
-    session = Session(AwkwardBackend())
-    out = gak.apply_correction(DOUBLE, "c", [from_awkward("x", array, session=session)])
-    assert _types(session, out) == (expected, expected)
-
-
 _product = json.loads(DOUBLE)
 _product["corrections"][0]["inputs"].append({"name": "y", "type": "real"})
 _product["corrections"][0]["data"].update(expression="x*y", variables=["x", "y"])
 PRODUCT = json.dumps(_product).encode()
 
 
-def _lists(doc: str) -> ak.Array:
-    return ak.Array(
-        ak.contents.ListOffsetArray(JAGGED.offsets, JAGGED.content, parameters={"__doc__": doc})
-    )
+def _jagged(leaf: Any = None, lists: Any = None) -> ak.Array:
+    content = ak.contents.NumpyArray(JAGGED.content.data, parameters=leaf)
+    return ak.Array(ak.contents.ListOffsetArray(JAGGED.offsets, content, parameters=lists))
 
 
 @pytest.mark.parametrize(
     ("arrays", "expected"),
     [
-        ([_lists("a"), _lists("b")], "var * float64"),
-        ([_lists("a"), ak.Array([1.0, 2.0, 3.0])], "var * float64"),
-        ([_lists("a"), _lists("a")], '[var * float64, parameters={"__doc__": "a"}]'),
+        ([_jagged(leaf={"typename": "float[]"})], "var * float64"),
+        ([_jagged(lists={"__doc__": "a"})], '[var * float64, parameters={"__doc__": "a"}]'),
+        ([_jagged(lists={"__doc__": "a"}), _jagged(lists={"__doc__": "b"})], "var * float64"),
+        ([_jagged(lists={"__doc__": "a"}), ak.Array([1.0, 2.0, 3.0])], "var * float64"),
+        (
+            [_jagged(lists={"__doc__": "a"}), _jagged(lists={"__doc__": "a"})],
+            '[var * float64, parameters={"__doc__": "a"}]',
+        ),
         (
             [ak.Array(ak.contents.NumpyArray(np.ones((3, 2)), parameters={"typename": "f"}))],
             '[2 * float64, parameters={"typename": "f"}]',
         ),
     ],
-    ids=["differing-lists", "list-and-flat", "shared-list", "multidimensional-leaf"],
+    ids=[
+        "leaf",
+        "list",
+        "differing-lists",
+        "list-and-flat",
+        "shared-list",
+        "multidimensional-leaf",
+    ],
 )
-def test_a_correction_keeps_the_parameters_its_broadcast_keeps(
+def test_a_correction_records_the_parameters_its_value_keeps(
     arrays: list[ak.Array], expected: str
 ) -> None:
     session = Session(AwkwardBackend())
