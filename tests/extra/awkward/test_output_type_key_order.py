@@ -54,6 +54,10 @@ UNION = ak.Array([1, [2]])
         (_empty_lists(), L(N("float64"), parameters={"b": 2, "a": 1})),
         (_list([[0.5]], c=None), L(N("float64"), parameters={"b": 2, "a": 1})),
         (UNION, U([L(N("int64")), N("int64")])),
+        (
+            ak.zip({"x": _empty_lists(), "y": ak.Array([0.5, 1.5])}, depth_limit=1),
+            R([N("float64"), L(N("int64"), parameters={"b": 2, "a": 1})], ["y", "x"]),
+        ),
     ],
     ids=[
         "list-parameters",
@@ -62,6 +66,7 @@ UNION = ak.Array([1, [2]])
         "unknown-inside",
         "none-parameter",
         "union-members",
+        "unknown-inside-record-fields",
     ],
 )
 def test_the_same_type_in_another_key_order_passes(data: ak.Array, declared: Any) -> None:

@@ -9,7 +9,6 @@ from __future__ import annotations
 import contextlib
 import functools
 import inspect
-import itertools
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, cast, overload
@@ -17,7 +16,6 @@ from typing import Any, cast, overload
 import awkward as ak
 import cloudpickle
 import numpy as np
-from awkward._parameters import parameters_are_equal
 from awkward.types._awkward_datashape_parser import LarkError
 
 from graphed import Array, Session
@@ -295,18 +293,16 @@ def declared_form(forms: Sequence[AwkwardForm], canonical: str) -> AwkwardForm:
 
 
 def _fits(value: ak.types.Type, declared: ak.types.Type) -> bool:
-    """``value`` is ``declared`` wherever it holds data, compared as awkward compares types.
+    """``value`` is ``declared`` wherever it holds data, for a value awkward cannot compare itself.
 
-    Parameters and record fields match by key, union members in any order, and every parameter
-    counts.
+    Parameters and record fields match by key and every parameter counts; union members match by
+    position.
     ``unknown``, the type of a buffer holding no values (an all-empty list), fits any declared
     type.
     """
     if isinstance(value, ak.types.UnknownType):
         return True
-    if type(value) is not type(declared) or not parameters_are_equal(
-        value.parameters, declared.parameters
-    ):
+    if type(value) is not type(declared) or value.parameters != declared.parameters:
         return False
     other: Any = declared
     if isinstance(value, ak.types.RecordType):
@@ -317,8 +313,8 @@ def _fits(value: ak.types.Type, declared: ak.types.Type) -> bool:
             and all(_fits(c, theirs[k]) for k, c in mine.items())
         )
     if isinstance(value, ak.types.UnionType):
-        return len(value.contents) == len(other.contents) and any(
-            all(map(_fits, value.contents, p)) for p in itertools.permutations(other.contents)
+        return len(value.contents) == len(other.contents) and all(
+            map(_fits, value.contents, other.contents)
         )
     if isinstance(value, ak.types.RegularType) and value.size != other.size:
         return False
