@@ -7,6 +7,7 @@ import io
 from collections.abc import Mapping
 from typing import Any
 
+from ..errors import PreserveError
 from ._base import ExternalPlugin
 from ._helpers import (
     _as_event_array,
@@ -29,6 +30,8 @@ def _pytorch_content_hash_impl(payload: bytes) -> str:
     model = torch.jit.load(io.BytesIO(payload), map_location="cpu")
     h = hashlib.sha256(b"torch-weights-code-v1")
     for name, tensor in sorted(model.state_dict().items()):
+        if tensor.is_quantized:  # raw bytes omit scale and zero point: distinct weights collide
+            raise PreserveError(f"weight {name!r} is {tensor.dtype}, which has no content hash")
         h.update(name.encode("utf-8"))
         # its raw bytes: numpy has no bfloat16 or float8 to read them through
         h.update(

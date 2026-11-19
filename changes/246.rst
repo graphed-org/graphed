@@ -7,6 +7,7 @@
 A complex output is refused, not truncated
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-* A model External whose output is complex, from any plugin, or a quantized PyTorch output, raises
-  ``PreserveError`` naming its dtype. A complex output used to be cast to float64, silently
-  dropping the imaginary part, with only a numpy ``ComplexWarning`` (#246).
+* A model External whose output is complex, from any plugin, or a PyTorch output with no float64
+  cast (quantized, bit or sub-byte), raises ``PreserveError`` naming its dtype, as does a PyTorch
+  model with a quantized weight, whose raw bytes omit its scale. A complex output used to be cast
+  to float64, silently dropping the imaginary part, with only a numpy ``ComplexWarning`` (#246).
