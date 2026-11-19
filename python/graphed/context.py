@@ -132,13 +132,33 @@ class EventContext(EagerRefusals, ContextNode):
         if isinstance(key, str):
             return self._read(key)
         if isinstance(key, list) and key and all(isinstance(field, str) for field in key):
-            return self._stamp(expand(lambda record: record[key], (self._record,), {}))
+            return self._stamp(expand(lambda record: record[key], (self._fields(key),), {}))
         if isinstance(key, Array | Varied):
             return self._derive(key)
         raise GraphedError(
             f"an event context takes a field name, a list of field names, or an Array/Varied mask "
             f"as its subscript, not {key!r}"
         )
+
+    def _fields(self, key: list[str]) -> Any:
+        """Return the record with every collection ``key`` names held by this context in it."""
+        record: Any = self._record
+        held = [name for name in key if name in collections_of(self)]
+        if not held:
+            return record
+        seam = getattr(context_session(self).backend, "with_field", None)
+        if seam is None:
+            raise GraphedError(
+                f"{self!r} holds {held} as collections, which a field list cannot read on a "
+                "backend without a with_field seam; read each by name (events.<name>)"
+            )
+        for name in held:
+            record = expand(
+                lambda rec, value, field=name: seam(rec, value, field),
+                (record, collections_of(self)[name]),
+                {},
+            )
+        return record
 
     def _read(self, name: str) -> Any:
         value = collections_of(self).get(name)
