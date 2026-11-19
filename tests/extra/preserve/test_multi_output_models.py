@@ -16,7 +16,7 @@ from graphed.awkward import AwkwardBackend, from_awkward
 from graphed.preserve import JAX_PLUGIN, ONNX_PLUGIN, PYTORCH_PLUGIN, TENSORFLOW_PLUGIN
 from graphed.preserve.externals import record_external
 
-X = np.arange(10, dtype="float32").reshape(5, 2)
+X: Any = np.arange(10, dtype="float32").reshape(5, 2)
 W1 = np.array([[1.0], [0.0]], dtype="float32")
 W2 = np.array([[0.0], [1.0]], dtype="float32")
 
@@ -50,12 +50,9 @@ def _pytorch() -> tuple[Any, bytes, Any]:
     torch = pytest.importorskip("torch")
     w1, w2 = torch.from_numpy(W1), torch.from_numpy(W2)
 
-    class Two(torch.nn.Module):
-        def forward(self, x: Any) -> Any:
-            return x @ w1, x @ w2
-
+    two = type("Two", (torch.nn.Module,), {"forward": lambda self, x: (x @ w1, x @ w2)})()
     buf = io.BytesIO()
-    torch.jit.save(torch.jit.trace(Two(), torch.zeros(1, 2)), buf)
+    torch.jit.save(torch.jit.trace(two, torch.zeros(1, 2)), buf)
     return PYTORCH_PLUGIN, buf.getvalue(), None
 
 
