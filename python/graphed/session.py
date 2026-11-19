@@ -289,12 +289,14 @@ class Session:
         array._site = site
         if inputs:
             labels: frozenset[str] | None = None
+            cut = False
             for item in inputs:
                 carried = labels_carried(item)
                 if carried:
                     labels = carried if labels is None else labels | carried
+                cut = cut or item._rows is not None
             attach(array, unify_contexts(*(handle_of(item) for item in inputs)), labels)
-            if any(item._rows is not None for item in inputs):
+            if cut:
                 array._rows = merged_rows(*(rows_of(item) for item in inputs))
         return array
 

@@ -150,7 +150,8 @@ def same_rows(a: ContextNode, b: ContextNode) -> bool:
     while a is not b:
         if a._link is None or b._link is None or a._link[0] != "mask" or b._link[0] != "mask":
             return False
-        if mask_key(a._link[1]) != mask_key(b._link[1]) or a._parent is None or b._parent is None:
+        same = a._link[1] is b._link[1] or mask_key(a._link[1]) == mask_key(b._link[1])
+        if not same or a._parent is None or b._parent is None:
             return False
         a, b = a._parent, b._parent
     return True
@@ -162,7 +163,7 @@ def mask_key(mask: Any) -> tuple[tuple[str, int], ...]:
     A REBUILT mask interns to the same ids, which is the binding condition for
     `ctx[rebuilt] is ctx[mask]`.
     """
-    members = getattr(mask, "_members", None)
+    members = getattr(mask, "_members", None)  # by duck type: `varied` imports this module
     if members is None:
         return (("nominal", mask.node_id),)
     return tuple((label, member.node_id) for label, member in members.items())
