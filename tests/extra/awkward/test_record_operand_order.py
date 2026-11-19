@@ -35,6 +35,7 @@ def _pair(e: Any, k: float = 1.0) -> tuple[Any, Any]:
 
 
 def _deferred(tmp_path: Path, incremental: bool) -> tuple[graphed.Session, Any]:
+    pytest.importorskip("pyarrow")
     path = str(tmp_path / "src.parquet")
     ak.to_parquet(SRC, path)
     session = graphed.Session(AwkwardBackend(), incremental=incremental)
