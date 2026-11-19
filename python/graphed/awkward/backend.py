@@ -32,7 +32,7 @@ from graphed.shuffle import join_blocks
 
 from . import functions as gak
 from . import join, payloads, shuffle
-from ._ops import _INTROSPECT_EAGER, _ak_own, _listed_names, _no_field, apply
+from ._ops import _BINARY, _INTROSPECT_EAGER, _ak_own, _listed_names, _no_field, apply
 from .array import AwkwardArray
 
 
@@ -530,6 +530,22 @@ class AwkwardBackend:
             return forms[0]
         operands = [self._with_behavior(f.tt) for f in forms]
         return AwkwardForm(_sharing(apply(op, operands, params, behavior=self._behavior)))
+
+    def ordered_operands(self, op: str, inputs: Sequence[Form]) -> bool:
+        """Return whether ``op`` over ``inputs`` may resolve to a behavior overload.
+
+        Such an overload (vector's record ``+``) need not be bitwise commutative, so the session
+        marks the node and the optimizer keeps its operand order.
+        """
+        return (
+            op in _BINARY
+            and len(inputs) == 2
+            and any(
+                isinstance(f.tt, ak.Array | ak.Record)
+                and f.tt.layout.purelist_parameters("__record__", "__list__")
+                for f in cast("Sequence[AwkwardForm]", inputs)
+            )
+        )
 
     def traced_form(self, fn: Callable[..., object], inputs: Sequence[Form]) -> AwkwardForm | None:
         """Return the form ``fn`` gives ``inputs``' typetracers, ``None`` if not a typetracer."""
