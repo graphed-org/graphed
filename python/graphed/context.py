@@ -53,6 +53,7 @@ from .systematics.lineage import (  # isort: skip
     collections_of,
     context_session,
 )
+from .systematics.handles import follow  # isort: skip
 from .systematics.explain import (  # isort: skip
     Explanation as Explanation,
     explain as explain,
@@ -282,22 +283,11 @@ class EventContext(EagerRefusals, ContextNode):
         memo = self._derived.get(key)
         if memo is not None:
             return memo
-        child = EventContext(
-            context_session(self),
-            expand(lambda record, on: record[on], (self._record, mask), {}),
-            is_data=self._is_data,
-            parent=self,
-            link=("mask", mask),
-        )
-        # every member re-indexed by THAT label's own mask, label-aligned per §2.4
-        child._collections = {
-            name: child._stamp(expand(lambda value, on: value[on], (collection, mask), {}))
-            for name, collection in collections_of(self).items()
-        }
+        link: Link = ("mask", mask)
+        child = self._linked(link)
         ambient = weight_of(self)
         if ambient is not None:
-            selected = expand(lambda value, on: value[on], (ambient, mask), {})
-            adopt(child, self, child._stamp(selected))
+            adopt(child, self, child._stamp(follow(ambient, *link)))
         child._record = child._stamp(child._record)
         self._derived[key] = child
         return child
@@ -307,6 +297,10 @@ class EventContext(EagerRefusals, ContextNode):
 
         Canonical per condition and ``valid_when``, as `_derive` is.
         """
+        if not isinstance(condition, Array | Varied):
+            raise GraphedError(
+                f"an event context is masked by an Array/Varied condition, not {condition!r}"
+            )
         key = (("option", int(valid_when)), *_mask_key(condition))
         memo = self._derived.get(key)
         if memo is not None:
@@ -316,22 +310,27 @@ class EventContext(EagerRefusals, ContextNode):
             raise GraphedError(f"{self!r} cannot be masked on a backend without a mask seam")
 
         def masked(value: Any) -> Any:
-            return expand(lambda item, on: seam(item, on, valid_when), (value, condition), {})
+            return expand(seam, (value, condition), {"valid_when": valid_when})
 
-        child = EventContext(
-            context_session(self),
-            masked(self._record),
-            is_data=self._is_data,
-            parent=self,
-            link=("option", condition),
-        )
+        child = self._linked(("option", masked))
         child._ambient = for_vary_link(self)
-        child._collections = {
-            name: child._stamp(masked(collection))
-            for name, collection in collections_of(self).items()
-        }
         child._record = child._stamp(child._record)
         self._derived[key] = child
+        return child
+
+    def _linked(self, link: Link) -> EventContext:
+        """Return the child on ``link``: the record and every collection carried by `follow`."""
+        child = EventContext(
+            context_session(self),
+            follow(self._record, *link),
+            is_data=self._is_data,
+            parent=self,
+            link=link,
+        )
+        child._collections = {
+            name: child._stamp(follow(collection, *link))
+            for name, collection in collections_of(self).items()
+        }
         return child
 
     def _vary_child(self, record: AmbientRecord, replaced: Mapping[str, Any]) -> EventContext:

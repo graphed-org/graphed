@@ -408,8 +408,9 @@ def shift_form(
             label: member_of(member, label)
             for label, member in {**one_at_a_time, **joints}.items()
         }
-        check_members({**existing, **resolved})
+        # re-indexed first, so a member read above an `option` link is checked masked, as stored
         resolved = {label: reindex_to(member, ctx) for label, member in resolved.items()}
+        check_members({**existing, **resolved})
         for label in resolved:
             if label in existing:
                 raise GraphedError(f"variation label {label!r} already varies {collection_name!r}")

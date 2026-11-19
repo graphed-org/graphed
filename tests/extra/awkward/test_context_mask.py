@@ -138,3 +138,69 @@ def test_a_field_named_mask_stays_a_field_on_an_array() -> None:
     session = Session(AwkwardBackend())
     ev = from_awkward("ev", ak.Array({"mask": [1, 2]}), session=session)
     assert ak.to_list(session.materialize(ev.mask)) == [1, 2]
+
+
+def test_a_context_masked_by_a_varied_condition_carries_its_universes() -> None:
+    session, ctx = _context(is_data=False)
+    jets = ctx.Jet
+    varied = graphed.vary(
+        ctx,
+        "jes",
+        collections={"Jet": {"up": gak.with_field(jets, jets.pt * 2, "pt"), "down": jets}},
+    )
+    masked = ctx.mask[gak.max(varied.Jet.pt, axis=1) > 35]
+    masked["met"] = masked.MET.pt
+    jets_up = ak.with_field(EAGER.Jet, EAGER.Jet.pt * 2, "pt")
+    _same(
+        session, universe(masked, "jes_up").met, EAGER.mask[ak.max(jets_up.pt, axis=1) > 35].MET.pt
+    )
+
+
+def test_a_context_refuses_a_condition_that_is_not_deferred() -> None:
+    _session, ctx = _context()
+    with pytest.raises(graphed.GraphedError, match="Array/Varied condition"):
+        ctx.mask[[True, False, True]]
+
+
+def test_a_value_read_through_the_parent_is_masked_when_assigned() -> None:
+    session, ctx = _context()
+    masked = ctx.mask[ctx.MET.pt > 10]
+    masked["x"] = ctx.MET.pt
+    want = EAGER.mask[EAGER.MET.pt > 10]
+    want["x"] = EAGER.MET.pt
+    got = ak.Array(session.materialize(masked.x))
+    assert (str(got.type), got.tolist()) == (str(want.x.type), want.x.tolist())
+
+
+def test_a_masked_context_varies_a_collection_built_from_its_parent() -> None:
+    session, ctx = _context(is_data=False)
+    masked = ctx.mask[ctx.MET.pt > 10]
+    jets = ctx.Jet
+    events = graphed.vary(
+        masked, "jes", collections={"Jet": {"up": gak.with_field(jets, jets.pt * 2, "pt")}}
+    )
+    up = ak.with_field(WANT.Jet, ak.mask(EAGER.Jet.pt * 2, EAGER.MET.pt > 10), "pt")
+    got = ak.Array(session.materialize(universe(events.Jet.pt, "jes_up")))
+    assert (str(got.type), got.tolist()) == (str(up.pt.type), up.pt.tolist())
+
+
+def test_inherited_universes_are_masked_when_a_masked_member_joins_them() -> None:
+    session, ctx = _context(is_data=False)
+    met = ctx.MET.pt
+    first = graphed.vary(met, "a", points={"up": met * 2})
+    masked = ctx.mask[met > 10]
+    both = graphed.vary(first, "b", points={"up": masked.MET.pt})
+    want = ak.mask(EAGER.MET.pt * 2, EAGER.MET.pt > 10)
+    got = ak.Array(session.materialize(universe(both, "a_up")))
+    assert (str(got.type), got.tolist()) == (str(want.type), want.tolist())
+
+
+class _NoMaskBackend(AwkwardBackend):
+    mask = None  # type: ignore[assignment]
+
+
+def test_a_backend_without_a_mask_seam_refuses_by_name() -> None:
+    session = Session(_NoMaskBackend())
+    ctx = gnano.events(from_awkward("ev", EAGER, session=session))
+    with pytest.raises(graphed.GraphedError, match="without a mask seam"):
+        ctx.mask[ctx.MET.pt > 10]

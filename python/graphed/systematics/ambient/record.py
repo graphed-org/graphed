@@ -212,10 +212,10 @@ def context_labels(ctx: EventContext) -> tuple[str, ...]:
     """§2.2's §2.4-ordered union of the labels a context carries.
 
     (a) the ambient registry's, (b) those of the `Varied` collections it CARRIES, (c) those of its
-    selection.
+    selection, (d) those of its record, which an `option` link's `Varied` condition varies.
     """
     out: dict[str, None] = dict.fromkeys(ambient_of(ctx).recorded)
-    for source in (*collections_of(ctx).values(), selection(ctx)):
+    for source in (*collections_of(ctx).values(), selection(ctx), ctx._record):
         for label in labels_of(source):
             out.setdefault(label, None)
     return tuple(out)

@@ -9,6 +9,7 @@ Both also take ak's field assignment, ``events["Photon"] = photons``, as a recor
 
 from __future__ import annotations
 
+import functools
 import inspect
 from collections.abc import Callable
 from typing import Any
@@ -117,7 +118,7 @@ def _masker(self: Any) -> Any:
     """``x.mask[condition]`` is ``ak.mask(x, condition)``; a field named ``mask`` stays a field."""
     if "mask" in gak.fields(self):
         return self["mask"]
-    return Masker(lambda condition: gak.mask(self, condition))
+    return Masker(functools.partial(gak.mask, self))
 
 
 def _clip(a: object, a_min: object = None, a_max: object = None) -> object:

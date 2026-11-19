@@ -57,6 +57,8 @@ def follow(value: Any, kind: str, payload: Any) -> Any:
         return expand(lambda item, mask: item[mask], (value, payload), {})
     if kind == "project":  # link kind (3): project, and RESET the accumulated label set
         return member_of(value, payload)
+    if kind == "option":  # ak.mask's link: the rows stay, the value is masked as the context is
+        return payload(value)
     return value  # link kind (2): a `vary` link is the identity — only registrations differ
 
 

@@ -929,10 +929,12 @@ def _on_context(
     if fn.__name__ == "fields":
         return fields_of(context)
     if fn.__name__ in ("with_field", "mask"):
-        bound = inspect.signature(fn).bind(*args, **kwargs).arguments
-        if bound["arr"] is context and fn.__name__ == "mask":
-            return context._mask(bound["condition"], bool(bound.get("valid_when", True)))
+        call = inspect.signature(fn).bind(*args, **kwargs)
+        call.apply_defaults()
+        bound = call.arguments
         if bound["arr"] is context:
+            if fn.__name__ == "mask":
+                return context._mask(bound["condition"], bool(bound["valid_when"]))
             return with_collection(context, bound["value"], bound["where"])
     raise GraphedTypeError(
         fn.__name__,
