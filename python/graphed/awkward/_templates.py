@@ -11,8 +11,6 @@ from typing import Any
 import awkward as ak
 import numpy as np
 
-from ..preserve.externals._helpers import _payload_bytes as _payload_bytes
-
 _TemplateEntry = tuple[str, Any]  # ("slot", i) | ("group", [i, ...]) | ("const", value)
 
 

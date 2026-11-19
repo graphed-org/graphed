@@ -29,7 +29,7 @@ from graphed.shuffle import JOINKEY, route_key
 from graphed.systematics.varied import instances_in
 from graphed.varied import Varied, boundary_refusal, expand, expand_tuple, narrow, session_of
 
-from ..preserve.externals._helpers import refuse_unread_inputs
+from ..preserve.externals._helpers import _payload_bytes, refuse_unread_inputs
 from ..preserve.externals.correctionlib_external import (
     _refused,
     check_correctionlib_params,
@@ -50,7 +50,7 @@ from ._params import (
     _structure_params,
     crosses_rows,
 )
-from ._templates import _ml_matrix, _parse_template, _payload_bytes
+from ._templates import _ml_matrix, _parse_template
 from .backend import AwkwardForm, astype_form, broadcast_form
 
 

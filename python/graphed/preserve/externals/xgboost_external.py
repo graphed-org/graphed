@@ -52,6 +52,7 @@ def _is_ubjson(payload: bytes) -> bool:
 
 #: UBJSON's fixed-size numeric markers (big-endian)
 _NUMBERS = {"i": ">b", "U": ">B", "I": ">h", "l": ">i", "L": ">q", "d": ">f", "D": ">d"}
+_CONSTANTS = {"Z": None, "T": True, "F": False}
 
 
 def _ubjson(buf: bytes) -> Any:
@@ -67,10 +68,12 @@ def _ubjson(buf: bytes) -> Any:
 
     def size() -> int:
         kind = marker()
-        n = value(kind) if kind in "iUIlL" else -1
+        if kind not in "iUIlL":
+            raise ValueError(f"UBJSON length at byte {pos} is not an integer")
+        n: int = value(kind)
         if n < 0:
-            raise ValueError(f"UBJSON length at byte {pos} is not a non-negative integer")
-        return int(n)
+            raise ValueError(f"UBJSON length at byte {pos} is negative")
+        return n
 
     def text() -> str:
         nonlocal pos
@@ -88,9 +91,8 @@ def _ubjson(buf: bytes) -> Any:
             return text()
         if kind in "[{":
             return container(kind == "{")
-        constants = {"Z": None, "T": True, "F": False}
-        if kind in constants:
-            return constants[kind]
+        if kind in _CONSTANTS:
+            return _CONSTANTS[kind]
         raise ValueError(f"UBJSON marker {kind!r} at byte {pos - 1}")
 
     def container(is_object: bool) -> Any:
@@ -102,6 +104,10 @@ def _ubjson(buf: bytes) -> Any:
         if buf[pos : pos + 1] == b"#":
             pos += 1
             count = size()
+        if not is_object and count is not None and typed in _NUMBERS:  # a typed array, in bulk
+            numbers: np.ndarray[Any, Any] = np.frombuffer(buf, _NUMBERS[typed], count, pos)
+            pos += numbers.nbytes
+            return (numbers.astype(str).astype(float) if typed == "d" else numbers).tolist()
         items: list[Any] = []
         while count is None or len(items) < count:
             if count is None and buf[pos : pos + 1] == (b"}" if is_object else b"]"):
@@ -122,7 +128,7 @@ def load_xgboost(payload: bytes, params: Mapping[str, Any]) -> Any:
     import xgboost as xgb
 
     booster = xgb.Booster()
-    booster.load_model(bytearray(payload if _is_ubjson(payload) else json_bytes(payload)))
+    booster.load_model(bytearray(json_bytes(payload)))  # UBJSON passes through ungzipped
     return booster
 
 
