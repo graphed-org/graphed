@@ -78,7 +78,7 @@ def _put_rows(value: Any, ctx: Any) -> None:
 
 def _selects_rows(mask: Any) -> bool:
     """Whether ``mask`` picks rows: a list-level mask leaves every row in place."""
-    member = next(iter(members_of(mask).values())) if isinstance(mask, Varied) else mask
+    member = next(iter(members_of(mask).values()))
     return getattr(member.session.form(member), "ndim", None) == 1
 
 
