@@ -204,3 +204,24 @@ def test_a_backend_without_a_mask_seam_refuses_by_name() -> None:
     ctx = gnano.events(from_awkward("ev", EAGER, session=session))
     with pytest.raises(graphed.GraphedError, match="without a mask seam"):
         ctx.mask[ctx.MET.pt > 10]
+
+
+def test_a_masked_field_reaches_a_per_chunk_function_as_eager_hands_it() -> None:
+    import numpy as np
+
+    seen: list[tuple[str, str, Any]] = []
+
+    def per_chunk(values: ak.Array) -> ak.Array:
+        if len(values):
+            flat = ak.to_numpy(values)
+            seen.append((str(values.type), type(values.layout).__name__, type(flat)))
+        return ak.fill_none(values, -1.0)
+
+    session, ctx = _context()
+    masked = ctx.mask[ctx.MET.pt > 10]
+    out = graphed.apply(per_chunk, masked.MET.pt, name="per_chunk")
+    got = ak.to_list(session.materialize(out))
+    want = per_chunk(WANT.MET.pt)
+    assert got == ak.to_list(want)
+    assert seen[0] == seen[-1]
+    assert seen[0][2] is np.ma.MaskedArray
