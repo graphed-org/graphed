@@ -63,7 +63,7 @@ def eval_pytorch(model: Any, params: Mapping[str, Any], inputs: list[Any]) -> An
     dtype = next((p.dtype for p in model.parameters()), None)
 
     # torch keeps numpy's strides and its matmul rounds by layout: order="F" is a pandas-fed matrix
-    fortran = params.get("order", "C") == "F"
+    fortran = params.get("order") == "F"
 
     def tensor(matrix: Any) -> Any:
         if fortran:
@@ -84,11 +84,12 @@ def eval_pytorch(model: Any, params: Mapping[str, Any], inputs: list[Any]) -> An
 
 
 def _check_pytorch_params(params: Mapping[str, Any], _payload: bytes, _n_inputs: int) -> None:
-    if params.get("order", "C") not in ("C", "F"):
+    if "order" in params and params["order"] != "F":  # one spelling of the default: omit it
         raise GraphedTypeError(
             "external",
             capture(),
-            f"order={params['order']!r}: the input matrix layout is 'C' (row-major) or 'F'",
+            f"order={params['order']!r}: order='F' feeds a column-major matrix; omit order for "
+            "the row-major default",
         )
 
 

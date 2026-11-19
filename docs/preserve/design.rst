@@ -483,6 +483,10 @@ The shipped correctionlib and ONNX plugins are the templates to copy, and
 themselves are imported only when a payload of that kind is actually hashed or evaluated, so a
 plugin you never use costs you no dependency.
 
+The PyTorch plugin feeds row-major matrices; ``params={"order": "F"}`` feeds column-major ones,
+the layout a pandas-fed ``torch.FloatTensor(df.to_numpy())`` has. torch's matrix multiply can
+round differently by layout, so the order is a recorded param and the two layouts are two nodes.
+
 How a call gets replayed
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
