@@ -261,7 +261,7 @@ def evaluate_external(
 def record_external(
     session: Any,
     plugin: ExternalPlugin,
-    payload: bytes | str | os.PathLike[str],
+    payload: bytes | bytearray | memoryview | str | os.PathLike[str],
     inputs: Sequence[Any],
     *,
     params: Mapping[str, Any] | None = None,

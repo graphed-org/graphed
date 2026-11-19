@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import gzip
+import os
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +15,7 @@ import graphed
 from graphed.awkward import from_awkward
 from graphed.preserve import PreserveError
 from graphed.preserve.externals import XGBOOST_PLUGIN, record_external
-from graphed.preserve.externals._helpers import _canonical_json_hash_impl
+from graphed.preserve.externals._helpers import _canonical_json_hash_impl, _payload_bytes
 
 xgb = pytest.importorskip("xgboost")
 
@@ -64,11 +65,13 @@ def test_one_booster_hashes_the_same_as_ubjson_json_and_gzipped_json(
 
 def test_two_boosters_hash_apart_as_ubjson(tmp_path: Path) -> None:
     one = _saved(tmp_path, _booster("binary:logistic"), "ubj").read_bytes()
-    other = _saved(tmp_path / "..", _booster("multi:softprob"), "ubj").read_bytes()
+    other = _saved(tmp_path, _booster("multi:softprob"), "ubj").read_bytes()
     assert XGBOOST_PLUGIN.content_hash(one) != XGBOOST_PLUGIN.content_hash(other)
 
 
-@pytest.mark.parametrize("spell", [str, Path], ids=["str", "Path"])
+@pytest.mark.parametrize(
+    "spell", [str, Path, lambda p: bytearray(p.read_bytes())], ids=["str", "Path", "bytearray"]
+)
 def test_a_path_payload_records_the_node_its_bytes_record(tmp_path: Path, spell: Any) -> None:
     path = _saved(tmp_path, _booster("binary:logistic"), "ubj")
     src = from_awkward("e", ak.zip({"a": X[:, 0], "b": X[:, 1]}), session=graphed.new_session())
@@ -84,9 +87,32 @@ def test_a_payload_of_no_known_format_is_refused_by_name() -> None:
 
 @pytest.mark.parametrize(
     ("payload", "why"),
-    [(b"{L", "buffer"), (b"{i\x01aZ}junk", "trailing bytes"), (b"{i\x01aQ}", "'Q'")],
-    ids=["truncated", "trailing", "marker"],
+    [
+        (b"{L", "buffer"),
+        (b"{i\x01aZ}junk", "trailing bytes"),
+        (b"{i\x01aQ}", "'Q'"),
+        (b"{i\x01aZ[}", "length"),
+        (b"{i\x01a[#i\xff}", "length"),
+        (b"{i\x01a[Z}}", "'}'"),
+        (b"{i\x01aHi\x011}", "'H'"),
+        (b"{i\x01a" + b"[" * 5000, "recursion"),
+    ],
+    ids=["truncated", "trailing", "marker", "list-length", "neg-count", "closer", "H", "deep"],
 )
 def test_malformed_ubjson_is_refused_by_name(payload: bytes, why: str) -> None:
     with pytest.raises(PreserveError, match=f"not valid UBJSON.*{why}"):
         XGBOOST_PLUGIN.content_hash(payload)
+
+
+def test_one_relative_path_in_two_directories_reads_two_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for name, body in (("a", b"one"), ("b", b"two")):
+        (tmp_path / name).mkdir()
+        (tmp_path / name / "m.json").write_bytes(body)
+        os.utime(tmp_path / name / "m.json", ns=(0, 0))
+    got = []
+    for name in ("a", "b"):
+        monkeypatch.chdir(tmp_path / name)
+        got.append(_payload_bytes("m.json"))
+    assert got == [b"one", b"two"]

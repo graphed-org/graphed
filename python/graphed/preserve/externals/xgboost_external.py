@@ -41,7 +41,7 @@ def _xgboost_hash_impl(payload: bytes) -> str:
             ) from err
     try:
         return canonical_document_hash(_DOMAIN, _ubjson(payload))
-    except (ValueError, IndexError, UnicodeDecodeError, struct.error) as err:
+    except (ValueError, IndexError, UnicodeDecodeError, struct.error, RecursionError) as err:
         raise PreserveError(f"an xgboost payload is not valid UBJSON ({err})") from err
 
 
@@ -65,9 +65,16 @@ def _ubjson(buf: bytes) -> Any:
         pos += 1
         return chr(buf[pos - 1])
 
+    def size() -> int:
+        kind = marker()
+        n = value(kind) if kind in "iUIlL" else -1
+        if n < 0:
+            raise ValueError(f"UBJSON length at byte {pos} is not a non-negative integer")
+        return int(n)
+
     def text() -> str:
         nonlocal pos
-        n = value(marker())
+        n = size()
         pos += n
         return buf[pos - n : pos].decode("utf-8")
 
@@ -77,7 +84,7 @@ def _ubjson(buf: bytes) -> Any:
             (number,) = struct.unpack_from(_NUMBERS[kind], buf, pos)
             pos += struct.calcsize(_NUMBERS[kind])
             return float(str(np.float32(number))) if kind == "d" else number
-        if kind in "SH":
+        if kind == "S":
             return text()
         if kind in "[{":
             return container(kind == "{")
@@ -94,10 +101,10 @@ def _ubjson(buf: bytes) -> Any:
             typed = marker()
         if buf[pos : pos + 1] == b"#":
             pos += 1
-            count = value(marker())
+            count = size()
         items: list[Any] = []
         while count is None or len(items) < count:
-            if count is None and buf[pos : pos + 1] in (b"]", b"}"):
+            if count is None and buf[pos : pos + 1] == (b"}" if is_object else b"]"):
                 pos += 1
                 break
             key = text() if is_object else None
