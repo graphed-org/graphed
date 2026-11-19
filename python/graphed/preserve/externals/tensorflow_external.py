@@ -14,21 +14,28 @@ from typing import Any
 
 from ._base import ExternalPlugin
 from ._helpers import (
+    RowShape,
     _as_event_array,
     _stack_feature_columns,
     _strip_config_names,
     memoized_model_hash,
     ml_matrix,
     parse_call_template,
+    row_shape,
 )
 
 
 def tensorflow_content_hash(payload: bytes) -> str:
     """Return the content hash of a ``.keras`` payload."""
-    return memoized_model_hash("tensorflow", payload, _tensorflow_content_hash_impl)
+    return memoized_model_hash("tensorflow", payload, _tensorflow_identity)[0]
 
 
-def _tensorflow_content_hash_impl(payload: bytes) -> str:
+def tensorflow_output_shape(payload: bytes) -> RowShape:
+    """Return the row shape of a single-output model, as its ``output_shape`` states it."""
+    return memoized_model_hash("tensorflow", payload, _tensorflow_identity)[1]
+
+
+def _tensorflow_identity(payload: bytes) -> tuple[str, RowShape]:
     """Architecture (name-stripped config) + weights — stable across re-saves of one model."""
     model = _keras_load_from_bytes(payload)
     import numpy as np
@@ -39,7 +46,8 @@ def _tensorflow_content_hash_impl(payload: bytes) -> str:
     )
     for weights in model.get_weights():
         h.update(np.ascontiguousarray(weights).tobytes())
-    return "sha256:" + h.hexdigest()
+    shape = getattr(model, "output_shape", None)  # a list for several outputs
+    return "sha256:" + h.hexdigest(), row_shape(shape) if isinstance(shape, tuple) else None
 
 
 def _keras_load_from_bytes(payload: bytes) -> Any:
@@ -98,4 +106,5 @@ TENSORFLOW_PLUGIN = ExternalPlugin(
     load=load_tensorflow,
     framework="tensorflow",
     output_dtype="float64",
+    output_shape=tensorflow_output_shape,
 )

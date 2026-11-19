@@ -12,11 +12,13 @@ from typing import Any
 
 from ._base import ExternalPlugin
 from ._helpers import (
+    RowShape,
     _as_event_array,
     _stack_feature_columns,
     memoized_model_hash,
     ml_matrix,
     parse_call_template,
+    row_shape,
 )
 
 _MLIR_LOC = re.compile(r"loc\(.*?\)|#loc\d*\s*=?.*")
@@ -24,10 +26,15 @@ _MLIR_LOC = re.compile(r"loc\(.*?\)|#loc\d*\s*=?.*")
 
 def jax_content_hash(payload: bytes) -> str:
     """Return the content hash of a ``jax.export`` payload."""
-    return memoized_model_hash("jax", payload, _jax_content_hash_impl)
+    return memoized_model_hash("jax", payload, _jax_identity)[0]
 
 
-def _jax_content_hash_impl(payload: bytes) -> str:
+def jax_output_shape(payload: bytes) -> RowShape:
+    """Return the row shape of the export's first output, as its avals state it."""
+    return memoized_model_hash("jax", payload, _jax_identity)[1]
+
+
+def _jax_identity(payload: bytes) -> tuple[str, RowShape]:
     """Location-stripped StableHLO + input/output avals — stable across re-exports of one fn."""
     from jax import export
 
@@ -36,7 +43,8 @@ def _jax_content_hash_impl(payload: bytes) -> str:
     h.update(_MLIR_LOC.sub("", exported.mlir_module()).encode("utf-8"))
     h.update(str(exported.in_avals).encode("utf-8"))
     h.update(str(exported.out_avals).encode("utf-8"))
-    return "sha256:" + h.hexdigest()
+    shape = row_shape(exported.out_avals[0].shape) if exported.out_avals else None
+    return "sha256:" + h.hexdigest(), shape
 
 
 def load_jax(payload: bytes, params: Mapping[str, Any]) -> Any:
@@ -87,4 +95,5 @@ JAX_PLUGIN = ExternalPlugin(
     load=load_jax,
     framework="jax",
     output_dtype="float64",
+    output_shape=jax_output_shape,
 )

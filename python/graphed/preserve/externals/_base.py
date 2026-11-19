@@ -43,7 +43,7 @@ from ...provenance import capture
 from ...services import UnboundServiceError
 from ...varied import containers_in, expand
 from ..errors import PreserveError
-from ._helpers import refuse_unread_inputs
+from ._helpers import event_type, refuse_unread_inputs
 
 ContentHash = Callable[[bytes], str]
 Load = Callable[[bytes, Mapping[str, Any]], Any]
@@ -95,6 +95,13 @@ class ExternalPlugin:
     # m71: the value's leaf dtype when it is static (its structure follows the input), recorded
     # as the form's leaves; form-only, so it never enters the node's params
     output_dtype: object = None
+    #: the value is the inputs' broadcast with ``output_dtype`` leaves, so that recorded form is
+    #: the value's whole type and is checked in full
+    broadcasts: bool = False
+    #: a model's (its value is one ``output_dtype`` row per event): the row shape its payload
+    #: states, read in the content hash's pass, recorded and checked in full; ``None`` where it
+    #: states none records one value per event, its leaves checked
+    output_shape: Callable[[bytes], tuple[int, ...] | None] | None = None
 
 
 class ResourceCache:
@@ -293,6 +300,15 @@ def record_external(
     if params and "service" in params:
         session.service_for(str(params["service"]))  # refuses an undeclared name
     content_hash = plugin.content_hash(payload)
+    # a stated type is a claim; an output_dtype alone is a leaf claim unless the plugin broadcasts
+    form_params: dict[str, object] = {
+        "output_dtype": plugin.output_dtype,
+        "claim": plugin.broadcasts,
+    }
+    if plugin.output_shape is not None:
+        shape = plugin.output_shape(payload)
+        form_params["output_type"] = event_type(shape or (1,))
+        form_params["claim"] = shape is not None
     node_params: dict[str, Any] = {
         "kind": plugin.kind,
         "content_hash": content_hash,
@@ -310,7 +326,7 @@ def record_external(
         list(inputs),
         node_params,
         output_type=output_type,
-        form_params={"output_dtype": plugin.output_dtype},  # shadows a user param of that name
+        form_params=form_params,  # shadows a user param of that name
     )
 
 

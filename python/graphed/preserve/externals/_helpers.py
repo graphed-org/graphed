@@ -7,8 +7,8 @@ import hashlib
 import json
 import threading
 from collections import OrderedDict
-from collections.abc import Callable, Mapping
-from typing import Any, TypeVar
+from collections.abc import Callable, Mapping, Sequence
+from typing import Any, TypeVar, cast
 
 from ...errors import GraphedTypeError
 from ...provenance import capture
@@ -25,18 +25,30 @@ def json_bytes(payload: bytes) -> bytes:
 
 def _canonical_json_hash(domain: bytes, payload: bytes) -> str:
     """sha256 over domain-separated, canonicalized JSON (key order + whitespace = formatting)."""
+    return canonical_json_identity(domain, payload)[0]
+
+
+def canonical_json_identity(
+    domain: bytes, payload: bytes, read: Callable[[Any], RowShape] = lambda _: None
+) -> tuple[str, RowShape]:
+    """Return the canonical-JSON hash and what ``read`` finds in the parsed document.
+
+    One parse, memoized: ``read`` must be the same for every call under one ``domain``.
+    """
     return memoized_model_hash(
-        domain.decode(), payload, lambda p: _canonical_json_hash_impl(domain, p)
+        domain.decode(), payload, lambda p: _canonical_json_hash_impl(domain, p, read)
     )
 
 
-def _canonical_json_hash_impl(domain: bytes, payload: bytes) -> str:
+def _canonical_json_hash_impl(
+    domain: bytes, payload: bytes, read: Callable[[Any], RowShape]
+) -> tuple[str, RowShape]:
     try:
         parsed = json.loads(json_bytes(payload).decode("utf-8"))
     except (UnicodeDecodeError, ValueError, OSError, EOFError) as err:
         raise PreserveError(f"payload is not valid JSON ({err})") from err
     canon = json.dumps(parsed, sort_keys=True, separators=(",", ":"), default=str)
-    return "sha256:" + hashlib.sha256(domain + canon.encode("utf-8")).hexdigest()
+    return "sha256:" + hashlib.sha256(domain + canon.encode("utf-8")).hexdigest(), read(parsed)
 
 
 def _stack_feature_columns(inputs: list[Any]) -> Any:
@@ -48,6 +60,28 @@ def _stack_feature_columns(inputs: list[Any]) -> Any:
     import numpy as np
 
     return np.stack([np.asarray(ak.to_numpy(ak.Array(i))) for i in inputs], axis=1)
+
+
+#: the shape of one row of a model's output, ``None`` when its payload does not state it
+RowShape = tuple[int, ...] | None
+
+
+def row_shape(shape: Sequence[object]) -> RowShape:
+    """Return the row shape of an output of ``shape``, ``None`` unless every row dim is static."""
+    tail = tuple(shape[1:])
+    if not shape or not all(isinstance(d, int) for d in tail):
+        return None
+    return cast("tuple[int, ...]", tail)
+
+
+def unstated_shape(payload: bytes) -> RowShape:
+    """Return ``None``: the row shape of a model whose payload states none."""
+    return None
+
+
+def event_type(shape: tuple[int, ...]) -> str:
+    """Return the type `_as_event_array` gives each event of an output whose rows are ``shape``."""
+    return " * ".join([*map(str, () if shape == (1,) else shape), "float64"])
 
 
 def _as_event_array(out: Any) -> Any:

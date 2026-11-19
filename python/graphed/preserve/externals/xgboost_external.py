@@ -8,9 +8,10 @@ from typing import Any
 from ..errors import PreserveError
 from ._base import ExternalPlugin
 from ._helpers import (
+    RowShape,
     _as_event_array,
-    _canonical_json_hash,
     _stack_feature_columns,
+    canonical_json_identity,
     json_bytes,
     ml_matrix,
     parse_call_template,
@@ -19,7 +20,24 @@ from ._helpers import (
 
 def xgboost_content_hash(payload: bytes) -> str:
     """Canonical JSON of the model document (XGBoost's open format) — dependency-free."""
-    return _canonical_json_hash(b"xgboost-json-v1", payload)
+    return canonical_json_identity(b"xgboost-json-v1", payload, _row_shape)[0]
+
+
+def xgboost_output_shape(payload: bytes) -> RowShape:
+    """Return the row shape ``predict`` gives, as the model's objective and params state it."""
+    return canonical_json_identity(b"xgboost-json-v1", payload, _row_shape)[1]
+
+
+def _row_shape(doc: Any) -> RowShape:
+    try:
+        learner = doc["learner"]
+        objective, model = learner["objective"]["name"], learner["learner_model_param"]
+        if objective == "multi:softprob":
+            return (int(model["num_class"]),)
+        # before 1.6 a model had no num_target, and xgboost loads it as 1
+        return (1,) if objective == "multi:softmax" else (int(model.get("num_target", 1)),)
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 def load_xgboost(payload: bytes, params: Mapping[str, Any]) -> Any:
@@ -76,4 +94,5 @@ XGBOOST_PLUGIN = ExternalPlugin(
     load=load_xgboost,
     framework="xgboost",
     output_dtype="float64",
+    output_shape=xgboost_output_shape,
 )

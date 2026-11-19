@@ -26,7 +26,7 @@ from graphed.provenance import capture
 from graphed.shuffle import JOINKEY, route_key
 from graphed.varied import boundary_refusal, containers_in, expand, expand_tuple, narrow
 
-from ..preserve.externals._helpers import refuse_unread_inputs
+from ..preserve.externals._helpers import event_type, refuse_unread_inputs
 from ..preserve.externals.correctionlib_external import (
     _refused,
     check_correctionlib_params,
@@ -47,7 +47,7 @@ from ._params import (
     crosses_rows,
 )
 from ._templates import _ml_matrix, _parse_template, _payload_bytes
-from .backend import AwkwardForm, astype_form, broadcast_form
+from .backend import AwkwardForm, astype_form, broadcast_form, declared_form
 
 
 def join(
@@ -690,6 +690,14 @@ def onnx_inference(
         params["kwargs"] = json.dumps(kwargs, sort_keys=True)
     refuse_unread_inputs("onnx", params, len(inputs))
     descriptor = payloads.onnx_weights_descriptor(blob)
+    forms = [cast("AwkwardForm", session.form(a)) for a in inputs]
+    shape = payloads.onnx_row_shape(blob)
+    # the plugin's value, a claim where the model states its width; a leaf claim where not
+    form, form_params = (
+        (declared_form(forms, event_type(shape)), None)
+        if shape is not None
+        else (astype_form(forms[first], "float64"), {"output_dtype": "float64", "claim": False})
+    )
     return session.record_external(
         "onnx",
         _TemplateExternal(
@@ -698,7 +706,8 @@ def onnx_inference(
         list(inputs),
         params,
         descriptor=descriptor,
-        form=session.form(inputs[first]),
+        form=form,
+        form_params=form_params,
     )
 
 

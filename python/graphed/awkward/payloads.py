@@ -140,7 +140,7 @@ def onnx_weights_descriptor(payload: bytes) -> PayloadDescriptor:
     """Describe an ONNX model payload's bytes."""
     from graphed.preserve.externals._helpers import memoized_model_hash
 
-    content_hash, opset, io_schema = memoized_model_hash(
+    content_hash, opset, io_schema, _ = memoized_model_hash(
         "onnx-descriptor", payload, _onnx_identity
     )
     return PayloadDescriptor(
@@ -153,12 +153,21 @@ def onnx_weights_descriptor(payload: bytes) -> PayloadDescriptor:
     )
 
 
-def _onnx_identity(payload: bytes) -> tuple[str, str, str]:
+def onnx_row_shape(payload: bytes) -> tuple[int, ...] | None:
+    """Return the row shape of an ONNX payload's first output, read in its descriptor's parse."""
+    from graphed.preserve.externals._helpers import memoized_model_hash
+
+    return memoized_model_hash("onnx-descriptor", payload, _onnx_identity)[3]
+
+
+def _onnx_identity(payload: bytes) -> tuple[str, str, str, tuple[int, ...] | None]:
     content_hash = onnx_weights_hash(payload)  # a model onnx cannot load raises here
     import onnx
+
+    from graphed.preserve.externals.onnx_external import onnx_row_shape
 
     model = onnx.load_from_string(payload)
     opset = ",".join(str(o.version) for o in model.opset_import)
     ins = ",".join(i.name for i in model.graph.input)
     outs = ",".join(o.name for o in model.graph.output)
-    return content_hash, opset, f"{ins}->{outs}"
+    return content_hash, opset, f"{ins}->{outs}", onnx_row_shape(model)
