@@ -10,7 +10,7 @@ from typing import Any
 
 from ..array import Array, attach, labels_carried, select
 from ..errors import GraphedError
-from .lineage import is_ancestor, links_below, row_space_above
+from .lineage import is_ancestor, links_below, row_space_above, rows_of, same_rows
 from .varied import Varied, context_of, expand, member_of, members_of, rebuild, tags_of
 
 
@@ -24,7 +24,9 @@ def reindex_to(value: Array | Varied, ctx: Any) -> Any:
     the row space above that run: the walk starts from there, which is what re-indexes a value read
     on a branch that differs from `ctx` in registrations alone.
     """
-    handle = context_of(value)
+    handle, rows = context_of(value), rows_of(value)
+    if rows is not None and ctx is not None and is_ancestor(rows, ctx):
+        handle = rows  # a row cut on the way to `ctx` is not made again (#280)
     if handle is None or handle is ctx:
         return value
     if ctx is None:
@@ -51,18 +53,27 @@ def reindex_to(value: Array | Varied, ctx: Any) -> Any:
     return with_context(value, ctx)
 
 
-def cut(value: Any, mask: Any, select: Any) -> Any:
-    """Return ``value[mask]`` by ``select``, in the rows of the context ``mask`` derives (#280).
+def cut(value: Any, mask: Any) -> Any:
+    """Return ``value[mask]``, in the rows of the context ``mask`` derives (#280).
 
-    A row mask read through ``value``'s own context leaves the value in that context's
-    ``ctx[mask]``, so assigning it there re-indexes nothing.
+    A row mask read in ``value``'s rows puts the value in ``ctx[mask]``'s, so assigning it there
+    re-indexes nothing. Only re-indexing reads this; the value's handle is unchanged.
     """
     out = expand(select, (value, mask), {})
-    handle = context_of(value)
-    derive = getattr(handle, "_derive", None)
-    if derive is None or context_of(mask) is not handle or not _selects_rows(mask):
+    here, there = rows_of(value), rows_of(mask)
+    derive = getattr(here, "_derive", None)
+    if derive is None or there is None or not same_rows(there, here) or not _selects_rows(mask):
         return out
-    return with_context(out, derive(mask))
+    _put_rows(out, derive(mask))
+    return out
+
+
+def _put_rows(value: Any, ctx: Any) -> None:
+    if isinstance(value, Varied):
+        for member in members_of(value).values():
+            _put_rows(member, ctx)
+    else:
+        value._rows = ctx
 
 
 def _selects_rows(mask: Any) -> bool:

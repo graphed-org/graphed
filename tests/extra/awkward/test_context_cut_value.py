@@ -11,8 +11,8 @@ import pytest
 import graphed
 from graphed import Session
 from graphed.awkward import AwkwardBackend, from_awkward, gak, gnano
-from graphed.errors import GraphedError
 from graphed.systematics import labels, universe
+from graphed.systematics.lineage import Followed
 
 DATA = {
     "pho": [[{"pt": 40.0}], [], [{"pt": 55.0}, {"pt": 30.0}], []],
@@ -86,12 +86,23 @@ def test_a_second_cut_on_top_is_assigned_as_is() -> None:
     assert _value(session, twice.x) == [55.0]
 
 
-def test_a_value_cut_by_another_mask_is_refused_when_assigned() -> None:
-    _, events = _events()
-    cut_events = events[_cut(events)]
-    other = ak.firsts(events.Jet)[ak.num(events.Jet) >= 1]
-    with pytest.raises(GraphedError, match="divergent branches"):
-        cut_events["x"] = other.pt
+def test_a_mask_read_through_a_rederived_sibling_cuts_the_value_once() -> None:
+    session, events = _events()
+    cut = _cut(events)
+    first = events[cut]
+    events["n"] = ak.num(events.Jet)
+    second = events[cut]
+    cut2 = ak.num(first.pho) >= 2
+    twice, dipho = second[cut2], ak.firsts(second.pho)[cut2]
+    twice["x"] = dipho.pt
+    assert _value(session, twice.x) == [55.0]
+
+
+def test_a_flat_mask_cut_combines_with_a_cut_context() -> None:
+    session, events = _events()
+    flat = ak.flatten(events.Jet.pt)
+    total = ak.sum(flat[flat > 30]) + ak.sum(ak.firsts(events[_cut(events)].Jet.pt))
+    assert session.materialize(total) == 130.0 + 75.0
 
 
 def test_a_jagged_mask_leaves_the_value_in_its_rows() -> None:
@@ -124,3 +135,17 @@ def test_a_derived_context_records_only_the_collections_it_reads() -> None:
     assert _value(session, ak.num(cut_events.a)) == [2, 1]
     assert session.node_count() - before == record + 2  # `a`'s cut and its count; `b` stays unread
     assert list(cut_events.b.fields) == ["pt"]
+
+
+def test_followed_collections_carry_once_and_keep_a_carry_error() -> None:
+    def carry(value: Any) -> Any:
+        if value == "bad":
+            raise KeyError("inside the carry")
+        return value + 1
+
+    held = Followed({"a": 1, "b": "bad"}, carry)
+    assert (held.get("a"), held.get("a"), held.get("zz", "none")) == (2, 2, "none")
+    with pytest.raises(KeyError, match="inside the carry"):
+        held.get("b")
+    del held["a"]
+    assert list(held) == ["b"]
