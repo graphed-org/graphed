@@ -9,6 +9,8 @@ from __future__ import annotations
 import contextlib
 import functools
 import inspect
+import threading
+import weakref
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, cast, overload
@@ -16,6 +18,8 @@ from typing import Any, cast, overload
 import awkward as ak
 import cloudpickle
 import numpy as np
+from awkward._nplikes.shape import unknown_length
+from awkward._nplikes.typetracer import TypeTracerArray
 from awkward.types._awkward_datashape_parser import LarkError
 
 from graphed import Array, Session
@@ -158,6 +162,69 @@ def _adopt(value: Any, behavior: Mapping[Any, Any] | None) -> Any:
     if type(value) is dict:
         return {key: _adopt(item, behavior) for key, item in value.items()}
     return value
+
+
+# Entries hold canonical layouts weakly and are dereferenced on use, so a dead layout's entry never
+# matches; a live canonical holds the content whose id is in its key, so that id is not reused.
+_CANONICAL: dict[tuple[type, int, np.dtype[Any]], weakref.ref[Any]] = {}
+_KEPT: dict[int, weakref.ref[Any]] = {}  # id(canonical) -> it, to skip a sub-layout already shared
+_CANONICAL_LOCK = threading.RLock()  # reentrant: `_forget` may run on a thread holding it
+
+
+def _sharing(result: Any) -> Any:
+    """Return a recorded typetracer ``result`` with its indexed sub-layouts shared (#282)."""
+    if not isinstance(result, ak.Array) or result.layout.backend.name != "typetracer":
+        return result
+    layout = _shared(result.layout)
+    if layout is result.layout:
+        return result
+    return ak.Array(layout, behavior=result.behavior, attrs=result._attrs)
+
+
+def _shared(layout: Any) -> Any:
+    """Return ``layout`` with each indexed sub-layout swapped for one recorded over its content.
+
+    An unknown-length index with no report carries no information, so two such indexed layouts of
+    one class over one content are interchangeable. ``ak.with_field`` re-wraps every field this
+    way, and keeping each copy makes the recorded forms quadratic in the number of fields.
+    """
+    kept = _KEPT.get(id(layout))
+    if kept is not None and kept() is layout:
+        return layout
+    if layout.is_record or layout.is_union:
+        contents = [_shared(content) for content in layout.contents]
+        if all(a is b for a, b in zip(contents, layout.contents, strict=True)):
+            return layout
+        return layout.copy(contents=contents)
+    if layout.is_numpy or layout.is_unknown:
+        return layout
+    content = _shared(layout.content)
+    if content is not layout.content:
+        layout = layout.copy(content=content)
+    if not layout.is_indexed or layout.parameters:
+        return layout
+    data = layout.index.data
+    if not isinstance(data, TypeTracerArray) or data.report is not None:
+        return layout
+    if data.shape[0] is not unknown_length:
+        return layout
+    key = (type(layout), id(layout.content), data.dtype)
+    with _CANONICAL_LOCK:
+        ref = _CANONICAL.get(key)
+        canonical = ref() if ref is not None else None
+        if canonical is None:
+            canonical = layout
+            ref = weakref.ref(layout, functools.partial(_forget, key, id(layout)))
+            _CANONICAL[key] = _KEPT[id(layout)] = ref
+    return canonical
+
+
+def _forget(key: tuple[type, int, np.dtype[Any]], ident: int, ref: weakref.ref[Any]) -> None:
+    with _CANONICAL_LOCK:
+        if _CANONICAL.get(key) is ref:
+            del _CANONICAL[key]
+        if _KEPT.get(ident) is ref:
+            del _KEPT[ident]
 
 
 @dataclass(eq=False)
@@ -462,7 +529,7 @@ class AwkwardBackend:
                 return astype_form(broadcast_form(forms), leaf)
             return forms[0]
         operands = [self._with_behavior(f.tt) for f in forms]
-        return AwkwardForm(apply(op, operands, params, behavior=self._behavior))
+        return AwkwardForm(_sharing(apply(op, operands, params, behavior=self._behavior)))
 
     def traced_form(self, fn: Callable[..., object], inputs: Sequence[Form]) -> AwkwardForm | None:
         """Return the form ``fn`` gives ``inputs``' typetracers, ``None`` if not a typetracer."""
