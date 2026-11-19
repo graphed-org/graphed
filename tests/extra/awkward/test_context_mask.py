@@ -170,3 +170,26 @@ def test_a_value_read_through_the_parent_is_masked_when_assigned() -> None:
     want["x"] = EAGER.MET.pt
     got = ak.Array(session.materialize(masked.x))
     assert (str(got.type), got.tolist()) == (str(want.x.type), want.x.tolist())
+
+
+def test_a_masked_context_varies_a_collection_built_from_its_parent() -> None:
+    session, ctx = _context(is_data=False)
+    masked = ctx.mask[ctx.MET.pt > 10]
+    jets = ctx.Jet
+    events = graphed.vary(
+        masked, "jes", collections={"Jet": {"up": gak.with_field(jets, jets.pt * 2, "pt")}}
+    )
+    up = ak.with_field(WANT.Jet, ak.mask(EAGER.Jet.pt * 2, EAGER.MET.pt > 10), "pt")
+    got = ak.Array(session.materialize(universe(events.Jet.pt, "jes_up")))
+    assert (str(got.type), got.tolist()) == (str(up.pt.type), up.pt.tolist())
+
+
+def test_inherited_universes_are_masked_when_a_masked_member_joins_them() -> None:
+    session, ctx = _context(is_data=False)
+    met = ctx.MET.pt
+    first = graphed.vary(met, "a", points={"up": met * 2})
+    masked = ctx.mask[met > 10]
+    both = graphed.vary(first, "b", points={"up": masked.MET.pt})
+    want = ak.mask(EAGER.MET.pt * 2, EAGER.MET.pt > 10)
+    got = ak.Array(session.materialize(universe(both, "a_up")))
+    assert (str(got.type), got.tolist()) == (str(want.type), want.tolist())

@@ -22,7 +22,8 @@ from graphed import write as gw
 from graphed.errors import GraphedError
 from graphed.execute import CompiledGraph
 from graphed.systematics import context_of
-from graphed.systematics.lineage import ROW_PRESERVING, is_ancestor, links_below
+from graphed.systematics.ambient import row_links
+from graphed.systematics.lineage import is_ancestor
 from graphed.varied import Varied, member_of, members_of, most_derived_context
 
 from .backend import AwkwardForm
@@ -165,7 +166,7 @@ def _lineage_refusal(record_ctx: Any, select_ctx: Any) -> None:
     if record_ctx is select_ctx:
         return
     if is_ancestor(select_ctx, record_ctx):
-        if all(kind in ROW_PRESERVING for kind, _ in links_below(record_ctx, select_ctx)):
+        if not row_links(record_ctx, select_ctx):
             return
         raise GraphedError(
             f"the record read through {record_ctx!r} is selected into a narrower ROW SPACE than "
@@ -174,7 +175,7 @@ def _lineage_refusal(record_ctx: Any, select_ctx: Any) -> None:
             "record at the mask's row space (§6.4b)"
         )
     if is_ancestor(record_ctx, select_ctx):
-        if all(kind in ROW_PRESERVING for kind, _ in links_below(select_ctx, record_ctx)):
+        if not row_links(select_ctx, record_ctx):
             return
         raise GraphedError(
             f"the record read through {record_ctx!r} is not the context its select= mask "

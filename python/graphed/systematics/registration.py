@@ -105,14 +105,14 @@ def vary_loose(
 def _align(member: Any, handle: Any) -> Any:
     """§2.1's one-row-space rule for overload (a)'s INHERITED members, the target included.
 
-    Only across a `mask` or `project` link — the two kinds `_follow` acts on. A `vary` link is
-    the identity in both row space and content, so re-indexing across it would do nothing but
-    re-stamp the handle, losing the parent identity §2.3e pins on the member.
+    Only across a link `follow` acts on, every kind but `vary`. A `vary` link is the identity in
+    both row space and content, so re-indexing across it would do nothing but re-stamp the handle,
+    losing the parent identity §2.3e pins on the member.
     """
     src = context_of(member)
     if src is None or src is handle:
         return member
-    if not any(kind in ("mask", "project") for kind, _payload in links_below(handle, src)):
+    if all(kind == "vary" for kind, _payload in links_below(handle, src)):
         return member
     return reindex_to(member, handle)
 
