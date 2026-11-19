@@ -1,0 +1,6 @@
+.. under: 0.0.12 (unreleased)
+
+* A call fanned out over ``Varied`` operands keeps their event context wherever the operands sit:
+  ``ak.zip({"pt": jets.pt, "eta": jets.eta})`` over varied fields can be assigned back into the
+  events (``events["sel"] = ...``), as its labels and tags already followed the nested operands
+  (#264).
