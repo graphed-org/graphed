@@ -7,6 +7,7 @@ Mirrors the subset of the awkward API the corpus analyses use, so an analysis wr
 from __future__ import annotations
 
 import functools
+import inspect
 import json
 import warnings
 from collections.abc import Callable, Mapping, Sequence
@@ -21,10 +22,12 @@ import graphed
 from graphed import Array
 from graphed.array import scalar_params
 from graphed.backend import ParamValue
+from graphed.context import EventContext, with_collection
 from graphed.errors import DeferredTypeError, GraphedError, GraphedTypeError
 from graphed.provenance import capture
 from graphed.shuffle import JOINKEY, route_key
-from graphed.varied import boundary_refusal, containers_in, expand, expand_tuple, narrow
+from graphed.systematics.varied import instances_in
+from graphed.varied import Varied, boundary_refusal, expand, expand_tuple, narrow
 
 from ..preserve.externals._helpers import refuse_unread_inputs
 from ..preserve.externals.correctionlib_external import (
@@ -919,6 +922,22 @@ def sample(arr: Array, *, factor: int) -> object:
 
 
 # ---- §2.3c: the gak dispatch layer; `_dispositions` classifies each function ----------
+def _on_context(
+    fn: Callable[..., Any], context: EventContext, args: Any, kwargs: Any
+) -> EventContext:
+    """Answer an event context where gak takes an array: only ``with_field`` means anything."""
+    if fn.__name__ == "with_field":
+        bound = inspect.signature(fn).bind(*args, **kwargs).arguments
+        if bound["arr"] is context:
+            return with_collection(context, bound["value"], bound["where"])
+    raise GraphedTypeError(
+        fn.__name__,
+        capture(),
+        f"{context!r} is an event context, not an array; pass one of its collections "
+        "(events.<name>)",
+    )
+
+
 def _dispatched(fn: Callable[..., Any], kind: str) -> Callable[..., Any]:
     """Wrap one gak function with the dispatch its classification names (§2.3c).
 
@@ -928,7 +947,11 @@ def _dispatched(fn: Callable[..., Any], kind: str) -> Callable[..., Any]:
 
     @functools.wraps(fn)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
-        if not containers_in(*args, *kwargs.values()):
+        found = instances_in((Varied, EventContext), *args, *kwargs.values())
+        context = next((v for v in found if isinstance(v, EventContext)), None)
+        if context is not None:
+            return _on_context(fn, context, args, kwargs)
+        if not found:
             return fn(*args, **kwargs)
         if kind == "refusing":
             raise boundary_refusal(f"gak.{fn.__name__}", *args, *kwargs.values())
