@@ -158,17 +158,17 @@ def split_field(key: object) -> tuple[str | list[str], tuple[object, ...]] | Non
     """
     if not isinstance(key, tuple):
         return None
-    for i, item in enumerate(key):
-        if _is_field(item):
-            rest = key[:i] + key[i + 1 :]
-            if isinstance(item, list) and any(_is_field(other) for other in rest):
-                # awkward applies a later name inside each listed field: not a chain of reads
-                raise TypeError(
-                    f"a field list followed by a field name ({key!r}) is not supported; read "
-                    "each listed field's path on its own"
-                )
-            return item, rest
-    return None
+    fields = [i for i, item in enumerate(key) if _is_field(item)]
+    if not fields:
+        return None
+    if any(isinstance(key[i], list) for i in fields[:-1]):
+        # awkward applies a later field inside each listed field: not a chain of reads
+        raise TypeError(
+            f"a field list followed by a field name or field list ({key!r}) is not supported; "
+            "read each listed field's path on its own"
+        )
+    i = fields[0]
+    return key[i], key[:i] + key[i + 1 :]
 
 
 def encode_subscript(key: tuple[object, ...]) -> str:

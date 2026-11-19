@@ -1,10 +1,7 @@
 .. under: 0.0.12 (unreleased)
 
-Nested-field tuple keys
-~~~~~~~~~~~~~~~~~~~~~~~
-
-``x["a", "b"]`` on a deferred awkward array, a ``Varied`` or an event context reads the nested
-field ``x["a"]["b"]``, as awkward does. A tuple key's field names select fields and its other
-members slice: ``x[:, "a"]`` and ``x["a", :, 0]`` equal eager awkward, while a member that consumes
-the partitioned axis (``x["a", 0]``) keeps the existing axis-0 refusal. A field list followed by a
-field name (``x[["a", "d"], "b"]``) is refused by name.
+* ``x["a", "b"]`` on a deferred awkward array, a ``Varied`` or an event context reads the nested
+  field ``x["a"]["b"]``, as awkward does. A tuple key's field names select fields and its other
+  members slice: ``x[:, "a"]`` and ``x["a", :, 0]`` equal eager awkward, while a member that
+  consumes the partitioned axis (``x["a", 0]``) keeps the existing axis-0 refusal. A field list
+  followed by a field name (``x[["a", "d"], "b"]``) is refused by name (#257).

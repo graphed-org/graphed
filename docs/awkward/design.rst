@@ -142,7 +142,8 @@ operators, ufuncs, ``getitem``, and the inner-axis tuple key (``jets.pt[:, :2]``
 because the event axis is left whole. A leading ``...`` leaves it whole only while there is an
 axis for it to absorb: ``jets.pt[..., 0]`` is a key because ``jets.pt`` is jagged, and the same
 key on a flat per-event field is ill-typed at record time, since the ``0`` would land on the event
-axis. Everything ragged-specific comes from the module:
+axis. Field names inside a tuple key select fields as in awkward (``events["Muon", "pt"]``,
+``jets[:, "pt"]``) and the rest of the key slices. Everything ragged-specific comes from the module:
 ``gak.num``, ``gak.flatten``, ``gak.combinations``, ``gak.cartesian``, ``gak.zip``, ``gak.sort``,
 ``gak.with_name``, ``gak.where``, and the rest of the working set. ``gak.with_field`` wants the
 field name every time — ``gak.with_field(jets, jets.pt * 1.05, "pt")`` — where

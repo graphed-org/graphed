@@ -151,8 +151,8 @@ class EventContext(EagerRefusals, ContextNode):
         if isinstance(key, Array | Varied):
             return self._derive(key)
         raise GraphedError(
-            f"an event context takes a field name, a list of field names, or an Array/Varied mask "
-            f"as its subscript, not {key!r}"
+            f"an event context takes a field name, a list of field names, a tuple key with a "
+            f"field name, or an Array/Varied mask as its subscript, not {key!r}"
         )
 
     def _fields(self, key: list[str]) -> Any:
