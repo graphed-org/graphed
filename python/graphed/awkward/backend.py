@@ -255,28 +255,40 @@ def _canonical_output_type(spec: object) -> str:
 _canonical_string = functools.cache(_canonical_output_type)
 
 
-def astype_form(form: AwkwardForm, dtype: object) -> AwkwardForm:
-    """Return ``form`` with its leaves cast to the primitive ``dtype``.
+def _bare_leaf(layout: Any, **kwargs: Any) -> Any:
+    if layout.is_numpy:
+        return layout.copy(parameters=None)
+    return None
 
-    ``dtype`` is any `canonical_output_type` spelling of one; a scalar stays a scalar.
+
+def astype_form(form: AwkwardForm, dtype: object) -> AwkwardForm:
+    """Return ``form`` with its leaves replaced by bare leaves of the primitive ``dtype``.
+
+    ``dtype`` is any `canonical_output_type` spelling of one; a scalar stays a scalar. A leaf's
+    parameters (NanoAOD's ``typename``) describe the input's values, so the new leaf has none, as
+    a computed value has none; list-level parameters (a multidimensional leaf's included) stay, as
+    the value keeps them.
     """
     t = _type(canonical_output_type(dtype))
     if not isinstance(t, ak.types.NumpyType) or t.parameters:
         raise TypeError(f"output_dtype {dtype!r} is not a primitive dtype")
     if ak.typetracer.is_unknown_scalar(form.tt):
         return AwkwardForm(ak.typetracer.create_unknown_scalar(np.dtype(t.primitive)))
-    return AwkwardForm(ak.values_astype(form.tt, t.primitive))
+    cast = ak.values_astype(form.tt, t.primitive)
+    return AwkwardForm(ak.transform(_bare_leaf, cast, numpy_to_regular=True))
 
 
 def broadcast_form(forms: Sequence[AwkwardForm]) -> AwkwardForm:
-    """Return the form ``ak.broadcast_arrays`` gives the array ``forms``.
+    """Return the form the array ``forms`` broadcast to, as correctionlib broadcasts them.
 
-    Scalars broadcast away; the first form when none is an array.
+    Scalars broadcast away; the first form when none is an array. Only the parameters every input
+    shares survive (``ak.broadcast_arrays``, then ``ak.transform``).
     """
     arrays = [f for f in forms if isinstance(f.tt, ak.Array)]
     if len(arrays) < 2:
         return (arrays or list(forms))[0]
-    return AwkwardForm(ak.broadcast_arrays(*(f.tt for f in arrays))[0])
+    broadcast = ak.broadcast_arrays(*(f.tt for f in arrays))
+    return AwkwardForm(ak.transform(lambda *_, **__: None, *broadcast)[0])
 
 
 def declared_form(forms: Sequence[AwkwardForm], canonical: str) -> AwkwardForm:
