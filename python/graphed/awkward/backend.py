@@ -9,6 +9,7 @@ from __future__ import annotations
 import contextlib
 import functools
 import inspect
+import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, cast, overload
@@ -197,6 +198,10 @@ _BOUNDARY = frozenset(
 _EXTERNAL = frozenset({"map", "correction", "onnx", "external"})
 
 
+#: a regular size unknown at record time, as `gak.to_regular` records it; the grammar has no `##`
+_UNKNOWN_SIZE = re.compile(r"##(?= \* )")
+
+
 @functools.cache  # a declared type is parsed once, not on every checked call
 def _type(canonical: str) -> ak.types.Type:
     """Return the awkward type of a canonical ``output_type``.
@@ -204,11 +209,35 @@ def _type(canonical: str) -> ak.types.Type:
     A primitive the datashape grammar lacks (``float16`` on awkward 2.14) but awkward's dtype table
     knows is built directly.
     """
+    if _UNKNOWN_SIZE.search(canonical):
+        return _tracer(canonical).type.content
     try:
         return ak.types.from_datashape(canonical, highlevel=False)
     except LarkError:
         ak.types.numpytype.primitive_to_dtype(canonical)  # TypeError unless a known primitive
         return ak.types.NumpyType(canonical)
+
+
+def _tracer(canonical: str) -> ak.Array:
+    """Return a typetracer of unknown length whose element type is ``canonical``.
+
+    An unknown regular size is built at a size no other in ``canonical`` has, then marked unknown.
+    """
+    stand_in = 1 + max(map(int, re.findall(r"(\d+) \*", canonical)), default=0)
+    known = _UNKNOWN_SIZE.sub(str(stand_in), canonical)
+    layout = ak.forms.from_type(_type(known)).length_one_array(highlevel=False)
+    tracer = ak.Array(layout.to_typetracer(forget_length=True))
+    if known == canonical:
+        return tracer
+
+    def unknown(layout: Any, continuation: Callable[[], Any], **_: Any) -> Any:
+        if not (layout.is_regular and layout.size == stand_in):
+            return None
+        return ak.contents.RegularArray(
+            continuation().content, ak.typetracer.unknown_length, parameters=layout.parameters
+        )
+
+    return ak.transform(unknown, tracer)
 
 
 #: declares one value per call, not one per row: the prefix the check prints a scalar with
@@ -246,7 +275,12 @@ def _canonical_output_type(spec: object) -> str:
         canonical = str(s) if isinstance(s, ak.types.Type) else None
         if isinstance(s, str):
             with contextlib.suppress(LarkError):  # datashape first: `"byte"` is awkward's byte
-                canonical = str(ak.types.from_datashape(s, highlevel=False))
+                parsed = (
+                    _type(s)
+                    if _UNKNOWN_SIZE.search(s)
+                    else ak.types.from_datashape(s, highlevel=False)
+                )
+                canonical = str(parsed)
         if canonical is None:
             # length one: a zero-length `U` array raises on the awkward 2.6 floor
             canonical = str(
@@ -256,7 +290,7 @@ def _canonical_output_type(spec: object) -> str:
         # the installed grammar misreads it (2.14: `float16[parameters=`)
         if str(rebuilt) != canonical:
             raise TypeError(f"rebuilds as {str(rebuilt)!r}")
-        ak.forms.from_type(rebuilt).length_one_array(highlevel=False)
+        _tracer(canonical)
     except (LarkError, TypeError, ValueError) as exc:
         raise TypeError(
             f"output_type {spec!r} is neither a type string the installed awkward can parse and "
@@ -306,8 +340,7 @@ def declared_form(forms: Sequence[AwkwardForm], canonical: str) -> AwkwardForm:
         if isinstance(t, ak.types.NumpyType) and not t.parameters:
             return AwkwardForm(ak.typetracer.create_unknown_scalar(np.dtype(t.primitive)))
         raise TypeError(f"output_type {canonical!r} over a scalar input must be a primitive dtype")
-    layout = ak.forms.from_type(t).length_one_array(highlevel=False)
-    return AwkwardForm(ak.Array(layout.to_typetracer(forget_length=True)))
+    return AwkwardForm(_tracer(canonical))
 
 
 _EMPTY: dict[str, str | bytes] = {"string": "", "bytes": b""}
@@ -352,7 +385,11 @@ def _fits(value: ak.types.Type, declared: ak.types.Type) -> bool:
         return len(value.contents) == len(other.contents) and all(
             map(_fits, value.contents, other.contents)
         )
-    if isinstance(value, ak.types.RegularType) and value.size != other.size:
+    if (
+        isinstance(value, ak.types.RegularType)
+        and other.size is not ak.typetracer.unknown_length
+        and value.size != other.size
+    ):
         return False
     if isinstance(value, (ak.types.ListType, ak.types.RegularType, ak.types.OptionType)):
         return _fits(value.content, other.content)
@@ -415,10 +452,11 @@ def check_output_type(
     array = any(map(_is_array, inputs)) if key == "output_type" else key == "array output_type"
     if scalar == array:
         return f"scalar {content}" if scalar else str(t)
-    want = _type(declared)
-    if content.is_equal_to(want, all_parameters=True):
+    want, any_size = _type(declared), bool(_UNKNOWN_SIZE.search(declared))
+    # awkward cannot compare a known size with an unknown one; `_fits` lets that one match any
+    if not any_size and content.is_equal_to(want, all_parameters=True):
         return None
-    if not scalar and _holds_unknown(content) and _fits(content, want):
+    if not scalar and (any_size or _holds_unknown(content)) and _fits(content, want):
         return None
     return str(content)
 

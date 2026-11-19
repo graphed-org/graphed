@@ -1,0 +1,8 @@
+.. under: 0.0.12 (unreleased)
+
+An ``output_type`` may name a regular size unknown at record time
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``graphed.apply``/``map`` accept the type ``gak.to_regular`` records, ``## * float64``, as an
+  ``output_type``, as a type object or a string. The unknown size fits each chunk's own size;
+  everything else in the declaration is still compared, and a known size stays strict (#270).
