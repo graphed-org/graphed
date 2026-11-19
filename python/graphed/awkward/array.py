@@ -10,7 +10,6 @@ Both also take ak's field assignment, ``events["Photon"] = photons``, as a recor
 from __future__ import annotations
 
 import functools
-
 import inspect
 from collections.abc import Callable
 from typing import Any

@@ -316,7 +316,7 @@ class EventContext(EagerRefusals, ContextNode):
         return child
 
     def _linked(self, link: Link) -> EventContext:
-        """The child on ``link``: the record and every collection carried across it by `follow`."""
+        """Return the child on ``link``: the record and every collection carried by `follow`."""
         child = EventContext(
             context_session(self),
             follow(self._record, *link),

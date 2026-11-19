@@ -193,3 +193,14 @@ def test_inherited_universes_are_masked_when_a_masked_member_joins_them() -> Non
     want = ak.mask(EAGER.MET.pt * 2, EAGER.MET.pt > 10)
     got = ak.Array(session.materialize(universe(both, "a_up")))
     assert (str(got.type), got.tolist()) == (str(want.type), want.tolist())
+
+
+class _NoMaskBackend(AwkwardBackend):
+    mask = None  # type: ignore[assignment]
+
+
+def test_a_backend_without_a_mask_seam_refuses_by_name() -> None:
+    session = Session(_NoMaskBackend())
+    ctx = gnano.events(from_awkward("ev", EAGER, session=session))
+    with pytest.raises(graphed.GraphedError, match="without a mask seam"):
+        ctx.mask[ctx.MET.pt > 10]
