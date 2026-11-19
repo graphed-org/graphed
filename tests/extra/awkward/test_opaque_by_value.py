@@ -199,36 +199,25 @@ def _scale_by(k: float) -> Callable[[Any], Any]:
     return scale
 
 
-def _declared_plan(fn: Callable[[Any], Any], output_type: str) -> Plan[Any]:
-    session = Session(AwkwardBackend())
-    form = AwkwardForm(ak.Array(EVENTS.layout.to_typetracer(forget_length=True)))
-    ev = session.source("events", form=form, data=Events(EVENTS))
-    plan = aggregate_plan(
-        gak.sum(graphed.apply(fn, ev.Jet.pt, output_type=output_type), axis=1),
-        reduce=_first,
-        combine=_cat,
-        empty=_empty,
-        steps_per_file=4,
-    )
-    assert isinstance(plan, Plan)
-    return plan
+def _declared(fn: Callable[[Any], Any], output_type: str) -> Plan[Any]:
+    return _ref_plan(lambda pt: gak.sum(graphed.apply(fn, pt, output_type=output_type), axis=1))
 
 
-DECLARED_FNS: dict[str, Callable[[], Callable[[Any], Any]]] = {
-    "lambda": lambda: lambda x: x * 3.0,
-    "closure": lambda: _scale_by(3.0),
+DECLARED_FNS: dict[str, Callable[[Any], Any]] = {
+    "lambda": lambda x: x * 3.0,
+    "closure": _scale_by(3.0),
 }
 
 
 @pytest.mark.parametrize("fn", DECLARED_FNS)
 def test_an_apply_declaring_its_output_type_runs_in_spawned_workers(fn: str) -> None:
-    got = _spawned(_declared_plan(DECLARED_FNS[fn](), "var * float64"))
+    got = _spawned(_declared(DECLARED_FNS[fn], "var * float64"))
     assert ak.to_list(got) == ak.to_list(3.0 * _jet_pt_sums(EVENTS))
 
 
 def test_the_output_type_check_travels_to_spawned_workers() -> None:
     with pytest.raises(StageError, match=r"OutputTypeError.*declares output_type 'var \* int64'"):
-        _spawned(_declared_plan(_scale_by(3.0), "var * int64"))
+        _spawned(_declared(_scale_by(3.0), "var * int64"))
 
 
 @dataclass
