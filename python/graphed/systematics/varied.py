@@ -293,11 +293,11 @@ def union_tags(*values: object) -> dict[str, tuple[str, ...]]:
 
 
 def most_derived_context(*values: Any) -> object:
-    """§2.3e's container handle: the most-derived member handle.
+    """§2.3e's container handle: the most-derived member handle, inside containers too.
 
     `None` when all are context-free.
     """
-    return unify_contexts(*(context_of(value) for value in values))
+    return unify_contexts(*(context_of(v) for v in instances_in((Array, Varied), *values)))
 
 
 def rebuild(
