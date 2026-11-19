@@ -25,6 +25,7 @@ from graphed.backend import ParamValue
 from graphed.errors import DeferredTypeError, GraphedError, GraphedTypeError
 from graphed.provenance import capture
 from graphed.shuffle import JOINKEY, route_key
+from graphed.systematics.varied import instances_in
 from graphed.varied import (
     boundary_refusal,
     containers_in,
@@ -926,32 +927,16 @@ def sample(arr: Array, *, factor: int) -> object:
     return arr.session.materialize(arr[::factor])
 
 
-#: ak keyword names whose gak parameter is spelled differently (a gak name of its own wins)
-_RENAMED = {
-    "b": "y",
-    "fill_value": "value",
-    "mask": "condition",
-    "parameter": "key",
-    "to": "dtype",
-    "what": "value",
-    "where": "field",
-}
-
-
-def _ak_only_keywords(name: str, signature: inspect.Signature) -> dict[str, object]:
-    """Return the defaulted keywords of ``ak.<name>`` the gak function lacks, with defaults."""
+def _ak_only_keywords(name: str, signature: inspect.Signature) -> list[inspect.Parameter]:
+    """Return the defaulted keywords of ``ak.<name>`` the gak function lacks, keyword-only."""
     ak_fn = getattr(ak, name, None)
     if not callable(ak_fn):
-        return {}
-    own = signature.parameters
-    return {
-        p.name: p.default
+        return []
+    return [
+        p.replace(kind=p.KEYWORD_ONLY)
         for p in inspect.signature(ak_fn).parameters.values()
-        if p.default is not p.empty
-        and p.kind in (p.POSITIONAL_OR_KEYWORD, p.KEYWORD_ONLY)
-        and p.name not in own
-        and _RENAMED.get(p.name) not in own
-    }
+        if p.default is not p.empty and p.name not in signature.parameters
+    ]
 
 
 def _is_default(value: object, default: object) -> bool:
@@ -961,24 +946,18 @@ def _is_default(value: object, default: object) -> bool:
 
 def _in_effect(behavior: object, operands: Sequence[object]) -> bool:
     """Return whether every entry of ``behavior`` is already what the operands' session applies."""
-    sessions = [
-        session
-        for value in operands
-        for a in (value.values() if isinstance(value, Mapping) else _items(value))
-        if (session := session_of(a)) is not None
-    ]
-    if not isinstance(behavior, Mapping) or not sessions:
+    if not isinstance(behavior, Mapping):
         return False
-    # awkward overlays an array's behavior on its global registry, as the backend's arrays get
-    effective = {**ak.behavior, **(getattr(sessions[0].backend, "_behavior", None) or {})}
-    # `all` is gak's here
-    return not [key for key, entry in behavior.items() if effective.get(key) is not entry]
-
-
-def _items(value: object) -> Sequence[object]:
-    if isinstance(value, Sequence) and not isinstance(value, str | bytes):
-        return value
-    return [value]
+    session = next(
+        (
+            s
+            for a in instances_in((Array, graphed.Varied), *operands)
+            if (s := session_of(a)) is not None
+        ),
+        None,
+    )
+    in_effect = getattr(session.backend, "behavior_in_effect", None) if session else None
+    return in_effect is not None and behavior.items() <= in_effect().items()
 
 
 def _take_ak_keywords(
@@ -989,6 +968,8 @@ def _take_ak_keywords(
     A ``behavior`` mapping whose every entry the session already applies is a default too: the
     session's backend, not the call, owns behavior.
     """
+    if not kwargs:
+        return
     for key in keywords.keys() & kwargs.keys():
         value = kwargs.pop(key)
         if _is_default(value, keywords[key]):
@@ -1014,7 +995,8 @@ def _dispatched(fn: Callable[..., Any], kind: str) -> Callable[..., Any]:
     ak's default only (R17.0's anti-drift pin reads ak's defaults).
     """
     signature = inspect.signature(fn)
-    keywords = _ak_only_keywords(fn.__name__, signature)
+    extra = _ak_only_keywords(fn.__name__, signature)
+    keywords = {p.name: p.default for p in extra}
 
     @functools.wraps(fn)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
@@ -1032,10 +1014,6 @@ def _dispatched(fn: Callable[..., Any], kind: str) -> Callable[..., Any]:
             return expand_tuple(fn, args, kwargs)
         return expand(fn, args, kwargs)
 
-    extra = [
-        inspect.Parameter(k, inspect.Parameter.KEYWORD_ONLY, default=d)
-        for k, d in keywords.items()
-    ]
     wrapper.__signature__ = signature.replace(  # type: ignore[attr-defined]
         parameters=[*signature.parameters.values(), *extra]
     )

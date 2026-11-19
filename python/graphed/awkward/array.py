@@ -29,6 +29,17 @@ from . import functions as gak
 register_internal("awkward._dispatch")
 register_internal("awkward._connect.numpy")
 
+#: ak keyword names whose gak parameter is spelled differently (a gak name of its own wins)
+_RENAMED = {
+    "b": "y",
+    "fill_value": "value",
+    "mask": "condition",
+    "parameter": "key",
+    "to": "dtype",
+    "what": "value",
+    "where": "field",
+}
+
 
 def _awkward_function(
     self: object, dispatch: Callable[..., Any], array_likes: object, args: Any, kwargs: Any
@@ -52,8 +63,7 @@ def _awkward_function(
     positional: list[object] = []
     keywords: dict[str, object] = {}
     for i, param in enumerate(signature.parameters.values()):
-        renamed = gak._RENAMED.get(param.name, param.name)
-        target = param.name if param.name in gak_params else renamed
+        target = param.name if param.name in gak_params else _RENAMED.get(param.name, param.name)
         if param.name in bound:
             value = bound[param.name]
         elif target in gak_params and gak_params[target].default not in (
