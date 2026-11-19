@@ -1,5 +1,5 @@
 .. under: 0.0.12 (unreleased)
 
 * The run-time ``output_type=`` check compares the value's type with the declared one as awkward
-  compares types, so parameters and record fields match in any key order instead of by the printed
-  string; every parameter still counts (#236).
+  compares types, so parameters and record fields match in any key order and union members in any
+  order instead of by the printed string; every parameter still counts (#236).
