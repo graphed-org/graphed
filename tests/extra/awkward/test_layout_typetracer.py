@@ -135,3 +135,10 @@ def test_a_varied_whose_universes_differ_in_form_is_refused_by_name() -> None:
     )
     with pytest.raises(graphed.GraphedError, match="layouts differ in form"):
         _ = pt.layout
+
+
+def test_a_varieds_field_named_layout_wins() -> None:
+    session = Session(AwkwardBackend())
+    arr = from_awkward("f", ak.Array({"layout": [1.0, 2.0]}), session=session)
+    v = graphed.vary(arr, "s", points={"up": ak.with_field(arr, arr.layout * 2, "layout")})
+    assert ak.Array(session.materialize(universe(v.layout, "s_up"))).tolist() == [2.0, 4.0]
