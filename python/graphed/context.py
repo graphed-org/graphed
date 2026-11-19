@@ -5,11 +5,10 @@ event-weight registry. Pure sugar over §§2.1-2.5 — no IR change, §3.1 intac
 
 Three properties do the work. Contexts are IMMUTABLE but for item assignment of a collection, so
 `graphed.vary` returns a new one and a fill from a pre-`vary` context is unaffected by later calls
-by construction. They RESERVE NO
-NAMES, so a tree branch called `weights` or `vary` stays reachable and every graphed operation on
-a context is a module function. And a read performed THROUGH a context yields THAT context's row
-space, which is what makes `sel.Jet` mean `events.Jet` re-indexed by `sel`'s derivation mask,
-label-aligned when that mask is `Varied`.
+by construction. They RESERVE NO NAMES, so a tree branch called `weights` or `vary` stays
+reachable and every graphed operation on a context is a module function. And a read performed
+THROUGH a context yields THAT context's row space, which is what makes `sel.Jet` mean `events.Jet`
+re-indexed by `sel`'s derivation mask, label-aligned when that mask is `Varied`.
 
 The neutral mechanism lives here; the nanoevents-flavored constructor is awkward-idiom and lives
 in `graphed.awkward.gnano` (the §2.1 factorization rule).
@@ -63,6 +62,7 @@ from .systematics.handles import reindex_to, with_context  # isort: skip
 from .systematics.registration import stamp_labels as stamp_labels  # isort: skip
 from .systematics.varied import (  # isort: skip
     Varied as Varied,
+    context_of,
     expand as expand,
     labels_of as labels_of,
     member_nodes as member_nodes,
@@ -160,27 +160,29 @@ class EventContext(EagerRefusals, ContextNode):
         """`events[name] = value`: rebind collection ``name`` on this context, in place (#80).
 
         Row space, registrations and identity are unchanged, so values read before and after it
-        combine; a context already derived from this one keeps what it was derived with.
+        combine; a context already derived from this one keeps what it was derived with, and is
+        not the one the same derivation answers with afterwards.
         """
-        self._collections[self._name(name)] = self._admit(name, value)
+        name = self._name(name)
+        self._collections[name] = self._admit(name, value)
         self._derived.clear()
         self._projected.clear()
 
-    def _name(self, name: object) -> str:
+    def _name(self, name: object, op: str = "__setitem__") -> str:
         if not isinstance(name, str):
             raise GraphedTypeError(
-                "__setitem__",
+                op,
                 capture(),
                 f"an event context assigns a whole collection by name, not {name!r}; to change "
                 "a nested field, assign the collection with that field replaced",
             )
         return name
 
-    def _admit(self, name: object, value: object) -> Array | Varied:
+    def _admit(self, name: str, value: object, op: str = "__setitem__") -> Array | Varied:
         """Return ``value`` re-indexed to this context, refusing what it cannot carry."""
         if not isinstance(value, Array | Varied):
             raise GraphedTypeError(
-                "__setitem__",
+                op,
                 capture(),
                 f"events[{name!r}] takes a deferred array or Varied computed from {self!r}, not "
                 f"{type(value).__name__}",
@@ -190,23 +192,40 @@ class EventContext(EagerRefusals, ContextNode):
                 f"events[{name!r}]: the value was recorded in a different Session than {self!r}; "
                 "compute it from this context's collections"
             )
+        if context_of(value) is None:
+            # a value read through no context has no row space to check against this one's
+            raise GraphedError(
+                f"events[{name!r}]: the value was not read through an event context, so its rows "
+                f"are not {self!r}'s; compute it from this context's collections"
+            )
         try:
-            value = reindex_to(value, self)
+            admitted: Array | Varied = reindex_to(value, self)
         except GraphedError as err:
             raise GraphedError(
                 f"events[{name!r}] cannot carry a value read through another context: {err}; "
                 f"compute it from {self!r} or a context it was derived from"
             ) from err
         carried = context_labels(self)
-        extra = [label for label in labels_of(value) if label not in carried]
+        extra = [label for label in labels_of(admitted) if label not in carried]
         if extra:
             raise GraphedError(
                 f"events[{name!r}]: the value carries universes {extra} that {self!r} has not "
                 "registered; assignment registers nothing, so register the family on the context: "
-                f"graphed.vary(events, <name>, collections={{{name!r}: value}}), or is_weight=True "
-                "for a weight"
+                f"graphed.vary(events, <name>, collections={{{name!r}: value}}), or "
+                "is_weight=True for a weight"
             )
-        return value
+        lost = [
+            label
+            for label in labels_of(collections_of(self).get(name))
+            if label != "nominal" and label not in labels_of(admitted)
+        ]
+        if lost:
+            raise GraphedError(
+                f"events[{name!r}]: the value drops universes {lost} the collection it replaces "
+                "carries; assignment keeps the registrations, so assign a value carrying them, or "
+                "read one universe with graphed.systematics.universe"
+            )
+        return admitted
 
     # ---- derivation (§2.6c: scoping is lineage) ---------------------------------
     def _derive(self, mask: Array | Varied) -> EventContext:
@@ -308,7 +327,8 @@ def with_collection(ctx: EventContext, value: object, name: object) -> EventCont
 
     A child, not a sibling, so values read through ``ctx`` still combine with the child's.
     """
-    return ctx._vary_child(for_vary_link(ctx), {ctx._name(name): ctx._admit(name, value)})
+    name = ctx._name(name, "with_field")
+    return ctx._vary_child(for_vary_link(ctx), {name: ctx._admit(name, value, "with_field")})
 
 
 def _mask_key(mask: Array | Varied) -> tuple[tuple[str, int], ...]:

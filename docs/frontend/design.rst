@@ -371,7 +371,9 @@ Assignment registers nothing, so a value carrying a family the context has not r
 refused; register that family with ``vary(ctx, name, collections={...})``. The row space, the
 registrations and the context's identity stay the same, so values read before and after the
 assignment can be combined. Contexts already derived from this one (``ctx[mask]``, ``universe``)
-keep the collections they were derived with. ``gak.with_field(ctx, value, name)`` does the same
+keep the collections they were derived with, and the same derivation taken afterwards is a
+different context, so combine values from derivations taken on the same side of the assignment.
+``gak.with_field(ctx, value, name)`` does the same
 but returns a new context and leaves ``ctx`` as it was.
 
 .. code-block:: python

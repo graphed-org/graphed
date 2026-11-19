@@ -924,7 +924,7 @@ def sample(arr: Array, *, factor: int) -> object:
 def _on_context(
     fn: Callable[..., Any], context: EventContext, args: Any, kwargs: Any
 ) -> EventContext:
-    """Answer an event context where gak takes an array: only ``with_field`` on it has a meaning."""
+    """Answer an event context where gak takes an array: only ``with_field`` means anything."""
     if fn.__name__ == "with_field":
         bound = inspect.signature(fn).bind(*args, **kwargs).arguments
         if bound["arr"] is context:
@@ -946,7 +946,9 @@ def _dispatched(fn: Callable[..., Any], kind: str) -> Callable[..., Any]:
 
     @functools.wraps(fn)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
-        context = next((v for v in (*args, *kwargs.values()) if isinstance(v, EventContext)), None)
+        given = (*args, *kwargs.values())
+        given += tuple(item for v in given if isinstance(v, list | tuple) for item in v)
+        context = next((v for v in given if isinstance(v, EventContext)), None)
         if context is not None:
             return _on_context(fn, context, args, kwargs)
         if not containers_in(*args, *kwargs.values()):

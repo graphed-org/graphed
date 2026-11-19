@@ -18,6 +18,7 @@ DATA = {
     "Jet": [[{"pt": 40.0}, {"pt": 20.0}], [{"pt": 55.0}], []],
     "Muon": [[{"pt": 1.0}, {"pt": 7.0}], [], [{"pt": 9.0}]],
 }
+_OTHER = ak.Array(DATA)
 
 
 def _events() -> tuple[Session, Any]:
@@ -40,7 +41,7 @@ def _jes(events: Any) -> Any:
 
 
 def _counts(session: Session, value: Any) -> list[int]:
-    return list(session.materialize(gak.num(value, axis=1)).tolist())
+    return list(ak.to_list(session.materialize(gak.num(value, axis=1))))
 
 
 def test_a_new_name_reads_back_by_item_and_attribute() -> None:
@@ -79,7 +80,11 @@ def test_a_later_vary_composes_one_at_a_time() -> None:
     assert labels(events) == ("nominal", "jes_up", "jes_down", "mes_up", "mes_down")
     assert labels(events.sel_jets) == ("nominal", "jes_up", "jes_down")
     assert _counts(session, universe(events, "mes_up").sel_jets) == [1, 1, 0]
-    assert session.materialize(universe(events, "mes_up").Muon.pt).tolist() == [[14.0], [], [18.0]]
+    assert ak.to_list(session.materialize(universe(events, "mes_up").Muon.pt)) == [
+        [14.0],
+        [],
+        [18.0],
+    ]
 
 
 def test_a_weight_reading_the_assigned_field_varies_with_its_shift() -> None:
@@ -91,7 +96,10 @@ def test_a_weight_reading_the_assigned_field_varies_with_its_shift() -> None:
         events, "btag", sf, is_weight=True, up=sf * 2, down=sf, composes_as_union=True
     )
     ambient = graphed.systematics.weight(events)
-    got = {label: session.materialize(universe(ambient, label)).tolist() for label in labels(ambient)}
+    got = {
+        label: ak.to_list(session.materialize(universe(ambient, label)))
+        for label in labels(ambient)
+    }
     assert got["jes_up"] == pytest.approx([1.1, 1.1, 1.0])
     assert got["jes_down"] == pytest.approx([1.0, 1.0, 1.0])
     assert got["btag_up"] == pytest.approx([2.2, 2.2, 2.0])
@@ -107,7 +115,7 @@ def test_earlier_derivations_keep_what_they_were_derived_with() -> None:
     assert _counts(session, events[mask].Muon) == [1, 1]
     assert _counts(session, nominal(events).Muon) == [1, 0, 1]
     combined = gak.num(jets, axis=1) + gak.num(events.Muon, axis=1)
-    assert session.materialize(combined).tolist() == [3, 1, 1]
+    assert ak.to_list(session.materialize(combined)) == [3, 1, 1]
 
 
 def test_with_field_returns_a_new_context_and_leaves_the_old_one() -> None:
@@ -132,7 +140,9 @@ def test_with_field_keeps_the_context_registrations() -> None:
     [
         (lambda e: 1.0, GraphedTypeError, "takes a deferred array or Varied"),
         (
-            lambda e: from_awkward("events", ak.Array(DATA), session=Session(AwkwardBackend())).Muon,
+            lambda e: (
+                from_awkward("events", ak.Array(DATA), session=Session(AwkwardBackend())).Muon
+            ),
             GraphedError,
             "different Session",
         ),
@@ -146,6 +156,11 @@ def test_with_field_keeps_the_context_registrations() -> None:
             GraphedError,
             r"universes \['loose_up', 'loose_down'\].*graphed\.vary\(events",
         ),
+        (
+            lambda e: from_awkward("other", _OTHER, session=e.Muon.session).Muon,
+            GraphedError,
+            "not read through an event context",
+        ),
     ],
 )
 def test_assignments_without_a_meaning_are_refused(value: Any, error: Any, match: str) -> None:
@@ -154,6 +169,23 @@ def test_assignments_without_a_meaning_are_refused(value: Any, error: Any, match
         events["x"] = value(events)
     with pytest.raises(error, match=match):
         gak.with_field(events, value(events), "x")
+
+
+def test_an_assignment_dropping_a_registered_universe_is_refused() -> None:
+    _, events = _events()
+    events = _jes(events)
+    with pytest.raises(GraphedError, match=r"drops universes \['jes_up', 'jes_down'\]"):
+        events["Jet"] = nominal(events.Jet)
+    with pytest.raises(GraphedError, match=r"drops universes \['jes_up', 'jes_down'\]"):
+        gak.with_field(events, nominal(events.Jet), "Jet")
+    events["Muon"] = events.Muon[events.Muon.pt > 5]
+    assert labels(events) == ("nominal", "jes_up", "jes_down")
+
+
+def test_with_field_names_itself_when_it_refuses() -> None:
+    _, events = _events()
+    with pytest.raises(GraphedTypeError, match="ill-typed op 'with_field'"):
+        gak.with_field(events, 1.0, "x")
 
 
 def test_a_non_name_key_is_refused() -> None:
@@ -166,3 +198,5 @@ def test_another_gak_function_names_the_context() -> None:
     _, events = _events()
     with pytest.raises(GraphedTypeError, match="is an event context, not an array"):
         gak.num(events, axis=1)
+    with pytest.raises(GraphedTypeError, match="is an event context, not an array"):
+        gak.concatenate([events, events.Muon], axis=1)
