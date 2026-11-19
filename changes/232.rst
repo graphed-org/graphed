@@ -1,0 +1,4 @@
+.. under: 0.0.12 (unreleased)
+
+* An XGBoost booster that stores feature names (and types) evaluates inside a graph, as it
+  predicts eagerly, instead of failing with "data did not contain feature names" (#232).

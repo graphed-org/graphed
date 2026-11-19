@@ -46,7 +46,11 @@ def eval_xgboost(booster: Any, params: Mapping[str, Any], inputs: list[Any]) -> 
         matrix = _stack_feature_columns(inputs)
     import xgboost as xgb
 
-    return _as_event_array(booster.predict(xgb.DMatrix(matrix)))
+    # the booster's own names and types, so a model trained on named columns runs as shipped
+    data = xgb.DMatrix(
+        matrix, feature_names=booster.feature_names, feature_types=booster.feature_types
+    )
+    return _as_event_array(booster.predict(data))
 
 
 def _xgboost_samples() -> list[bytes]:
