@@ -1,0 +1,15 @@
+.. under: 0.0.12 (unreleased)
+
+ak.* on deferred arrays takes awkward's keywords at their defaults
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Every ``gak`` function, and the ``ak.*`` call that dispatches to it, now takes each defaulted
+  keyword of its ``ak`` function that it lacked, at ak's default: ``behavior=None``,
+  ``attrs=None``, ``highlevel=True``, and others such as ``ak.zip``'s ``right_broadcast`` and
+  ``ak.where``'s ``mergebool``. Code that forwards them, like ``vector.zip``, now runs deferred. A
+  non-default value raises ``GraphedTypeError`` naming the keyword, where it used to raise
+  ``TypeError`` (#256).
+* A ``behavior=`` mapping is accepted when the session already applies every entry, from the
+  backend's ``AwkwardBackend(behavior=...)`` or from awkward's registry. Otherwise it is refused
+  with what to do: register it with awkward (``vector.register_awkward()``) or pass it to
+  ``AwkwardBackend``. The backend, not the call, owns behavior.
