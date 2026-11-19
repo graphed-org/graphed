@@ -23,6 +23,7 @@ CHUNKS = [ak.Array({"w": [1.5, -2.0, 3.0]}), ak.Array({"w": [1.0, 0.5, 2.0]})]
 
 
 def _source(tmp_path: Path) -> tuple[graphed.Session, Any]:
+    pytest.importorskip("pyarrow")
     session = graphed.Session(AwkwardBackend())
     paths = [str(tmp_path / f"in{i}.parquet") for i in range(len(CHUNKS))]
     for chunk, path in zip(CHUNKS, paths, strict=True):
