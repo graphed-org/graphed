@@ -27,7 +27,7 @@ from graphed.errors import DeferredTypeError, GraphedError, GraphedTypeError
 from graphed.provenance import capture
 from graphed.shuffle import JOINKEY, route_key
 from graphed.systematics.varied import instances_in
-from graphed.varied import Varied, boundary_refusal, expand, expand_tuple, narrow
+from graphed.varied import Varied, boundary_refusal, expand, expand_tuple, narrow, session_of
 
 from ..preserve.externals._helpers import refuse_unread_inputs
 from ..preserve.externals.correctionlib_external import (
@@ -921,6 +921,66 @@ def sample(arr: Array, *, factor: int) -> object:
     return arr.session.materialize(arr[::factor])
 
 
+def _ak_only_keywords(name: str, signature: inspect.Signature) -> list[inspect.Parameter]:
+    """Return the defaulted keywords of ``ak.<name>`` the gak function lacks, keyword-only."""
+    ak_fn = getattr(ak, name, None)
+    if not callable(ak_fn):
+        return []
+    return [
+        p.replace(kind=p.KEYWORD_ONLY)
+        for p in inspect.signature(ak_fn).parameters.values()
+        if p.default is not p.empty and p.name not in signature.parameters
+    ]
+
+
+def _is_default(value: object, default: object) -> bool:
+    # every ak default here is None, a bool, a str or a type, so == never broadcasts
+    return value is default or (type(value) is type(default) and bool(value == default))
+
+
+def _in_effect(behavior: object, operands: Sequence[object]) -> bool:
+    """Return whether every entry of ``behavior`` is already what the operands' session applies."""
+    if not isinstance(behavior, Mapping):
+        return False
+    session = next(
+        (
+            s
+            for a in instances_in((Array, graphed.Varied), *operands)
+            if (s := session_of(a)) is not None
+        ),
+        None,
+    )
+    in_effect = getattr(session.backend, "behavior_in_effect", None) if session else None
+    return in_effect is not None and behavior.items() <= in_effect().items()
+
+
+def _take_ak_keywords(
+    name: str, keywords: Mapping[str, object], args: Sequence[object], kwargs: dict[str, Any]
+) -> None:
+    """Drop each ak-only keyword of ``kwargs`` at ak's default, refusing any other by name.
+
+    A ``behavior`` mapping whose every entry the session already applies is a default too: the
+    session's backend, not the call, owns behavior.
+    """
+    if not kwargs:
+        return
+    for key in keywords.keys() & kwargs.keys():
+        value = kwargs.pop(key)
+        if _is_default(value, keywords[key]):
+            continue
+        if key == "behavior" and _in_effect(value, [*args, *kwargs.values()]):
+            continue
+        hint = (
+            "register it with awkward (vector: vector.register_awkward()) or pass it to "
+            "AwkwardBackend(behavior=...)"
+            if key == "behavior"
+            else f"a deferred call takes only ak's default, {keywords[key]!r}"
+        )
+        raise GraphedTypeError(
+            f"gak.{name}", capture(), f"{key}={value!r} is not honoured; {hint}"
+        )
+
+
 # ---- §2.3c: the gak dispatch layer; `_dispositions` classifies each function ----------
 def _on_context(
     fn: Callable[..., Any], context: EventContext, args: Any, kwargs: Any
@@ -947,12 +1007,17 @@ def _on_context(
 def _dispatched(fn: Callable[..., Any], kind: str) -> Callable[..., Any]:
     """Wrap one gak function with the dispatch its classification names (§2.3c).
 
-    Signatures do not change (R17.0's anti-drift pin): `functools.wraps` keeps `__wrapped__`, so
-    `inspect.signature` still reports the underlying one.
+    Its signature is the underlying one plus the defaulted ak keywords it lacks, each taken at
+    ak's default only (R17.0's anti-drift pin reads ak's defaults).
     """
+    signature = inspect.signature(fn)
+    extra = _ak_only_keywords(fn.__name__, signature)
+    keywords = {p.name: p.default for p in extra}
 
     @functools.wraps(fn)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
+        # before the context answer too: `_on_context` binds against the gak signature alone
+        _take_ak_keywords(fn.__name__, keywords, args, kwargs)
         found = instances_in((Varied, EventContext), *args, *kwargs.values())
         context = next((v for v in found if isinstance(v, EventContext)), None)
         if context is not None:
@@ -970,6 +1035,9 @@ def _dispatched(fn: Callable[..., Any], kind: str) -> Callable[..., Any]:
             return expand_tuple(fn, args, kwargs)
         return expand(fn, args, kwargs)
 
+    wrapper.__signature__ = signature.replace(  # type: ignore[attr-defined]
+        parameters=[*signature.parameters.values(), *extra]
+    )
     return wrapper
 
 

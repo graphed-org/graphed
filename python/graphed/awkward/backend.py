@@ -9,6 +9,7 @@ from __future__ import annotations
 import contextlib
 import functools
 import inspect
+from collections import ChainMap
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, cast, overload
@@ -624,6 +625,10 @@ class AwkwardBackend:
         It pickles with cloudpickle, as behaviors hold lambdas.
         """
         return _AsRead(chunk)
+
+    def behavior_in_effect(self) -> Mapping[Any, Any]:
+        """Return the behavior this backend's arrays resolve names in: its own over ak.behavior."""
+        return ChainMap(self._behavior or {}, ak.behavior)
 
     def _with_behavior(self, tt: Any) -> Any:
         # a new wrapper, never the stored typetracer: record-time behavior code may assign into
