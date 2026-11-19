@@ -112,6 +112,15 @@ def test_a_report_bound_index_is_not_swapped() -> None:
     assert awkward_backend._shared(second) is second
 
 
+def test_a_known_length_index_is_not_swapped() -> None:
+    real = ak.contents.IndexedArray(
+        ak.index.Index64(np.array([1, 0])), ak.contents.NumpyArray(np.array([1.0, 2.0]))
+    )
+    first = awkward_backend._shared(real.to_typetracer())
+    second = first.copy(index=ak.index.Index64(first.index.data))
+    assert awkward_backend._shared(second) is second
+
+
 def test_entries_die_with_the_session() -> None:
     gc.collect()
     before = len(awkward_backend._CANONICAL), len(awkward_backend._KEPT)

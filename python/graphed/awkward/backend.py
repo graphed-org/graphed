@@ -169,7 +169,7 @@ def _adopt(value: Any, behavior: Mapping[Any, Any] | None) -> Any:
 # matches; a live canonical holds the content whose id is in its key, so that id is not reused.
 _CANONICAL: dict[tuple[type, int, np.dtype[Any]], weakref.ref[Any]] = {}
 _KEPT: dict[int, weakref.ref[Any]] = {}  # id(canonical) -> it, to skip a sub-layout already shared
-_CANONICAL_LOCK = threading.Lock()
+_CANONICAL_LOCK = threading.RLock()  # reentrant: `_forget` may run on a thread holding it
 
 
 def _sharing(result: Any) -> Any:
@@ -221,11 +221,11 @@ def _shared(layout: Any) -> Any:
 
 
 def _forget(key: tuple[type, int, np.dtype[Any]], ident: int, ref: weakref.ref[Any]) -> None:
-    # the collector may run this inside `_CANONICAL_LOCK`, so it takes no lock
-    if _CANONICAL.get(key) is ref:
-        _CANONICAL.pop(key, None)
-    if _KEPT.get(ident) is ref:
-        _KEPT.pop(ident, None)
+    with _CANONICAL_LOCK:
+        if _CANONICAL.get(key) is ref:
+            del _CANONICAL[key]
+        if _KEPT.get(ident) is ref:
+            del _KEPT[ident]
 
 
 @dataclass(eq=False)
