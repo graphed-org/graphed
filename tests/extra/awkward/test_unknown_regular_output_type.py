@@ -25,6 +25,7 @@ WIDE = {"two": [[1.0, 2.0], [3.0, 4.0]], "three": [[1.0, 2.0, 3.0], [4.0, 5.0, 6
 
 
 def _source(tmp_path: Path, *widths: str) -> Any:
+    pytest.importorskip("pyarrow")
     session = graphed.Session(AwkwardBackend())
     paths = []
     for i, width in enumerate(widths):
