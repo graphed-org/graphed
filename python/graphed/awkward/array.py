@@ -18,7 +18,7 @@ import numpy as np
 from awkward._connect.numpy import implemented as _ak_numpy
 
 from graphed import Array
-from graphed.array import no_eager_value, take_state
+from graphed.array import Masker, no_eager_value, take_state
 from graphed.errors import GraphedTypeError
 from graphed.provenance import capture, register_internal
 from graphed.varied import Varied, register_varied
@@ -104,6 +104,13 @@ def _setitem(self: Any, where: object, what: object) -> None:
     take_state(self, new)
 
 
+def _masker(self: Any) -> Any:
+    """``x.mask[condition]`` is ``ak.mask(x, condition)``; a field named ``mask`` stays a field."""
+    if "mask" in gak.fields(self):
+        return self["mask"]
+    return Masker(lambda condition: gak.mask(self, condition))
+
+
 def _clip(a: object, a_min: object = None, a_max: object = None) -> object:
     """``np.clip`` as its two ufuncs: awkward has no ``np.clip`` of its own."""
     low = a if a_min is None else np.maximum(a, a_min)
@@ -130,6 +137,7 @@ class AwkwardArray(Array):
     __awkward_function__ = _awkward_function
     __setitem__ = _setitem
     __array_function__ = _array_function
+    mask = property(_masker)
 
 
 class AwkwardVaried(Varied):
@@ -140,6 +148,7 @@ class AwkwardVaried(Varied):
     __awkward_function__ = _awkward_function
     __setitem__ = _setitem
     __array_function__ = _array_function
+    mask = property(_masker)
 
 
 register_varied(AwkwardArray, AwkwardVaried)

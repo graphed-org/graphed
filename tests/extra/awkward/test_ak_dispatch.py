@@ -160,9 +160,9 @@ def test_varied_dispatches_like_gak(arrays: dict[str, Any]) -> None:
 
 
 @pytest.mark.parametrize("cls", [AwkwardArray, AwkwardVaried])
-def test_the_awkward_proxy_adds_no_member_functions(cls: type) -> None:
+def test_the_awkward_proxy_adds_only_the_mask_accessor(cls: type) -> None:
     assert "__awkward_function__" in vars(cls)
-    assert [name for name in vars(cls) if not name.startswith("_")] == []
+    assert [name for name in vars(cls) if not name.startswith("_")] == ["mask"]
 
 
 @pytest.mark.parametrize(("name", "n"), [("mean", ()), ("std", ()), ("var", ()), ("moment", (2,))])

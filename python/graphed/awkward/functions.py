@@ -925,11 +925,13 @@ def sample(arr: Array, *, factor: int) -> object:
 def _on_context(
     fn: Callable[..., Any], context: EventContext, args: Any, kwargs: Any
 ) -> EventContext | list[str]:
-    """Answer an event context where gak takes an array: ``with_field`` and ``fields`` only."""
+    """Answer an event context where gak takes an array: ``with_field``, ``mask``, ``fields``."""
     if fn.__name__ == "fields":
         return fields_of(context)
-    if fn.__name__ == "with_field":
+    if fn.__name__ in ("with_field", "mask"):
         bound = inspect.signature(fn).bind(*args, **kwargs).arguments
+        if bound["arr"] is context and fn.__name__ == "mask":
+            return context._mask(bound["condition"], bool(bound.get("valid_when", True)))
         if bound["arr"] is context:
             return with_collection(context, bound["value"], bound["where"])
     raise GraphedTypeError(

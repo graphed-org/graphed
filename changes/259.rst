@@ -1,0 +1,13 @@
+.. under: 0.0.12 (unreleased)
+
+An event context can be masked, and ``.mask[...]`` works on deferred arrays
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``ak.mask(events, condition)``, ``gak.mask(events, condition)`` and
+  ``events.mask[condition]`` return a context with the same rows and registrations. Each of its
+  reads comes back masked, as ``ak.mask`` on the event record gives it. Item assignment,
+  filtering, ``graphed.vary`` and writes keep working on it. A ``Varied`` condition masks each
+  universe by its own condition (#259).
+* ``x.mask[condition]`` on a deferred array (or a container of universes) is
+  ``ak.mask(x, condition)``, as on an awkward array. A record field named ``mask`` stays a field,
+  on an array and on a context.

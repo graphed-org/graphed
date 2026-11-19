@@ -26,7 +26,7 @@ import itertools
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from .array import Array, EagerRefusals, detached, dir_with
+from .array import Array, EagerRefusals, Masker, detached, dir_with
 from .errors import GraphedError, GraphedTypeError
 from .provenance import capture
 
@@ -126,13 +126,16 @@ class EventContext(EagerRefusals, ContextNode):
         return dir_with(super().__dir__(), fields_of(self))
 
     def __getattr__(self, name: str) -> Any:
-        """Read field ``name`` of the event record; ``fields`` lists them where no field is one."""
+        """Read field ``name`` of the event record.
+
+        Where no field has the name, ``fields`` lists them and ``mask[cond]`` masks the context.
+        """
         if name.startswith("_"):
             raise AttributeError(name)
-        if name == "fields":
+        if name in ("fields", "mask"):
             names = fields_of(self)
             if name not in names:
-                return names
+                return names if name == "fields" else Masker(self._mask)
         return self._read(name)
 
     def __getitem__(self, key: object) -> Any:
@@ -292,6 +295,38 @@ class EventContext(EagerRefusals, ContextNode):
         if ambient is not None:
             selected = expand(lambda value, on: value[on], (ambient, mask), {})
             adopt(child, self, child._stamp(selected))
+        child._record = child._stamp(child._record)
+        self._derived[key] = child
+        return child
+
+    def _mask(self, condition: Array | Varied, valid_when: bool = True) -> EventContext:
+        """`ak.mask(ctx, condition)`: the same rows and registrations, every value masked.
+
+        Canonical per condition and ``valid_when``, as `_derive` is.
+        """
+        key = (("option", int(valid_when)), *_mask_key(condition))
+        memo = self._derived.get(key)
+        if memo is not None:
+            return memo
+        seam = getattr(context_session(self).backend, "mask", None)
+        if seam is None:
+            raise GraphedError(f"{self!r} cannot be masked on a backend without a mask seam")
+
+        def masked(value: Any) -> Any:
+            return expand(lambda item, on: seam(item, on, valid_when), (value, condition), {})
+
+        child = EventContext(
+            context_session(self),
+            masked(self._record),
+            is_data=self._is_data,
+            parent=self,
+            link=("option", condition),
+        )
+        child._ambient = for_vary_link(self)
+        child._collections = {
+            name: child._stamp(masked(collection))
+            for name, collection in collections_of(self).items()
+        }
         child._record = child._stamp(child._record)
         self._derived[key] = child
         return child
