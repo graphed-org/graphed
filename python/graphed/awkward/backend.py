@@ -717,7 +717,7 @@ class AwkwardBackend:
         A rectilinear idiom needs nothing here, which is why the seam is optional and
         `graphed.systematics.broadcast_like` falls back to the identity when a backend omits it.
         """
-        return gak.broadcast_arrays(value, factor)[1]  # type: ignore[arg-type]
+        return gak.broadcast_arrays(value, factor)[1]
 
     def with_field(self, record: object, value: object, name: str) -> object:
         """Set field ``name`` of ``record`` to ``value`` (the optional event-context seam)."""
