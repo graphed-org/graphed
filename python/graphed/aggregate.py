@@ -65,7 +65,7 @@ from .execute import (
 )
 from .projection import read_columns
 from .services import Bindable, Resolvable, ServiceSpec, bind_externals, referenced_services
-from .session import Session
+from .session import CheckedExternal, Session
 from .varied import refuse_container
 from .write import (
     PartitionedSource,
@@ -126,10 +126,12 @@ def by_value(fn: T) -> T:
 
     By name when importable, by value otherwise (a lambda, a closure, a ``__main__`` def a worker
     cannot import). A callable object stays itself, so its ``bind_services``/``resolve_services``
-    hooks are still seen.
+    hooks are still seen; a ``CheckedExternal`` keeps its check and ships its ``fn`` this way.
     """
     if isinstance(fn, types.FunctionType | functools.partial):
         return _ByValue(fn)  # type: ignore[return-value]  # calls as fn does
+    if isinstance(fn, CheckedExternal):
+        return replace(fn, fn=by_value(fn.fn))  # type: ignore[return-value]  # same type as fn
     return fn
 
 
