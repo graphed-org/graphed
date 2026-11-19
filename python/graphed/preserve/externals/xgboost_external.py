@@ -105,7 +105,7 @@ def _ubjson(buf: bytes) -> Any:
             pos += 1
             count = size()
         if not is_object and count is not None and typed in _NUMBERS:  # a typed array, in bulk
-            numbers = np.frombuffer(buf, _NUMBERS[typed], count, pos)
+            numbers: np.ndarray[Any, Any] = np.frombuffer(buf, _NUMBERS[typed], count, pos)
             pos += numbers.nbytes
             return (numbers.astype(str).astype(float) if typed == "d" else numbers).tolist()
         items: list[Any] = []
