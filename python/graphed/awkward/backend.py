@@ -350,7 +350,8 @@ def check_output_type(
 
     ``output_type`` is the whole element type: the value's type must equal it as awkward compares
     types (option-ness, regular vs var, record names and every parameter included, keys in any
-    order), except that ``unknown`` inside an array fits anything. ``output_dtype`` is a static leaf dtype: every leaf must have it.
+    order), except that ``unknown`` inside an array fits anything. ``output_dtype`` is a static
+    leaf dtype: every leaf must have it.
     """
     try:
         t = ak.type(value)
