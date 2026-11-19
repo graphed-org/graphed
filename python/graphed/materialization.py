@@ -21,7 +21,7 @@ from .aggregate import (
     read_label,
 )
 from .array import Array
-from .execute import CompiledGraph, Key, _compile_cone, evaluate_ir, ir_cone
+from .execute import CompiledGraph, Key, _compile_cone, evaluate_ir
 from .projection import read_columns
 from .session import Session
 from .varied import Varied, members_of, refuse_container
@@ -139,16 +139,21 @@ def _keep(session: Session, nid: int, chunks: Sequence[object], reads: dict[int,
         reads[nid] = concat(chunks)
 
 
-def _pairs_by_chunk(session: Session, arrays: Sequence[Array]) -> bool:
-    """Return whether ``arrays`` take an op the backend pairs by chunk, not by row."""
-    unaligned = getattr(session.backend, "rows_unaligned", None)
-    if unaligned is None:
-        return False
-    nodes = session._nodes()
-    return any(
-        nodes[nid]["kind"] == "op" and unaligned(nodes[nid]["name"], nodes[nid]["params"])
-        for nid in ir_cone(nodes, [a.node_id for a in arrays])
-    )
+def _paired_by_chunk(session: Session, among: Container[int] | None = None) -> set[int]:
+    """Return the nodes at or downstream of an op the backend pairs by chunk, not by row.
+
+    With ``among``, only of such an op in ``among``. A node's inputs precede it in the store.
+    """
+    pairs = getattr(session.backend, "pairs_by_chunk", lambda op, params: False)
+    paired: set[int] = set()
+    for nid, nd in enumerate(session._nodes()):
+        if not paired.isdisjoint(nd["inputs"]) or (
+            nd["kind"] == "op"
+            and (among is None or nid in among)
+            and pairs(nd["name"], nd["params"])
+        ):
+            paired.add(nid)
+    return paired
 
 
 def _chunks_join(session: Session, data: PartitionedSource) -> bool:
@@ -228,7 +233,9 @@ def _first_entries(
             if isinstance(data, PartitionedSource) and _chunks_join(session, data):
                 columns = _columns(data, arrays, nid)
                 chunks, rows = _read_first(data, columns, entries, resources)
-                if len(chunks) > 1 and _pairs_by_chunk(session, arrays):
+                if len(chunks) > 1 and not _paired_by_chunk(session).isdisjoint(
+                    a.node_id for a in arrays if nid in session.reachable_sources(a.node_id)
+                ):
                     raise ValueError(
                         f"the first {entries} entries span {len(chunks)} partitions, and these "
                         "results take an op that pairs its operands chunk by chunk, so one "
@@ -487,10 +494,20 @@ def _evaluated(items: Iterable[Any], sample: _Sample | None = None) -> dict[int,
             )
             values.update(ran)
             continue
+        paired = _paired_by_chunk(session)
         for array in work.arrays:
-            if _pairs_by_chunk(session, [array]):
-                work.joint([array])  # its pass evaluates it chunk by chunk
+            if array.node_id in paired:
+                # a pass over each of its partitioned sources evaluates it chunk by chunk
+                for nid, data in sources_read([array]).items():
+                    if isinstance(data, PartitionedSource):
+                        work.passes.setdefault(nid, _Joint())
         past = _past_boundary(session) if work.pieces or work.passes else frozenset[int]()
+        stranded = _paired_by_chunk(session, past) if paired else set()
+        if any(a.node_id in stranded for a in [*work.arrays, *_Joint(work.pieces).outputs()]):
+            raise ValueError(
+                "an op the backend pairs by chunk is downstream of a reduction, exchange or join "
+                "here, so materialize has no chunk to pair its operands by"
+            )
         for key, pieces in work.pieces.items():
             # past a boundary is whole, where a reduction has its one value
             whole = not past.isdisjoint(a.node_id for a in pieces.outputs)
@@ -552,7 +569,7 @@ def materialize(
     is always its whole-dataset value. As in any chunked run, that takes behavior methods, named
     types' overloads and Externals to be row-wise, and an operation pairing two row sets raises
     in that pass, though it broadcasts alone. An Array taking an op its backend's
-    ``rows_unaligned`` names evaluates in a per-partition pass instead, and a sample of
+    ``pairs_by_chunk`` names evaluates in a per-partition pass instead, and a sample of
     ``entries=`` spanning partitions refuses it. A piece downstream of a reduction, or reading
     anything but one partitioned source, evaluates with the Arrays over the whole dataset, where
     that reduction has its one correct value. A write consuming one is refused, as it is in a

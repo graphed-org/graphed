@@ -244,6 +244,43 @@ def test_a_sample_spanning_chunks_refuses_an_op_paired_by_chunk() -> None:
         graphed.head(outlier, 4)
 
 
+def test_a_sample_spanning_chunks_still_takes_an_unflatten() -> None:
+    events = _events()
+    rebuilt = gak.unflatten(gak.flatten(events.x), gak.num(events.x))
+    assert ak.to_list(graphed.materialize(rebuilt, entries=4)) == [[3.0, 2.0], [], [1.0], [6.0]]
+
+
+class _OneChunk(_Chunks):
+    def partitions(self, target_bytes: int) -> tuple[Partition, ...]:
+        return (Partition.blind("0", "one", 0, 1),)
+
+
+class _OtherChunks(_Chunks):
+    def partitions(self, target_bytes: int) -> tuple[Partition, ...]:
+        return tuple(Partition.blind(uri, "other", 0, 1) for uri in ("0", "1"))
+
+
+def _two_sources(first: Any, second: Any) -> tuple[Any, Any]:
+    session = Session(_SubPairsNoRows())
+    form = AwkwardForm(ak.Array(_ONE.layout.to_typetracer(True)))
+    return session.source("a", form=form, data=first), session.source("b", form=form, data=second)
+
+
+def test_an_op_paired_by_chunk_beside_a_second_source_evaluates_chunk_by_chunk() -> None:
+    a, b = _two_sources(_Chunks(), _OtherChunks())
+    shifted = (a.s - a.s[a.t > 4.0]) + gak.sum(b.s, axis=0)
+    assert ak.to_list(graphed.materialize(shifted)) == [8.5, 6.5, 6.5, 7.0, 6.5]
+
+
+def test_a_sample_spanning_chunks_refuses_only_where_the_paired_op_reads() -> None:
+    a, b = _two_sources(_OneChunk(), _Chunks())
+    paired = a.s - a.s[a.t > 4.0]
+    counts = gak.num(b.x, axis=1)
+    sampled = graphed.materialize({"paired": paired, "counts": counts}, entries=4)
+    assert ak.to_list(sampled["paired"]) == [2.0, 0.0, 0.0]
+    assert ak.to_list(sampled["counts"]) == [2, 0, 1, 1]
+
+
 def test_a_whole_evaluation_still_broadcasts_a_length_one_row_set() -> None:
     events = _events()
     outlier = events.s - events.s[events.s == 3.0]
@@ -335,3 +372,11 @@ def test_two_row_sets_after_an_exchange_refuse_rather_than_broadcast() -> None:
 def test_aligned_rows_after_an_exchange_run_to_their_whole_value() -> None:
     moved = graphed.repartition(_events(), n=1)
     assert sorted(_dests(moved.s[moved.s > 0.75] + 1.0)[0]) == [2.0, 2.0, 2.0, 4.0]
+
+
+def test_materialize_refuses_an_op_paired_by_chunk_past_a_reduction() -> None:
+    events = _chunk_paired().session.source(
+        "past", form=AwkwardForm(ak.Array(_ONE.layout.to_typetracer(True))), data=_Chunks()
+    )
+    with pytest.raises(ValueError, match="no chunk to pair its operands by"):
+        graphed.materialize(events.s - gak.sum(events.s, axis=0))
