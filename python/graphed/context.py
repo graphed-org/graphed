@@ -26,7 +26,7 @@ import itertools
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from .array import Array, EagerRefusals, detached
+from .array import Array, EagerRefusals, detached, split_field
 from .errors import GraphedError, GraphedTypeError
 from .provenance import capture
 
@@ -128,9 +128,12 @@ class EventContext(EagerRefusals, ContextNode):
         return self._read(name)
 
     def __getitem__(self, key: object) -> Any:
-        """Read a field or field list, or derive the context a mask selects."""
+        """Read a field, field list or nested-field key, or derive the context a mask selects."""
         if isinstance(key, str):
             return self._read(key)
+        if (split := split_field(key)) is not None:
+            head, rest = split
+            return self[head][rest] if rest else self[head]
         if isinstance(key, list) and key and all(isinstance(field, str) for field in key):
             return self._stamp(expand(lambda record: record[key], (self._fields(key),), {}))
         if isinstance(key, Array | Varied):

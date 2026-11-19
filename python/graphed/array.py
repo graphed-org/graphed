@@ -145,6 +145,32 @@ def _refuse_axis0(first: object) -> TypeError:
     )
 
 
+def _is_field(item: object) -> bool:
+    return isinstance(item, str) or (
+        isinstance(item, list) and bool(item) and all(isinstance(name, str) for name in item)
+    )
+
+
+def split_field(key: object) -> tuple[str | list[str], tuple[object, ...]] | None:
+    """Awkward's tuple key as its first field item and the key without it; ``None`` without one.
+
+    A field selection commutes with the slicing members, so ``x[key]`` is ``x[head][rest]``.
+    """
+    if not isinstance(key, tuple):
+        return None
+    for i, item in enumerate(key):
+        if _is_field(item):
+            rest = key[:i] + key[i + 1 :]
+            if isinstance(item, list) and any(_is_field(other) for other in rest):
+                # awkward applies a later name inside each listed field: not a chain of reads
+                raise TypeError(
+                    f"a field list followed by a field name ({key!r}) is not supported; read "
+                    "each listed field's path on its own"
+                )
+            return item, rest
+    return None
+
+
 def encode_subscript(key: tuple[object, ...]) -> str:
     """Canonical injective spec for an inner (partition-local) tuple key.
 
