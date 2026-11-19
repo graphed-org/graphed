@@ -189,17 +189,30 @@ def _jax_bytes(weight: float, *, extra_op: bool = False) -> bytes:
     return bytes(export.export(jax.jit(f))(spec).serialize())
 
 
+def _jax_bytes_moved(weight: float) -> bytes:
+    """``_jax_bytes(weight)`` again, its function defined on other source lines."""
+    jax = pytest.importorskip("jax")
+    from jax import export  # noqa: PLC0415
+
+    def f(x: Any) -> Any:
+        return jax.nn.sigmoid(weight * x[:, 0] + 0.1)
+
+    spec = jax.ShapeDtypeStruct(export.symbolic_shape("b, 1"), jax.numpy.float32)
+    return bytes(export.export(jax.jit(f))(spec).serialize())
+
+
 def test_jax_hash_is_content_identity() -> None:
     pytest.importorskip("jax")
     h = JAX_PLUGIN.content_hash
-    a, a_reexported, b_weights, c_structure = (
+    a, a_reexported, a_moved, b_weights, c_structure = (
         _jax_bytes(0.5),
         _jax_bytes(0.5),
+        _jax_bytes_moved(0.5),
         _jax_bytes(0.9),
         _jax_bytes(0.5, extra_op=True),
     )
-    assert a != a_reexported, "jax.export blobs are volatile — the premise of content hashing"
-    assert h(a) == h(a_reexported)  # source locations are formatting, not content
+    assert a != a_moved, "jax.export blobs embed source locations — the premise of content hashing"
+    assert h(a) == h(a_reexported) == h(a_moved)  # source locations are formatting, not content
     assert h(a) != h(b_weights)
     assert h(a) != h(c_structure)
     validate_plugin(JAX_PLUGIN)
