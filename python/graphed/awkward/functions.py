@@ -126,12 +126,10 @@ def zip(
     Tuple fields are "0", "1", ...; ``depth_limit=1`` builds an events-level record of collections
     without broadcasting their jaggedness together.
     """
-    if isinstance(fields, Mapping):
-        arrays, params = _operands("zip", list(fields.values()))
-        params["fields"] = ",".join(fields.keys())
-    else:
-        arrays, params = _operands("zip", list(fields))
-        params["tuple"] = True
+    arrays, params = _operands(
+        "zip", list(fields.values() if isinstance(fields, Mapping) else fields)
+    )
+    params.update({"fields": ",".join(fields)} if isinstance(fields, Mapping) else {"tuple": True})
     if depth_limit is not None:
         params["depth_limit"] = depth_limit
     params.update(_structure_params(with_name=with_name, parameters=parameters))
