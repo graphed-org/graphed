@@ -19,16 +19,21 @@ from graphed.preserve.externals._helpers import _as_event_array
 from graphed.preserve.externals.pytorch_external import _pytorch_content_hash_impl
 
 
+def _traced(torch: Any, module: Any, example: Any) -> bytes:
+    buf = io.BytesIO()
+    torch.jit.save(torch.jit.trace(module, example), buf)
+    return buf.getvalue()
+
+
 def test_a_bfloat16_pytorch_model_runs() -> None:
     torch = pytest.importorskip("torch")
     model = torch.nn.Linear(2, 1, bias=False).to(torch.bfloat16)
     with torch.no_grad():
         model.weight.copy_(torch.tensor([[1.0, 2.0]]))
-    buf = io.BytesIO()
-    torch.jit.save(torch.jit.trace(model, torch.zeros(1, 2, dtype=torch.bfloat16)), buf)
+    payload = _traced(torch, model, torch.zeros(1, 2, dtype=torch.bfloat16))
     session = Session(AwkwardBackend())
     ev = from_awkward("ev", ak.Array({"a": [1.0, 2.0], "b": [3.0, 4.0]}), session=session)
-    out = record_external(session, PYTORCH_PLUGIN, buf.getvalue(), [ev.a, ev.b])
+    out = record_external(session, PYTORCH_PLUGIN, payload, [ev.a, ev.b])
     assert ak.to_list(session.materialize(out)) == [7.0, 10.0]
 
 
@@ -39,30 +44,24 @@ def test_a_torch_float_numpy_lacks_is_cast_to_float64(dtype: str) -> None:
     assert (str(ak.type(values)), ak.to_list(values)) == ("2 * float64", [1.5, 2.0])
 
 
-@pytest.mark.parametrize("dtype", ["complex32", "complex64", "qint8", "bits8"])
-def test_a_torch_output_with_no_float64_value_is_refused_by_name(dtype: str) -> None:
+@pytest.mark.parametrize(
+    ("dtype", "make"),
+    [
+        ("complex32", lambda t: t.ones(2, 1).to(t.complex32)),
+        ("complex64", lambda t: t.ones(2, 1).to(t.complex64)),
+        ("qint8", lambda t: t.quantize_per_tensor(t.ones(2, 1), 0.1, 0, t.qint8)),
+        ("bits8", lambda t: t.empty(2, 1, dtype=t.bits8)),
+    ],
+)
+def test_a_torch_output_with_no_float64_value_is_refused_by_name(dtype: str, make: Any) -> None:
     torch = pytest.importorskip("torch")
-    ones: Any = torch.ones(2, 1)
-    tensor = (
-        torch.quantize_per_tensor(ones, 0.1, 0, torch.qint8)
-        if dtype == "qint8"
-        else torch.empty(2, 1, dtype=torch.bits8)
-        if dtype == "bits8"
-        else ones.to(getattr(torch, dtype))
-    )
     with pytest.raises(PreserveError, match=f"output is torch.{dtype}, which has no float64"):
-        _as_event_array(tensor)
+        _as_event_array(make(torch))
 
 
 def test_a_complex_numpy_output_is_refused_not_truncated() -> None:
     with pytest.raises(PreserveError, match="output is complex64, which has no float64 value"):
         _as_event_array(np.array([[1 + 2j], [3 + 4j]], dtype=np.complex64))
-
-
-def _traced(torch: Any, module: Any, example: Any) -> bytes:
-    buf = io.BytesIO()
-    torch.jit.save(torch.jit.trace(module, example), buf)
-    return buf.getvalue()
 
 
 def test_a_float32_weight_hash_reads_the_bytes_numpy_did() -> None:
