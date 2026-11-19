@@ -15,7 +15,7 @@ import functools
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
-from ..array import Array, BoundMethod, Deferred, handle_of
+from ..array import Array, BoundMethod, Deferred, handle_of, select
 from ..errors import GraphedError
 from .lineage import unify_contexts
 from .points import Point, restrict
@@ -113,6 +113,14 @@ class Varied(Deferred):
         return rebuild(out, tags=self._tags, context=self._context)
 
     # ---- structural access -----------------------------------------------------
+    def __getitem__(self, key: object) -> Any:
+        """Map a subscript over every member; a mask cuts as `Array`'s does."""
+        if isinstance(key, Array | Varied):
+            from .handles import cut
+
+            return cut(self, key, select)
+        return expand(lambda member, k: member[k], (self, key), {})
+
     def __getattr__(self, name: str) -> Any:
         """Map an attribute read over every member."""
         if name in RESERVED:

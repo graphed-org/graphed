@@ -340,6 +340,15 @@ class EagerRefusals:
         )
 
 
+def select(array: Any, mask: Any) -> Any:
+    """Record ``array[mask]`` per universe, stamping no handle."""
+    if isinstance(array, Array) and isinstance(mask, Array):
+        return array.session.record_op("getitem", [array, mask], reduction=_positional(mask))
+    from .varied import expand
+
+    return expand(select, (array, mask), {})
+
+
 def _positional(key: Array) -> bool:
     """Return whether ``key`` picks rows by position, which each chunk would read as its own."""
     positional = getattr(key.session.backend, "positional_key", None)
@@ -673,12 +682,10 @@ class Array(Deferred):
 
     def __getitem__(self, key: object) -> Array:
         """Record a subscript: a mask, a field name, a field list or a tuple key."""
-        if getattr(key, "_varied_container", False):  # a Varied mask selects PER UNIVERSE
-            from .varied import expand
+        if isinstance(key, Array) or getattr(key, "_varied_container", False):
+            from .systematics.handles import cut
 
-            return expand(lambda arr, mask: arr[mask], (self, key), {})  # type: ignore[no-any-return]  # a Varied in, a Varied out
-        if isinstance(key, Array):
-            return self._session.record_op("getitem", [self, key], reduction=_positional(key))
+            return cut(self, key, select)  # type: ignore[no-any-return]  # a Varied mask selects PER UNIVERSE
         if isinstance(key, str):
             return self._session.record_op("field", [self], {"field": key})
         # M17: a list of field names selects a RECORD SUBSET — common to both array models
