@@ -141,8 +141,8 @@ class _Chunks:
         return ak.concatenate([_ONE, _TWO])
 
 
-def _events() -> Any:
-    session = Session(AwkwardBackend())
+def _events(backend: AwkwardBackend | None = None) -> Any:
+    session = Session(AwkwardBackend() if backend is None else backend)
     form = AwkwardForm(ak.Array(_ONE.layout.to_typetracer(forget_length=True)))
     return session.source("chunks", form=form, data=_Chunks())
 
@@ -205,29 +205,18 @@ class _SubPairsNoRows(AwkwardBackend):
     ids=["default", "declared"],
 )
 def test_a_backend_declares_which_ops_pair_no_rows(backend: Any, expected: Any) -> None:
-    events = Session(backend()).source(
-        "chunks", form=AwkwardForm(ak.Array(_ONE.layout.to_typetracer(True))), data=_Chunks()
-    )
+    events = _events(backend())
     # each chunk keeps one row, so the declared op broadcasts it over the chunk
     outlier = events.s - events.s[events.t > 4.0]
-    plan = graphed.aggregate_plan(
-        outlier,
-        reduce=lambda values: [values[0]],
-        combine=operator.add,
-        empty=list,
-        backend=lambda: outlier.session.backend,
-    )
     if expected is None:
         with pytest.raises(StageError, match=r"\[1, 3\] rows in one chunk"):
-            SequentialRunner().run(plan)
+            _chunked(outlier)
     else:
-        assert ak.to_list(ak.concatenate(SequentialRunner().run(plan).value)) == expected
+        assert _chunked(outlier) == expected
 
 
 def _chunk_paired() -> Any:
-    events = Session(_SubPairsNoRows()).source(
-        "chunks", form=AwkwardForm(ak.Array(_ONE.layout.to_typetracer(True))), data=_Chunks()
-    )
+    events = _events(_SubPairsNoRows())
     return events.s - events.s[events.t > 4.0]
 
 

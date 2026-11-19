@@ -139,21 +139,35 @@ def _keep(session: Session, nid: int, chunks: Sequence[object], reads: dict[int,
         reads[nid] = concat(chunks)
 
 
-def _paired_by_chunk(session: Session, among: Container[int] | None = None) -> set[int]:
+def _downstream(
+    nodes: Sequence[Mapping[str, Any]], seed: Callable[[int, Mapping[str, Any]], bool]
+) -> set[int]:
+    """Return the nodes ``seed`` picks and those downstream; a node's inputs precede it."""
+    found: set[int] = set()
+    for nid, nd in enumerate(nodes):
+        if not found.isdisjoint(nd["inputs"]) or seed(nid, nd):
+            found.add(nid)
+    return found
+
+
+def _paired_by_chunk(
+    session: Session, nodes: Sequence[Mapping[str, Any]], among: Container[int] | None = None
+) -> set[int]:
     """Return the nodes at or downstream of an op the backend pairs by chunk, not by row.
 
-    With ``among``, only of such an op in ``among``. A node's inputs precede it in the store.
+    With ``among``, only of such an op in ``among``.
     """
-    pairs = getattr(session.backend, "pairs_by_chunk", lambda op, params: False)
-    paired: set[int] = set()
-    for nid, nd in enumerate(session._nodes()):
-        if not paired.isdisjoint(nd["inputs"]) or (
+    pairs = getattr(session.backend, "pairs_by_chunk", None)
+    if pairs is None:
+        return set()
+    return _downstream(
+        nodes,
+        lambda nid, nd: (
             nd["kind"] == "op"
             and (among is None or nid in among)
             and pairs(nd["name"], nd["params"])
-        ):
-            paired.add(nid)
-    return paired
+        ),
+    )
 
 
 def _chunks_join(session: Session, data: PartitionedSource) -> bool:
@@ -227,13 +241,14 @@ def _first_entries(
     """
     reads: dict[int, object] = {}
     exhausted = True
+    paired = cache(lambda: _paired_by_chunk(session, session._nodes()))
     resources = LocalResources()
     try:
         for nid, data in sources_read(arrays).items():
             if isinstance(data, PartitionedSource) and _chunks_join(session, data):
                 columns = _columns(data, arrays, nid)
                 chunks, rows = _read_first(data, columns, entries, resources)
-                if len(chunks) > 1 and not _paired_by_chunk(session).isdisjoint(
+                if len(chunks) > 1 and not paired().isdisjoint(
                     a.node_id for a in arrays if nid in session.reachable_sources(a.node_id)
                 ):
                     raise ValueError(
@@ -320,13 +335,11 @@ def _frontier(session: Session, arrays: Sequence[Array], nid: int, past: Set[int
     return session._proxies(nodes, arrays)
 
 
-def _past_boundary(session: Session) -> set[int]:
-    """Return the nodes at or downstream of a boundary; a node's inputs precede it in the store."""
-    past: set[int] = set()
-    for nid, nd in enumerate(session._nodes()):
-        if nd["kind"] in _BOUNDARIES or not past.isdisjoint(nd["inputs"]):
-            past.add(nid)
-    return past
+def _past_boundary(session: Session, nodes: Sequence[Mapping[str, Any]] | None = None) -> set[int]:
+    """Return the nodes at or downstream of a boundary."""
+    return _downstream(
+        session._nodes() if nodes is None else nodes, lambda _, nd: nd["kind"] in _BOUNDARIES
+    )
 
 
 def _carrying(frontier: Sequence[Array]) -> PlanPieces:
@@ -494,15 +507,15 @@ def _evaluated(items: Iterable[Any], sample: _Sample | None = None) -> dict[int,
             )
             values.update(ran)
             continue
-        paired = _paired_by_chunk(session)
-        for array in work.arrays:
-            if array.node_id in paired:
-                # a pass over each of its partitioned sources evaluates it chunk by chunk
-                for nid, data in sources_read([array]).items():
-                    if isinstance(data, PartitionedSource):
-                        work.passes.setdefault(nid, _Joint())
-        past = _past_boundary(session) if work.pieces or work.passes else frozenset[int]()
-        stranded = _paired_by_chunk(session, past) if paired else set()
+        nodes = session._nodes()
+        paired = _paired_by_chunk(session, nodes)
+        # a pass over each partitioned source of a paired Array evaluates it chunk by chunk
+        chunk_paired = [a for a in work.arrays if a.node_id in paired]
+        for nid, data in (sources_read(chunk_paired) if chunk_paired else {}).items():
+            if isinstance(data, PartitionedSource):
+                work.passes.setdefault(nid, _Joint())
+        past = _past_boundary(session, nodes) if work.pieces or work.passes else frozenset[int]()
+        stranded = _paired_by_chunk(session, nodes, past) if paired else set()
         if any(a.node_id in stranded for a in [*work.arrays, *_Joint(work.pieces).outputs()]):
             raise ValueError(
                 "an op the backend pairs by chunk is downstream of a reduction, exchange or join "
