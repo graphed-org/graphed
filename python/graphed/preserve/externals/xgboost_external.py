@@ -44,6 +44,7 @@ def eval_xgboost(booster: Any, params: Mapping[str, Any], inputs: list[Any]) -> 
         matrix = ml_matrix(args[0], inputs)
     else:
         matrix = _stack_feature_columns(inputs)
+    import numpy as np
     import xgboost as xgb
 
     # xgboost reads absent trailing columns as missing values instead of refusing them
@@ -52,9 +53,11 @@ def eval_xgboost(booster: Any, params: Mapping[str, Any], inputs: list[Any]) -> 
         raise PreserveError(
             f"the xgboost model takes {expected} features; the call gives {matrix.shape[1]}"
         )
-    # the booster's own names, so a model trained on named columns runs as shipped
-    data = xgb.DMatrix(matrix, feature_names=booster.feature_names)
-    return _as_event_array(booster.predict(data))
+    names = booster.feature_names  # its own, so a model trained on named columns runs as shipped
+    if not len(matrix):  # an empty DMatrix predicts shape (0, 0), losing the output width
+        one = booster.predict(xgb.DMatrix(np.zeros((1, expected)), feature_names=names))
+        return _as_event_array(one[:0])
+    return _as_event_array(booster.predict(xgb.DMatrix(matrix, feature_names=names)))
 
 
 def _xgboost_samples() -> list[bytes]:
