@@ -1,4 +1,4 @@
-"""An output dtype numpy lacks is cast to float64, or refused by name if it has no float64 (#246)."""
+"""An output dtype numpy lacks is cast to float64, or refused by name without one (#246)."""
 
 from __future__ import annotations
 
