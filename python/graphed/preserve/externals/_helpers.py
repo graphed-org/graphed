@@ -50,15 +50,35 @@ def _stack_feature_columns(inputs: list[Any]) -> Any:
     return np.stack([np.asarray(ak.to_numpy(ak.Array(i))) for i in inputs], axis=1)
 
 
+def _no_float64(dtype: object) -> PreserveError:
+    return PreserveError(f"the model's output is {dtype}, which has no float64 value")
+
+
 def _as_event_array(out: Any) -> Any:
     """Return a model's (n,) or (n, 1) output as one value per event.
 
-    (n, k, ...) as ``ak.from_numpy`` gives it, regular rows of k.
+    (n, k, ...) as ``ak.from_numpy`` gives it, regular rows of k. A model with several outputs
+    gives its first, as ONNX's ``session.run`` lists them.
     """
     import awkward as ak
     import numpy as np
 
-    values = np.asarray(out, dtype="float64")
+    if isinstance(out, tuple | list):
+        out = out[0]
+    if isinstance(out, Mapping | tuple | list):  # "first" has no one meaning for keyed outputs
+        raise PreserveError(f"the model's first output is a {type(out).__name__}, not an array")
+    if type(out).__module__.startswith("torch"):  # numpy has no bfloat16 or float8: cast first
+        if out.is_complex():  # .double() would drop the imaginary part with only a warning
+            raise _no_float64(out.dtype)
+        try:
+            out = out.double()
+        except RuntimeError as err:  # quantized, sub-byte and bit dtypes have no cast
+            raise _no_float64(out.dtype) from err
+    # a tensor's own .numpy(): np.asarray on a Keras EagerTensor warns on every call
+    values = np.asarray(out.numpy() if hasattr(out, "numpy") else out)
+    if np.iscomplexobj(values):  # float64 would drop the imaginary part
+        raise _no_float64(values.dtype)
+    values = values.astype("float64", copy=False)
     return ak.from_numpy(values.reshape(-1) if values.shape[1:] == (1,) else values)
 
 
