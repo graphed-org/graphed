@@ -53,12 +53,18 @@ def _stack_feature_columns(inputs: list[Any]) -> Any:
 def _as_event_array(out: Any) -> Any:
     """Return a model's (n,) or (n, 1) output as one value per event.
 
-    (n, k, ...) as ``ak.from_numpy`` gives it, regular rows of k.
+    (n, k, ...) as ``ak.from_numpy`` gives it, regular rows of k. A model with several outputs
+    gives its first, as ONNX's ``session.run`` lists them.
     """
     import awkward as ak
     import numpy as np
 
-    values = np.asarray(out, dtype="float64")
+    if isinstance(out, tuple | list):
+        out = out[0]
+    if isinstance(out, Mapping | tuple | list):  # "first" has no one meaning for keyed outputs
+        raise PreserveError(f"the model's first output is a {type(out).__name__}, not an array")
+    # a tensor's own .numpy(): np.asarray on a Keras EagerTensor warns on every call
+    values = np.asarray(out.numpy() if hasattr(out, "numpy") else out, dtype="float64")
     return ak.from_numpy(values.reshape(-1) if values.shape[1:] == (1,) else values)
 
 
