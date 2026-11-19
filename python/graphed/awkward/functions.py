@@ -26,7 +26,8 @@ from graphed.context import EventContext, with_collection
 from graphed.errors import DeferredTypeError, GraphedError, GraphedTypeError
 from graphed.provenance import capture
 from graphed.shuffle import JOINKEY, route_key
-from graphed.varied import boundary_refusal, containers_in, expand, expand_tuple, narrow
+from graphed.systematics.varied import instances_in
+from graphed.varied import Varied, boundary_refusal, expand, expand_tuple, narrow
 
 from ..preserve.externals._helpers import refuse_unread_inputs
 from ..preserve.externals.correctionlib_external import (
@@ -946,12 +947,11 @@ def _dispatched(fn: Callable[..., Any], kind: str) -> Callable[..., Any]:
 
     @functools.wraps(fn)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
-        given = (*args, *kwargs.values())
-        given += tuple(item for v in given if isinstance(v, list | tuple) for item in v)
-        context = next((v for v in given if isinstance(v, EventContext)), None)
+        found = instances_in((Varied, EventContext), *args, *kwargs.values())
+        context = next((v for v in found if isinstance(v, EventContext)), None)
         if context is not None:
             return _on_context(fn, context, args, kwargs)
-        if not containers_in(*args, *kwargs.values()):
+        if not found:
             return fn(*args, **kwargs)
         if kind == "refusing":
             raise boundary_refusal(f"gak.{fn.__name__}", *args, *kwargs.values())

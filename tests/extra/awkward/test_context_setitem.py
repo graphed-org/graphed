@@ -143,7 +143,7 @@ def test_with_field_keeps_the_context_registrations() -> None:
             lambda e: (
                 from_awkward("events", ak.Array(DATA), session=Session(AwkwardBackend())).Muon
             ),
-            GraphedError,
+            GraphedTypeError,
             "different Session",
         ),
         (
@@ -200,3 +200,5 @@ def test_another_gak_function_names_the_context() -> None:
         gak.num(events, axis=1)
     with pytest.raises(GraphedTypeError, match="is an event context, not an array"):
         gak.concatenate([events, events.Muon], axis=1)
+    with pytest.raises(GraphedTypeError, match="is an event context, not an array"):
+        gak.zip({"a": events, "b": events.Muon})

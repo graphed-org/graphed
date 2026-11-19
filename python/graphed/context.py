@@ -188,9 +188,11 @@ class EventContext(EagerRefusals, ContextNode):
                 f"{type(value).__name__}",
             )
         if session_of(value) is not context_session(self):
-            raise GraphedError(
+            raise GraphedTypeError(
+                op,
+                capture(),
                 f"events[{name!r}]: the value was recorded in a different Session than {self!r}; "
-                "compute it from this context's collections"
+                "compute it from this context's collections",
             )
         if context_of(value) is None:
             # a value read through no context has no row space to check against this one's
@@ -205,8 +207,8 @@ class EventContext(EagerRefusals, ContextNode):
                 f"events[{name!r}] cannot carry a value read through another context: {err}; "
                 f"compute it from {self!r} or a context it was derived from"
             ) from err
-        carried = context_labels(self)
-        extra = [label for label in labels_of(admitted) if label not in carried]
+        carried, kept = context_labels(self), labels_of(admitted)
+        extra = [label for label in kept if label not in carried]
         if extra:
             raise GraphedError(
                 f"events[{name!r}]: the value carries universes {extra} that {self!r} has not "
@@ -217,7 +219,7 @@ class EventContext(EagerRefusals, ContextNode):
         lost = [
             label
             for label in labels_of(collections_of(self).get(name))
-            if label != "nominal" and label not in labels_of(admitted)
+            if label != "nominal" and label not in kept
         ]
         if lost:
             raise GraphedError(
