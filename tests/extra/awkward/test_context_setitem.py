@@ -10,7 +10,7 @@ import pytest
 import graphed
 from graphed import Session
 from graphed.awkward import AwkwardBackend, from_awkward, gak, gnano
-from graphed.context import EventContext
+from graphed.context import EventContext, context_of
 from graphed.errors import GraphedError, GraphedTypeError
 from graphed.systematics import labels, nominal, universe
 
@@ -204,3 +204,13 @@ def test_another_gak_function_names_the_context() -> None:
         gak.zip({"a": events, "b": events.Muon})
     with pytest.raises(GraphedTypeError, match="is an event context, not an array"):
         gak.with_field(events.Muon, events, "x")
+
+
+def test_a_held_collection_promotes_and_keeps_its_context() -> None:
+    session, events = _events()
+    muons = events.Muon
+    muons["scaled"] = graphed.vary(muons.pt, "musf", up=muons.pt * 2, down=muons.pt)
+    assert isinstance(muons, graphed.Varied)
+    assert context_of(muons) is events
+    up = ak.to_list(session.materialize(universe(muons, "musf_up").scaled))
+    assert up == [[2.0, 14.0], [], [18.0]]
