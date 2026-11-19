@@ -337,6 +337,10 @@ class Deferred(EagerRefusals):
     `__class__` assignment; a slot the class does not use stays unset.
     """
 
+    # M48 adds two frontend-only slots (§2.3e): `_context` is the event-context handle a read was
+    # performed through, `_labels` the variation labels flowing into this expression. Both are
+    # underscore-prefixed so `__getattr__`'s guard keeps them out of field access, and NEITHER
+    # reaches NodeKey params/tokens/hashes — interning and §1.2 stay intact.
     __slots__ = (
         "__weakref__",
         "_context",
@@ -350,10 +354,6 @@ class Deferred(EagerRefusals):
 
 
 class Array(Deferred):
-    # M48 adds two frontend-only slots (§2.3e): `_context` is the event-context handle a read was
-    # performed through, `_labels` the variation labels flowing into this expression. Both are
-    # underscore-prefixed so `__getattr__`'s guard keeps them out of field access, and NEITHER
-    # reaches NodeKey params/tokens/hashes — interning and §1.2 stay intact.
     """A deferred array: a proxy for one node of a Session's recorded graph."""
 
     __slots__ = ()

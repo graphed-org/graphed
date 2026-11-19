@@ -104,7 +104,7 @@ def _setitem(self: Any, where: object, what: object) -> None:
     new = _with_path(self, path, what)
     # a varied value turns an array proxy into its container; the shared layout allows the swap
     self.__class__ = type(new)
-    for name in Deferred.__slots__[1:]:
+    for name in (n for n in Deferred.__slots__ if n != "__weakref__"):
         slot = getattr(Deferred, name)
         try:
             slot.__set__(self, slot.__get__(new))
