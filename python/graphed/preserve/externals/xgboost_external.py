@@ -47,10 +47,10 @@ def eval_xgboost(booster: Any, params: Mapping[str, Any], inputs: list[Any]) -> 
     import xgboost as xgb
 
     # xgboost reads absent trailing columns as missing values instead of refusing them
-    if matrix.shape[1] != booster.num_features():
+    expected = booster.num_features()
+    if matrix.shape[1] != expected:
         raise PreserveError(
-            f"the xgboost model takes {booster.num_features()} features; "
-            f"the call gives {matrix.shape[1]}"
+            f"the xgboost model takes {expected} features; the call gives {matrix.shape[1]}"
         )
     # the booster's own names and types, so a model trained on named columns runs as shipped
     data = xgb.DMatrix(
