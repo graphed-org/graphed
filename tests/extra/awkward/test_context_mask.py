@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import awkward as ak
+import numpy as np
 import pytest
 
 import graphed
@@ -207,8 +208,6 @@ def test_a_backend_without_a_mask_seam_refuses_by_name() -> None:
 
 
 def test_a_masked_field_reaches_a_per_chunk_function_as_eager_hands_it() -> None:
-    import numpy as np
-
     seen: list[tuple[str, str, Any]] = []
 
     def per_chunk(values: ak.Array) -> ak.Array:
