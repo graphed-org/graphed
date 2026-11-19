@@ -293,8 +293,9 @@ def declared_form(forms: Sequence[AwkwardForm], canonical: str) -> AwkwardForm:
 
 
 def _fits(value: ak.types.Type, declared: ak.types.Type) -> bool:
-    """``value`` is ``declared`` wherever it holds data.
+    """``value`` is ``declared`` wherever it holds data, compared as awkward compares types.
 
+    Parameters and record fields match by key, in any order, and every parameter counts.
     ``unknown``, the type of a buffer holding no values (an all-empty list), fits any declared
     type.
     """
@@ -303,18 +304,23 @@ def _fits(value: ak.types.Type, declared: ak.types.Type) -> bool:
     if type(value) is not type(declared) or value.parameters != declared.parameters:
         return False
     other: Any = declared
-    if isinstance(value, (ak.types.RecordType, ak.types.UnionType)):
-        fields = value.fields if isinstance(value, ak.types.RecordType) else None
+    if isinstance(value, ak.types.RecordType):
+        keys = [str(i) for i in range(len(value.contents))] if value.is_tuple else value.fields
+        same = value.is_tuple == other.is_tuple and len(value.contents) == len(other.contents)
         return (
-            fields == (other.fields if fields is not None else None)
-            and len(value.contents) == len(other.contents)
-            and all(map(_fits, value.contents, other.contents))
+            same
+            and (value.is_tuple or set(keys) == set(other.fields))
+            and all(_fits(value.content(k), other.content(k)) for k in keys)
+        )
+    if isinstance(value, ak.types.UnionType):
+        return len(value.contents) == len(other.contents) and all(
+            map(_fits, value.contents, other.contents)
         )
     if isinstance(value, ak.types.RegularType) and value.size != other.size:
         return False
     if isinstance(value, (ak.types.ListType, ak.types.RegularType, ak.types.OptionType)):
         return _fits(value.content, other.content)
-    return str(value) == str(declared)
+    return value.is_equal_to(declared, all_parameters=True)
 
 
 def _leaves(t: ak.types.Type) -> list[str]:
@@ -342,9 +348,9 @@ def check_output_type(
 ) -> str | None:
     """``None`` when an External's ``value`` has its declared type, else the value's type string.
 
-    ``output_type`` is the whole element type: the value's type string must equal it (option-ness,
-    regular vs var, record names and parameters included), except that ``unknown`` inside an array
-    fits anything. ``output_dtype`` is a static leaf dtype: every leaf must have it.
+    ``output_type`` is the whole element type: the value's type must equal it as awkward compares
+    types (option-ness, regular vs var, record names and every parameter included, keys in any
+    order), except that ``unknown`` inside an array fits anything. ``output_dtype`` is a static leaf dtype: every leaf must have it.
     """
     try:
         t = ak.type(value)
@@ -358,11 +364,8 @@ def check_output_type(
     scalar = not _is_array(value)
     if scalar == any(map(_is_array, inputs)):
         return f"scalar {actual}" if scalar else str(t)
-    if actual == declared:
-        return None
-    if not scalar and "unknown" in actual and _fits(content, _type(declared)):
-        return None
-    return actual
+    fits = (not scalar or "unknown" not in actual) and _fits(content, _type(declared))
+    return None if fits else actual
 
 
 class AwkwardBackend:
