@@ -169,6 +169,9 @@ def test_assignments_without_a_meaning_are_refused(value: Any, error: Any, match
         events["x"] = value(events)
     with pytest.raises(error, match=match):
         gak.with_field(events, value(events), "x")
+    if not isinstance(value(events), float):  # a scalar field broadcasts, as on an awkward array
+        with pytest.raises(error, match=match):
+            events["Muon", "x"] = value(events)
 
 
 def test_an_assignment_dropping_a_registered_universe_is_refused() -> None:
@@ -225,7 +228,7 @@ def test_a_field_key_reaches_a_nested_record() -> None:
 @pytest.mark.parametrize(
     ("key", "match"),
     [
-        (("Muon", 1), "by field name"),
+        (("Muon", 1), r"or a nested field by \(name, field, \.\.\.\)"),
         ((1, "pt"), r"or a nested field by \(name, field, \.\.\.\)"),
         (("Muon",), r"or a nested field by \(name, field, \.\.\.\)"),
     ],
