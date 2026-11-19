@@ -54,18 +54,20 @@ def test_vector_awk_of_a_deferred_zip_equals_eager() -> None:
     assert _value(session.materialize(got.deltaphi(got))) == _value(want.deltaphi(want))
 
 
-def _sources(tmp_path: Path) -> dict[str, Any]:
+def _source(tmp_path: Path, name: str) -> Any:
     session, events = _events()
-    path = str(tmp_path / "j.parquet")
-    ak.to_parquet(JETS, path)
+    if name == "parquet":
+        pytest.importorskip("pyarrow")
+        path = str(tmp_path / "j.parquet")
+        ak.to_parquet(JETS, path)
+        return from_parquet("p", path, session=session)
     return {
         "from_awkward": from_awkward("e", JETS, session=session),
-        "parquet": from_parquet("p", path, session=session),
         "an op": from_awkward("e", JETS, session=session).pt * 2,
         "event context": events,
         "context collection": events.Jet,
         "behavior record": _zip(events.Jet),
-    }
+    }[name]
 
 
 @pytest.mark.parametrize(
@@ -73,7 +75,7 @@ def _sources(tmp_path: Path) -> dict[str, Any]:
     ["from_awkward", "parquet", "an op", "event context", "context collection", "behavior record"],
 )
 def test_the_layout_has_the_eager_form_and_an_unknown_length(tmp_path: Path, name: str) -> None:
-    x = _sources(tmp_path)[name]
+    x = _source(tmp_path, name)
     eager = {
         "from_awkward": JETS,
         "parquet": JETS,
@@ -108,7 +110,7 @@ VALUE_READS: dict[str, Callable[[Any], Any]] = {
 @pytest.mark.parametrize("read", VALUE_READS.values(), ids=VALUE_READS.keys())
 @pytest.mark.parametrize("name", ["from_awkward", "parquet", "context collection"])
 def test_no_value_reads_through_the_layout(tmp_path: Path, name: str, read: Any) -> None:
-    layout = _sources(tmp_path)[name].layout
+    layout = _source(tmp_path, name).layout
     with pytest.raises((TypeError, RuntimeError)):
         read(layout)
 
