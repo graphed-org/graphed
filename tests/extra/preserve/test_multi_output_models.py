@@ -1,4 +1,4 @@
-"""A model with several outputs gives its first, one value per event, in every plugin (#244)."""
+"""A multi-output JAX, ONNX, PyTorch or TensorFlow model gives its first output (#244)."""
 
 from __future__ import annotations
 
@@ -14,7 +14,9 @@ import pytest
 from graphed import Session
 from graphed.awkward import AwkwardBackend, from_awkward
 from graphed.preserve import JAX_PLUGIN, ONNX_PLUGIN, PYTORCH_PLUGIN, TENSORFLOW_PLUGIN
+from graphed.preserve.errors import PreserveError
 from graphed.preserve.externals import record_external
+from graphed.preserve.externals._helpers import _as_event_array
 
 X: Any = np.arange(10, dtype="float32").reshape(5, 2)
 W1 = np.array([[1.0], [0.0]], dtype="float32")
@@ -76,3 +78,11 @@ def test_a_multi_output_model_gives_its_first_output_per_event(build: Any) -> No
     events = from_awkward("ev", ak.Array({"a": X[:, 0], "b": X[:, 1]}), session=session)
     out = record_external(session, plugin, payload, [events.a, events.b], params=params)
     assert ak.to_list(session.materialize(out)) == (X @ W1).reshape(-1).tolist()
+
+
+@pytest.mark.parametrize(
+    ("out", "kind"), [({"p": X, "q": X}, "dict"), (((X, X), X), "tuple"), ([{"p": X}], "dict")]
+)
+def test_an_output_with_no_first_array_is_refused(out: Any, kind: str) -> None:
+    with pytest.raises(PreserveError, match=f"first output is a {kind}, not an array"):
+        _as_event_array(out)
