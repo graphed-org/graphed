@@ -16,6 +16,7 @@ import pytest
 from graphed import Session
 from graphed.awkward import AwkwardBackend, from_awkward, gak
 from graphed.debug import StageError
+from graphed.errors import GraphedTypeError
 from graphed.preserve import (
     JAX_PLUGIN,
     ONNX_PLUGIN,
@@ -303,3 +304,26 @@ def test_a_callers_form_is_checked_only_when_claimed(claim: bool) -> None:
     with pytest.raises(StageError) as info:
         session.materialize(out)
     assert "declares array output_type '?float64'" in info.value.cause_message
+
+
+class _Untyped:
+    """A form the backend cannot type, as another package's own form is."""
+
+    def describe(self) -> str:
+        return "untyped"
+
+
+def test_a_claimed_form_the_backend_cannot_type_is_refused_at_its_line() -> None:
+    session = Session(AwkwardBackend())
+    x = _inputs(session)[0]
+    with pytest.raises(GraphedTypeError) as info:
+        session.record_external(
+            "map",
+            lambda v: v,
+            [x],
+            {"fn": "untyped"},
+            descriptor=AwkwardBackend().external_payload("map", {"fn": "untyped"}),
+            form=_Untyped(),
+            form_params={"claim": True},
+        )
+    assert info.value.provenance.filename == __file__
