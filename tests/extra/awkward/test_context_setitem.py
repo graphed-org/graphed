@@ -202,3 +202,5 @@ def test_another_gak_function_names_the_context() -> None:
         gak.concatenate([events, events.Muon], axis=1)
     with pytest.raises(GraphedTypeError, match="is an event context, not an array"):
         gak.zip({"a": events, "b": events.Muon})
+    with pytest.raises(GraphedTypeError, match="is an event context, not an array"):
+        gak.with_field(events.Muon, events, "x")
