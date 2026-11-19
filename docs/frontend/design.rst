@@ -1394,6 +1394,11 @@ call adds no param, so its bytes are unchanged. ``output_type=`` and ``form=`` a
 reach the node, so they cannot change its identity or bytes. The preserve layer uses it for a
 plugin's ``output_dtype`` default.
 
+A backend's optional ``ordered_operands(op, inputs) -> bool`` says that ``op`` over those input
+forms may run a user overload whose operand order matters; the session then records the node with
+``ordered=True``, which keeps the optimizer's commute rules off it (awkward answers yes for a
+binary op over an operand with a ``__record__`` or ``__list__`` name).
+
 A declaration is checked at run time through the backend's optional
 ``check_output_type(value, inputs, key, declared) -> str | None``, which returns the value's type
 when it disagrees with the declaration. ``key`` is ``"output_type"`` or ``"output_dtype"``, or
