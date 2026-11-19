@@ -68,6 +68,16 @@ def test_a_field_list_followed_by_a_field_is_refused_by_name() -> None:
         src[["a", "d"], "b"]
 
 
+@pytest.mark.parametrize("key", [(["a", "d"], ["b"]), ("a", ["b"], "c")], ids=repr)
+def test_a_field_list_before_another_field_is_refused_with_the_whole_key(
+    key: tuple[Any, ...],
+) -> None:
+    _session, src = _src()
+    with pytest.raises(TypeError, match="followed by a field name or field list") as info:
+        src[key]
+    assert repr(key) in str(info.value)
+
+
 @pytest.mark.parametrize("key", [("a", "b"), ("a", S, 0), ("a", ["b", "c"])], ids=repr)
 def test_an_event_context_reads_a_nested_field_key_as_eager(key: tuple[Any, ...]) -> None:
     session = Session(AwkwardBackend())
