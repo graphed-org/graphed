@@ -148,3 +148,20 @@ def test_a_backend_that_cannot_declare_still_records_the_traced_form(
     out = ev.x.map(lambda x: x > 2)
     assert typestr(out) == "## * bool"
     assert not isinstance(ev.session._externals[out.node_id][0], CheckedExternal)
+
+
+@pytest.mark.parametrize(
+    ("fn", "reason"),
+    [
+        (lambda total: 1.0, r"<lambda>; pass"),
+        (lambda total: _raise(KeyError("k")), r"\(KeyError: 'k'\)"),
+    ],
+    ids=["not-traced", "raises"],
+)
+def test_a_scalar_input_has_no_length_zero_call(fn: Any, reason: str) -> None:
+    with pytest.warns(GraphedWarning, match=reason):
+        graphed.apply(fn, gak.sum(events().x))
+
+
+def _raise(exc: Exception) -> Any:
+    raise exc
