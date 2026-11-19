@@ -304,7 +304,7 @@ follows the same rule, going through the framework's own loader to get at the co
    * - ``pytorch_model``
      - a TorchScript archive's sorted ``state_dict`` plus its code
    * - ``xgboost_model``
-     - XGBoost's open JSON model, canonicalized
+     - XGBoost's open JSON (or UBJSON) model, canonicalized
    * - ``jax_export``
      - ``jax.export`` StableHLO with source locations stripped, plus the input signature
    * - ``triton_model``

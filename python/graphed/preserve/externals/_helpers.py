@@ -23,12 +23,12 @@ def _read_payload(path: str, mtime_ns: int, size: int) -> bytes:
     return Path(path).read_bytes()
 
 
-def _payload_bytes(payload: bytes | str | os.PathLike[str]) -> bytes:
+def _payload_bytes(payload: bytes | bytearray | memoryview | str | os.PathLike[str]) -> bytes:
     """Return a payload's bytes; one file is one object, however many nodes record it."""
-    if isinstance(payload, bytes):
-        return payload
+    if isinstance(payload, (bytes, bytearray, memoryview)):  # Booster.save_raw is a bytearray
+        return bytes(payload)
     stat = os.stat(payload)
-    return _read_payload(os.fspath(payload), stat.st_mtime_ns, stat.st_size)
+    return _read_payload(os.path.abspath(payload), stat.st_mtime_ns, stat.st_size)
 
 
 def json_bytes(payload: bytes) -> bytes:
