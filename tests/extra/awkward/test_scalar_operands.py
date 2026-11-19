@@ -51,6 +51,8 @@ REFUSED: dict[str, tuple[Callable[[Any], Any], str]] = {
     "covar": (lambda s: ak.covar(1.0, s.x, axis=1), "x must be a deferred array, not float"),
     "linear_fit": (lambda s: ak.linear_fit(s.x, 2, axis=1), "y must be a deferred array, not int"),
     "mask": (lambda s: ak.mask(s.f, True), "condition must be a deferred array, not bool"),
+    "where scalar condition": (lambda s: ak.where(True, s.f, 0), r"scalar \(bool\)"),
+    "mask array": (lambda s: ak.mask(1.0, s.f > 1), "array must be a deferred array, not float"),
     "concatenate axis=0": (lambda s: ak.concatenate([s.f, 0]), "a scalar adds a row"),
     "zip an eager object": (lambda s: ak.zip({"x": s.x, "o": object()}), "operand 1 must be"),
 }

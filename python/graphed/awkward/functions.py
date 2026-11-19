@@ -458,10 +458,10 @@ def drop_none(arr: Array, axis: int | None = None) -> Array:
     return arr.session.record_op("ak.drop_none", [arr], params)
 
 
-def where(cond: Array, a: object, b: object) -> Array:
+def where(cond: object, a: object, b: object) -> Array:
     """Record ``ak.where``; a scalar ``a`` or ``b`` travels as a param."""
     inputs, params = _operands("where", [cond, a, b])
-    return cond.session.record_op("ak.where", inputs, params)
+    return inputs[0].session.record_op("ak.where", inputs, params)
 
 
 def _operands(name: str, operands: Sequence[object]) -> tuple[list[Array], dict[str, ParamValue]]:
@@ -761,7 +761,7 @@ def run_lengths(arr: Array) -> Array:
 
 def mask(arr: Array, condition: Array, *, valid_when: bool = True) -> Array:
     """Record ``ak.mask`` of ``arr`` by ``condition``."""
-    _require_arrays("mask", {"condition": condition})
+    _require_arrays("mask", {"array": arr, "condition": condition})
     return arr.session.record_op("ak.mask", [arr, condition], {"valid_when": valid_when})
 
 
