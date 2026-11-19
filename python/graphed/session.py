@@ -49,6 +49,15 @@ def _fn_label(fn: object) -> str:
     return str(getattr(fn, "__name__", repr(fn)))
 
 
+def _reason(exc: BaseException) -> str:
+    """Return ``exc``'s type and the first non-blank line of its message."""
+    try:  # the exception's own __str__ is user code too
+        line = next((s for s in str(exc).splitlines() if s.strip()), "")
+    except Exception:
+        line = ""
+    return f"{type(exc).__name__}{': ' + line if line else ''}"
+
+
 def _call_identity(fn: object) -> object:
     """Return what makes two callable objects one call: see `Session._fn_name`'s identity rule."""
     # not isinstance: `__class__` is the callable's to claim
@@ -173,8 +182,8 @@ class Session:
         self._fn_taken: set[str] = set()
         # evaluator key -> the first callable recorded under it and where
         self._fn_held: dict[str, tuple[Callable[..., object], Provenance]] = {}
-        # (evaluator key, *input types) -> what tracing that function gave
-        self._fn_traced: dict[tuple[str, ...], Form | None] = {}
+        # (evaluator key, *input types) -> the form and canonical type inferring that function gave
+        self._fn_traced: dict[tuple[str, ...], tuple[Form, str] | None] = {}
 
     def __deepcopy__(self, memo: dict[int, Any] | None = None) -> Session:
         """Return this Session: one graph has one Session, so a copy shares what it records."""
@@ -843,7 +852,9 @@ class Session:
             key = evaluator_key(descriptor.content_hash, params_d)
             fn = self._hold_fn(fn, key, params_d["fn"], prov)
             if undeclared and declared is None:
-                form = self._traced_form(fn, key, ids, prov) or form
+                inferred = self._traced_form(fn, key, ids, prov)
+                if inferred is not None:
+                    form, declared = inferred[0], ("output_type", inferred[1])
         with self._lock:
             node_id = self._store.add_external(descriptor, ids, params_d)
             if declared is not None and check is not None:
@@ -892,14 +903,16 @@ class Session:
 
     def _traced_form(
         self, fn: Callable[..., object], key: str, ids: Sequence[int], prov: Provenance
-    ) -> Form | None:
-        """Return the form an undeclared ``fn`` gives its inputs, where the backend can trace it.
+    ) -> tuple[Form, str] | None:
+        """Return the form and type an undeclared ``fn`` gives its inputs, where the backend can.
 
-        This runs the user's function at record time, so any failure is a warning, never fatal.
-        One function is traced once per input type, however many universes record it.
+        The type is the backend's canonical ``output_type``, checked on every value as a declared
+        one is. This runs the user's function at record time, so any failure is a warning, never
+        fatal. One function is inferred once per input type, however many universes record it.
         """
         trace = getattr(self._backend, "traced_form", None)
-        if trace is None:
+        canonical = getattr(self._backend, "canonical_output_type", None)
+        if trace is None or canonical is None:
             return None
         forms = self._forms_of(ids)
         traced = (key, *(form.describe() for form in forms))
@@ -907,20 +920,20 @@ class Session:
             if traced in self._fn_traced:
                 return self._fn_traced[traced]
         reason = ""
+        inferred: tuple[Form, str] | None = None
         try:
             form: Form | None = trace(fn, forms)
+            if form is not None:
+                inferred = (form, str(canonical(form)))
         except Exception as exc:
-            form = None
-            try:  # the exception's own __str__ is user code too
-                line = next((s for s in str(exc).splitlines() if s.strip()), "")
-            except Exception:
-                line = ""
-            reason = f" ({type(exc).__name__}{': ' + line if line else ''})"
-        if form is None:
+            # a failure the backend raised from an earlier one names both
+            reasons = dict.fromkeys(_reason(e) for e in (exc.__cause__, exc) if e is not None)
+            reason = f" ({'; '.join(reasons)})"
+        if inferred is None:
             message = f"could not infer the type of {_fn_label(fn)}{reason}; pass output_type="
             warnings.warn_explicit(message, GraphedWarning, prov.filename, prov.lineno)
         with self._lock:
-            return self._fn_traced.setdefault(traced, form)
+            return self._fn_traced.setdefault(traced, inferred)
 
     def _canonical_output_type(
         self,

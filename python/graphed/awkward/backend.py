@@ -214,8 +214,8 @@ def _type(canonical: str) -> ak.types.Type:
 def canonical_output_type(spec: object) -> str:
     """Reduce an ``output_type`` spelling to awkward's type string, a fixpoint.
 
-    The spelling is a datashape string, awkward Type/Form/ArrayType, numpy dtype-like, or Python
-    type; refuse what cannot be built.
+    The spelling is a datashape string, awkward Type/Form/ArrayType, numpy dtype-like, Python type,
+    or an inferred ``AwkwardForm``; refuse what cannot be built.
     """
     return _canonical_string(spec) if isinstance(spec, str) else _canonical_output_type(spec)
 
@@ -223,6 +223,8 @@ def canonical_output_type(spec: object) -> str:
 def _canonical_output_type(spec: object) -> str:
     try:
         s = PYTHON_TYPES[spec] if isinstance(spec, type) and spec in PYTHON_TYPES else spec
+        if isinstance(s, AwkwardForm):
+            s = ak.type(s.tt)
         if isinstance(s, ak.forms.Form):
             s = s.type
         if isinstance(s, (ak.types.ArrayType, ak.types.ScalarType)):
@@ -445,11 +447,41 @@ class AwkwardBackend:
         return AwkwardForm(apply(op, operands, params, behavior=self._behavior))
 
     def traced_form(self, fn: Callable[..., object], inputs: Sequence[Form]) -> AwkwardForm | None:
-        """Return the form ``fn`` gives ``inputs``' typetracers, ``None`` if not a typetracer."""
+        """Return the form ``fn`` gives ``inputs``.
+
+        Their typetracers' result, else the type of one call on length-zero arrays of their forms,
+        raising, from the typetracer's failure, when that gives no array of a known type.
+        """
         forms = cast("Sequence[AwkwardForm]", inputs)
-        result = fn(*(self._with_behavior(f.tt) for f in forms))
-        traced = isinstance(result, ak.Array) and ak.backend(result) == "typetracer"
-        return AwkwardForm(result) if traced or ak.typetracer.is_unknown_scalar(result) else None
+        failure: Exception | None = None
+        try:
+            result = fn(*(self._with_behavior(f.tt) for f in forms))
+        except Exception as exc:
+            failure = exc
+        else:
+            traced = isinstance(result, ak.Array) and ak.backend(result) == "typetracer"
+            if traced or ak.typetracer.is_unknown_scalar(result):
+                return AwkwardForm(result)
+        if not all(isinstance(f.tt, ak.Array) for f in forms):  # a scalar has no length zero
+            if failure is None:
+                return None
+            raise failure
+        zeros = [
+            ak.Array(f.tt.layout.form.length_zero_array(highlevel=False), attrs=f.tt.attrs)
+            for f in forms
+        ]
+        try:
+            value = fn(*(self._with_behavior(z) for z in zeros))
+        except Exception as exc:
+            raise exc from failure
+        if not isinstance(value, ak.Array):
+            raise TypeError(
+                f"on length-zero arrays it returns {type(value).__name__}, not an array"
+            ) from failure
+        if "unknown" in str(value.type):  # as check_output_type reads it: holds no values
+            raise ValueError(f"on length-zero arrays its type is {str(value.type)!r}") from failure
+        layout = value.layout.to_typetracer(forget_length=True)
+        return AwkwardForm(ak.Array(layout, behavior=value.behavior, attrs=value.attrs))
 
     def eval_stage(
         self, op: str, inputs: Sequence[object], params: Mapping[str, object]
