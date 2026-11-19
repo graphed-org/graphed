@@ -121,6 +121,17 @@ class EventContext(EagerRefusals, ContextNode):
         return f"EventContext(#{self._serial} from {self._provenance})"
 
     # ---- tree content (§2.6a: the context reserves NO names) --------------------
+    @property
+    def fields(self) -> list[str]:
+        """The record's fields, then each name assigned on this context, as awkward lists them."""
+        names = list(self._record.fields)
+        return [*names, *(name for name in collections_of(self) if name not in names)]
+
+    def __dir__(self) -> list[str]:
+        """List the attributes with the fields, as an awkward array does."""
+        reachable = (name for name in self.fields if name.isidentifier() and name[0] != "_")
+        return sorted({*super().__dir__(), *reachable})
+
     def __getattr__(self, name: str) -> Any:
         """Read field ``name`` of the event record."""
         if name.startswith("_"):

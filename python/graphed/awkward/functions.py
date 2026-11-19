@@ -924,8 +924,10 @@ def sample(arr: Array, *, factor: int) -> object:
 # ---- §2.3c: the gak dispatch layer; `_dispositions` classifies each function ----------
 def _on_context(
     fn: Callable[..., Any], context: EventContext, args: Any, kwargs: Any
-) -> EventContext:
-    """Answer an event context where gak takes an array: only ``with_field`` means anything."""
+) -> EventContext | list[str]:
+    """Answer an event context where gak takes an array: ``with_field`` and ``fields`` only."""
+    if fn.__name__ == "fields":
+        return context.fields
     if fn.__name__ == "with_field":
         bound = inspect.signature(fn).bind(*args, **kwargs).arguments
         if bound["arr"] is context:
