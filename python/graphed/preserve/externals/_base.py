@@ -43,7 +43,7 @@ from ...provenance import capture
 from ...services import UnboundServiceError
 from ...varied import containers_in, expand
 from ..errors import PreserveError
-from ._helpers import refuse_unread_inputs
+from ._helpers import _payload_bytes, refuse_unread_inputs
 
 ContentHash = Callable[[bytes], str]
 Load = Callable[[bytes, Mapping[str, Any]], Any]
@@ -261,7 +261,7 @@ def evaluate_external(
 def record_external(
     session: Any,
     plugin: ExternalPlugin,
-    payload: bytes,
+    payload: bytes | str | os.PathLike[str],
     inputs: Sequence[Any],
     *,
     params: Mapping[str, Any] | None = None,
@@ -276,8 +276,9 @@ def record_external(
 
     ``output_type=`` declares the type of each element of the plugin's value (any spelling the
     session's backend accepts, see ``Session.record_external``); it is recorded as the node's form
-    and its canonical string joins the node's params.
+    and its canonical string joins the node's params. ``payload`` is the bytes or a path to them.
     """
+    payload = _payload_bytes(payload)  # a path records the same node as its bytes
     if containers_in(*inputs):  # one External per universe, as `graphed.apply` records
         return expand(
             lambda *members: record_external(

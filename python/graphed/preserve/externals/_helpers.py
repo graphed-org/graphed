@@ -2,17 +2,33 @@
 
 from __future__ import annotations
 
+import functools
 import gzip
 import hashlib
 import json
+import os
 import threading
 from collections import OrderedDict
 from collections.abc import Callable, Mapping
+from pathlib import Path
 from typing import Any, TypeVar
 
 from ...errors import GraphedTypeError
 from ...provenance import capture
 from ..errors import PreserveError
+
+
+@functools.lru_cache(maxsize=8)
+def _read_payload(path: str, mtime_ns: int, size: int) -> bytes:
+    return Path(path).read_bytes()
+
+
+def _payload_bytes(payload: bytes | str | os.PathLike[str]) -> bytes:
+    """Return a payload's bytes; one file is one object, however many nodes record it."""
+    if isinstance(payload, bytes):
+        return payload
+    stat = os.stat(payload)
+    return _read_payload(os.fspath(payload), stat.st_mtime_ns, stat.st_size)
 
 
 def json_bytes(payload: bytes) -> bytes:
@@ -35,7 +51,12 @@ def _canonical_json_hash_impl(domain: bytes, payload: bytes) -> str:
         parsed = json.loads(json_bytes(payload).decode("utf-8"))
     except (UnicodeDecodeError, ValueError, OSError, EOFError) as err:
         raise PreserveError(f"payload is not valid JSON ({err})") from err
-    canon = json.dumps(parsed, sort_keys=True, separators=(",", ":"), default=str)
+    return canonical_document_hash(domain, parsed)
+
+
+def canonical_document_hash(domain: bytes, document: Any) -> str:
+    """sha256 over domain-separated, canonicalized JSON of a parsed ``document``."""
+    canon = json.dumps(document, sort_keys=True, separators=(",", ":"), default=str)
     return "sha256:" + hashlib.sha256(domain + canon.encode("utf-8")).hexdigest()
 
 
