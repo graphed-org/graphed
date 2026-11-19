@@ -30,7 +30,10 @@ def _pytorch_content_hash_impl(payload: bytes) -> str:
     h = hashlib.sha256(b"torch-weights-code-v1")
     for name, tensor in sorted(model.state_dict().items()):
         h.update(name.encode("utf-8"))
-        h.update(tensor.detach().cpu().numpy().tobytes())
+        # its raw bytes: numpy has no bfloat16 or float8 to read them through
+        h.update(
+            tensor.detach().cpu().contiguous().reshape(-1).view(torch.uint8).numpy().tobytes()
+        )
     h.update(model.code.encode("utf-8"))  # architecture is content too: same weights, new graph
     return "sha256:" + h.hexdigest()
 

@@ -1,0 +1,12 @@
+.. under: 0.0.12 (unreleased)
+
+* A PyTorch model whose output or weights are bfloat16 or float8 runs; numpy has neither dtype, so
+  the output is cast to float64 before conversion and the content hash reads the weights' raw
+  bytes (unchanged for every other dtype) (#246).
+
+A complex output is refused, not truncated
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* A model External whose output is complex, from any plugin, or a quantized PyTorch output, raises
+  ``PreserveError`` naming its dtype. A complex output used to be cast to float64, silently
+  dropping the imaginary part, with only a numpy ``ComplexWarning`` (#246).

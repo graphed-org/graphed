@@ -63,8 +63,15 @@ def _as_event_array(out: Any) -> Any:
         out = out[0]
     if isinstance(out, Mapping | tuple | list):  # "first" has no one meaning for keyed outputs
         raise PreserveError(f"the model's first output is a {type(out).__name__}, not an array")
+    if type(out).__module__.startswith("torch"):  # numpy has no bfloat16 or float8: cast first
+        if out.is_quantized or out.is_complex():
+            raise PreserveError(f"the model's output is {out.dtype}, which has no float64 value")
+        out = out.double()
     # a tensor's own .numpy(): np.asarray on a Keras EagerTensor warns on every call
-    values = np.asarray(out.numpy() if hasattr(out, "numpy") else out, dtype="float64")
+    values = np.asarray(out.numpy() if hasattr(out, "numpy") else out)
+    if np.iscomplexobj(values):  # float64 would drop the imaginary part
+        raise PreserveError(f"the model's output is {values.dtype}, which has no float64 value")
+    values = values.astype("float64", copy=False)
     return ak.from_numpy(values.reshape(-1) if values.shape[1:] == (1,) else values)
 
 
