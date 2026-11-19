@@ -306,7 +306,10 @@ def _fits(value: ak.types.Type, declared: ak.types.Type) -> bool:
         return False
     other: Any = declared
     if isinstance(value, ak.types.RecordType):
-        mine, theirs = (dict(zip(t.fields, t.contents, strict=True)) for t in (value, other))
+        mine, theirs = (
+            dict(zip(range(len(t.contents)) if t.is_tuple else t.fields, t.contents, strict=True))
+            for t in (value, other)
+        )
         return (
             value.is_tuple == other.is_tuple
             and mine.keys() == theirs.keys()
