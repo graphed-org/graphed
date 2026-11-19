@@ -20,7 +20,6 @@ import cloudpickle
 import numpy as np
 from awkward._nplikes.shape import unknown_length
 from awkward._nplikes.typetracer import TypeTracerArray
-from awkward.contents import IndexedArray, IndexedOptionArray
 from awkward.types._awkward_datashape_parser import LarkError
 
 from graphed import Array, Session
@@ -174,7 +173,7 @@ _CANONICAL_LOCK = threading.RLock()  # reentrant: `_forget` may run on a thread 
 
 def _sharing(result: Any) -> Any:
     """Return a recorded typetracer ``result`` with its indexed sub-layouts shared (#282)."""
-    if not isinstance(result, ak.Array) or ak.backend(result) != "typetracer":
+    if not isinstance(result, ak.Array) or result.layout.backend.name != "typetracer":
         return result
     layout = _shared(result.layout)
     if layout is result.layout:
@@ -202,7 +201,7 @@ def _shared(layout: Any) -> Any:
     content = _shared(layout.content)
     if content is not layout.content:
         layout = layout.copy(content=content)
-    if not isinstance(layout, IndexedArray | IndexedOptionArray) or layout.parameters:
+    if not layout.is_indexed or layout.parameters:
         return layout
     data = layout.index.data
     if not isinstance(data, TypeTracerArray) or data.report is not None:
