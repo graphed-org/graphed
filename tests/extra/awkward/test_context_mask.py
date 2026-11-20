@@ -99,6 +99,7 @@ def test_a_filter_on_a_masked_context() -> None:
 
 
 def test_a_masked_context_writes_the_bytes_eager_writes(tmp_path: Path) -> None:
+    pytest.importorskip("pyarrow")
     _session, ctx = _context()
     masked = ctx.mask[ctx.MET.pt > 10]
     masked["ht"] = gak.sum(masked.Jet.pt, axis=1)

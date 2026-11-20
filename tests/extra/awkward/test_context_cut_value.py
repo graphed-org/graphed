@@ -149,3 +149,20 @@ def test_followed_collections_carry_once_and_keep_a_carry_error() -> None:
         held.get("b")
     del held["a"]
     assert list(held) == ["b"]
+
+
+@pytest.mark.parametrize("shape", SHAPES.values(), ids=SHAPES.keys())
+def test_reading_a_values_rows_asks_no_array_for_a_missing_name(
+    shape: Callable[[Any], Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    asked: list[str] = []
+    fallback = graphed.Array.__getattr__
+
+    def counted(self: graphed.Array, name: str) -> Any:
+        asked.append(name)
+        return fallback(self, name)
+
+    monkeypatch.setattr(graphed.Array, "__getattr__", counted)
+    session, events = _events()
+    _value(session, shape(events))
+    assert "_members" not in asked
