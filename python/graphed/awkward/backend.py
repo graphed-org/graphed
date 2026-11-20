@@ -281,8 +281,8 @@ def _type(canonical: str) -> ak.types.Type:
 def canonical_output_type(spec: object) -> str:
     """Reduce an ``output_type`` spelling to awkward's type string, a fixpoint.
 
-    The spelling is a datashape string, awkward Type/Form/ArrayType, numpy dtype-like, or Python
-    type; refuse what cannot be built.
+    The spelling is a datashape string, awkward Type/Form/ArrayType, numpy dtype-like, Python type,
+    or an inferred ``AwkwardForm``; refuse what cannot be built.
     """
     return _canonical_string(spec) if isinstance(spec, str) else _canonical_output_type(spec)
 
@@ -290,6 +290,8 @@ def canonical_output_type(spec: object) -> str:
 def _canonical_output_type(spec: object) -> str:
     try:
         s = PYTHON_TYPES[spec] if isinstance(spec, type) and spec in PYTHON_TYPES else spec
+        if isinstance(s, AwkwardForm):
+            s = ak.type(s.tt)
         if isinstance(s, ak.forms.Form):
             s = s.type
         if isinstance(s, (ak.types.ArrayType, ak.types.ScalarType)):
@@ -419,6 +421,17 @@ def _leaves(t: ak.types.Type) -> list[str]:
     return []
 
 
+def _holds_unknown(t: ak.types.Type) -> bool:
+    """Return whether ``t`` has an ``unknown`` node, by structure: a field may be named so."""
+    if isinstance(t, ak.types.UnknownType):
+        return True
+    if isinstance(t, (ak.types.RecordType, ak.types.UnionType)):
+        return any(map(_holds_unknown, t.contents))
+    if isinstance(t, (ak.types.ListType, ak.types.RegularType, ak.types.OptionType)):
+        return _holds_unknown(t.content)
+    return False
+
+
 def _is_array(x: object) -> bool:
     """Array-ness at run time: a 0-d ndarray and an `ak.Record` are scalars."""
     # never np.ndim: it converts the value, and a ragged list raises
@@ -432,27 +445,28 @@ def check_output_type(
 
     ``output_type`` is the whole element type: the value's type must equal it as awkward compares
     types (option-ness, regular vs var, record names and every parameter included, keys in any
-    order), except that ``unknown`` inside an array fits anything. ``output_dtype`` is a static
-    leaf dtype: every leaf must have it.
+    order), except that ``unknown`` inside an array fits anything. It is an array exactly when an
+    input is one; an inferred ``array output_type`` or ``scalar output_type`` states its own.
+    ``output_dtype`` is a static leaf dtype: every leaf must have it.
     """
     try:
         t = ak.type(value)
     except (TypeError, ValueError):  # not array-like at all
         return type(value).__name__
     content = t.content if isinstance(t, (ak.types.ArrayType, ak.types.ScalarType)) else t
-    actual = str(content)
     if key == "output_dtype":
-        return None if all(p == declared for p in _leaves(content)) else actual
+        return None if all(p == declared for p in _leaves(content)) else str(content)
     # as `declared_form`: an array when any input is one; value and inputs share the predicate
     scalar = not _is_array(value)
-    if scalar == any(map(_is_array, inputs)):
-        return f"scalar {actual}" if scalar else str(t)
+    array = any(map(_is_array, inputs)) if key == "output_type" else key == "array output_type"
+    if scalar == array:
+        return f"scalar {content}" if scalar else str(t)
     want = _type(declared)
     if content.is_equal_to(want, all_parameters=True):
         return None
-    if not scalar and "unknown" in actual and _fits(content, want):
+    if not scalar and _holds_unknown(content) and _fits(content, want):
         return None
-    return actual
+    return str(content)
 
 
 class AwkwardBackend:
@@ -548,11 +562,41 @@ class AwkwardBackend:
         )
 
     def traced_form(self, fn: Callable[..., object], inputs: Sequence[Form]) -> AwkwardForm | None:
-        """Return the form ``fn`` gives ``inputs``' typetracers, ``None`` if not a typetracer."""
+        """Return the form ``fn`` gives ``inputs``.
+
+        Their typetracers' result, else the type of one call on length-zero arrays of their forms,
+        raising, from the typetracer's failure, when that gives no array of a known type.
+        """
         forms = cast("Sequence[AwkwardForm]", inputs)
-        result = fn(*(self._with_behavior(f.tt) for f in forms))
-        traced = isinstance(result, ak.Array) and ak.backend(result) == "typetracer"
-        return AwkwardForm(result) if traced or ak.typetracer.is_unknown_scalar(result) else None
+        failure: Exception | None = None
+        try:
+            result = fn(*(self._with_behavior(f.tt) for f in forms))
+        except Exception as exc:
+            failure = exc
+        else:
+            traced = isinstance(result, ak.Array) and ak.backend(result) == "typetracer"
+            if traced or ak.typetracer.is_unknown_scalar(result):
+                return AwkwardForm(result)
+        if not all(isinstance(f.tt, ak.Array) for f in forms):  # a scalar has no length zero
+            if failure is None:
+                return None
+            raise failure
+        zeros = [
+            ak.Array(f.tt.layout.form.length_zero_array(highlevel=False), attrs=f.tt.attrs)
+            for f in forms
+        ]
+        try:
+            value = fn(*(self._with_behavior(z) for z in zeros))
+        except Exception as exc:
+            raise exc from failure
+        if not isinstance(value, ak.Array):
+            raise TypeError(
+                f"on length-zero arrays it returns {type(value).__name__}, not an array"
+            ) from failure
+        if _holds_unknown(value.type.content):
+            raise ValueError(f"on length-zero arrays its type is {str(value.type)!r}") from failure
+        layout = value.layout.to_typetracer(forget_length=True)
+        return AwkwardForm(ak.Array(layout, behavior=value.behavior, attrs=value.attrs))
 
     def eval_stage(
         self, op: str, inputs: Sequence[object], params: Mapping[str, object]

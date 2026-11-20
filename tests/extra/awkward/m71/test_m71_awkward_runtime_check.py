@@ -110,13 +110,18 @@ def test_a_matching_value_passes_unchanged() -> None:
     assert ak.to_list(s.materialize(ev.x[ev.x.map(fx.cut, output_type=bool)])) == [1.5, 2.5, 3.5]
 
 
-def test_only_a_declared_node_carries_a_check() -> None:
+def test_a_declared_or_inferred_node_carries_a_check_and_an_uninferred_one_does_not() -> None:
     from graphed.session import CheckedExternal  # noqa: PLC0415  (absent on the base)
 
     s, ev = _events()
-    assert s._externals[ev.x.map(fx.cut).node_id][0] is fx.cut
-    checked = s._externals[ev.x.map(fx.cut, output_type=bool).node_id][0]
-    assert isinstance(checked, CheckedExternal) and checked.fn is fx.cut
+    inferred, declared = ev.x.map(fx.cut), ev.x.map(fx.cut, output_type=bool)
+    for out, key in ((inferred, "array output_type"), (declared, "output_type")):
+        checked = s._externals[out.node_id][0]
+        assert isinstance(checked, CheckedExternal) and checked.fn is fx.cut
+        assert (checked.key, checked.declared) == (key, "bool")
+    with pytest.warns(graphed.GraphedWarning, match="could not infer"):
+        bare = ev.x.map(fx.total)
+    assert s._externals[bare.node_id][0] is fx.total
 
 
 def test_a_plan_raises_a_stage_error_at_the_declaring_line() -> None:
