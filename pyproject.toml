@@ -163,6 +163,8 @@ convention = "pep257"
 # Array's methods take Varied operands and delegate to the shuffle verbs, and both modules build on
 # Array, so those imports wait until a method runs.
 "python/graphed/array.py" = ["PLC0415"]
+# Varied's subscript cuts through systematics.handles, which builds on Varied.
+"python/graphed/systematics/varied.py" = ["PLC0415"]
 
 [tool.mypy]
 # 3.12 pin: numpy 2.5.0 (py>=3.12) ships PEP695 stubs that require mypy on 3.12+.

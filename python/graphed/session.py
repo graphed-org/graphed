@@ -31,7 +31,7 @@ from .errors import (
 )
 from .provenance import Provenance, Site, capture
 from .services import Bindable
-from .systematics.lineage import unify_contexts
+from .systematics.lineage import merged_rows, rows_of, unify_contexts
 from .systematics.points import Point
 from .systematics.state import SystematicsState
 from .write import PartitionedSource
@@ -302,11 +302,15 @@ class Session:
         array._site = site
         if inputs:
             labels: frozenset[str] | None = None
+            cut = False
             for item in inputs:
                 carried = labels_carried(item)
                 if carried:
                     labels = carried if labels is None else labels | carried
+                cut = cut or item._rows is not None
             attach(array, unify_contexts(*(handle_of(item) for item in inputs)), labels)
+            if cut:
+                array._rows = merged_rows(*(rows_of(item) for item in inputs))
         return array
 
     # ---- introspection ---------------------------------------------------------
