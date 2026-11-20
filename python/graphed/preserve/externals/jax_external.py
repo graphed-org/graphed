@@ -48,12 +48,20 @@ def load_jax(payload: bytes, params: Mapping[str, Any]) -> Any:
 
 def eval_jax(exported: Any, params: Mapping[str, Any], inputs: list[Any]) -> Any:
     """Call the exported function on ``inputs``, one value per event."""
+    import numpy as np
+
     template = parse_call_template(params, len(inputs))
     if template is None:  # legacy: one stacked feature matrix
-        return _as_event_array(exported.call(_stack_feature_columns(inputs)))
-    args, kwargs = template
-    arrays = [ml_matrix(e, inputs) for e in args]
-    kwarrays = {k: ml_matrix(e, inputs) for k, e in kwargs.items()}
+        arrays, kwarrays = [_stack_feature_columns(inputs)], {}
+    else:
+        args, kwargs = template
+        arrays = [ml_matrix(e, inputs) for e in args]
+        kwarrays = {k: ml_matrix(e, inputs) for k, e in kwargs.items()}
+    if not any(len(a) for a in (*arrays, *kwarrays.values())):
+        tail = exported.out_avals[0].shape[1:]
+        # the export states the width; a symbolic batch dimension refuses zero rows
+        if all(isinstance(d, int) for d in tail):
+            return _as_event_array(np.zeros((0, *tail)))
     return _as_event_array(exported.call(*arrays, **kwarrays))
 
 
