@@ -1126,6 +1126,9 @@ Prints::
 
 Both outputs share the ``ht`` sub-expression, so it is read and evaluated once per partition, not
 once per output — and of the three columns in each file, only ``Jet_pt`` is read at all.
+``reduce`` gets one value per output you pass, in the order you pass them, so
+``dict(zip(names, values))`` pairs each name with its own value. Outputs that compile to one node, the
+same sum twice or ``x + y`` beside ``y + x``, are evaluated once and the value repeated.
 ``SequentialRunner`` runs the plan here with no extra dependencies; the same plan object is what
 you hand to a process pool, a dask cluster or a parsl pool from ``graphed-executors`` (``pip
 install graphed-executors``). ``backend=`` names the workers' evaluation backend, ``partitions=``

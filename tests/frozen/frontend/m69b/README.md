@@ -6,8 +6,8 @@ Awkward-free (numpy backend, the in-memory record source `Events`), so the free-
 **New API (a `TypeError`/`AttributeError` on d0ad16b is the expected pre-implementation failure):**
 `graphed.aggregate_plan(..., opt_level=1)`: `1` is the optimized compile, `0` the 1:1 cone of the plan's
 outputs, write arrays and metadata arrays, any other value refused (`ValueError`) naming `0` and `1`;
-`GraphStore.cone(outputs=)`; `graphed.debug.replay` compiles once at the plan's level and hands `reduce` one
-value per IR output.
+`GraphStore.cone(outputs=)`; `graphed.debug.replay` compiles once at the plan's level and hands `reduce` what a
+run hands it, one value per marked output (#228).
 
 Fixture (`m69b_opt_fixtures.record`): before any output, the session records, unmarked, a node over a column
 no output reads (`z * 3.0`) and a node that raises on the data (`x[x > 100][0]`). The marked pair `w`,
@@ -15,9 +15,9 @@ no output reads (`z * 3.0`) and a node that raises on the data (`x[x > 100][0]`)
 
 | Test | Clause | Witness | Fails on |
 |---|---|---|---|
-| `test_opt0_runs_and_reduce_receives_one_value_per_marked_output` | at `0` the plan runs, the reduce receives one value per marked output, the totals equal the default's, which receives one fewer | `sums` returns one total per value: `[5, 5]` at `0`, `[5]` by default | shipping the whole store (`compile_ir(optimize=False)`: the unread-column node raises); a default of `0` |
+| `test_opt0_runs_and_reduce_receives_one_value_per_marked_output` | at `0` the plan runs, the reduce receives one value per marked output, the totals equal the default's, which does too (#228) | `sums` returns one total per value: `[5, 5]` at `0` and by default | shipping the whole store (`compile_ir(optimize=False)`: the unread-column node raises); a default of `0` |
 | `test_opt0_ships_the_lowered_cone_of_the_outputs` | the shipped IR's node count equals the outputs' `lower(opt_level=0)` cone; `compile_ir(session, *outputs, optimize=False)` holds more | node counts | shipping the whole store |
-| `test_opt0_writes_the_defaults_parts` | `writes=` with a metadata array at `0` writes the default's parts | part files byte-equal; reduce arity `3` at `0` (two values, one path), `2` by default | a cone over `outputs` only (write and metadata arrays unslotted); the whole store; a default of `0` |
+| `test_opt0_writes_the_defaults_parts` | `writes=` with a metadata array at `0` writes the default's parts | part files byte-equal; reduce arity `3` (two values, one path) at `0` and by default (#228) | a cone over `outputs` only (write and metadata arrays unslotted); the whole store; a default of `0` |
 | `test_the_default_is_the_optimized_compile` | the default's IR bytes equal a plan built without the kwarg, and today's optimized compile | IR bytes | a default of `0` |
 | `test_opt0_ir_and_pickled_plan_do_not_depend_on_the_hash_seed` | at `0` the IR and the pickled plan are byte-identical across two child interpreters with `PYTHONHASHSEED` 1 and 2 | each child (`check=True`) prints one line: IR digest, pickled-plan digest, `hash("graphed")`; the hashes differ, so the comparison is live | a hash-ordered structure (a `frozenset` of strings) in the shipped process |
 | `test_replay_of_a_capturing_plan_equals_its_run[w-and-w-times-1-at-0]` | a `store=` plan at `0`, run, then `graphed.debug.replay(plan, 0, *outputs).diff()` is equal | `diff.reference == "recorded"`, `diff.equal` | replay recompiling optimized (refuses the plan); the whole store |

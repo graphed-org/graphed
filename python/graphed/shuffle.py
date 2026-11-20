@@ -41,8 +41,10 @@ from graphed.core.execution import WorkerResources
 from .aggregate import (
     _adopting,
     _partitioned,
+    _slot_of,
     attribute_failures,
     external_evaluators,
+    per_output,
     plan_services,
     read_label,
     resolve_backend,
@@ -562,6 +564,8 @@ def _build(
     barrier, targets, sides, post = _barrier_sides(builder, outputs, store)
     params = dict(nodes[barrier]["params"])
     refuse_chunk_partials(compiled, as_outputs=fold is None)
+    if fold is not None:
+        fold = (per_output(fold[0], on_compiled, outputs, _slot_of(compiled)), fold[1], fold[2])
 
     backend_id = _backend_identity(session, backend)
     factory = worker_backend(session, backend)
