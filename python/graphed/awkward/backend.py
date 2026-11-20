@@ -9,6 +9,7 @@ from __future__ import annotations
 import contextlib
 import functools
 import inspect
+import re
 import threading
 import weakref
 from collections import ChainMap
@@ -265,6 +266,16 @@ _BOUNDARY = frozenset(
 _EXTERNAL = frozenset({"map", "correction", "onnx", "external"})
 
 
+#: a regular size unknown at record time, as `gak.to_regular` records it (the grammar has no `##`),
+#: or a quoted name or parameter, whose `##` is text
+_UNKNOWN_SIZE = re.compile(r'"(?:[^"\\]|\\.)*"|##(?= \* )')
+
+
+@functools.cache  # checked once per chunk
+def _unknown_size(s: str) -> bool:
+    return any(m.group() == "##" for m in _UNKNOWN_SIZE.finditer(s))
+
+
 @functools.cache  # a declared type is parsed once, not on every checked call
 def _type(canonical: str) -> ak.types.Type:
     """Return the awkward type of a canonical ``output_type``.
@@ -272,11 +283,38 @@ def _type(canonical: str) -> ak.types.Type:
     A primitive the datashape grammar lacks (``float16`` on awkward 2.14) but awkward's dtype table
     knows is built directly.
     """
+    if _unknown_size(canonical):
+        return _tracer(canonical).type.content
     try:
         return ak.types.from_datashape(canonical, highlevel=False)
     except LarkError:
         ak.types.numpytype.primitive_to_dtype(canonical)  # TypeError unless a known primitive
         return ak.types.NumpyType(canonical)
+
+
+def _tracer(canonical: str) -> ak.Array:
+    """Return a typetracer of unknown length whose element type is ``canonical``.
+
+    An unknown regular size is built at a size no other in ``canonical`` has, then marked unknown.
+    """
+    if not _unknown_size(canonical):
+        return _typetracer(ak.forms.from_type(_type(canonical)).length_one_array())
+    sizes = {int(n) for n in re.findall(r"(\d+) \*", canonical)}
+    # the smallest free size: the length-one array holds the product of every size
+    stand_in = next(n for n in range(1, len(sizes) + 2) if n not in sizes)
+    known = _UNKNOWN_SIZE.sub(
+        lambda m: str(stand_in) if m.group() == "##" else m.group(), canonical
+    )
+    tracer = _tracer(known)
+
+    def unknown(layout: Any, continuation: Callable[[], Any], **_: Any) -> Any:
+        if not (layout.is_regular and layout.size == stand_in):
+            return None
+        return ak.contents.RegularArray(
+            continuation().content, ak.typetracer.unknown_length, parameters=layout.parameters
+        )
+
+    return ak.transform(unknown, tracer)
 
 
 #: declares one value per call, not one per row: the prefix the check prints a scalar with
@@ -314,7 +352,10 @@ def _canonical_output_type(spec: object) -> str:
         canonical = str(s) if isinstance(s, ak.types.Type) else None
         if isinstance(s, str):
             with contextlib.suppress(LarkError):  # datashape first: `"byte"` is awkward's byte
-                canonical = str(ak.types.from_datashape(s, highlevel=False))
+                parsed = (
+                    _type(s) if _unknown_size(s) else ak.types.from_datashape(s, highlevel=False)
+                )
+                canonical = str(parsed)
         if canonical is None:
             # length one: a zero-length `U` array raises on the awkward 2.6 floor
             canonical = str(
@@ -324,7 +365,7 @@ def _canonical_output_type(spec: object) -> str:
         # the installed grammar misreads it (2.14: `float16[parameters=`)
         if str(rebuilt) != canonical:
             raise TypeError(f"rebuilds as {str(rebuilt)!r}")
-        ak.forms.from_type(rebuilt).length_one_array(highlevel=False)
+        _tracer(canonical)
     except (LarkError, TypeError, ValueError) as exc:
         raise TypeError(
             f"output_type {spec!r} is neither a type string the installed awkward can parse and "
@@ -386,8 +427,7 @@ def declared_form(forms: Sequence[AwkwardForm], canonical: str) -> AwkwardForm:
         if isinstance(t, ak.types.NumpyType) and not t.parameters:
             return AwkwardForm(ak.typetracer.create_unknown_scalar(np.dtype(t.primitive)))
         raise TypeError(f"output_type {canonical!r} over a scalar input must be a primitive dtype")
-    layout = ak.forms.from_type(t).length_one_array(highlevel=False)
-    return AwkwardForm(ak.Array(layout.to_typetracer(forget_length=True)))
+    return AwkwardForm(_tracer(canonical))
 
 
 _EMPTY: dict[str, str | bytes] = {"string": "", "bytes": b""}
@@ -408,8 +448,8 @@ def _scalar_form(canonical: str) -> AwkwardForm:
 def _fits(value: ak.types.Type, declared: ak.types.Type) -> bool:
     """``value`` is ``declared`` wherever it holds data, for a value awkward cannot compare itself.
 
-    Parameters and record fields match by key and every parameter counts; union members match by
-    position.
+    Parameters and record fields match by key and every parameter counts; union members match in
+    any order, as awkward compares them.
     ``unknown``, the type of a buffer holding no values (an all-empty list), fits any declared
     type.
     """
@@ -429,14 +469,34 @@ def _fits(value: ak.types.Type, declared: ak.types.Type) -> bool:
             and all(_fits(c, theirs[k]) for k, c in mine.items())
         )
     if isinstance(value, ak.types.UnionType):
-        return len(value.contents) == len(other.contents) and all(
-            map(_fits, value.contents, other.contents)
+        return len(value.contents) == len(other.contents) and _matched(
+            value.contents, other.contents
         )
-    if isinstance(value, ak.types.RegularType) and value.size != other.size:
+    if (
+        isinstance(value, ak.types.RegularType)
+        and other.size is not ak.typetracer.unknown_length
+        and value.size != other.size
+    ):
         return False
     if isinstance(value, (ak.types.ListType, ak.types.RegularType, ak.types.OptionType)):
         return _fits(value.content, other.content)
     return value.is_equal_to(declared, all_parameters=True)
+
+
+def _matched(values: Sequence[ak.types.Type], declared: Sequence[ak.types.Type]) -> bool:
+    """Whether each of ``values`` fits a member of ``declared`` of its own (Kuhn's matching)."""
+    owner: dict[int, int] = {}
+
+    def place(i: int, seen: set[int]) -> bool:
+        for j, d in enumerate(declared):
+            if j not in seen and _fits(values[i], d):
+                seen.add(j)
+                if j not in owner or place(owner[j], seen):
+                    owner[j] = i
+                    return True
+        return False
+
+    return all(place(i, set()) for i in range(len(values)))
 
 
 def _leaves(t: ak.types.Type) -> list[str]:
@@ -453,14 +513,20 @@ def _leaves(t: ak.types.Type) -> list[str]:
     return []
 
 
-def _holds_unknown(t: ak.types.Type) -> bool:
-    """Return whether ``t`` has an ``unknown`` node, by structure: a field may be named so."""
+def _holds_unknown(t: ak.types.Type, *, size_zero: bool = False) -> bool:
+    """Return whether ``t`` has an ``unknown`` node, by structure: a field may be named so.
+
+    ``size_zero`` counts a regular of size 0 too: a length-zero call cannot tell it from a size
+    the data decides.
+    """
     if isinstance(t, ak.types.UnknownType):
         return True
+    if size_zero and isinstance(t, ak.types.RegularType) and t.size == 0:
+        return True
     if isinstance(t, (ak.types.RecordType, ak.types.UnionType)):
-        return any(map(_holds_unknown, t.contents))
+        return any(_holds_unknown(c, size_zero=size_zero) for c in t.contents)
     if isinstance(t, (ak.types.ListType, ak.types.RegularType, ak.types.OptionType)):
-        return _holds_unknown(t.content)
+        return _holds_unknown(t.content, size_zero=size_zero)
     return False
 
 
@@ -495,10 +561,11 @@ def check_output_type(
     array = any(map(_is_array, inputs)) if key == "output_type" else key == "array output_type"
     if scalar == array:
         return f"scalar {content}" if scalar else str(t)
-    want = _type(declared)
-    if content.is_equal_to(want, all_parameters=True):
+    want, any_size = _type(declared), _unknown_size(declared)
+    # awkward cannot compare a known size with an unknown one; `_fits` lets that one match any
+    if not any_size and content.is_equal_to(want, all_parameters=True):
         return None
-    if not scalar and _holds_unknown(content) and _fits(content, want):
+    if not scalar and (any_size or _holds_unknown(content)) and _fits(content, want):
         return None
     return str(content)
 
@@ -635,8 +702,11 @@ class AwkwardBackend:
             raise TypeError(
                 f"on length-zero arrays it returns {type(value).__name__}, not an array"
             ) from failure
-        if _holds_unknown(value.type.content):
-            raise ValueError(f"on length-zero arrays its type is {str(value.type)!r}") from failure
+        if _holds_unknown(value.type.content, size_zero=True):
+            raise ValueError(
+                f"on length-zero arrays its type is {str(value.type)!r} (an unknown regular size "
+                "declares as ##)"
+            ) from failure
         layout = value.layout.to_typetracer(forget_length=True)
         return AwkwardForm(ak.Array(layout, behavior=value.behavior, attrs=value.attrs))
 
