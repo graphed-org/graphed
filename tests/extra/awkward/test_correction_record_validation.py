@@ -14,9 +14,9 @@ import pytest
 import graphed
 from graphed import Session
 from graphed.awkward import AwkwardBackend, from_awkward, gak
-from graphed.awkward._templates import _payload_bytes
 from graphed.errors import GraphedTypeError
 from graphed.preserve.externals import record_external
+from graphed.preserve.externals._helpers import _payload_bytes
 from graphed.preserve.externals.correctionlib_external import CORRECTIONLIB_PLUGIN
 from graphed.preserve.externals.onnx_external import ONNX_PLUGIN
 from graphed.varied import member_of
