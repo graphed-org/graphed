@@ -278,20 +278,34 @@ def _type(canonical: str) -> ak.types.Type:
         return ak.types.NumpyType(canonical)
 
 
+#: declares one value per call, not one per row: the prefix the check prints a scalar with
+SCALAR = "scalar "
+
+
 def canonical_output_type(spec: object) -> str:
     """Reduce an ``output_type`` spelling to awkward's type string, a fixpoint.
 
     The spelling is a datashape string, awkward Type/Form/ArrayType, numpy dtype-like, Python type,
-    or an inferred ``AwkwardForm``; refuse what cannot be built.
+    or an inferred ``AwkwardForm``; refuse what cannot be built. ``"scalar <type>"`` declares a
+    function that returns one value of that type, such as ``"scalar string"`` for a Python ``str``.
     """
+    if isinstance(spec, str) and spec.startswith(SCALAR):
+        return SCALAR + _canonical_string(spec.removeprefix(SCALAR))
     return _canonical_string(spec) if isinstance(spec, str) else _canonical_output_type(spec)
+
+
+def _value_type(value: object) -> ak.types.Type:
+    """Return awkward's type of ``value``; a Python ``str``/``bytes`` is one string, not chars."""
+    if isinstance(value, str | bytes):
+        return ak.types.ScalarType(_type("string" if isinstance(value, str) else "bytes"))
+    return ak.type(value)
 
 
 def _canonical_output_type(spec: object) -> str:
     try:
         s = PYTHON_TYPES[spec] if isinstance(spec, type) and spec in PYTHON_TYPES else spec
         if isinstance(s, AwkwardForm):
-            s = ak.type(s.tt)
+            s = _value_type(s.tt)
         if isinstance(s, ak.forms.Form):
             s = s.type
         if isinstance(s, (ak.types.ArrayType, ak.types.ScalarType)):
@@ -364,6 +378,8 @@ def declared_form(forms: Sequence[AwkwardForm], canonical: str) -> AwkwardForm:
     That element type over an array input's length, or a scalar (a record one included) when no
     input is an array.
     """
+    if canonical.startswith(SCALAR):
+        return _scalar_form(canonical.removeprefix(SCALAR))
     t = _type(canonical)
     if not any(isinstance(f.tt, ak.Array) for f in forms):
         if isinstance(t, ak.types.NumpyType) and not t.parameters:
@@ -371,6 +387,21 @@ def declared_form(forms: Sequence[AwkwardForm], canonical: str) -> AwkwardForm:
         raise TypeError(f"output_type {canonical!r} over a scalar input must be a primitive dtype")
     layout = ak.forms.from_type(t).length_one_array(highlevel=False)
     return AwkwardForm(ak.Array(layout.to_typetracer(forget_length=True)))
+
+
+_EMPTY: dict[str, str | bytes] = {"string": "", "bytes": b""}
+
+
+def _scalar_form(canonical: str) -> AwkwardForm:
+    """Return the form of one value of type ``canonical``: a primitive, a string or bytes."""
+    if canonical in _EMPTY:  # no typetracer scalar holds one: the empty value does
+        return AwkwardForm(_EMPTY[canonical])
+    t = _type(canonical)
+    if isinstance(t, ak.types.NumpyType) and not t.parameters:
+        return AwkwardForm(ak.typetracer.create_unknown_scalar(np.dtype(t.primitive)))
+    raise TypeError(
+        f"a scalar output_type is a primitive dtype, string or bytes, not {canonical!r}"
+    )
 
 
 def _fits(value: ak.types.Type, declared: ak.types.Type) -> bool:
@@ -449,8 +480,10 @@ def check_output_type(
     input is one; an inferred ``array output_type`` or ``scalar output_type`` states its own.
     ``output_dtype`` is a static leaf dtype: every leaf must have it.
     """
+    if declared.startswith(SCALAR):
+        key, declared = "scalar output_type", declared.removeprefix(SCALAR)
     try:
-        t = ak.type(value)
+        t = _value_type(value)
     except (TypeError, ValueError):  # not array-like at all
         return type(value).__name__
     content = t.content if isinstance(t, (ak.types.ArrayType, ak.types.ScalarType)) else t
@@ -581,14 +614,22 @@ class AwkwardBackend:
             if failure is None:
                 return None
             raise failure
-        zeros = [
-            ak.Array(f.tt.layout.form.length_zero_array(highlevel=False), attrs=f.tt.attrs)
-            for f in forms
-        ]
+        try:
+            zeros = [
+                ak.Array(f.tt.layout.form.length_zero_array(highlevel=False), attrs=f.tt.attrs)
+                for f in forms
+            ]
+        except TypeError as exc:  # a size-0 stand-in would infer a regular size the data lacks
+            raise TypeError(
+                "an input has no length-zero instance (a regular size unknown at record time, as "
+                f"after ak.to_regular): {exc}"
+            ) from failure
         try:
             value = fn(*(self._with_behavior(z) for z in zeros))
         except Exception as exc:
             raise exc from failure
+        if isinstance(value, str | bytes):  # one value per call: a string or bytes scalar
+            return AwkwardForm(value[:0])
         if not isinstance(value, ak.Array):
             raise TypeError(
                 f"on length-zero arrays it returns {type(value).__name__}, not an array"
