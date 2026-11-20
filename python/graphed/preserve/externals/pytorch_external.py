@@ -7,6 +7,7 @@ import io
 from collections.abc import Mapping
 from typing import Any
 
+from ..errors import PreserveError
 from ._base import ExternalPlugin
 from ._helpers import (
     _as_event_array,
@@ -29,8 +30,13 @@ def _pytorch_content_hash_impl(payload: bytes) -> str:
     model = torch.jit.load(io.BytesIO(payload), map_location="cpu")
     h = hashlib.sha256(b"torch-weights-code-v1")
     for name, tensor in sorted(model.state_dict().items()):
+        if tensor.is_quantized:  # raw bytes omit scale and zero point: distinct weights collide
+            raise PreserveError(f"weight {name!r} is {tensor.dtype}, which has no content hash")
         h.update(name.encode("utf-8"))
-        h.update(tensor.detach().cpu().numpy().tobytes())
+        # its raw bytes: numpy has no bfloat16 or float8 to read them through
+        h.update(
+            tensor.detach().cpu().contiguous().reshape(-1).view(torch.uint8).numpy().tobytes()
+        )
     h.update(model.code.encode("utf-8"))  # architecture is content too: same weights, new graph
     return "sha256:" + h.hexdigest()
 
@@ -59,12 +65,12 @@ def eval_pytorch(model: Any, params: Mapping[str, Any], inputs: list[Any]) -> An
 
     with torch.no_grad():
         if template is None:  # legacy: one stacked feature matrix
-            out = model(tensor(_stack_feature_columns(inputs))).numpy()
+            out = model(tensor(_stack_feature_columns(inputs)))
         else:
             args, kwargs = template
             tensors = [tensor(ml_matrix(e, inputs)) for e in args]
             kwtensors = {k: tensor(ml_matrix(e, inputs)) for k, e in kwargs.items()}
-            out = model(*tensors, **kwtensors).numpy()
+            out = model(*tensors, **kwtensors)
     return _as_event_array(out)
 
 

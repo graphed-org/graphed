@@ -3,12 +3,12 @@
 A frontend wrapper over the root event record carrying (a) the collections and (b) an ambient
 event-weight registry. Pure sugar over §§2.1-2.5 — no IR change, §3.1 intact.
 
-Three properties do the work. Contexts are IMMUTABLE, so `graphed.vary` returns a new one and a
-fill from a pre-`vary` context is unaffected by later calls by construction. They RESERVE NO
-NAMES, so a tree branch called `weights` or `vary` stays reachable and every graphed operation on
-a context is a module function. And a read performed THROUGH a context yields THAT context's row
-space, which is what makes `sel.Jet` mean `events.Jet` re-indexed by `sel`'s derivation mask,
-label-aligned when that mask is `Varied`.
+Three properties do the work. Contexts are IMMUTABLE but for item assignment of a collection, so
+`graphed.vary` returns a new one and a fill from a pre-`vary` context is unaffected by later calls
+by construction. They RESERVE NO NAMES, so a tree branch called `weights` or `vary` stays
+reachable and every graphed operation on a context is a module function. And a read performed
+THROUGH a context yields THAT context's row space, which is what makes `sel.Jet` mean `events.Jet`
+re-indexed by `sel`'s derivation mask, label-aligned when that mask is `Varied`.
 
 The neutral mechanism lives here; the nanoevents-flavored constructor is awkward-idiom and lives
 in `graphed.awkward.gnano` (the §2.1 factorization rule).
@@ -27,7 +27,7 @@ from collections.abc import Iterable, Mapping
 from typing import Any
 
 from .array import Array, EagerRefusals
-from .errors import GraphedError
+from .errors import GraphedError, GraphedTypeError
 from .provenance import capture
 
 # `Rider` and `ambient_entries` are re-exported, and `_two_level` aliased, because
@@ -39,6 +39,7 @@ from .systematics.ambient import (  # isort: skip
     ambient_entries as ambient_entries,
     context_labels,
     fold,
+    for_vary_link,
     seed,
     shift_form,
     two_level,
@@ -57,10 +58,11 @@ from .systematics.explain import (  # isort: skip
     explain as explain,
     explain_variations as explain_variations,
 )
-from .systematics.handles import with_context  # isort: skip
+from .systematics.handles import reindex_to, with_context  # isort: skip
 from .systematics.registration import stamp_labels as stamp_labels  # isort: skip
 from .systematics.varied import (  # isort: skip
     Varied as Varied,
+    context_of,
     expand as expand,
     labels_of as labels_of,
     member_nodes as member_nodes,
@@ -68,6 +70,7 @@ from .systematics.varied import (  # isort: skip
     members_of as members_of,
     point_registry as point_registry,
     rebuild as rebuild,
+    session_of,
     tags_of as tags_of,
 )
 
@@ -81,9 +84,10 @@ _SERIAL = itertools.count()
 class EventContext(EagerRefusals, ContextNode):
     """An event context (§2.6). Built by an idiom constructor, never directly.
 
-    Its RECORDED state — collections, selection, the registered weight factors and the label union
-    over them — never changes after construction, which is what makes `graphed.vary` return a new
-    context and a fill from a pre-`vary` one unaffected. The ambient weight is composed from that
+    Its RECORDED state — selection, the registered weight factors and the label union over them —
+    never changes after construction, which is what makes `graphed.vary` return a new context and a
+    fill from a pre-`vary` one unaffected. Its collections change only by item assignment, which no
+    context derived from it earlier sees. The ambient weight is composed from that
     recorded state on demand (`graphed.systematics.ambient`), and its memo is a pure CACHE stamped
     with the Session's mint epoch: a mint landing after a composition makes the next read remake
     it, so what a factor contributes at a label is what the registry says AS OF THE READ.
@@ -128,13 +132,30 @@ class EventContext(EagerRefusals, ContextNode):
         if isinstance(key, str):
             return self._read(key)
         if isinstance(key, list) and key and all(isinstance(field, str) for field in key):
-            return self._stamp(expand(lambda record: record[key], (self._record,), {}))
+            return self._stamp(expand(lambda record: record[key], (self._fields(key),), {}))
         if isinstance(key, Array | Varied):
             return self._derive(key)
         raise GraphedError(
             f"an event context takes a field name, a list of field names, or an Array/Varied mask "
             f"as its subscript, not {key!r}"
         )
+
+    def _fields(self, key: list[str]) -> Any:
+        """Return the record with every collection ``key`` names held by this context in it."""
+        record: Any = self._record
+        cols = collections_of(self)
+        held = [name for name in dict.fromkeys(key) if name in cols]
+        if not held:
+            return record
+        seam = getattr(context_session(self).backend, "with_field", None)
+        if seam is None:
+            raise GraphedError(
+                f"{self!r} holds {held} as collections, which a field list cannot read on a "
+                "backend without a with_field seam; read each by name (events.<name>)"
+            )
+        for name in held:
+            record = expand(seam, (record, cols[name]), {"name": name})
+        return record
 
     def _read(self, name: str) -> Any:
         value = collections_of(self).get(name)
@@ -150,6 +171,80 @@ class EventContext(EagerRefusals, ContextNode):
         alone would answer with the parent's handle).
         """
         return with_context(value, self)
+
+    # ---- assignment (graphed#221) -----------------------------------------------
+    def __setitem__(self, name: object, value: object) -> None:
+        """`events[name] = value`: rebind collection ``name`` on this context, in place (#80).
+
+        Row space, registrations and identity are unchanged, so values read before and after it
+        combine; a context already derived from this one keeps what it was derived with, and is
+        not the one the same derivation answers with afterwards.
+        """
+        name = self._name(name)
+        self._collections[name] = self._admit(name, value)
+        self._derived.clear()
+        self._projected.clear()
+
+    def _name(self, name: object, op: str = "__setitem__") -> str:
+        if not isinstance(name, str):
+            raise GraphedTypeError(
+                op,
+                capture(),
+                f"an event context assigns a whole collection by name, not {name!r}; to change "
+                "a nested field, assign the collection with that field replaced",
+            )
+        return name
+
+    def _admit(self, name: str, value: object, op: str = "__setitem__") -> Array | Varied:
+        """Return ``value`` re-indexed to this context, refusing what it cannot carry."""
+        if not isinstance(value, Array | Varied):
+            raise GraphedTypeError(
+                op,
+                capture(),
+                f"events[{name!r}] takes a deferred array or Varied computed from {self!r}, not "
+                f"{type(value).__name__}",
+            )
+        if session_of(value) is not context_session(self):
+            raise GraphedTypeError(
+                op,
+                capture(),
+                f"events[{name!r}]: the value was recorded in a different Session than {self!r}; "
+                "compute it from this context's collections",
+            )
+        if context_of(value) is None:
+            # a value read through no context has no row space to check against this one's
+            raise GraphedError(
+                f"events[{name!r}]: the value was not read through an event context, so its rows "
+                f"are not {self!r}'s; compute it from this context's collections"
+            )
+        try:
+            admitted: Array | Varied = reindex_to(value, self)
+        except GraphedError as err:
+            raise GraphedError(
+                f"events[{name!r}] cannot carry a value read through another context: {err}; "
+                f"compute it from {self!r} or a context it was derived from"
+            ) from err
+        carried, kept = context_labels(self), labels_of(admitted)
+        extra = [label for label in kept if label not in carried]
+        if extra:
+            raise GraphedError(
+                f"events[{name!r}]: the value carries universes {extra} that {self!r} has not "
+                "registered; assignment registers nothing, so register the family on the context: "
+                f"graphed.vary(events, <name>, collections={{{name!r}: value}}), or "
+                "is_weight=True for a weight"
+            )
+        lost = [
+            label
+            for label in labels_of(collections_of(self).get(name))
+            if label != "nominal" and label not in kept
+        ]
+        if lost:
+            raise GraphedError(
+                f"events[{name!r}]: the value drops universes {lost} the collection it replaces "
+                "carries; assignment keeps the registrations, so assign a value carrying them, or "
+                "read one universe with graphed.systematics.universe"
+            )
+        return admitted
 
     # ---- derivation (§2.6c: scoping is lineage) ---------------------------------
     def _derive(self, mask: Array | Varied) -> EventContext:
@@ -244,6 +339,15 @@ class EventContext(EagerRefusals, ContextNode):
 def project(ctx: EventContext, label: str) -> EventContext:
     """Return `ctx`'s child context for universe ``label`` (`universe`/`nominal`)."""
     return ctx._project(label)
+
+
+def with_collection(ctx: EventContext, value: object, name: object) -> EventContext:
+    """Return a `vary`-linked child of ``ctx`` carrying ``value`` as ``name``; ``ctx`` unchanged.
+
+    A child, not a sibling, so values read through ``ctx`` still combine with the child's.
+    """
+    name = ctx._name(name, "with_field")
+    return ctx._vary_child(for_vary_link(ctx), {name: ctx._admit(name, value, "with_field")})
 
 
 def _mask_key(mask: Array | Varied) -> tuple[tuple[str, int], ...]:

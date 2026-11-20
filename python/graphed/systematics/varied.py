@@ -229,19 +229,19 @@ def universes_of(value: object) -> tuple[Any, ...]:
     return tuple(value._members.values()) if isinstance(value, Varied) else (value,)
 
 
-def _collect(value: object, found: list[Varied]) -> None:
-    """Collect every `Varied` in an operand, INSIDE Mapping/Sequence arguments too.
+def _collect(value: object, found: list[Any], types: type | tuple[type, ...]) -> None:
+    """Collect every instance of ``types`` in an operand, INSIDE Mapping/Sequence arguments too.
 
     §2.3c's *container-traversing* class: `gak.zip`'s mapping is its only array-bearing operand.
     """
-    if isinstance(value, Varied):
+    if isinstance(value, types):
         found.append(value)
     elif isinstance(value, Mapping):
         for item in value.values():
-            _collect(item, found)
+            _collect(item, found, types)
     elif isinstance(value, Sequence) and not isinstance(value, str | bytes):
         for item in value:
-            _collect(item, found)
+            _collect(item, found, types)
 
 
 def narrow(value: object, label: str) -> Any:
@@ -255,12 +255,17 @@ def narrow(value: object, label: str) -> Any:
     return value
 
 
+def instances_in(types: type | tuple[type, ...], *values: object) -> list[Any]:
+    """Return every instance of ``types`` in ``values``, inside containers too."""
+    found: list[Any] = []
+    for value in values:
+        _collect(value, found, types)
+    return found
+
+
 def containers_in(*values: object) -> list[Varied]:
     """Return every `Varied` in ``values``, inside containers too."""
-    found: list[Varied] = []
-    for value in values:
-        _collect(value, found)
-    return found
+    return instances_in(Varied, *values)
 
 
 def union_labels(*values: object) -> tuple[str, ...]:

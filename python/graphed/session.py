@@ -49,6 +49,15 @@ def _fn_label(fn: object) -> str:
     return str(getattr(fn, "__name__", repr(fn)))
 
 
+def _reason(exc: BaseException) -> str:
+    """Return ``exc``'s type and the first non-blank line of its message."""
+    try:  # the exception's own __str__ is user code too
+        line = next((s for s in str(exc).splitlines() if s.strip()), "")
+    except Exception:
+        line = ""
+    return f"{type(exc).__name__}{': ' + line if line else ''}"
+
+
 def _call_identity(fn: object) -> object:
     """Return what makes two callable objects one call: see `Session._fn_name`'s identity rule."""
     # not isinstance: `__class__` is the callable's to claim
@@ -173,8 +182,8 @@ class Session:
         self._fn_taken: set[str] = set()
         # evaluator key -> the first callable recorded under it and where
         self._fn_held: dict[str, tuple[Callable[..., object], Provenance]] = {}
-        # (evaluator key, *input types) -> what tracing that function gave
-        self._fn_traced: dict[tuple[str, ...], Form | None] = {}
+        # (evaluator key, *input types) -> the form and declaration inferring that function gave
+        self._fn_traced: dict[tuple[str, ...], tuple[Form, tuple[str, str] | None] | None] = {}
 
     def __deepcopy__(self, memo: dict[int, Any] | None = None) -> Session:
         """Return this Session: one graph has one Session, so a copy shares what it records."""
@@ -668,6 +677,9 @@ class Session:
         if rows_from is None:
             self._same_rows(op, prov, inputs)
         ids = [a.node_id for a in inputs]
+        ordered = getattr(self._backend, "ordered_operands", None)
+        if ordered is not None and ordered(op, self._forms_of(ids)):
+            params_d["ordered"] = True  # a param keeps the optimizer's commute rules off this node
         form = self._located_form(op, prov, ids, params_d)
         with self._lock:
             if reduction:
@@ -843,7 +855,7 @@ class Session:
             key = evaluator_key(descriptor.content_hash, params_d)
             fn = self._hold_fn(fn, key, params_d["fn"], prov)
             if undeclared and declared is None:
-                form = self._traced_form(fn, key, ids, prov) or form
+                form, declared = self._traced_form(fn, key, ids, prov) or (form, None)
         with self._lock:
             node_id = self._store.add_external(descriptor, ids, params_d)
             if declared is not None and check is not None:
@@ -892,35 +904,44 @@ class Session:
 
     def _traced_form(
         self, fn: Callable[..., object], key: str, ids: Sequence[int], prov: Provenance
-    ) -> Form | None:
-        """Return the form an undeclared ``fn`` gives its inputs, where the backend can trace it.
+    ) -> tuple[Form, tuple[str, str] | None] | None:
+        """Return the form an undeclared ``fn`` gives its inputs and its declaration, if inferred.
 
-        This runs the user's function at record time, so any failure is a warning, never fatal.
-        One function is traced once per input type, however many universes record it.
+        The declaration is the backend's canonical ``output_type``, checked on every value as a
+        declared one is, keyed by the form's own row-ness; ``None`` where the backend cannot
+        declare. This runs the user's function at record time, so
+        any failure is a warning, never fatal. One function is inferred once per input type,
+        however many universes record it.
         """
         trace = getattr(self._backend, "traced_form", None)
         if trace is None:
             return None
+        canonical = getattr(self._backend, "canonical_output_type", None)
         forms = self._forms_of(ids)
         traced = (key, *(form.describe() for form in forms))
         with self._lock:
             if traced in self._fn_traced:
                 return self._fn_traced[traced]
         reason = ""
+        inferred: tuple[Form, tuple[str, str] | None] | None = None
         try:
             form: Form | None = trace(fn, forms)
+            if form is not None:
+                # unlike a declaration, an inferred form knows whether it has rows
+                rows = "array" if getattr(form, "has_rows", True) else "scalar"
+                typed = (
+                    None if canonical is None else (f"{rows} output_type", str(canonical(form)))
+                )
+                inferred = (form, typed)
         except Exception as exc:
-            form = None
-            try:  # the exception's own __str__ is user code too
-                line = next((s for s in str(exc).splitlines() if s.strip()), "")
-            except Exception:
-                line = ""
-            reason = f" ({type(exc).__name__}{': ' + line if line else ''})"
-        if form is None:
+            # a failure the backend raised from an earlier one names both
+            reasons = dict.fromkeys(_reason(e) for e in (exc.__cause__, exc) if e is not None)
+            reason = f" ({'; '.join(reasons)})"
+        if inferred is None:
             message = f"could not infer the type of {_fn_label(fn)}{reason}; pass output_type="
             warnings.warn_explicit(message, GraphedWarning, prov.filename, prov.lineno)
         with self._lock:
-            return self._fn_traced.setdefault(traced, form)
+            return self._fn_traced.setdefault(traced, inferred)
 
     def _canonical_output_type(
         self,

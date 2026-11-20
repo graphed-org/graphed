@@ -7,6 +7,7 @@ Mirrors the subset of the awkward API the corpus analyses use, so an analysis wr
 from __future__ import annotations
 
 import functools
+import inspect
 import json
 import warnings
 from collections.abc import Callable, Mapping, Sequence
@@ -21,10 +22,12 @@ import graphed
 from graphed import Array
 from graphed.array import scalar_params
 from graphed.backend import ParamValue
+from graphed.context import EventContext, with_collection
 from graphed.errors import DeferredTypeError, GraphedError, GraphedTypeError
 from graphed.provenance import capture
 from graphed.shuffle import JOINKEY, route_key
-from graphed.varied import boundary_refusal, containers_in, expand, expand_tuple, narrow
+from graphed.systematics.varied import instances_in
+from graphed.varied import Varied, boundary_refusal, expand, expand_tuple, narrow
 
 from ..preserve.externals._helpers import _payload_bytes, refuse_unread_inputs
 from ..preserve.externals.correctionlib_external import (
@@ -43,6 +46,7 @@ from ._params import (
     _comb_params,
     _reduce,
     _reduce2,
+    _require_arrays,
     _structure_params,
     crosses_rows,
 )
@@ -98,7 +102,7 @@ def combinations(
 
 
 def cartesian(
-    arrays: Sequence[Array] | Mapping[str, Array],
+    arrays: Sequence[object] | Mapping[str, object],
     *,
     axis: int = 1,
     nested: bool | Sequence[int] | Sequence[str] | None = None,
@@ -106,13 +110,15 @@ def cartesian(
     parameters: Mapping[str, ParamValue] | None = None,
 ) -> Array:
     """Record ``ak.cartesian`` over ``arrays``."""
-    inputs = list(arrays.values() if isinstance(arrays, Mapping) else arrays)
-    params = _cartesian_params(arrays, axis, nested, with_name, parameters)
+    inputs, consts = _operands(
+        "cartesian", list(arrays.values() if isinstance(arrays, Mapping) else arrays)
+    )
+    params = {**_cartesian_params(arrays, axis, nested, with_name, parameters), **consts}
     return _along_axis("ak.cartesian", inputs, params, axis, unpaired=True)
 
 
 def zip(
-    fields: Mapping[str, Array] | Sequence[Array],
+    fields: Mapping[str, object] | Sequence[object],
     *,
     depth_limit: int | None = None,
     with_name: str | None = None,
@@ -123,12 +129,10 @@ def zip(
     Tuple fields are "0", "1", ...; ``depth_limit=1`` builds an events-level record of collections
     without broadcasting their jaggedness together.
     """
-    if isinstance(fields, Mapping):
-        arrays = list(fields.values())
-        params: dict[str, ParamValue] = {"fields": ",".join(fields.keys())}
-    else:
-        arrays = list(fields)
-        params = {"tuple": True}
+    arrays, params = _operands(
+        "zip", list(fields.values() if isinstance(fields, Mapping) else fields)
+    )
+    params.update({"fields": ",".join(fields)} if isinstance(fields, Mapping) else {"tuple": True})
     if depth_limit is not None:
         params["depth_limit"] = depth_limit
     params.update(_structure_params(with_name=with_name, parameters=parameters))
@@ -425,9 +429,17 @@ def local_index(arr: Array, axis: int = -1) -> Array:
     return _along_axis("ak.local_index", [arr], {"axis": axis}, axis)
 
 
-def concatenate(arrays: Sequence[Array], axis: int = 0) -> Array:
+def concatenate(arrays: Sequence[object], axis: int = 0) -> Array:
     """Record ``ak.concatenate`` of ``arrays`` along ``axis``."""
-    return _along_axis("ak.concatenate", list(arrays), {"axis": axis}, axis, unpaired=True)
+    inputs, params = _operands("concatenate", list(arrays))
+    if params and crosses_rows(inputs[0], axis):
+        raise GraphedTypeError(
+            "concatenate",
+            capture(),
+            "a scalar adds a row along the row axis, which each chunk would add again; record it "
+            "as an array, or concatenate along an inner axis",
+        )
+    return _along_axis("ak.concatenate", inputs, {**params, "axis": axis}, axis, unpaired=True)
 
 
 def flatten(arr: Array, axis: int | None = 1) -> Array:
@@ -447,16 +459,37 @@ def drop_none(arr: Array, axis: int | None = None) -> Array:
     return arr.session.record_op("ak.drop_none", [arr], params)
 
 
-def where(cond: Array, a: object, b: object) -> Array:
+def where(cond: object, a: object, b: object) -> Array:
     """Record ``ak.where``; a scalar ``a`` or ``b`` travels as a param."""
-    inputs: list[Array] = []
+    inputs, params = _operands("where", [cond, a, b])
+    return inputs[0].session.record_op("ak.where", inputs, params)
+
+
+def _operands(name: str, operands: Sequence[object]) -> tuple[list[Array], dict[str, ParamValue]]:
+    """Split ``operands`` into the deferred arrays and the scalars, which ak broadcasts.
+
+    A scalar at position ``i`` travels as the ``const{i}`` param in its own dtype (M59).
+    """
+    arrays: list[Array] = []
     params: dict[str, ParamValue] = {}
-    for i, operand in enumerate((cond, a, b)):
+    for i, operand in enumerate(operands):
         if isinstance(operand, Array):
-            inputs.append(operand)
-        else:
+            arrays.append(operand)
+            continue
+        try:
             params.update(scalar_params(operand, f"const{i}", f"const{i}_dtype"))
-    return cond.session.record_op("ak.where", inputs, params)
+        except DeferredTypeError:
+            raise
+        except (TypeError, ValueError) as err:
+            raise GraphedTypeError(
+                name,
+                capture(),
+                f"operand {i} must be a deferred array or a bool/int/float/str scalar, not "
+                f"{type(operand).__name__}",
+            ) from err
+    if not arrays:
+        raise GraphedTypeError(name, capture(), "no operand is a deferred array")
+    return arrays, params
 
 
 def _dtype_name(dtype: npt.DTypeLike) -> str:
@@ -729,6 +762,7 @@ def run_lengths(arr: Array) -> Array:
 
 def mask(arr: Array, condition: Array, *, valid_when: bool = True) -> Array:
     """Record ``ak.mask`` of ``arr`` by ``condition``."""
+    _require_arrays("mask", {"array": arr, "condition": condition})
     return arr.session.record_op("ak.mask", [arr, condition], {"valid_when": valid_when})
 
 
@@ -845,12 +879,13 @@ def values_astype(arr: Array, dtype: npt.DTypeLike) -> Array:
     return arr.session.record_op("ak.values_astype", [arr], {"dtype": _dtype_name(dtype)})
 
 
-def broadcast_arrays(*arrays: Array, depth_limit: int | None = None) -> tuple[Array, ...]:
+def broadcast_arrays(*arrays: object, depth_limit: int | None = None) -> tuple[Array, ...]:
     """Each broadcast output is its own recorded node (same inputs, an index param)."""
-    session = arrays[0].session
-    extra: dict[str, ParamValue] = {} if depth_limit is None else {"depth_limit": depth_limit}
+    inputs, extra = _operands("broadcast_arrays", arrays)
+    if depth_limit is not None:
+        extra["depth_limit"] = depth_limit
     return tuple(
-        session.record_op("ak.broadcast_arrays", list(arrays), {"index": i, **extra})
+        inputs[0].session.record_op("ak.broadcast_arrays", inputs, {"index": i, **extra})
         for i in range(len(arrays))
     )
 
@@ -919,6 +954,22 @@ def sample(arr: Array, *, factor: int) -> object:
 
 
 # ---- §2.3c: the gak dispatch layer; `_dispositions` classifies each function ----------
+def _on_context(
+    fn: Callable[..., Any], context: EventContext, args: Any, kwargs: Any
+) -> EventContext:
+    """Answer an event context where gak takes an array: only ``with_field`` means anything."""
+    if fn.__name__ == "with_field":
+        bound = inspect.signature(fn).bind(*args, **kwargs).arguments
+        if bound["arr"] is context:
+            return with_collection(context, bound["value"], bound["where"])
+    raise GraphedTypeError(
+        fn.__name__,
+        capture(),
+        f"{context!r} is an event context, not an array; pass one of its collections "
+        "(events.<name>)",
+    )
+
+
 def _dispatched(fn: Callable[..., Any], kind: str) -> Callable[..., Any]:
     """Wrap one gak function with the dispatch its classification names (§2.3c).
 
@@ -928,7 +979,11 @@ def _dispatched(fn: Callable[..., Any], kind: str) -> Callable[..., Any]:
 
     @functools.wraps(fn)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
-        if not containers_in(*args, *kwargs.values()):
+        found = instances_in((Varied, EventContext), *args, *kwargs.values())
+        context = next((v for v in found if isinstance(v, EventContext)), None)
+        if context is not None:
+            return _on_context(fn, context, args, kwargs)
+        if not found:
             return fn(*args, **kwargs)
         if kind == "refusing":
             raise boundary_refusal(f"gak.{fn.__name__}", *args, *kwargs.values())
