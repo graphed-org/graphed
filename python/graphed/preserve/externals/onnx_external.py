@@ -9,7 +9,14 @@ from typing import Any
 from ...errors import GraphedTypeError
 from ...provenance import capture
 from ._base import ExternalPlugin
-from ._helpers import _as_event_array, memoized_model_hash, ml_matrix, parse_call_template
+from ._helpers import (
+    RowShape,
+    _as_event_array,
+    memoized_model_hash,
+    ml_matrix,
+    parse_call_template,
+    row_shape,
+)
 
 #: onnxruntime's input type strings whose element name is not numpy's
 _ORT_DTYPES = {"tensor(float)": "float32", "tensor(double)": "float64"}
@@ -17,14 +24,24 @@ _ORT_DTYPES = {"tensor(float)": "float32", "tensor(double)": "float64"}
 
 def onnx_content_hash(payload: bytes) -> str:
     """Return the content hash of an ONNX payload."""
-    return memoized_model_hash("onnx", payload, _onnx_content_hash_impl)
+    return memoized_model_hash("onnx", payload, _onnx_identity)[0]
 
 
-def _onnx_content_hash_impl(payload: bytes) -> str:
+def onnx_output_shape(payload: bytes) -> RowShape:
+    """Return the row shape of the graph's first output, as its static dims state it."""
+    return memoized_model_hash("onnx", payload, _onnx_identity)[1]
+
+
+def _onnx_identity(payload: bytes) -> tuple[str, RowShape]:
     import onnx
+
+    return model_identity(onnx.load_from_string(payload))
+
+
+def model_identity(model: Any) -> tuple[str, RowShape]:
+    """Return a loaded ONNX ``model``'s weights hash and its first output's static row shape."""
     from onnx import numpy_helper
 
-    model = onnx.load_from_string(payload)
     h = hashlib.sha256()
     h.update(b"onnx-weights-v1")
     for init in sorted(model.graph.initializer, key=lambda t: t.name):
@@ -32,7 +49,12 @@ def _onnx_content_hash_impl(payload: bytes) -> str:
         h.update(numpy_helper.to_array(init).tobytes())
     for node in model.graph.node:  # structure too: same weights, different graph -> different hash
         h.update(node.op_type.encode("utf-8"))
-    return "sha256:" + h.hexdigest()
+    if not model.graph.output:
+        return "sha256:" + h.hexdigest(), None
+    out = model.graph.output[0].type
+    dims = out.tensor_type.shape.dim if out.tensor_type.HasField("shape") else []
+    shape = row_shape([d.dim_value if d.HasField("dim_value") else None for d in dims])
+    return "sha256:" + h.hexdigest(), shape
 
 
 def load_onnx(payload: bytes, params: Mapping[str, Any]) -> Any:
@@ -105,4 +127,5 @@ ONNX_PLUGIN = ExternalPlugin(
     framework="onnxruntime",
     check_params=_check_onnx_params,
     output_dtype="float64",
+    output_shape=onnx_output_shape,
 )

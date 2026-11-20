@@ -9,14 +9,15 @@ from typing import Any
 from ..errors import PreserveError
 from ._base import ExternalPlugin
 from ._helpers import (
+    RowShape,
     _as_event_array,
-    _canonical_json_hash_impl,
     _stack_feature_columns,
     canonical_document_hash,
     json_bytes,
     memoized_model_hash,
     ml_matrix,
     parse_call_template,
+    parse_json,
 )
 
 _DOMAIN = b"xgboost-json-v1"
@@ -28,21 +29,47 @@ def xgboost_content_hash(payload: bytes) -> str:
     One booster saved as ``.json`` and as ``.ubj`` hashes the same: a UBJSON float32 reads as the
     shortest decimal that round-trips it, which is what XGBoost's JSON writer prints.
     """
-    return memoized_model_hash(_DOMAIN.decode(), payload, _xgboost_hash_impl)
+    return _identity(payload)[0]
 
 
-def _xgboost_hash_impl(payload: bytes) -> str:
+def xgboost_output_shape(payload: bytes) -> RowShape:
+    """Return the row shape ``predict`` gives, as the model's objective and params state it."""
+    return _identity(payload)[1]
+
+
+def _identity(payload: bytes) -> tuple[str, RowShape]:
+    return memoized_model_hash(_DOMAIN.decode(), payload, _identity_impl)
+
+
+def _identity_impl(payload: bytes) -> tuple[str, RowShape]:
+    document = _document(payload)
+    return canonical_document_hash(_DOMAIN, document), _row_shape(document)
+
+
+def _document(payload: bytes) -> Any:
     if not _is_ubjson(payload):
         try:
-            return _canonical_json_hash_impl(_DOMAIN, payload)
+            return parse_json(payload)
         except PreserveError as err:
             raise PreserveError(
                 f"an xgboost payload is JSON, gzipped JSON or UBJSON; this is none ({err})"
             ) from err
     try:
-        return canonical_document_hash(_DOMAIN, _ubjson(payload))
+        return _ubjson(payload)
     except (ValueError, IndexError, UnicodeDecodeError, struct.error, RecursionError) as err:
         raise PreserveError(f"an xgboost payload is not valid UBJSON ({err})") from err
+
+
+def _row_shape(doc: Any) -> RowShape:
+    try:
+        learner = doc["learner"]
+        objective, model = learner["objective"]["name"], learner["learner_model_param"]
+        if objective == "multi:softprob":
+            return (int(model["num_class"]),)
+        # before 1.6 a model had no num_target, and xgboost loads it as 1
+        return (1,) if objective == "multi:softmax" else (int(model.get("num_target", 1)),)
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 def _is_ubjson(payload: bytes) -> bool:
@@ -177,4 +204,5 @@ XGBOOST_PLUGIN = ExternalPlugin(
     load=load_xgboost,
     framework="xgboost",
     output_dtype="float64",
+    output_shape=xgboost_output_shape,
 )

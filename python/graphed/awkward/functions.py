@@ -29,7 +29,7 @@ from graphed.shuffle import JOINKEY, route_key
 from graphed.systematics.varied import instances_in
 from graphed.varied import Varied, boundary_refusal, expand, expand_tuple, narrow, session_of
 
-from ..preserve.externals._helpers import _payload_bytes, refuse_unread_inputs
+from ..preserve.externals._helpers import _payload_bytes, model_form_params, refuse_unread_inputs
 from ..preserve.externals.correctionlib_external import (
     _refused,
     check_correctionlib_params,
@@ -51,7 +51,7 @@ from ._params import (
     crosses_rows,
 )
 from ._templates import _ml_matrix, _parse_template
-from .backend import AwkwardForm, astype_form, broadcast_form
+from .backend import AwkwardForm, astype_form, broadcast_form, declared_form
 
 
 def join(
@@ -672,7 +672,7 @@ def apply_correction(
         form=astype_form(
             broadcast_form([cast("AwkwardForm", session.form(a)) for a in slots]), "float64"
         ),
-        form_params={"output_dtype": "float64"},
+        form_params={"output_dtype": "float64", "claim": True},
     )
 
 
@@ -707,9 +707,6 @@ def onnx_inference(
         k: _parse_template([v], len(inputs), constants=False, groups=True)[0]
         for k, v in (kwargs or {}).items()
     }
-    slot_indices = [i for kind, i in arg_entries if kind == "slot"]
-    group_first = [v[0] for kind, v in arg_entries if kind == "group"]
-    first = (slot_indices + group_first + [0])[0]
 
     def _fn(*vals: object) -> object:
         call = [_ml_matrix(e, vals) for e in arg_entries]
@@ -723,6 +720,8 @@ def onnx_inference(
         params["kwargs"] = json.dumps(kwargs, sort_keys=True)
     refuse_unread_inputs("onnx", params, len(inputs))
     descriptor = payloads.onnx_weights_descriptor(blob)
+    forms = [cast("AwkwardForm", session.form(a)) for a in inputs]
+    form_params = model_form_params(payloads.onnx_row_shape(blob))
     return session.record_external(
         "onnx",
         _TemplateExternal(
@@ -731,7 +730,8 @@ def onnx_inference(
         list(inputs),
         params,
         descriptor=descriptor,
-        form=session.form(inputs[first]),
+        form=declared_form(forms, str(form_params["output_type"])),
+        form_params=form_params,
     )
 
 

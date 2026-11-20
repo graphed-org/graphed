@@ -19,6 +19,7 @@ from ._helpers import (
     memoized_model_hash,
     ml_matrix,
     parse_call_template,
+    unstated_shape,
 )
 
 
@@ -118,4 +119,5 @@ PYTORCH_PLUGIN = ExternalPlugin(
     check_params=_check_pytorch_params,
     framework="torch",
     output_dtype="float64",
+    output_shape=unstated_shape,  # TorchScript states no output shape
 )

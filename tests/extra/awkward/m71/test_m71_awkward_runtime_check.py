@@ -254,7 +254,7 @@ def test_the_correction_template_checks_its_float64_leaves(
     line = fx.here() + 1
     sf = gak.apply_correction(cset, "sf", [ev.x], fx.score, args=["nominal", "$0"])
     err = _refused(lambda: s.materialize(sf), line)
-    assert "declares output_dtype 'float64'; its value is 'float32'" in err.cause_message
+    assert "declares array output_type 'float64'; its value is 'float32'" in err.cause_message
 
 
 @pytest.mark.parametrize(
