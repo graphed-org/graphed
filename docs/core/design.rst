@@ -165,7 +165,10 @@ Loading your graph into it is one linear pass in topological order.
 * *commutativity* for the symmetric operations — ``add``, ``mul``, ``and``, ``or``, ``eq``,
   ``ne``, ``maximum``, ``minimum`` — where argument order genuinely cannot matter, so
   ``add(a, b)`` and ``add(b, a)`` merge into one class. Asymmetric operations (``sub``, ``div``,
-  ordered comparisons) are absent, because for those the order is the meaning.
+  ordered comparisons) are absent, because for those the order is the meaning. The rule matches
+  only a param-less node: a backend whose operator may resolve to a user overload (awkward's
+  behavior-dispatched record ``+``, which need not be bitwise commutative) marks the node with an
+  ``ordered`` param at record time, and its operands keep their order on every reduction path.
 * *identity elimination* for ``x + 0.0`` and ``x * 1.0``, both operand orders, matched on the
   scalar's exact bit pattern.
 

@@ -1,0 +1,24 @@
+.. under: 0.0.12 (unreleased)
+
+A model External records the row shape its payload states
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* A built-in model External (ONNX, XGBoost, JAX, TensorFlow, PyTorch, Triton, and
+  ``gak.onnx_inference``) records one ``float64`` value per event, with no option, or
+  ``k * float64`` when the model's output is ``k`` wide. It used to record its inputs'
+  structure, so an option-typed input recorded ``?float64``, and a multi-class or multi-output
+  model recorded ``float64`` (#250).
+* The width comes from what the content hash already parses. For XGBoost that is the objective
+  and ``num_class`` or ``num_target``; for ONNX, the first output's static dims; for JAX, the
+  export's first output aval; for TensorFlow, a single-output model's ``output_shape``. Record
+  time is unchanged. A model whose payload states no width (PyTorch, Triton, a symbolic ONNX
+  dim) records one value per event and checks only its leaves' dtype, as before.
+
+A built-in plugin's value is checked against its whole recorded type
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* When a model states its width, a value that disagrees with the recorded type raises
+  ``StageError`` (cause ``OutputTypeError``) at the recording line. So do a correction's value
+  and a caller's ``form=`` in ``Session.record_external``. Before, only the leaf dtype was
+  checked, and a wrong structure passed silently. A user plugin's ``output_dtype`` is still a
+  leaf check, and a plugin that declares neither stays unchecked (#250).

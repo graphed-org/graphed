@@ -281,4 +281,5 @@ CORRECTIONLIB_PLUGIN = ExternalPlugin(
     framework="correctionlib",
     check_params=check_correctionlib_params,
     output_dtype="float64",
+    broadcasts=True,
 )

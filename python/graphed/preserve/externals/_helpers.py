@@ -2,17 +2,33 @@
 
 from __future__ import annotations
 
+import functools
 import gzip
 import hashlib
 import json
+import os
 import threading
 from collections import OrderedDict
-from collections.abc import Callable, Mapping
-from typing import Any, TypeVar
+from collections.abc import Callable, Mapping, Sequence
+from pathlib import Path
+from typing import Any, TypeVar, cast
 
 from ...errors import GraphedTypeError
 from ...provenance import capture
 from ..errors import PreserveError
+
+
+@functools.lru_cache(maxsize=8)
+def _read_payload(path: str, mtime_ns: int, size: int) -> bytes:
+    return Path(path).read_bytes()
+
+
+def _payload_bytes(payload: bytes | bytearray | memoryview | str | os.PathLike[str]) -> bytes:
+    """Return a payload's bytes; one file is one object, however many nodes record it."""
+    if isinstance(payload, (bytes, bytearray, memoryview)):  # Booster.save_raw is a bytearray
+        return bytes(payload)
+    stat = os.stat(payload)
+    return _read_payload(os.path.abspath(payload), stat.st_mtime_ns, stat.st_size)
 
 
 def json_bytes(payload: bytes) -> bytes:
@@ -31,11 +47,20 @@ def _canonical_json_hash(domain: bytes, payload: bytes) -> str:
 
 
 def _canonical_json_hash_impl(domain: bytes, payload: bytes) -> str:
+    return canonical_document_hash(domain, parse_json(payload))
+
+
+def parse_json(payload: bytes) -> Any:
+    """Return the document of a JSON or gzipped-JSON payload."""
     try:
-        parsed = json.loads(json_bytes(payload).decode("utf-8"))
+        return json.loads(json_bytes(payload).decode("utf-8"))
     except (UnicodeDecodeError, ValueError, OSError, EOFError) as err:
         raise PreserveError(f"payload is not valid JSON ({err})") from err
-    canon = json.dumps(parsed, sort_keys=True, separators=(",", ":"), default=str)
+
+
+def canonical_document_hash(domain: bytes, document: Any) -> str:
+    """sha256 over domain-separated, canonicalized JSON of a parsed ``document``."""
+    canon = json.dumps(document, sort_keys=True, separators=(",", ":"), default=str)
     return "sha256:" + hashlib.sha256(domain + canon.encode("utf-8")).hexdigest()
 
 
@@ -50,15 +75,69 @@ def _stack_feature_columns(inputs: list[Any]) -> Any:
     return np.stack([np.asarray(ak.to_numpy(ak.Array(i))) for i in inputs], axis=1)
 
 
+#: the shape of one row of a model's output, ``None`` when its payload does not state it
+RowShape = tuple[int, ...] | None
+
+
+def row_shape(shape: Sequence[object]) -> RowShape:
+    """Return the row shape of an output of ``shape``, ``None`` unless every row dim is static."""
+    tail = tuple(shape[1:])
+    if not shape or not all(isinstance(d, int) for d in tail):
+        return None
+    return cast("tuple[int, ...]", tail)
+
+
+def unstated_shape(payload: bytes) -> RowShape:
+    """Return ``None``: the row shape of a model whose payload states none."""
+    return None
+
+
+def event_type(shape: RowShape) -> str:
+    """Return the type `_as_event_array` gives each event of an output whose rows are ``shape``.
+
+    One value per event where ``shape`` is ``None``.
+    """
+    return " * ".join([*map(str, () if shape in (None, (1,)) else shape), "float64"])
+
+
+def model_form_params(shape: RowShape) -> dict[str, object]:
+    """Return a model External's ``form_params``: a claim where its shape is stated."""
+    return {
+        "output_type": event_type(shape),
+        "output_dtype": "float64",
+        "claim": shape is not None,
+    }
+
+
+def _no_float64(dtype: object) -> PreserveError:
+    return PreserveError(f"the model's output is {dtype}, which has no float64 value")
+
+
 def _as_event_array(out: Any) -> Any:
     """Return a model's (n,) or (n, 1) output as one value per event.
 
-    (n, k, ...) as ``ak.from_numpy`` gives it, regular rows of k.
+    (n, k, ...) as ``ak.from_numpy`` gives it, regular rows of k. A model with several outputs
+    gives its first, as ONNX's ``session.run`` lists them.
     """
     import awkward as ak
     import numpy as np
 
-    values = np.asarray(out, dtype="float64")
+    if isinstance(out, tuple | list):
+        out = out[0]
+    if isinstance(out, Mapping | tuple | list):  # "first" has no one meaning for keyed outputs
+        raise PreserveError(f"the model's first output is a {type(out).__name__}, not an array")
+    if type(out).__module__.startswith("torch"):  # numpy has no bfloat16 or float8: cast first
+        if out.is_complex():  # .double() would drop the imaginary part with only a warning
+            raise _no_float64(out.dtype)
+        try:
+            out = out.double()
+        except RuntimeError as err:  # quantized, sub-byte and bit dtypes have no cast
+            raise _no_float64(out.dtype) from err
+    # a tensor's own .numpy(): np.asarray on a Keras EagerTensor warns on every call
+    values = np.asarray(out.numpy() if hasattr(out, "numpy") else out)
+    if np.iscomplexobj(values):  # float64 would drop the imaginary part
+        raise _no_float64(values.dtype)
+    values = values.astype("float64", copy=False)
     return ak.from_numpy(values.reshape(-1) if values.shape[1:] == (1,) else values)
 
 
