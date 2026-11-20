@@ -56,8 +56,10 @@ _ENV_PACKAGES = (
 def _pack_array(arr: Any) -> bytes:
     import awkward as ak
 
+    from ..awkward._form_order import ordered_form
+
     form, length, container = ak.to_buffers(ak.Array(arr))
-    return pickle.dumps((form.to_json(), length, dict(container)), protocol=5)
+    return pickle.dumps((ordered_form(form).to_json(), length, dict(container)), protocol=5)
 
 
 def _unpack_array(blob: bytes) -> Any:

@@ -1,0 +1,7 @@
+.. under: 0.0.12 (unreleased)
+
+* What graphed hashes or writes for a concatenated awkward value is the same bytes in every
+  process: checkpoint blobs, a resumable plan's task keys, replay-input captures, preservation
+  bundle datasets, shuffle blocks and a varied write's record types. ``ak.concatenate`` returns
+  an array's parameters in ``PYTHONHASHSEED`` order (scikit-hep/awkward#4570 proposes the fix
+  upstream), and each of these encoders now writes form parameters in key order (#238).

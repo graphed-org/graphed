@@ -40,6 +40,7 @@ from graphed.session import reader
 from graphed.varied import member_of, refuse_container, union_labels
 from graphed.write import PartitionedSource
 
+from ._form_order import ordered_form
 from ._read_list import _evaluation_columns, _evaluation_columns_union
 from ._varied_read import read_varied as read_varied
 from ._varied_write import (
@@ -749,7 +750,7 @@ def _record_types(session: Session, record: Any, labels: Sequence[str]) -> dict[
     """Return each label's record form the reader cannot rebuild from the stored columns."""
     nominal_form = _tt(session, member_of(record, "nominal")).layout.form
     record_types = {
-        label: form.to_dict()
+        label: ordered_form(form).to_dict()
         for label in labels
         if not (form := _tt(session, member_of(record, label)).layout.form).type.is_equal_to(
             nominal_form.type, all_parameters=True
@@ -757,7 +758,7 @@ def _record_types(session: Session, record: Any, labels: Sequence[str]) -> dict[
     }
     # its stored fields drop the record's own
     if nominal_form.is_record and nominal_form.parameters:
-        record_types["nominal"] = nominal_form.to_dict()
+        record_types["nominal"] = ordered_form(nominal_form).to_dict()
     return record_types
 
 
