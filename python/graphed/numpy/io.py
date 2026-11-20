@@ -14,6 +14,7 @@ here), evaluates the compiled IR, and writes one single-column parquet part.
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal, cast, overload
@@ -227,6 +228,7 @@ class _WritePart:
             {self.source_name: chunk},
             externals=dict(self.externals),
             chunked=True,
+            partition=functools.partial(gpq.resolve_partition, partition),
         )
         result = np.asarray(out)
         if result.ndim != 1:

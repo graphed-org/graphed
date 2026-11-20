@@ -62,6 +62,7 @@ from .execute import (
     evaluate_ir,
     external_key,
     refuse_chunk_partials,
+    resolved_partition,
 )
 from .projection import read_columns
 from .services import Bindable, Resolvable, ServiceSpec, bind_externals, referenced_services
@@ -257,6 +258,7 @@ class _PartitionReduce(Generic[V]):
                         externals=dict(self.externals),
                         on_failure=self._attribute(self._label(partition, chunk)),
                         chunked=True,
+                        partition=self._partition(partition),
                     )
                 result = _adopted(
                     backend,
@@ -349,6 +351,7 @@ class _PartitionReduce(Generic[V]):
                 externals=dict(self.externals),
                 on_failure=self._attribute(self._label(partition, chunk)),
                 chunked=True,
+                partition=self._partition(partition),
             )
 
     def capture_id(self, partition: Partition) -> str:
@@ -378,6 +381,9 @@ class _PartitionReduce(Generic[V]):
 
     def _label(self, partition: Partition, chunk: object) -> Callable[[], str]:
         return functools.partial(read_label, self.reader, partition, chunk)
+
+    def _partition(self, partition: Partition) -> Callable[[], Partition]:
+        return functools.partial(resolved_partition, self.reader, partition)
 
 
 def read_label(reader: Any, partition: Partition, chunk: Any) -> str:

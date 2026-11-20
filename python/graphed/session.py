@@ -79,6 +79,12 @@ class _CompileView:
     shift_after_weight: Mapping[tuple[str, str], frozenset[int]]
 
 
+def wants_partition(params: Mapping[str, object]) -> bool:
+    """Whether an External's ``params`` ask for its partition: a map's ``partition=True``."""
+    # a plugin External's user params may name `partition`; only a map's `fn` marks the request
+    return "fn" in params and params.get("partition") is True
+
+
 @dataclass(frozen=True)
 class CheckedExternal:
     """The evaluator of an External that declared its type.
@@ -97,9 +103,9 @@ class CheckedExternal:
     provenance: Provenance
     node: str
 
-    def __call__(self, *inputs: object) -> object:
+    def __call__(self, *inputs: object, **keywords: object) -> object:
         """Evaluate, then refuse a value that disagrees with the declared type."""
-        value = self.fn(*inputs)
+        value = self.fn(*inputs, **keywords)
         actual = self.check(value, inputs, self.key, self.declared)
         if actual is not None:
             detail = f"{self.node} declares {self.key} {self.declared!r}; its value is {actual!r}"
@@ -834,6 +840,8 @@ class Session:
         self._same_rows(op, prov, inputs)
         if (descriptor is None) != (form is None):
             raise GraphedTypeError(op, prov, "descriptor= and form= must be given together")
+        if wants_partition(params_d):
+            self._one_chunk(op, prov, inputs, output_type)
         # user params may carry any key, so op_form sees `output_type` only as declared here
         form_view = {k: v for k, v in params_d.items() if k != "output_type"}
         declared_type = None
@@ -878,6 +886,42 @@ class Session:
                 )
             self._externals.setdefault(node_id, (fn, ids))
             return self._enter(node_id, form, prov, inputs)
+
+    def _one_chunk(
+        self, op: str, prov: Provenance, inputs: Sequence[Array], output_type: object
+    ) -> None:
+        """Refuse a ``partition=True`` External whose rows are not one input chunk's."""
+        if output_type is None:
+            raise GraphedTypeError(
+                op, prov, "partition=True needs output_type=: recording has no partition to trace"
+            )
+        ids = [a.node_id for a in inputs]
+        with self._lock:
+            names = sorted(
+                {self._source_names[n] for i in ids for n in self._reachable_sources(i)}
+            )
+            kinds = {node["kind"] for node in self._store.cone(outputs=ids).nodes()}
+        if len(names) > 1:
+            raise GraphedTypeError(
+                op, prov, f"partition=True reads one source's partition; its inputs read {names}"
+            )
+        # each of these makes a task's rows other than one input chunk's
+        barriers = [
+            label
+            for kind, label in (
+                ("exchange", "a repartition"),
+                ("join", "a join"),
+                ("reduction", "a reduction"),
+            )
+            if kind in kinds
+        ]
+        if barriers:
+            raise GraphedTypeError(
+                op,
+                prov,
+                f"partition=True needs rows from one input chunk; its inputs come after "
+                f"{' and '.join(barriers)}",
+            )
 
     def _hold_fn(
         self, fn: Callable[..., object], key: str, name: ParamValue, prov: Provenance

@@ -1,0 +1,9 @@
+.. under: 0.0.12 (unreleased)
+
+* ``graphed.apply(fn, ..., partition=True)`` and ``Array.map(fn, partition=True)`` call ``fn`` with
+  ``partition=``, the ``Partition`` (``uri``, ``tree``, resolved entry range) of the chunk each
+  task runs on, on every runner, so a per-file constant can be read from the file's path. The
+  request is part of the node's identity. It needs ``output_type=``; inputs read from several
+  sources, or past a repartition, a join or a whole-dataset reduction, are refused at the call,
+  and a whole-source ``materialize()`` refuses one at the recording line, while
+  ``materialize(partition=)`` and ``graphed.debug.run``/``replay`` hand it the partition (#285).

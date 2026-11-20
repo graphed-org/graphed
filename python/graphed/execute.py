@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
-from functools import partial
+from functools import cache, partial
 from typing import Any, ClassVar
 
 import graphed.core
@@ -31,7 +31,7 @@ from .array import labels_carried
 from .backend import Backend
 from .errors import GraphedError
 from .provenance import Provenance
-from .session import Session, _CompileView, evaluator_key
+from .session import Session, _CompileView, evaluator_key, wants_partition
 from .varied import refuse_container
 
 __all__ = [
@@ -256,6 +256,7 @@ def evaluate_ir(
     outputs: Sequence[int] | None = None,
     given: Mapping[int, object] | None = None,
     chunked: bool = False,
+    partition: Callable[[], graphed.core.Partition] | None = None,
 ) -> list[object]:
     """Evaluate a compiled (reduced) IR.
 
@@ -274,7 +275,11 @@ def evaluate_ir(
 
     ``chunked`` says the sources are one chunk of a dataset: a row-wise op's arrays of unequal
     length then refuse, since a chunk's length-1 operand broadcasts where the dataset's would not.
+
+    ``partition`` returns the input partition the sources are a chunk of, for an External recorded
+    with ``partition=True``; one evaluated without it refuses.
     """
+    partition = None if partition is None else cache(partition)  # one resolve however many ask
     blob = compiled.ir if isinstance(compiled, CompiledGraph) else compiled
     store = graphed.core.GraphStore.deserialize(bytes(blob))
     nodes = store.nodes()
@@ -317,7 +322,7 @@ def evaluate_ir(
         elif kind == "stage":
             vals.append(_evaluate_stage(evaluate, nid, nd["members"], ins, on_failure))
         elif kind == "external":
-            vals.append(_evaluate_external(nid, nd, ins, externals, on_failure))
+            vals.append(_evaluate_external(nid, nd, ins, externals, on_failure, partition))
         else:  # pragma: no cover - the codec only emits the kinds above
             raise GraphedError(f"evaluate_ir: unknown node kind {kind!r}")
         del ins
@@ -369,6 +374,7 @@ def _evaluate_external(
     ins: list[object],
     externals: Mapping[str, Callable[..., object]] | None,
     on_failure: OnFailure | None,
+    partition: Callable[[], graphed.core.Partition] | None = None,
 ) -> object:
     """Evaluate an External node with the evaluator ``externals`` binds to it."""
     # Resolve by the specific (content_hash, params) `external_key` first — that is what
@@ -379,7 +385,45 @@ def _evaluate_external(
     fn = None if externals is None else (externals.get(external_key(nd)) or externals.get(chash))
     if fn is None:
         raise _unbound_external(chash)
-    return _dispatch(partial(fn, *ins), external_op(nd), ins, (nid, None), on_failure)
+    return _dispatch(
+        external_call(fn, ins, nd, partition), external_op(nd), ins, (nid, None), on_failure
+    )
+
+
+def external_call(
+    fn: Callable[..., object],
+    ins: list[object],
+    node: Mapping[str, Any],
+    partition: Callable[[], graphed.core.Partition] | None,
+) -> Callable[[], object]:
+    """Return ``fn`` on ``ins`` as a call, handed ``partition=`` for a ``partition=True`` map."""
+    if wants_partition(node.get("params") or {}):
+        return partial(_with_partition, fn, ins, partition)
+    return partial(fn, *ins)
+
+
+def resolved_partition(
+    reader: object, partition: graphed.core.Partition
+) -> graphed.core.Partition:
+    """Return ``partition`` with its entry range resolved, where ``reader`` can count entries."""
+    count = getattr(reader, "num_entries", None)
+    if partition.blind_step is None or count is None:
+        return partition
+    return partition.resolve(count(partition))
+
+
+def _with_partition(
+    fn: Callable[..., object],
+    ins: list[object],
+    partition: Callable[[], graphed.core.Partition] | None,
+) -> object:
+    if partition is None:  # raised inside the dispatch, so it points at the recording line
+        raise ValueError(
+            "this function reads its input partition (partition=True), and this evaluation has "
+            "none: only a task over one input partition (aggregate_plan, a write, a repartition's "
+            "map side, materialize(partition=)) has one; materialize() evaluates whole sources"
+        )
+    return fn(*ins, partition=partition())
 
 
 def _last_consumers(inputs: Sequence[Sequence[int]], *, keep: set[int]) -> dict[int, list[int]]:
