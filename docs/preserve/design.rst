@@ -487,6 +487,12 @@ The PyTorch plugin feeds row-major matrices; ``params={"order": "F"}`` feeds col
 the layout a pandas-fed ``torch.FloatTensor(df.to_numpy())`` has. torch's matrix multiply can
 round differently by layout, so the order is a recorded param and the two layouts are two nodes.
 
+TorchScript takes no implicit cast, so the plugin feeds the dtype of the model's first parameter,
+except one numpy has no dtype for (bfloat16, float8): such a model upcasts inside ``forward``, and
+casting first would round the inputs. Those inputs keep their own dtype. ``params={"input_dtype":
+"bfloat16"}`` (a torch dtype's own name, not an alias such as ``"float"``) overrides both, and is
+a recorded param.
+
 How a call gets replayed
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
