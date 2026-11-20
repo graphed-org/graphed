@@ -1,0 +1,5 @@
+.. under: 0.0.12 (unreleased)
+
+* A field list read through an event context, ``events[["Jet", "MET"]]``, reads the collections
+  the context holds: a ``graphed.vary(..., collections=...)`` shift is varied in its universes
+  instead of silently nominal, and an assigned name is found (#222).
