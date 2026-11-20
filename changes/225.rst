@@ -1,0 +1,7 @@
+.. under: 0.0.12 (unreleased)
+
+* A JAX payload's content hash no longer depends on Python function names, the exported one's or a
+  nested ``jax.jit`` function's: the same computation exported from a renamed function or a lambda
+  is one payload (#225). JAX content hashes change with this release, so a saved plan with a JAX
+  ``External`` recorded by an earlier graphed fails a bundle export's payload-integrity check;
+  record it again.
