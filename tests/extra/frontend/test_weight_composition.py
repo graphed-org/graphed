@@ -313,7 +313,8 @@ def test_the_composed_ambient_carries_the_registering_context_not_the_reading_on
     # with a sibling's read, and refuses to re-index it back to the context that registered it
     product = graphed.nominal(graphed.weight(left)) * right["w"]
     assert graphed.accessors.context_of(product) is right
-    assert graphed.accessors.reindex_to(_ambient(left), registered) is graphed.weight(left)
+    ambient = _ambient(left)
+    assert graphed.accessors.reindex_to(ambient, registered) is ambient
 
 
 def test_variations_answers_an_empty_registry_on_a_projected_context() -> None:
