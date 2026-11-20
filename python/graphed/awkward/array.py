@@ -19,7 +19,7 @@ import numpy as np
 from awkward._connect.numpy import implemented as _ak_numpy
 
 from graphed import Array
-from graphed.array import Masker, no_eager_value, take_state
+from graphed.array import Masker, no_eager_value, split_field, take_state
 from graphed.errors import GraphedError, GraphedTypeError
 from graphed.provenance import capture, register_internal
 from graphed.varied import Varied, register_varied
@@ -90,6 +90,15 @@ def _with_path(target: Any, path: tuple[str, ...], value: Any) -> Any:
     return gak.with_field(target, value, path[0])
 
 
+def _getitem(self: Any, key: object) -> Any:
+    """Ak's ``Array.__getitem__``: a tuple key's field names select fields, the rest slices."""
+    split = split_field(key)
+    if split is None:
+        return Array.__getitem__(self, key)
+    head, rest = split
+    return self[head][rest] if rest else self[head]
+
+
 def _setitem(self: Any, where: object, what: object) -> None:
     """Ak's ``Array.__setitem__``, by recording ``with_field`` and rebinding this proxy.
 
@@ -136,6 +145,7 @@ class AwkwardArray(Array):
     __slots__ = ()
 
     __awkward_function__ = _awkward_function
+    __getitem__ = _getitem
     __setitem__ = _setitem
     __array_function__ = _array_function
     mask = property(_masker)
