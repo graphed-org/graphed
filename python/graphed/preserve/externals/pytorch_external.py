@@ -60,12 +60,12 @@ def eval_pytorch(model: Any, params: Mapping[str, Any], inputs: list[Any]) -> An
 
     with torch.no_grad():
         if template is None:  # legacy: one stacked feature matrix
-            out = model(tensor(_stack_feature_columns(inputs))).numpy()
+            out = model(tensor(_stack_feature_columns(inputs)))
         else:
             args, kwargs = template
             tensors = [tensor(ml_matrix(e, inputs)) for e in args]
             kwtensors = {k: tensor(ml_matrix(e, inputs)) for k, e in kwargs.items()}
-            out = model(*tensors, **kwtensors).numpy()
+            out = model(*tensors, **kwtensors)
     return _as_event_array(out)
 
 

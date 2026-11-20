@@ -74,9 +74,7 @@ def eval_tensorflow(model: Any, params: Mapping[str, Any], inputs: list[Any]) ->
         tensors = [ml_matrix(e, inputs) for e in args]
         kwtensors = {k: ml_matrix(e, inputs) for k, e in kwargs.items()}
         out = model(tensors if len(tensors) > 1 else tensors[0], **kwtensors)
-    # convert via the tensor's own .numpy() — np.asarray on an EagerTensor goes through keras's
-    # pre-numpy-2 __array__ (no copy= keyword) and warns on every call
-    return _as_event_array(out.numpy() if hasattr(out, "numpy") else out)
+    return _as_event_array(out)
 
 
 def _tensorflow_samples() -> list[bytes]:

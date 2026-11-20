@@ -684,6 +684,9 @@ class Session:
         if rows_from is None:
             self._same_rows(op, prov, inputs)
         ids = [a.node_id for a in inputs]
+        ordered = getattr(self._backend, "ordered_operands", None)
+        if ordered is not None and ordered(op, self._forms_of(ids)):
+            params_d["ordered"] = True  # a param keeps the optimizer's commute rules off this node
         form = self._located_form(op, prov, ids, params_d)
         with self._lock:
             if reduction:
