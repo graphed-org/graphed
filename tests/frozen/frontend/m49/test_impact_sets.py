@@ -72,8 +72,9 @@ def test_member_of_is_exported_and_resolves_the_label_union() -> None:
     container = shared_node_topology(session).total
     plain = graphed.universe(container, "nominal")
 
-    assert graphed.member_of(container, "jes_up") is graphed.universe(container, "jes_up")
-    assert graphed.member_of(container, "btag_up") is graphed.nominal(container)
+    jes_up = graphed.universe(container, "jes_up").node_id
+    assert graphed.member_of(container, "jes_up").node_id == jes_up
+    assert graphed.member_of(container, "btag_up").node_id == graphed.nominal(container).node_id
     assert graphed.member_of(plain, "jes_up") is plain
     with pytest.raises(KeyError):
         graphed.universe(container, "btag_up")
