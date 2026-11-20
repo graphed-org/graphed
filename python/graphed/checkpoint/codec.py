@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import pickle
+import sys
 from typing import Any, Protocol
 
 
@@ -31,12 +32,28 @@ class PickleCodec:
     PROTOCOL = 5
 
     def encode(self, value: Any) -> bytes:
-        """Pickle ``value``."""
-        return pickle.dumps(value, protocol=self.PROTOCOL)
+        """Pickle ``value``, each awkward array in it with its form's parameters in key order."""
+        buf = io.BytesIO()
+        _OrderedPickler(buf, protocol=self.PROTOCOL).dump(value)
+        return buf.getvalue()
 
     def decode(self, data: bytes) -> Any:
         """Unpickle ``data``."""
         return pickle.loads(data)
+
+
+class _OrderedPickler(pickle.Pickler):
+    """The pickler whose awkward arrays carry their parameters in key order, not hash order."""
+
+    def reducer_override(self, obj: Any) -> Any:
+        ak = sys.modules.get("awkward")  # no awkward imported: no awkward array to reorder
+        # behavior classes subclass ak.Array and ak.Record
+        if ak is None or not isinstance(obj, (ak.Array, ak.Record)):
+            return NotImplemented
+        from ..awkward._form_order import ordered_array, ordered_record
+
+        ordered = ordered_array(obj) if isinstance(obj, ak.Array) else ordered_record(obj)
+        return ordered.__reduce_ex__(PickleCodec.PROTOCOL)
 
 
 class NumpyCodec:

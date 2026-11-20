@@ -129,6 +129,7 @@ convention = "pep257"
 # framework) where it is used, so a base install imports them without it.
 "python/graphed/awkward/payloads.py" = ["PLC0415"]
 "python/graphed/checkpoint/codec.py" = ["PLC0415"]
+"python/graphed/checkpoint/resume.py" = ["PLC0415"]
 "python/graphed/debug/dashboard/_client.py" = ["PLC0415"]
 "python/graphed/debug/dashboard/_server.py" = ["PLC0415"]
 "python/graphed/debug/progress.py" = ["PLC0415"]  # tqdm, so importing graphed.debug stays cheap

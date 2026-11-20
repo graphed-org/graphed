@@ -19,6 +19,8 @@ from typing import Any
 import awkward as ak
 import numpy as np
 
+from ._form_order import ordered_form
+
 #: the pinned §4 route hash (the golden vectors require exactly this).
 PINNED_ROUTING_HASH = "sha256"
 
@@ -190,7 +192,7 @@ def to_wire(block: ak.Array) -> bytes:
     """
     form, length, container = ak.to_buffers(block)
     packed = {k: np.asarray(v) for k, v in container.items()}
-    return pickle.dumps((form.to_dict(), int(length), packed), protocol=5)
+    return pickle.dumps((ordered_form(form).to_dict(), int(length), packed), protocol=5)
 
 
 def from_wire(data: bytes) -> ak.Array:

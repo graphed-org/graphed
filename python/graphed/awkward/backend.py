@@ -34,6 +34,7 @@ from graphed.shuffle import join_blocks
 
 from . import functions as gak
 from . import join, payloads, shuffle
+from ._form_order import ordered_form
 from ._ops import _BINARY, _INTROSPECT_EAGER, _ak_own, _listed_names, _no_field, apply
 from .array import AwkwardArray
 
@@ -53,7 +54,7 @@ class _AsRead:
         # "@"-prefixed attrs are transient, which ak.Array's own pickling drops too
         attrs = {k: v for k, v in self.array.attrs.items() if not k.startswith("@")}
         rebuild = functools.partial(ak.from_buffers, behavior=self.array.behavior, attrs=attrs)
-        return rebuild, (form, length, buffers)
+        return rebuild, (ordered_form(form), length, buffers)
 
 
 def _canonical(behavior: Mapping[Any, Any]) -> dict[Any, Any]:

@@ -169,6 +169,17 @@ def _attrs_unset(array: Any) -> Any:
     return bare
 
 
+def _keyed_awkward(value: Any) -> Any:
+    """Return an awkward array or record as it is keyed: parameters in key order (#238)."""
+    from ..awkward._form_order import ordered_array, ordered_record
+
+    ak = sys.modules["awkward"]
+    out = ordered_array(value) if isinstance(value, ak.Array) else ordered_record(value)
+    if out._attrs is not None and all(k.startswith("@") for k in out._attrs):
+        return _attrs_unset(out)
+    return out
+
+
 class _KeyPickler(pickle._Pickler):
     """Cloudpickle's by-value/by-name partition and reducers on the pure-Python pickler.
 
@@ -225,13 +236,8 @@ class _KeyPickler(pickle._Pickler):
         while (keyed_as := getattr(type(obj), "_keyed_as", None)) is not None:
             obj = self._keyed.setdefault(id(obj), (obj, keyed_as(obj)))[1]
         # pickling drops "@" attrs; dispatch holds no awkward type and skips ABCMeta's isinstance
-        if (
-            type(obj) not in self.dispatch
-            and isinstance(obj, self._arrays)
-            and obj._attrs is not None
-            and all(k.startswith("@") for k in obj._attrs)
-        ):
-            obj = self._keyed.setdefault(id(obj), (obj, _attrs_unset(obj)))[1]
+        if type(obj) not in self.dispatch and isinstance(obj, self._arrays):
+            obj = self._keyed.setdefault(id(obj), (obj, _keyed_awkward(obj)))[1]
         _PURE._Pickler.save(self, obj, save_persistent_id)
 
     def memoize(self, obj: Any) -> None:
