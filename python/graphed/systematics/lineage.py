@@ -157,13 +157,19 @@ def same_rows(a: ContextNode, b: ContextNode) -> bool:
     return True
 
 
+def _members_of(value: Any) -> Any:
+    # by class, not instance: `varied` imports this module, and an array subclass's `__getattr__`
+    # can cost a form lookup per missing name
+    return value._members if getattr(type(value), "_varied_container", False) else None
+
+
 def mask_key(mask: Any) -> tuple[tuple[str, int], ...]:
     """Return a mask derivation's identity: its per-label node ids.
 
     A REBUILT mask interns to the same ids, which is the binding condition for
     `ctx[rebuilt] is ctx[mask]`.
     """
-    members = getattr(mask, "_members", None)  # by duck type: `varied` imports this module
+    members = _members_of(mask)
     if members is None:
         return (("nominal", mask.node_id),)
     return tuple((label, member.node_id) for label, member in members.items())
@@ -225,7 +231,7 @@ def row_space_above(handle: ContextNode, ctx: ContextNode) -> ContextNode | None
 
 def rows_of(value: Any) -> Any:
     """Return the context whose rows `value` holds: where a row cut put it, else its handle."""
-    members = getattr(value, "_members", None)
+    members = _members_of(value)
     if members is not None:
         rows = {id(r): r for r in map(rows_of, members.values())}
         return next(iter(rows.values())) if len(rows) == 1 else None
