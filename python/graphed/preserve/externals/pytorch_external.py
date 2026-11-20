@@ -60,8 +60,7 @@ def eval_pytorch(model: Any, params: Mapping[str, Any], inputs: list[Any]) -> An
     import torch
 
     template = parse_call_template(params, len(inputs))
-    # TorchScript takes no implicit cast: feed the dtype the model's weights declare
-    dtype = next((p.dtype for p in model.parameters()), None)
+    dtype = _input_dtype(model, params)
 
     # torch keeps numpy's strides and its matmul rounds by layout: order="F" is a pandas-fed matrix
     fortran = params.get("order") == "F"
@@ -84,7 +83,43 @@ def eval_pytorch(model: Any, params: Mapping[str, Any], inputs: list[Any]) -> An
     return _as_event_array(out)
 
 
+def _input_dtype(model: Any, params: Mapping[str, Any]) -> Any:
+    """Return the dtype to feed ``model``, or None to feed each input as it is (#252)."""
+    import torch
+
+    if "input_dtype" in params:
+        return getattr(torch, str(params["input_dtype"]))
+    # TorchScript takes no implicit cast: feed the weights' dtype, unless numpy has none for it,
+    # where the cast would round the inputs before a forward that upcasts them itself
+    dtype = next((p.dtype for p in model.parameters()), None)
+    if dtype is None:
+        return None
+    try:
+        torch.empty(0, dtype=dtype).numpy()
+    except TypeError:
+        return None
+    return dtype
+
+
 def _check_pytorch_params(params: Mapping[str, Any], _payload: bytes, _n_inputs: int) -> None:
+    if "input_dtype" in params:
+        import torch
+
+        name = str(params["input_dtype"])
+        dtype = getattr(torch, name, None)
+        if not isinstance(dtype, torch.dtype):
+            raise GraphedTypeError(
+                "external",
+                capture(),
+                f"input_dtype={params['input_dtype']!r} names no torch dtype; spell it as torch "
+                "does, such as 'float32' or 'bfloat16'",
+            )
+        if str(dtype) != f"torch.{name}":  # one spelling per dtype: an alias is a second node
+            raise GraphedTypeError(
+                "external",
+                capture(),
+                f"input_dtype={name!r} is {dtype}; spell it {str(dtype).removeprefix('torch.')!r}",
+            )
     if params.get("order", "F") != "F":  # one spelling of the default: omit it
         raise GraphedTypeError(
             "external",
