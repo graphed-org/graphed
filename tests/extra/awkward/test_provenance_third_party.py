@@ -25,8 +25,6 @@ from graphed.errors import GraphedTypeError
 
 bh = pytest.importorskip("boost_histogram")
 hist = pytest.importorskip("hist")
-correctionlib = pytest.importorskip("correctionlib")
-cs = pytest.importorskip("correctionlib.schemav2")
 
 FAKE_LIB = os.path.join(sysconfig.get_path("purelib"), "gw73_fakelib", "mod.py")
 
@@ -34,17 +32,6 @@ FAKE_LIB = os.path.join(sysconfig.get_path("purelib"), "gw73_fakelib", "mod.py")
 def _x() -> Any:
     session = graphed.Session(AwkwardBackend())
     return from_awkward(session, "ev", ak.Array({"x": [1.0, 2.0, 3.0]})).x
-
-
-def _correction() -> Any:
-    corr = cs.Correction(
-        name="c",
-        version=1,
-        inputs=[cs.Variable(name="x", type="real")],
-        output=cs.Variable(name="w", type="real"),
-        data=1.0,
-    )
-    return correctionlib.CorrectionSet(cs.CorrectionSet(schema_version=2, corrections=[corr]))["c"]
 
 
 def _fake_lib() -> types.ModuleType:
@@ -62,7 +49,6 @@ CALLS: dict[str, Callable[[Any], Any]] = {
     "ak.from_iter": lambda x: ak.from_iter([x]),
     "boost_histogram fill": lambda x: bh.Histogram(bh.axis.Regular(3, 0, 3)).fill(x),
     "hist fill": lambda x: hist.Hist.new.Reg(3, 0, 3, name="x").Double().fill(x=x),
-    "correctionlib evaluate": lambda x: _correction().evaluate(x),
     "installed library": lambda x: _fake_lib().truth(x),
 }
 

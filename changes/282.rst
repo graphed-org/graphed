@@ -1,0 +1,7 @@
+.. under: 0.0.12 (unreleased)
+
+* Growing an option-typed record one field at a time (``x[name] = v`` on a ``var * ?record``, as a
+  sort then ``ak.mask`` leaves it) no longer keeps a copy of every field per recorded node.
+  ``ak.with_field`` re-wraps each field over the same content, and recorded forms now share those
+  wrappers. At 1000 fields the retained forms drop from 235 MB to a few MB per universe, and the
+  forms and outputs are unchanged (#282).

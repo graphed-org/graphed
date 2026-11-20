@@ -1,0 +1,18 @@
+.. under: 0.0.12 (unreleased)
+
+An untraceable function's type comes from a length-zero call
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* An undeclared ``graphed.apply``/``map`` whose function the typetracer cannot trace (numpy on
+  ``ak.to_numpy``, a numba kernel, a model) takes its type from one call on length-zero arrays of
+  its inputs' forms, so it needs no ``output_type=``. A function that fails on empty input, or
+  returns an ``unknown``-typed empty result, still warns, and the warning names both failures
+  (#245).
+
+An inferred type is checked like a declared one
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* A value whose type differs from the inferred one raises ``StageError`` (cause
+  ``OutputTypeError``) at the recording line, a function that reduces to a scalar included. Before, a wrongly inferred type passed silently and
+  mislabelled everything downstream. A type that depends on the data, such as a dtype that widens
+  with content, is one such case: declare it with ``output_type=`` (#245).
