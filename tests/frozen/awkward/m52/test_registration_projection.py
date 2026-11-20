@@ -84,7 +84,7 @@ def test_a_default_point_registration_reduces_same_family_but_fans_out_a_foreign
     # same family: a different jes tag on the member still restricts to nominal
     other_tag = graphed.vary(x, "jes", down=x * 7.0)
     z_tag = graphed.vary(x * 3.0, "jes", up=other_tag)
-    assert graphed.universe(z_tag, "jes_up") is graphed.nominal(other_tag)
+    assert graphed.universe(z_tag, "jes_up").node_id == graphed.nominal(other_tag).node_id
 
     # cross family: the member carries a foreign `jer` universe
     other_family = graphed.vary(x, "jer", up=x * 5.0)
@@ -93,7 +93,7 @@ def test_a_default_point_registration_reduces_same_family_but_fans_out_a_foreign
     assert cross.node_id != graphed.nominal(other_family).node_id
 
     # the one-at-a-time jes_up still restricts the foreign jer axis to nominal (the diagonal)
-    assert graphed.universe(z_family, "jes_up") is graphed.nominal(other_family)
+    assert graphed.universe(z_family, "jes_up").node_id == graphed.nominal(other_family).node_id
     # but m53 mints the joint alongside it, reaching the real foreign universe — not a silent drop
     joint = graphed.member_of(z_family, "jes_up__jer_up")
     assert joint.node_id == cross.node_id

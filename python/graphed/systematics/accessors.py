@@ -97,11 +97,13 @@ def labels(x: Introspectable) -> tuple[str, ...]:
 def universe(x: Introspectable, label: str) -> Any:
     """`x`'s universe for `label` — a KeyError listing the valid labels when it has none.
 
-    An event context's universe is one projected context, the same object on every read: a
-    collection assigned into it is seen by later reads of that universe and by nothing else.
+    A container's universe is a proxy of its member's node, not the member itself, so assigning
+    into it leaves the container as it was. An event context's universe is one projected context,
+    the same object on every read: a collection assigned into it is seen by later reads of that
+    universe and by nothing else.
     """
     if isinstance(x, Varied):
-        return member_exact(x, label)
+        return detached(member_exact(x, label))
     if _is_context(x):
         return project(x, label)
     if isinstance(x, Array):
