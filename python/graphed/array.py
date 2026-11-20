@@ -9,9 +9,9 @@ dispatch keys); they are backend-agnostic strings, so graphed stays free of nump
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from itertools import count
-from typing import TYPE_CHECKING, Any, SupportsFloat
+from typing import TYPE_CHECKING, Any, SupportsFloat, TypeVar
 
 from .backend import ParamValue
 from .errors import DeferredTypeError, GraphedTypeError, MissingFieldError
@@ -19,6 +19,8 @@ from .provenance import Provenance, Site, capture
 
 if TYPE_CHECKING:
     from .session import Session
+
+_T = TypeVar("_T")
 
 # numpy ufunc name -> canonical op name (so np.subtract(a, b) and a - b record the same op).
 # M11 (dask.array parity P0.2): the FULL single-output ufunc tier. Ufunc application is COMMON to
@@ -330,14 +332,41 @@ def _positional(key: Array) -> bool:
     return positional is not None and positional(key.session.form(key))
 
 
-class Array(EagerRefusals):
+class Deferred(EagerRefusals):
+    """The one slot layout of `Array` and `Varied`.
+
+    Shared so `x[field] = varied` can turn an array proxy into a container in place, by
+    `__class__` assignment; a slot the class does not use stays unset.
+    """
+
     # M48 adds two frontend-only slots (§2.3e): `_context` is the event-context handle a read was
     # performed through, `_labels` the variation labels flowing into this expression. Both are
     # underscore-prefixed so `__getattr__`'s guard keeps them out of field access, and NEITHER
     # reaches NodeKey params/tokens/hashes — interning and §1.2 stay intact.
+    __slots__ = (
+        "__weakref__",
+        "_context",
+        "_labels",
+        "_members",
+        "_node_id",
+        "_session",
+        "_site",
+        "_tags",
+    )
+
+
+def take_state(proxy: Deferred, source: Deferred) -> None:
+    """Make ``proxy`` the same value as ``source``: its class and its slots, the rest unset."""
+    for name in _USED[isinstance(proxy, Array)]:
+        delattr(proxy, name)
+    proxy.__class__ = type(source)
+    _copy_state(source, proxy)
+
+
+class Array(Deferred):
     """A deferred array: a proxy for one node of a Session's recorded graph."""
 
-    __slots__ = ("_context", "_labels", "_node_id", "_session", "_site")
+    __slots__ = ()
 
     # let numpy defer to us for ufuncs (np.cos(array), np.hypot(a, b), ...)
     __array_priority__ = 1000.0
@@ -738,9 +767,13 @@ class Array(EagerRefusals):
         """List the attributes, with the fields and behaviors the backend names for this form."""
         names = getattr(self._session.backend, "attribute_names", None)
         extra = () if names is None else names(self._session.form(self))
-        # `__getattr__` refuses a leading underscore, and `arr.<name>` needs an identifier
-        reachable = (name for name in extra if name.isidentifier() and name[0] != "_")
-        return sorted({*super().__dir__(), *reachable})
+        return dir_with(super().__dir__(), extra)
+
+
+def dir_with(attributes: Iterable[str], names: Iterable[str]) -> list[str]:
+    """Return ``attributes`` with each of ``names`` that ``obj.<name>`` can reach."""
+    # `__getattr__` refuses a leading underscore, and `obj.<name>` needs an identifier
+    return sorted({*attributes, *(n for n in names if n.isidentifier() and n[0] != "_")})
 
 
 # ---- the two §2.3e slots, for the systematics layers ---------------------------------------
@@ -975,3 +1008,28 @@ def _record_method(
         return session.record_op("method", inputs, {**params, "index": next(leaf)})
 
     return build(shape)
+
+
+#: the slots each kind of proxy sets; the rest of `Deferred`'s stay unset
+_USED = {
+    True: ("_context", "_labels", "_node_id", "_session", "_site"),
+    False: ("_context", "_members", "_tags"),
+}
+
+
+def _copy_state(source: Deferred, target: Deferred) -> None:
+    for name in _USED[isinstance(source, Array)]:
+        setattr(target, name, getattr(source, name))
+
+
+def detached(value: _T) -> _T:
+    """Return a fresh proxy of ``value`` for graphed to keep, ``value`` itself if not a proxy.
+
+    An in-place assignment (``x[field] = ...``) rebinds the object it is made on, so a holder
+    keeping the caller's own object would change with it.
+    """
+    if not isinstance(value, Deferred):
+        return value
+    fresh = object.__new__(type(value))
+    _copy_state(value, fresh)
+    return fresh

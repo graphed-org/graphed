@@ -375,7 +375,8 @@ keep the collections they were derived with, and the same derivation taken after
 different context, so combine values from derivations taken on the same side of the assignment.
 ``gak.with_field(ctx, value, name)`` does the same
 but returns a new context and leaves ``ctx`` as it was. A field list, ``ctx[["Jet", "MET"]]``,
-reads each listed collection the way ``ctx.Jet`` does, universes included.
+reads each listed collection the way ``ctx.Jet`` does, universes included. ``ctx["Jet", "pt3"] = value``,
+or a longer field path, assigns ``Jet`` with that field replaced, as on an awkward array.
 
 .. code-block:: python
 
@@ -1393,34 +1394,22 @@ call adds no param, so its bytes are unchanged. ``output_type=`` and ``form=`` a
 reach the node, so they cannot change its identity or bytes. The preserve layer uses it for a
 plugin's ``output_dtype`` default.
 
-A backend's optional ``ordered_operands(op, inputs) -> bool`` says that ``op`` over those input
-forms may run a user overload whose operand order matters; the session then records the node with
-``ordered=True``, which keeps the optimizer's commute rules off it (awkward answers yes for a
-binary op over an operand with a ``__record__`` or ``__list__`` name).
-
 A declaration is checked at run time through the backend's optional
 ``check_output_type(value, inputs, key, declared) -> str | None``, which returns the value's type
-when it disagrees with the declaration. ``key`` is ``"output_type"`` or ``"output_dtype"``, or
-``"array output_type"`` or ``"scalar output_type"`` for an inferred type, which states its own
-row-ness where a declaration takes it from the inputs. The IR cannot carry the fact that a node
-declared, since a plugin param may itself be named ``output_type``, so the session wraps a
-declaring node's evaluator in ``CheckedExternal`` at record time. The wrapper travels wherever the
-evaluator does, into plans and process pools, and raises ``graphed.OutputTypeError`` at the
-recorded line. An ``output_dtype`` in ``form_params`` beside ``form=`` declares too, as
-``gak.apply_correction`` does. An undeclared ``map`` whose type the backend infers is checked
-against that type the same way; any other undeclared node keeps its bare evaluator. An aggregate
-plan re-raises any other ``GraphedError`` from a worker unchanged, and turns this one into the
-``StageError`` at the declaring line.
+when it disagrees with the declaration (``key`` is ``"output_type"`` or ``"output_dtype"``). The IR
+cannot carry the fact that a node declared, since a plugin param may itself be named
+``output_type``, so the session wraps a declaring node's evaluator in ``CheckedExternal`` at
+record time. The wrapper travels wherever the evaluator does, into plans and process pools, and
+raises ``graphed.OutputTypeError`` at the recorded line. An ``output_dtype`` in ``form_params``
+beside ``form=`` declares too, as ``gak.apply_correction`` does. An undeclared node keeps its bare
+evaluator. An aggregate plan re-raises any other ``GraphedError`` from a worker unchanged, and turns this
+one into the ``StageError`` at the declaring line.
 
 A backend may also provide ``traced_form(fn, inputs) -> Form | None``, the form an undeclared
-``map`` gives ``inputs``. The awkward backend tries the typetracers first, then one call on
-length-zero arrays of the inputs' forms. A failure there is raised from the typetracer's failure,
-so the warning names both. The session calls it at the recording line and records that form, which
-stays out of the node's params, and checks every value against the form's
-``canonical_output_type`` and its own row-ness, a scalar from array inputs included; a backend
-without ``canonical_output_type`` records it unchecked. A failure there is a ``GraphedWarning``
-and ``op_form``'s answer stands, unchecked, since the callable is the user's. A backend without
-the method records ``op_form``'s answer silently.
+``map`` gives ``inputs`` on metadata, or ``None`` if ``fn`` returned anything else. The session
+calls it at the recording line and records that form, which stays out of the node's params. A
+failure there is a ``GraphedWarning`` and ``op_form``'s answer stands, since the callable is the
+user's. A backend without the method records ``op_form``'s answer silently.
 
 A package that records its *own* call-outs — histogram fills are the example — passes
 ``descriptor=`` and ``form=`` to ``Session.record_external`` and the backend is not consulted at

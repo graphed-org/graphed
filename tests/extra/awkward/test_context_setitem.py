@@ -12,7 +12,7 @@ from graphed import Session
 from graphed.awkward import AwkwardBackend, from_awkward, gak, gnano
 from graphed.context import EventContext
 from graphed.errors import GraphedError, GraphedTypeError
-from graphed.systematics import labels, nominal, universe
+from graphed.systematics import context_of, labels, nominal, universe
 
 DATA = {
     "Jet": [[{"pt": 40.0}, {"pt": 20.0}], [{"pt": 55.0}], []],
@@ -169,6 +169,9 @@ def test_assignments_without_a_meaning_are_refused(value: Any, error: Any, match
         events["x"] = value(events)
     with pytest.raises(error, match=match):
         gak.with_field(events, value(events), "x")
+    if not isinstance(value(events), float):  # a scalar field broadcasts, as on an awkward array
+        with pytest.raises(error, match=match):
+            events["Muon", "x"] = value(events)
 
 
 def test_an_assignment_dropping_a_registered_universe_is_refused() -> None:
@@ -188,10 +191,52 @@ def test_with_field_names_itself_when_it_refuses() -> None:
         gak.with_field(events, 1.0, "x")
 
 
-def test_a_non_name_key_is_refused() -> None:
+def test_a_field_key_assigns_the_collection_with_that_field() -> None:
+    session, events = _events()
+    held = events.Muon
+    events["Muon", "pt2"] = events.Muon.pt * 2
+    assert ak.to_list(session.materialize(events.Muon.pt2)) == [[2.0, 14.0], [], [18.0]]
+    assert gak.fields(held) == ["pt"]
+
+
+def test_a_field_key_takes_a_varied_value_and_a_varied_collection() -> None:
+    session, events = _events()
+    events = _jes(events)
+    events["Muon", "jets"] = gak.sum(events.Jet.pt, axis=1)
+    assert labels(events.Muon) == ("nominal", "jes_up", "jes_down")
+    assert ak.to_list(session.materialize(universe(events, "jes_up").Muon.jets)) == [
+        [90.0, 90.0],
+        [],
+        [0.0],
+    ]
+    events["Jet", "pt3"] = events.Jet.pt * 3
+    assert labels(events.Jet) == ("nominal", "jes_up", "jes_down")
+    assert ak.to_list(session.materialize(universe(events, "jes_up").Jet.pt3)) == [
+        [180.0, 90.0],
+        [247.5],
+        [],
+    ]
+
+
+def test_a_field_key_reaches_a_nested_record() -> None:
+    session, events = _events()
+    events["Muon", "p4"] = gak.zip({"x": events.Muon.pt})
+    events["Muon", "p4", "x"] = events.Muon.pt * 3
+    assert ak.to_list(session.materialize(events.Muon.p4.x)) == [[3.0, 21.0], [], [27.0]]
+
+
+@pytest.mark.parametrize(
+    ("key", "match"),
+    [
+        (("Muon", 1), r"or a nested field by \(name, field, \.\.\.\)"),
+        ((1, "pt"), r"or a nested field by \(name, field, \.\.\.\)"),
+        (("Muon",), r"or a nested field by \(name, field, \.\.\.\)"),
+    ],
+)
+def test_a_key_with_a_non_name_element_is_refused(key: Any, match: str) -> None:
     _, events = _events()
-    with pytest.raises(GraphedTypeError, match="whole collection by name"):
-        events["Muon", "pt"] = events.Muon.pt
+    with pytest.raises(GraphedTypeError, match=match):
+        events[key] = events.Muon.pt
 
 
 def test_another_gak_function_names_the_context() -> None:
@@ -204,3 +249,25 @@ def test_another_gak_function_names_the_context() -> None:
         gak.zip({"a": events, "b": events.Muon})
     with pytest.raises(GraphedTypeError, match="is an event context, not an array"):
         gak.with_field(events.Muon, events, "x")
+
+
+def test_a_held_collection_promotes_and_keeps_its_context() -> None:
+    session, events = _events()
+    muons = events.Muon
+    muons["scaled"] = graphed.vary(muons.pt, "musf", up=muons.pt * 2, down=muons.pt)
+    assert isinstance(muons, graphed.Varied)
+    assert context_of(muons) is events
+    up = ak.to_list(session.materialize(universe(muons, "musf_up").scaled))
+    assert up == [[2.0, 14.0], [], [18.0]]
+
+
+def test_assigning_on_a_proxy_the_context_holds_leaves_the_context() -> None:
+    session = Session(AwkwardBackend())
+    raw = from_awkward("events", ak.Array(DATA), session=session)
+    events = gnano.events(raw)
+    muons = events.Muon
+    events["Mu"] = muons
+    raw["extra"] = raw.Muon.pt
+    muons["scaled"] = muons.pt * 2
+    assert "extra" not in gak.fields(events[["Muon"]])
+    assert gak.fields(events.Mu) == ["pt"]

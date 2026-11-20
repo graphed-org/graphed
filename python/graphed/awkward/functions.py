@@ -22,14 +22,14 @@ import graphed
 from graphed import Array
 from graphed.array import scalar_params
 from graphed.backend import ParamValue
-from graphed.context import EventContext, with_collection
+from graphed.context import EventContext, fields_of, with_collection
 from graphed.errors import DeferredTypeError, GraphedError, GraphedTypeError
 from graphed.provenance import capture
 from graphed.shuffle import JOINKEY, route_key
 from graphed.systematics.varied import instances_in
-from graphed.varied import Varied, boundary_refusal, expand, expand_tuple, narrow
+from graphed.varied import Varied, boundary_refusal, expand, expand_tuple, narrow, session_of
 
-from ..preserve.externals._helpers import _payload_bytes, refuse_unread_inputs
+from ..preserve.externals._helpers import _payload_bytes, model_form_params, refuse_unread_inputs
 from ..preserve.externals.correctionlib_external import (
     _refused,
     check_correctionlib_params,
@@ -51,7 +51,7 @@ from ._params import (
     crosses_rows,
 )
 from ._templates import _ml_matrix, _parse_template
-from .backend import AwkwardForm, astype_form, broadcast_form
+from .backend import AwkwardForm, astype_form, broadcast_form, declared_form
 
 
 def join(
@@ -672,7 +672,7 @@ def apply_correction(
         form=astype_form(
             broadcast_form([cast("AwkwardForm", session.form(a)) for a in slots]), "float64"
         ),
-        form_params={"output_dtype": "float64"},
+        form_params={"output_dtype": "float64", "claim": True},
     )
 
 
@@ -707,9 +707,6 @@ def onnx_inference(
         k: _parse_template([v], len(inputs), constants=False, groups=True)[0]
         for k, v in (kwargs or {}).items()
     }
-    slot_indices = [i for kind, i in arg_entries if kind == "slot"]
-    group_first = [v[0] for kind, v in arg_entries if kind == "group"]
-    first = (slot_indices + group_first + [0])[0]
 
     def _fn(*vals: object) -> object:
         call = [_ml_matrix(e, vals) for e in arg_entries]
@@ -723,6 +720,8 @@ def onnx_inference(
         params["kwargs"] = json.dumps(kwargs, sort_keys=True)
     refuse_unread_inputs("onnx", params, len(inputs))
     descriptor = payloads.onnx_weights_descriptor(blob)
+    forms = [cast("AwkwardForm", session.form(a)) for a in inputs]
+    form_params = model_form_params(payloads.onnx_row_shape(blob))
     return session.record_external(
         "onnx",
         _TemplateExternal(
@@ -731,7 +730,8 @@ def onnx_inference(
         list(inputs),
         params,
         descriptor=descriptor,
-        form=session.form(inputs[first]),
+        form=declared_form(forms, str(form_params["output_type"])),
+        form_params=form_params,
     )
 
 
@@ -953,11 +953,73 @@ def sample(arr: Array, *, factor: int) -> object:
     return arr.session.materialize(arr[::factor])
 
 
+def _ak_only_keywords(name: str, signature: inspect.Signature) -> list[inspect.Parameter]:
+    """Return the defaulted keywords of ``ak.<name>`` the gak function lacks, keyword-only."""
+    ak_fn = getattr(ak, name, None)
+    if not callable(ak_fn):
+        return []
+    return [
+        p.replace(kind=p.KEYWORD_ONLY)
+        for p in inspect.signature(ak_fn).parameters.values()
+        if p.default is not p.empty and p.name not in signature.parameters
+    ]
+
+
+def _is_default(value: object, default: object) -> bool:
+    # every ak default here is None, a bool, a str or a type, so == never broadcasts
+    return value is default or (type(value) is type(default) and bool(value == default))
+
+
+def _in_effect(behavior: object, operands: Sequence[object]) -> bool:
+    """Return whether every entry of ``behavior`` is already what the operands' session applies."""
+    if not isinstance(behavior, Mapping):
+        return False
+    session = next(
+        (
+            s
+            for a in instances_in((Array, graphed.Varied), *operands)
+            if (s := session_of(a)) is not None
+        ),
+        None,
+    )
+    in_effect = getattr(session.backend, "behavior_in_effect", None) if session else None
+    return in_effect is not None and behavior.items() <= in_effect().items()
+
+
+def _take_ak_keywords(
+    name: str, keywords: Mapping[str, object], args: Sequence[object], kwargs: dict[str, Any]
+) -> None:
+    """Drop each ak-only keyword of ``kwargs`` at ak's default, refusing any other by name.
+
+    A ``behavior`` mapping whose every entry the session already applies is a default too: the
+    session's backend, not the call, owns behavior.
+    """
+    if not kwargs:
+        return
+    for key in keywords.keys() & kwargs.keys():
+        value = kwargs.pop(key)
+        if _is_default(value, keywords[key]):
+            continue
+        if key == "behavior" and _in_effect(value, [*args, *kwargs.values()]):
+            continue
+        hint = (
+            "register it with awkward (vector: vector.register_awkward()) or pass it to "
+            "AwkwardBackend(behavior=...)"
+            if key == "behavior"
+            else f"a deferred call takes only ak's default, {keywords[key]!r}"
+        )
+        raise GraphedTypeError(
+            f"gak.{name}", capture(), f"{key}={value!r} is not honoured; {hint}"
+        )
+
+
 # ---- §2.3c: the gak dispatch layer; `_dispositions` classifies each function ----------
 def _on_context(
     fn: Callable[..., Any], context: EventContext, args: Any, kwargs: Any
-) -> EventContext:
-    """Answer an event context where gak takes an array: only ``with_field`` means anything."""
+) -> EventContext | list[str]:
+    """Answer an event context where gak takes an array: ``with_field`` and ``fields`` only."""
+    if fn.__name__ == "fields":
+        return fields_of(context)
     if fn.__name__ == "with_field":
         bound = inspect.signature(fn).bind(*args, **kwargs).arguments
         if bound["arr"] is context:
@@ -973,12 +1035,17 @@ def _on_context(
 def _dispatched(fn: Callable[..., Any], kind: str) -> Callable[..., Any]:
     """Wrap one gak function with the dispatch its classification names (§2.3c).
 
-    Signatures do not change (R17.0's anti-drift pin): `functools.wraps` keeps `__wrapped__`, so
-    `inspect.signature` still reports the underlying one.
+    Its signature is the underlying one plus the defaulted ak keywords it lacks, each taken at
+    ak's default only (R17.0's anti-drift pin reads ak's defaults).
     """
+    signature = inspect.signature(fn)
+    extra = _ak_only_keywords(fn.__name__, signature)
+    keywords = {p.name: p.default for p in extra}
 
     @functools.wraps(fn)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
+        # before the context answer too: `_on_context` binds against the gak signature alone
+        _take_ak_keywords(fn.__name__, keywords, args, kwargs)
         found = instances_in((Varied, EventContext), *args, *kwargs.values())
         context = next((v for v in found if isinstance(v, EventContext)), None)
         if context is not None:
@@ -996,6 +1063,9 @@ def _dispatched(fn: Callable[..., Any], kind: str) -> Callable[..., Any]:
             return expand_tuple(fn, args, kwargs)
         return expand(fn, args, kwargs)
 
+    wrapper.__signature__ = signature.replace(  # type: ignore[attr-defined]
+        parameters=[*signature.parameters.values(), *extra]
+    )
     return wrapper
 
 

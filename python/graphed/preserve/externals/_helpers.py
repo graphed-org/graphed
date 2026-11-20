@@ -9,9 +9,9 @@ import json
 import os
 import threading
 from collections import OrderedDict
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 from ...errors import GraphedTypeError
 from ...provenance import capture
@@ -47,11 +47,15 @@ def _canonical_json_hash(domain: bytes, payload: bytes) -> str:
 
 
 def _canonical_json_hash_impl(domain: bytes, payload: bytes) -> str:
+    return canonical_document_hash(domain, parse_json(payload))
+
+
+def parse_json(payload: bytes) -> Any:
+    """Return the document of a JSON or gzipped-JSON payload."""
     try:
-        parsed = json.loads(json_bytes(payload).decode("utf-8"))
+        return json.loads(json_bytes(payload).decode("utf-8"))
     except (UnicodeDecodeError, ValueError, OSError, EOFError) as err:
         raise PreserveError(f"payload is not valid JSON ({err})") from err
-    return canonical_document_hash(domain, parsed)
 
 
 def canonical_document_hash(domain: bytes, document: Any) -> str:
@@ -69,6 +73,40 @@ def _stack_feature_columns(inputs: list[Any]) -> Any:
     import numpy as np
 
     return np.stack([np.asarray(ak.to_numpy(ak.Array(i))) for i in inputs], axis=1)
+
+
+#: the shape of one row of a model's output, ``None`` when its payload does not state it
+RowShape = tuple[int, ...] | None
+
+
+def row_shape(shape: Sequence[object]) -> RowShape:
+    """Return the row shape of an output of ``shape``, ``None`` unless every row dim is static."""
+    tail = tuple(shape[1:])
+    if not shape or not all(isinstance(d, int) for d in tail):
+        return None
+    return cast("tuple[int, ...]", tail)
+
+
+def unstated_shape(payload: bytes) -> RowShape:
+    """Return ``None``: the row shape of a model whose payload states none."""
+    return None
+
+
+def event_type(shape: RowShape) -> str:
+    """Return the type `_as_event_array` gives each event of an output whose rows are ``shape``.
+
+    One value per event where ``shape`` is ``None``.
+    """
+    return " * ".join([*map(str, () if shape in (None, (1,)) else shape), "float64"])
+
+
+def model_form_params(shape: RowShape) -> dict[str, object]:
+    """Return a model External's ``form_params``: a claim where its shape is stated."""
+    return {
+        "output_type": event_type(shape),
+        "output_dtype": "float64",
+        "claim": shape is not None,
+    }
 
 
 def _no_float64(dtype: object) -> PreserveError:

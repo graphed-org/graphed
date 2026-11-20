@@ -26,7 +26,7 @@ import itertools
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from .array import Array, EagerRefusals
+from .array import Array, EagerRefusals, detached, dir_with
 from .errors import GraphedError, GraphedTypeError
 from .provenance import capture
 
@@ -108,7 +108,7 @@ class EventContext(EagerRefusals, ContextNode):
     ) -> None:
         """Wrap ``record`` as an event context, derived from ``parent`` by ``link``."""
         super().__init__(session, parent, link, collections)
-        self._record = record
+        self._record = detached(record)
         self._is_data = is_data
         self._ambient = seed(self, weight, parent)
         self._serial = next(_SERIAL)
@@ -121,10 +121,18 @@ class EventContext(EagerRefusals, ContextNode):
         return f"EventContext(#{self._serial} from {self._provenance})"
 
     # ---- tree content (§2.6a: the context reserves NO names) --------------------
+    def __dir__(self) -> list[str]:
+        """List the attributes with the fields, as an awkward array does."""
+        return dir_with(super().__dir__(), fields_of(self))
+
     def __getattr__(self, name: str) -> Any:
-        """Read field ``name`` of the event record."""
+        """Read field ``name`` of the event record; ``fields`` lists them where no field is one."""
         if name.startswith("_"):
             raise AttributeError(name)
+        if name == "fields":
+            names = fields_of(self)
+            if name not in names:
+                return names
         return self._read(name)
 
     def __getitem__(self, key: object) -> Any:
@@ -178,8 +186,15 @@ class EventContext(EagerRefusals, ContextNode):
 
         Row space, registrations and identity are unchanged, so values read before and after it
         combine; a context already derived from this one keeps what it was derived with, and is
-        not the one the same derivation answers with afterwards.
+        not the one the same derivation answers with afterwards. ``events[name, *path] = value``
+        assigns ``name`` with the nested field replaced, as awkward does (#229).
         """
+        if isinstance(name, tuple) and len(name) > 1 and all(isinstance(n, str) for n in name):
+            if isinstance(value, Array | Varied):
+                self._refuse_foreign(name[0], value)
+            collection = detached(self._read(name[0]))
+            collection[name[1:]] = value
+            name, value = name[0], collection
         name = self._name(name)
         self._collections[name] = self._admit(name, value)
         self._derived.clear()
@@ -190,8 +205,8 @@ class EventContext(EagerRefusals, ContextNode):
             raise GraphedTypeError(
                 op,
                 capture(),
-                f"an event context assigns a whole collection by name, not {name!r}; to change "
-                "a nested field, assign the collection with that field replaced",
+                f"an event context assigns a collection by name, or a nested field by "
+                f"(name, field, ...), not {name!r}",
             )
         return name
 
@@ -204,19 +219,7 @@ class EventContext(EagerRefusals, ContextNode):
                 f"events[{name!r}] takes a deferred array or Varied computed from {self!r}, not "
                 f"{type(value).__name__}",
             )
-        if session_of(value) is not context_session(self):
-            raise GraphedTypeError(
-                op,
-                capture(),
-                f"events[{name!r}]: the value was recorded in a different Session than {self!r}; "
-                "compute it from this context's collections",
-            )
-        if context_of(value) is None:
-            # a value read through no context has no row space to check against this one's
-            raise GraphedError(
-                f"events[{name!r}]: the value was not read through an event context, so its rows "
-                f"are not {self!r}'s; compute it from this context's collections"
-            )
+        self._refuse_foreign(name, value, op)
         try:
             admitted: Array | Varied = reindex_to(value, self)
         except GraphedError as err:
@@ -244,7 +247,23 @@ class EventContext(EagerRefusals, ContextNode):
                 "carries; assignment keeps the registrations, so assign a value carrying them, or "
                 "read one universe with graphed.systematics.universe"
             )
-        return admitted
+        return detached(admitted)
+
+    def _refuse_foreign(self, name: str, value: Array | Varied, op: str = "__setitem__") -> None:
+        """Refuse a value whose rows cannot be this context's."""
+        if session_of(value) is not context_session(self):
+            raise GraphedTypeError(
+                op,
+                capture(),
+                f"events[{name!r}]: the value was recorded in a different Session than {self!r}; "
+                "compute it from this context's collections",
+            )
+        if context_of(value) is None:
+            # a value read through no context has no row space to check against this one's
+            raise GraphedError(
+                f"events[{name!r}]: the value was not read through an event context, so its rows "
+                f"are not {self!r}'s; compute it from this context's collections"
+            )
 
     # ---- derivation (§2.6c: scoping is lineage) ---------------------------------
     def _derive(self, mask: Array | Varied) -> EventContext:
@@ -400,3 +419,12 @@ def vary_context(
         ctx, name, nominal, variations, collections, points, composes_as_union, max_universes, tags
     )
     return ctx._vary_child(record, replaced)
+
+
+def fields_of(context: EventContext) -> list[str]:
+    """Return the record's fields, then the names assigned on ``context``, as awkward does."""
+    session = context_session(context)
+    # the form answers, so a branch called `fields` cannot shadow the record's field list
+    form = session.form(member_of(context._record, "nominal"))
+    names = list(session.backend.introspect(form, "fields"))
+    return [*names, *(name for name in collections_of(context) if name not in names)]
