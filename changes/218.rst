@@ -1,0 +1,4 @@
+.. under: 0.0.12 (unreleased)
+
+* ``graphed.apply(fn, x, output_type=...)`` with a lambda or closure ``fn`` runs on a process
+  pool; the declared-type check no longer stops ``fn`` from being shipped by value (#218).
