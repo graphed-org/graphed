@@ -1,0 +1,6 @@
+.. under: 0.0.12 (unreleased)
+
+* An XGBoost booster that stores feature names evaluates inside a graph, as it
+  predicts eagerly, instead of failing with "data did not contain feature names" (#232).
+* An XGBoost call whose feature count differs from the model's raises ``PreserveError``;
+  too few columns used to predict silently, reading the absent ones as missing (#232).

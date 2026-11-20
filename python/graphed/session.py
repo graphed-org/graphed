@@ -49,6 +49,15 @@ def _fn_label(fn: object) -> str:
     return str(getattr(fn, "__name__", repr(fn)))
 
 
+def _reason(exc: BaseException) -> str:
+    """Return ``exc``'s type and the first non-blank line of its message."""
+    try:  # the exception's own __str__ is user code too
+        line = next((s for s in str(exc).splitlines() if s.strip()), "")
+    except Exception:
+        line = ""
+    return f"{type(exc).__name__}{': ' + line if line else ''}"
+
+
 def _call_identity(fn: object) -> object:
     """Return what makes two callable objects one call: see `Session._fn_name`'s identity rule."""
     # not isinstance: `__class__` is the callable's to claim
@@ -70,6 +79,11 @@ class _CompileView:
     shift_after_weight: Mapping[tuple[str, str], frozenset[int]]
 
 
+def _declares(fn: Callable[..., object]) -> bool:
+    """Return whether ``fn`` checks a type its caller declared with ``output_type=``."""
+    return isinstance(fn, CheckedExternal) and fn.key == "output_type"
+
+
 @dataclass(frozen=True)
 class CheckedExternal:
     """The evaluator of an External that declared its type.
@@ -79,7 +93,9 @@ class CheckedExternal:
     """
 
     fn: Callable[..., object]
-    #: ``"output_type"`` (the element type) or ``"output_dtype"`` (a static leaf dtype)
+    #: ``"output_type"`` (a declared element type), ``"array output_type"`` or
+    #: ``"scalar output_type"`` (a claimed one, stating its row-ness), or ``"output_dtype"``
+    #: (a static leaf dtype)
     key: str
     declared: str
     #: the recording backend's ``check_output_type``
@@ -173,8 +189,8 @@ class Session:
         self._fn_taken: set[str] = set()
         # evaluator key -> the first callable recorded under it and where
         self._fn_held: dict[str, tuple[Callable[..., object], Provenance]] = {}
-        # (evaluator key, *input types) -> what tracing that function gave
-        self._fn_traced: dict[tuple[str, ...], Form | None] = {}
+        # (evaluator key, *input types) -> the form and declaration inferring that function gave
+        self._fn_traced: dict[tuple[str, ...], tuple[Form, tuple[str, str] | None] | None] = {}
 
     def __deepcopy__(self, memo: dict[int, Any] | None = None) -> Session:
         """Return this Session: one graph has one Session, so a copy shares what it records."""
@@ -668,6 +684,9 @@ class Session:
         if rows_from is None:
             self._same_rows(op, prov, inputs)
         ids = [a.node_id for a in inputs]
+        ordered = getattr(self._backend, "ordered_operands", None)
+        if ordered is not None and ordered(op, self._forms_of(ids)):
+            params_d["ordered"] = True  # a param keeps the optimizer's commute rules off this node
         form = self._located_form(op, prov, ids, params_d)
         with self._lock:
             if reduction:
@@ -807,10 +826,13 @@ class Session:
         function of the descriptor (a preserve plugin's ``output_dtype``) types the form without
         changing the node's identity or bytes.
 
-        A declaration is checked, never cast: with a backend ``check_output_type``, the evaluator
-        of a node declaring ``output_type`` or a ``form_params`` ``output_dtype`` (also beside
-        ``form=``) becomes a :class:`CheckedExternal`, and a value of another type raises
-        :class:`~graphed.OutputTypeError` at this call's line.
+        A recorded type is checked, never cast, when it is a claim or a leaf claim; with a backend
+        ``check_output_type`` the evaluator becomes a :class:`CheckedExternal`, and a value of
+        another type raises :class:`~graphed.OutputTypeError` at this call's line. A claim is
+        ``output_type=``, an inferred ``map`` form, or, with ``form_params`` ``claim=True``,
+        ``form=`` or the form ``form_params`` built: its whole type is checked. A leaf claim is
+        a ``form_params`` ``output_dtype`` otherwise: only its leaves' dtype is. Anything else
+        is a guess, unchecked.
         """
         params_d: dict[str, ParamValue] = dict(params or {})
         prov = capture()
@@ -819,7 +841,9 @@ class Session:
         if (descriptor is None) != (form is None):
             raise GraphedTypeError(op, prov, "descriptor= and form= must be given together")
         # user params may carry any key, so op_form sees `output_type` only as declared here
-        form_view = {k: v for k, v in params_d.items() if k != "output_type"}
+        form_view: dict[str, object] = {k: v for k, v in params_d.items() if k != "output_type"}
+        form_view.update(form_params or {})
+        claimed = bool((form_params or {}).get("claim"))
         declared_type = None
         if output_type is not None:
             declared_type = self._canonical_output_type(op, prov, output_type, params_d, form)
@@ -833,26 +857,23 @@ class Session:
         ids = [a.node_id for a in inputs]
         undeclared = op == "map" and form is None
         if form is None:
-            form = self._located_form(op, prov, ids, {**form_view, **(form_params or {})})
-        # the declaration op_form honoured (or, beside form=, a leaf dtype) is checked on every
-        # value
+            form = self._located_form(op, prov, ids, form_view)
         check = getattr(self._backend, "check_output_type", None)
-        declared = self._declaration(op, prov, declared_type, form_params)
+        claim = form if claimed else None
+        declared = self._declaration(op, prov, declared_type, form_params, claim)
         # after every refusal of the call itself, so a refused function holds no name
         if "fn" in params_d:
             key = evaluator_key(descriptor.content_hash, params_d)
             fn = self._hold_fn(fn, key, params_d["fn"], prov)
             if undeclared and declared is None:
-                form = self._traced_form(fn, key, ids, prov) or form
+                form, declared = self._traced_form(fn, key, ids, prov) or (form, None)
         with self._lock:
             node_id = self._store.add_external(descriptor, ids, params_d)
             if declared is not None and check is not None:
                 node = f"{op} node {node_id} ({params_d.get('fn', descriptor.kind)!r})"
                 fn = CheckedExternal(fn, declared[0], declared[1], check, op, prov, node)
             prior = self._externals.get(node_id)
-            if prior is not None and isinstance(prior[0], CheckedExternal) != isinstance(
-                fn, CheckedExternal
-            ):
+            if prior is not None and _declares(prior[0]) != _declares(fn):
                 # an 'output_type' param and output_type= store the same params, so one node
                 # would drop the check
                 raise GraphedTypeError(
@@ -892,11 +913,14 @@ class Session:
 
     def _traced_form(
         self, fn: Callable[..., object], key: str, ids: Sequence[int], prov: Provenance
-    ) -> Form | None:
-        """Return the form an undeclared ``fn`` gives its inputs, where the backend can trace it.
+    ) -> tuple[Form, tuple[str, str] | None] | None:
+        """Return the form an undeclared ``fn`` gives its inputs and its declaration, if inferred.
 
-        This runs the user's function at record time, so any failure is a warning, never fatal.
-        One function is traced once per input type, however many universes record it.
+        The declaration is the backend's canonical ``output_type``, checked on every value as a
+        declared one is, keyed by the form's own row-ness; ``None`` where the backend cannot
+        declare. This runs the user's function at record time, so
+        any failure is a warning, never fatal. One function is inferred once per input type,
+        however many universes record it.
         """
         trace = getattr(self._backend, "traced_form", None)
         if trace is None:
@@ -907,20 +931,20 @@ class Session:
             if traced in self._fn_traced:
                 return self._fn_traced[traced]
         reason = ""
+        inferred: tuple[Form, tuple[str, str] | None] | None = None
         try:
             form: Form | None = trace(fn, forms)
+            if form is not None:
+                inferred = (form, self._claim(form))
         except Exception as exc:
-            form = None
-            try:  # the exception's own __str__ is user code too
-                line = next((s for s in str(exc).splitlines() if s.strip()), "")
-            except Exception:
-                line = ""
-            reason = f" ({type(exc).__name__}{': ' + line if line else ''})"
-        if form is None:
+            # a failure the backend raised from an earlier one names both
+            reasons = dict.fromkeys(_reason(e) for e in (exc.__cause__, exc) if e is not None)
+            reason = f" ({'; '.join(reasons)})"
+        if inferred is None:
             message = f"could not infer the type of {_fn_label(fn)}{reason}; pass output_type="
             warnings.warn_explicit(message, GraphedWarning, prov.filename, prov.lineno)
         with self._lock:
-            return self._fn_traced.setdefault(traced, form)
+            return self._fn_traced.setdefault(traced, inferred)
 
     def _canonical_output_type(
         self,
@@ -947,26 +971,46 @@ class Session:
         except Exception as exc:  # an unrepresentable declaration -> user-located error
             raise GraphedTypeError(op, prov, str(exc)) from exc
 
+    def _claim(self, form: Form) -> tuple[str, str] | None:
+        """Return the check of a claimed ``form``: its canonical type, keyed by its row-ness.
+
+        ``None`` where the backend cannot type forms.
+        """
+        canonical = getattr(self._backend, "canonical_output_type", None)
+        if canonical is None:
+            return None
+        # unlike a declaration, a form knows whether it has rows
+        rows = "array" if getattr(form, "has_rows", True) else "scalar"
+        return (f"{rows} output_type", str(canonical(form)))
+
     def _declaration(
         self,
         op: str,
         prov: Provenance,
         declared_type: str | None,
         form_params: Mapping[str, object] | None,
+        claimed: Form | None,
     ) -> tuple[str, str] | None:
         """Return the ``(key, type)`` a :class:`CheckedExternal` checks, else ``None``.
 
-        The declared ``output_type``, else a ``form_params`` leaf ``output_dtype``; none without
-        the backend's ``check_output_type``.
+        The declared ``output_type``, else the ``claimed`` form's type, else a ``form_params``
+        leaf ``output_dtype``; none without the backend's ``check_output_type``.
         """
         if getattr(self._backend, "check_output_type", None) is None:
             return None
         if declared_type is not None:
             return ("output_type", declared_type)
         dtype = (form_params or {}).get("output_dtype")
-        if getattr(self._backend, "canonical_output_type", None) is None or dtype is None:
-            return None
-        return ("output_dtype", self._canonical(op, prov, dtype))
+        leaf = None
+        if getattr(self._backend, "canonical_output_type", None) is not None and dtype is not None:
+            # a spelling it cannot build is refused even beside a claim
+            leaf = ("output_dtype", self._canonical(op, prov, dtype))
+        if claimed is not None:
+            try:
+                return self._claim(claimed) or leaf
+            except TypeError as exc:  # a claim it cannot type, refused at the user's line
+                raise GraphedTypeError(op, prov, str(exc)) from exc
+        return leaf
 
     # ---- generic graph walk (shared by materialize + projection) ----------------
     def walk(

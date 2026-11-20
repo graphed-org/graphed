@@ -6,8 +6,10 @@ missing, semantics-bearing parameters are witnessed against eager awkward — se
 depth_limit (the NanoEvents-of-collections enabler), inline with_name/parameters, combinations
 replacement/axis, reducer keepdims/mask_identity/initial, WEIGHTED moments (HEP's bread and
 butter), sort stability, drop_none axis, nan_to_num replacements, isclose equal_nan, and
-dtype-preserving *_like constructors. Deliberately absent everywhere: highlevel / attrs (eager
-concerns) and behavior (backend-owned, M18 — never a per-call kwarg).
+dtype-preserving *_like constructors. highlevel / attrs (eager concerns), behavior (backend-owned,
+M18) and every other defaulted ak keyword a gak function does not implement are accepted at
+awkward's default and refused by name otherwise; a behavior mapping is accepted only when the
+backend already applies it (#256).
 """
 
 from __future__ import annotations
