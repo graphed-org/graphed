@@ -364,6 +364,30 @@ The cut is written once and applies inside every universe. The pile-up weight do
 ``ht``'s labels because a weight is not part of the value — it is applied where the fill happens,
 automatically, to every universe.
 
+Assigning a collection works as it does on an array: ``ctx[name] = value`` sets ``name`` on this
+context, whether ``name`` is new or replaces a collection. ``value`` is an array or a ``Varied``
+computed from this context or one it was derived from, and it keeps the universes it carries.
+Assignment registers nothing, so a value carrying a family the context has not registered is
+refused; register that family with ``vary(ctx, name, collections={...})``. The row space, the
+registrations and the context's identity stay the same, so values read before and after the
+assignment can be combined. Contexts already derived from this one (``ctx[mask]``, ``universe``)
+keep the collections they were derived with, and the same derivation taken afterwards is a
+different context, so combine values from derivations taken on the same side of the assignment.
+``gak.with_field(ctx, value, name)`` does the same
+but returns a new context and leaves ``ctx`` as it was. A field list, ``ctx[["Jet", "MET"]]``,
+reads each listed collection the way ``ctx.Jet`` does, universes included.
+
+.. code-block:: python
+
+    ctx["Jet"] = ctx.Jet[ctx.Jet.pt > 30.0]
+    print(labels(ctx.Jet))
+    print(s.materialize(gak.num(universe(ctx, "jes_up").Jet, axis=1)))
+
+Prints::
+
+    ('nominal', 'jes_up', 'jes_down')
+    [1, 1, 2]
+
 A collection that is a *function* of the varied one — Type-1 MET recomputed from the jets — has
 to move with it, and two ``{tag: record}`` maps would spell the same shifts twice. The shift form
 therefore also takes a ``Varied`` as a collection member: vary the context's central jets with the
@@ -1369,22 +1393,34 @@ call adds no param, so its bytes are unchanged. ``output_type=`` and ``form=`` a
 reach the node, so they cannot change its identity or bytes. The preserve layer uses it for a
 plugin's ``output_dtype`` default.
 
+A backend's optional ``ordered_operands(op, inputs) -> bool`` says that ``op`` over those input
+forms may run a user overload whose operand order matters; the session then records the node with
+``ordered=True``, which keeps the optimizer's commute rules off it (awkward answers yes for a
+binary op over an operand with a ``__record__`` or ``__list__`` name).
+
 A declaration is checked at run time through the backend's optional
 ``check_output_type(value, inputs, key, declared) -> str | None``, which returns the value's type
-when it disagrees with the declaration (``key`` is ``"output_type"`` or ``"output_dtype"``). The IR
-cannot carry the fact that a node declared, since a plugin param may itself be named
-``output_type``, so the session wraps a declaring node's evaluator in ``CheckedExternal`` at
-record time. The wrapper travels wherever the evaluator does, into plans and process pools, and
-raises ``graphed.OutputTypeError`` at the recorded line. An ``output_dtype`` in ``form_params``
-beside ``form=`` declares too, as ``gak.apply_correction`` does. An undeclared node keeps its bare
-evaluator. An aggregate plan re-raises any other ``GraphedError`` from a worker unchanged, and turns this
-one into the ``StageError`` at the declaring line.
+when it disagrees with the declaration. ``key`` is ``"output_type"`` or ``"output_dtype"``, or
+``"array output_type"`` or ``"scalar output_type"`` for an inferred type, which states its own
+row-ness where a declaration takes it from the inputs. The IR cannot carry the fact that a node
+declared, since a plugin param may itself be named ``output_type``, so the session wraps a
+declaring node's evaluator in ``CheckedExternal`` at record time. The wrapper travels wherever the
+evaluator does, into plans and process pools, and raises ``graphed.OutputTypeError`` at the
+recorded line. An ``output_dtype`` in ``form_params`` beside ``form=`` declares too, as
+``gak.apply_correction`` does. An undeclared ``map`` whose type the backend infers is checked
+against that type the same way; any other undeclared node keeps its bare evaluator. An aggregate
+plan re-raises any other ``GraphedError`` from a worker unchanged, and turns this one into the
+``StageError`` at the declaring line.
 
 A backend may also provide ``traced_form(fn, inputs) -> Form | None``, the form an undeclared
-``map`` gives ``inputs`` on metadata, or ``None`` if ``fn`` returned anything else. The session
-calls it at the recording line and records that form, which stays out of the node's params. A
-failure there is a ``GraphedWarning`` and ``op_form``'s answer stands, since the callable is the
-user's. A backend without the method records ``op_form``'s answer silently.
+``map`` gives ``inputs``. The awkward backend tries the typetracers first, then one call on
+length-zero arrays of the inputs' forms. A failure there is raised from the typetracer's failure,
+so the warning names both. The session calls it at the recording line and records that form, which
+stays out of the node's params, and checks every value against the form's
+``canonical_output_type`` and its own row-ness, a scalar from array inputs included; a backend
+without ``canonical_output_type`` records it unchecked. A failure there is a ``GraphedWarning``
+and ``op_form``'s answer stands, unchecked, since the callable is the user's. A backend without
+the method records ``op_form``'s answer silently.
 
 A package that records its *own* call-outs — histogram fills are the example — passes
 ``descriptor=`` and ``form=`` to ``Session.record_external`` and the backend is not consulted at
