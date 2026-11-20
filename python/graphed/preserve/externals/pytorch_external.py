@@ -7,6 +7,10 @@ import io
 from collections.abc import Mapping
 from typing import Any
 
+import numpy as np
+
+from ...errors import GraphedTypeError
+from ...provenance import capture
 from ..errors import PreserveError
 from ._base import ExternalPlugin
 from ._helpers import (
@@ -58,7 +62,12 @@ def eval_pytorch(model: Any, params: Mapping[str, Any], inputs: list[Any]) -> An
     # TorchScript takes no implicit cast: feed the dtype the model's weights declare
     dtype = next((p.dtype for p in model.parameters()), None)
 
+    # torch keeps numpy's strides and its matmul rounds by layout: order="F" is a pandas-fed matrix
+    fortran = params.get("order") == "F"
+
     def tensor(matrix: Any) -> Any:
+        if fortran:
+            matrix = np.asfortranarray(matrix)
         return (
             torch.from_numpy(matrix).to(dtype) if dtype is not None else torch.from_numpy(matrix)
         )
@@ -72,6 +81,16 @@ def eval_pytorch(model: Any, params: Mapping[str, Any], inputs: list[Any]) -> An
             kwtensors = {k: tensor(ml_matrix(e, inputs)) for k, e in kwargs.items()}
             out = model(*tensors, **kwtensors)
     return _as_event_array(out)
+
+
+def _check_pytorch_params(params: Mapping[str, Any], _payload: bytes, _n_inputs: int) -> None:
+    if params.get("order", "F") != "F":  # one spelling of the default: omit it
+        raise GraphedTypeError(
+            "external",
+            capture(),
+            f"order={params['order']!r}: order='F' feeds a column-major matrix; omit order for "
+            "the row-major default",
+        )
 
 
 def _pytorch_samples() -> list[bytes]:
@@ -96,6 +115,7 @@ PYTORCH_PLUGIN = ExternalPlugin(
     evaluate=eval_pytorch,
     samples=_pytorch_samples,
     load=load_pytorch,
+    check_params=_check_pytorch_params,
     framework="torch",
     output_dtype="float64",
 )
