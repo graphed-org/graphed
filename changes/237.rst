@@ -1,0 +1,5 @@
+.. under: 0.0.12 (unreleased)
+
+* An event context's ``fields``, ``dir()`` and ``gak.fields`` list the names assigned on it, after
+  the record's own fields and in assignment order, a replaced name keeping its place, as awkward
+  lists them; derived, projected, varied and ``with_field`` contexts do the same (#237).

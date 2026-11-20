@@ -9,7 +9,7 @@ dispatch keys); they are backend-agnostic strings, so graphed stays free of nump
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from itertools import count
 from typing import TYPE_CHECKING, Any, SupportsFloat, TypeVar
 
@@ -788,9 +788,13 @@ class Array(Deferred):
         """List the attributes, with the fields and behaviors the backend names for this form."""
         names = getattr(self._session.backend, "attribute_names", None)
         extra = () if names is None else names(self._session.form(self))
-        # `__getattr__` refuses a leading underscore, and `arr.<name>` needs an identifier
-        reachable = (name for name in extra if name.isidentifier() and name[0] != "_")
-        return sorted({*super().__dir__(), *reachable})
+        return dir_with(super().__dir__(), extra)
+
+
+def dir_with(attributes: Iterable[str], names: Iterable[str]) -> list[str]:
+    """Return ``attributes`` with each of ``names`` that ``obj.<name>`` can reach."""
+    # `__getattr__` refuses a leading underscore, and `obj.<name>` needs an identifier
+    return sorted({*attributes, *(n for n in names if n.isidentifier() and n[0] != "_")})
 
 
 # ---- the two §2.3e slots, for the systematics layers ---------------------------------------
