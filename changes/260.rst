@@ -1,0 +1,11 @@
+.. under: 0.0.12 (unreleased)
+
+A per-chunk function may return a string or bytes
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``graphed.apply``/``map`` whose function returns a Python ``str`` or ``bytes`` per chunk (a JSON
+  summary for ``PartWrite`` metadata, say) is typed as a scalar string or bytes, inferred from its
+  length-zero call or declared as ``output_type="scalar string"``/``"scalar bytes"``. Any
+  ``"scalar <type>"`` declaration names a primitive dtype, string or bytes (#260).
+* An input of a regular dimension whose size is unknown at record time gets no length-zero call,
+  since a size-0 stand-in would infer the wrong size; the warning says so (#260).

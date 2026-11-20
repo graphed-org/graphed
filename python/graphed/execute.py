@@ -328,11 +328,11 @@ def evaluate_ir(
 
 def _rows_aligned(backend: Backend) -> Callable[..., object]:
     """Return ``backend.eval_stage``, refusing inputs that are not one row set."""
-    unaligned = getattr(backend, "unaligned_ops", ())
+    unaligned = getattr(backend, "rows_unaligned", lambda op, params: False)
 
     def evaluate(op: str, inputs: Sequence[object], params: Mapping[str, object]) -> object:
         lengths = {len(x) for x in inputs if getattr(x, "ndim", 0) > 0}  # type: ignore[arg-type]
-        if len(lengths) > 1 and op not in unaligned:
+        if len(lengths) > 1 and not unaligned(op, params):
             raise ValueError(  # no GraphedError: those skip the attribution to the user's line
                 f"{op!r} got arrays of {sorted(lengths)} rows in one chunk: they are different "
                 "row sets, so a partitioned run cannot pair them with the dataset's rows"
