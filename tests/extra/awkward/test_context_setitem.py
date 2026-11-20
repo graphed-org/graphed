@@ -169,6 +169,9 @@ def test_assignments_without_a_meaning_are_refused(value: Any, error: Any, match
         events["x"] = value(events)
     with pytest.raises(error, match=match):
         gak.with_field(events, value(events), "x")
+    if not isinstance(value(events), float):  # a scalar field broadcasts, as on an awkward array
+        with pytest.raises(error, match=match):
+            events["Muon", "x"] = value(events)
 
 
 def test_an_assignment_dropping_a_registered_universe_is_refused() -> None:
@@ -188,10 +191,52 @@ def test_with_field_names_itself_when_it_refuses() -> None:
         gak.with_field(events, 1.0, "x")
 
 
-def test_a_non_name_key_is_refused() -> None:
+def test_a_field_key_assigns_the_collection_with_that_field() -> None:
+    session, events = _events()
+    held = events.Muon
+    events["Muon", "pt2"] = events.Muon.pt * 2
+    assert ak.to_list(session.materialize(events.Muon.pt2)) == [[2.0, 14.0], [], [18.0]]
+    assert gak.fields(held) == ["pt"]
+
+
+def test_a_field_key_takes_a_varied_value_and_a_varied_collection() -> None:
+    session, events = _events()
+    events = _jes(events)
+    events["Muon", "jets"] = gak.sum(events.Jet.pt, axis=1)
+    assert labels(events.Muon) == ("nominal", "jes_up", "jes_down")
+    assert ak.to_list(session.materialize(universe(events, "jes_up").Muon.jets)) == [
+        [90.0, 90.0],
+        [],
+        [0.0],
+    ]
+    events["Jet", "pt3"] = events.Jet.pt * 3
+    assert labels(events.Jet) == ("nominal", "jes_up", "jes_down")
+    assert ak.to_list(session.materialize(universe(events, "jes_up").Jet.pt3)) == [
+        [180.0, 90.0],
+        [247.5],
+        [],
+    ]
+
+
+def test_a_field_key_reaches_a_nested_record() -> None:
+    session, events = _events()
+    events["Muon", "p4"] = gak.zip({"x": events.Muon.pt})
+    events["Muon", "p4", "x"] = events.Muon.pt * 3
+    assert ak.to_list(session.materialize(events.Muon.p4.x)) == [[3.0, 21.0], [], [27.0]]
+
+
+@pytest.mark.parametrize(
+    ("key", "match"),
+    [
+        (("Muon", 1), r"or a nested field by \(name, field, \.\.\.\)"),
+        ((1, "pt"), r"or a nested field by \(name, field, \.\.\.\)"),
+        (("Muon",), r"or a nested field by \(name, field, \.\.\.\)"),
+    ],
+)
+def test_a_key_with_a_non_name_element_is_refused(key: Any, match: str) -> None:
     _, events = _events()
-    with pytest.raises(GraphedTypeError, match="whole collection by name"):
-        events["Muon", "pt"] = events.Muon.pt
+    with pytest.raises(GraphedTypeError, match=match):
+        events[key] = events.Muon.pt
 
 
 def test_another_gak_function_names_the_context() -> None:
