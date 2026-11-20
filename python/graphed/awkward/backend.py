@@ -253,28 +253,40 @@ def _canonical_output_type(spec: object) -> str:
 _canonical_string = functools.cache(_canonical_output_type)
 
 
-def astype_form(form: AwkwardForm, dtype: object) -> AwkwardForm:
-    """Return ``form`` with its leaves cast to the primitive ``dtype``.
+def _bare_leaf(layout: Any, **kwargs: Any) -> Any:
+    if layout.is_numpy:
+        return layout.copy(parameters=None)
+    return None
 
-    ``dtype`` is any `canonical_output_type` spelling of one; a scalar stays a scalar.
+
+def astype_form(form: AwkwardForm, dtype: object) -> AwkwardForm:
+    """Return ``form`` with its leaves replaced by bare leaves of the primitive ``dtype``.
+
+    ``dtype`` is any `canonical_output_type` spelling of one; a scalar stays a scalar. A leaf's
+    parameters (NanoAOD's ``typename``) describe the input's values, so the new leaf has none, as
+    a computed value has none; list-level parameters (a multidimensional leaf's included) stay, as
+    the value keeps them.
     """
     t = _type(canonical_output_type(dtype))
     if not isinstance(t, ak.types.NumpyType) or t.parameters:
         raise TypeError(f"output_dtype {dtype!r} is not a primitive dtype")
     if ak.typetracer.is_unknown_scalar(form.tt):
         return AwkwardForm(ak.typetracer.create_unknown_scalar(np.dtype(t.primitive)))
-    return AwkwardForm(ak.values_astype(form.tt, t.primitive))
+    cast = ak.values_astype(form.tt, t.primitive)
+    return AwkwardForm(ak.transform(_bare_leaf, cast, numpy_to_regular=True))
 
 
 def broadcast_form(forms: Sequence[AwkwardForm]) -> AwkwardForm:
-    """Return the form ``ak.broadcast_arrays`` gives the array ``forms``.
+    """Return the form the array ``forms`` broadcast to, as correctionlib broadcasts them.
 
-    Scalars broadcast away; the first form when none is an array.
+    Scalars broadcast away; the first form when none is an array. Only the parameters every input
+    shares survive (``ak.broadcast_arrays``, then ``ak.transform``).
     """
     arrays = [f for f in forms if isinstance(f.tt, ak.Array)]
     if len(arrays) < 2:
         return (arrays or list(forms))[0]
-    return AwkwardForm(ak.broadcast_arrays(*(f.tt for f in arrays))[0])
+    broadcast = ak.broadcast_arrays(*(f.tt for f in arrays))
+    return AwkwardForm(ak.transform(lambda *_, **__: None, *broadcast)[0])
 
 
 def declared_form(forms: Sequence[AwkwardForm], canonical: str) -> AwkwardForm:
@@ -293,8 +305,10 @@ def declared_form(forms: Sequence[AwkwardForm], canonical: str) -> AwkwardForm:
 
 
 def _fits(value: ak.types.Type, declared: ak.types.Type) -> bool:
-    """``value`` is ``declared`` wherever it holds data.
+    """``value`` is ``declared`` wherever it holds data, for a value awkward cannot compare itself.
 
+    Parameters and record fields match by key and every parameter counts; union members match by
+    position.
     ``unknown``, the type of a buffer holding no values (an all-empty list), fits any declared
     type.
     """
@@ -303,18 +317,25 @@ def _fits(value: ak.types.Type, declared: ak.types.Type) -> bool:
     if type(value) is not type(declared) or value.parameters != declared.parameters:
         return False
     other: Any = declared
-    if isinstance(value, (ak.types.RecordType, ak.types.UnionType)):
-        fields = value.fields if isinstance(value, ak.types.RecordType) else None
+    if isinstance(value, ak.types.RecordType):
+        mine, theirs = (
+            dict(zip(range(len(t.contents)) if t.is_tuple else t.fields, t.contents, strict=True))
+            for t in (value, other)
+        )
         return (
-            fields == (other.fields if fields is not None else None)
-            and len(value.contents) == len(other.contents)
-            and all(map(_fits, value.contents, other.contents))
+            value.is_tuple == other.is_tuple
+            and mine.keys() == theirs.keys()
+            and all(_fits(c, theirs[k]) for k, c in mine.items())
+        )
+    if isinstance(value, ak.types.UnionType):
+        return len(value.contents) == len(other.contents) and all(
+            map(_fits, value.contents, other.contents)
         )
     if isinstance(value, ak.types.RegularType) and value.size != other.size:
         return False
     if isinstance(value, (ak.types.ListType, ak.types.RegularType, ak.types.OptionType)):
         return _fits(value.content, other.content)
-    return str(value) == str(declared)
+    return value.is_equal_to(declared, all_parameters=True)
 
 
 def _leaves(t: ak.types.Type) -> list[str]:
@@ -342,9 +363,10 @@ def check_output_type(
 ) -> str | None:
     """``None`` when an External's ``value`` has its declared type, else the value's type string.
 
-    ``output_type`` is the whole element type: the value's type string must equal it (option-ness,
-    regular vs var, record names and parameters included), except that ``unknown`` inside an array
-    fits anything. ``output_dtype`` is a static leaf dtype: every leaf must have it.
+    ``output_type`` is the whole element type: the value's type must equal it as awkward compares
+    types (option-ness, regular vs var, record names and every parameter included, keys in any
+    order), except that ``unknown`` inside an array fits anything. ``output_dtype`` is a static
+    leaf dtype: every leaf must have it.
     """
     try:
         t = ak.type(value)
@@ -358,9 +380,10 @@ def check_output_type(
     scalar = not _is_array(value)
     if scalar == any(map(_is_array, inputs)):
         return f"scalar {actual}" if scalar else str(t)
-    if actual == declared:
+    want = _type(declared)
+    if content.is_equal_to(want, all_parameters=True):
         return None
-    if not scalar and "unknown" in actual and _fits(content, _type(declared)):
+    if not scalar and "unknown" in actual and _fits(content, want):
         return None
     return actual
 
@@ -373,8 +396,16 @@ class AwkwardBackend:
 
     #: M59: this backend evaluates the shared inner-axis tuple key (`subscript`)
     subscript_keys = True
-    #: array counts are as long as the lists they cut, not as the array they cut
-    unaligned_ops = frozenset({"ak.unflatten"})
+
+    def rows_unaligned(self, op: str, params: Mapping[str, object]) -> bool:
+        """Return whether ``op`` may take inputs holding different rows of one chunk."""
+        # array counts are as long as the lists they cut, not as the array they cut
+        return op == "ak.unflatten"
+
+    def pairs_by_chunk(self, op: str, params: Mapping[str, object]) -> bool:
+        """Return whether ``op`` pairs inputs by chunk, so one run over joined chunks errs."""
+        # an unflatten's counts join chunk for chunk with the content they cut
+        return op != "ak.unflatten" and self.rows_unaligned(op, params)
 
     def positional_key(self, form: AwkwardForm) -> bool:
         """Return whether a key of ``form`` picks rows by position: a flat key that is no mask."""

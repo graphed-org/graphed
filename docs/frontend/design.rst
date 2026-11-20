@@ -364,6 +364,29 @@ The cut is written once and applies inside every universe. The pile-up weight do
 ``ht``'s labels because a weight is not part of the value — it is applied where the fill happens,
 automatically, to every universe.
 
+Assigning a collection works as it does on an array: ``ctx[name] = value`` sets ``name`` on this
+context, whether ``name`` is new or replaces a collection. ``value`` is an array or a ``Varied``
+computed from this context or one it was derived from, and it keeps the universes it carries.
+Assignment registers nothing, so a value carrying a family the context has not registered is
+refused; register that family with ``vary(ctx, name, collections={...})``. The row space, the
+registrations and the context's identity stay the same, so values read before and after the
+assignment can be combined. Contexts already derived from this one (``ctx[mask]``, ``universe``)
+keep the collections they were derived with, and the same derivation taken afterwards is a
+different context, so combine values from derivations taken on the same side of the assignment.
+``gak.with_field(ctx, value, name)`` does the same
+but returns a new context and leaves ``ctx`` as it was.
+
+.. code-block:: python
+
+    ctx["Jet"] = ctx.Jet[ctx.Jet.pt > 30.0]
+    print(labels(ctx.Jet))
+    print(s.materialize(gak.num(universe(ctx, "jes_up").Jet, axis=1)))
+
+Prints::
+
+    ('nominal', 'jes_up', 'jes_down')
+    [1, 1, 2]
+
 A collection that is a *function* of the varied one — Type-1 MET recomputed from the jets — has
 to move with it, and two ``{tag: record}`` maps would spell the same shifts twice. The shift form
 therefore also takes a ``Varied`` as a collection member: vary the context's central jets with the
