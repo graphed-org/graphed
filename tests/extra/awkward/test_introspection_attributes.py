@@ -15,7 +15,7 @@ import pytest
 from graphed import BoundMethod, Session
 from graphed.awkward import AwkwardBackend, from_awkward
 
-EAGER = ("fields", "type", "typestr", "ndim", "is_tuple", "positional_axis")
+EAGER = ("fields", "type", "typestr", "ndim", "is_tuple", "positional_axis", "layout")
 REFUSED = sorted(
     name
     for name, value in vars(ak.Array).items()
@@ -45,7 +45,7 @@ def _session(data: ak.Array, behavior: dict[Any, Any] | None = None) -> tuple[Se
 
 
 def test_refused_population_is_live() -> None:
-    assert {"layout", "mask", "nbytes", "attrs", "behavior", "named_axis"} <= set(REFUSED)
+    assert {"mask", "nbytes", "attrs", "behavior", "named_axis"} <= set(REFUSED)
 
 
 @pytest.mark.parametrize(
@@ -60,6 +60,8 @@ def test_eager_names_answer_like_the_data_and_record_nothing(data: ak.Array, nam
     assert type(got) is type(want)
     if name == "type":  # the deferred length is unknown; everything below it is exact
         assert got.content == want.content
+    elif name == "layout":  # the typetracer's layout: the data's form, no values
+        assert got.form == want.form
     elif name == "typestr":
         assert got.split(" * ", 1)[1] == want.split(" * ", 1)[1]
     else:

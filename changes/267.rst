@@ -1,0 +1,10 @@
+.. under: 0.0.12 (unreleased)
+
+A deferred awkward array answers ``.layout``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``a.layout`` is the typetracer layout of the recorded type, as dask-awkward answers it, so
+  ``vector.awk(vector.zip({...}))`` on deferred fields works and materializes as eager does. Every
+  value read off the layout (``len``, ``to_list``, ``np.asarray``, iteration, a leaf element) raises
+  or gives awkward's unknown marker. A ``Varied`` answers the layout its universes share and
+  refuses by name when their forms differ (#267).

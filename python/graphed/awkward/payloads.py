@@ -107,17 +107,10 @@ def correctionlib_contents_hash(payload: bytes) -> str:
 def onnx_weights_hash(payload: bytes) -> str:
     """sha256 of the model's WEIGHTS + graph op structure — file bytes are not identity."""
     import onnx
-    from onnx import numpy_helper
 
-    model = onnx.load_from_string(payload)
-    h = hashlib.sha256()
-    h.update(b"onnx-weights-v1")
-    for init in sorted(model.graph.initializer, key=lambda t: t.name):
-        h.update(init.name.encode("utf-8"))
-        h.update(numpy_helper.to_array(init).tobytes())
-    for node in model.graph.node:
-        h.update(node.op_type.encode("utf-8"))
-    return "sha256:" + h.hexdigest()
+    from graphed.preserve.externals.onnx_external import model_identity
+
+    return model_identity(onnx.load_from_string(payload))[0]
 
 
 def correctionlib_contents_descriptor(payload: bytes, correction_name: str) -> PayloadDescriptor:
@@ -140,7 +133,7 @@ def onnx_weights_descriptor(payload: bytes) -> PayloadDescriptor:
     """Describe an ONNX model payload's bytes."""
     from graphed.preserve.externals._helpers import memoized_model_hash
 
-    content_hash, opset, io_schema = memoized_model_hash(
+    content_hash, opset, io_schema, _ = memoized_model_hash(
         "onnx-descriptor", payload, _onnx_identity
     )
     return PayloadDescriptor(
@@ -153,12 +146,21 @@ def onnx_weights_descriptor(payload: bytes) -> PayloadDescriptor:
     )
 
 
-def _onnx_identity(payload: bytes) -> tuple[str, str, str]:
-    content_hash = onnx_weights_hash(payload)  # a model onnx cannot load raises here
+def onnx_row_shape(payload: bytes) -> tuple[int, ...] | None:
+    """Return the row shape of an ONNX payload's first output, read in its descriptor's parse."""
+    from graphed.preserve.externals._helpers import memoized_model_hash
+
+    return memoized_model_hash("onnx-descriptor", payload, _onnx_identity)[3]
+
+
+def _onnx_identity(payload: bytes) -> tuple[str, str, str, tuple[int, ...] | None]:
     import onnx
 
-    model = onnx.load_from_string(payload)
+    from graphed.preserve.externals.onnx_external import model_identity
+
+    model = onnx.load_from_string(payload)  # a model onnx cannot load raises here
+    content_hash, shape = model_identity(model)
     opset = ",".join(str(o.version) for o in model.opset_import)
     ins = ",".join(i.name for i in model.graph.input)
     outs = ",".join(o.name for o in model.graph.output)
-    return content_hash, opset, f"{ins}->{outs}"
+    return content_hash, opset, f"{ins}->{outs}", shape
