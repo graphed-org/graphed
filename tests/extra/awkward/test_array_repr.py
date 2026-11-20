@@ -113,7 +113,7 @@ def test_dir_lists_fields_and_keeps_the_frontend_names() -> None:
 
 
 def test_dir_leaves_out_what_a_deferred_array_cannot_answer() -> None:
-    assert not {"to_list", "show", "layout"} & set(dir(_events()))
+    assert not {"to_list", "show", "nbytes"} & set(dir(_events()))
 
 
 def test_dir_lists_a_behaviors_properties_and_methods() -> None:
@@ -144,16 +144,16 @@ def test_a_behaviors_override_of_an_awkward_name_is_listed() -> None:
     session = Session(AwkwardBackend(behavior=behavior))
     names = set(dir(from_awkward("j", data, session=session)))
     assert {"to_list", "mask"} <= names
-    assert not {"show", "layout"} & names
+    assert not {"show", "nbytes"} & names
 
 
 def test_a_record_lists_and_answers_its_introspection() -> None:
     record = _events()[0]
     assert {"fields", "typestr"} <= set(dir(record))
-    assert not {"layout", "to_list"} & set(dir(record))
+    assert not {"nbytes", "to_list"} & set(dir(record))
     assert record.fields == ["Jet_pt", "Muon_pt", "MET_pt"]
-    with pytest.raises(AttributeError, match="cannot answer 'layout'"):
-        _ = record.layout
+    with pytest.raises(AttributeError, match="cannot answer 'nbytes'"):
+        _ = record.nbytes
 
 
 def test_a_numpy_array_gets_a_repr_and_a_records_fields() -> None:

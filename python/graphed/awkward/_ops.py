@@ -249,7 +249,7 @@ def apply(
     handler = _OPS.get(op)
     if handler is None:
         raise TypeError(f"unsupported awkward op {op!r}")
-    return handler(op, operands, params)
+    return handler(op, _with_consts(operands, params), params)
 
 
 #: An op's evaluation: ``(op, operands, params) -> value``, on typetracers and real arrays alike.
@@ -258,7 +258,9 @@ _Handler = Callable[[str, Sequence[Any], Mapping[str, Any]], Any]
 
 # ak.Array descriptors the record-time typetracer answers as the data would; it does not carry the
 # source's attrs/behavior/named axes, nor a known length, so those are refused
-_INTROSPECT_EAGER = frozenset({"fields", "type", "typestr", "ndim", "is_tuple", "positional_axis"})
+_INTROSPECT_EAGER = frozenset(
+    {"fields", "type", "typestr", "ndim", "is_tuple", "positional_axis", "layout"}
+)
 
 
 def _ak_own(x: Any, name: str) -> bool:
@@ -371,6 +373,74 @@ def _cartesian(op: str, xs: Sequence[Any], p: Mapping[str, Any]) -> Any:
     )
 
 
+_LISTS = (ak.contents.ListOffsetArray, ak.contents.ListArray, ak.contents.RegularArray)
+_INDEXED = (ak.contents.IndexedArray, ak.contents.IndexedOptionArray)
+
+
+def _with_field(base: Any, value: Any, where: Any) -> Any:
+    """``ak.with_field``, run on a typetracer over only the fields it would change (#286).
+
+    Awkward's own call revisits every field (``base[k]`` per field, an O(width) lookup each); the
+    fields it leaves unchanged are spliced back from ``base``, so the result's form and touched
+    buffers are awkward's. Only for typetracers: under an indexed record the spliced fields are
+    not re-indexed, which only a value without data may skip.
+    """
+    narrowed = _narrowed_with_field(base, value, where)
+    return ak.with_field(base, value, where=where) if narrowed is None else narrowed
+
+
+def _narrowed_with_field(base: Any, value: Any, where: Any) -> Any:
+    if not (
+        isinstance(where, str)
+        and isinstance(base, ak.Array)
+        and isinstance(value, ak.Array)
+        and ak.backend(base) == "typetracer"
+    ):
+        return None
+    path, record = [], base.layout
+    while isinstance(record, _LISTS) or (isinstance(record, _INDEXED) and not record.parameters):
+        path.append(record)
+        record = record.content
+    if not isinstance(record, ak.contents.RecordArray) or record.is_tuple:
+        return None
+    pairs = list(zip(record.fields, record.contents, strict=True))
+    # under an index or a ListArray awkward re-indexes each field, which leaves a parameterless
+    # IndexedArray's form as it is and changes any other
+    indexed = any(isinstance(node, (*_INDEXED, ak.contents.ListArray)) for node in path)
+    changed = {
+        k
+        for k, c in pairs
+        if k == where
+        or (indexed and not (isinstance(c, ak.contents.IndexedArray) and not c.parameters))
+    }
+    narrow = record.copy(
+        contents=[c for k, c in pairs if k in changed],
+        fields=[k for k, _ in pairs if k in changed],
+        parameters=None,
+    )  # unnamed: a behavior for the record's name may refuse a record missing its other fields
+    inner = _rewrapped(path, narrow)
+    result = ak.with_field(ak.Array(inner, behavior=base.behavior, attrs=base.attrs), value, where)
+    out_path, out = [], result.layout
+    while not out.is_record:
+        out_path.append(out)
+        out = out.content
+    new = dict(zip(out.fields, out.contents, strict=True))
+    spliced = [new.pop(k, c) for k, c in pairs]
+    inner = _rewrapped(
+        out_path,
+        record.copy(
+            contents=[*spliced, *new.values()], fields=[*record.fields, *new], length=out.length
+        ),
+    )
+    return ak.Array(inner, behavior=result.behavior, attrs=result.attrs)
+
+
+def _rewrapped(path: list[Any], inner: Any) -> Any:
+    for node in reversed(path):
+        inner = node.copy(content=inner)
+    return inner
+
+
 def _zip(op: str, xs: Sequence[Any], p: Mapping[str, Any]) -> Any:
     zipped = tuple(xs) if p.get("tuple") else dict(zip(_fields(p), xs, strict=True))
     kw: dict[str, Any] = dict(_naming_kwargs(p))
@@ -428,7 +498,7 @@ def _broadcast_arrays(op: str, xs: Sequence[Any], p: Mapping[str, Any]) -> Any:
     try:
         return ak.broadcast_arrays(*xs, depth_limit=dl)[int(p["index"])]
     except ValueError as exc:  # §6.1d: awkward names two anonymous layouts; blame the factor
-        raise _broadcast_blame(xs, exc) from exc
+        raise _broadcast_blame([x for x in xs if isinstance(x, ak.Array)], exc) from exc
 
 
 def _like_dtype(p: Mapping[str, Any]) -> Any:
@@ -468,8 +538,8 @@ _OPS: dict[str, _Handler] = {
     "ak.cartesian": _cartesian,
     "ak.argcartesian": _cartesian,
     "ak.zip": _zip,
-    "ak.with_field": lambda op, xs, p: ak.with_field(
-        xs[0], scalar_param(p) if "scalar" in p else xs[1], where=p["field"]
+    "ak.with_field": lambda op, xs, p: _with_field(
+        xs[0], scalar_param(p) if "scalar" in p else xs[1], p["field"]
     ),
     "ak.firsts": lambda op, xs, p: ak.firsts(xs[0], axis=int(p.get("axis", 1))),
     "ak.argmin": _arg_extremum,
@@ -483,7 +553,7 @@ _OPS: dict[str, _Handler] = {
         xs[0], scalar_param(p, "value", "value_dtype"), axis=int(p.get("axis", -1))
     ),
     "ak.drop_none": _drop_none,
-    "ak.where": lambda op, xs, p: ak.where(*_three_operands(xs, p)),
+    "ak.where": lambda op, xs, p: ak.where(*xs),
     "ak.zeros_like": lambda op, xs, p: ak.zeros_like(xs[0], dtype=_like_dtype(p)),
     "ak.ones_like": lambda op, xs, p: ak.ones_like(xs[0], dtype=_like_dtype(p)),
     "ak.values_astype": lambda op, xs, p: ak.values_astype(xs[0], _dtype(p)),
@@ -600,11 +670,11 @@ def _dtype(params: Mapping[str, Any]) -> Any:
     return np.dtype(str(params.get("dtype", "float64")))
 
 
-def _three_operands(operands: Sequence[Any], params: Mapping[str, Any]) -> tuple[Any, Any, Any]:
-    """Reconstruct ak.where's (cond, a, b) where some args may be scalars (encoded by index)."""
-    out: list[Any] = []
+def _with_consts(operands: Sequence[Any], params: Mapping[str, Any]) -> list[Any]:
+    """Put back, in position, the scalar operands recorded as ``const{i}`` params."""
+    n = len(operands) + sum(1 for k in params if k.startswith("const") and k[5:].isdigit())
     it = iter(operands)
-    for i in range(3):
-        key = f"const{i}"
-        out.append(scalar_param(params, key, f"{key}_dtype") if key in params else next(it))
-    return out[0], out[1], out[2]
+    return [
+        scalar_param(params, f"const{i}", f"const{i}_dtype") if f"const{i}" in params else next(it)
+        for i in range(n)
+    ]

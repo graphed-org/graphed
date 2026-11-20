@@ -117,7 +117,7 @@ def test_provenance_is_the_user_line(arrays: dict[str, Any]) -> None:
 
 
 def test_options_gak_lacks_are_refused_like_gak(arrays: dict[str, Any]) -> None:
-    with pytest.raises(TypeError, match="highlevel"):
+    with pytest.raises(GraphedError, match="highlevel=False"):
         ak.sum(arrays["a"], axis=1, highlevel=False)
     with pytest.raises(TypeError, match="where"):  # gak requires the name ak defaults to None
         ak.with_field(arrays["r"], arrays["r"].pt)

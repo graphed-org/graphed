@@ -60,6 +60,7 @@ from .execute import (
     external_key,
     ir_cone,
     refuse_chunk_partials,
+    resolved_partition,
 )
 from .projection import read_columns
 from .services import Bindable, Resolvable, bind_externals
@@ -281,6 +282,7 @@ class _MapWrite:
             ),
             outputs=(self.target,),
             chunked=True,
+            partition=functools.partial(resolved_partition, self.reader, task.partition),
         )
         scheme, key, parts = self.route
         if scheme == "position":

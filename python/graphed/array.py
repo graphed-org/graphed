@@ -145,6 +145,32 @@ def _refuse_axis0(first: object) -> TypeError:
     )
 
 
+def _is_field(item: object) -> bool:
+    return isinstance(item, str) or (
+        isinstance(item, list) and bool(item) and all(isinstance(name, str) for name in item)
+    )
+
+
+def split_field(key: object) -> tuple[str | list[str], tuple[object, ...]] | None:
+    """Awkward's tuple key as its first field item and the key without it; ``None`` without one.
+
+    A field selection commutes with the slicing members, so ``x[key]`` is ``x[head][rest]``.
+    """
+    if not isinstance(key, tuple):
+        return None
+    fields = [i for i, item in enumerate(key) if _is_field(item)]
+    if not fields:
+        return None
+    if any(isinstance(key[i], list) for i in fields[:-1]):
+        # awkward applies a later field inside each listed field: not a chain of reads
+        raise TypeError(
+            f"a field list followed by a field name or field list ({key!r}) is not supported; "
+            "read each listed field's path on its own"
+        )
+    i = fields[0]
+    return key[i], key[:i] + key[i + 1 :]
+
+
 def encode_subscript(key: tuple[object, ...]) -> str:
     """Canonical injective spec for an inner (partition-local) tuple key.
 
@@ -737,6 +763,7 @@ class Array(Deferred):
         *,
         name: str | None = None,
         output_type: object = None,
+        partition: bool = False,
     ) -> Array:
         """Record ``fn`` over this array as one opaque External node.
 
@@ -754,10 +781,14 @@ class Array(Deferred):
         ``fn`` runs it on metadata at this line and records the result's type, which is not part
         of the node's identity; if that fails, a :class:`~graphed.GraphedWarning` says so and the
         backend's default form stands.
+
+        ``partition=True`` calls ``fn`` with ``partition=``, the
+        :class:`~graphed.core.Partition` (``uri``, ``tree``, entry range) of the chunk it runs on,
+        resolved where its reader can count entries. It needs ``output_type=``, since recording has
+        no partition to trace with, and refuses an array whose rows are not one input chunk's:
+        read from several sources, or past a repartition, a join or a reduction.
         """
-        return self._session.record_external(
-            "map", fn, [self], {"fn": self._session._fn_name(fn, name)}, output_type=output_type
-        )
+        return apply(fn, self, name=name, output_type=output_type, partition=partition)
 
     def reduce(self, kind: str = "sum") -> Array:
         """Record a ``kind`` reduction of this array."""
@@ -819,9 +850,13 @@ def add_labels(array: Array, labels: frozenset[str]) -> None:
 
 
 def apply(
-    fn: Callable[..., object], *arrays: Array, name: str | None = None, output_type: object = None
+    fn: Callable[..., object],
+    *arrays: Array,
+    name: str | None = None,
+    output_type: object = None,
+    partition: bool = False,
 ) -> Array:
-    """Record ``fn`` over several deferred arrays as ONE multi-input External node.
+    r"""Record ``fn`` over several deferred arrays as ONE multi-input External node.
 
     The blockwise/map_blocks analogue. A function over arrays, so it is idiom-neutral (awkward
     style); the numpy-specific signature-aware form is ``graphed.numpy.apply_gufunc``.
@@ -832,7 +867,8 @@ def apply(
     ``name=`` works as for ``Array.map``: a callable that differs under one name raises.
 
     ``output_type=`` declares the result's element type, and without it the type is inferred,
-    as for ``Array.map``.
+    as for ``Array.map``. ``partition=True`` hands ``fn`` its chunk's partition, as for
+    ``Array.map``.
 
     >>> import awkward as ak
     >>> import graphed
@@ -841,12 +877,33 @@ def apply(
     >>> root = graphed.apply(lambda a: a**0.5, x, name="sqrt")
     >>> graphed.materialize(root).tolist()
     [1.0, 2.0, 3.0]
+
+    A per-file constant, read from the path of the file each partition is a chunk of:
+
+    >>> import os, re, tempfile
+    >>> from graphed.awkward import from_parquet
+    >>> from graphed.core import Partition
+    >>> top = tempfile.mkdtemp()
+    >>> paths = [os.path.join(top, f"kl_{kl}", "f.parquet") for kl in (1, 5)]
+    >>> for path in paths:
+    ...     os.makedirs(os.path.dirname(path))
+    ...     _ = ak.to_parquet(ak.Array({"x": [0.0, 0.0]}), path)
+    >>> events = from_parquet("events", paths)
+    >>> def kl(x, *, partition):
+    ...     return x + float(re.search(r"kl_(\d+)", partition.uri).group(1))
+    >>> per_file = graphed.apply(kl, events.x, name="kl", output_type="float64", partition=True)
+    >>> graphed.materialize(per_file, partition=Partition(paths[1], "", 0, 2)).tolist()
+    [5.0, 5.0]
     """
     from .varied import containers_in, expand
 
     if containers_in(*arrays):  # §2.3d *expanding*: one External per universe
         return expand(  # type: ignore[no-any-return]  # a Varied in, a Varied out
-            lambda *members: apply(fn, *members, name=name, output_type=output_type), arrays, {}
+            lambda *members: apply(
+                fn, *members, name=name, output_type=output_type, partition=partition
+            ),
+            arrays,
+            {},
         )
     if not arrays or not all(isinstance(a, Array) for a in arrays):
         raise TypeError("apply needs at least one deferred Array operand")
@@ -856,9 +913,10 @@ def apply(
             "apply operands must come from one Session; record them in one (`with "
             "operand.session:` around the later reads)"
         )
-    return session.record_external(
-        "map", fn, list(arrays), {"fn": session._fn_name(fn, name)}, output_type=output_type
-    )
+    params: dict[str, ParamValue] = {"fn": session._fn_name(fn, name)}
+    if partition:
+        params["partition"] = True
+    return session.record_external("map", fn, list(arrays), params, output_type=output_type)
 
 
 # ---- M54: behavior methods with arguments ----------------------------------------------------

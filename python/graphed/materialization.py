@@ -21,7 +21,7 @@ from .aggregate import (
     read_label,
 )
 from .array import Array
-from .execute import CompiledGraph, Key, _compile_cone, evaluate_ir
+from .execute import CompiledGraph, Key, _compile_cone, evaluate_ir, resolved_partition
 from .projection import read_columns
 from .session import Session
 from .varied import Varied, members_of, refuse_container
@@ -139,6 +139,37 @@ def _keep(session: Session, nid: int, chunks: Sequence[object], reads: dict[int,
         reads[nid] = concat(chunks)
 
 
+def _downstream(
+    nodes: Sequence[Mapping[str, Any]], seed: Callable[[int, Mapping[str, Any]], bool]
+) -> set[int]:
+    """Return the nodes ``seed`` picks and those downstream; a node's inputs precede it."""
+    found: set[int] = set()
+    for nid, nd in enumerate(nodes):
+        if not found.isdisjoint(nd["inputs"]) or seed(nid, nd):
+            found.add(nid)
+    return found
+
+
+def _paired_by_chunk(
+    session: Session, nodes: Sequence[Mapping[str, Any]], among: Container[int] | None = None
+) -> set[int]:
+    """Return the nodes at or downstream of an op the backend pairs by chunk, not by row.
+
+    With ``among``, only of such an op in ``among``.
+    """
+    pairs = getattr(session.backend, "pairs_by_chunk", None)
+    if pairs is None:
+        return set()
+    return _downstream(
+        nodes,
+        lambda nid, nd: (
+            nd["kind"] == "op"
+            and (among is None or nid in among)
+            and pairs(nd["name"], nd["params"])
+        ),
+    )
+
+
 def _chunks_join(session: Session, data: PartitionedSource) -> bool:
     """Return whether ``data``'s partitions make one chunk under this session's backend."""
     return hasattr(session.backend, "concat") or len(data.partitions(1)) == 1
@@ -210,12 +241,22 @@ def _first_entries(
     """
     reads: dict[int, object] = {}
     exhausted = True
+    paired = cache(lambda: _paired_by_chunk(session, session._nodes()))
     resources = LocalResources()
     try:
         for nid, data in sources_read(arrays).items():
             if isinstance(data, PartitionedSource) and _chunks_join(session, data):
                 columns = _columns(data, arrays, nid)
                 chunks, rows = _read_first(data, columns, entries, resources)
+                if len(chunks) > 1 and not paired().isdisjoint(
+                    a.node_id for a in arrays if nid in session.reachable_sources(a.node_id)
+                ):
+                    raise ValueError(
+                        f"the first {entries} entries span {len(chunks)} partitions, and these "
+                        "results take an op that pairs its operands chunk by chunk, so one "
+                        "evaluation over them is wrong; materialize them whole, or one chunk "
+                        "with partition="
+                    )
                 _keep(session, nid, chunks, reads)
             else:
                 reads[nid], rows = _first(load(nid), entries)
@@ -237,10 +278,11 @@ def _read_chunk(
 
 def _partition_chunk(
     arrays: Sequence[Array], partition: Partition
-) -> tuple[int, Callable[[], object], Callable[[], str]]:
-    """Return the source holding ``partition``, its read of the chunk, and the chunk's label.
+) -> tuple[int, Callable[[], object], Callable[[], str], Callable[[], Partition]]:
+    """Return the source holding ``partition``, its chunk's read and label, and its partition.
 
-    The label is the one a plan's task gives the chunk, worked out only when asked for.
+    The partition is the one a task hands a ``partition=True`` function; the label is the one a
+    plan's task gives the chunk, worked out only when asked for.
     """
     place = (partition.uri, partition.tree)
     found = [
@@ -261,7 +303,7 @@ def _partition_chunk(
     def label() -> str:
         return read_label(data, partition, read[-1] if read else None)
 
-    return nid, chunk, label
+    return nid, chunk, label, cache(partial(resolved_partition, data, partition))
 
 
 def _frontier(session: Session, arrays: Sequence[Array], nid: int, past: Set[int]) -> list[Array]:
@@ -294,13 +336,11 @@ def _frontier(session: Session, arrays: Sequence[Array], nid: int, past: Set[int
     return session._proxies(nodes, arrays)
 
 
-def _past_boundary(session: Session) -> set[int]:
-    """Return the nodes at or downstream of a boundary; a node's inputs precede it in the store."""
-    past: set[int] = set()
-    for nid, nd in enumerate(session._nodes()):
-        if nd["kind"] in _BOUNDARIES or not past.isdisjoint(nd["inputs"]):
-            past.add(nid)
-    return past
+def _past_boundary(session: Session, nodes: Sequence[Mapping[str, Any]] | None = None) -> set[int]:
+    """Return the nodes at or downstream of a boundary."""
+    return _downstream(
+        session._nodes() if nodes is None else nodes, lambda _, nd: nd["kind"] in _BOUNDARIES
+    )
 
 
 def _carrying(frontier: Sequence[Array]) -> PlanPieces:
@@ -334,7 +374,10 @@ def _run_pass(
     whole value of each node they take.
     """
     sharing = [a for a in arrays if nid in session.reachable_sources(a.node_id)]
-    read_by = _planned_arrays(joint.outputs(), tuple(joint.writes), store=None, opt_level=1)
+    outputs, writes = joint.outputs(), tuple(joint.writes)
+    read_by = (
+        _planned_arrays(outputs, writes, store=None, opt_level=1) if outputs or writes else []
+    )
     frontier = _frontier(session, sharing, nid, past)
     carried = _carrying(frontier)
     joint.pieces[id(carried)] = carried
@@ -367,10 +410,11 @@ def _run_whole(
     where: str | Callable[[], str] = _WHOLE,
     *,
     chunked: bool = False,
+    partition: Callable[[], Partition] | None = None,
 ) -> dict[int, Any]:
     """Evaluate ``joint`` and ``arrays`` in one graph over whole sources, cut at ``reads``.
 
-    ``where`` is what a failure says ran; ``chunked`` is :func:`evaluate_ir`'s.
+    ``where`` is what a failure says ran; ``chunked`` and ``partition`` are :func:`evaluate_ir`'s.
     """
     outputs = [*joint.outputs(), *arrays]
     compiled = _compile_cone(session, *outputs)
@@ -388,6 +432,7 @@ def _run_whole(
         on_failure=attribute_failures(compiled.correspondence.frames, where, labels, opt_level=0),
         given={landed[nid][0]: value for nid, value in reads.items() if nid in landed},
         chunked=chunked,
+        partition=partition,
     )
     slot = _slot_of(compiled)
     return {
@@ -427,6 +472,8 @@ class _Sample:
     #: what a failure says ran
     where: str | Callable[[], str]
     chunked: bool = False
+    #: the one partition sampled, as a task hands it to a ``partition=True`` function
+    partition: Callable[[], Partition] | None = None
 
 
 def _evaluated(items: Iterable[Any], sample: _Sample | None = None) -> dict[int, Any]:
@@ -461,11 +508,30 @@ def _evaluated(items: Iterable[Any], sample: _Sample | None = None) -> dict[int,
             joint = _Joint(pieces=work.pieces)
             stand_ins = sample.reads(session, [*work.arrays, *joint.outputs()])
             ran = _run_whole(
-                session, joint, work.arrays, stand_ins, sample.where, chunked=sample.chunked
+                session,
+                joint,
+                work.arrays,
+                stand_ins,
+                sample.where,
+                chunked=sample.chunked,
+                partition=sample.partition,
             )
             values.update(ran)
             continue
-        past = _past_boundary(session) if work.pieces or work.passes else frozenset[int]()
+        nodes = session._nodes()
+        paired = _paired_by_chunk(session, nodes)
+        # a pass over each partitioned source of a paired Array evaluates it chunk by chunk
+        chunk_paired = [a for a in work.arrays if a.node_id in paired]
+        for nid, data in (sources_read(chunk_paired) if chunk_paired else {}).items():
+            if isinstance(data, PartitionedSource):
+                work.passes.setdefault(nid, _Joint())
+        past = _past_boundary(session, nodes) if work.pieces or work.passes else frozenset[int]()
+        stranded = _paired_by_chunk(session, nodes, past) if paired else set()
+        if any(a.node_id in stranded for a in [*work.arrays, *_Joint(work.pieces).outputs()]):
+            raise ValueError(
+                "an op the backend pairs by chunk is downstream of a reduction, exchange or join "
+                "here, so materialize has no chunk to pair its operands by"
+            )
         for key, pieces in work.pieces.items():
             # past a boundary is whole, where a reduction has its one value
             whole = not past.isdisjoint(a.node_id for a in pieces.outputs)
@@ -497,14 +563,14 @@ def _sample_of(entries: int | None, partition: Partition | None) -> _Sample | No
     if entries is not None and partition is not None:
         raise ValueError("materialize takes entries= or partition=, not both")
     if partition is not None:
-        labels: list[Callable[[], str]] = []
+        last: list[tuple[Callable[[], str], Callable[[], Partition]]] = []
 
         def reads(_: Session, arrays: Sequence[Array]) -> dict[int, object]:
-            nid, chunk, label = _partition_chunk(arrays, partition)
-            labels.append(label)
+            nid, chunk, label, part = _partition_chunk(arrays, partition)
+            last.append((label, part))
             return {nid: chunk()}
 
-        return _Sample(reads, lambda: labels[-1](), chunked=True)
+        return _Sample(reads, lambda: last[-1][0](), chunked=True, partition=lambda: last[-1][1]())
     return None if entries is None else _first_sample(entries, "materialize")
 
 
@@ -526,7 +592,9 @@ def materialize(
     downstream of a reduction; the rest evaluates once over the concatenated chunks, so an Array
     is always its whole-dataset value. As in any chunked run, that takes behavior methods, named
     types' overloads and Externals to be row-wise, and an operation pairing two row sets raises
-    in that pass, though it broadcasts alone. A piece downstream of a reduction, or reading
+    in that pass, though it broadcasts alone. An Array taking an op its backend's
+    ``pairs_by_chunk`` names evaluates in a per-partition pass instead, and a sample of
+    ``entries=`` spanning partitions refuses it. A piece downstream of a reduction, or reading
     anything but one partitioned source, evaluates with the Arrays over the whole dataset, where
     that reduction has its one correct value. A write consuming one is refused, as it is in a
     plan. A plan passed in is its own pass. A failing operation raises a

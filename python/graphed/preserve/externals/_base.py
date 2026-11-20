@@ -43,7 +43,7 @@ from ...provenance import capture
 from ...services import UnboundServiceError
 from ...varied import containers_in, expand
 from ..errors import PreserveError
-from ._helpers import refuse_unread_inputs
+from ._helpers import _payload_bytes, model_form_params, refuse_unread_inputs
 
 ContentHash = Callable[[bytes], str]
 Load = Callable[[bytes, Mapping[str, Any]], Any]
@@ -95,6 +95,13 @@ class ExternalPlugin:
     # m71: the value's leaf dtype when it is static (its structure follows the input), recorded
     # as the form's leaves; form-only, so it never enters the node's params
     output_dtype: object = None
+    #: the value is the inputs' broadcast with ``output_dtype`` leaves, so that recorded form is
+    #: the value's whole type and is checked in full
+    broadcasts: bool = False
+    #: a model's (its value is `_as_event_array`'s float64 rows): the row shape its payload
+    #: states, read in the content hash's pass, recorded and checked in full; ``None`` where it
+    #: states none records one value per event, its leaves checked
+    output_shape: Callable[[bytes], tuple[int, ...] | None] | None = None
 
 
 class ResourceCache:
@@ -261,7 +268,7 @@ def evaluate_external(
 def record_external(
     session: Any,
     plugin: ExternalPlugin,
-    payload: bytes,
+    payload: bytes | bytearray | memoryview | str | os.PathLike[str],
     inputs: Sequence[Any],
     *,
     params: Mapping[str, Any] | None = None,
@@ -276,8 +283,9 @@ def record_external(
 
     ``output_type=`` declares the type of each element of the plugin's value (any spelling the
     session's backend accepts, see ``Session.record_external``); it is recorded as the node's form
-    and its canonical string joins the node's params.
+    and its canonical string joins the node's params. ``payload`` is the bytes or a path to them.
     """
+    payload = _payload_bytes(payload)  # a path records the same node as its bytes
     if containers_in(*inputs):  # one External per universe, as `graphed.apply` records
         return expand(
             lambda *members: record_external(
@@ -293,6 +301,13 @@ def record_external(
     if params and "service" in params:
         session.service_for(str(params["service"]))  # refuses an undeclared name
     content_hash = plugin.content_hash(payload)
+    # a stated type is a claim; an output_dtype alone is a leaf claim unless the plugin broadcasts
+    form_params: dict[str, object] = {
+        "output_dtype": plugin.output_dtype,
+        "claim": plugin.broadcasts,
+    }
+    if plugin.output_shape is not None:
+        form_params = model_form_params(plugin.output_shape(payload))
     node_params: dict[str, Any] = {
         "kind": plugin.kind,
         "content_hash": content_hash,
@@ -310,7 +325,7 @@ def record_external(
         list(inputs),
         node_params,
         output_type=output_type,
-        form_params={"output_dtype": plugin.output_dtype},  # shadows a user param of that name
+        form_params=form_params,  # shadows a user param of that name
     )
 
 

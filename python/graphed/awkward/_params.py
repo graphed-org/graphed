@@ -11,6 +11,8 @@ from collections.abc import Mapping, Sequence
 from graphed import Array
 from graphed.array import scalar_params
 from graphed.backend import ParamValue
+from graphed.errors import GraphedTypeError
+from graphed.provenance import capture
 
 
 def crosses_rows(arr: Array, axis: int | None) -> bool:
@@ -68,7 +70,7 @@ def _comb_params(
 
 
 def _cartesian_params(
-    arrays: Sequence[Array] | Mapping[str, Array],
+    arrays: Sequence[object] | Mapping[str, object],
     axis: int,
     nested: bool | Sequence[int] | Sequence[str] | None,
     with_name: str | None,
@@ -139,5 +141,15 @@ def _reduce(
     return _along_axis(name, inputs, params, axis)  # type: ignore[arg-type]
 
 
+def _require_arrays(name: str, operands: Mapping[str, object]) -> None:
+    """Refuse, by name, an operand that is not a deferred array, as awkward refuses a scalar."""
+    for slot, operand in operands.items():
+        if not isinstance(operand, Array):
+            raise GraphedTypeError(
+                name, capture(), f"{slot} must be a deferred array, not {type(operand).__name__}"
+            )
+
+
 def _reduce2(name: str, x: Array, y: Array, axis: int | None) -> Array:
+    _require_arrays(name, {"x": x, "y": y})
     return _along_axis(name, [x, y], {"axis": "none" if axis is None else axis}, axis)
