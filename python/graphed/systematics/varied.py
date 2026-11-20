@@ -15,7 +15,7 @@ import functools
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
-from ..array import Array, BoundMethod, EagerRefusals, handle_of
+from ..array import Array, BoundMethod, Deferred, handle_of
 from ..errors import GraphedError
 from .lineage import unify_contexts
 from .points import Point, restrict
@@ -27,10 +27,10 @@ RESERVED = ("node_id", "session")
 Member = Any  # an `Array`, or a `Varied` when the container is a registered weight factor (§2.1)
 
 
-class Varied(EagerRefusals):
+class Varied(Deferred):
     """A mapping of universes, `"nominal"` first."""
 
-    __slots__ = ("__weakref__", "_context", "_members", "_tags")
+    __slots__ = ()
 
     #: lets `Array._binary` defer to the reflected dunders below instead of raising on a container
     _varied_container = True

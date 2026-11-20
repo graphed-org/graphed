@@ -16,7 +16,7 @@ from math import isfinite
 from numbers import Real
 from typing import Any
 
-from ..array import Array
+from ..array import Array, detached
 from ..context import EventContext, vary_context
 from ..errors import GraphedError, GraphedTypeError
 from ..provenance import capture
@@ -139,6 +139,9 @@ def vary(
             raise GraphedError(f"the scalar factor {name!r} takes only its members, up=1.025")
         return ScalarFactor(target, name, tags)
     declares, placements = _parse_points(points)
+    target, nominal = detached(target), detached(nominal)
+    declares = None if declares is None else {tag: detached(v) for tag, v in declares.items()}
+    tags = {tag: detached(v) for tag, v in tags.items()}
     overload: Any  # the two context overloads take one arg shape; mypy keeps its own narrowing
     if isinstance(target, Array | Varied):
         session = session_of(target)

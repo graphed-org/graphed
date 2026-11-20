@@ -18,7 +18,7 @@ import numpy as np
 from awkward._connect.numpy import implemented as _ak_numpy
 
 from graphed import Array
-from graphed.array import no_eager_value
+from graphed.array import no_eager_value, take_state
 from graphed.errors import GraphedError, GraphedTypeError
 from graphed.provenance import capture, register_internal
 from graphed.varied import Varied, register_varied
@@ -93,7 +93,7 @@ def _setitem(self: Any, where: object, what: object) -> None:
     """Ak's ``Array.__setitem__``, by recording ``with_field`` and rebinding this proxy.
 
     The key is a field name, or a tuple path into nested records; other proxies of the old node are
-    untouched.
+    untouched. A varied value makes this proxy the container of universes, as rebinding does.
     """
     path = (where,) if isinstance(where, str) else where
     if not (isinstance(path, tuple) and path and all(isinstance(part, str) for part in path)):
@@ -101,17 +101,7 @@ def _setitem(self: Any, where: object, what: object) -> None:
             "__setitem__", capture(), "only fields may be assigned in-place (by field name)"
         )
     new = _with_path(self, path, what)
-    if not isinstance(new, type(self)):
-        raise GraphedTypeError(
-            "__setitem__",
-            capture(),
-            "assigning a varied value turns this array into a container of universes, which an "
-            "in-place assignment cannot do; rebind instead: x = gak.with_field(x, value, field)",
-        )
-    for cls in type(new).__mro__:
-        for slot in getattr(cls, "__slots__", ()):
-            if slot != "__weakref__":
-                setattr(self, slot, getattr(new, slot))
+    take_state(self, new)
 
 
 def _clip(a: object, a_min: object = None, a_max: object = None) -> object:

@@ -19,6 +19,7 @@ from ._helpers import (
     _stack_feature_columns,
     ml_matrix,
     parse_call_template,
+    unstated_shape,
 )
 
 # ---- NVIDIA Triton (remote inference) -----------------------------------------------------------
@@ -145,4 +146,5 @@ TRITON_PLUGIN = ExternalPlugin(
     check_params=_check_triton_params,
     load_params=("url", "transport"),
     output_dtype="float64",
+    output_shape=unstated_shape,  # the model is remote: no record-time call
 )

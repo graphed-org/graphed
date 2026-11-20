@@ -1,0 +1,5 @@
+.. under: 0.0.12 (unreleased)
+
+* The frozen m26 jax content-hash test builds its control from a function defined on other source
+  lines: jax 0.12.1 serializes a plain re-export to the same bytes, which failed the control on
+  every PR (#224).

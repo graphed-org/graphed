@@ -1,0 +1,9 @@
+.. under: 0.0.12 (unreleased)
+
+* An event context takes item assignment: ``events["sel_jets"] = jets`` adds a collection and
+  ``events["Muon"] = events.Muon[mask]`` replaces one, with an array or a ``Varied`` computed from
+  that context, which keeps its universes. ``gak.with_field(events, value, name)`` returns a new
+  context carrying it. A value from another Session or another context, or carrying a family the
+  context has not registered, is refused with the spelling that works, and any other ``gak``
+  function handed a context raises ``GraphedTypeError`` instead of ``AttributeError: _site``
+  (#221).

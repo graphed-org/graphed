@@ -249,7 +249,7 @@ def apply(
     handler = _OPS.get(op)
     if handler is None:
         raise TypeError(f"unsupported awkward op {op!r}")
-    return handler(op, operands, params)
+    return handler(op, _with_consts(operands, params), params)
 
 
 #: An op's evaluation: ``(op, operands, params) -> value``, on typetracers and real arrays alike.
@@ -430,7 +430,7 @@ def _broadcast_arrays(op: str, xs: Sequence[Any], p: Mapping[str, Any]) -> Any:
     try:
         return ak.broadcast_arrays(*xs, depth_limit=dl)[int(p["index"])]
     except ValueError as exc:  # §6.1d: awkward names two anonymous layouts; blame the factor
-        raise _broadcast_blame(xs, exc) from exc
+        raise _broadcast_blame([x for x in xs if isinstance(x, ak.Array)], exc) from exc
 
 
 def _like_dtype(p: Mapping[str, Any]) -> Any:
@@ -485,7 +485,7 @@ _OPS: dict[str, _Handler] = {
         xs[0], scalar_param(p, "value", "value_dtype"), axis=int(p.get("axis", -1))
     ),
     "ak.drop_none": _drop_none,
-    "ak.where": lambda op, xs, p: ak.where(*_three_operands(xs, p)),
+    "ak.where": lambda op, xs, p: ak.where(*xs),
     "ak.zeros_like": lambda op, xs, p: ak.zeros_like(xs[0], dtype=_like_dtype(p)),
     "ak.ones_like": lambda op, xs, p: ak.ones_like(xs[0], dtype=_like_dtype(p)),
     "ak.values_astype": lambda op, xs, p: ak.values_astype(xs[0], _dtype(p)),
@@ -602,11 +602,11 @@ def _dtype(params: Mapping[str, Any]) -> Any:
     return np.dtype(str(params.get("dtype", "float64")))
 
 
-def _three_operands(operands: Sequence[Any], params: Mapping[str, Any]) -> tuple[Any, Any, Any]:
-    """Reconstruct ak.where's (cond, a, b) where some args may be scalars (encoded by index)."""
-    out: list[Any] = []
+def _with_consts(operands: Sequence[Any], params: Mapping[str, Any]) -> list[Any]:
+    """Put back, in position, the scalar operands recorded as ``const{i}`` params."""
+    n = len(operands) + sum(1 for k in params if k.startswith("const") and k[5:].isdigit())
     it = iter(operands)
-    for i in range(3):
-        key = f"const{i}"
-        out.append(scalar_param(params, key, f"{key}_dtype") if key in params else next(it))
-    return out[0], out[1], out[2]
+    return [
+        scalar_param(params, f"const{i}", f"const{i}_dtype") if f"const{i}" in params else next(it)
+        for i in range(n)
+    ]

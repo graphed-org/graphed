@@ -1,0 +1,10 @@
+.. under: 0.0.12 (unreleased)
+
+A record operator keeps its operand order through the optimizer
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* A binary op over a named record (or list), such as vector's ``a + b``, is recorded with an
+  ``ordered`` param, so the optimizer no longer swaps its operands or merges it with ``b + a``.
+  awkward's behavior overload for it need not be bitwise commutative, and a plan returned values
+  that differed from eager in the last bit. Numeric twins still merge. A backend says which ops
+  these are through an optional ``ordered_operands(op, inputs)`` (#263).
