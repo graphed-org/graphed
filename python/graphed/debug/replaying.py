@@ -14,7 +14,7 @@ from __future__ import annotations
 import time
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
-from functools import cached_property
+from functools import cache, cached_property, partial
 from typing import Any
 
 from graphed import Array
@@ -34,8 +34,10 @@ from graphed.execute import (
     _unbound_external,
     _unbound_source,
     compile_ir,
+    external_call,
     external_key,
     external_op,
+    resolved_partition,
 )
 
 from .errors import SourceFrame
@@ -202,6 +204,7 @@ class Replay:
         chunk = self._chunk
         source_name = self._process.source_name
         externals = dict(self._process.externals)
+        part = cache(partial(resolved_partition, self._process.reader, self.task.partition))
 
         # bound as evaluate_ir binds them for the run, so an unbound name fails replay as it failed
         # the task
@@ -215,7 +218,7 @@ class Replay:
             fn = externals.get(external_key(node)) or externals.get(chash)
             if fn is None:
                 raise _unbound_external(chash)
-            return fn(*ins)
+            return external_call(fn, ins, node, part)()
 
         backend = resolve_backend(self._process.backend_factory)
         values = iter_ir(

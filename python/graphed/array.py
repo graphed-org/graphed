@@ -684,6 +684,7 @@ class Array(EagerRefusals):
         *,
         name: str | None = None,
         output_type: object = None,
+        partition: bool = False,
     ) -> Array:
         """Record ``fn`` over this array as one opaque External node.
 
@@ -701,10 +702,14 @@ class Array(EagerRefusals):
         ``fn`` runs it on metadata at this line and records the result's type, which is not part
         of the node's identity; if that fails, a :class:`~graphed.GraphedWarning` says so and the
         backend's default form stands.
+
+        ``partition=True`` calls ``fn`` with ``partition=``, the
+        :class:`~graphed.core.Partition` (``uri``, ``tree``, entry range) of the chunk it runs on,
+        resolved where its reader can count entries. It needs ``output_type=``, since recording has
+        no partition to trace with, and refuses an array whose rows are not one input chunk's:
+        read from several sources, or past a repartition, a join or a reduction.
         """
-        return self._session.record_external(
-            "map", fn, [self], {"fn": self._session._fn_name(fn, name)}, output_type=output_type
-        )
+        return apply(fn, self, name=name, output_type=output_type, partition=partition)
 
     def reduce(self, kind: str = "sum") -> Array:
         """Record a ``kind`` reduction of this array."""
@@ -762,7 +767,11 @@ def add_labels(array: Array, labels: frozenset[str]) -> None:
 
 
 def apply(
-    fn: Callable[..., object], *arrays: Array, name: str | None = None, output_type: object = None
+    fn: Callable[..., object],
+    *arrays: Array,
+    name: str | None = None,
+    output_type: object = None,
+    partition: bool = False,
 ) -> Array:
     """Record ``fn`` over several deferred arrays as ONE multi-input External node.
 
@@ -775,7 +784,8 @@ def apply(
     ``name=`` works as for ``Array.map``: a callable that differs under one name raises.
 
     ``output_type=`` declares the result's element type, and without it the type is inferred,
-    as for ``Array.map``.
+    as for ``Array.map``. ``partition=True`` hands ``fn`` its chunk's partition, as for
+    ``Array.map``.
 
     >>> import awkward as ak
     >>> import graphed
@@ -789,7 +799,11 @@ def apply(
 
     if containers_in(*arrays):  # §2.3d *expanding*: one External per universe
         return expand(  # type: ignore[no-any-return]  # a Varied in, a Varied out
-            lambda *members: apply(fn, *members, name=name, output_type=output_type), arrays, {}
+            lambda *members: apply(
+                fn, *members, name=name, output_type=output_type, partition=partition
+            ),
+            arrays,
+            {},
         )
     if not arrays or not all(isinstance(a, Array) for a in arrays):
         raise TypeError("apply needs at least one deferred Array operand")
@@ -799,9 +813,10 @@ def apply(
             "apply operands must come from one Session; record them in one (`with "
             "operand.session:` around the later reads)"
         )
-    return session.record_external(
-        "map", fn, list(arrays), {"fn": session._fn_name(fn, name)}, output_type=output_type
-    )
+    params: dict[str, ParamValue] = {"fn": session._fn_name(fn, name)}
+    if partition:
+        params["partition"] = True
+    return session.record_external("map", fn, list(arrays), params, output_type=output_type)
 
 
 # ---- M54: behavior methods with arguments ----------------------------------------------------

@@ -21,7 +21,7 @@ from .aggregate import (
     read_label,
 )
 from .array import Array
-from .execute import CompiledGraph, Key, _compile_cone, evaluate_ir
+from .execute import CompiledGraph, Key, _compile_cone, evaluate_ir, resolved_partition
 from .projection import read_columns
 from .session import Session
 from .varied import Varied, members_of, refuse_container
@@ -278,10 +278,11 @@ def _read_chunk(
 
 def _partition_chunk(
     arrays: Sequence[Array], partition: Partition
-) -> tuple[int, Callable[[], object], Callable[[], str]]:
-    """Return the source holding ``partition``, its read of the chunk, and the chunk's label.
+) -> tuple[int, Callable[[], object], Callable[[], str], Callable[[], Partition]]:
+    """Return the source holding ``partition``, its chunk's read and label, and its partition.
 
-    The label is the one a plan's task gives the chunk, worked out only when asked for.
+    The partition is the one a task hands a ``partition=True`` function; the label is the one a
+    plan's task gives the chunk, worked out only when asked for.
     """
     place = (partition.uri, partition.tree)
     found = [
@@ -302,7 +303,7 @@ def _partition_chunk(
     def label() -> str:
         return read_label(data, partition, read[-1] if read else None)
 
-    return nid, chunk, label
+    return nid, chunk, label, cache(partial(resolved_partition, data, partition))
 
 
 def _frontier(session: Session, arrays: Sequence[Array], nid: int, past: Set[int]) -> list[Array]:
@@ -409,10 +410,11 @@ def _run_whole(
     where: str | Callable[[], str] = _WHOLE,
     *,
     chunked: bool = False,
+    partition: Callable[[], Partition] | None = None,
 ) -> dict[int, Any]:
     """Evaluate ``joint`` and ``arrays`` in one graph over whole sources, cut at ``reads``.
 
-    ``where`` is what a failure says ran; ``chunked`` is :func:`evaluate_ir`'s.
+    ``where`` is what a failure says ran; ``chunked`` and ``partition`` are :func:`evaluate_ir`'s.
     """
     outputs = [*joint.outputs(), *arrays]
     compiled = _compile_cone(session, *outputs)
@@ -430,6 +432,7 @@ def _run_whole(
         on_failure=attribute_failures(compiled.correspondence.frames, where, labels, opt_level=0),
         given={landed[nid][0]: value for nid, value in reads.items() if nid in landed},
         chunked=chunked,
+        partition=partition,
     )
     slot = _slot_of(compiled)
     return {
@@ -469,6 +472,8 @@ class _Sample:
     #: what a failure says ran
     where: str | Callable[[], str]
     chunked: bool = False
+    #: the one partition sampled, as a task hands it to a ``partition=True`` function
+    partition: Callable[[], Partition] | None = None
 
 
 def _evaluated(items: Iterable[Any], sample: _Sample | None = None) -> dict[int, Any]:
@@ -503,7 +508,13 @@ def _evaluated(items: Iterable[Any], sample: _Sample | None = None) -> dict[int,
             joint = _Joint(pieces=work.pieces)
             stand_ins = sample.reads(session, [*work.arrays, *joint.outputs()])
             ran = _run_whole(
-                session, joint, work.arrays, stand_ins, sample.where, chunked=sample.chunked
+                session,
+                joint,
+                work.arrays,
+                stand_ins,
+                sample.where,
+                chunked=sample.chunked,
+                partition=sample.partition,
             )
             values.update(ran)
             continue
@@ -552,14 +563,14 @@ def _sample_of(entries: int | None, partition: Partition | None) -> _Sample | No
     if entries is not None and partition is not None:
         raise ValueError("materialize takes entries= or partition=, not both")
     if partition is not None:
-        labels: list[Callable[[], str]] = []
+        last: list[tuple[Callable[[], str], Callable[[], Partition]]] = []
 
         def reads(_: Session, arrays: Sequence[Array]) -> dict[int, object]:
-            nid, chunk, label = _partition_chunk(arrays, partition)
-            labels.append(label)
+            nid, chunk, label, part = _partition_chunk(arrays, partition)
+            last.append((label, part))
             return {nid: chunk()}
 
-        return _Sample(reads, lambda: labels[-1](), chunked=True)
+        return _Sample(reads, lambda: last[-1][0](), chunked=True, partition=lambda: last[-1][1]())
     return None if entries is None else _first_sample(entries, "materialize")
 
 

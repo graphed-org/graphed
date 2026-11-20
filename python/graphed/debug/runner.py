@@ -16,7 +16,7 @@ from pathlib import Path
 from graphed import Array, Session
 from graphed.core import Partition
 from graphed.errors import raising_frame
-from graphed.execute import _rows_aligned
+from graphed.execute import _rows_aligned, external_call
 from graphed.materialization import _first_sample, _partition_chunk
 from graphed.varied import refuse_container
 
@@ -81,11 +81,13 @@ def _walk(
     chunks: Mapping[int, Callable[[], object]],
     where: str | Callable[[], str],
     memo: dict[int, object] | None = None,
+    part: Callable[[], Partition] | None = None,
 ) -> object:
     backend = session.backend
     aligned = _rows_aligned(backend)
+    nodes = session._nodes()
     # one chunk runs as `evaluate_ir(chunked=True)` runs a task, so the task's failures reproduce
-    ops = {node["id"] for node in session._nodes() if node["kind"] == "op"} if chunks else ()
+    ops = {node["id"] for node in nodes if node["kind"] == "op"} if chunks else ()
 
     def label() -> str:
         return where if isinstance(where, str) else where()
@@ -111,7 +113,7 @@ def _walk(
 
     def on_external(nid: int, fn: object, ins: list[object]) -> object:
         try:
-            return fn(*ins)  # type: ignore[operator]
+            return external_call(fn, ins, nodes[nid], part)()  # type: ignore[arg-type]
         except StageError:
             raise
         except Exception as exc:
@@ -150,11 +152,13 @@ def run(
         )
     chunks: dict[int, Callable[[], object]] = {}
     sampled: Callable[[], str] | None = None
+    part: Callable[[], Partition] | None = None
     if partition is not None:
-        nid, read, sampled = _partition_chunk([array], partition)
+        nid, read, sampled, part = _partition_chunk([array], partition)
         chunks[nid] = read
     where = label if label is not None else sampled or "sample"
-    return _walk(session, array, lower(session, array, opt_level=opt_level), chunks, where)
+    lowered = lower(session, array, opt_level=opt_level)
+    return _walk(session, array, lowered, chunks, where, part=part)
 
 
 def _rows(value: object) -> int | str:

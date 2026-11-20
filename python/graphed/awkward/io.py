@@ -34,7 +34,7 @@ from graphed.backend import Backend
 from graphed.core import Partition
 from graphed.core.execution import Plan, SequentialRunner, WorkerResources
 from graphed.errors import GraphedError
-from graphed.execute import CompiledGraph, refuse_chunk_partials
+from graphed.execute import CompiledGraph, refuse_chunk_partials, resolved_partition
 from graphed.services import bind_externals
 from graphed.session import reader
 from graphed.varied import member_of, refuse_container, union_labels
@@ -278,6 +278,7 @@ class _WritePart:
             {self.source_name: chunk},
             externals=dict(self.externals),
             chunked=True,
+            partition=functools.partial(resolved_partition, self.reader, partition),
         )
         payload = _payload(out, self.column)
         (path,) = self.part_paths(partition)
@@ -485,6 +486,7 @@ class _VariedWritePart:
             {self.source_name: chunk},
             externals=dict(self.externals),
             chunked=True,
+            partition=functools.partial(resolved_partition, self.reader, partition),
         )
         rank = dict(self.rank)
 
