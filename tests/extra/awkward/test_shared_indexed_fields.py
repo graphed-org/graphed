@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 
 import graphed
-from graphed.awkward import AwkwardBackend, from_awkward
+from graphed.awkward import AwkwardBackend, _ops, from_awkward
 from graphed.awkward import backend as awkward_backend
 from graphed.awkward.backend import AwkwardForm
 from graphed.awkward.projection import project_buffers_many
@@ -74,6 +74,8 @@ def test_sharing_changes_no_form_and_no_projection(
 def test_retained_layouts_grow_linearly_in_fields(
     sharing: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # awkward's own with_field, which re-wraps every field (a narrowed call re-wraps none)
+    monkeypatch.setattr(_ops, "_narrowed_with_field", lambda *args: None)
     if not sharing:
         _unshared(monkeypatch)
     narrow = _distinct_layouts(_grown(40, option=True)[0])
