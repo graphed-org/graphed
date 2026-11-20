@@ -1,0 +1,7 @@
+.. under: 0.0.12 (unreleased)
+
+* Reduction time grows linearly with graph size, including a wide fan-in (#289). Saturation uses
+  egg's simple scheduler, so it takes the same few passes at any size rather than one more per
+  doubling, and egg is now 0.11, whose parent lists hold ids rather than a copy of a k-ary node per
+  child. Saturation no longer stops at egg's 5 s wall clock, so the reduced IR cannot depend on
+  machine speed; it is otherwise unchanged.

@@ -96,6 +96,21 @@ impl Default for EggEngine {
     }
 }
 
+impl EggEngine {
+    fn saturate(&self, egraph: EGraph<SymbolLang, ()>, nodes: usize) -> Runner<SymbolLang, ()> {
+        Runner::default()
+            // egg's default backoff bans a rule matching every symmetric node and doubles its
+            // threshold per ban, so saturation would take log(N) passes over all N classes
+            .with_scheduler(egg::SimpleScheduler)
+            .with_iter_limit(self.iter_limit)
+            // egg's default 5 s wall-clock stop would make the reduced IR depend on machine speed
+            .with_time_limit(std::time::Duration::MAX)
+            .with_node_limit(nodes.saturating_mul(4) + 1024)
+            .with_egraph(egraph)
+            .run(&self.rules)
+    }
+}
+
 impl RewriteEngine for EggEngine {
     #[allow(
         clippy::indexing_slicing,
@@ -112,11 +127,7 @@ impl RewriteEngine for EggEngine {
         }
 
         // 2. saturate with a deterministic budget (egg merges equivalent eclasses).
-        let runner = Runner::default()
-            .with_iter_limit(self.iter_limit)
-            .with_node_limit(graph.nodes.len().saturating_mul(4) + 1024)
-            .with_egraph(egraph)
-            .run(&self.rules);
+        let runner = self.saturate(egraph, graph.nodes.len());
 
         // 3. extract in O(N): quotient the IR by the e-graph equivalence, keeping the EARLIEST node
         //    of each class (topologically safe + prefers the simpler form for our rules).
@@ -156,5 +167,37 @@ impl RewriteEngine for EggEngine {
         // by the time any later member of that class is looked up.
         let node_map = canon.iter().map(|c| class_to_new[c]).collect();
         (EngineGraph { nodes, outputs }, node_map)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use egg::{EGraph, StopReason, Symbol, SymbolLang};
+
+    use super::EggEngine;
+
+    /// A hub feeding `k` commutable `add`s, each with its own source.
+    fn star(k: usize) -> EGraph<SymbolLang, ()> {
+        let mut egraph = EGraph::default();
+        let x = egraph.add(SymbolLang::leaf("source|x"));
+        let hub = egraph.add(SymbolLang::new("op|inc", vec![x]));
+        for i in 0..k {
+            let s = egraph.add(SymbolLang::leaf(Symbol::from(format!("source|s{i}"))));
+            egraph.add(SymbolLang::new("op|add", vec![hub, s]));
+        }
+        egraph
+    }
+
+    #[test]
+    fn saturation_takes_as_many_passes_at_any_width() {
+        let engine = EggEngine::default();
+        let passes = |k| {
+            let egraph = star(k);
+            let nodes = egraph.total_number_of_nodes();
+            let runner = engine.saturate(egraph, nodes);
+            assert!(matches!(runner.stop_reason, Some(StopReason::Saturated)));
+            runner.iterations.len()
+        };
+        assert_eq!(passes(1_000), passes(32_000));
     }
 }
