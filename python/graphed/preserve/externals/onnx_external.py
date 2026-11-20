@@ -66,7 +66,7 @@ def eval_onnx(session: Any, params: Mapping[str, Any], inputs: list[Any]) -> Any
         else x
         for name, x in feeds.items()
     }
-    return _as_event_array(session.run(None, feeds)[0])
+    return _as_event_array(session.run(None, feeds))
 
 
 def _onnx_samples() -> list[bytes]:

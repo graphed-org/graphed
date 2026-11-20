@@ -1,0 +1,11 @@
+.. under: 0.0.12 (unreleased)
+
+A scalar among a gak function's array operands broadcasts as in awkward
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``ak.zip``, ``ak.cartesian``, ``ak.broadcast_arrays`` and ``ak.concatenate`` (inner axis) take a
+  Python or numpy scalar in any operand position, as ``ak.where`` and ``ak.with_field`` already
+  did: ``ak.zip({"px": px, "mass": 0})`` gives the type eager awkward gives. Before, they raised
+  ``AttributeError``. ``ak.concatenate`` along the row axis, and ``ak.corr``/``covar``/
+  ``linear_fit``/``mask`` (which awkward refuses a scalar), raise ``GraphedTypeError`` naming the
+  operand (#262).

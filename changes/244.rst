@@ -1,0 +1,7 @@
+.. under: 0.0.12 (unreleased)
+
+* A model External whose model returns several outputs gives its first output, one value per
+  event, in the JAX, PyTorch and TensorFlow plugins, as ONNX already did. Before, JAX and
+  TensorFlow stacked the outputs into a leading axis (one row per output instead of per event)
+  and PyTorch raised ``AttributeError``. An output that is a dict, or whose first output is
+  itself a tuple, raises ``PreserveError`` naming it, instead of a numpy conversion error (#244).
