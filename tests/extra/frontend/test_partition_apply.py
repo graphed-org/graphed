@@ -12,11 +12,10 @@ from typing import Any
 
 import awkward as ak
 import numpy as np
-import pyarrow as pa
-import pyarrow.parquet as pq
 import pytest
 
 import graphed
+import graphed.awkward as ga
 import graphed.debug as gd
 from graphed import Session
 from graphed.aggregate import aggregate_plan
@@ -246,6 +245,8 @@ def test_a_plugin_param_named_partition_is_no_request() -> None:
 
 
 def test_a_numpy_write_hands_the_resolved_blind_range(tmp_path: Any) -> None:
+    pa = pytest.importorskip("pyarrow")
+    pq = pytest.importorskip("pyarrow.parquet")
     src = tmp_path / "kl_3.parquet"
     pq.write_table(pa.table({"x": np.zeros(4)}), src)
     session = Session(NumpyBackend())
@@ -283,3 +284,49 @@ def test_a_reader_that_cannot_count_hands_the_blind_partition_as_it_is() -> None
     )
     assert isinstance(plan, Plan)
     assert sorted(set(SequentialRunner().run(plan).value.tolist())) == [0.0, 1.0]
+
+
+def kl_of(x: Any, *, partition: Partition) -> Any:
+    """Per row: the kl the file path names."""
+    return kl_and_start(x, partition=partition).kl
+
+
+def _kls(steps: int) -> list[float]:
+    return [row["kl"] for row in _eager(steps)]
+
+
+def _written(parts: Any) -> list[Any]:
+    assert isinstance(parts, list)
+    pytest.importorskip("pyarrow")
+    return [row for p in sorted(parts) for row in ak.from_parquet(p).tolist()]
+
+
+def test_an_awkward_write_hands_each_part_its_partition(tmp_path: Any) -> None:
+    pytest.importorskip("pyarrow")
+    session = Session(AwkwardBackend())
+    kl = _source(session).x.map(kl_of, output_type="float64", partition=True)
+    parts = ga.to_parquet(kl, str(tmp_path / "out"), steps_per_file=2, column="kl")
+    assert [row["kl"] for row in _written(parts)] == _kls(2)
+
+
+def test_a_varied_awkward_write_hands_each_part_its_partition(tmp_path: Any) -> None:
+    pytest.importorskip("pyarrow")
+    session = Session(AwkwardBackend())
+    x = _source(session).x
+    record = gak.zip({"x": x, "kl": x.map(kl_of, output_type="float64", partition=True)})
+    keep = graphed.vary(x > 0.0, "s", points={"up": x > -1.0})
+    parts = ga.to_parquet(record, str(tmp_path / "out"), select=keep, steps_per_file=2)
+    assert [row["kl"] for row in _written(parts)] == _kls(2)
+
+
+def test_the_map_side_of_a_repartition_hands_each_task_its_partition() -> None:
+    session = Session(AwkwardBackend())
+    kl = _source(session).x.map(kl_of, output_type="float64", partition=True)
+    plan = graphed.shuffle_plan(
+        kl.repartition(n=2),
+        reduce=lambda values: ak.Array(values[0]),
+        combine=lambda a, b: ak.concatenate([a, b]),
+        empty=lambda: ak.Array([]),
+        steps_per_file=2,
+    )
+    assert sorted(SequentialRunner().run(plan).value.tolist()) == sorted(_kls(2))

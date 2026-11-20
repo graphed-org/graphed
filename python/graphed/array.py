@@ -773,7 +773,7 @@ def apply(
     output_type: object = None,
     partition: bool = False,
 ) -> Array:
-    """Record ``fn`` over several deferred arrays as ONE multi-input External node.
+    r"""Record ``fn`` over several deferred arrays as ONE multi-input External node.
 
     The blockwise/map_blocks analogue. A function over arrays, so it is idiom-neutral (awkward
     style); the numpy-specific signature-aware form is ``graphed.numpy.apply_gufunc``.
@@ -794,6 +794,23 @@ def apply(
     >>> root = graphed.apply(lambda a: a**0.5, x, name="sqrt")
     >>> graphed.materialize(root).tolist()
     [1.0, 2.0, 3.0]
+
+    A per-file constant, read from the path of the file each partition is a chunk of:
+
+    >>> import os, re, tempfile
+    >>> from graphed.awkward import from_parquet
+    >>> from graphed.core import Partition
+    >>> top = tempfile.mkdtemp()
+    >>> paths = [os.path.join(top, f"kl_{kl}", "f.parquet") for kl in (1, 5)]
+    >>> for path in paths:
+    ...     os.makedirs(os.path.dirname(path))
+    ...     _ = ak.to_parquet(ak.Array({"x": [0.0, 0.0]}), path)
+    >>> events = from_parquet("events", paths)
+    >>> def kl(x, *, partition):
+    ...     return x + float(re.search(r"kl_(\d+)", partition.uri).group(1))
+    >>> per_file = graphed.apply(kl, events.x, name="kl", output_type="float64", partition=True)
+    >>> graphed.materialize(per_file, partition=Partition(paths[1], "", 0, 2)).tolist()
+    [5.0, 5.0]
     """
     from .varied import containers_in, expand
 
