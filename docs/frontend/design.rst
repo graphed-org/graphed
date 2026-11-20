@@ -374,7 +374,8 @@ assignment can be combined. Contexts already derived from this one (``ctx[mask]`
 keep the collections they were derived with, and the same derivation taken afterwards is a
 different context, so combine values from derivations taken on the same side of the assignment.
 ``gak.with_field(ctx, value, name)`` does the same
-but returns a new context and leaves ``ctx`` as it was.
+but returns a new context and leaves ``ctx`` as it was. A field list, ``ctx[["Jet", "MET"]]``,
+reads each listed collection the way ``ctx.Jet`` does, universes included.
 
 .. code-block:: python
 

@@ -2,17 +2,33 @@
 
 from __future__ import annotations
 
+import functools
 import gzip
 import hashlib
 import json
+import os
 import threading
 from collections import OrderedDict
 from collections.abc import Callable, Mapping, Sequence
+from pathlib import Path
 from typing import Any, TypeVar, cast
 
 from ...errors import GraphedTypeError
 from ...provenance import capture
 from ..errors import PreserveError
+
+
+@functools.lru_cache(maxsize=8)
+def _read_payload(path: str, mtime_ns: int, size: int) -> bytes:
+    return Path(path).read_bytes()
+
+
+def _payload_bytes(payload: bytes | bytearray | memoryview | str | os.PathLike[str]) -> bytes:
+    """Return a payload's bytes; one file is one object, however many nodes record it."""
+    if isinstance(payload, (bytes, bytearray, memoryview)):  # Booster.save_raw is a bytearray
+        return bytes(payload)
+    stat = os.stat(payload)
+    return _read_payload(os.path.abspath(payload), stat.st_mtime_ns, stat.st_size)
 
 
 def json_bytes(payload: bytes) -> bytes:
@@ -25,30 +41,27 @@ def json_bytes(payload: bytes) -> bytes:
 
 def _canonical_json_hash(domain: bytes, payload: bytes) -> str:
     """sha256 over domain-separated, canonicalized JSON (key order + whitespace = formatting)."""
-    return canonical_json_identity(domain, payload)[0]
-
-
-def canonical_json_identity(
-    domain: bytes, payload: bytes, read: Callable[[Any], RowShape] = lambda _: None
-) -> tuple[str, RowShape]:
-    """Return the canonical-JSON hash and what ``read`` finds in the parsed document.
-
-    One parse, memoized: ``read`` must be the same for every call under one ``domain``.
-    """
     return memoized_model_hash(
-        domain.decode(), payload, lambda p: _canonical_json_hash_impl(domain, p, read)
+        domain.decode(), payload, lambda p: _canonical_json_hash_impl(domain, p)
     )
 
 
-def _canonical_json_hash_impl(
-    domain: bytes, payload: bytes, read: Callable[[Any], RowShape]
-) -> tuple[str, RowShape]:
+def _canonical_json_hash_impl(domain: bytes, payload: bytes) -> str:
+    return canonical_document_hash(domain, parse_json(payload))
+
+
+def parse_json(payload: bytes) -> Any:
+    """Return the document of a JSON or gzipped-JSON payload."""
     try:
-        parsed = json.loads(json_bytes(payload).decode("utf-8"))
+        return json.loads(json_bytes(payload).decode("utf-8"))
     except (UnicodeDecodeError, ValueError, OSError, EOFError) as err:
         raise PreserveError(f"payload is not valid JSON ({err})") from err
-    canon = json.dumps(parsed, sort_keys=True, separators=(",", ":"), default=str)
-    return "sha256:" + hashlib.sha256(domain + canon.encode("utf-8")).hexdigest(), read(parsed)
+
+
+def canonical_document_hash(domain: bytes, document: Any) -> str:
+    """sha256 over domain-separated, canonicalized JSON of a parsed ``document``."""
+    canon = json.dumps(document, sort_keys=True, separators=(",", ":"), default=str)
+    return "sha256:" + hashlib.sha256(domain + canon.encode("utf-8")).hexdigest()
 
 
 def _stack_feature_columns(inputs: list[Any]) -> Any:
@@ -96,6 +109,10 @@ def model_form_params(shape: RowShape) -> dict[str, object]:
     }
 
 
+def _no_float64(dtype: object) -> PreserveError:
+    return PreserveError(f"the model's output is {dtype}, which has no float64 value")
+
+
 def _as_event_array(out: Any) -> Any:
     """Return a model's (n,) or (n, 1) output as one value per event.
 
@@ -109,8 +126,18 @@ def _as_event_array(out: Any) -> Any:
         out = out[0]
     if isinstance(out, Mapping | tuple | list):  # "first" has no one meaning for keyed outputs
         raise PreserveError(f"the model's first output is a {type(out).__name__}, not an array")
+    if type(out).__module__.startswith("torch"):  # numpy has no bfloat16 or float8: cast first
+        if out.is_complex():  # .double() would drop the imaginary part with only a warning
+            raise _no_float64(out.dtype)
+        try:
+            out = out.double()
+        except RuntimeError as err:  # quantized, sub-byte and bit dtypes have no cast
+            raise _no_float64(out.dtype) from err
     # a tensor's own .numpy(): np.asarray on a Keras EagerTensor warns on every call
-    values = np.asarray(out.numpy() if hasattr(out, "numpy") else out, dtype="float64")
+    values = np.asarray(out.numpy() if hasattr(out, "numpy") else out)
+    if np.iscomplexobj(values):  # float64 would drop the imaginary part
+        raise _no_float64(values.dtype)
+    values = values.astype("float64", copy=False)
     return ak.from_numpy(values.reshape(-1) if values.shape[1:] == (1,) else values)
 
 
