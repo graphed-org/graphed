@@ -4,4 +4,4 @@
   close to linear in the number of fields, and column projection replays it the same way: on a
   typetracer, awkward's ``with_field`` now runs over only the fields the call changes, and the
   others are kept as they were. Forms, plans and projections are unchanged. Adding 2000 fields to
-  a jagged selection records in 1.1 s instead of 13.7 s (#286).
+  a jagged selection records in 1.2 s instead of 13.7 s (#286).
