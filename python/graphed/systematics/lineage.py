@@ -14,6 +14,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Self, TypeVar
 
+from ..array import detached
 from ..errors import GraphedError
 
 if TYPE_CHECKING:
@@ -47,7 +48,9 @@ class ContextNode:
         self._session = session
         self._parent = parent
         self._link = link
-        self._collections: dict[str, Any] = dict(collections or {})
+        self._collections: dict[str, Any] = {
+            name: detached(value) for name, value in (collections or {}).items()
+        }
 
     def __deepcopy__(self, memo: dict[int, Any] | None = None) -> Self:
         """Return this context: contexts compare by identity, so a copy would be a stranger."""
