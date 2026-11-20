@@ -22,6 +22,7 @@ REFUSED = sorted(
     if not name.startswith("_")
     and isinstance(value, property | functools.cached_property)
     and name not in EAGER
+    and name != "mask"  # the accessor: ak.mask(arr, condition)
 )
 RECORDS = ak.Array([[{"x": 1, "y": 2.0}], [], [{"x": 3, "y": 4.0}]])
 
@@ -45,7 +46,7 @@ def _session(data: ak.Array, behavior: dict[Any, Any] | None = None) -> tuple[Se
 
 
 def test_refused_population_is_live() -> None:
-    assert {"mask", "nbytes", "attrs", "behavior", "named_axis"} <= set(REFUSED)
+    assert {"nbytes", "attrs", "behavior", "named_axis"} <= set(REFUSED)
 
 
 @pytest.mark.parametrize(
@@ -79,8 +80,7 @@ def test_fields_membership_and_ndim_comparison() -> None:
 @pytest.mark.parametrize("name", REFUSED)
 def test_refused_names_raise_with_guidance(name: str) -> None:
     session, arr = _session(RECORDS)
-    hint = "gak.mask" if name == "mask" else "materialize"
-    with pytest.raises(AttributeError, match=rf"cannot answer '{name}'; .*{hint}"):
+    with pytest.raises(AttributeError, match=rf"cannot answer '{name}'; .*materialize"):
         getattr(arr, name)
     assert session.node_count() == 1
 

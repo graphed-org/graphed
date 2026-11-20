@@ -6,7 +6,8 @@ here are its interface: every other module reads a context's lineage through the
 
 Variation history is object lineage (§2.6b): a context is derived from its parent by one link —
 `("mask", mask)` derives rows, `("vary", None)` changes only registrations, `("project", label)`
-narrows to one universe (§6.1d).
+narrows to one universe (§6.1d), and `("option", masker)` masks values without changing rows
+(`ak.mask`).
 """
 
 from __future__ import annotations
@@ -20,8 +21,12 @@ from ..errors import GraphedError
 if TYPE_CHECKING:
     from .ambient import AmbientRecord
 
-#: §6.1d's three link kinds: ("mask", mask), ("vary", None), ("project", label)
+#: §6.1d's three link kinds, ("mask", mask), ("vary", None), ("project", label), and ak.mask's
+#: ("option", masker)
 Link = tuple[str, Any]
+
+#: the links that keep the parent's rows and registrations
+ROW_PRESERVING = frozenset({"vary", "option"})
 
 _Node = TypeVar("_Node", bound="ContextNode")
 
@@ -126,12 +131,12 @@ def selection(ctx: ContextNode) -> Any:
 def row_space_above(handle: ContextNode, ctx: ContextNode) -> ContextNode | None:
     """Return the context `handle`'s row space belongs to as seen from `ctx`.
 
-    `handle` itself is not one of `ctx`'s ancestors, but a run of `vary` links above it may end at
-    one (or at `ctx`), and such a run changes no rows. `None` when the two are on genuinely
-    different row spaces.
+    `handle` itself is not one of `ctx`'s ancestors, but a run of `ROW_PRESERVING` links above it
+    may end at one (or at `ctx`), and such a run changes no rows. `None` when the two are on
+    genuinely different row spaces.
     """
     node = handle
-    while node._link is not None and node._link[0] == "vary" and node._parent is not None:
+    while node._link is not None and node._link[0] in ROW_PRESERVING and node._parent is not None:
         node = node._parent
         if node is ctx or is_ancestor(node, ctx):
             return node

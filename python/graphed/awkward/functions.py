@@ -1017,12 +1017,16 @@ def _take_ak_keywords(
 def _on_context(
     fn: Callable[..., Any], context: EventContext, args: Any, kwargs: Any
 ) -> EventContext | list[str]:
-    """Answer an event context where gak takes an array: ``with_field`` and ``fields`` only."""
+    """Answer an event context where gak takes an array: ``with_field``, ``mask``, ``fields``."""
     if fn.__name__ == "fields":
         return fields_of(context)
-    if fn.__name__ == "with_field":
-        bound = inspect.signature(fn).bind(*args, **kwargs).arguments
+    if fn.__name__ in ("with_field", "mask"):
+        call = inspect.signature(fn).bind(*args, **kwargs)
+        call.apply_defaults()
+        bound = call.arguments
         if bound["arr"] is context:
+            if fn.__name__ == "mask":
+                return context._mask(bound["condition"], bool(bound["valid_when"]))
             return with_collection(context, bound["value"], bound["where"])
     raise GraphedTypeError(
         fn.__name__,
