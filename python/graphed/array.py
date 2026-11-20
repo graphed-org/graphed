@@ -133,7 +133,11 @@ def _is_full_slice(value: object) -> bool:
 
 def _refuse_axis0(first: object) -> TypeError:
     if isinstance(first, slice):  # the spelling that does work is two subscripts: a[1:3][:, 0]
-        bits = ["" if v is None else str(v) for v in (first.start, first.stop, first.step)]
+        # a deferred bound refuses str()
+        bits = [
+            "" if v is None else repr(v) if isinstance(v, EagerRefusals) else str(v)
+            for v in (first.start, first.stop, first.step)
+        ]
         # `start:stop` always, `:step` only when there is one — rstrip would turn `1::` into `1`,
         # an integer index, which is a different op
         spell = ":".join(bits if first.step is not None else bits[:2])
@@ -358,6 +362,19 @@ class EagerRefusals:
             "; to select elementwise, use np.where on a numpy-backed array or ak.where/gak.where "
             "on an awkward-backed one (or &/|/~)",
         )
+
+    def __str__(self) -> str:
+        """Show the repr; refuse a deferred scalar, whose text would read as its value (#219)."""
+        self._refuse_scalar_text("str(...)")
+        return repr(self)
+
+    def __format__(self, spec: str) -> str:
+        """Format as ``str`` does; refuse a deferred scalar, as ``str`` does."""
+        self._refuse_scalar_text("format(...)")
+        return super().__format__(spec)
+
+    def _refuse_scalar_text(self, op: str) -> None:
+        """Raise ``op``'s refusal if this value is a deferred scalar."""
 
     def __array__(self, dtype: object = None, copy: object = None) -> Any:
         """Refuse an eager numpy value: a deferred value has none."""
@@ -812,6 +829,12 @@ class Array(Deferred):
         sources = sorted(map(session.source_name, session.reachable_sources(self._node_id)))
         shown = ", ".join(map(repr, sources))
         return f"graphed.Array<{_clip(session.form(self).describe())}, from {_clip(shown)}>"
+
+    def _refuse_scalar_text(self, op: str) -> None:
+        form = self._session.form(self)
+        # a reduced numpy array with a shape left is no scalar, though it has no rows
+        if not getattr(form, "has_rows", True) and getattr(form, "ndim", 0) == 0:
+            raise no_eager_value(op, "; repr(x) shows the deferred scalar", DeferredTypeError)
 
     def __dir__(self) -> list[str]:
         """List the attributes, with the fields and behaviors the backend names for this form."""

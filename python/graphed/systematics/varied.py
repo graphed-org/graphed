@@ -149,6 +149,9 @@ class Varied(Deferred):
         """Show the labels this container carries."""
         return f"Varied(labels={list(self._members)})"
 
+    def _refuse_scalar_text(self, op: str) -> None:
+        self._members["nominal"]._refuse_scalar_text(op)
+
 
 # ---- what other modules read of a container -------------------------------------------------
 def members_of(value: object) -> Mapping[str, Member]:
