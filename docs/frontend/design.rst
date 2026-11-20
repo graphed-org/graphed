@@ -364,6 +364,30 @@ The cut is written once and applies inside every universe. The pile-up weight do
 ``ht``'s labels because a weight is not part of the value — it is applied where the fill happens,
 automatically, to every universe.
 
+Assigning a collection works as it does on an array: ``ctx[name] = value`` sets ``name`` on this
+context, whether ``name`` is new or replaces a collection. ``value`` is an array or a ``Varied``
+computed from this context or one it was derived from, and it keeps the universes it carries.
+Assignment registers nothing, so a value carrying a family the context has not registered is
+refused; register that family with ``vary(ctx, name, collections={...})``. The row space, the
+registrations and the context's identity stay the same, so values read before and after the
+assignment can be combined. Contexts already derived from this one (``ctx[mask]``, ``universe``)
+keep the collections they were derived with, and the same derivation taken afterwards is a
+different context, so combine values from derivations taken on the same side of the assignment.
+``gak.with_field(ctx, value, name)`` does the same
+but returns a new context and leaves ``ctx`` as it was. A field list, ``ctx[["Jet", "MET"]]``,
+reads each listed collection the way ``ctx.Jet`` does, universes included.
+
+.. code-block:: python
+
+    ctx["Jet"] = ctx.Jet[ctx.Jet.pt > 30.0]
+    print(labels(ctx.Jet))
+    print(s.materialize(gak.num(universe(ctx, "jes_up").Jet, axis=1)))
+
+Prints::
+
+    ('nominal', 'jes_up', 'jes_down')
+    [1, 1, 2]
+
 A collection that is a *function* of the varied one — Type-1 MET recomputed from the jets — has
 to move with it, and two ``{tag: record}`` maps would spell the same shifts twice. The shift form
 therefore also takes a ``Varied`` as a collection member: vary the context's central jets with the
@@ -1368,6 +1392,11 @@ call adds no param, so its bytes are unchanged. ``output_type=`` and ``form=`` a
 ``form_params=`` passes values to ``op_form`` alone. They sit under the stored params and never
 reach the node, so they cannot change its identity or bytes. The preserve layer uses it for a
 plugin's ``output_dtype`` default.
+
+A backend's optional ``ordered_operands(op, inputs) -> bool`` says that ``op`` over those input
+forms may run a user overload whose operand order matters; the session then records the node with
+``ordered=True``, which keeps the optimizer's commute rules off it (awkward answers yes for a
+binary op over an operand with a ``__record__`` or ``__list__`` name).
 
 A declaration is checked at run time through the backend's optional
 ``check_output_type(value, inputs, key, declared) -> str | None``, which returns the value's type

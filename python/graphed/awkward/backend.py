@@ -10,6 +10,8 @@ import contextlib
 import functools
 import inspect
 import re
+import threading
+import weakref
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, cast, overload
@@ -17,6 +19,8 @@ from typing import Any, cast, overload
 import awkward as ak
 import cloudpickle
 import numpy as np
+from awkward._nplikes.shape import unknown_length
+from awkward._nplikes.typetracer import TypeTracerArray
 from awkward.types._awkward_datashape_parser import LarkError
 
 from graphed import Array, Session
@@ -29,7 +33,7 @@ from graphed.shuffle import join_blocks
 
 from . import functions as gak
 from . import join, payloads, shuffle
-from ._ops import _INTROSPECT_EAGER, _ak_own, _listed_names, _no_field, apply
+from ._ops import _BINARY, _INTROSPECT_EAGER, _ak_own, _listed_names, _no_field, apply
 from .array import AwkwardArray
 
 
@@ -159,6 +163,69 @@ def _adopt(value: Any, behavior: Mapping[Any, Any] | None) -> Any:
     if type(value) is dict:
         return {key: _adopt(item, behavior) for key, item in value.items()}
     return value
+
+
+# Entries hold canonical layouts weakly and are dereferenced on use, so a dead layout's entry never
+# matches; a live canonical holds the content whose id is in its key, so that id is not reused.
+_CANONICAL: dict[tuple[type, int, np.dtype[Any]], weakref.ref[Any]] = {}
+_KEPT: dict[int, weakref.ref[Any]] = {}  # id(canonical) -> it, to skip a sub-layout already shared
+_CANONICAL_LOCK = threading.RLock()  # reentrant: `_forget` may run on a thread holding it
+
+
+def _sharing(result: Any) -> Any:
+    """Return a recorded typetracer ``result`` with its indexed sub-layouts shared (#282)."""
+    if not isinstance(result, ak.Array) or result.layout.backend.name != "typetracer":
+        return result
+    layout = _shared(result.layout)
+    if layout is result.layout:
+        return result
+    return ak.Array(layout, behavior=result.behavior, attrs=result._attrs)
+
+
+def _shared(layout: Any) -> Any:
+    """Return ``layout`` with each indexed sub-layout swapped for one recorded over its content.
+
+    An unknown-length index with no report carries no information, so two such indexed layouts of
+    one class over one content are interchangeable. ``ak.with_field`` re-wraps every field this
+    way, and keeping each copy makes the recorded forms quadratic in the number of fields.
+    """
+    kept = _KEPT.get(id(layout))
+    if kept is not None and kept() is layout:
+        return layout
+    if layout.is_record or layout.is_union:
+        contents = [_shared(content) for content in layout.contents]
+        if all(a is b for a, b in zip(contents, layout.contents, strict=True)):
+            return layout
+        return layout.copy(contents=contents)
+    if layout.is_numpy or layout.is_unknown:
+        return layout
+    content = _shared(layout.content)
+    if content is not layout.content:
+        layout = layout.copy(content=content)
+    if not layout.is_indexed or layout.parameters:
+        return layout
+    data = layout.index.data
+    if not isinstance(data, TypeTracerArray) or data.report is not None:
+        return layout
+    if data.shape[0] is not unknown_length:
+        return layout
+    key = (type(layout), id(layout.content), data.dtype)
+    with _CANONICAL_LOCK:
+        ref = _CANONICAL.get(key)
+        canonical = ref() if ref is not None else None
+        if canonical is None:
+            canonical = layout
+            ref = weakref.ref(layout, functools.partial(_forget, key, id(layout)))
+            _CANONICAL[key] = _KEPT[id(layout)] = ref
+    return canonical
+
+
+def _forget(key: tuple[type, int, np.dtype[Any]], ident: int, ref: weakref.ref[Any]) -> None:
+    with _CANONICAL_LOCK:
+        if _CANONICAL.get(key) is ref:
+            del _CANONICAL[key]
+        if _KEPT.get(ident) is ref:
+            del _KEPT[ident]
 
 
 @dataclass(eq=False)
@@ -310,28 +377,40 @@ def _canonical_output_type(spec: object) -> str:
 _canonical_string = functools.cache(_canonical_output_type)
 
 
-def astype_form(form: AwkwardForm, dtype: object) -> AwkwardForm:
-    """Return ``form`` with its leaves cast to the primitive ``dtype``.
+def _bare_leaf(layout: Any, **kwargs: Any) -> Any:
+    if layout.is_numpy:
+        return layout.copy(parameters=None)
+    return None
 
-    ``dtype`` is any `canonical_output_type` spelling of one; a scalar stays a scalar.
+
+def astype_form(form: AwkwardForm, dtype: object) -> AwkwardForm:
+    """Return ``form`` with its leaves replaced by bare leaves of the primitive ``dtype``.
+
+    ``dtype`` is any `canonical_output_type` spelling of one; a scalar stays a scalar. A leaf's
+    parameters (NanoAOD's ``typename``) describe the input's values, so the new leaf has none, as
+    a computed value has none; list-level parameters (a multidimensional leaf's included) stay, as
+    the value keeps them.
     """
     t = _type(canonical_output_type(dtype))
     if not isinstance(t, ak.types.NumpyType) or t.parameters:
         raise TypeError(f"output_dtype {dtype!r} is not a primitive dtype")
     if ak.typetracer.is_unknown_scalar(form.tt):
         return AwkwardForm(ak.typetracer.create_unknown_scalar(np.dtype(t.primitive)))
-    return AwkwardForm(ak.values_astype(form.tt, t.primitive))
+    cast = ak.values_astype(form.tt, t.primitive)
+    return AwkwardForm(ak.transform(_bare_leaf, cast, numpy_to_regular=True))
 
 
 def broadcast_form(forms: Sequence[AwkwardForm]) -> AwkwardForm:
-    """Return the form ``ak.broadcast_arrays`` gives the array ``forms``.
+    """Return the form the array ``forms`` broadcast to, as correctionlib broadcasts them.
 
-    Scalars broadcast away; the first form when none is an array.
+    Scalars broadcast away; the first form when none is an array. Only the parameters every input
+    shares survive (``ak.broadcast_arrays``, then ``ak.transform``).
     """
     arrays = [f for f in forms if isinstance(f.tt, ak.Array)]
     if len(arrays) < 2:
         return (arrays or list(forms))[0]
-    return AwkwardForm(ak.broadcast_arrays(*(f.tt for f in arrays))[0])
+    broadcast = ak.broadcast_arrays(*(f.tt for f in arrays))
+    return AwkwardForm(ak.transform(lambda *_, **__: None, *broadcast)[0])
 
 
 def declared_form(forms: Sequence[AwkwardForm], canonical: str) -> AwkwardForm:
@@ -498,8 +577,16 @@ class AwkwardBackend:
 
     #: M59: this backend evaluates the shared inner-axis tuple key (`subscript`)
     subscript_keys = True
-    #: array counts are as long as the lists they cut, not as the array they cut
-    unaligned_ops = frozenset({"ak.unflatten"})
+
+    def rows_unaligned(self, op: str, params: Mapping[str, object]) -> bool:
+        """Return whether ``op`` may take inputs holding different rows of one chunk."""
+        # array counts are as long as the lists they cut, not as the array they cut
+        return op == "ak.unflatten"
+
+    def pairs_by_chunk(self, op: str, params: Mapping[str, object]) -> bool:
+        """Return whether ``op`` pairs inputs by chunk, so one run over joined chunks errs."""
+        # an unflatten's counts join chunk for chunk with the content they cut
+        return op != "ak.unflatten" and self.rows_unaligned(op, params)
 
     def positional_key(self, form: AwkwardForm) -> bool:
         """Return whether a key of ``form`` picks rows by position: a flat key that is no mask."""
@@ -556,7 +643,23 @@ class AwkwardBackend:
                 return astype_form(broadcast_form(forms), leaf)
             return forms[0]
         operands = [self._with_behavior(f.tt) for f in forms]
-        return AwkwardForm(apply(op, operands, params, behavior=self._behavior))
+        return AwkwardForm(_sharing(apply(op, operands, params, behavior=self._behavior)))
+
+    def ordered_operands(self, op: str, inputs: Sequence[Form]) -> bool:
+        """Return whether ``op`` over ``inputs`` may resolve to a behavior overload.
+
+        Such an overload (vector's record ``+``) need not be bitwise commutative, so the session
+        marks the node and the optimizer keeps its operand order.
+        """
+        return (
+            op in _BINARY
+            and len(inputs) == 2
+            and any(
+                isinstance(f.tt, ak.Array | ak.Record)
+                and f.tt.layout.purelist_parameters("__record__", "__list__")
+                for f in cast("Sequence[AwkwardForm]", inputs)
+            )
+        )
 
     def traced_form(self, fn: Callable[..., object], inputs: Sequence[Form]) -> AwkwardForm | None:
         """Return the form ``fn`` gives ``inputs``.
@@ -756,7 +859,11 @@ class AwkwardBackend:
         A rectilinear idiom needs nothing here, which is why the seam is optional and
         `graphed.systematics.broadcast_like` falls back to the identity when a backend omits it.
         """
-        return gak.broadcast_arrays(value, factor)[1]  # type: ignore[arg-type]
+        return gak.broadcast_arrays(value, factor)[1]
+
+    def with_field(self, record: object, value: object, name: str) -> object:
+        """Set field ``name`` of ``record`` to ``value`` (the optional event-context seam)."""
+        return gak.with_field(record, value, name)  # type: ignore[arg-type]
 
     def external_payload(self, op: str, params: Mapping[str, object]) -> PayloadDescriptor | None:
         """Return the payload descriptor an External ``op`` carries, if any."""

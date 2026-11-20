@@ -304,7 +304,7 @@ follows the same rule, going through the framework's own loader to get at the co
    * - ``pytorch_model``
      - a TorchScript archive's sorted ``state_dict`` plus its code
    * - ``xgboost_model``
-     - XGBoost's open JSON model, canonicalized
+     - XGBoost's open JSON (or UBJSON) model, canonicalized
    * - ``jax_export``
      - ``jax.export`` StableHLO with source locations stripped, plus the input signature
    * - ``triton_model``
@@ -482,6 +482,10 @@ The shipped correctionlib and ONNX plugins are the templates to copy, and
 ``registered_kinds()`` lists every kind the registry knows, yours included. The frameworks
 themselves are imported only when a payload of that kind is actually hashed or evaluated, so a
 plugin you never use costs you no dependency.
+
+The PyTorch plugin feeds row-major matrices; ``params={"order": "F"}`` feeds column-major ones,
+the layout a pandas-fed ``torch.FloatTensor(df.to_numpy())`` has. torch's matrix multiply can
+round differently by layout, so the order is a recorded param and the two layouts are two nodes.
 
 How a call gets replayed
 ~~~~~~~~~~~~~~~~~~~~~~~~
