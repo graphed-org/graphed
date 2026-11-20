@@ -26,7 +26,7 @@ import itertools
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from .array import Array, EagerRefusals, detached
+from .array import Array, EagerRefusals, detached, dir_with
 from .errors import GraphedError, GraphedTypeError
 from .provenance import capture
 
@@ -121,10 +121,18 @@ class EventContext(EagerRefusals, ContextNode):
         return f"EventContext(#{self._serial} from {self._provenance})"
 
     # ---- tree content (§2.6a: the context reserves NO names) --------------------
+    def __dir__(self) -> list[str]:
+        """List the attributes with the fields, as an awkward array does."""
+        return dir_with(super().__dir__(), fields_of(self))
+
     def __getattr__(self, name: str) -> Any:
-        """Read field ``name`` of the event record."""
+        """Read field ``name`` of the event record; ``fields`` lists them where no field is one."""
         if name.startswith("_"):
             raise AttributeError(name)
+        if name == "fields":
+            names = fields_of(self)
+            if name not in names:
+                return names
         return self._read(name)
 
     def __getitem__(self, key: object) -> Any:
@@ -411,3 +419,12 @@ def vary_context(
         ctx, name, nominal, variations, collections, points, composes_as_union, max_universes, tags
     )
     return ctx._vary_child(record, replaced)
+
+
+def fields_of(context: EventContext) -> list[str]:
+    """Return the record's fields, then the names assigned on ``context``, as awkward does."""
+    session = context_session(context)
+    # the form answers, so a branch called `fields` cannot shadow the record's field list
+    form = session.form(member_of(context._record, "nominal"))
+    names = list(session.backend.introspect(form, "fields"))
+    return [*names, *(name for name in collections_of(context) if name not in names)]
