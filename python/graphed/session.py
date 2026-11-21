@@ -407,10 +407,10 @@ class Session:
         """Return the store's node list (a copy)."""
         return self._store.nodes()
 
-    def _external_view(self) -> tuple[list[dict[str, Any]], dict[int, tuple[Any, list[int]]]]:
-        """Return the store's node list and the External evaluators by node id, taken together."""
+    def _external_view(self) -> dict[int, tuple[Any, list[int]]]:
+        """Return a copy of the External evaluators by node id."""
         with self._lock:
-            return self._store.nodes(), dict(self._externals)
+            return dict(self._externals)
 
     def form(self, array: Array) -> Form:
         """Return the form of ``array``."""
