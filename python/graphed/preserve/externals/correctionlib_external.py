@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 from collections.abc import Callable, Mapping
@@ -218,9 +219,6 @@ def check_correctionlib_params(params: Mapping[str, Any], payload: bytes, n_inpu
 
 def eval_correctionlib(cset: Any, params: Mapping[str, Any], inputs: list[Any]) -> Any:
     """Evaluate the named correction over ``inputs``."""
-    import awkward as ak
-    import numpy as np
-
     name = str(params.get("name", ""))
     compound = bool(params.get("compound", False))
     corr = _resolve(cset, cset.compound, name, compound)
@@ -230,6 +228,14 @@ def eval_correctionlib(cset: Any, params: Mapping[str, Any], inputs: list[Any]) 
             f"{name!r} (corrections: {sorted(cset)}; compound_corrections: "
             f"{sorted(cset.compound)})"
         )
+    return _call(corr, params, inputs)
+
+
+def _call(corr: Any, params: Mapping[str, Any], inputs: list[Any]) -> Any:
+    """Call ``corr`` as ``params`` spell it over ``inputs``."""
+    import awkward as ak
+    import numpy as np
+
     template = _call_template(params, len(inputs))
     if template is None:  # the legacy (systematic, inputs[0]) shape, unchanged
         systematic = str(params.get("systematic", "nominal"))
@@ -243,6 +249,55 @@ def eval_correctionlib(cset: Any, params: Mapping[str, Any], inputs: list[Any]) 
         return fast
     out = corr.evaluate(*call)
     return out if isinstance(out, ak.Array) else ak.Array(np.asarray(out))
+
+
+_CONSTANT_KINDS = {str: "string", bool: "int", int: "int", float: "real"}
+
+
+@functools.cache
+def _constant(kinds: tuple[str, ...]) -> Any:
+    """Return a correction taking inputs of ``kinds`` whose value is 0."""
+    import correctionlib
+
+    inputs = [{"name": f"i{n}", "type": kind} for n, kind in enumerate(kinds)]
+    doc = {
+        "schema_version": 2,
+        "corrections": [
+            {
+                "name": "c",
+                "version": 1,
+                "inputs": inputs,
+                "output": {"name": "v", "type": "real"},
+                "data": 0.0,
+            }
+        ],
+    }
+    return correctionlib.CorrectionSet.from_string(json.dumps(doc))["c"]
+
+
+def correction_form(params: Mapping[str, Any], inputs: list[Any]) -> Any:
+    """Return the typetracer of the value the call ``params`` spells gives ``inputs``' typetracers.
+
+    It is this plugin's own call on length-zero inputs, of a constant correction taking the same
+    kinds of input, so it keeps the parameters and option-ness the installed correctionlib keeps
+    and parses no payload.
+    """
+    import awkward as ak
+    import numpy as np
+
+    if not any(isinstance(x, ak.Array) for x in inputs):  # a scalar stays a scalar
+        return ak.typetracer.create_unknown_scalar(np.float64)
+    template = _call_template(params, len(inputs))
+    entries = [("const", ""), ("slot", 0)] if template is None else template[0]
+    kinds = tuple("real" if kind == "slot" else _CONSTANT_KINDS[type(v)] for kind, v in entries)
+    # a scalar input is a numpy scalar when the node runs
+    zeros = [
+        ak.typetracer.length_zero_if_typetracer(x) if isinstance(x, ak.Array) else x.dtype.type(0)
+        for x in inputs
+    ]
+    return ak.Array(
+        _call(_constant(kinds), params, zeros).layout.to_typetracer(forget_length=True)
+    )
 
 
 def _correctionlib_samples() -> list[bytes]:
@@ -281,5 +336,5 @@ CORRECTIONLIB_PLUGIN = ExternalPlugin(
     framework="correctionlib",
     check_params=check_correctionlib_params,
     output_dtype="float64",
-    broadcasts=True,
+    value_form=correction_form,
 )

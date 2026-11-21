@@ -33,6 +33,7 @@ from ..preserve.externals._helpers import _payload_bytes, model_form_params, ref
 from ..preserve.externals.correctionlib_external import (
     _refused,
     check_correctionlib_params,
+    correction_form,
     correction_inputs,
 )
 from . import payloads
@@ -51,7 +52,7 @@ from ._params import (
     crosses_rows,
 )
 from ._templates import _ml_matrix, _parse_template
-from .backend import AwkwardForm, astype_form, broadcast_form, declared_form
+from .backend import AwkwardForm, declared_form
 
 
 def join(
@@ -618,8 +619,8 @@ def apply_correction(
     the template, which replay obeys identically. EVERY backend — in-process included — evaluates
     through the correctionlib preserve plugin, rebuilt from the payload bytes under the recorded
     template: in-process gets the plugin's flat-buffer evaluation instead of correctionlib's
-    per-call ``ak.transform`` wrapper. The recorded type is the broadcast of every slotted input,
-    as that wrapper broadcasts them.
+    per-call ``ak.transform`` wrapper. The recorded type is the one that plugin's call gives the
+    inputs' typetracers, as the installed correctionlib types it.
 
     ``evaluator`` without ``args=`` is the path-based recording: ``payload`` must be a path and the
     callable is the evaluation, so nothing here checks it. With ``args=`` it is never called.
@@ -646,7 +647,7 @@ def apply_correction(
     if arrays:  # a foreign input outranks a bad template, as in `record_external`
         arrays[0].session._mine(arrays, ("correction", capture()))
     try:
-        entries = _parse_template(args, len(arrays), constants=True, groups=False)
+        _parse_template(args, len(arrays), constants=True, groups=False)
     except (TypeError, ValueError) as err:
         raise _refused(str(err)) from err
     params: dict[str, ParamValue] = {
@@ -657,8 +658,11 @@ def apply_correction(
     check_correctionlib_params(params, blob, len(arrays))
     session = arrays[0].session
     refuse_unread_inputs("correction", params, len(arrays))
-    slots = [arrays[i] for kind, i in entries if kind == "slot"]
     descriptor = payloads.correctionlib_contents_descriptor(blob, name)
+    try:
+        form = correction_form(params, [cast("AwkwardForm", session.form(a)).tt for a in arrays])
+    except (TypeError, ValueError) as err:  # inputs the correction cannot take
+        raise _refused(str(err)) from err
     return session.record_external(
         "correction",
         # call=None: the plugin owns evaluation on every backend (see _TemplateExternal)
@@ -668,10 +672,7 @@ def apply_correction(
         arrays,
         params,
         descriptor=descriptor,
-        # the correctionlib plugin's value is float64 (its outputs are `real`), checked at run time
-        form=astype_form(
-            broadcast_form([cast("AwkwardForm", session.form(a)) for a in slots]), "float64"
-        ),
+        form=AwkwardForm(form),
         form_params={"output_dtype": "float64", "claim": True},
     )
 

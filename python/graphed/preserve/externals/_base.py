@@ -98,6 +98,9 @@ class ExternalPlugin:
     #: the value is the inputs' broadcast with ``output_dtype`` leaves, so that recorded form is
     #: the value's whole type and is checked in full
     broadcasts: bool = False
+    #: the value's type from the node's params and its inputs' typetracers, by the plugin's own
+    #: call; recorded and checked in full
+    value_form: Callable[[Mapping[str, Any], list[Any]], Any] | None = None
     #: a model's (its value is `_as_event_array`'s float64 rows): the row shape its payload
     #: states, read in the content hash's pass, recorded and checked in full; ``None`` where it
     #: states none records one value per event, its leaves checked
@@ -305,9 +308,11 @@ def record_external(
         session.service_for(str(params["service"]))  # refuses an undeclared name
     content_hash = plugin.content_hash(payload)
     # a stated type is a claim; an output_dtype alone is a leaf claim unless the plugin broadcasts
+    # or states its value_form
     form_params: dict[str, object] = {
         "output_dtype": plugin.output_dtype,
-        "claim": plugin.broadcasts,
+        "claim": plugin.broadcasts or plugin.value_form is not None,
+        "value_form": plugin.value_form,
         "infer": plugin.array_value,
     }
     if plugin.output_shape is not None:

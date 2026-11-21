@@ -1,4 +1,4 @@
-"""An External's recorded type drops an input's leaf parameters, as its value does (#248)."""
+"""An External's recorded type keeps the parameters its value keeps (#248, #310)."""
 
 from __future__ import annotations
 
@@ -9,11 +9,13 @@ from pathlib import Path
 from typing import Any
 
 import awkward as ak
+import correctionlib
 import numpy as np
 import pytest
 
 from graphed import Session
 from graphed.awkward import AwkwardBackend, from_awkward, gak
+from graphed.errors import GraphedTypeError
 from graphed.preserve import (
     JAX_PLUGIN,
     ONNX_PLUGIN,
@@ -22,6 +24,7 @@ from graphed.preserve import (
     XGBOOST_PLUGIN,
 )
 from graphed.preserve.externals import record_external
+from graphed.preserve.externals.correctionlib_external import CORRECTIONLIB_PLUGIN
 
 DOUBLE = json.dumps(
     {
@@ -61,38 +64,113 @@ def _jagged(leaf: Any = None, lists: Any = None) -> ak.Array:
     return ak.Array(ak.contents.ListOffsetArray(JAGGED.offsets, content, parameters=lists))
 
 
+def _option(array: ak.Array, parameters: Any = None) -> ak.Array:
+    index = ak.index.Index64(np.arange(len(array)))
+    return ak.Array(ak.contents.IndexedOptionArray(index, array.layout, parameters=parameters))
+
+
+FLAT = ak.Array([1.0, 2.0, 3.0])
+SHAPES = {
+    "leaf": [_jagged(leaf={"typename": "float[]"})],
+    "list": [_jagged(lists={"__doc__": "a"})],
+    "differing-lists": [_jagged(lists={"__doc__": "a"}), _jagged(lists={"__doc__": "b"})],
+    "list-and-flat": [_jagged(lists={"__doc__": "a"}), FLAT],
+    "flat-and-list": [FLAT, _jagged(lists={"__doc__": "a"})],
+    "list-and-option": [_jagged(lists={"__doc__": "a"}), ak.Array([1.0, None, 3.0])],
+    "shared-list": [_jagged(lists={"__doc__": "a"}), _jagged(lists={"__doc__": "a"})],
+    "multidimensional-leaf": [
+        ak.Array(ak.contents.NumpyArray(np.ones((3, 2)), parameters={"typename": "f"}))
+    ],
+    "option-list": [_option(_jagged(lists={"__doc__": "a"}))],
+    "option-parameter": [_option(FLAT, {"__doc__": "o"})],
+}
+
+
+def _cset_type(arrays: list[ak.Array]) -> str:
+    cset = correctionlib.CorrectionSet.from_string(
+        (PRODUCT if len(arrays) == 2 else DOUBLE).decode()
+    )
+    return str(ak.type(cset["c"].evaluate(*arrays)).content)
+
+
+def _record_plugin(session: Session, xs: list[Any]) -> Any:
+    payload = PRODUCT if len(xs) == 2 else DOUBLE
+    args = [f"${i}" for i in range(len(xs))]
+    return record_external(
+        session, CORRECTIONLIB_PLUGIN, payload, xs, params={"name": "c", "args": args}
+    )
+
+
 @pytest.mark.parametrize(
-    ("arrays", "expected"),
+    "record",
     [
-        ([_jagged(leaf={"typename": "float[]"})], "var * float64"),
-        ([_jagged(lists={"__doc__": "a"})], '[var * float64, parameters={"__doc__": "a"}]'),
-        ([_jagged(lists={"__doc__": "a"}), _jagged(lists={"__doc__": "b"})], "var * float64"),
-        ([_jagged(lists={"__doc__": "a"}), ak.Array([1.0, 2.0, 3.0])], "var * float64"),
-        (
-            [_jagged(lists={"__doc__": "a"}), _jagged(lists={"__doc__": "a"})],
-            '[var * float64, parameters={"__doc__": "a"}]',
-        ),
-        (
-            [ak.Array(ak.contents.NumpyArray(np.ones((3, 2)), parameters={"typename": "f"}))],
-            '[2 * float64, parameters={"typename": "f"}]',
-        ),
+        lambda s, xs: gak.apply_correction(PRODUCT if len(xs) == 2 else DOUBLE, "c", xs),
+        _record_plugin,
     ],
-    ids=[
-        "leaf",
-        "list",
-        "differing-lists",
-        "list-and-flat",
-        "shared-list",
-        "multidimensional-leaf",
-    ],
+    ids=["apply_correction", "record_external"],
 )
-def test_a_correction_records_the_parameters_its_value_keeps(
-    arrays: list[ak.Array], expected: str
+@pytest.mark.parametrize("arrays", SHAPES.values(), ids=SHAPES.keys())
+def test_a_correction_records_the_type_the_installed_correctionlib_gives(
+    arrays: list[ak.Array], record: Any
 ) -> None:
     session = Session(AwkwardBackend())
     xs = [from_awkward(f"x{i}", a, session=session) for i, a in enumerate(arrays)]
-    out = gak.apply_correction(PRODUCT if len(xs) == 2 else DOUBLE, "c", xs)
-    assert _types(session, out) == (expected, expected)
+    expected = _cset_type(arrays)
+    assert _types(session, record(session, xs)) == (expected, expected)
+
+
+def test_a_scalar_input_of_a_correction_broadcasts_as_a_number() -> None:
+    session = Session(AwkwardBackend())
+    x = from_awkward("x", _jagged(lists={"__doc__": "a"}), session=session)
+    total = gak.sum(from_awkward("n", FLAT, session=session))
+    expected = _cset_type([_jagged(lists={"__doc__": "a"}), np.float64(6.0)])
+    assert _types(session, gak.apply_correction(PRODUCT, "c", [x, total])) == (expected, expected)
+
+
+@pytest.mark.parametrize(
+    "record",
+    [lambda s, x: gak.apply_correction(DOUBLE, "c", [x]), lambda s, x: _record_plugin(s, [x])],
+    ids=["apply_correction", "record_external"],
+)
+def test_an_input_the_correction_cannot_take_is_refused_where_it_is_recorded(record: Any) -> None:
+    session = Session(AwkwardBackend())
+    x = from_awkward("x", ak.Array(["a", "b"]), session=session)
+    with pytest.raises(GraphedTypeError, match="string") as info:
+        record(session, x)
+    assert info.value.provenance.filename == __file__
+
+
+SYSTEMATIC = json.dumps(
+    {
+        "schema_version": 2,
+        "corrections": [
+            {
+                "name": "sf",
+                "version": 1,
+                "inputs": [{"name": "s", "type": "string"}, {"name": "x", "type": "real"}],
+                "output": {"name": "w", "type": "real"},
+                "data": {
+                    "nodetype": "category",
+                    "input": "s",
+                    "content": [{"key": "nominal", "value": 1.5}],
+                },
+            }
+        ],
+    }
+).encode()
+
+
+def test_a_systematic_call_records_the_flat_value_it_gives_an_option_input() -> None:
+    session = Session(AwkwardBackend())
+    x = from_awkward("x", ak.Array([1.0, None, 3.0]), session=session)
+    out = record_external(
+        session,
+        CORRECTIONLIB_PLUGIN,
+        SYSTEMATIC,
+        [x],
+        params={"name": "sf", "systematic": "nominal"},
+    )
+    assert _types(session, out) == ("float64", "float64")
 
 
 def _onnx() -> bytes:

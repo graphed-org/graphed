@@ -84,6 +84,27 @@ jobs:
             diff-cover coverage.xml --compare-branch=origin/main
           fi
 
+  # The suites against unreleased correctionlib main, whose awkward wrapper types values differently
+  # from the release the matrix installs (cms-nanoAOD/correctionlib#357); pinned for determinism.
+  test-correctionlib-main:
+    name: test correctionlib main
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install (correctionlib built from main)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+          python -m pip install "correctionlib @ git+https://github.com/cms-nanoAOD/correctionlib.git@445b7a31ad0298b3b14a81d370faa44f08add04e"
+          python -c "import correctionlib; print(correctionlib.__version__)"
+      - name: Frozen suites (per-subtree)
+        shell: bash
+        run: ./scripts/run-tests.sh
+
   # Pure-Rust IR: formatting, clippy (deny warnings), unit tests, and the loom model.
   rust:
     name: rust (clippy + cargo test + loom)
@@ -305,7 +326,7 @@ jobs:
   ci-required:
     name: ci required
     if: always()
-    needs: [test, coverage, rust, rust-msrv, coverage-rust, test-freethreaded, dashboard-smoke, docs, triton]
+    needs: [test, coverage, test-correctionlib-main, rust, rust-msrv, coverage-rust, test-freethreaded, dashboard-smoke, docs, triton]
     runs-on: ubuntu-latest
     steps:
       - name: every needed job succeeded
