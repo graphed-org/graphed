@@ -801,7 +801,9 @@ class Array(Deferred):
 
         ``partition=True`` calls ``fn`` with ``partition=``, the
         :class:`~graphed.core.Partition` (``uri``, ``tree``, entry range) of the chunk it runs on,
-        resolved where its reader can count entries. It needs ``output_type=``, since recording has
+        resolved where its reader can count entries; a sample of the first entries (``head``,
+        ``materialize(entries=)``, ``graphed.debug.trace``) hands it the first partition, cut to
+        the entries read. It needs ``output_type=``, since recording has
         no partition to trace with, and refuses an array whose rows are not one input chunk's:
         read from several sources, or past a repartition, a join or a reduction.
         """
@@ -917,6 +919,8 @@ def apply(
     >>> per_file = graphed.apply(kl, events.x, name="kl", output_type="float64", partition=True)
     >>> graphed.materialize(per_file, partition=Partition(paths[1], "", 0, 2)).tolist()
     [5.0, 5.0]
+    >>> graphed.head(per_file, 1).tolist()
+    [1.0]
     """
     from .varied import containers_in, expand
 

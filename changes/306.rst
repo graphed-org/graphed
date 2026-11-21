@@ -1,0 +1,7 @@
+.. under: 0.0.12 (unreleased)
+
+* ``graphed.head``, ``graphed.materialize(entries=)`` and ``graphed.debug.trace`` hand a
+  ``partition=True`` function the partition they read: the first partition, cut to the entries
+  read. They used to give it none, so anything downstream of such a function raised. First
+  entries that span several partitions are refused, as they are for an op that pairs its operands
+  chunk by chunk (#306).
