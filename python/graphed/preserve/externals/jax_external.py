@@ -1,6 +1,6 @@
 """The ``jax_export`` plugin (M26): ``jax.export`` artifacts.
 
-The hash is location-stripped StableHLO + avals.
+The hash is StableHLO with locations and Python function names stripped, plus avals.
 """
 
 from __future__ import annotations
@@ -22,6 +22,18 @@ from ._helpers import (
 )
 
 _MLIR_LOC = re.compile(r"loc\(.*?\)|#loc\d*\s*=?.*")
+# the module and its private functions are named after Python functions, not the computation
+_MLIR_MODULE_NAME = re.compile(r'^module @(?:"[^"]*"|[\w$.-]+)', re.M)
+_MLIR_PRIVATE_FUNC = re.compile(r"func\.func private @([\w$.-]+)")
+
+
+def _unnamed(mlir: str) -> str:
+    """Return ``mlir`` with the module and each private function renamed by definition order."""
+    names = {name: f"f{i}" for i, name in enumerate(_MLIR_PRIVATE_FUNC.findall(mlir))}
+    if names:
+        symbol = re.compile(r"@(" + "|".join(map(re.escape, names)) + r")(?![\w$.-])")
+        mlir = symbol.sub(lambda m: "@" + names[m.group(1)], mlir)
+    return _MLIR_MODULE_NAME.sub("module @m", mlir)
 
 
 def jax_content_hash(payload: bytes) -> str:
@@ -35,12 +47,12 @@ def jax_output_shape(payload: bytes) -> RowShape:
 
 
 def _jax_identity(payload: bytes) -> tuple[str, RowShape]:
-    """Location-stripped StableHLO + input/output avals — stable across re-exports of one fn."""
+    """Location- and name-stripped StableHLO + input/output avals: stable across re-exports."""
     from jax import export
 
     exported = export.deserialize(bytearray(payload))
-    h = hashlib.sha256(b"jax-mlir-avals-v1")
-    h.update(_MLIR_LOC.sub("", exported.mlir_module()).encode("utf-8"))
+    h = hashlib.sha256(b"jax-mlir-avals-v2")
+    h.update(_unnamed(_MLIR_LOC.sub("", exported.mlir_module())).encode("utf-8"))
     h.update(str(exported.in_avals).encode("utf-8"))
     h.update(str(exported.out_avals).encode("utf-8"))
     shape = row_shape(exported.out_avals[0].shape) if exported.out_avals else None

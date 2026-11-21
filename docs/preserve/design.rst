@@ -306,7 +306,8 @@ follows the same rule, going through the framework's own loader to get at the co
    * - ``xgboost_model``
      - XGBoost's open JSON (or UBJSON) model, canonicalized
    * - ``jax_export``
-     - ``jax.export`` StableHLO with source locations stripped, plus the input signature
+     - ``jax.export`` StableHLO with source locations and Python function names stripped, plus the
+       input signature
    * - ``triton_model``
      - the served model's identity descriptor — see below
    * - ``histogram``
