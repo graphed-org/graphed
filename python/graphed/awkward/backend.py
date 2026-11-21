@@ -174,14 +174,19 @@ _KEPT: dict[int, weakref.ref[Any]] = {}  # id(canonical) -> it, to skip a sub-la
 _CANONICAL_LOCK = threading.RLock()  # reentrant: `_forget` may run on a thread holding it
 
 
-def _sharing(result: Any) -> Any:
-    """Return a recorded typetracer ``result`` with its indexed sub-layouts shared (#282)."""
+def _sharing(result: Any, behavior: Mapping[Any, Any] | None) -> Any:
+    """Return a recorded typetracer ``result`` with its indexed sub-layouts shared (#282).
+
+    It carries the backend's ``behavior`` object, when there is one, rather than awkward's merged
+    copy per result (#297): `_with_behavior` lays that object over a form's own at every read.
+    """
     if not isinstance(result, ak.Array) or result.layout.backend.name != "typetracer":
         return result
     layout = _shared(result.layout)
-    if layout is result.layout:
+    behavior = behavior or result.behavior
+    if layout is result.layout and behavior is result.behavior:
         return result
-    return ak.Array(layout, behavior=result.behavior, attrs=result._attrs)
+    return ak.Array(layout, behavior=behavior, attrs=result._attrs)
 
 
 def _shared(layout: Any) -> Any:
@@ -637,7 +642,9 @@ class AwkwardBackend:
         if op == "join":
             # M40 (§3.3): flat relational record-merge form; how=left/outer ⇒ missing side
             # option-typed
-            return AwkwardForm(join.join_form([f.tt for f in forms], params))
+            return AwkwardForm(
+                _sharing(join.join_form([f.tt for f in forms], params), self._behavior)
+            )
         if op in _EXTERNAL:
             # an External's value type is not derivable from its inputs: a declared `output_type`
             # is recorded as given, a plugin's static leaf `output_dtype` casts the leaves of the
@@ -650,7 +657,8 @@ class AwkwardBackend:
                 return astype_form(broadcast_form(forms), leaf)
             return forms[0]
         operands = [self._with_behavior(f.tt) for f in forms]
-        return AwkwardForm(_sharing(apply(op, operands, params, behavior=self._behavior)))
+        result = apply(op, operands, params, behavior=self._behavior)
+        return AwkwardForm(_sharing(result, self._behavior))
 
     def ordered_operands(self, op: str, inputs: Sequence[Form]) -> bool:
         """Return whether ``op`` over ``inputs`` may resolve to a behavior overload.
@@ -683,7 +691,7 @@ class AwkwardBackend:
         else:
             traced = isinstance(result, ak.Array) and ak.backend(result) == "typetracer"
             if traced or ak.typetracer.is_unknown_scalar(result):
-                return AwkwardForm(result)
+                return AwkwardForm(_sharing(result, self._behavior))
         if not all(isinstance(f.tt, ak.Array) for f in forms):  # a scalar has no length zero
             if failure is None:
                 return None
@@ -714,7 +722,9 @@ class AwkwardBackend:
                 "declares as ##)"
             ) from failure
         layout = value.layout.to_typetracer(forget_length=True)
-        return AwkwardForm(ak.Array(layout, behavior=value.behavior, attrs=value.attrs))
+        return AwkwardForm(
+            _sharing(ak.Array(layout, behavior=value.behavior, attrs=value.attrs), self._behavior)
+        )
 
     def eval_stage(
         self, op: str, inputs: Sequence[object], params: Mapping[str, object]

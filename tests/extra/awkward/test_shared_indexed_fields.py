@@ -49,7 +49,7 @@ def _distinct_layouts(session: graphed.Session) -> int:
 
 
 def _unshared(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(awkward_backend, "_sharing", lambda result: result)
+    monkeypatch.setattr(awkward_backend, "_sharing", lambda result, behavior: result)
 
 
 @pytest.mark.parametrize("option", [True, False], ids=["option-record", "record"])
