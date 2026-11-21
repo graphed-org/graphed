@@ -1,0 +1,11 @@
+.. under: 0.0.12 (unreleased)
+
+* A correction's recorded type is the one the installed correctionlib gives its inputs, found by
+  calling the correction plugin on their typetracers: correctionlib main (after
+  cms-nanoAOD/correctionlib#357) keeps a list's parameters and a 2-D leaf's differently from
+  2.9.0, and its correct value used to be refused with ``OutputTypeError``. A ``systematic=``
+  call on an option-typed input is no longer refused either. A correction over inputs it cannot
+  take (a string array), or whose value's type depends on the inputs' length (a jagged
+  ``systematic=`` input, an ``(n, 1)`` array beside an ``(n,)`` one), is refused at the
+  recording line rather than when it runs. A plugin's ``value_form`` states its value's type
+  this way (#310).

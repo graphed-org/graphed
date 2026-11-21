@@ -484,8 +484,10 @@ L1L2L3 chain) in separate lists, and a name may appear in both. ``apply_correcti
 up in ``corrections``, then in ``compound_corrections``; ``compound=True`` searches only the
 compound list, which is how a compound correction sharing a regular one's name is reached. The flag
 is part of the node's identity, so the two are never merged as duplicates. The recorded type is what
-correctionlib returns: the broadcast of every array input, so a per-event ``rho`` and a per-jet
-``pt`` record a per-jet result.
+the installed correctionlib returns: the broadcast of every array input, so a per-event ``rho`` and a
+per-jet ``pt`` record a per-jet result. It is found by running the plugin's call, with a constant
+correction, on length-zero arrays of the inputs' types, so the parameters it keeps follow the
+installed version.
 
 Declaring what an external call returns
 ---------------------------------------

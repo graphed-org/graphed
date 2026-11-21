@@ -413,7 +413,7 @@ def astype_form(form: AwkwardForm, dtype: object) -> AwkwardForm:
 
 
 def broadcast_form(forms: Sequence[AwkwardForm]) -> AwkwardForm:
-    """Return the form the array ``forms`` broadcast to, as correctionlib broadcasts them.
+    """Return the form the array ``forms`` broadcast to.
 
     Scalars broadcast away; the first form when none is an array. Only the parameters every input
     shares survive (``ak.broadcast_arrays``, then ``ak.transform``).
@@ -647,11 +647,15 @@ class AwkwardBackend:
             )
         if op in _EXTERNAL:
             # an External's value type is not derivable from its inputs: a declared `output_type`
-            # is recorded as given, a plugin's static leaf `output_dtype` casts the leaves of the
-            # inputs' broadcast, and anything else records the first input's form
+            # is recorded as given, a plugin's `value_form` gives it, a plugin's static leaf
+            # `output_dtype` casts the leaves of the inputs' broadcast, and anything else records
+            # the first input's form
             declared = params.get("output_type")
             if declared is not None:
                 return declared_form(forms, str(declared))
+            shaped = params.get("value_form")
+            if callable(shaped):
+                return AwkwardForm(shaped(params, [f.tt for f in forms]))
             leaf = params.get("output_dtype")
             if leaf is not None:
                 return astype_form(broadcast_form(forms), leaf)
