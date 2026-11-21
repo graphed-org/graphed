@@ -1,7 +1,8 @@
 .. under: 0.0.12 (unreleased)
 
-* ``str()``, ``print()``, ``format()`` and f-strings of a deferred scalar (a whole-array reduction
-  such as ``gak.sum(x)``, a single record such as ``events[0]``, or a ``Varied`` of them) raise
-  ``DeferredTypeError`` at the user's line, as ``float()`` does, instead of returning the array's
-  repr as if it were the value; ``repr()`` is unchanged. An array keeps its repr under all of them
-  (#219).
+* ``str()``, ``print()``, ``"%s" %`` and f-strings or ``format()`` without a spec describe a
+  deferred value (an array, a whole-array reduction such as ``gak.sum(x)``, a single record such
+  as ``events[0]``, or a ``Varied`` of them) as its ``repr()`` does. A format spec
+  (``f"{x:.3f}"``, ``format(x, "d")``) asks for the calculated value and raises
+  ``DeferredTypeError`` at the user's line, as ``float()`` and ``"%f" %`` do; on an array it used
+  to raise a plain ``TypeError`` (#219, #313).
