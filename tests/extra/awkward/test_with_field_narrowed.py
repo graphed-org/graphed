@@ -1,7 +1,8 @@
-"""``ak.with_field`` on a typetracer runs over only the fields it changes (#286)."""
+"""``ak.with_field`` runs over only the fields it changes, recorded (#286) and run (#304)."""
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Callable, Iterator
 from typing import Any
 
@@ -129,3 +130,64 @@ def test_plans_and_projections_are_unchanged(monkeypatch: pytest.MonkeyPatch) ->
     fast = plan()
     monkeypatch.setattr(_ops, "_narrowed_with_field", lambda *args: None)
     assert plan() == fast
+
+
+def _rows(indexed: type, outer: list[int]) -> ak.Array:
+    """Three rows of a record whose field ``ix`` is itself indexed, under an ``indexed`` layer."""
+    ix = ak.contents.IndexedArray(
+        ak.index.Index64(np.array([2, 0, 1, 3, 4])), ak.contents.NumpyArray(np.arange(5.0) * 10)
+    )
+    record = ak.contents.RecordArray([ak.contents.NumpyArray(np.arange(5.0)), ix], ["a", "ix"])
+    return ak.Array(indexed(ak.index.Index64(np.array(outer)), record))
+
+
+REAL: dict[str, Callable[[], ak.Array]] = {
+    **{shape: functools.partial(fn, DATA) for shape, fn in SHAPES.items()},
+    "sliced list of record": lambda: DATA.jets[5:30],
+    "indexed record of an indexed field": lambda: _rows(ak.contents.IndexedArray, [4, 1, 1]),
+    "option record of an indexed field": lambda: _rows(ak.contents.IndexedOptionArray, [4, -1, 1]),
+}
+
+
+def _steps(rec: ak.Array) -> list[tuple[str, str]]:
+    return STEPS if "pt" in rec.fields else [("a", "f0"), ("f0", "f1"), ("ix", "a"), ("f1", "ix")]
+
+
+@pytest.mark.parametrize("shape", REAL)
+def test_on_real_arrays_the_values_are_awkwards(shape: str) -> None:
+    mine = theirs = REAL[shape]()
+    for src, name in _steps(mine):
+        mine = _ops._with_field(mine, mine[src] * 1.0, name)
+        theirs = ak.with_field(theirs, theirs[src] * 1.0, name)
+    assert mine.to_list() == theirs.to_list()
+    assert mine.type == theirs.type
+
+
+@pytest.mark.parametrize("shape", REAL)
+def test_on_real_arrays_awkward_sees_only_the_fields_a_call_changes(
+    shape: str, widths: list[int]
+) -> None:
+    rec = REAL[shape]()
+    for i in range(12):
+        rec = _ops._with_field(rec, rec[rec.fields[0]] * 1.0, f"f{i}")
+    # the first call may fall back to awkward's own, which leaves the layers above the record as
+    # the next calls keep them
+    assert max(widths[2:]) <= 1
+
+
+@pytest.mark.parametrize(
+    "shape", ["indexed record of an indexed field", "option record of an indexed field"]
+)
+def test_on_real_arrays_a_reindexing_call_falls_back(shape: str, widths: list[int]) -> None:
+    rec = REAL[shape]()
+    out = _ops._with_field(rec, rec.a * 1.0, "new")
+    assert widths == [0, 2]  # the narrowed call, then awkward's over the whole record
+    assert out.to_list() == ak.with_field(rec, rec.a * 1.0, "new").to_list()
+
+
+def test_on_real_arrays_a_regular_record_broadcast_wider_keeps_awkwards_values() -> None:
+    a = ak.contents.NumpyArray(np.arange(6.0))
+    rec = ak.Array(ak.contents.RegularArray(ak.contents.RecordArray([a], ["a"], length=3), 1))
+    value = ak.Array(ak.contents.RegularArray(ak.contents.NumpyArray(np.arange(6.0) * 10), 2))
+    out = _ops._with_field(rec, value, "new")
+    assert out.to_list() == ak.with_field(rec, value, where="new").to_list()
