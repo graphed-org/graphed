@@ -13,8 +13,9 @@ import pytest
 import graphed
 from graphed import Session
 from graphed.awkward import AwkwardBackend, from_awkward, gak
+from graphed.context import EventContext
 from graphed.errors import DeferredTypeError, GraphedTypeError
-from graphed.numpy import NumpyBackend, from_array
+from graphed.numpy import NumpyBackend, from_array, from_record
 
 
 def _numpy() -> Any:
@@ -117,3 +118,26 @@ def test_a_deferred_slice_bound_is_named_in_the_axis0_refusal() -> None:
     x = _numpy()
     with pytest.raises(TypeError, match=r"chain it: a\[1:graphed\.Array<"):
         x[1 : np.sum(x), 0]
+
+
+def _context() -> Any:
+    session = Session(NumpyBackend())
+    record = from_record(session, "ev", pt=np.arange(1.0, 4.0))
+    return EventContext(session, record["pt"], collections={"pt": record["pt"]})
+
+
+@pytest.mark.parametrize(
+    ("make", "names"),
+    [
+        (_context, "an event context has none until it runs: format a field of it"),
+        (lambda: _awkward().w, "a deferred array has none until it runs: format the value"),
+    ],
+    ids=["context", "array"],
+)
+def test_a_format_spec_refusal_names_what_is_formatted(make: Any, names: str) -> None:
+    value = make()
+    with pytest.raises(DeferredTypeError) as info:
+        f"{value:>5}"
+    assert names in info.value.detail
+    assert "the format spec '>5' asks for the calculated value" in info.value.detail
+    assert info.value.provenance.filename == __file__

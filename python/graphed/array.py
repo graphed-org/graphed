@@ -314,6 +314,16 @@ def no_eager_value(
     return kind(op, capture(), f"{NEEDS_VALUES}{advice}")
 
 
+def spec_refusal(spec: str, value: str, how: str) -> DeferredTypeError:
+    """Return the refusal of format ``spec`` on ``value``, which has no value to format yet."""
+    return DeferredTypeError(
+        "format(...)",
+        capture(),
+        f"needs values, and {value} has none until it runs: {how}; the format spec {spec!r} asks "
+        "for the calculated value, and without a spec the text describes the deferred one",
+    )
+
+
 class Masker:
     """``x.mask[condition]``: awkward's mask accessor, answered by ``masked(condition)``."""
 
@@ -332,6 +342,12 @@ class EagerRefusals:
     """The conversions a deferred value refuses, common to an array and a container of them."""
 
     __slots__ = ()
+
+    #: what a format spec's refusal names, and how to get a value to format
+    _formats_as = (
+        "a deferred array",
+        "format the value graphed.materialize(x) gives, or peek with graphed.head(x)",
+    )
 
     def __iter__(self) -> Any:
         # int __getitem__ (M13) would otherwise make Array INFINITELY iterable through Python's
@@ -369,11 +385,7 @@ class EagerRefusals:
     def __format__(self, spec: str) -> str:
         """Describe the deferred value without a spec; refuse a spec, which asks for its value."""
         if spec:
-            advice = (
-                f"; the format spec {spec!r} asks for the calculated value, so format the "
-                "materialized one; without a spec the text describes the deferred value"
-            )
-            raise no_eager_value("format(...)", advice, DeferredTypeError)
+            raise spec_refusal(spec, *self._formats_as)
         return repr(self)
 
     def __array__(self, dtype: object = None, copy: object = None) -> Any:
