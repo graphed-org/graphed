@@ -29,5 +29,5 @@ def test_direct_replay_reduces_what_the_run_reduces(opt_level: int) -> None:
     assert isinstance(plan.process, _PartitionReduce)
     task = plan.tasks[0]
     run: Any = plan.process(task.partition, LocalResources())
-    assert len(run) == 2 - opt_level
+    assert len(run) == 2
     assert Replay(plan.process, task, outputs).value.tolist() == run.tolist()

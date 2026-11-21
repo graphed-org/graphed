@@ -43,7 +43,7 @@ def test_opt0_runs_and_reduce_receives_one_value_per_marked_output() -> None:
     _s, events = fx.record()
     outputs = fx.merged_pair(events)
     total = float(fx.COLUMNS["w"].sum())
-    assert SequentialRunner().run(_plan(*outputs)).value.tolist() == [total]
+    assert SequentialRunner().run(_plan(*outputs)).value.tolist() == [total, total]
     assert SequentialRunner().run(_plan(*outputs, opt_level=0)).value.tolist() == [total, total]
 
 
@@ -80,7 +80,7 @@ def test_opt0_writes_the_defaults_parts(tmp_path: Path) -> None:
         )
         arities[level] = SequentialRunner().run(plan).value
         parts[level] = {p.name: p.read_bytes() for p in dest.iterdir()}
-    assert arities == {1: [2, 2], 0: [3, 3]}
+    assert arities == {1: [3, 3], 0: [3, 3]}
     assert sorted(parts[0]) == ["part0.json", "part1.json"]
     assert parts[0] == parts[1]
 

@@ -14,6 +14,7 @@ from graphed.core.plan import DurablePlan, DurablePlanV2
 
 from .aggregate import (
     _planned_arrays,
+    _refuse_slot_readers,
     _slot_of,
     aggregate_plan,
     attribute_failures,
@@ -42,8 +43,9 @@ class PlanPieces:
 
     A class whose instances evaluate through a plan defines ``__graphed_pieces__()`` returning
     these, and :func:`materialize` plans them beside the call's other results. ``reduce`` gets
-    the whole value list, so it reads ``outputs`` at the slots ``on_compiled`` records from the
-    :class:`CompiledGraph`; what ``on_compiled`` returns joins the plan's variation labels.
+    the whole value list, one value per output of the plan, so it reads each of ``outputs`` at its
+    first index in the :class:`CompiledGraph`'s ``requested``, which ``on_compiled`` records;
+    what ``on_compiled`` returns joins the plan's variation labels.
     ``finalize`` turns the combined value into the object's result; with no ``outputs`` it is
     given ``empty()`` and nothing runs. Pieces belong to one plan, so ``__graphed_pieces__`` builds
     fresh ones each call.
@@ -111,6 +113,11 @@ class _Joint:
 
     def on_compiled(self, compiled: CompiledGraph) -> tuple[Any, ...]:
         """Run each piece's hook; a key several pieces label carries the union of their labels."""
+        outputs, landed = self.outputs(), compiled.correspondence.node_map
+        if len({landed[a.node_id][0] for a in outputs}) < len(outputs):
+            _refuse_slot_readers(
+                *(f for p in self.pieces.values() for f in (p.reduce, p.on_compiled))
+            )
         entries: dict[Key, tuple[set[str], Any]] = {}
         for piece in self.pieces.values():
             for key, (labels, frame) in piece.on_compiled(compiled) or ():
@@ -343,12 +350,20 @@ def _past_boundary(session: Session, nodes: Sequence[Mapping[str, Any]] | None =
     )
 
 
+def _positions(compiled: CompiledGraph) -> Callable[[int], int]:
+    """Return where a node's value sits among one value per output asked, by its record id."""
+    first: dict[int, int] = {}
+    for i, nid in enumerate(compiled.requested):
+        first.setdefault(nid, i)
+    return first.__getitem__
+
+
 def _carrying(frontier: Sequence[Array]) -> PlanPieces:
     """Return a piece whose result is ``frontier``'s values, one tuple per partition."""
     slots: list[int] = []
 
     def on_compiled(compiled: CompiledGraph) -> None:
-        slots[:] = map(_slot_of(compiled), frontier)
+        slots[:] = map(_positions(compiled), (a.node_id for a in frontier))
 
     return PlanPieces(
         outputs=tuple(frontier),
@@ -435,8 +450,9 @@ def _run_whole(
         partition=partition,
     )
     slot = _slot_of(compiled)
+    per_output = [values[slot(a)] for a in joint.outputs()]
     return {
-        **joint.by_item(joint.finalize(joint.combine(joint.empty(), joint.reduce(values)))),
+        **joint.by_item(joint.finalize(joint.combine(joint.empty(), joint.reduce(per_output)))),
         **{id(array): values[slot(array)] for array in arrays},
     }
 

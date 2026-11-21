@@ -87,21 +87,22 @@ def test_reduce_sees_todays_values_then_one_path_per_write(tmp_path: Path) -> No
     assert len(SEEN) == len(plan.tasks) == 2
     for task, seen in zip(sorted(plan.tasks, key=lambda t: t.key), SEEN, strict=True):
         chunk = src.chunk(task.partition)
-        assert len(seen) == 5
+        assert len(seen) == 6
         np.testing.assert_array_equal(seen[0], 2.0 * chunk)
         np.testing.assert_array_equal(seen[1], chunk + 1.0)
-        assert seen[2:] == [
+        np.testing.assert_array_equal(seen[2], 2.0 * chunk)
+        assert seen[3:] == [
             os.path.join(tmp_path / w, by_step(task.partition)) for w in ("wa", "wb", "wd")
         ]
-        assert read_part(seen[2])["values"] == (2.0 * chunk).tolist()
-        assert read_part(seen[3])["values"] == (chunk + 1.0).tolist()
-        assert read_part(seen[4])["values"] == (3.0 * chunk).tolist()
+        assert read_part(seen[3])["values"] == (2.0 * chunk).tolist()
+        assert read_part(seen[4])["values"] == (chunk + 1.0).tolist()
+        assert read_part(seen[5])["values"] == (3.0 * chunk).tolist()
 
     SEEN.clear()
     SequentialRunner().run(
         graphed.aggregate_plan(a, b, a, reduce=spy_reduce, combine=add, empty=zero)
     )
-    assert [len(seen) for seen in SEEN] == [2, 2]
+    assert [len(seen) for seen in SEEN] == [3, 3]
     for task, seen in zip(sorted(plan.tasks, key=lambda t: t.key), SEEN, strict=True):
         np.testing.assert_array_equal(seen[0], 2.0 * src.chunk(task.partition))
         np.testing.assert_array_equal(seen[1], src.chunk(task.partition) + 1.0)

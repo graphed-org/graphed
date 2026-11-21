@@ -595,9 +595,81 @@ def fold_of(array: Array) -> Fold:
     return _fold_of(array.session._nodes()[array.node_id])
 
 
+#: the attribute a ``reduce`` or ``on_compiled`` from graphed-histogram 0.0.9 or later carries: it
+#: reads each value at its output's position in ``CompiledGraph.requested``, not its compiled slot
+VALUES_PER_OUTPUT = "graphed_values_per_output"
+
+
+def _refuse_slot_readers(*hooks: object) -> None:
+    """Refuse a graphed-histogram hook that reads values at compiled slots, as before 0.0.9 (#228).
+
+    Called only where outputs merged, the one case where the two positions differ.
+    """
+    # remove once everything we ship requires graphed-histogram>=0.0.9
+    for hook in hooks:
+        module = getattr(hook, "__module__", None) or ""
+        if module.split(".")[0] == "graphed_histogram" and not getattr(
+            hook, VALUES_PER_OUTPUT, False
+        ):
+            raise GraphedError(
+                "two of this plan's outputs compile to one value, and this graphed-histogram "
+                "reads its fills at compiled positions, so it would read the wrong ones: upgrade "
+                "graphed-histogram to 0.0.9 or later"
+            )
+
+
+def per_output(
+    reduce: Callable[[list[Any]], Any],
+    on_compiled: Callable[[CompiledGraph], Any] | None,
+    outputs: Sequence[Array],
+    slot: Callable[[Array], int],
+) -> Callable[[list[Any]], Any]:
+    """Return ``reduce`` handed one value per output, in order (#228), refusing a slot reader.
+
+    ``slot`` is :func:`_slot_of` of the compile.
+    """
+    slots = tuple(map(slot, outputs))
+    if slots == tuple(range(len(outputs))):
+        return reduce
+    _refuse_slot_readers(reduce, on_compiled)
+    return _PerOutput(reduce, slots)
+
+
+@dataclass(frozen=True)
+class _PerOutput:
+    """A ``reduce`` handed one value per output, in order, where the compile merged some (#228).
+
+    ``slots`` is each output's index among the evaluated values, which the outputs lead; what
+    follows them (a write's part paths) is passed on after.
+    """
+
+    reduce: Callable[[list[Any]], Any]
+    slots: tuple[int, ...]
+
+    def __call__(self, values: list[Any]) -> Any:
+        return self.reduce([*(values[s] for s in self.slots), *values[max(self.slots) + 1 :]])
+
+    def bind_services(self, endpoints: Mapping[str, str]) -> _PerOutput:
+        """Return a copy whose ``reduce`` carries ``endpoints`` where it takes them."""
+        if not isinstance(self.reduce, Bindable):
+            return self
+        return replace(self, reduce=self.reduce.bind_services(endpoints))
+
+    def resolve_services(self, value: Any) -> Any:
+        """``value`` resolved by ``reduce`` when it takes it; ``value`` itself otherwise."""
+        return (
+            self.reduce.resolve_services(value) if isinstance(self.reduce, Resolvable) else value
+        )
+
+    def output_summaries(self) -> list[str]:
+        """Describe each output, for a ``reduce`` that says what they are."""
+        hook = getattr(self.reduce, "output_summaries", None)
+        return [] if hook is None else list(hook())
+
+
 @dataclass(frozen=True)
 class _Folded:
-    """``aggregate_plan``'s default reduction: one fold per output, read at its compiled slot."""
+    """``aggregate_plan``'s default reduction: one fold per output, read at its position."""
 
     slots: tuple[int, ...]
     folds: tuple[Fold, ...]
@@ -617,7 +689,7 @@ class _Folded:
         return out if self.then is None else self.then(out)
 
 
-def _folded(outputs: Sequence[Array], slot: Callable[[Array], int]) -> _Folded:
+def _folded(outputs: Sequence[Array]) -> _Folded:
     """Return the default reduction of ``outputs``; refuse an output no fold covers."""
     nodes = outputs[0].session._nodes()
     folds = []
@@ -628,7 +700,7 @@ def _folded(outputs: Sequence[Array], slot: Callable[[Array], int]) -> _Folded:
             raise TypeError(
                 f"aggregate_plan: output {i} {err}; pass reduce=, combine=, empty="
             ) from err
-    return _Folded(tuple(slot(o) for o in outputs), tuple(folds))
+    return _Folded(tuple(range(len(outputs))), tuple(folds))
 
 
 def aggregate_plan(
@@ -676,7 +748,10 @@ def aggregate_plan(
 
     ``on_compiled`` is the seam onto the internally compiled :class:`CompiledGraph` — the
     artifact is otherwise unreachable from the caller. It fires ONCE, and whatever it returns is
-    carried onto the shipped closure's ``variation_labels``.
+    carried onto the shipped closure's ``variation_labels``. An output's value is at its first
+    index in ``CompiledGraph.requested``. A ``reduce`` or ``on_compiled`` from graphed-histogram
+    must carry the attribute ``graphed_values_per_output`` set true, as 0.0.9 and later do; where
+    outputs merge, one without it is refused, since it reads compiled slots.
 
     ``store`` (a directory, or an fsspec URL) makes each task capture its input chunk and its
     ``reduce`` partial into that checkpoint root, so :func:`graphed.debug.replay` can re-run a task
@@ -691,11 +766,12 @@ def aggregate_plan(
     evaluation: ``reduce`` then receives the outputs' values as without writes, followed by one
     part path per write. ``outputs`` may be empty when ``writes`` is not.
 
-    ``opt_level`` picks the compile. ``1``, the default, optimizes: equal outputs may merge, and
-    ``reduce`` then receives one value for them. ``0`` ships the 1:1 cone of the outputs, the
-    written arrays and the metadata arrays, every recorded operation its own node (the graph
-    :func:`graphed.debug.lower` calls ``opt_level=0``), so ``reduce`` receives one value per
-    distinct output. A ``StageError`` reports the level, and :func:`graphed.debug.replay`
+    ``reduce`` receives one value per output passed, in the order passed, at every level: outputs
+    that compile to one node (the same Array twice, or ``x + y`` and ``y + x``) are evaluated
+    once and the value repeated. ``opt_level`` picks the compile. ``1``, the default, optimizes.
+    ``0`` ships the 1:1 cone of the outputs, the written arrays and the metadata arrays, every
+    recorded operation its own node (the graph :func:`graphed.debug.lower` calls
+    ``opt_level=0``). A ``StageError`` reports the level, and :func:`graphed.debug.replay`
     recompiles at it. Any other value is refused.
 
     ``finalize`` becomes ``Plan.finalize``: the runner calls it once, on the head, on the combined
@@ -750,12 +826,12 @@ def aggregate_plan(
     written = {compiled.correspondence.node_map[w.array.node_id][0] for w in writes}
     refuse_chunk_partials(compiled, as_outputs=written)
     if reduce is None or combine is None or empty is None:
-        folded = _folded(outputs, slot)
+        folded = _folded(outputs)
         reduce, combine, empty = folded.reduce, folded.combine, folded.empty
         # the workers' copy carries no finalize: only the head calls it
         finalize = replace(folded, then=finalize and by_value(finalize)).finalize
     if over_join:
-        from .shuffle import _build  # shuffle imports this module
+        from .shuffle import _build  # shuffle imports this module; _build hands it out per output
 
         return _build(
             "join_plan",
@@ -769,6 +845,7 @@ def aggregate_plan(
             on_compiled=on_compiled,
             finalize=finalize,
         )
+    reduce = per_output(reduce, on_compiled, outputs, slot)
     if events_per_task is not None:
         if steps_per_file is not None or partitions is not None:
             raise TypeError(
