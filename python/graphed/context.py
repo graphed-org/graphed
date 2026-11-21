@@ -98,6 +98,11 @@ class EventContext(EagerRefusals, ContextNode):
 
     __slots__ = ("_derived", "_is_data", "_projected", "_provenance", "_record", "_serial")
 
+    _formats_as = (
+        "an event context",
+        "format a field of it, as graphed.materialize(ctx.<field>) gives it",
+    )
+
     def __init__(
         self,
         session: Any,
