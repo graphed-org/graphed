@@ -178,8 +178,8 @@ def trace(array: Array, *, entries: int) -> None:
     session = array.session
     sample = _first_sample(entries, "trace")
     lowered = lower(session, array, opt_level=0)
-    values = sample.reads(session, [array])
-    _walk(session, array, lowered, {}, sample.where, values)
+    values, part = sample.reads(session, [array])
+    _walk(session, array, lowered, {}, sample.where, values, part=part)
     # a dict keeps the first position of a line; its row is its last op, or the op that emptied it
     rows: dict[tuple[str, int], str] = {}
     emptied: tuple[str, int] | None = None

@@ -330,3 +330,70 @@ def test_the_map_side_of_a_repartition_hands_each_task_its_partition() -> None:
         steps_per_file=2,
     )
     assert sorted(SequentialRunner().run(plan).value.tolist()) == sorted(_kls(2))
+
+
+FIRST = {"kl": 1.0, "start": 0.0}  # the first file's partition, narrowed to the entries read
+
+
+def test_head_downstream_of_a_partition_reader_reads_the_first_partition() -> None:
+    events = _source(Session(AwkwardBackend()))
+    out = graphed.apply(
+        kl_and_start, events.x, output_type="{kl: float64, start: float64}", partition=True
+    )
+    assert graphed.head(out, 2).tolist() == [FIRST] * 2
+    assert graphed.head(events.x[out.kl > 0], 1).tolist() == [1.0]
+
+
+def test_a_sample_of_the_first_entries_reads_the_first_partition() -> None:
+    assert (
+        graphed.materialize(_mapped(Session(AwkwardBackend())), entries=3).tolist() == [FIRST] * 3
+    )
+
+
+def test_trace_hands_the_first_partition(capsys: pytest.CaptureFixture[str]) -> None:
+    gd.trace(_mapped(Session(AwkwardBackend())).kl + 1, entries=2)
+    assert "2 -> 2" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("read", ["head", "entries"])
+def test_first_entries_over_two_partitions_are_refused(read: str) -> None:
+    out = _mapped(Session(AwkwardBackend()))  # the first file holds 5 entries
+    with pytest.raises(ValueError, match=r"span 2 partitions.*reads its input partition"):
+        graphed.head(out, 7) if read == "head" else graphed.materialize(out, entries=7)
+
+
+@pytest.mark.parametrize("read", ["materialize", "head"])
+def test_in_memory_values_have_no_partition(read: str) -> None:
+    out = graphed.apply(
+        kl_and_start,
+        from_awkward("x", ak.Array([1.0, 2.0])),
+        output_type="{kl: float64, start: float64}",
+        partition=True,
+    )
+    with pytest.raises(StageError, match="this evaluation has none"):
+        graphed.materialize(out) if read == "materialize" else graphed.head(out, 1)
+
+
+def test_a_second_source_beside_a_partition_reader_leaves_it_its_partition() -> None:
+    session = Session(AwkwardBackend())
+    form = AwkwardForm(ak.Array(Files()().layout.to_typetracer(forget_length=True)))
+    other = session.source("other", form=form, data=Files())
+    got = graphed.materialize((_mapped(session), other.x), entries=2)
+    assert got[0].tolist() == [FIRST] * 2
+
+
+@pytest.mark.parametrize("sample", ["entries", "partition"])
+def test_a_partition_reader_over_a_source_read_whole_gets_no_other_partition(sample: str) -> None:
+    session = Session(AwkwardBackend())
+    mem = graphed.apply(
+        kl_and_start,
+        from_awkward("x", ak.Array([1.0, 2.0]), session=session),
+        output_type="{kl: float64, start: float64}",
+        partition=True,
+    )
+    arrays = (mem, _mapped(session))
+    with pytest.raises(StageError, match="this evaluation has none"):
+        if sample == "entries":
+            graphed.materialize(arrays, entries=2)
+        else:
+            graphed.materialize(arrays, partition=Partition.blind(next(iter(FILES)), "", 0, 1))

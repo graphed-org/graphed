@@ -433,7 +433,9 @@ def _with_partition(
         raise ValueError(
             "this function reads its input partition (partition=True), and this evaluation has "
             "none: only a task over one input partition (aggregate_plan, a write, a repartition's "
-            "map side, materialize(partition=)) has one; materialize() evaluates whole sources"
+            "map side, materialize(partition=)) or a sample of the first partition's entries "
+            "(head, materialize(entries=), graphed.debug.trace) has one; materialize() evaluates "
+            "whole sources"
         )
     return fn(*ins, partition=partition())
 
