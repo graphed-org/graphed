@@ -1,0 +1,7 @@
+.. under: 0.0.12 (unreleased)
+
+* A correction call's constant whose kind its input's declared type rejects (an ``int`` or
+  ``bool`` for a ``real`` input, a ``float`` for an ``int``, anything but a ``str`` for a
+  ``string``, including a ``systematic=`` call on a correction whose first input is not a
+  string) is refused with ``GraphedTypeError`` at the recording line, as correctionlib refuses
+  it; it used to fail when the node ran (#311).

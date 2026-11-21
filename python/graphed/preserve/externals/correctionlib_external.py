@@ -144,7 +144,8 @@ def _refused(detail: str) -> GraphedTypeError:
     return GraphedTypeError("correction", capture(), detail)
 
 
-_CorrectionInputs = dict[str, tuple[str, ...]]
+#: each entry's ``(name, type)`` inputs, in order
+_CorrectionInputs = dict[str, tuple[tuple[str, str], ...]]
 
 
 def correctionlib_identity(
@@ -153,7 +154,10 @@ def correctionlib_identity(
     """Return a set's digest, schema version, and each regular and compound entry's inputs."""
     data = json.loads(json_bytes(payload))
     regular, stacked = (
-        {entry["name"]: tuple(i["name"] for i in entry["inputs"]) for entry in data.get(key) or ()}
+        {
+            entry["name"]: tuple((i["name"], i["type"]) for i in entry["inputs"])
+            for entry in data.get(key) or ()
+        }
         for key in ("corrections", "compound_corrections")
     )
     schema_version = str(data.get("schema_version", "unknown"))
@@ -167,8 +171,12 @@ def memoized_identity(payload: bytes) -> tuple[str, str, _CorrectionInputs, _Cor
 
 def correction_inputs(payload: bytes, name: str, compound: bool) -> tuple[str, ...]:
     """Return the input names of ``name``, refusing a name the set does not hold."""
+    return tuple(n for n, _ in _declared(payload, name, compound))
+
+
+def _declared(payload: bytes, name: str, compound: bool) -> tuple[tuple[str, str], ...]:
     _, _, regular, stacked = memoized_identity(payload)
-    wanted: tuple[str, ...] | None = _resolve(regular, stacked, name, compound)
+    wanted: tuple[tuple[str, str], ...] | None = _resolve(regular, stacked, name, compound)
     if wanted is None:
         held = stacked if compound else {**stacked, **regular}
         raise _refused(
@@ -187,9 +195,10 @@ def _call_template(
 
 
 def check_correctionlib_params(params: Mapping[str, Any], payload: bytes, n_inputs: int) -> None:
-    """Refuse at record time a name the set lacks, a wrong-length call, or one with no Array."""
+    """Refuse at record time a bad name, call length, Array-less call, or constant kind."""
     name = str(params.get("name", ""))
-    wanted = correction_inputs(payload, name, bool(params.get("compound", False)))
+    declared = _declared(payload, name, bool(params.get("compound", False)))
+    wanted = tuple(n for n, _ in declared)
     try:
         template = _call_template(params, n_inputs)
     except PreserveError as err:
@@ -215,6 +224,14 @@ def check_correctionlib_params(params: Mapping[str, Any], payload: bytes, n_inpu
             f"correction {name!r} with systematic= takes one Array input, {wanted[1]!r}; "
             f"got {n_inputs}"
         )
+    systematic = [("const", str(params.get("systematic", "nominal"))), ("slot", 0)]
+    for (kind, value), (input_name, input_type) in zip(
+        systematic if template is None else template[0], declared, strict=True
+    ):
+        if kind == "const" and _constant_kind(value) != input_type:
+            raise _refused(
+                f"correction {name!r} input {input_name!r} is {input_type}; got {value!r}"
+            )
 
 
 def eval_correctionlib(cset: Any, params: Mapping[str, Any], inputs: list[Any]) -> Any:
@@ -251,7 +268,10 @@ def _call(corr: Any, params: Mapping[str, Any], inputs: list[Any]) -> Any:
     return out if isinstance(out, ak.Array) else ak.Array(np.asarray(out))
 
 
-_CONSTANT_KINDS = {str: "string", bool: "int", int: "int", float: "real"}
+def _constant_kind(value: object) -> str:
+    """Return the input type correctionlib takes ``value`` for: a bool is an int, as there."""
+    # isinstance, not type(): a numpy or enum subclass records as its JSON base value
+    return "string" if isinstance(value, str) else "int" if isinstance(value, int) else "real"
 
 
 @functools.cache
@@ -287,7 +307,7 @@ def correction_form(params: Mapping[str, Any], inputs: list[Any]) -> Any:
         return ak.typetracer.create_unknown_scalar(np.float64)
     template = _call_template(params, len(inputs))
     entries = [("const", ""), ("slot", 0)] if template is None else template[0]
-    kinds = tuple("real" if kind == "slot" else _CONSTANT_KINDS[type(v)] for kind, v in entries)
+    kinds = tuple("real" if kind == "slot" else _constant_kind(v) for kind, v in entries)
     try:
         # a scalar input is a numpy scalar when the node runs
         zeros = [
