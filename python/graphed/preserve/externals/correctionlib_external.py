@@ -257,8 +257,6 @@ _CONSTANT_KINDS = {str: "string", bool: "int", int: "int", float: "real"}
 @functools.cache
 def _constant(kinds: tuple[str, ...]) -> Any:
     """Return a correction taking inputs of ``kinds`` whose value is 0."""
-    import correctionlib
-
     inputs = [{"name": f"i{n}", "type": kind} for n, kind in enumerate(kinds)]
     doc = {
         "schema_version": 2,
@@ -272,7 +270,7 @@ def _constant(kinds: tuple[str, ...]) -> Any:
             }
         ],
     }
-    return correctionlib.CorrectionSet.from_string(json.dumps(doc))["c"]
+    return load_correctionlib(json.dumps(doc).encode(), {})["c"]
 
 
 def correction_form(params: Mapping[str, Any], inputs: list[Any]) -> Any:
@@ -290,14 +288,34 @@ def correction_form(params: Mapping[str, Any], inputs: list[Any]) -> Any:
     template = _call_template(params, len(inputs))
     entries = [("const", ""), ("slot", 0)] if template is None else template[0]
     kinds = tuple("real" if kind == "slot" else _CONSTANT_KINDS[type(v)] for kind, v in entries)
-    # a scalar input is a numpy scalar when the node runs
-    zeros = [
-        ak.typetracer.length_zero_if_typetracer(x) if isinstance(x, ak.Array) else x.dtype.type(0)
-        for x in inputs
-    ]
-    return ak.Array(
-        _call(_constant(kinds), params, zeros).layout.to_typetracer(forget_length=True)
-    )
+    try:
+        # a scalar input is a numpy scalar when the node runs
+        zeros = [
+            ak.typetracer.length_zero_if_typetracer(x)
+            if isinstance(x, ak.Array)
+            else x.dtype.type(0)
+            for x in inputs
+        ]
+        value = _call(_constant(kinds), params, zeros)
+    except Exception as err:
+        raise _refused(f"the correction cannot take inputs of these types: {err}") from err
+    # numpy broadcasting against the length axis (a jagged systematic= input, (n, 1) beside (n,))
+    # gives a size the length decides, which length zero records as 0
+    if _sized_zero(value.type) and not any(
+        _sized_zero(x.type) for x in zeros if isinstance(x, ak.Array)
+    ):
+        raise _refused(f"the correction's value type depends on its inputs' length: {value.type}")
+    return ak.Array(value.layout.to_typetracer(forget_length=True))
+
+
+def _sized_zero(t: Any) -> bool:
+    """Return whether type ``t`` has a regular dimension of size 0."""
+    import awkward as ak
+
+    if isinstance(t, ak.types.RegularType) and t.size == 0:
+        return True
+    contents = list(getattr(t, "contents", ())) or ([t.content] if hasattr(t, "content") else [])
+    return any(map(_sized_zero, contents))
 
 
 def _correctionlib_samples() -> list[bytes]:

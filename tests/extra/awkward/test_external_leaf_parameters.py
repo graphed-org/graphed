@@ -140,6 +140,15 @@ def test_an_input_the_correction_cannot_take_is_refused_where_it_is_recorded(rec
     assert info.value.provenance.filename == __file__
 
 
+def test_a_value_whose_type_depends_on_the_length_is_refused_where_it_is_recorded() -> None:
+    session = Session(AwkwardBackend())
+    column = from_awkward("c", ak.Array(np.ones((3, 1))), session=session)
+    x = from_awkward("x", FLAT, session=session)
+    with pytest.raises(GraphedTypeError, match="depends on its inputs' length") as info:
+        gak.apply_correction(PRODUCT, "c", [column, x])
+    assert info.value.provenance.filename == __file__
+
+
 SYSTEMATIC = json.dumps(
     {
         "schema_version": 2,
@@ -171,6 +180,20 @@ def test_a_systematic_call_records_the_flat_value_it_gives_an_option_input() -> 
         params={"name": "sf", "systematic": "nominal"},
     )
     assert _types(session, out) == ("float64", "float64")
+
+
+def test_a_systematic_call_refuses_a_jagged_input_where_it_is_recorded() -> None:
+    session = Session(AwkwardBackend())
+    x = from_awkward("x", _jagged(), session=session)
+    with pytest.raises(GraphedTypeError, match="depends on its inputs' length") as info:
+        record_external(
+            session,
+            CORRECTIONLIB_PLUGIN,
+            SYSTEMATIC,
+            [x],
+            params={"name": "sf", "systematic": "nominal"},
+        )
+    assert info.value.provenance.filename == __file__
 
 
 def _onnx() -> bytes:

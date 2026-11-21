@@ -659,10 +659,7 @@ def apply_correction(
     session = arrays[0].session
     refuse_unread_inputs("correction", params, len(arrays))
     descriptor = payloads.correctionlib_contents_descriptor(blob, name)
-    try:
-        form = correction_form(params, [cast("AwkwardForm", session.form(a)).tt for a in arrays])
-    except (TypeError, ValueError) as err:  # inputs the correction cannot take
-        raise _refused(str(err)) from err
+    form = correction_form(params, [cast("AwkwardForm", session.form(a)).tt for a in arrays])
     return session.record_external(
         "correction",
         # call=None: the plugin owns evaluation on every backend (see _TemplateExternal)
