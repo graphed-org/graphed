@@ -133,7 +133,11 @@ def _is_full_slice(value: object) -> bool:
 
 def _refuse_axis0(first: object) -> TypeError:
     if isinstance(first, slice):  # the spelling that does work is two subscripts: a[1:3][:, 0]
-        bits = ["" if v is None else str(v) for v in (first.start, first.stop, first.step)]
+        # a deferred bound refuses str()
+        bits = [
+            "" if v is None else repr(v) if isinstance(v, EagerRefusals) else str(v)
+            for v in (first.start, first.stop, first.step)
+        ]
         # `start:stop` always, `:step` only when there is one — rstrip would turn `1::` into `1`,
         # an integer index, which is a different op
         spell = ":".join(bits if first.step is not None else bits[:2])
@@ -359,11 +363,33 @@ class EagerRefusals:
             "on an awkward-backed one (or &/|/~)",
         )
 
+    def __str__(self) -> str:
+        """Show the repr; refuse a deferred scalar, whose text would read as its value (#219)."""
+        self._refuse_scalar_text("str(...)")
+        return repr(self)
+
+    def __format__(self, spec: str) -> str:
+        """Format as ``str`` does; refuse a deferred scalar, as ``str`` does."""
+        self._refuse_scalar_text("format(...)")
+        return super().__format__(spec)
+
+    def _refuse_scalar_text(self, op: str) -> None:
+        """Raise ``op``'s refusal if this value is a deferred scalar."""
+
     def __array__(self, dtype: object = None, copy: object = None) -> Any:
         """Refuse an eager numpy value: a deferred value has none."""
         raise no_eager_value(
             "np.asarray(...)", "; a histogram fills deferred with hist.graphed.Hist"
         )
+
+
+def select(array: Any, mask: Any) -> Any:
+    """Record ``array[mask]`` per universe, stamping no handle."""
+    if isinstance(array, Array) and isinstance(mask, Array):
+        return array.session.record_op("getitem", [array, mask], reduction=_positional(mask))
+    from .varied import expand
+
+    return expand(select, (array, mask), {})
 
 
 def _positional(key: Array) -> bool:
@@ -389,6 +415,7 @@ class Deferred(EagerRefusals):
         "_labels",
         "_members",
         "_node_id",
+        "_rows",
         "_session",
         "_site",
         "_tags",
@@ -417,6 +444,8 @@ class Array(Deferred):
         self._node_id = node_id
         self._context: object = None
         self._labels: frozenset[str] | None = None
+        # a context a row cut put this value in, read only to re-index it there (#280)
+        self._rows: object = None
         # the recording this proxy came from: interning shares the node, not the line
         self._site: Site | None = None
 
@@ -699,12 +728,10 @@ class Array(Deferred):
 
     def __getitem__(self, key: object) -> Array:
         """Record a subscript: a mask, a field name, a field list or a tuple key."""
-        if getattr(key, "_varied_container", False):  # a Varied mask selects PER UNIVERSE
-            from .varied import expand
+        if isinstance(key, Array) or getattr(key, "_varied_container", False):
+            from .systematics.handles import cut
 
-            return expand(lambda arr, mask: arr[mask], (self, key), {})  # type: ignore[no-any-return]  # a Varied in, a Varied out
-        if isinstance(key, Array):
-            return self._session.record_op("getitem", [self, key], reduction=_positional(key))
+            return cut(self, key)  # type: ignore[no-any-return]  # a Varied mask selects PER UNIVERSE
         if isinstance(key, str):
             return self._session.record_op("field", [self], {"field": key})
         # M17: a list of field names selects a RECORD SUBSET — common to both array models
@@ -802,6 +829,12 @@ class Array(Deferred):
         sources = sorted(map(session.source_name, session.reachable_sources(self._node_id)))
         shown = ", ".join(map(repr, sources))
         return f"graphed.Array<{_clip(session.form(self).describe())}, from {_clip(shown)}>"
+
+    def _refuse_scalar_text(self, op: str) -> None:
+        form = self._session.form(self)
+        # a reduced numpy array with a shape left is no scalar, though it has no rows
+        if not getattr(form, "has_rows", True) and getattr(form, "ndim", 0) == 0:
+            raise no_eager_value(op, "; repr(x) shows the deferred scalar", DeferredTypeError)
 
     def __dir__(self) -> list[str]:
         """List the attributes, with the fields and behaviors the backend names for this form."""
@@ -1052,7 +1085,7 @@ def _record_method(
 
 #: the slots each kind of proxy sets; the rest of `Deferred`'s stay unset
 _USED = {
-    True: ("_context", "_labels", "_node_id", "_session", "_site"),
+    True: ("_context", "_labels", "_node_id", "_rows", "_session", "_site"),
     False: ("_context", "_members", "_tags"),
 }
 

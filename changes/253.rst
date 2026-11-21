@@ -1,0 +1,10 @@
+.. under: 0.0.12 (unreleased)
+
+* A preserve plugin's ``record_external`` with no ``output_type=``, ``output_dtype`` or stated
+  shape records the type of one ``evaluate`` on length-zero inputs, as an undeclared
+  ``graphed.apply`` does, and checks every value against it; before, it recorded the first input's
+  type and checked nothing. Where ``evaluate`` cannot run on no rows, or gives no array of a known
+  type there, the call warns at your line, ``could not infer the type of the '<kind>' plugin
+  (...); pass output_type=``, and keeps the first input's type unchecked. A plugin whose value
+  is no array, such as the histogram plugin, sets ``ExternalPlugin(array_value=False)`` and is
+  neither inferred nor warned about (#253).

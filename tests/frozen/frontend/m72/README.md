@@ -12,7 +12,7 @@ free-threaded job can collect it.
 | Test | Contract item | Pins (witness) |
 |---|---|---|
 | `test_write_and_reduce_share_one_read_and_one_evaluation` | frontend 1 | reads == tasks (`FileSource.reads`), `EVALS["mul"]` == tasks, value and part contents right |
-| `test_reduce_sees_todays_values_then_one_path_per_write` | frontend 2 | outputs `(a, b, a)` + writes `(a, b*1.0, 3x)` → `reduce` gets `[va, vb, p1, p2, p3]`; `b*1.0` (optimizer-merged) and `a` (an output) write the right values; `writes=()` gives `[va, vb]` |
+| `test_reduce_sees_todays_values_then_one_path_per_write` | frontend 2 | outputs `(a, b, a)` + writes `(a, b*1.0, 3x)` → `reduce` gets `[va, vb, va, p1, p2, p3]`; `b*1.0` (optimizer-merged) and `a` (an output) write the right values; `writes=()` gives `[va, vb, va]` |
 | `test_part_metadata_holds_this_chunks_reduction` | frontend 3 | per-part KV = `str()` of that chunk's float32 sum (differs from `str(float())`); two chunks differ; a static value is `str()`-ed once at build; `metadata=None` → codec gets `None` |
 | `test_part_path_is_destination_joined_with_name_of_the_tasks_partition` | frontend 4 | explicit ranges and blind tasks: path = `join(destination, name(task.partition))` (the unresolved blind partition), parent dirs created |
 | `test_colliding_part_names_are_refused_before_any_task_runs` | frontend 5 | blind `0-0` naming and two writes to one name raise `ValueError` "write the same part" at build: zero reads, no codec call, no directory; explicit ranges build |

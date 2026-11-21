@@ -1,0 +1,11 @@
+.. under: 0.0.12 (unreleased)
+
+* ``aggregate_plan``'s ``reduce`` (and ``join_plan``'s, and so a collated plan's) receives one
+  value per output passed, in the order passed, at every ``opt_level``. Outputs that compile to one
+  node, such as the same Array twice or ``x + y`` beside ``y + x``, are evaluated once and the
+  value repeated; before, ``reduce`` got one value for them and could not tell which positions
+  merged (#228). ``CompiledGraph.requested`` holds the asked-for outputs' ids in order, and a
+  hook that reads values by position reads them at an output's first index there.
+  graphed-histogram before 0.0.9 reads fills at compiled positions: where outputs merge, its
+  plans now raise, naming the upgrade, instead of reading the wrong fills. Use
+  ``graphed-histogram>=0.0.9`` with this release.

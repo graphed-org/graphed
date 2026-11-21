@@ -1,0 +1,14 @@
+.. under: 0.0.12 (unreleased)
+
+A value cut by a context's mask is in that context's rows
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``events[cut]["name"] = f(x[cut])``, where ``x`` and the row mask ``cut`` are read through
+  ``events``, assigns the value as it is instead of cutting it a second time: in either order of
+  the two cuts, for a ``Varied`` value or mask, and under a second cut on top (#280).
+* A 1-d mask is taken as a row mask only for that assignment, so a mask over a flattened array
+  changes nothing else. A value cut by a different mask is re-indexed by the context's mask, as
+  before.
+* ``events[cut]`` derived again after an assignment on ``events`` holds the same rows as the
+  first ``events[cut]``, so values read through either combine.
+* A derived context records a collection's cut only when that collection is read.

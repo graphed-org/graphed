@@ -1,0 +1,7 @@
+.. under: 0.0.12 (unreleased)
+
+* A recorded node keeps its backend's behavior object rather than a copy: awkward merges the
+  behaviors of an op's several inputs into a new mapping per result, and a recording keeps every
+  result (op, ``map`` and ``join`` alike), so a large behavior such as coffea's NanoAOD one cost a
+  copy per node (#297). Recording ``gak.where`` with a 1372-entry behavior drops from 54.5 KiB to
+  3.7 KiB of memory per call.

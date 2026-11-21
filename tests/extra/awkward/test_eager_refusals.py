@@ -156,7 +156,9 @@ def test_numpy_scalars_stay_operands() -> None:
         assert ak.to_list(graphed.materialize(x * scalar)) == [2.0, 4.0]
 
 
-@pytest.mark.parametrize("operand", [object(), b"ab", {"a": 1}, {1.0}], ids=repr)
+@pytest.mark.parametrize(
+    "operand", [object(), b"ab", {"a": 1}, {1.0}], ids=["object", "bytes", "dict", "set"]
+)
 def test_what_is_no_array_gets_pythons_operand_refusal(operand: object) -> None:
     with pytest.raises(TypeError, match="AwkwardArray") as refused:
         _events().MET_pt * operand

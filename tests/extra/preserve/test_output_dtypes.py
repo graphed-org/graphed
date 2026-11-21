@@ -12,6 +12,7 @@ import pytest
 
 from graphed import Session
 from graphed.awkward import AwkwardBackend, from_awkward
+from graphed.errors import StageError
 from graphed.preserve import PYTORCH_PLUGIN
 from graphed.preserve.errors import PreserveError
 from graphed.preserve.externals import record_external
@@ -33,8 +34,13 @@ def test_a_bfloat16_pytorch_model_runs() -> None:
     payload = _traced(torch, model, torch.zeros(1, 2, dtype=torch.bfloat16))
     session = Session(AwkwardBackend())
     ev = from_awkward("ev", ak.Array({"a": [1.0, 2.0], "b": [3.0, 4.0]}), session=session)
-    out = record_external(session, PYTORCH_PLUGIN, payload, [ev.a, ev.b])
+    # numpy has no bfloat16, so the inputs keep their own dtype unless input_dtype names it (#252)
+    params = {"input_dtype": "bfloat16"}
+    out = record_external(session, PYTORCH_PLUGIN, payload, [ev.a, ev.b], params=params)
     assert ak.to_list(session.materialize(out)) == [7.0, 10.0]
+    undeclared = record_external(session, PYTORCH_PLUGIN, payload, [ev.a, ev.b])
+    with pytest.raises(StageError, match="same dtype"):
+        session.materialize(undeclared)
 
 
 @pytest.mark.parametrize("dtype", ["bfloat16", "float8_e4m3fn", "float16"])

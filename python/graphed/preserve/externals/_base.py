@@ -102,6 +102,9 @@ class ExternalPlugin:
     #: states, read in the content hash's pass, recorded and checked in full; ``None`` where it
     #: states none records one value per event, its leaves checked
     output_shape: Callable[[bytes], tuple[int, ...] | None] | None = None
+    #: ``False`` where the value is no array (a histogram fill): with no stated type its recorded
+    #: form stays the first input's, unchecked, instead of being inferred
+    array_value: bool = True
 
 
 class ResourceCache:
@@ -305,6 +308,7 @@ def record_external(
     form_params: dict[str, object] = {
         "output_dtype": plugin.output_dtype,
         "claim": plugin.broadcasts,
+        "infer": plugin.array_value,
     }
     if plugin.output_shape is not None:
         form_params = model_form_params(plugin.output_shape(payload))
@@ -353,6 +357,11 @@ class _PluginEvaluator:
     #: where the node's ``params["service"]`` answers this run; a plain default keeps old pickles
     #: loading
     endpoint: str | None = None
+
+    @property
+    def __name__(self) -> str:
+        """Name the plugin in a record-time warning, not the payload bytes."""
+        return f"the {self.plugin.kind!r} plugin"
 
     def bind_services(self, endpoints: Mapping[str, str]) -> _PluginEvaluator:
         name = self.node_params.get("service")

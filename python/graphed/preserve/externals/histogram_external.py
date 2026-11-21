@@ -112,4 +112,5 @@ HISTOGRAM_PLUGIN = ExternalPlugin(
     samples=_histogram_samples,
     framework="boost_histogram",
     synthesize=_histogram_synthesize,
+    array_value=False,
 )

@@ -113,6 +113,14 @@ class Varied(Deferred):
         return rebuild(out, tags=self._tags, context=self._context)
 
     # ---- structural access -----------------------------------------------------
+    def __getitem__(self, key: object) -> Any:
+        """Map a subscript over every member; a mask cuts as `Array`'s does."""
+        if isinstance(key, Array | Varied):
+            from .handles import cut
+
+            return cut(self, key)
+        return expand(lambda member, k: member[k], (self, key), {})
+
     def __getattr__(self, name: str) -> Any:
         """Map an attribute read over every member."""
         if name in RESERVED:
@@ -140,6 +148,9 @@ class Varied(Deferred):
     def __repr__(self) -> str:
         """Show the labels this container carries."""
         return f"Varied(labels={list(self._members)})"
+
+    def _refuse_scalar_text(self, op: str) -> None:
+        self._members["nominal"]._refuse_scalar_text(op)
 
 
 # ---- what other modules read of a container -------------------------------------------------

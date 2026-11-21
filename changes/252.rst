@@ -1,0 +1,8 @@
+.. under: 0.0.12 (unreleased)
+
+* A PyTorch model whose weights are bfloat16 or float8 gets its inputs in their own dtype, not
+  rounded to the weights' dtype: numpy has neither, and such a model upcasts inside ``forward``.
+  A weight dtype numpy has is still the input dtype, as TorchScript needs. ``params={"input_dtype":
+  "<torch dtype>"}`` names the input dtype outright, and is part of the node. A bfloat16 or float8
+  model whose ``forward`` takes its weights' dtype as is now raises torch's dtype mismatch until
+  it declares ``input_dtype`` (#252).

@@ -74,6 +74,10 @@ A proxy has no value until it runs, so ``if x:``, ``bool(x)`` and ``np.asarray(x
 ``np.where`` on a numpy-backed proxy or ``ak.where``/``gak.where`` on an awkward-backed one, or
 ``materialize`` first.
 
+A deferred scalar, such as ``gak.sum(x)``, also refuses ``str(s)``, ``print(s)`` and ``f"{s}"``,
+whose text would read as its value; ``repr(s)`` shows what it is. An array keeps its repr under
+all three.
+
 A scalar operand is not an input but a param, and it records everything it imposes on the result.
 A Python ``bool``, ``int`` or ``float`` records as itself; a numpy scalar records its dtype name
 beside its exact value, so ``mask * np.uint64(1 << 3)`` is ``uint64`` rather than the ``float64``
@@ -1126,6 +1130,9 @@ Prints::
 
 Both outputs share the ``ht`` sub-expression, so it is read and evaluated once per partition, not
 once per output — and of the three columns in each file, only ``Jet_pt`` is read at all.
+``reduce`` gets one value per output you pass, in the order you pass them, so
+``dict(zip(names, values))`` pairs each name with its own value. Outputs that compile to one node, the
+same sum twice or ``x + y`` beside ``y + x``, are evaluated once and the value repeated.
 ``SequentialRunner`` runs the plan here with no extra dependencies; the same plan object is what
 you hand to a process pool, a dask cluster or a parsl pool from ``graphed-executors`` (``pip
 install graphed-executors``). ``backend=`` names the workers' evaluation backend, ``partitions=``

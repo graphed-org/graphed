@@ -1,0 +1,7 @@
+.. under: 0.0.12 (unreleased)
+
+* ``str()``, ``print()``, ``format()`` and f-strings of a deferred scalar (a whole-array reduction
+  such as ``gak.sum(x)``, a single record such as ``events[0]``, or a ``Varied`` of them) raise
+  ``DeferredTypeError`` at the user's line, as ``float()`` does, instead of returning the array's
+  repr as if it were the value; ``repr()`` is unchanged. An array keeps its repr under all of them
+  (#219).

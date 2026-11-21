@@ -1,0 +1,8 @@
+.. under: 0.0.12 (unreleased)
+
+* Running a graph that builds a record one field at a time no longer re-broadcasts the whole
+  record for each new field: on real arrays, as on a typetracer (#286), awkward's ``with_field``
+  runs over only the fields the call changes and the others are kept as they were, wherever
+  awkward's call leaves the layers above the record as they were; elsewhere awkward's own call
+  runs. Values and types are awkward's. Adding 2000 fields to a jagged selection runs in 2.0 s
+  instead of 14.8 s, and to an option-typed one in 1.4 s instead of 37.2 s (#304).

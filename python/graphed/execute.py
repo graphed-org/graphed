@@ -80,7 +80,7 @@ class CompiledGraph:
     analysis function).
     """
 
-    checkpoint_ignore: ClassVar[tuple[str, ...]] = ("correspondence",)
+    checkpoint_ignore: ClassVar[tuple[str, ...]] = ("correspondence", "requested")
 
     ir: bytes
     source_names: tuple[str, ...]
@@ -96,10 +96,21 @@ class CompiledGraph:
     #: order is sound. Detected at RECORD time (`ambient.shift_form`); neither operand survives to
     #: here, so the compile-time walk the unreached-label diagnostic uses cannot see it.
     shift_after_weight: tuple[tuple[str, str], ...] = ()
+    #: the record ids of the Arrays compiled, in the order asked, repeats kept. `aggregate_plan`'s
+    #: outputs lead it, so an output's first index here is where `reduce` gets its value (#228).
+    requested: tuple[int, ...] = ()
 
     # unhashable BY DECISION since m49: `correspondence.node_map` is a dict and every consumer
     # wants that shape, so the artifact refuses under its own name rather than through a member.
     __hash__ = None  # type: ignore[assignment]  # object declares a Callable here
+
+    def __getstate__(self) -> dict[str, Any]:
+        """Return the pickled state; ``requested`` stays out of it when unset."""
+        # so a checkpoint key, which writes it unset, is the key it was before the field existed
+        state = dict(self.__dict__)
+        if not state.get("requested"):
+            state.pop("requested", None)
+        return state
 
     def evaluate(
         self,
@@ -159,6 +170,7 @@ def _compiled(view: _CompileView, outputs: tuple[Any, ...]) -> CompiledGraph:
         ir=view.ir,
         source_names=view.source_names,
         unreached_labels=tuple(sorted(view.registered_labels - reached)),
+        requested=tuple(arr.node_id for arr in outputs),
         correspondence=Correspondence(
             node_map=node_map, frames=_frames_by_key(view.provenance, node_map)
         ),

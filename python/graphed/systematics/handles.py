@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..array import Array, attach, labels_carried
+from ..array import Array, attach, labels_carried, select
 from ..errors import GraphedError
-from .lineage import is_ancestor, links_below, row_space_above
+from .lineage import is_ancestor, links_below, row_space_above, rows_of, same_rows
 from .varied import Varied, context_of, expand, member_of, members_of, rebuild, tags_of
 
 
@@ -24,7 +24,9 @@ def reindex_to(value: Array | Varied, ctx: Any) -> Any:
     the row space above that run: the walk starts from there, which is what re-indexes a value read
     on a branch that differs from `ctx` in registrations alone.
     """
-    handle = context_of(value)
+    handle, rows = context_of(value), rows_of(value)
+    if rows is not None and ctx is not None and is_ancestor(rows, ctx):
+        handle = rows  # a row cut on the way to `ctx` is not made again (#280)
     if handle is None or handle is ctx:
         return value
     if ctx is None:
@@ -51,10 +53,39 @@ def reindex_to(value: Array | Varied, ctx: Any) -> Any:
     return with_context(value, ctx)
 
 
+def cut(value: Any, mask: Any) -> Any:
+    """Return ``value[mask]``, in the rows of the context ``mask`` derives (#280).
+
+    A row mask read in ``value``'s rows puts the value in ``ctx[mask]``'s, so assigning it there
+    re-indexes nothing. Only re-indexing reads this; the value's handle is unchanged.
+    """
+    out = expand(select, (value, mask), {})
+    here, there = rows_of(value), rows_of(mask)
+    derive = getattr(here, "_derive", None)
+    if derive is None or there is None or not same_rows(there, here) or not _selects_rows(mask):
+        return out
+    _put_rows(out, derive(mask))
+    return out
+
+
+def _put_rows(value: Any, ctx: Any) -> None:
+    if isinstance(value, Varied):
+        for member in members_of(value).values():
+            _put_rows(member, ctx)
+    else:
+        value._rows = ctx
+
+
+def _selects_rows(mask: Any) -> bool:
+    """Whether ``mask`` picks rows: a list-level mask leaves every row in place."""
+    member = next(iter(members_of(mask).values()))
+    return getattr(member.session.form(member), "ndim", None) == 1
+
+
 def follow(value: Any, kind: str, payload: Any) -> Any:
     """Return `value` carried across one lineage link (§6.1d), parent-to-child."""
     if kind == "mask":  # link kind (1): each label's member by THAT label's mask
-        return expand(lambda item, mask: item[mask], (value, payload), {})
+        return expand(select, (value, payload), {})
     if kind == "project":  # link kind (3): project, and RESET the accumulated label set
         return member_of(value, payload)
     if kind == "option":  # ak.mask's link: the rows stay, the value is masked as the context is

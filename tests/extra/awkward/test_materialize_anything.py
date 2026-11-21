@@ -28,6 +28,7 @@ from graphed.awkward.io import from_parquet, parquet_write, to_parquet
 from graphed.core import DurablePlan, OpSpec, Partition
 from graphed.core.execution import SequentialRunner
 from graphed.errors import GraphedError, StageError
+from graphed.execute import compile_ir
 from graphed.materialization import PlanPieces, _Joint
 from graphed.session import Session
 
@@ -448,7 +449,7 @@ def test_pieces_labelling_one_key_carry_the_union_of_their_labels() -> None:
     session = Session(AwkwardBackend())
     source, _ = _files(session, *_flat())
     joint = _Joint()
-    compiled: Any = None
+    compiled = compile_ir(session, source.a, source.a)
     for i, labels in enumerate((("up",), ("down",))):
         joint.pieces[i] = PlanPieces(
             outputs=(source.a,),
