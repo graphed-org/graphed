@@ -321,7 +321,7 @@ def build_bundle(
     ir = session.serialized_ir(*outputs_arrays, optimize=False)
     ir_hash = store.put(ir)
     nodes = GraphStore.deserialize(ir).nodes()
-    _recorded, evaluators = session._external_view()
+    evaluators = session._external_view()
 
     # 2. input datasets -> content-addressed store
     sources_manifest = {name: store.put(_pack_array(arr)) for name, arr in datasets.items()}

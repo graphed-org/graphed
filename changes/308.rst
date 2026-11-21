@@ -1,0 +1,6 @@
+.. under: 0.0.12 (unreleased)
+
+* Two Externals with one payload and the same params, recorded on inputs of different shapes (a
+  correction on flattened and on jagged jets), each check their value against their own type
+  claim; one used to run with the other's claim and raise ``OutputTypeError``. A plan ships their
+  shared payload once (#308).

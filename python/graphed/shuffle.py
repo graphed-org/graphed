@@ -44,6 +44,7 @@ from .aggregate import (
     _slot_of,
     attribute_failures,
     external_evaluators,
+    overriding,
     per_output,
     plan_services,
     read_label,
@@ -61,6 +62,7 @@ from .execute import (
     evaluate_ir,
     external_key,
     ir_cone,
+    node_key,
     refuse_chunk_partials,
     resolved_partition,
 )
@@ -571,7 +573,7 @@ def _build(
 
     backend_id = _backend_identity(session, backend)
     factory = worker_backend(session, backend)
-    wired = external_evaluators(session, compiled) | dict(externals or {})
+    wired = overriding(external_evaluators(session, compiled), externals)
     frames = compiled.correspondence.frames
     steps = [steps_for(data, steps_per_file) for _, _, data in sides]
     side_parts = [data.partitions(n) for n, (_, _, data) in zip(steps, sides, strict=True)]
@@ -683,5 +685,6 @@ def _cone_externals(
     nodes: Sequence[Mapping[str, Any]], cone: set[int], wired: Mapping[str, Callable[..., object]]
 ) -> tuple[tuple[str, Callable[..., object]], ...]:
     """Return the wired External evaluators whose nodes lie in ``cone``."""
-    keys = {external_key(nodes[i]) for i in cone if nodes[i]["kind"] == "external"}
+    ext = [nodes[i] for i in cone if nodes[i]["kind"] == "external"]
+    keys = {*map(external_key, ext), *map(node_key, ext)}
     return tuple((key, fn) for key, fn in wired.items() if key in keys)

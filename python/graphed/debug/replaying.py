@@ -31,12 +31,11 @@ from graphed.execute import (
     CompiledGraph,
     Key,
     _rows_aligned,
-    _unbound_external,
     _unbound_source,
     compile_ir,
     external_call,
-    external_key,
     external_op,
+    resolve_external,
     resolved_partition,
 )
 
@@ -97,8 +96,10 @@ def _equal(a: Any, b: Any) -> bool:
 
 def _unfused(
     process: _PartitionReduce[Any],
-) -> tuple[list[dict[str, Any]], LoweredGraph, list[int]]:
-    """Return the plan's IR one operation per node, its lowering and its outputs' new ids.
+) -> tuple[list[dict[str, Any]], LoweredGraph, list[int], dict[int, int]]:
+    """Return the plan's IR one operation per node, its lowering, its outputs' and its own new ids.
+
+    The last maps each new id to the plan node it came from.
 
     A stage's members are the operations it runs and the plan's frames name each, so this needs
     nothing the plan does not already ship.
@@ -109,6 +110,7 @@ def _unfused(
     nodes: list[dict[str, Any]] = []
     ops: list[LoweredOp] = []
     value_of: dict[int, int] = {}
+    plan_ids: dict[int, int] = {}
 
     def add(node: Mapping[str, Any], key: Key, inputs: list[int]) -> None:
         new = len(nodes)
@@ -120,6 +122,7 @@ def _unfused(
         boundary = lowered_kind != "op" or name in boundary_ops
         ops.append(LoweredOp(new, name, lowered_kind, frame, tuple(inputs), "", boundary))
         value_of[key[0]] = new
+        plan_ids[new] = key[0]
 
     for node in arena.nodes():
         ins = [value_of[i] for i in node["inputs"]]
@@ -132,7 +135,7 @@ def _unfused(
             add(member, (node["id"], index), inputs)
     stages = tuple(LoweredStage(i, (op,)) for i, op in enumerate(ops))
     outputs = [value_of[o] for o in arena.outputs()]
-    return nodes, LoweredGraph(0, stages, outputs[-1]), outputs
+    return nodes, LoweredGraph(0, stages, outputs[-1]), outputs, plan_ids
 
 
 class Replay:
@@ -170,8 +173,10 @@ class Replay:
                 bytes(compile_ir(self._session, *outputs, optimize=False).ir)
             )
             self._nodes = [n for n in arena.nodes() if n["id"] in cone]
+            landed = compiled.correspondence.node_map
+            self._plan_ids = {n["id"]: landed[n["id"]][0] for n in self._nodes}
         else:
-            self._nodes, self._lowered, self._reduced_ids = _unfused(process)
+            self._nodes, self._lowered, self._reduced_ids, self._plan_ids = _unfused(process)
             self._cone = list(self._lowered.ops)
         self._store: Any = None
         self._captured: dict[str, str] = {}
@@ -214,10 +219,8 @@ class Replay:
             return chunk
 
         def external(node: dict[str, Any], ins: list[Any]) -> Any:
-            chash = node["descriptor"]["content_hash"]
-            fn = externals.get(external_key(node)) or externals.get(chash)
-            if fn is None:
-                raise _unbound_external(chash)
+            # the plan keys a node's own evaluator by its plan id, which replay renumbers
+            fn = resolve_external(externals, {**node, "id": self._plan_ids[node["id"]]})
             return external_call(fn, ins, node, part)()
 
         backend = resolve_backend(self._process.backend_factory)

@@ -19,6 +19,7 @@ from .aggregate import (
     aggregate_plan,
     attribute_failures,
     external_evaluators,
+    overriding,
     read_label,
 )
 from .array import Array
@@ -461,7 +462,7 @@ def _run_whole(
             for nid in sources_read(outputs)
             if nid not in reads
         },
-        externals={**external_evaluators(session, compiled), **joint.externals()},
+        externals=overriding(external_evaluators(session, compiled), joint.externals()),
         on_failure=attribute_failures(compiled.correspondence.frames, where, labels, opt_level=0),
         given={landed[nid][0]: value for nid, value in reads.items() if nid in landed},
         chunked=chunked,

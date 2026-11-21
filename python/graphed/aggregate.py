@@ -61,6 +61,7 @@ from .execute import (
     compile_ir,
     evaluate_ir,
     external_key,
+    node_key,
     refuse_chunk_partials,
     resolved_partition,
 )
@@ -491,19 +492,42 @@ def external_evaluators(
     a plan. The key includes the node's params, so N systematic universes off one CorrectionSet
     each resolve to their OWN evaluator (they share a payload ``content_hash`` but not a params
     digest).
+
+    A key's later node holding another evaluator (one payload on a flat and a jagged input, each
+    claiming its own type) also gets its own, under :func:`~graphed.execute.node_key`: its claim
+    around the key's unchecked function, so the payload still ships once.
     """
-    by_key: dict[str, Callable[..., object]] = {}
-    recorded, externals = session._external_view()
-    for node_id, (fn, _inputs) in externals.items():
-        by_key[external_key(recorded[node_id])] = fn
+    externals = session._external_view()
+    own = {
+        landed[0]: externals[nid][0]
+        for nid, landed in compiled.correspondence.node_map.items()
+        if nid in externals
+    }
     wired: dict[str, Callable[..., object]] = {}
     for node in GraphStore.deserialize(bytes(compiled.ir)).nodes():
-        if node["kind"] == "external":
-            key = external_key(node)
-            evaluator = by_key.get(key)
-            if evaluator is not None:
-                wired[key] = evaluator
+        mine = own.get(node["id"])
+        if mine is not None:
+            shared = wired.setdefault(external_key(node), mine)
+            if mine is not shared and any(isinstance(f, CheckedExternal) for f in (mine, shared)):
+                wired[node_key(node)] = _around(mine, shared)
     return wired
+
+
+def _around(mine: Callable[..., object], shared: Callable[..., object]) -> Callable[..., object]:
+    """Return ``mine``'s check, if any, around ``shared``'s unchecked function."""
+    fn = shared.fn if isinstance(shared, CheckedExternal) else shared
+    return replace(mine, fn=fn) if isinstance(mine, CheckedExternal) else fn
+
+
+def overriding(
+    wired: Mapping[str, Callable[..., object]],
+    overrides: Mapping[str, Callable[..., object]] | None,
+) -> dict[str, Callable[..., object]]:
+    """Return ``wired`` with each of ``overrides`` binding every node of its key."""
+    overrides = overrides or {}
+    # a node's own entry (its node_key, "<key>@<id>") would shadow its key's override
+    kept = {key: fn for key, fn in wired.items() if key.rpartition("@")[0] not in overrides}
+    return kept | dict(overrides)
 
 
 def shipped_evaluators(
@@ -513,7 +537,15 @@ def shipped_evaluators(
 
     Each evaluator is wrapped by :func:`by_value`.
     """
-    return tuple((key, by_value(fn)) for key, fn in external_evaluators(session, compiled).items())
+    shipped: dict[int, Callable[..., object]] = {}
+
+    def ship(fn: Callable[..., object]) -> Callable[..., object]:
+        # a node's own evaluator shares its key's function, which must pickle once
+        if isinstance(fn, CheckedExternal):
+            return replace(fn, fn=ship(fn.fn))
+        return shipped.setdefault(id(fn), by_value(fn))
+
+    return tuple((key, ship(fn)) for key, fn in external_evaluators(session, compiled).items())
 
 
 def plan_services(
@@ -857,9 +889,10 @@ def aggregate_plan(
     # Wire EVERY External surviving in the compiled IR from the session (fills + upstream
     # corrections alike); an explicit `externals=` (keyed by `external_key`) overrides the
     # auto-wired evaluator.
-    wired = dict(shipped_evaluators(session, compiled))
-    if externals:
-        wired.update((key, by_value(fn)) for key, fn in externals.items())
+    wired = overriding(
+        dict(shipped_evaluators(session, compiled)),
+        {key: by_value(fn) for key, fn in (externals or {}).items()},
+    )
     read = arrays if read_by is None else read_by
     declared = declared_columns(data, read)
     factory = worker_backend(session, backend)

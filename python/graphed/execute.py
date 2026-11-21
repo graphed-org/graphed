@@ -258,6 +258,32 @@ def external_key(node: Mapping[str, Any]) -> str:
     return evaluator_key(node["descriptor"]["content_hash"], node.get("params") or {})
 
 
+def node_key(node: Mapping[str, Any]) -> str:
+    """Return the key of one External node's own evaluator.
+
+    :func:`external_evaluators <graphed.aggregate.external_evaluators>` wires one where nodes
+    sharing an :func:`external_key` hold different evaluators: each checks its own node's claim.
+    """
+    return f"{external_key(node)}@{node['id']}"
+
+
+def resolve_external(
+    externals: Mapping[str, Callable[..., object]] | None, node: Mapping[str, Any]
+) -> Callable[..., object]:
+    """Return the evaluator ``externals`` binds to External ``node``.
+
+    Its :func:`node_key`, else its :func:`external_key` (what ``aggregate_plan`` wires, keeping N
+    systematic universes off one payload distinct), else its bare ``content_hash`` (a direct
+    ``evaluate_ir`` caller's single-payload key, and the frozen attribution contract).
+    """
+    chash = node["descriptor"]["content_hash"]
+    bound = externals or {}
+    fn = bound.get(node_key(node)) or bound.get(external_key(node)) or bound.get(chash)
+    if fn is None:
+        raise _unbound_external(chash)
+    return fn
+
+
 def evaluate_ir(
     compiled: CompiledGraph | bytes,
     backend: Backend,
@@ -389,14 +415,7 @@ def _evaluate_external(
     partition: Callable[[], graphed.core.Partition] | None = None,
 ) -> object:
     """Evaluate an External node with the evaluator ``externals`` binds to it."""
-    # Resolve by the specific (content_hash, params) `external_key` first — that is what
-    # `aggregate_plan` wires, and it keeps N systematic universes off one payload distinct.
-    # Fall back to the bare `content_hash` so a direct `evaluate_ir` caller may key by it
-    # (the single-payload case, and the frozen attribution contract).
-    chash = nd["descriptor"]["content_hash"]
-    fn = None if externals is None else (externals.get(external_key(nd)) or externals.get(chash))
-    if fn is None:
-        raise _unbound_external(chash)
+    fn = resolve_external(externals, nd)
     return _dispatch(
         external_call(fn, ins, nd, partition), external_op(nd), ins, (nid, None), on_failure
     )
