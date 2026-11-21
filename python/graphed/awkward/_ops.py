@@ -378,12 +378,14 @@ _INDEXED = (ak.contents.IndexedArray, ak.contents.IndexedOptionArray)
 
 
 def _with_field(base: Any, value: Any, where: Any) -> Any:
-    """``ak.with_field``, run on a typetracer over only the fields it would change (#286).
+    """``ak.with_field``, run over only the fields it would change (#286, #304).
 
     Awkward's own call revisits every field (``base[k]`` per field, an O(width) lookup each); the
-    fields it leaves unchanged are spliced back from ``base``, so the result's form and touched
-    buffers are awkward's. Only for typetracers: under an indexed record the spliced fields are
-    not re-indexed, which only a value without data may skip.
+    fields it leaves unchanged are spliced back from ``base``, so on a typetracer the result's form
+    and touched buffers are awkward's. Under an indexed record the spliced fields are not
+    re-indexed, which only a value without data may skip: on real arrays the splice is kept only
+    where awkward's call left every layer above the record as it was, so each spliced field keeps
+    its values.
     """
     narrowed = _narrowed_with_field(base, value, where)
     return ak.with_field(base, value, where=where) if narrowed is None else narrowed
@@ -394,9 +396,10 @@ def _narrowed_with_field(base: Any, value: Any, where: Any) -> Any:
         isinstance(where, str)
         and isinstance(base, ak.Array)
         and isinstance(value, ak.Array)
-        and ak.backend(base) == "typetracer"
+        and ak.backend(base) in ("typetracer", "cpu")
     ):
         return None
+    concrete = ak.backend(base) == "cpu"
     path, record = [], base.layout
     while isinstance(record, _LISTS) or (isinstance(record, _INDEXED) and not record.parameters):
         path.append(record)
@@ -406,7 +409,9 @@ def _narrowed_with_field(base: Any, value: Any, where: Any) -> Any:
     pairs = list(zip(record.fields, record.contents, strict=True))
     # under an index or a ListArray awkward re-indexes each field, which leaves a parameterless
     # IndexedArray's form as it is and changes any other
-    indexed = any(isinstance(node, (*_INDEXED, ak.contents.ListArray)) for node in path)
+    indexed = not concrete and any(
+        isinstance(node, (*_INDEXED, ak.contents.ListArray)) for node in path
+    )
     changed = {
         k
         for k, c in pairs
@@ -424,6 +429,8 @@ def _narrowed_with_field(base: Any, value: Any, where: Any) -> Any:
     while not out.is_record:
         out_path.append(out)
         out = out.content
+    if concrete and not _same_structure(path, out_path):
+        return None
     new = dict(zip(out.fields, out.contents, strict=True))
     spliced = [new.pop(k, c) for k, c in pairs]
     inner = _rewrapped(
@@ -433,6 +440,28 @@ def _narrowed_with_field(base: Any, value: Any, where: Any) -> Any:
         ),
     )
     return ak.Array(inner, behavior=result.behavior, attrs=result.attrs)
+
+
+_INDEX_BUFFERS: dict[type, tuple[str, ...]] = {
+    ak.contents.ListOffsetArray: ("offsets",),
+    ak.contents.ListArray: ("starts", "stops"),
+    ak.contents.RegularArray: (),
+    ak.contents.IndexedArray: ("index",),
+    ak.contents.IndexedOptionArray: ("index",),
+}
+
+
+def _same_structure(path: list[Any], out_path: list[Any]) -> bool:
+    """Whether each layer of ``out_path`` places the record's rows as ``path``'s layer does."""
+    return len(path) == len(out_path) and all(
+        type(a) is type(b)
+        and a.length == b.length
+        and getattr(a, "size", None) == getattr(b, "size", None)
+        and all(
+            np.array_equal(getattr(a, n).data, getattr(b, n).data) for n in _INDEX_BUFFERS[type(a)]
+        )
+        for a, b in zip(path, out_path, strict=False)
+    )
 
 
 def _rewrapped(path: list[Any], inner: Any) -> Any:
