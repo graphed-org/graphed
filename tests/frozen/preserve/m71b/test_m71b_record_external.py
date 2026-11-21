@@ -71,13 +71,13 @@ def test_a_declared_named_record_resolves_its_behavior() -> None:
     assert same(s.materialize(g.pt2), expected.pt2)
 
 
-def test_the_declared_type_is_identity_and_the_undeclared_form_is_unchanged() -> None:
+def test_the_declared_type_is_identity_and_the_undeclared_form_is_inferred() -> None:
     s, ev = recorded()
     declared = record_external(s, LUMI, b"g", [ev.run], output_type="bool")
     undeclared = record_external(s, LUMI, b"g", [ev.run])
 
     assert declared.node_id != undeclared.node_id
-    assert describe(s, undeclared) == "## * uint32"
+    assert describe(s, undeclared) == "## * bool"
     assert "output_type" not in params_of(s, undeclared)
     as_int8 = record_external(s, LUMI, b"g", [ev.run], output_type="int8")
     assert as_int8.node_id not in {declared.node_id, undeclared.node_id}

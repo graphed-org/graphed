@@ -420,11 +420,18 @@ node carries your plugin's content hash, so it is preservable rather than opaque
 and reproduce time both go through ``plugin.evaluate`` on the same bytes, which is why the
 bundle comes back bit for bit.
 
-graphed cannot see what your ``evaluate`` returns, so the recorded type is the first input's. When
-the value has another type, such as a mask over a run number or a record built from a jet column,
-declare it with ``output_type=``. It takes the same spellings as ``map``: a type string, a type
-object, a numpy dtype or a Python type. The declared type becomes the recorded type, so fields,
-masks and behaviors work at build time:
+graphed cannot see what your ``evaluate`` returns before it runs, so a call that states no type
+records the type of one ``evaluate`` on length-zero inputs, as an undeclared ``map`` does, and
+checks every value against it. Where ``evaluate`` cannot run on no rows, or gives no awkward
+array of a known type there (a numpy array, whose dtype on no values is numpy's default, or a 2-D
+output whose width is unknown), the call warns at your line, ``could not infer the type of the
+'my_photons' plugin (...); pass output_type=``, and records the first input's type, unchecked. A
+plugin whose value is no array, such as the shipped histogram plugin, sets
+``ExternalPlugin(array_value=False)``: its calls are neither inferred nor warned about. Declare
+the type with ``output_type=`` to skip that call.
+It takes the same spellings as ``map``: a type string, a type object, a numpy dtype or a Python
+type. The declared type becomes the recorded type, so fields, masks and behaviors work at build
+time:
 
 .. code-block:: python
 
@@ -454,7 +461,7 @@ masks and behaviors work at build time:
 
 Prints::
 
-    ## * var * float64
+    ## * var * Photon[pt: float32, eta: float32]
     ## * var * float32
     [[30.0, 20.0], [], [40.0]]
 

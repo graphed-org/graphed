@@ -17,7 +17,7 @@ is evaluated with in `SEEN`), and a `Photon` behavior known to the backend only.
 | `…::test_a_declared_jagged_selection_indexes_its_jets` | B-C1 | `"var * bool"`; `Jet.pt[jm]` records `## * var * float64`, equals eager |
 | `…::test_a_scalar_input_records_the_declared_scalar` | B-C1 | `bool` over `gak.sum(x)` (form only) |
 | `…::test_a_declared_named_record_resolves_its_behavior` | B-C1 | `var * Photon[...]`; `g.pt2` records `## * var * float32`, equals eager |
-| `…::test_the_declared_type_is_identity_and_the_undeclared_form_is_unchanged` | B-C2 | declared vs undeclared → two nodes; undeclared keeps `## * uint32`, no `output_type` param; `int8` a third node |
+| `…::test_the_declared_type_is_identity_and_the_undeclared_form_is_inferred` | B-C2 | declared vs undeclared → two nodes; undeclared records the type its length-zero call gives, `## * bool`, no `output_type` param; `int8` a third node |
 | `…::test_spellings_of_one_declared_type_are_one_node` | B-C2 | `"bool"`/`bool`/`np.bool_` one node with params `"bool"`; `"var*bool"`/`"var * bool"`/`ListType` one node; `PHO` string and its `RecordType` object one node |
 | `…::test_an_unbuildable_declaration_is_refused_at_the_call[*]` | B-C5 | `"nope"`, `3` → located `GraphedTypeError`, `repr(spec)` in `detail` |
 | `…::test_a_numpy_session_still_has_no_payload_descriptor` | B-C5 | numpy session + keyword → `GraphedTypeError` "no payload descriptor" |

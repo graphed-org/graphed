@@ -841,8 +841,9 @@ class Session:
         another type raises :class:`~graphed.OutputTypeError` at this call's line. A claim is
         ``output_type=``, an inferred ``map`` form, or, with ``form_params`` ``claim=True``,
         ``form=`` or the form ``form_params`` built: its whole type is checked. A leaf claim is
-        a ``form_params`` ``output_dtype`` otherwise: only its leaves' dtype is. Anything else
-        is a guess, unchecked.
+        a ``form_params`` ``output_dtype`` otherwise: only its leaves' dtype is. With none of these
+        and ``form_params`` ``infer=True``, the form is inferred as an undeclared ``map``'s is,
+        warning where it cannot be. Anything else is a guess, unchecked.
         """
         params_d: dict[str, ParamValue] = dict(params or {})
         prov = capture()
@@ -867,16 +868,20 @@ class Session:
                     op, prov, "backend returned no payload descriptor for external op"
                 )
         ids = [a.node_id for a in inputs]
-        undeclared = op == "map" and form is None
+        # a plugin External with no stated type is inferred as an undeclared map is (#253)
+        guessed = bool((form_params or {}).get("infer")) and not claimed
+        guessed = guessed and form_view.get("output_dtype") is None
+        undeclared = form is None and (op == "map" or guessed)
         if form is None:
             form = self._located_form(op, prov, ids, form_view)
         check = getattr(self._backend, "check_output_type", None)
         claim = form if claimed else None
         declared = self._declaration(op, prov, declared_type, form_params, claim)
         # after every refusal of the call itself, so a refused function holds no name
-        if "fn" in params_d:
+        if "fn" in params_d or guessed:
             key = evaluator_key(descriptor.content_hash, params_d)
-            fn = self._hold_fn(fn, key, params_d["fn"], prov)
+            if "fn" in params_d:
+                fn = self._hold_fn(fn, key, params_d["fn"], prov)
             if undeclared and declared is None:
                 form, declared = self._traced_form(fn, key, ids, prov) or (form, None)
         with self._lock:
