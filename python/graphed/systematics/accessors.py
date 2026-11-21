@@ -98,7 +98,9 @@ def universe(x: Introspectable, label: str) -> Any:
     """`x`'s universe for `label` — a KeyError listing the valid labels when it has none.
 
     A container's universe is a proxy of its member's node, not the member itself, so assigning
-    into it leaves the container as it was.
+    into it leaves the container as it was. An event context's universe is one projected context,
+    the same object on every read: a collection assigned into it is seen by later reads of that
+    universe and by nothing else.
     """
     if isinstance(x, Varied):
         return detached(member_exact(x, label))
@@ -189,13 +191,14 @@ def weight(ctx: Any) -> Varied | Array | None:
     `None` when nothing is registered; a projected context's
     (`graphed.systematics.universe(ctx, label)`) is that one universe's member.
 
-    Read-only: it returns the registry's current container, it never mutates.
+    Read-only: it returns a proxy of the registry's current container, so assigning into it
+    leaves the registry as it was.
     """
     if not _is_context(ctx):
         raise GraphedError(
             "graphed.systematics.weight reads an event context's ambient weight registry"
         )
-    return weight_of(ctx)
+    return detached(weight_of(ctx))
 
 
 def variations(ctx: Any) -> dict[str, dict[str, tuple[Kind, Fraction | None]]]:

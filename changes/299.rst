@@ -1,0 +1,7 @@
+.. under: 0.0.12 (unreleased)
+
+* ``graphed.systematics.weight(ctx)`` returns a proxy of the registry's ambient weight, so
+  assigning a field into it, or into one of its universes, no longer changes what later reads
+  return (#299). An event context's ``universe``/``nominal`` stays one projected context: a
+  collection assigned into it is seen by later reads of that universe and by nothing else, now
+  stated in ``universe``'s docstring.
