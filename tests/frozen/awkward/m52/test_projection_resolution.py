@@ -11,6 +11,7 @@ pinned integer.
 from __future__ import annotations
 
 import awkward as ak
+import pytest
 from m52_projection_fixtures import JOINT_LABEL, ONE_AT_A_TIME_LABEL, joint_weight_program
 
 import graphed
@@ -48,14 +49,24 @@ def test_a_joint_label_resolves_to_the_shifted_member_not_the_nominal_one() -> N
     assert diagonal.node_id == central.node_id
 
 
-def test_the_fast_path_returns_the_containers_own_member_by_identity() -> None:
+def test_the_fast_path_resolves_a_carried_label_to_its_own_members_node(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """§4.6's theorem: a label the container carries is not a special case.
 
     `keys(point(L)) ⊆ axes(C)` makes the restriction the identity and point→label is unique
-    (§4.11-2). Object identity pins that the fast path was kept.
+    (§4.11-2). A restriction that cannot run pins that the fast path was kept.
     """
     program = joint_weight_program()
 
+    def restricted(self: object, label: str) -> str:
+        raise AssertionError(f"the carried label {label!r} was restricted")
+
     for container in (program.jes_only, program.ambient):
-        for label in graphed.labels(container):
-            assert graphed.member_of(container, label) is container._members[label]
+        carried = graphed.labels(container)
+        monkeypatch.setattr(type(container), "_key_for", restricted)
+        for label in carried:
+            got = graphed.member_of(container, label)
+            assert got.node_id == container._members[label].node_id
+            assert got is not container._members[label]
+        monkeypatch.undo()

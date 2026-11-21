@@ -15,7 +15,7 @@ import functools
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
-from ..array import Array, BoundMethod, Deferred, handle_of
+from ..array import Array, BoundMethod, Deferred, detached, handle_of
 from ..errors import GraphedError
 from .lineage import unify_contexts
 from .points import Point, restrict
@@ -103,7 +103,7 @@ class Varied(Deferred):
         """
         out: dict[str, Member] = {}
         for label, member in self._members.items():
-            result = fn(member)
+            result = fn(detached(member))  # an assignment into it must not move this container
             if isinstance(result, Varied):
                 raise GraphedError(
                     "Varied.apply must return one Array per universe; combine two containers with "
@@ -230,9 +230,10 @@ def labels_of(value: object) -> tuple[str, ...]:
 def member_of(value: object, label: str) -> Any:
     """Return the universe `value` contributes for `label`.
 
-    Its own member, else its nominal one.
+    A proxy of its own member, else of its nominal one, so assigning into it leaves `value` as it
+    was.
     """
-    return value._member_for(label) if isinstance(value, Varied) else value
+    return detached(value._member_for(label)) if isinstance(value, Varied) else value
 
 
 def universes_of(value: object) -> tuple[Any, ...]:

@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, TypeGuard
 
-from ..array import Array
+from ..array import Array, detached
 from ..context import project
 from ..errors import GraphedError
 from .ambient import context_labels, weight_of
@@ -95,9 +95,13 @@ def labels(x: Introspectable) -> tuple[str, ...]:
 
 
 def universe(x: Introspectable, label: str) -> Any:
-    """`x`'s universe for `label` — a KeyError listing the valid labels when it has none."""
+    """`x`'s universe for `label` — a KeyError listing the valid labels when it has none.
+
+    A container's universe is a proxy of its member's node, not the member itself, so assigning
+    into it leaves the container as it was.
+    """
     if isinstance(x, Varied):
-        return member_exact(x, label)
+        return detached(member_exact(x, label))
     if _is_context(x):
         return project(x, label)
     if isinstance(x, Array):

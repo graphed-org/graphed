@@ -1,0 +1,7 @@
+.. under: 0.0.12 (unreleased)
+
+* ``graphed.nominal``, ``graphed.universe`` and ``graphed.member_of`` on a ``Varied`` return a
+  proxy of its member, not the member object itself, so assigning a field into the universe they
+  return (``n = graphed.nominal(v); n["f"] = x``) no longer changes the container (#231). Two
+  reads of one universe are two objects of one node: compare them by ``.node_id``, not ``is``.
+  ``Varied.apply`` hands its function the same kind of proxy.

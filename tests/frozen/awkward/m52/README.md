@@ -27,7 +27,7 @@ never at module import, so the suite COLLECTS against `origin/main`.
 | anchor | design § | test |
 |---|---|---|
 | `vary-m52-C3` | §4.6/§8-d a joint label resolves to the single-axis container's SHIFTED member (and a one-at-a-time label still to nominal) | `test_projection_resolution.py::test_a_joint_label_resolves_to_the_shifted_member_not_the_nominal_one` |
-| `vary-m52-C3` | §4.6 the fast path is kept — a carried label returns the container's own member by IDENTITY | `test_projection_resolution.py::test_the_fast_path_returns_the_containers_own_member_by_identity` |
+| `vary-m52-C3` | §4.6 the fast path is kept — a carried label resolves to its own member's node without the restriction running, as a proxy of its own | `test_projection_resolution.py::test_the_fast_path_resolves_a_carried_label_to_its_own_members_node` |
 | `vary-m52-C3` | §4.6/§8-e `_two_level` reaches the true inner cross member; the diagonal stays the diagonal | `test_two_level_projection.py::test_two_level_reaches_the_true_inner_cross_member` |
 | `vary-m53` | §2 a shift ⊗ shift joint is auto-fanned and reaches the inner `jes` universe (the one-at-a-time stays the diagonal) | `test_registration_projection.py::test_a_shift_shift_joint_is_auto_fanned_and_reaches_the_inner_jes_universe` |
 | `vary-m52-C3` (survivor) | §4.6/§7.1-2/§8-j a default-point registration keeps the member's own label when it carries it | `test_registration_projection.py::test_a_default_point_registration_keeps_the_members_own_label_when_it_carries_it` |
@@ -68,7 +68,7 @@ never at module import, so the suite COLLECTS against `origin/main`.
 
 ## Non-vacuity (re-authored for m53: fails on the current union-collapse tree for the right reason)
 
-The two same-family survivors — `test_the_fast_path_returns_the_containers_own_member_by_identity`
+The two same-family survivors — `test_the_fast_path_resolves_a_carried_label_to_its_own_members_node`
 and `test_a_default_point_registration_keeps_the_members_own_label_when_it_carries_it` — PASS on the
 current tree: they pin laws m53 preserves, and their passing is the live-harness control.
 
