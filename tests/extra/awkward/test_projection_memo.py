@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import weakref
 from typing import Any
 
 import awkward as ak
@@ -74,3 +75,30 @@ def test_reach_walks_a_shared_sub_dag_once(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setattr(Session, "walk", counting_walk)
     assert by_label._reach(outputs) == union
     assert sorted(visits) == sorted(union)
+
+
+def test_a_tracer_is_dropped_once_its_last_reader_has_replayed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = Session(AwkwardBackend())
+    ev = from_awkward("ev", ak.Array(DATA), session=session)
+    x, sums = ev.m, []
+    for i in range(20):
+        x = x + float(i)
+        sums.append(gak.sum(x * 2.0, axis=0))
+    evaluate = session.backend.eval_stage
+    made: list[weakref.ref[Any]] = []
+    alive_at_end: list[int] = []
+
+    def tracking(name: str, *args: Any, **kwargs: Any) -> Any:
+        out = evaluate(name, *args, **kwargs)
+        made.append(weakref.ref(out))
+        alive_at_end[:] = [sum(r() is not None for r in made)]
+        return out
+
+    monkeypatch.setattr(session.backend, "eval_stage", tracking)
+    projection = project_buffers_many([x, *sums])
+    assert len(made) == 61  # the field, 20 adds, 20 products, 20 sums
+    # the chain's end and the sums are roots; a product dies with its sum, an add with the next add
+    assert alive_at_end[0] <= 22
+    assert projection.read_buffers == {"ev": {"m": BufferNeed.DATA}}

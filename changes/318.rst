@@ -1,0 +1,5 @@
+.. under: 0.0.12 (unreleased)
+
+* The column-projection replay drops each node's reporting typetracer once the last node of the
+  outputs' cones that reads it has replayed, instead of holding one per node for the whole
+  replay (#318).

@@ -20,6 +20,8 @@ hash, and fails loudly when one is missing.
 
 from __future__ import annotations
 
+import graphlib
+import heapq
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import cache, partial
@@ -330,13 +332,15 @@ def evaluate_ir(
         if cone is None
         else {nid for nid in range(len(nodes)) if nid not in cone} | set(given or ())
     )
-    release = _last_consumers(
-        [() if nid in skipped else nd["inputs"] for nid, nd in enumerate(nodes)], keep=set(wanted)
-    )
-    vals: list[object] = []
-    for nid, nd in enumerate(nodes):
+    inputs = [() if nid in skipped else nd["inputs"] for nid, nd in enumerate(nodes)]
+    order = _evaluation_order(inputs)
+    last = _last_consumers([inputs[nid] for nid in order], keep=set(wanted))
+    release = {order[at]: done for at, done in last.items()}
+    vals: list[object] = [None] * len(nodes)
+    for nid in order:
+        nd = nodes[nid]
         if nid in skipped:
-            vals.append(None if given is None else given.get(nid))
+            vals[nid] = None if given is None else given.get(nid)
             continue
         kind = nd["kind"]
         ins = [vals[i] for i in nd["inputs"]]
@@ -348,7 +352,7 @@ def evaluate_ir(
             # every label (each cone reaches it), so attributing a load failure would
             # misattribute it to all variations at once
             value = sources[name]
-            vals.append(value() if callable(value) else value)
+            vals[nid] = value() if callable(value) else value
         elif kind in ("op", "reduction", "exchange", "join"):
             # a boundary is evaluated by its backend reference kernel, as `Session.materialize`
             # does
@@ -356,11 +360,11 @@ def evaluate_ir(
             # a boundary's inputs need not be one row set: `isin`, axis-0 `concatenate`, a join
             run = evaluate if kind == "op" else backend.eval_stage
             call = partial(run, name, ins, nd["params"])
-            vals.append(_dispatch(call, name, ins, (nid, None), on_failure))
+            vals[nid] = _dispatch(call, name, ins, (nid, None), on_failure)
         elif kind == "stage":
-            vals.append(_evaluate_stage(evaluate, nid, nd["members"], ins, on_failure))
+            vals[nid] = _evaluate_stage(evaluate, nid, nd["members"], ins, on_failure)
         elif kind == "external":
-            vals.append(_evaluate_external(nid, nd, ins, externals, on_failure, partition))
+            vals[nid] = _evaluate_external(nid, nd, ins, externals, on_failure, partition)
         else:  # pragma: no cover - the codec only emits the kinds above
             raise GraphedError(f"evaluate_ir: unknown node kind {kind!r}")
         del ins
@@ -474,6 +478,29 @@ def _last_consumers(inputs: Sequence[Sequence[int]], *, keep: set[int]) -> dict[
         if i not in keep:
             out.setdefault(consumer, []).append(i)
     return out
+
+
+def _evaluation_order(inputs: Sequence[Sequence[int]]) -> list[int]:
+    """Return an order of the topological ``inputs``' nodes: the ready node nearest a sink first.
+
+    The IR's own order builds a first-marked output's whole cone before a later output's short
+    branch off it runs, so every value that branch reads stays live until the end.
+    """
+    height = [0] * len(inputs)
+    for nid in range(len(inputs) - 1, -1, -1):
+        for i in inputs[nid]:
+            height[i] = max(height[i], height[nid] + 1)
+    sorter = graphlib.TopologicalSorter(dict(enumerate(inputs)))
+    sorter.prepare()
+    ready: list[tuple[int, int]] = []
+    order: list[int] = []
+    while sorter.is_active():
+        for nid in sorter.get_ready():
+            heapq.heappush(ready, (height[nid], nid))
+        _, nid = heapq.heappop(ready)
+        order.append(nid)
+        sorter.done(nid)
+    return order
 
 
 def ir_cone(

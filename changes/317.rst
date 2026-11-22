@@ -1,0 +1,5 @@
+.. under: 0.0.12 (unreleased)
+
+* ``evaluate_ir`` runs each ready node nearest an output first, so a later output's short branch
+  off a long chain runs as soon as its input exists and that input is freed early; the IR's own
+  order kept every such input live to the end of the task (#317).
