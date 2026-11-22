@@ -14,6 +14,7 @@ import json
 import threading
 import types
 import warnings
+from array import array
 from collections.abc import Callable, Hashable, Iterable, Mapping, Sequence, Set
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, TypeVar, cast
@@ -198,8 +199,10 @@ class Session:
         # (evaluator key, *input types) -> the form and declaration inferring that function gave
         self._fn_traced: dict[tuple[str, ...], tuple[Form, tuple[str, str] | None] | None] = {}
         # the backend's `op_key` -> what that inference gave, beside the input forms the key's
-        # identities name (held, so no id in a key is recycled)
-        self._inferred: dict[Hashable, tuple[Any, Sequence[Form]]] = {}
+        # identities name (held, so no id in a key is recycled), and the entry's index
+        self._inferred: dict[Hashable, tuple[Any, Sequence[Form], int]] = {}
+        # node id -> the index of the memo entry its op's form came from, -1 for none
+        self._entries = array("i")
 
     def __deepcopy__(self, memo: dict[int, Any] | None = None) -> Session:
         """Return this Session: one graph has one Session, so a copy shares what it records."""
@@ -700,12 +703,17 @@ class Session:
         ordered = getattr(self._backend, "ordered_operands", None)
         if ordered is not None and ordered(op, self._forms_of(ids)):
             params_d["ordered"] = True  # a param keeps the optimizer's commute rules off this node
-        form = self._located_form(op, prov, ids, params_d)
+        form, entry = self._located_form(op, prov, ids, params_d)
         with self._lock:
             if reduction:
                 node_id = self._store.add_reduction(op, ids, params_d)
             else:
                 node_id = self._store.add_op(op, ids, params_d)
+            if entry >= 0:
+                missing = node_id + 1 - len(self._entries)
+                if missing > 0:
+                    self._entries.extend(array("i", [-1]) * missing)
+                self._entries[node_id] = entry
             rows = None if rows_from is None else self._carried([inputs[i] for i in rows_from])
             return self._enter(node_id, form, prov, inputs, op=(op, params_d, ids), rows=rows)
 
@@ -744,11 +752,14 @@ class Session:
 
     def _located_form(
         self, op: str, prov: Provenance, ids: Sequence[int], params: Mapping[str, object]
-    ) -> Form:
-        """Return the backend's ``op_form``; its type or shape error becomes a user-located one."""
+    ) -> tuple[Form, int]:
+        """Return the backend's ``op_form`` and its memo entry (``_memo_entry``).
+
+        Its type or shape error becomes a user-located one.
+        """
         forms = self._forms_of(ids)
         try:
-            return self._memoized(
+            return self._memo_entry(
                 op, forms, params, lambda: self._backend.op_form(op, forms, params)
             )
         except GraphedTypeError:
@@ -768,17 +779,27 @@ class Session:
         Universes repeat one inference and share its result object. An inference warning is
         emitted once per distinct key, not per site; a raise is never kept, so every site raises.
         """
+        return self._memo_entry(op, forms, params, infer)[0]
+
+    def _memo_entry(
+        self,
+        op: str,
+        forms: Sequence[Form],
+        params: Mapping[str, object],
+        infer: Callable[[], R],
+    ) -> tuple[R, int]:
+        """Return ``_memoized``'s value and the index of its memo entry, ``-1`` for none."""
         keyed = getattr(self._backend, "op_key", None)
         key = None if keyed is None else keyed(op, forms, params)
         if key is None:
-            return infer()
+            return infer(), -1
         with self._lock:
             held = self._inferred.get(key)
-        if held is not None:
-            return cast("R", held[0])
-        value = infer()
-        with self._lock:
-            return cast("R", self._inferred.setdefault(key, (value, forms))[0])
+        if held is None:
+            value = infer()
+            with self._lock:
+                held = self._inferred.setdefault(key, (value, forms, len(self._inferred)))
+        return cast("R", held[0]), held[2]
 
     def _enter(
         self,
@@ -830,7 +851,7 @@ class Session:
         prov = capture()
         self._mine([left, right], ("join", prov))
         ids = [left.node_id, right.node_id]
-        form = self._located_form("join", prov, ids, params_d)
+        form, _ = self._located_form("join", prov, ids, params_d)
         with self._lock:
             node_id = self._store.add_join(ids, params_d)
             # a join's rows are its own, so two joins of one pair are two row sets
@@ -903,7 +924,7 @@ class Session:
         guessed = guessed and form_view.get("output_dtype") is None
         undeclared = form is None and (op == "map" or guessed)
         if form is None:
-            form = self._located_form(op, prov, ids, form_view)
+            form, _ = self._located_form(op, prov, ids, form_view)
         check = getattr(self._backend, "check_output_type", None)
         claim = form if claimed else None
         declared = self._declaration(op, prov, declared_type, form_params, claim)
