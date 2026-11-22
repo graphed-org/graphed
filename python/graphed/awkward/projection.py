@@ -135,7 +135,8 @@ def _buffers_of(value: object) -> Iterator[Any]:
 
 
 def _positions(found: set[int]) -> np.ndarray:
-    return np.fromiter(sorted(found), dtype=np.int32, count=len(found))
+    out: np.ndarray = np.fromiter(sorted(found), dtype=np.int32, count=len(found))
+    return out
 
 
 class _Summaries:
@@ -278,10 +279,11 @@ class _Summaries:
     def _ids(self, value: object, rebuilt: Mapping[str, int]) -> np.ndarray:
         """Each buffer of ``value``: its source buffer's id, ``-1`` for a derived one."""
         keys = (buffer.form_key for buffer in _buffers_of(value))
-        return np.fromiter(
+        out: np.ndarray = np.fromiter(
             (self.ids.get(k, rebuilt.get(k, -1)) for k in keys),
             dtype=np.int32,
         )
+        return out
 
     def _keys_of(self, nid: int, value: object) -> np.ndarray:
         if isinstance(value, np.ndarray):
@@ -343,7 +345,8 @@ def _entry(entries: Sequence[int], nid: int) -> int:
 
 
 def _ids(keys: Iterable[str], rebuilt: Mapping[str, int]) -> np.ndarray:
-    return np.fromiter((rebuilt[k] for k in keys), dtype=np.int32)
+    out: np.ndarray = np.fromiter((rebuilt[k] for k in keys), dtype=np.int32)
+    return out
 
 
 def _reporting(session: Session, nid: int, key: str) -> tuple[ak.Array, object, object]:
