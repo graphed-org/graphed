@@ -23,12 +23,38 @@ def _read_payload(path: str, mtime_ns: int, size: int) -> bytes:
     return Path(path).read_bytes()
 
 
+# equal payload contents -> one object, so hash-memo lookups and a plan's pickle go by identity
+_CANON: OrderedDict[bytes, bytes] = OrderedDict()
+# id of a payload already canonicalized -> (it, its canonical object), so its content is compared
+# once; the entry holds the payload, so its id is not reused while the entry lives
+_SEEN: OrderedDict[int, tuple[bytes, bytes]] = OrderedDict()
+_CANON_CAP = 64  # each table's bound on the payloads it keeps alive
+_CANON_LOCK = threading.Lock()
+
+
 def _payload_bytes(payload: bytes | bytearray | memoryview | str | os.PathLike[str]) -> bytes:
-    """Return a payload's bytes; one file is one object, however many nodes record it."""
+    """Return a payload's bytes; equal contents are one object, however many nodes record them."""
+    fresh = False  # a bytearray's copy is never passed again, so it is not worth keeping by id
     if isinstance(payload, (bytes, bytearray, memoryview)):  # Booster.save_raw is a bytearray
-        return bytes(payload)
-    stat = os.stat(payload)
-    return _read_payload(os.path.abspath(payload), stat.st_mtime_ns, stat.st_size)
+        data = bytes(payload)
+        fresh = data is not payload
+    else:
+        stat = os.stat(payload)
+        data = _read_payload(os.path.abspath(payload), stat.st_mtime_ns, stat.st_size)
+    with _CANON_LOCK:
+        seen = _SEEN.get(id(data))
+        if seen is not None:
+            _SEEN.move_to_end(id(data))
+            return seen[1]
+        canon = _CANON.setdefault(data, data)
+        _CANON.move_to_end(canon)
+        if len(_CANON) > _CANON_CAP:
+            _CANON.popitem(last=False)
+        if canon is not data and not fresh:
+            _SEEN[id(data)] = (data, canon)
+            if len(_SEEN) > _CANON_CAP:
+                _SEEN.popitem(last=False)
+        return canon
 
 
 def json_bytes(payload: bytes) -> bytes:
