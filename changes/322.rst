@@ -1,0 +1,5 @@
+.. under: 0.0.12 (unreleased)
+
+* An operand of an arithmetic op or ``filter`` is told from a universe container by its class; an
+  array class whose ``__getattr__`` answers ``_`` names paid an attribute lookup and its error
+  message at every op (#322).
