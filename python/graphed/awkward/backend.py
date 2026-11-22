@@ -9,12 +9,14 @@ from __future__ import annotations
 import contextlib
 import functools
 import inspect
+import json
 import re
 import threading
 import weakref
 from collections import ChainMap
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from functools import cached_property
 from typing import Any, cast, overload
 
 import awkward as ak
@@ -174,6 +176,17 @@ _KEPT: dict[int, weakref.ref[Any]] = {}  # id(canonical) -> it, to skip a sub-la
 _CANONICAL_LOCK = threading.RLock()  # reentrant: `_forget` may run on a thread holding it
 
 
+_WIDE = 100
+
+
+def _wide(tt: Any) -> bool:
+    """Return whether ``tt``'s outer record has so many fields its structure outcosts inference."""
+    layout = tt.layout if isinstance(tt, ak.Array) else None
+    while layout is not None and (layout.is_list or layout.is_option or layout.is_indexed):
+        layout = layout.content
+    return layout is not None and layout.is_record and len(layout.fields) >= _WIDE
+
+
 def _sharing(result: Any, behavior: Mapping[Any, Any] | None) -> Any:
     """Return a recorded typetracer ``result`` with its indexed sub-layouts shared (#282).
 
@@ -240,6 +253,24 @@ class AwkwardForm:
     """Opaque form backed by a metadata-only typetracer array (implements graphed.backend.Form)."""
 
     tt: ak.Array
+    #: made by inference, so a wide one is keyed by identity rather than by its costly structure
+    inferred: bool = field(default=False, repr=False)
+
+    @cached_property
+    def key(self) -> object:
+        """Return what an op's inferred form depends on in this form, or ``None`` if not known.
+
+        The form's JSON holds its parameters, record names and regular sizes; the length, a known
+        one; the behavior and each attr's value count by identity, and the memo keeps them alive.
+        """
+        tt = self.tt
+        if not isinstance(tt, ak.Array):
+            return None
+        if self.inferred and _wide(tt):
+            return id(self)
+        layout = tt.layout
+        attrs = tuple(sorted((str(k), id(v)) for k, v in (tt._attrs or {}).items()))
+        return (layout.form.to_json(), str(layout.length), id(tt.behavior), attrs)
 
     def describe(self) -> str:
         """Return the awkward type string of this form."""
@@ -662,7 +693,24 @@ class AwkwardBackend:
             return forms[0]
         operands = [self._with_behavior(f.tt) for f in forms]
         result = apply(op, operands, params, behavior=self._behavior)
-        return AwkwardForm(_sharing(result, self._behavior))
+        return AwkwardForm(_sharing(result, self._behavior), inferred=True)
+
+    def op_key(
+        self, op: str, forms: Sequence[AwkwardForm], params: Mapping[str, object]
+    ) -> tuple[object, ...] | None:
+        """Return what ``op``'s form over ``forms`` with ``params`` depends on, or ``None``.
+
+        The registries' sizes stand for the behaviors: a registration partway through a recording
+        is a new key, while replacing an entry already registered is not supported.
+        """
+        keys = tuple(f.key for f in forms)
+        if None in keys:
+            return None
+        try:  # a node's identity holds its params as JSON, so its form can depend on no more
+            text = json.dumps(params, sort_keys=True)
+        except (TypeError, ValueError):
+            return None
+        return (op, text, keys, len(ak.behavior), len(self._behavior or ()))
 
     def ordered_operands(self, op: str, inputs: Sequence[Form]) -> bool:
         """Return whether ``op`` over ``inputs`` may resolve to a behavior overload.

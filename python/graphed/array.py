@@ -1076,7 +1076,8 @@ def _record_method(
             "method", prov, f"{name}(): this backend records no behavior methods"
         )
     try:
-        shape = outputs([session.form(a) for a in inputs], params)
+        forms = [session.form(a) for a in inputs]
+        shape = session._memoized("method outputs", forms, params, lambda: outputs(forms, params))
     except Exception as exc:  # the typetracer refused the call -> located at the user's line
         raise GraphedTypeError("method", prov, f"{name}(): {exc}") from exc
     if shape is None:

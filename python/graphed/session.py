@@ -14,9 +14,9 @@ import json
 import threading
 import types
 import warnings
-from collections.abc import Callable, Iterable, Mapping, Sequence, Set
+from collections.abc import Callable, Hashable, Iterable, Mapping, Sequence, Set
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 import graphed.core
 
@@ -197,6 +197,9 @@ class Session:
         self._fn_held: dict[str, tuple[Callable[..., object], Provenance]] = {}
         # (evaluator key, *input types) -> the form and declaration inferring that function gave
         self._fn_traced: dict[tuple[str, ...], tuple[Form, tuple[str, str] | None] | None] = {}
+        # the backend's `op_key` -> what that inference gave, beside the input forms the key's
+        # identities name (held, so no id in a key is recycled)
+        self._inferred: dict[Hashable, tuple[Any, Sequence[Form]]] = {}
 
     def __deepcopy__(self, memo: dict[int, Any] | None = None) -> Session:
         """Return this Session: one graph has one Session, so a copy shares what it records."""
@@ -743,12 +746,39 @@ class Session:
         self, op: str, prov: Provenance, ids: Sequence[int], params: Mapping[str, object]
     ) -> Form:
         """Return the backend's ``op_form``; its type or shape error becomes a user-located one."""
+        forms = self._forms_of(ids)
         try:
-            return self._backend.op_form(op, self._forms_of(ids), params)
+            return self._memoized(
+                op, forms, params, lambda: self._backend.op_form(op, forms, params)
+            )
         except GraphedTypeError:
             raise
         except Exception as exc:
             raise GraphedTypeError(op, prov, str(exc)) from exc
+
+    def _memoized(
+        self,
+        op: str,
+        forms: Sequence[Form],
+        params: Mapping[str, object],
+        infer: Callable[[], R],
+    ) -> R:
+        """Return ``infer()``, run once per the backend's optional ``op_key`` of the call.
+
+        Universes repeat one inference and share its result object. An inference warning is
+        emitted once per distinct key, not per site; a raise is never kept, so every site raises.
+        """
+        keyed = getattr(self._backend, "op_key", None)
+        key = None if keyed is None else keyed(op, forms, params)
+        if key is None:
+            return infer()
+        with self._lock:
+            held = self._inferred.get(key)
+        if held is not None:
+            return cast("R", held[0])
+        value = infer()
+        with self._lock:
+            return cast("R", self._inferred.setdefault(key, (value, forms))[0])
 
     def _enter(
         self,
