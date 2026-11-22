@@ -17,6 +17,7 @@ import pyarrow.parquet as pq
 
 import graphed
 import graphed.debug as gd
+import graphed.materialization as materialization
 import graphed.numpy as gnp
 from graphed.awkward import AwkwardBackend, AwkwardForm, from_awkward, gak
 from graphed.awkward.io import _file_tables, from_parquet, read_parquet_partition, to_parquet
@@ -26,6 +27,7 @@ from graphed.core.plan import _partition_bytes, _partition_from_json, _partition
 from graphed.errors import PackKeyError, StageError
 from graphed.materialization import PlanPieces
 from graphed.parquet import derive_part_index, row_groups_for
+from graphed.projection import read_columns
 from graphed.session import Session
 
 
@@ -80,13 +82,19 @@ def _rows_read(files: _Files) -> int:
 def test_head_reads_a_prefix_of_the_used_columns() -> None:
     ev, files = _files(1000)
     assert ak.to_list(graphed.head(ev.a * 2, 3)) == [0.0, 2.0, 4.0]
-    assert files.reads == [(0, 3, ("a",))]
+    assert files.reads == [(0, materialization._HEAD_FIRST_ENTRIES, ("a",))]
 
 
 def test_head_widens_past_a_cut_that_empties_the_first_file() -> None:
     ev, files = _files(10, 10, 10)
     assert ak.to_list(graphed.head(ev.a[ev.a >= 25], 2)) == [25.0, 26.0]
     assert _rows_read(files) < 3 * 30
+
+
+def test_head_finds_rows_a_few_entries_in_with_one_round() -> None:
+    ev, files = _files(1000)
+    assert ak.to_list(graphed.head(ev.a[ev.a >= 20], 2)) == [20.0, 21.0]
+    assert files.reads == [(0, materialization._HEAD_FIRST_ENTRIES, ("a",))]
 
 
 def test_head_returns_what_there_is_when_the_data_ends() -> None:
@@ -159,7 +167,7 @@ def test_gak_head_and_session_materialize_read_only_used_columns() -> None:
     ev, files = _files(100)
     x = ev.a + 1
     assert ak.to_list(gak.head(x, 2)) == [1.0, 2.0]
-    assert files.reads == [(0, 2, ("a",))]
+    assert files.reads == [(0, materialization._HEAD_FIRST_ENTRIES, ("a",))]
     files.reads.clear()
     assert ak.num(ev.session.materialize(x), axis=0) == 100
     assert files.reads == [(0, 100, ("a",))]
@@ -555,3 +563,35 @@ def test_a_parquet_partition_reads_only_its_row_groups(
     assert asked == [[1, 2]]
     assert len(read_parquet_partition(Partition(path, "", 4, 4))) == 0
     assert asked[-1] is None
+
+
+def test_head_projects_its_columns_once_however_often_it_widens(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ev, files = _files(10, 10, 10)
+    projected: list[int] = []
+
+    def counted(arrays: Any, nid: int) -> Any:
+        projected.append(nid)
+        return read_columns(arrays, nid)
+
+    monkeypatch.setattr(materialization, "read_columns", counted)
+    assert ak.to_list(graphed.head(ev.a[ev.a >= 25], 2)) == [25.0, 26.0]
+    assert len(files.reads) > 1  # it widened
+    assert len(projected) == 1
+
+
+def test_head_over_a_short_first_partition_and_a_whole_source_pairs_their_rows() -> None:
+    ev, files = _files(5, 95)
+    whole = from_awkward("whole", ak.Array({"b": np.arange(100.0)}), session=ev.session)
+    assert ak.to_list(graphed.head(ev.a + whole.b, 3)) == [0.0, 2.0, 4.0]
+    assert files.reads == [(0, 5, ("a",))]
+
+
+def test_head_reads_all_of_the_first_partition_before_spanning_a_second() -> None:
+    ev, files = _files(100, 100)
+    out = ev.a[ev.a >= 62].map(
+        lambda v, *, partition: v, name="f", output_type="float64", partition=True
+    )
+    assert ak.to_list(graphed.head(out, 3)) == [62.0, 63.0, 64.0]
+    assert {i for i, _, _ in files.reads} == {0}

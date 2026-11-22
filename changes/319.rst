@@ -1,0 +1,6 @@
+.. under: 0.0.12 (unreleased)
+
+* ``graphed.head`` projects a source's columns once per call; it re-ran the projection over the
+  array's cone on every widening round (#319).
+* ``graphed.head`` reads at least 32 entries in its first round, staying within each source's first
+  partition until that partition runs short (#319).

@@ -233,6 +233,10 @@ def test_a_sample_spanning_chunks_refuses_an_op_paired_by_chunk() -> None:
         graphed.head(outlier, 4)
 
 
+def test_a_head_the_first_partition_answers_reads_no_further() -> None:
+    assert ak.to_list(graphed.head(_chunk_paired(), 1)) == [2.0]
+
+
 def test_a_sample_spanning_chunks_still_takes_an_unflatten() -> None:
     events = _events()
     rebuilt = gak.unflatten(gak.flatten(events.x), gak.num(events.x))
