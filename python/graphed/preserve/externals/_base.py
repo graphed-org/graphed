@@ -291,7 +291,7 @@ def record_external(
     session's backend accepts, see ``Session.record_external``); it is recorded as the node's form
     and its canonical string joins the node's params. ``payload`` is the bytes or a path to them.
     """
-    payload = _payload_bytes(payload)  # a path records the same node as its bytes
+    payload = _payload_bytes(payload, session)  # a path records the same node as its bytes
     if containers_in(*inputs):  # one External per universe, as `graphed.apply` records
         return expand(
             lambda *members: record_external(

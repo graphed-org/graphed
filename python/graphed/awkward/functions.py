@@ -638,7 +638,9 @@ def apply_correction(
         return arrays[0].session.record_external(
             "correction", evaluator, arrays, {"path": str(payload), "name": name, **which}
         )
-    blob = _payload_bytes(payload)
+    blob = _payload_bytes(
+        payload, next(filter(None, map(session_of, [*arrays, *named.values()])), None)
+    )
     wanted = correction_inputs(blob, name, compound)  # a wrong name outranks a bad template
     if named:
         arrays, args = _named_template(wanted, name, named)
@@ -699,7 +701,7 @@ def onnx_inference(
         )
     session = inputs[0].session
     session._mine(list(inputs), ("onnx", capture()))  # a foreign input outranks a bad template
-    blob = _payload_bytes(payload)
+    blob = _payload_bytes(payload, session)
     arg_entries = _parse_template(args or [], len(inputs), constants=False, groups=True)
     kw_entries = {
         k: _parse_template([v], len(inputs), constants=False, groups=True)[0]

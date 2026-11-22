@@ -250,9 +250,9 @@ def test_a_varied_keyword_expands_per_universe() -> None:
 def test_a_path_is_read_once_and_reread_when_the_file_changes(tmp_path: Path) -> None:
     path = tmp_path / "set.json"
     path.write_bytes(CSET)
-    assert _payload_bytes(str(path)) is _payload_bytes(str(path))
+    assert _payload_bytes(str(path), None) is _payload_bytes(str(path), None)
     path.write_bytes(CSET + b" ")
-    assert _payload_bytes(str(path)) == CSET + b" "
+    assert _payload_bytes(str(path), None) == CSET + b" "
 
 
 def _external(ev: Any, params: dict[str, Any], *inputs: Any, payload: bytes = CSET) -> Any:
