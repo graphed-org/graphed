@@ -26,9 +26,6 @@ def _read_payload(path: str, mtime_ns: int, size: int) -> bytes:
     return Path(path).read_bytes()
 
 
-_PAYLOAD_IDS_CAP = 64  # duplicates a Session keeps alive only to skip their content compare
-
-
 def _payload_bytes(
     payload: bytes | bytearray | memoryview | str | os.PathLike[str], session: Session | None
 ) -> bytes:
@@ -36,27 +33,16 @@ def _payload_bytes(
 
     Without a session (a call that refuses for want of an Array input) the bytes are returned.
     """
-    fresh = False  # a bytearray's copy is never passed again, so it is not worth keeping by id
     if isinstance(payload, (bytes, bytearray, memoryview)):  # Booster.save_raw is a bytearray
         data = bytes(payload)
-        fresh = data is not payload
     else:
         stat = os.stat(payload)
         data = _read_payload(os.path.abspath(payload), stat.st_mtime_ns, stat.st_size)
     if session is None:
         return data
-    hash(data)  # bytes cache it: the full scan stays outside the Session's lock
+    hash(data)  # bytes cache it: the hash scan stays outside the Session's lock
     with session._lock:
-        seen = session._payload_ids.get(id(data))
-        if seen is not None:
-            session._payload_ids.move_to_end(id(data))
-            return seen[1]
-        canon = session._payloads.setdefault(data, data)
-        if canon is not data and not fresh:
-            session._payload_ids[id(data)] = (data, canon)
-            if len(session._payload_ids) > _PAYLOAD_IDS_CAP:
-                session._payload_ids.popitem(last=False)
-        return canon
+        return session._payloads.setdefault(data, data)
 
 
 def json_bytes(payload: bytes) -> bytes:

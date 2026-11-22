@@ -1,0 +1,4 @@
+.. under: 0.0.12 (unreleased)
+
+* Recording keeps no duplicate payload object alive, so a graph that loads one correction file
+  several times holds a single copy of it while it records (#332).

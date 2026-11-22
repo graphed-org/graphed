@@ -1,6 +1,4 @@
 .. under: 0.0.12 (unreleased)
 
-* A recorded External's payload bytes are shared by every node that records an equal payload, and
-  a payload object seen before is matched by identity: recording one correction set from many
-  equal bytes objects compares each object's contents once, not on every content-hash lookup, and
+* A recorded External's payload bytes are shared by every node that records an equal payload, so
   the graph holds one copy (#326).
