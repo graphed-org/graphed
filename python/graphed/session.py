@@ -15,7 +15,6 @@ import threading
 import types
 import warnings
 from array import array
-from collections import OrderedDict
 from collections.abc import Callable, Hashable, Iterable, Mapping, Sequence, Set
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, TypeVar, cast
@@ -204,11 +203,8 @@ class Session:
         self._inferred: dict[Hashable, tuple[Any, Sequence[Form], int]] = {}
         # node id -> the index of the memo entry its op's form came from, -1 for none
         self._entries = array("i")
-        # a payload's content -> the one object every node recording it shares, and a payload
-        # object seen before -> (it, that object); held, so its id cannot be recycled, and capped,
-        # since nothing else may hold it
+        # a payload's content -> the one object every node recording it shares
         self._payloads: dict[bytes, bytes] = {}
-        self._payload_ids: OrderedDict[int, tuple[bytes, bytes]] = OrderedDict()
 
     def __deepcopy__(self, memo: dict[int, Any] | None = None) -> Session:
         """Return this Session: one graph has one Session, so a copy shares what it records."""

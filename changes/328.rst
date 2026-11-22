@@ -1,5 +1,5 @@
 .. under: 0.0.12 (unreleased)
 
-* The tables that make a recording's equal payloads one object belong to its Session, so the
-  duplicate payload objects they hold (at most 64) are released with the Session instead of
-  living for the rest of the process (#328).
+* The table that makes a recording's equal payloads one object belongs to its Session, so the
+  payloads it holds are released with the Session instead of living for the rest of the process
+  (#328).
