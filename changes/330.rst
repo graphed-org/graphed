@@ -1,0 +1,5 @@
+.. under: 0.0.12 (unreleased)
+
+* Projection evaluates one node per Session memo entry and replays what that node touched on the
+  entry's other nodes, so a graph with many systematic universes projects several times faster
+  with the same result (#330).

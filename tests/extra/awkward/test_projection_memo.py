@@ -10,6 +10,7 @@ import pytest
 
 from graphed import BufferNeed, Session
 from graphed.awkward import AwkwardBackend, from_awkward, gak, project_buffers_many
+from graphed.awkward.projection import _buffers, _walked
 from graphed.systematics import by_label
 from graphed.systematics.by_label import cone
 
@@ -42,8 +43,11 @@ def test_each_op_node_is_evaluated_once_across_the_outputs(
     session, ev, outputs = _outputs(n_outputs)
     union = {nid for out in outputs for nid in cone(session, out.node_id)}
     calls = _counted_ops(session, monkeypatch)
-    project_buffers_many(outputs)
+    _walked(outputs, "raise", summarize=False)
     assert len(calls) == len(union - {ev.node_id}) == 6 + 2 * n_outputs
+    calls.clear()
+    project_buffers_many(outputs)  # the outputs' sums are one memo entry
+    assert len(calls) == 7 + n_outputs
 
 
 def test_the_shared_memo_leaves_the_projection_unchanged() -> None:
@@ -97,7 +101,7 @@ def test_a_tracer_is_dropped_once_its_last_reader_has_replayed(
         return out
 
     monkeypatch.setattr(session.backend, "eval_stage", tracking)
-    projection = project_buffers_many([x, *sums])
+    projection = _buffers(*_walked([x, *sums], "raise", summarize=False))
     assert len(made) == 61  # the field, 20 adds, 20 products, 20 sums
     # the chain's end and the sums are roots; a product dies with its sum, an add with the next add
     assert alive_at_end[0] <= 22
