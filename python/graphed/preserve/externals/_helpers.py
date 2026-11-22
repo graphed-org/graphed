@@ -11,11 +11,14 @@ import threading
 from collections import OrderedDict
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Any, TypeVar, cast
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from ...errors import GraphedTypeError
 from ...provenance import capture
 from ..errors import PreserveError
+
+if TYPE_CHECKING:
+    from ...session import Session
 
 
 @functools.lru_cache(maxsize=8)
@@ -23,17 +26,16 @@ def _read_payload(path: str, mtime_ns: int, size: int) -> bytes:
     return Path(path).read_bytes()
 
 
-# equal payload contents -> one object, so hash-memo lookups and a plan's pickle go by identity
-_CANON: OrderedDict[bytes, bytes] = OrderedDict()
-# id of a payload already canonicalized -> (it, its canonical object), so its content is compared
-# once; the entry holds the payload, so its id is not reused while the entry lives
-_SEEN: OrderedDict[int, tuple[bytes, bytes]] = OrderedDict()
-_CANON_CAP = 64  # each table's bound on the payloads it keeps alive
-_CANON_LOCK = threading.Lock()
+_PAYLOAD_IDS_CAP = 64  # duplicates a Session keeps alive only to skip their content compare
 
 
-def _payload_bytes(payload: bytes | bytearray | memoryview | str | os.PathLike[str]) -> bytes:
-    """Return a payload's bytes; equal contents are one object, however many nodes record them."""
+def _payload_bytes(
+    payload: bytes | bytearray | memoryview | str | os.PathLike[str], session: Session | None
+) -> bytes:
+    """Return a payload's bytes; equal contents are one object in ``session``'s nodes.
+
+    Without a session (a call that refuses for want of an Array input) the bytes are returned.
+    """
     fresh = False  # a bytearray's copy is never passed again, so it is not worth keeping by id
     if isinstance(payload, (bytes, bytearray, memoryview)):  # Booster.save_raw is a bytearray
         data = bytes(payload)
@@ -41,19 +43,19 @@ def _payload_bytes(payload: bytes | bytearray | memoryview | str | os.PathLike[s
     else:
         stat = os.stat(payload)
         data = _read_payload(os.path.abspath(payload), stat.st_mtime_ns, stat.st_size)
-    with _CANON_LOCK:
-        seen = _SEEN.get(id(data))
+    if session is None:
+        return data
+    hash(data)  # bytes cache it: the full scan stays outside the Session's lock
+    with session._lock:
+        seen = session._payload_ids.get(id(data))
         if seen is not None:
-            _SEEN.move_to_end(id(data))
+            session._payload_ids.move_to_end(id(data))
             return seen[1]
-        canon = _CANON.setdefault(data, data)
-        _CANON.move_to_end(canon)
-        if len(_CANON) > _CANON_CAP:
-            _CANON.popitem(last=False)
+        canon = session._payloads.setdefault(data, data)
         if canon is not data and not fresh:
-            _SEEN[id(data)] = (data, canon)
-            if len(_SEEN) > _CANON_CAP:
-                _SEEN.popitem(last=False)
+            session._payload_ids[id(data)] = (data, canon)
+            if len(session._payload_ids) > _PAYLOAD_IDS_CAP:
+                session._payload_ids.popitem(last=False)
         return canon
 
 
