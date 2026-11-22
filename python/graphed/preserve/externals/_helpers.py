@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import threading
+import weakref
 from collections import OrderedDict
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
@@ -42,7 +43,29 @@ def _payload_bytes(
         return data
     hash(data)  # bytes cache it: the hash scan stays outside the Session's lock
     with session._lock:
+        if not session._payloads:
+            weakref.finalize(session, _forget, session._payloads).atexit = False
         return session._payloads.setdefault(data, data)
+
+
+def _forget(payloads: dict[bytes, bytes]) -> None:
+    """Drop what the process-wide caches hold of a dead Session's payloads."""
+    _FORGOTTEN.append(payloads)
+    # a collection can finalize a Session on the thread that holds the memo lock: the holder purges
+    if _HASH_MEMO_LOCK.acquire(blocking=False):
+        try:
+            _purge_forgotten()
+        finally:
+            _HASH_MEMO_LOCK.release()
+    _read_payload.cache_clear()
+
+
+def _purge_forgotten() -> None:
+    """Drop the memo entries of the payloads `_forget` queued; the caller holds the memo lock."""
+    while _FORGOTTEN:
+        payloads = _FORGOTTEN.pop()
+        for key in [k for k in _HASH_MEMO if k[1] in payloads]:
+            del _HASH_MEMO[key]
 
 
 def json_bytes(payload: bytes) -> bytes:
@@ -298,12 +321,14 @@ def ml_matrix(entry: TemplateEntry, inputs: list[Any]) -> Any:
 _HASH_MEMO: OrderedDict[tuple[str, bytes], Any] = OrderedDict()
 _HASH_MEMO_CAP = 64  # also bounds the payloads the keys keep alive
 _HASH_MEMO_LOCK = threading.Lock()
+_FORGOTTEN: list[dict[bytes, bytes]] = []
 _T = TypeVar("_T")
 
 
 def memoized_model_hash(domain: str, payload: bytes, compute: Callable[[bytes], _T]) -> _T:
     key = (domain, bytes(payload))
     with _HASH_MEMO_LOCK:  # get + move_to_end must not interleave with another thread's eviction
+        _purge_forgotten()
         if key in _HASH_MEMO:
             _HASH_MEMO.move_to_end(key)
             cached: _T = _HASH_MEMO[key]

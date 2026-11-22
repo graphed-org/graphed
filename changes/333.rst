@@ -1,0 +1,5 @@
+.. under: 0.0.12 (unreleased)
+
+* When a Session is gone, the process-wide content-hash memo and payload-file cache drop its
+  payloads, so a process that records several analyses no longer keeps earlier ones' correction
+  sets and models alive (#333).
