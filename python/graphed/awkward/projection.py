@@ -17,11 +17,12 @@ been reduced (it replays the ops, which a fused stage contains unchanged).
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Sequence
 
 import awkward as ak
 
-from graphed import Array
+from graphed import Array, Session
 from graphed.projection import (
     CONSERVATIVE,
     BufferNeed,
@@ -29,6 +30,7 @@ from graphed.projection import (
     Projection,
     handle_opaque,
 )
+from graphed.systematics.by_label import _reach
 from graphed.systematics.varied import expanding
 
 from .backend import AwkwardForm
@@ -67,6 +69,13 @@ def _structural_paths(form: object, path: tuple[str, ...] = ()) -> dict[str, str
             out[key] = ".".join(path)
         out.update(_structural_paths(form.content, path))  # type: ignore[attr-defined]
     return out
+
+
+def _readers(session: Session, arrays: Sequence[Array]) -> Counter[int]:
+    """Count, per node of ``arrays``' cones, the reads by other nodes of those cones."""
+    cone = _reach(arrays)
+    with session._lock:
+        return Counter(i for nid in cone for i in session._inputs_of(nid))
 
 
 def _replay(
@@ -111,12 +120,25 @@ def _replay(
         return form.tt if isinstance(form, AwkwardForm) else inputs[0]
 
     memo: dict[int, object] = {}  # one memo, so a sub-DAG the outputs share is replayed once
+    readers = _readers(session, [a for a in arrays if a.session is session])
+    readers.update(a.node_id for a in arrays)  # an output is read by the caller, so it is kept
+
+    def replayed(nid: int, value: object) -> object:
+        # a tracer no later node of any output's cone reads is dropped as soon as that holds
+        with session._lock:
+            read = session._inputs_of(nid)
+        for i in read:
+            readers[i] -= 1
+            if not readers[i]:
+                del memo[i]
+        return value
+
     for array in arrays:  # `walk` refuses an array from another Session
         result = session.walk(
             array,
             source=lambda nid: tracers[nid],
-            op=lambda _nid, name, ins, params: backend.eval_stage(name, ins, params),
-            external=on_external,
+            op=lambda nid, name, ins, params: replayed(nid, backend.eval_stage(name, ins, params)),
+            external=lambda nid, fn, ins: replayed(nid, on_external(nid, fn, ins)),
             memo=memo,
         )
         # the output is materialized, so its own columns are read — touch them (covers a bare
