@@ -1,0 +1,9 @@
+.. under: 0.0.12 (unreleased)
+
+* A Session infers an op's form once per distinct (op, parameters, input forms), as its backend's
+  optional ``op_key`` names them, and every node of that key shares the one form: systematic
+  universes no longer repeat each inference. An inference warning is emitted once per key, not per
+  site (#324).
+* ``AwkwardBackend.op_key`` keys a form by its structure, a wide inferred record by identity, and
+  the behavior registries by size: registering a behavior partway through a recording is seen, while
+  replacing a registered entry is not supported (#324).
