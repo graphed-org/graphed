@@ -22,7 +22,7 @@ STEPS = 6
 def _peak() -> tuple[int, list[Any]]:
     session = Session(NumpyBackend())
     x = session.source("x", form=NumpyForm(DATA.dtype, shape=(None,)), data=DATA)
-    sums = []
+    sums: list[Any] = []
     for _ in range(STEPS):
         x = x + 1.0
         sums.append(np.sum(x))
