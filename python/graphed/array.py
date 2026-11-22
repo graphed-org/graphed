@@ -473,7 +473,7 @@ class Array(Deferred):
 
     # ---- elementwise recording -------------------------------------------------
     def _binary(self, op: str, other: object, *, reflected: bool = False) -> Array:
-        if getattr(other, "_varied_container", False):
+        if getattr(type(other), "_varied_container", False):
             # the container's reflected dunder maps the op per universe (mypy special-cases a
             # NotImplemented return only in the dunders themselves, not in this shared helper)
             return NotImplemented  # type: ignore[no-any-return]
@@ -740,7 +740,7 @@ class Array(Deferred):
 
     def __getitem__(self, key: object) -> Array:
         """Record a subscript: a mask, a field name, a field list or a tuple key."""
-        if isinstance(key, Array) or getattr(key, "_varied_container", False):
+        if isinstance(key, Array) or getattr(type(key), "_varied_container", False):
             from .systematics.handles import cut
 
             return cut(self, key)  # type: ignore[no-any-return]  # a Varied mask selects PER UNIVERSE
@@ -780,7 +780,7 @@ class Array(Deferred):
     # ---- M2 methods (kept) -----------------------------------------------------
     def filter(self, mask: Array) -> Array:
         """Record the selection of this array's rows where ``mask`` is true."""
-        if getattr(mask, "_varied_container", False):
+        if getattr(type(mask), "_varied_container", False):
             from .varied import expand
 
             return expand(lambda arr, m: arr.filter(m), (self, mask), {})  # type: ignore[no-any-return]  # a Varied in, a Varied out
