@@ -114,5 +114,5 @@ def test_one_relative_path_in_two_directories_reads_two_files(
     got = []
     for name in ("a", "b"):
         monkeypatch.chdir(tmp_path / name)
-        got.append(_payload_bytes("m.json"))
+        got.append(_payload_bytes("m.json", None))
     assert got == [b"one", b"two"]
