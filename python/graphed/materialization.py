@@ -232,34 +232,49 @@ def _read_first(
     columns: Sequence[str] | None,
     entries: int,
     resources: WorkerResources,
-) -> tuple[list[object], int, list[Partition]]:
-    """Read partitions in order until ``entries`` rows are read; return chunks, rows and parts."""
+    one_partition: bool = False,
+) -> tuple[list[object], int, bool, list[Partition]]:
+    """Read partitions in order until ``entries`` rows are read, or only the first one.
+
+    Return the chunks, the rows read, whether the data ended short of ``entries``, and the parts.
+    """
     chunks: list[object] = []
     parts: list[Partition] = []
     rows = 0
-    for partition in data.partitions(1):
+    every = data.partitions(1)
+    for partition in every:
         wanted = entries - rows
         parts.append(partition.first(wanted))
         chunk, read = _first(data.read_partition(parts[-1], columns, resources), wanted)
         chunks.append(chunk)
         rows += read
-        if rows == entries:
+        if rows == entries or one_partition:
             break
-    return chunks, rows, parts
+    return chunks, rows, rows < entries and len(parts) == len(every), parts
 
 
 def _first_entries(
-    session: Session, arrays: Sequence[Array], entries: int, load: Callable[[int], object]
-) -> tuple[dict[int, object], bool, Callable[[], Partition] | None]:
-    """Return each source's first ``entries`` rows, whether every source ran out, and a partition.
+    session: Session,
+    arrays: Sequence[Array],
+    entries: int,
+    load: Callable[[int], object],
+    columns: dict[int, tuple[str, ...] | None],
+    one_partition: bool = False,
+) -> tuple[dict[int, object], bool, Callable[[], Partition] | None, int]:
+    """Return each source's first rows, whether every source ran out, a partition, and the rows.
 
-    The partition is the one a ``partition=True`` function's source was read from, where exactly
-    one partition feeds such functions.
+    Each source holds the returned number of rows, at most ``entries``. The partition is the one
+    a ``partition=True`` function's source was read from, where exactly one partition feeds such
+    functions.
 
     ``load`` gives a source read whole: one that is not partitioned, or whose chunks do not join.
+    ``columns`` holds each source's projected columns across calls over the same ``arrays``;
+    ``one_partition`` reads no partition past each source's first, and cuts every source to the
+    rows of a first partition shorter than ``entries``.
     """
     reads: dict[int, object] = {}
     exhausted = True
+    held = entries
     first: Callable[[], Partition] | None = None
     paired = cache(lambda: _paired_by_chunk(session, session._nodes()))
     fed = cache(lambda: _partition_fed(session, arrays))
@@ -267,8 +282,13 @@ def _first_entries(
     try:
         for nid, data in sources_read(arrays).items():
             if isinstance(data, PartitionedSource) and _chunks_join(session, data):
-                columns = _columns(data, arrays, nid)
-                chunks, rows, parts = _read_first(data, columns, entries, resources)
+                if nid not in columns:
+                    columns[nid] = _columns(data, arrays, nid)
+                chunks, rows, ended, parts = _read_first(
+                    data, columns[nid], entries, resources, one_partition
+                )
+                if not ended:
+                    held = min(held, rows)
                 if len(chunks) > 1 and (
                     nid in fed()
                     or not paired().isdisjoint(
@@ -286,10 +306,13 @@ def _first_entries(
                     first = cache(partial(resolved_partition, data, parts[0]))
             else:
                 reads[nid], rows = _first(load(nid), entries)
-            exhausted = exhausted and rows < entries
+                ended = rows < entries
+            exhausted = exhausted and ended
     finally:
         resources.close()
-    return reads, exhausted, first if len(fed()) == 1 else None
+    if held < entries:  # rows pair across sources, so none holds more than the shortest
+        reads = {nid: _first(value, held)[0] for nid, value in reads.items()}
+    return reads, exhausted, first if len(fed()) == 1 else None, held
 
 
 def _read_chunk(
@@ -593,7 +616,7 @@ def _first_sample(entries: int, caller: str) -> _Sample:
     def reads(
         session: Session, arrays: Sequence[Array]
     ) -> tuple[dict[int, object], Callable[[], Partition] | None]:
-        values, _, part = _first_entries(session, arrays, entries, session.source_value)
+        values, _, part, _ = _first_entries(session, arrays, entries, session.source_value, {})
         return values, part
 
     return _Sample(reads, _first_label(entries))
@@ -671,6 +694,9 @@ def materialize(
     return _replace_items(held, lambda item: values[id(item)])
 
 
+_HEAD_FIRST_ENTRIES = 32
+
+
 def head(array: Array, n: int = 5) -> Any:
     """Return the first ``n`` rows of ``array``'s value, reading as little as that takes.
 
@@ -684,17 +710,23 @@ def head(array: Array, n: int = 5) -> Any:
     session = array.session
     if array.node_id in _past_boundary(session):
         return materialize(array[:n])
-    entries = max(n, 1)
+    # a round costs per op, not per entry, so the first reads a few tens of entries
+    entries = max(n, _HEAD_FIRST_ENTRIES) if n else 1
+    first = n > 0
     load = cache(session.source_value)
+    columns: dict[int, tuple[str, ...] | None] = {}
     while True:
-        reads, exhausted, part = _first_entries(session, [array], entries, load)
+        reads, exhausted, part, held = _first_entries(
+            session, [array], entries, load, columns, first
+        )
+        first = first and held == entries
         # nothing here is past a boundary, so every operand is the prefix's rows, and a length-1
         # operand is a row set that must not broadcast
-        where = _first_label(entries)
+        where = _first_label(held)
         value = _run_whole(session, _Joint(), [array], reads, where, chunked=True, partition=part)[
             id(array)
         ]
         rows, found = _first(value, n)
         if exhausted or found == n:
             return rows
-        entries *= 2
+        entries = 2 * max(held, 1)

@@ -358,7 +358,7 @@ def test_trace_hands_the_first_partition(capsys: pytest.CaptureFixture[str]) -> 
 @pytest.mark.parametrize("read", ["head", "entries"])
 def test_first_entries_over_two_partitions_are_refused(read: str) -> None:
     out = _mapped(Session(AwkwardBackend()))  # the first file holds 5 entries
-    with pytest.raises(ValueError, match=r"span 2 partitions.*reads its input partition"):
+    with pytest.raises(ValueError, match=r"span \d+ partitions.*reads its input partition"):
         graphed.head(out, 7) if read == "head" else graphed.materialize(out, entries=7)
 
 
